@@ -1351,15 +1351,20 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
 
 /// A signer failure of a private document operation, or of the receiving xpub
 /// derivation the private sync's seed check makes first, as a wallet error: the
-/// SDK's refusal stays typed; a missing mnemonic is the key-unavailable
+/// SDK's refusal of a private contact request stays typed, and its refusal of
+/// a private document entry converts by variant
+/// (`From<PrivateDocumentSealError>`, the refused request an
+/// `InvalidParameter`); a missing mnemonic is the key-unavailable
 /// outcome (FFI code 31), carried as the signer's typed completion is, with
 /// the reserved marker at position 0 of a `ProtocolError::Generic` payload
 /// (`NotFound` renders it there), so the structural discriminator restores
 /// it; the rest are reported as the other provider methods report theirs.
 fn private_document_signer_error(error: MnemonicResolverSignerError) -> PlatformWalletError {
     match error {
-        MnemonicResolverSignerError::PrivateContactRequest(error)
-        | MnemonicResolverSignerError::PrivateDocument(error) => PlatformWalletError::Sdk(error),
+        MnemonicResolverSignerError::PrivateContactRequest(error) => {
+            PlatformWalletError::Sdk(error)
+        }
+        MnemonicResolverSignerError::PrivateDocument(error) => error.into(),
         error @ MnemonicResolverSignerError::NotFound => PlatformWalletError::Sdk(
             dash_sdk::Error::Protocol(ProtocolError::Generic(error.to_string())),
         ),

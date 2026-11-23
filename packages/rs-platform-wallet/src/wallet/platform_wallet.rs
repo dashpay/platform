@@ -2587,6 +2587,13 @@ impl PlatformWallet {
         C: ContactCryptoProvider + Sync,
         P: OrchardProver,
     {
+        let removed = || PlatformWalletError::WalletRemovedBeforeSend(hex::encode(self.wallet_id));
+        // A stale handle is refused before the seal, which would read its
+        // wallet as not found, or a re-created one's identities; the check
+        // under the gate below is the one that holds for the spend.
+        if !self.core().is_current_generation().await {
+            return Err(removed());
+        }
         let sealed = self
             .identity
             .seal_private_document_entry(crypto, new)
@@ -2595,9 +2602,7 @@ impl PlatformWallet {
         // the teardown takes them, and held until the spend returns.
         let _lifecycle = self.core().generation_payment_guard().await;
         if !self.core().is_current_generation().await {
-            return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
-                self.wallet_id,
-            )));
+            return Err(removed());
         }
         let keyset = self.derive_spend_keyset(seed, account).await?;
         private_document_create_from_pool_with_metadata(

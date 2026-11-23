@@ -19,6 +19,7 @@
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
+use dpp::identity::Purpose;
 use platform_wallet::{
     private_document_create_fee, private_document_recipient_key_choices,
     PrivateDocumentEntryCreated, PrivateDocumentRecipientKey, PrivateDocumentSenderAuth,
@@ -33,7 +34,7 @@ use crate::{check_ptr, unwrap_result_or_return};
 #[cfg(feature = "shielded")]
 use platform_wallet::wallet::shielded::CachedOrchardProver;
 #[cfg(feature = "shielded")]
-use platform_wallet::NewPrivateDocumentEntry;
+use platform_wallet::{NewPrivateDocumentEntry, PlatformWalletError};
 #[cfg(feature = "shielded")]
 use rs_sdk_ffi::MnemonicResolverHandle;
 
@@ -70,12 +71,24 @@ const _: [u8; 8] = [0u8; std::mem::size_of::<PrivateDocumentRecipientKeyFFI>()];
 const _: [u8; 4] = [0u8; std::mem::align_of::<PrivateDocumentRecipientKeyFFI>()];
 const _: () = assert!(std::mem::offset_of!(PrivateDocumentRecipientKeyFFI, purpose) == 4);
 
-impl From<PrivateDocumentRecipientKey> for PrivateDocumentRecipientKeyFFI {
-    fn from(key: PrivateDocumentRecipientKey) -> Self {
-        Self {
+impl PrivateDocumentRecipientKeyFFI {
+    /// `key` with its purpose numbered as dpp numbers it (1 `ENCRYPTION`, 2
+    /// `DECRYPTION`), or `None` for any other purpose, which no key an entry
+    /// may be sealed to has (`private_document_recipient_key`).
+    fn of(key: PrivateDocumentRecipientKey) -> Option<Self> {
+        let purpose = match key.purpose {
+            Purpose::ENCRYPTION => 1,
+            Purpose::DECRYPTION => 2,
+            Purpose::AUTHENTICATION
+            | Purpose::TRANSFER
+            | Purpose::SYSTEM
+            | Purpose::VOTING
+            | Purpose::OWNER => return None,
+        };
+        Some(Self {
             key_id: key.key_id,
-            purpose: key.purpose as u8,
-        }
+            purpose,
+        })
     }
 }
 
@@ -98,13 +111,16 @@ impl PrivateDocumentRecipientKeysFFI {
         }
     }
 
-    /// `keys` handed over as an exact-length boxed slice.
+    /// `keys` handed over as an exact-length boxed slice
+    /// ([`PrivateDocumentRecipientKeyFFI::of`]).
     fn from_keys(keys: Vec<PrivateDocumentRecipientKey>) -> Self {
+        let keys: Box<[PrivateDocumentRecipientKeyFFI]> = keys
+            .into_iter()
+            .filter_map(PrivateDocumentRecipientKeyFFI::of)
+            .collect();
         if keys.is_empty() {
             return Self::empty();
         }
-        let keys: Box<[PrivateDocumentRecipientKeyFFI]> =
-            keys.into_iter().map(Into::into).collect();
         let count = keys.len();
         Self {
             keys: Box::into_raw(keys) as *mut PrivateDocumentRecipientKeyFFI,
@@ -325,12 +341,14 @@ pub unsafe extern "C" fn platform_wallet_manager_private_document_create_fee(
 /// Orchard spend authority. Writes the entry's commitment and sender key to
 /// `*out_created`, reset to zeros first.
 ///
-/// Errors: what is refused before anything is paid (a sender the wallet
-/// does not hold or without such a key, a recipient key that is not an
-/// enabled `DECRYPTION` or `ENCRYPTION` key, properties the schema refuses,
-/// an unknown auth mode) with `ErrorInvalidParameter` or
-/// `ErrorIdentityNotFound` and the reason; a resolver whose seed is not the
-/// wallet's with `ErrorInvalidParameter`; a network below protocol version
+/// Errors: a null pointer with `ErrorNullPointer`; what is refused before
+/// anything is paid (a sender the wallet does not hold or without such a
+/// key, a recipient the network does not hold, a recipient key that is not
+/// an enabled `DECRYPTION` or `ENCRYPTION` key, properties that are not a
+/// JSON object or that the schema refuses, an unknown auth mode) with
+/// `ErrorInvalidParameter` or `ErrorIdentityNotFound` and the reason; a
+/// resolver whose seed is not the wallet's with `ErrorInvalidParameter`; a
+/// wallet removed since its handle was taken with `NotFound`; a network below protocol version
 /// 15 with `ErrorProtocolVersionNotActive`; the rest as the other note
 /// spends: `ErrorShieldedSpendUnconfirmed` means the entry may already be in
 /// the store, do not create it again.
@@ -412,6 +430,8 @@ unsafe fn create_private_document_entry_inner(
     check_ptr!(mnemonic_resolver_handle);
     check_ptr!(data_contract_id);
     check_ptr!(document_type_name);
+    check_ptr!(sender_identity_id);
+    check_ptr!(recipient_identity_id);
     check_ptr!(properties_json);
 
     let mut wallet_id = [0u8; 32];
@@ -476,7 +496,21 @@ unsafe fn create_private_document_entry_inner(
             unsafe { *out_created = created.into() };
             PlatformWalletFFIResult::ok()
         }
-        Err(error) => seed_mismatch_result(error)
+        Err(error) => create_error_result(error),
+    }
+}
+
+/// The result a failed create reports: a refusal of what was asked keeps its
+/// own code (`ErrorInvalidParameter`, `ErrorIdentityNotFound`), as the
+/// export documents, rather than the spend mapping's generic
+/// `ErrorWalletOperation`; a seed mismatch takes the DashPay exports' code;
+/// the rest map as the other note spends do.
+#[cfg(feature = "shielded")]
+fn create_error_result(error: PlatformWalletError) -> PlatformWalletFFIResult {
+    match error {
+        error @ (PlatformWalletError::InvalidParameter(_)
+        | PlatformWalletError::IdentityNotFound(_)) => error.into(),
+        error => seed_mismatch_result(error)
             .unwrap_or_else(|error| map_spend_result(Err(error), CREATE_OPERATION)),
     }
 }
@@ -484,7 +518,6 @@ unsafe fn create_private_document_entry_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dpp::identity::Purpose;
 
     #[test]
     fn should_marshal_the_sender_auth_modes_and_refuse_a_signed_one() {
@@ -542,6 +575,139 @@ mod tests {
         let none = PrivateDocumentRecipientKeysFFI::from_keys(vec![]);
         assert!(none.keys.is_null());
         assert_eq!(none.count, 0);
+    }
+
+    /// A purpose no key an entry may be sealed to has is not marshalled as
+    /// some other number: the key is left out.
+    #[test]
+    fn should_leave_out_a_recipient_key_of_another_purpose() {
+        for purpose in [
+            Purpose::AUTHENTICATION,
+            Purpose::TRANSFER,
+            Purpose::SYSTEM,
+            Purpose::VOTING,
+            Purpose::OWNER,
+        ] {
+            assert_eq!(
+                PrivateDocumentRecipientKeyFFI::of(PrivateDocumentRecipientKey {
+                    key_id: 4,
+                    purpose,
+                }),
+                None
+            );
+        }
+        let mut keys = PrivateDocumentRecipientKeysFFI::from_keys(vec![
+            PrivateDocumentRecipientKey {
+                key_id: 0,
+                purpose: Purpose::AUTHENTICATION,
+            },
+            PrivateDocumentRecipientKey {
+                key_id: 2,
+                purpose: Purpose::DECRYPTION,
+            },
+        ]);
+        assert_eq!(keys.count, 1);
+        let slice = unsafe { std::slice::from_raw_parts(keys.keys, keys.count) };
+        assert_eq!(
+            slice,
+            &[PrivateDocumentRecipientKeyFFI {
+                key_id: 2,
+                purpose: 2
+            }]
+        );
+        unsafe { platform_wallet_private_document_recipient_keys_free(&mut keys) };
+        let none = PrivateDocumentRecipientKeysFFI::from_keys(vec![PrivateDocumentRecipientKey {
+            key_id: 0,
+            purpose: Purpose::AUTHENTICATION,
+        }]);
+        assert!(none.keys.is_null());
+        assert_eq!(none.count, 0);
+    }
+
+    /// A refusal of what was asked keeps its documented code through the
+    /// create's mapping, and so do the spend outcomes a host acts on.
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_keep_the_create_s_refusal_codes() {
+        use dpp::prelude::Identifier;
+
+        let code = |error| create_error_result(error).code;
+        assert_eq!(
+            code(PlatformWalletError::InvalidParameter(
+                "the properties do not satisfy \"note\"".to_string()
+            )),
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert_eq!(
+            code(PlatformWalletError::IdentityNotFound(Identifier::from(
+                [0xB0; 32]
+            ))),
+            PlatformWalletFFIResultCode::ErrorIdentityNotFound
+        );
+        assert_eq!(
+            code(PlatformWalletError::SeedMismatch {
+                wallet_id: "ab".to_string(),
+            }),
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert_eq!(
+            code(PlatformWalletError::ShieldedSpendUnconfirmed {
+                operation: CREATE_OPERATION,
+                reason: "not proved".to_string(),
+            }),
+            PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
+        );
+        assert_eq!(
+            code(PlatformWalletError::WalletRemovedBeforeSend(
+                "ab".to_string()
+            )),
+            PlatformWalletFFIResultCode::NotFound
+        );
+        assert_eq!(
+            code(PlatformWalletError::ShieldedNoUnspentNotes),
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+    }
+
+    /// A null sender or recipient identity id is refused before anything is
+    /// read.
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_refuse_a_null_sender_or_recipient_identity_id() {
+        let id = [0u8; 32];
+        let name = std::ffi::CString::new("note").expect("a C string");
+        let properties = std::ffi::CString::new("{}").expect("a C string");
+        // Never dereferenced: the null checks come first.
+        let resolver = std::ptr::NonNull::<MnemonicResolverHandle>::dangling().as_ptr();
+        for (sender, recipient, expected) in [
+            (std::ptr::null(), id.as_ptr(), "sender_identity_id"),
+            (id.as_ptr(), std::ptr::null(), "recipient_identity_id"),
+        ] {
+            let mut created = PrivateDocumentEntryCreatedFFI {
+                commitment: [9; 32],
+                sender_key_id: 9,
+            };
+            let result = unsafe {
+                platform_wallet_manager_create_private_document_entry(
+                    u64::MAX,
+                    id.as_ptr(),
+                    resolver,
+                    0,
+                    id.as_ptr(),
+                    name.as_ptr(),
+                    sender,
+                    recipient,
+                    2,
+                    0,
+                    properties.as_ptr(),
+                    &mut created,
+                )
+            };
+            assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+            let message = unsafe { CStr::from_ptr(result.message) }.to_string_lossy();
+            assert!(message.contains(expected), "{message}");
+            assert_eq!(created, PrivateDocumentEntryCreatedFFI::default());
+        }
     }
 
     #[test]

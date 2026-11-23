@@ -213,14 +213,6 @@ fn private_entry_size(
         })
 }
 
-/// A refusal of the SDK's check of an entry as the caller's: its text alone.
-fn refused(error: dash_sdk::Error) -> PlatformWalletError {
-    match error {
-        dash_sdk::Error::Generic(message) => PlatformWalletError::InvalidParameter(message),
-        error => error.into(),
-    }
-}
-
 /// The sender identity of a create, as the wallet holds it, and the keys it
 /// may seal with: each enabled `ECDSA_SECP256K1` `ENCRYPTION` key whose id
 /// names an identity key slot, with that slot's path, in key id order.
@@ -325,8 +317,18 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         let document_type = contract
             .document_type_for_name(&new.document_type_name)
             .map_err(|error| PlatformWalletError::InvalidParameter(error.to_string()))?;
+        // Properties that are not a JSON object are the caller's to fix, as
+        // the schema check's refusal below is; the helper's other callers
+        // report them as identity data.
         let properties: BTreeMap<String, Value> =
-            document_properties_from_json(document_type, &new.properties_json)?;
+            document_properties_from_json(document_type, &new.properties_json).map_err(
+                |error| match error {
+                    PlatformWalletError::InvalidIdentityData(message) => {
+                        PlatformWalletError::InvalidParameter(message)
+                    }
+                    error => error,
+                },
+            )?;
         let recipient = Identity::fetch(&self.sdk, new.recipient_identity_id)
             .await?
             .ok_or(PlatformWalletError::IdentityNotFound(
@@ -344,10 +346,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             properties: &properties,
         };
         // Every candidate passes the sender key check alike: the check
-        // refuses what was asked before the signer is.
-        request(keys[0].0)
-            .check(platform_version)
-            .map_err(refused)?;
+        // refuses what was asked before the signer is, each refusal an
+        // `InvalidParameter` by its variant (`From<PrivateDocumentSealError>`).
+        request(keys[0].0).check(platform_version)?;
 
         self.verify_seed_binds(crypto).await?;
         let paths: Vec<DerivationPath> = keys.iter().map(|(_, _, path)| path.clone()).collect();
@@ -597,7 +598,38 @@ mod tests {
                 .seal_private_document_entry(&NoKeys, &new)
                 .await
                 .expect_err("refused");
-            assert!(refused.to_string().contains(expected), "{refused}");
+            assert!(
+                matches!(&refused, PlatformWalletError::InvalidParameter(message)
+                    if message.contains(expected)),
+                "{refused:?}"
+            );
+        }
+    }
+
+    /// Properties that are not JSON, or not a JSON object, are the caller's
+    /// to fix: `InvalidParameter`, before the recipient is fetched or the
+    /// signer asked.
+    #[tokio::test]
+    async fn should_refuse_malformed_properties_json_as_an_invalid_parameter() {
+        let alice = identity(ALICE_PHRASE, ALICE, true);
+        // Bob is not served: the refusal comes before his fetch.
+        let (_manager, wallet) = wallet(ALICE_PHRASE, &alice).await;
+        for (properties_json, expected) in [
+            ("{\"text\":", "Invalid document properties JSON"),
+            ("\"hello\"", "must be a JSON object"),
+        ] {
+            let mut new = new_entry(PrivateDocumentSenderAuth::Anonymous, "hello");
+            new.properties_json = properties_json.to_string();
+            let refused = wallet
+                .identity()
+                .seal_private_document_entry(&NoKeys, &new)
+                .await
+                .expect_err("refused");
+            assert!(
+                matches!(&refused, PlatformWalletError::InvalidParameter(message)
+                    if message.contains(expected)),
+                "{refused:?}"
+            );
         }
     }
 
@@ -684,6 +716,166 @@ mod tests {
             private_document_create_fee_for(&contract, "note", 1, version),
             Err(PlatformWalletError::InvalidParameter(message)) if message.contains("not private")
         ));
+    }
+
+    #[cfg(feature = "shielded")]
+    mod create {
+        use super::*;
+        use crate::wallet::shielded::{
+            FileBackedShieldedStore, NetworkShieldedCoordinator, ShieldedStore,
+        };
+        use dpp::shielded::builder::OrchardProver;
+        use grovedb_commitment_tree::ProvingKey;
+        use std::sync::Arc;
+
+        /// A prover the refused creates here never reach.
+        struct UnreachableProver;
+        impl OrchardProver for UnreachableProver {
+            fn proving_key(&self) -> &ProvingKey {
+                panic!("nothing is proved")
+            }
+        }
+
+        /// A shielded coordinator on a fresh store under `dir`.
+        fn coordinator_at(dir: &std::path::Path) -> Arc<NetworkShieldedCoordinator> {
+            let db_path = dir.join("tree.sqlite");
+            let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store");
+            Arc::new(NetworkShieldedCoordinator::new(
+                Arc::new(dash_sdk::Sdk::new_mock()),
+                Network::Testnet,
+                db_path,
+                store,
+            ))
+        }
+
+        /// Create `new` from `wallet`'s account 0, sealed by `crypto`.
+        async fn create<C: ContactCryptoProvider + Sync>(
+            wallet: &PlatformWallet,
+            coordinator: &Arc<NetworkShieldedCoordinator>,
+            crypto: &C,
+            new: &NewPrivateDocumentEntry,
+        ) -> Result<PrivateDocumentEntryCreated, PlatformWalletError> {
+            wallet
+                .create_private_document_entry(
+                    coordinator,
+                    &seed(ALICE_PHRASE),
+                    0,
+                    new,
+                    crypto,
+                    UnreachableProver,
+                )
+                .await
+        }
+
+        /// Whether `coordinator`'s store records nothing for `wallet`: no
+        /// transition saved for a redrive. The store holds no note, so none
+        /// can be reserved either.
+        async fn records_nothing(
+            coordinator: &Arc<NetworkShieldedCoordinator>,
+            wallet: &PlatformWallet,
+        ) -> bool {
+            let store = coordinator.store().read().await;
+            store
+                .pending_redrives_for_wallet(wallet.wallet_id())
+                .expect("the store reads")
+                .is_empty()
+        }
+
+        /// A request the check refuses (a recipient key no entry is sealed
+        /// to, properties the schema refuses, properties that are not a JSON
+        /// object) is refused as the caller's before the signer is asked:
+        /// nothing is reserved, recorded, proved or broadcast.
+        #[tokio::test]
+        async fn should_refuse_a_create_the_check_refuses_before_anything_is_paid() {
+            let dir = tempfile::tempdir().expect("temporary shielded store");
+            let coordinator = coordinator_at(dir.path());
+            let alice = identity(ALICE_PHRASE, ALICE, true);
+            let (_manager, wallet) = wallet(ALICE_PHRASE, &alice).await;
+            serve_bob(&wallet, identity(BOB_PHRASE, BOB, true)).await;
+
+            let mut signing_key = new_entry(PrivateDocumentSenderAuth::Anonymous, "hello");
+            signing_key.recipient_key_id = 0;
+            let too_short = new_entry(PrivateDocumentSenderAuth::Anonymous, "no");
+            let mut not_json = new_entry(PrivateDocumentSenderAuth::Anonymous, "hello");
+            not_json.properties_json = "[1]".to_string();
+            for new in [signing_key, too_short, not_json] {
+                // `NoKeys` and `UnreachableProver` panic if reached.
+                let refused = create(&wallet, &coordinator, &NoKeys, &new).await;
+                assert!(
+                    matches!(refused, Err(PlatformWalletError::InvalidParameter(_))),
+                    "{refused:?}"
+                );
+            }
+            assert!(records_nothing(&coordinator, &wallet).await);
+        }
+
+        /// A handle to a wallet removed, or re-created under the same id,
+        /// since it was taken creates nothing: it is refused with
+        /// `WalletRemovedBeforeSend` before the seal, and nothing is
+        /// recorded. The current wallet's create goes past the check.
+        #[tokio::test]
+        async fn should_refuse_a_create_from_a_wallet_no_longer_current() {
+            let dir = tempfile::tempdir().expect("temporary shielded store");
+            let coordinator = coordinator_at(dir.path());
+            let alice = identity(ALICE_PHRASE, ALICE, true);
+            let (manager, removed) = wallet(ALICE_PHRASE, &alice).await;
+            serve_bob(&removed, identity(BOB_PHRASE, BOB, true)).await;
+            let new = new_entry(PrivateDocumentSenderAuth::Anonymous, "hello");
+            let wallet_id = removed.wallet_id();
+
+            manager.remove_wallet(&wallet_id).await.expect("removed");
+            let refused = create(&removed, &coordinator, &NoKeys, &new).await;
+            assert!(
+                matches!(&refused, Err(PlatformWalletError::WalletRemovedBeforeSend(id))
+                    if *id == hex::encode(wallet_id)),
+                "{refused:?}"
+            );
+
+            let recreated = manager
+                .create_wallet_from_seed_bytes(
+                    Network::Testnet,
+                    &seed(ALICE_PHRASE),
+                    key_wallet::wallet::initialization::WalletAccountCreationOptions::Default,
+                    Some(0),
+                )
+                .await
+                .expect("re-created");
+            assert_eq!(recreated.wallet_id(), wallet_id);
+            let refused = create(&removed, &coordinator, &NoKeys, &new).await;
+            assert!(
+                matches!(
+                    refused,
+                    Err(PlatformWalletError::WalletRemovedBeforeSend(_))
+                ),
+                "{refused:?}"
+            );
+            assert!(records_nothing(&coordinator, &removed).await);
+        }
+
+        /// A current wallet's create that the check accepts is sealed, passes
+        /// the liveness check and reaches the spend, which refuses it here
+        /// before anything is reserved: this wallet's shielded account is
+        /// not bound.
+        #[tokio::test]
+        async fn should_take_a_current_wallet_s_create_past_the_liveness_check() {
+            let dir = tempfile::tempdir().expect("temporary shielded store");
+            let coordinator = coordinator_at(dir.path());
+            let alice = identity(ALICE_PHRASE, ALICE, true);
+            let (_manager, wallet) = wallet(ALICE_PHRASE, &alice).await;
+            serve_bob(&wallet, identity(BOB_PHRASE, BOB, true)).await;
+            let current = create(
+                &wallet,
+                &coordinator,
+                &alice_crypto(),
+                &new_entry(PrivateDocumentSenderAuth::DeniableMac, "hello Bob"),
+            )
+            .await;
+            assert!(
+                matches!(current, Err(PlatformWalletError::ShieldedNotBound)),
+                "{current:?}"
+            );
+            assert!(records_nothing(&coordinator, &wallet).await);
+        }
     }
 
     /// A provider that derives no key: any use of it fails the test.

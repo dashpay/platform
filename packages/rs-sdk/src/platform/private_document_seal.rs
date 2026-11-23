@@ -16,9 +16,9 @@
 //! which keys may sign for the type, and is not built here.
 
 use std::collections::BTreeMap;
+use std::fmt;
 
 use crate::platform::private_document_scan::validate_private_document_properties;
-use crate::Error;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::document_type::encode_private_document_payload;
@@ -26,14 +26,167 @@ use dpp::data_contract::DataContract;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose};
-use dpp::platform_value::{BinaryData, Value};
+use dpp::platform_value::{BinaryData, Identifier, Value};
 use dpp::secp256k1::{PublicKey, SecretKey};
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use platform_encryption::{
-    private_document_outgoing_viewing_key, seal_private_document_entry, PrivateDocumentRecipient,
-    PrivateDocumentSender, PrivateDocumentTarget, PRIVATE_DOCUMENT_ENVELOPE_OVERHEAD_LEN,
+    private_document_outgoing_viewing_key, seal_private_document_entry,
+    PrivateDocumentEnvelopeError, PrivateDocumentRecipient, PrivateDocumentSender,
+    PrivateDocumentTarget, PRIVATE_DOCUMENT_ENVELOPE_OVERHEAD_LEN,
 };
 use zeroize::{Zeroize, Zeroizing};
+
+/// Whose key a [`PrivateDocumentSealError`] refuses.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PrivateDocumentKeyRole {
+    /// The sender's key, which the entry is sealed with.
+    Sender,
+    /// The recipient's key, which the entry is sealed to.
+    Recipient,
+}
+
+impl fmt::Display for PrivateDocumentKeyRole {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Sender => "sender",
+            Self::Recipient => "recipient",
+        })
+    }
+}
+
+/// The keys a key of `role` must be, as a refusal names them.
+fn expected_key(role: PrivateDocumentKeyRole) -> &'static str {
+    match role {
+        PrivateDocumentKeyRole::Sender => "an ECDSA_SECP256K1 ENCRYPTION key",
+        PrivateDocumentKeyRole::Recipient => "an ECDSA_SECP256K1 DECRYPTION or ENCRYPTION key",
+    }
+}
+
+/// Why an entry was not sealed. Every variant but [`Self::SecretKeyMismatch`] and
+/// [`Self::Sealing`] refuses what the sender asked for
+/// ([`Self::is_refused_request`]): the type, a key, or the properties.
+#[derive(Debug, thiserror::Error)]
+pub enum PrivateDocumentSealError {
+    /// The contract declares no such document type.
+    #[error("the contract {contract_id} has no document type \"{document_type_name}\": {reason}")]
+    UnknownDocumentType {
+        /// The contract asked for.
+        contract_id: Identifier,
+        /// The type asked for.
+        document_type_name: String,
+        /// The contract's reason.
+        reason: String,
+    },
+    /// The document type is not private.
+    #[error("the document type \"{document_type_name}\" of contract {contract_id} is not private")]
+    NotPrivate {
+        /// The contract asked for.
+        contract_id: Identifier,
+        /// The type asked for.
+        document_type_name: String,
+    },
+    /// The identity has no key of that id.
+    #[error("the {role} identity {identity_id} has no key {key_id}")]
+    MissingKey {
+        /// Whose key.
+        role: PrivateDocumentKeyRole,
+        /// The identity asked for.
+        identity_id: Identifier,
+        /// The key asked for.
+        key_id: KeyID,
+    },
+    /// The key is not of a type and purpose an entry is sealed with ([`expected_key`]).
+    #[error("the {role} key {key_id} is a {key_type} {purpose} key, not {}", expected_key(*.role))]
+    UnusableKey {
+        /// Whose key.
+        role: PrivateDocumentKeyRole,
+        /// The key asked for.
+        key_id: KeyID,
+        /// Its type.
+        key_type: KeyType,
+        /// Its purpose.
+        purpose: Purpose,
+    },
+    /// The key is disabled.
+    #[error("the {role} key {key_id} is disabled")]
+    DisabledKey {
+        /// Whose key.
+        role: PrivateDocumentKeyRole,
+        /// The key asked for.
+        key_id: KeyID,
+    },
+    /// The key's data is not a secp256k1 point.
+    #[error("the {role} key {key_id} is not a secp256k1 point: {reason}")]
+    InvalidKeyData {
+        /// Whose key.
+        role: PrivateDocumentKeyRole,
+        /// The key asked for.
+        key_id: KeyID,
+        /// Why its data does not parse.
+        reason: String,
+    },
+    /// The properties do not satisfy the type's schema.
+    #[error("the properties do not satisfy \"{document_type_name}\": {reason}")]
+    InvalidProperties {
+        /// The type asked for.
+        document_type_name: String,
+        /// The schema's reason.
+        reason: String,
+    },
+    /// The properties do not encode as the type's payload.
+    #[error("the properties of \"{document_type_name}\" do not encode: {source}")]
+    PayloadEncoding {
+        /// The type asked for.
+        document_type_name: String,
+        /// The encoder's reason, boxed as it is far larger than the other variants.
+        source: Box<ProtocolError>,
+    },
+    /// The properties encode to more than an entry of the type holds.
+    #[error(
+        "the properties encode to {payload_len} bytes; an entry of \"{document_type_name}\" \
+         ({entry_size} bytes) holds at most {capacity}"
+    )]
+    PayloadTooLarge {
+        /// The type asked for.
+        document_type_name: String,
+        /// The encoded payload's length.
+        payload_len: usize,
+        /// The type's entry size.
+        entry_size: usize,
+        /// The payload an entry holds.
+        capacity: usize,
+    },
+    /// The secret key given is not the one of the sender key: the signer holds another key
+    /// at the path it was asked for.
+    #[error("the secret key given is not the one of the sender key {key_id}")]
+    SecretKeyMismatch {
+        /// The sender key asked for.
+        key_id: KeyID,
+    },
+    /// The envelope did not seal a checked request.
+    #[error("sealing a private document entry: {0}")]
+    Sealing(#[source] PrivateDocumentEnvelopeError),
+}
+
+impl PrivateDocumentSealError {
+    /// Whether this refuses what the sender asked for (the type, a key, or the properties),
+    /// rather than reporting a signer or envelope failure.
+    pub fn is_refused_request(&self) -> bool {
+        match self {
+            Self::UnknownDocumentType { .. }
+            | Self::NotPrivate { .. }
+            | Self::MissingKey { .. }
+            | Self::UnusableKey { .. }
+            | Self::DisabledKey { .. }
+            | Self::InvalidKeyData { .. }
+            | Self::InvalidProperties { .. }
+            | Self::PayloadEncoding { .. }
+            | Self::PayloadTooLarge { .. } => true,
+            Self::SecretKeyMismatch { .. } | Self::Sealing(_) => false,
+        }
+    }
+}
 
 /// Whether `key` is one a private document entry can be sealed to, and so one a wallet scans a
 /// private type's store with: an `ECDSA_SECP256K1` `DECRYPTION` or `ENCRYPTION` key, disabled
@@ -51,22 +204,13 @@ pub fn is_private_document_key(key: &IdentityPublicKey) -> bool {
 pub fn private_document_recipient_key(
     recipient: &Identity,
     key_id: KeyID,
-) -> Result<PublicKey, String> {
-    let key = recipient.get_public_key_by_id(key_id).ok_or_else(|| {
-        format!(
-            "the recipient identity {} has no key {key_id}",
-            recipient.id()
-        )
-    })?;
+) -> Result<PublicKey, PrivateDocumentSealError> {
+    let role = PrivateDocumentKeyRole::Recipient;
+    let key = identity_key(recipient, key_id, role)?;
     if !is_private_document_key(key) {
-        return Err(format!(
-            "the recipient key {key_id} is a {} {} key, not an ECDSA_SECP256K1 DECRYPTION or \
-             ENCRYPTION key",
-            key.key_type(),
-            key.purpose()
-        ));
+        return Err(unusable(key, role));
     }
-    enabled_point(key, "recipient")
+    enabled_point(key, role)
 }
 
 /// The keys of `identity` an entry may be sealed to now
@@ -83,30 +227,60 @@ pub fn private_document_recipient_keys(identity: &Identity) -> Vec<&IdentityPubl
 /// `ECDSA_SECP256K1` `ENCRYPTION` key, which a wallet derives an outgoing viewing key from
 /// ([`is_private_document_key`]), not disabled, holding a secp256k1 point. Why not, when it may
 /// not.
-pub fn private_document_sender_key(sender: &Identity, key_id: KeyID) -> Result<PublicKey, String> {
-    let key = sender
-        .get_public_key_by_id(key_id)
-        .ok_or_else(|| format!("the sender identity {} has no key {key_id}", sender.id()))?;
+pub fn private_document_sender_key(
+    sender: &Identity,
+    key_id: KeyID,
+) -> Result<PublicKey, PrivateDocumentSealError> {
+    let role = PrivateDocumentKeyRole::Sender;
+    let key = identity_key(sender, key_id, role)?;
     if key.key_type() != KeyType::ECDSA_SECP256K1 || key.purpose() != Purpose::ENCRYPTION {
-        return Err(format!(
-            "the sender key {key_id} is a {} {} key, not an ECDSA_SECP256K1 ENCRYPTION key",
-            key.key_type(),
-            key.purpose()
-        ));
+        return Err(unusable(key, role));
     }
-    enabled_point(key, "sender")
+    enabled_point(key, role)
+}
+
+/// `identity`'s key `key_id`, or the refusal that it has none.
+fn identity_key(
+    identity: &Identity,
+    key_id: KeyID,
+    role: PrivateDocumentKeyRole,
+) -> Result<&IdentityPublicKey, PrivateDocumentSealError> {
+    identity
+        .get_public_key_by_id(key_id)
+        .ok_or(PrivateDocumentSealError::MissingKey {
+            role,
+            identity_id: identity.id(),
+            key_id,
+        })
+}
+
+/// The refusal of `key` as not of the type and purpose `role` takes.
+fn unusable(key: &IdentityPublicKey, role: PrivateDocumentKeyRole) -> PrivateDocumentSealError {
+    PrivateDocumentSealError::UnusableKey {
+        role,
+        key_id: key.id(),
+        key_type: key.key_type(),
+        purpose: key.purpose(),
+    }
 }
 
 /// The secp256k1 point of `key`, when it is not disabled.
-fn enabled_point(key: &IdentityPublicKey, role: &str) -> Result<PublicKey, String> {
+fn enabled_point(
+    key: &IdentityPublicKey,
+    role: PrivateDocumentKeyRole,
+) -> Result<PublicKey, PrivateDocumentSealError> {
     if key.disabled_at().is_some() {
-        return Err(format!("the {role} key {} is disabled", key.id()));
+        return Err(PrivateDocumentSealError::DisabledKey {
+            role,
+            key_id: key.id(),
+        });
     }
     PublicKey::from_slice(key.data().as_slice()).map_err(|error| {
-        format!(
-            "the {role} key {} is not a secp256k1 point: {error}",
-            key.id()
-        )
+        PrivateDocumentSealError::InvalidKeyData {
+            role,
+            key_id: key.id(),
+            reason: error.to_string(),
+        }
     })
 }
 
@@ -156,57 +330,61 @@ impl PrivateDocumentEntryRequest<'_> {
     /// the type is private, the keys may be used ([`private_document_sender_key`],
     /// [`private_document_recipient_key`]), the properties satisfy the type's schema and their
     /// payload fits an entry. Why not, when it does not.
-    pub fn check(&self, platform_version: &PlatformVersion) -> Result<(), Error> {
+    pub fn check(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), PrivateDocumentSealError> {
         self.checked(platform_version).map(|_| ())
     }
 
-    fn checked(&self, platform_version: &PlatformVersion) -> Result<CheckedRequest, Error> {
+    fn checked(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<CheckedRequest, PrivateDocumentSealError> {
         let contract_id = self.contract.id();
+        let document_type_name = || self.document_type_name.to_string();
         let document_type = self
             .contract
             .document_type_for_name(self.document_type_name)
-            .map_err(|error| {
-                Error::Generic(format!(
-                    "the contract {contract_id} has no document type \"{}\": {error}",
-                    self.document_type_name
-                ))
+            .map_err(|error| PrivateDocumentSealError::UnknownDocumentType {
+                contract_id,
+                document_type_name: document_type_name(),
+                reason: error.to_string(),
             })?;
         let entry_size = document_type
             .private_document()
             .map(|config| config.entry_size() as usize)
-            .ok_or_else(|| {
-                Error::Generic(format!(
-                    "the document type \"{}\" of contract {contract_id} is not private",
-                    self.document_type_name
-                ))
+            .ok_or_else(|| PrivateDocumentSealError::NotPrivate {
+                contract_id,
+                document_type_name: document_type_name(),
             })?;
         let sender_public_key =
-            private_document_sender_key(self.sender, self.sender_encryption_key_id)
-                .map_err(Error::Generic)?;
+            private_document_sender_key(self.sender, self.sender_encryption_key_id)?;
         let recipient_public_key =
-            private_document_recipient_key(self.recipient, self.recipient_key_id)
-                .map_err(Error::Generic)?;
+            private_document_recipient_key(self.recipient, self.recipient_key_id)?;
         validate_private_document_properties(
             self.contract,
             self.document_type_name,
             self.properties,
             platform_version,
         )
-        .map_err(|error| {
-            Error::Generic(format!(
-                "the properties do not satisfy \"{}\": {error}",
-                self.document_type_name
-            ))
+        .map_err(|reason| PrivateDocumentSealError::InvalidProperties {
+            document_type_name: document_type_name(),
+            reason,
         })?;
-        let payload = encode_private_document_payload(document_type, self.properties.clone())?;
+        let payload = encode_private_document_payload(document_type, self.properties.clone())
+            .map_err(|source| PrivateDocumentSealError::PayloadEncoding {
+                document_type_name: document_type_name(),
+                source: Box::new(source),
+            })?;
         let capacity = entry_size.saturating_sub(PRIVATE_DOCUMENT_ENVELOPE_OVERHEAD_LEN);
         if payload.len() > capacity {
-            return Err(Error::Generic(format!(
-                "the properties encode to {} bytes; an entry of \"{}\" ({entry_size} bytes) \
-                 holds at most {capacity}",
-                payload.len(),
-                self.document_type_name
-            )));
+            return Err(PrivateDocumentSealError::PayloadTooLarge {
+                document_type_name: document_type_name(),
+                payload_len: payload.len(),
+                entry_size,
+                capacity,
+            });
         }
         Ok(CheckedRequest {
             entry_size,
@@ -229,13 +407,12 @@ pub fn seal_private_document(
     encryption_secret_key: &SecretKey,
     esk_seed: &[u8; 32],
     platform_version: &PlatformVersion,
-) -> Result<BinaryData, Error> {
+) -> Result<BinaryData, PrivateDocumentSealError> {
     let checked = request.checked(platform_version)?;
     if checked.sender_public_key != PublicKey::from_secret_key(encryption_secret_key) {
-        return Err(Error::Generic(format!(
-            "the secret key given is not the one of the sender key {}",
-            request.sender_encryption_key_id
-        )));
+        return Err(PrivateDocumentSealError::SecretKeyMismatch {
+            key_id: request.sender_encryption_key_id,
+        });
     }
     let sender_identity_id = request.sender.id().to_buffer();
     let sender = match request.auth {
@@ -265,7 +442,7 @@ pub fn seal_private_document(
         &outgoing_viewing_key,
         esk_seed,
     )
-    .map_err(|error| Error::Generic(format!("sealing a private document entry: {error}")))?;
+    .map_err(PrivateDocumentSealError::Sealing)?;
     Ok(BinaryData::new(entry))
 }
 
@@ -276,7 +453,6 @@ mod tests {
     use crate::platform::private_document_scan::{
         read_private_document_payload, PrivateDocumentScanKeys,
     };
-    use crate::platform::Identifier;
     use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::{IdentityV0, SecurityLevel};
@@ -424,7 +600,7 @@ mod tests {
         auth: PrivateDocumentSenderAuth,
         recipient_key_id: KeyID,
         properties: &BTreeMap<String, Value>,
-    ) -> Result<BinaryData, Error> {
+    ) -> Result<BinaryData, PrivateDocumentSealError> {
         let sender = sender();
         let recipient = recipient();
         seal_private_document(
@@ -444,8 +620,12 @@ mod tests {
         )
     }
 
-    fn refusal(result: Result<BinaryData, Error>) -> String {
-        result.expect_err("refused").to_string()
+    /// The refusal of `result`, which must be one of the request
+    /// ([`PrivateDocumentSealError::is_refused_request`]).
+    fn refusal(result: Result<BinaryData, PrivateDocumentSealError>) -> PrivateDocumentSealError {
+        let refused = result.expect_err("refused");
+        assert!(refused.is_refused_request(), "{refused}");
+        refused
     }
 
     /// A page of the test store holding `entry` at position 0.
@@ -549,10 +729,42 @@ mod tests {
         let contract = contract();
         let text = properties("hello");
         let auth = PrivateDocumentSenderAuth::Anonymous;
-        assert!(refusal(seal(&contract, auth, SIGNING_KEY_ID, &text))
-            .contains("not an ECDSA_SECP256K1 DECRYPTION or ENCRYPTION key"),);
-        assert!(refusal(seal(&contract, auth, DISABLED_KEY_ID, &text)).contains("is disabled"));
-        assert!(refusal(seal(&contract, auth, 9, &text)).contains("has no key 9"));
+        let recipient = PrivateDocumentKeyRole::Recipient;
+        let signing = refusal(seal(&contract, auth, SIGNING_KEY_ID, &text));
+        assert!(
+            matches!(
+                signing,
+                PrivateDocumentSealError::UnusableKey {
+                    role,
+                    key_id: SIGNING_KEY_ID,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    purpose: Purpose::AUTHENTICATION,
+                } if role == recipient
+            ),
+            "{signing:?}"
+        );
+        // The message names what a recipient key must be.
+        assert!(signing
+            .to_string()
+            .contains("not an ECDSA_SECP256K1 DECRYPTION or ENCRYPTION key"));
+        let disabled = refusal(seal(&contract, auth, DISABLED_KEY_ID, &text));
+        assert!(
+            matches!(
+                disabled,
+                PrivateDocumentSealError::DisabledKey { role, key_id: DISABLED_KEY_ID }
+                    if role == recipient
+            ),
+            "{disabled:?}"
+        );
+        let missing = refusal(seal(&contract, auth, 9, &text));
+        assert!(
+            matches!(
+                missing,
+                PrivateDocumentSealError::MissingKey { role, identity_id, key_id: 9 }
+                    if role == recipient && identity_id == Identifier::from(RECIPIENT_ID)
+            ),
+            "{missing:?}"
+        );
     }
 
     #[test]
@@ -589,40 +801,86 @@ mod tests {
             properties: &text,
         };
         let version = PlatformVersion::latest();
-        assert!(refusal(seal_private_document(
+        let decryption_key = refusal(seal_private_document(
             &request(DECRYPTION_KEY_ID),
             &secret(0x12),
             &[9; 32],
-            version
-        ))
-        .contains("not an ECDSA_SECP256K1 ENCRYPTION key"));
-        assert!(refusal(seal_private_document(
+            version,
+        ));
+        assert!(
+            matches!(
+                decryption_key,
+                PrivateDocumentSealError::UnusableKey {
+                    role: PrivateDocumentKeyRole::Sender,
+                    key_id: DECRYPTION_KEY_ID,
+                    purpose: Purpose::DECRYPTION,
+                    ..
+                }
+            ),
+            "{decryption_key:?}"
+        );
+        assert!(decryption_key
+            .to_string()
+            .contains("not an ECDSA_SECP256K1 ENCRYPTION key"));
+        // Another secret than the sender key's is not the sender's request refused, but the
+        // signer holding another key.
+        let another_secret = seal_private_document(
             &request(ENCRYPTION_KEY_ID),
             &secret(0x44),
             &[9; 32],
-            version
-        ))
-        .contains("not the one of the sender key 1"));
+            version,
+        )
+        .expect_err("refused");
+        assert!(
+            matches!(
+                another_secret,
+                PrivateDocumentSealError::SecretKeyMismatch {
+                    key_id: ENCRYPTION_KEY_ID
+                }
+            ),
+            "{another_secret:?}"
+        );
+        assert!(!another_secret.is_refused_request());
     }
 
     #[test]
     fn should_refuse_properties_the_schema_refuses_or_an_entry_cannot_hold() {
         let contract = contract();
         let auth = PrivateDocumentSenderAuth::Anonymous;
-        assert!(
-            refusal(seal(&contract, auth, DECRYPTION_KEY_ID, &BTreeMap::new()))
-                .contains("the properties do not satisfy \"note\"")
-        );
         let mut unknown = properties("hello");
         unknown.insert("other".to_string(), Value::Bool(true));
-        assert!(refusal(seal(&contract, auth, DECRYPTION_KEY_ID, &unknown))
-            .contains("the properties do not satisfy"));
+        for refused_properties in [BTreeMap::new(), unknown] {
+            let refused = refusal(seal(
+                &contract,
+                auth,
+                DECRYPTION_KEY_ID,
+                &refused_properties,
+            ));
+            assert!(
+                matches!(
+                    &refused,
+                    PrivateDocumentSealError::InvalidProperties { document_type_name, .. }
+                        if document_type_name == TYPE_NAME
+                ),
+                "{refused:?}"
+            );
+        }
         // Registration refuses a type whose largest payload does not fit its entries; one
         // parsed without that check may hold properties no entry holds.
         let small = contract_of(320, false);
         let long = "é".repeat(80);
         let refused = refusal(seal(&small, auth, DECRYPTION_KEY_ID, &properties(&long)));
-        assert!(refused.contains("holds at most 21"), "{refused}");
+        assert!(
+            matches!(
+                refused,
+                PrivateDocumentSealError::PayloadTooLarge {
+                    entry_size: 320,
+                    capacity: 21,
+                    ..
+                }
+            ),
+            "{refused:?}"
+        );
     }
 
     #[test]
@@ -631,11 +889,8 @@ mod tests {
         let sender = sender();
         let recipient = recipient();
         let text = properties("hello");
-        for (name, expected) in [
-            ("public", "is not private"),
-            ("missing", "has no document type \"missing\""),
-        ] {
-            let refused = PrivateDocumentEntryRequest {
+        let check = |name| {
+            PrivateDocumentEntryRequest {
                 contract: &contract,
                 document_type_name: name,
                 sender: &sender,
@@ -647,8 +902,26 @@ mod tests {
             }
             .check(PlatformVersion::latest())
             .expect_err("refused")
-            .to_string();
-            assert!(refused.contains(expected), "{refused}");
-        }
+        };
+        let public = check("public");
+        assert!(
+            matches!(
+                &public,
+                PrivateDocumentSealError::NotPrivate { document_type_name, contract_id }
+                    if document_type_name == "public"
+                        && *contract_id == Identifier::from(CONTRACT_ID)
+            ),
+            "{public:?}"
+        );
+        let missing = check("missing");
+        assert!(
+            matches!(
+                &missing,
+                PrivateDocumentSealError::UnknownDocumentType { document_type_name, .. }
+                    if document_type_name == "missing"
+            ),
+            "{missing:?}"
+        );
+        assert!(public.is_refused_request() && missing.is_refused_request());
     }
 }

@@ -72,7 +72,7 @@ use dash_sdk::platform::dashpay::{
 use dash_sdk::platform::private_document_entries::PrivateDocumentEntries;
 use dash_sdk::platform::private_document_scan::{PrivateDocumentScan, PrivateDocumentScanKeys};
 use dash_sdk::platform::private_document_seal::{
-    seal_private_document, PrivateDocumentEntryRequest,
+    seal_private_document, PrivateDocumentEntryRequest, PrivateDocumentSealError,
 };
 use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use key_wallet::dashcore::ecdsa::{EcdsaError, EcdsaPublicKey, EcdsaSecretKey, EcdsaSignature};
@@ -190,9 +190,10 @@ pub enum MnemonicResolverSignerError {
 
     /// The SDK refused to seal an entry of a private document type with the
     /// derived key: a key the identity does not hold or may not use,
-    /// properties the type's schema refuses, or a type that is not private.
+    /// properties the type's schema refuses, a type that is not private, or
+    /// a derived key that is not the sender key's.
     #[error("private document: {0}")]
-    PrivateDocument(dash_sdk::Error),
+    PrivateDocument(PrivateDocumentSealError),
 }
 
 /// `key_wallet::signer::Signer` implementation that derives ECDSA
@@ -2106,7 +2107,14 @@ mod tests {
                 )
                 .expect_err("the key at that path is not the sender's");
             assert!(
-                matches!(err, MnemonicResolverSignerError::PrivateDocument(_)),
+                matches!(
+                    err,
+                    MnemonicResolverSignerError::PrivateDocument(
+                        PrivateDocumentSealError::SecretKeyMismatch {
+                            key_id: SENDER_KEY_ID
+                        }
+                    )
+                ),
                 "expected the SDK's refusal, got: {err:?}"
             );
 
