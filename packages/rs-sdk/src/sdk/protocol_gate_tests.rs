@@ -3442,6 +3442,56 @@ async fn should_refuse_a_generic_broadcast_of_a_shielded_token_purchase_until_14
     }
 }
 
+/// A token shielded transfer paid from the shielded pool (type 26) built elsewhere and sent
+/// through the generic broadcast is gated from protocol version 14, as the purchase is.
+#[tokio::test]
+async fn should_refuse_a_generic_broadcast_of_a_token_shielded_transfer_until_14() {
+    use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::v0::TokenShieldedTransferWithShieldedFeeTransitionV0;
+    use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::TokenShieldedTransferWithShieldedFeeTransition;
+
+    let action = SerializedAction {
+        nullifier: [1; 32],
+        rk: [2; 32],
+        cmx: [3; 32],
+        encrypted_note: vec![4; 216],
+        cv_net: [5; 32],
+        spend_auth_sig: [6; 64],
+    };
+    let transfer = StateTransition::TokenShieldedTransferWithShieldedFee(
+        TokenShieldedTransferWithShieldedFeeTransition::V0(
+            TokenShieldedTransferWithShieldedFeeTransitionV0 {
+                data_contract_id: Identifier::new([4; 32]),
+                token_contract_position: 0,
+                token_id: Identifier::new([5; 32]),
+                token_actions: vec![action.clone(), action.clone()],
+                token_anchor: [7; 32],
+                token_proof: vec![8; 64],
+                token_binding_signature: [9; 64],
+                fee_actions: vec![action.clone(), action],
+                fee_anchor: [7; 32],
+                fee_proof: vec![8; 64],
+                fee_binding_signature: [9; 64],
+                credit_amount: 2_000,
+            },
+        ),
+    );
+    for pinned in [false, true] {
+        let sdk = mock_sdk(V14, pinned, V13);
+        answer_probe(&sdk, "pv13").await;
+        match transfer.broadcast(&sdk, None).await {
+            Err(Error::ProtocolVersionNotActive {
+                method: "broadcast_state_transition",
+                required: V14,
+                network: V13,
+                cause: None,
+                ..
+            }) => {}
+            other => panic!("pinned {pinned}: expected a local refusal, got {other:?}"),
+        }
+        assert_eq!(probes(&sdk).await, 1, "pinned {pinned}");
+    }
+}
+
 /// History reads choose their request version from what the gate's probe proves: request V0
 /// on a network below protocol 15, V1 at it.
 mod document_history {

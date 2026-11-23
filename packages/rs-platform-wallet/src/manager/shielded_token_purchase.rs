@@ -19,9 +19,12 @@ use crate::manager::PlatformWalletManager;
 use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
 use crate::wallet::shielded::{
     NetworkShieldedCoordinator, ShieldedTokenPoolWatch, ShieldedTokenPurchaseOutcome,
+    ShieldedTokenSpendOutcome,
 };
+use dpp::address_funds::OrchardAddress;
 
-/// What a shielded token purchase from one wallet needs from the manager: the
+/// What a shielded token purchase or token pool spend from one wallet needs
+/// from the manager: the
 /// wallet, the shielded coordinator whose store holds its notes, and the
 /// shielded sync that looks for the purchase. Taken from the manager in one
 /// call ([`PlatformWalletManager::shielded_token_purchaser`]) and owned, so a
@@ -96,6 +99,44 @@ impl ShieldedTokenPurchaser {
     }
 }
 
+impl ShieldedTokenPurchaser {
+    /// Send `amount` of the token at `token_contract_position` of
+    /// `data_contract_id` from `account`'s notes in the token's shielded pool
+    /// to `recipient` in that pool, paying the fee from the account's credit
+    /// pool notes ([`PlatformWallet::shielded_token_transfer`]), then request a
+    /// shielded sync when the transfer may be on the network, as
+    /// [`Self::purchase`] does.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn transfer<P: OrchardProver>(
+        &self,
+        seed: &[u8],
+        account: u32,
+        data_contract_id: &Identifier,
+        token_contract_position: TokenContractPosition,
+        recipient: &OrchardAddress,
+        amount: TokenAmount,
+        prover: P,
+    ) -> Result<ShieldedTokenSpendOutcome, PlatformWalletError> {
+        let result = self
+            .wallet
+            .shielded_token_transfer(
+                &self.coordinator,
+                seed,
+                account,
+                data_contract_id,
+                token_contract_position,
+                recipient,
+                amount,
+                prover,
+            )
+            .await;
+        if spend_needs_shielded_sync(&result) {
+            request_shielded_sync(&self.sync);
+        }
+        result
+    }
+}
+
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// What a shielded token purchase from `wallet_id` needs
     /// ([`ShieldedTokenPurchaser`]). Refuses a wallet the manager does not
@@ -160,6 +201,20 @@ fn purchase_needs_shielded_sync(
     matches!(
         result,
         Ok(ShieldedTokenPurchaseOutcome::Submitted)
+            | Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+            | Err(PlatformWalletError::ShieldedBroadcastUnconfirmed { .. })
+    )
+}
+
+/// Whether a token pool spend that ended as `result` may be on the network
+/// without being confirmed, as [`purchase_needs_shielded_sync`] tells for a
+/// purchase.
+fn spend_needs_shielded_sync(
+    result: &Result<ShieldedTokenSpendOutcome, PlatformWalletError>,
+) -> bool {
+    matches!(
+        result,
+        Ok(ShieldedTokenSpendOutcome::Submitted)
             | Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
             | Err(PlatformWalletError::ShieldedBroadcastUnconfirmed { .. })
     )
