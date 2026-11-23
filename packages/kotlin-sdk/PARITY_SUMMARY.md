@@ -18,7 +18,7 @@ Capabilities tracked: **49**
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
 | Swift | 2 | 18 | 29 |
-| Kotlin | 6 | 13 | 30 |
+| Kotlin | 8 | 13 | 28 |
 
 ## Capability status
 
@@ -62,8 +62,8 @@ Capabilities tracked: **49**
 | `contracts.fee_claim` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
 | `contracts.moderation_writes` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
 | `system.block_and_transition_status_reads` | supported / partial / not_applicable | supported / partial / not_applicable |
-| `voting.masternode_vote_stored_key` | supported / partial / not_applicable | partial / partial / not_applicable |
-| `identity.load_masternode_voting_key` | supported / partial / not_applicable | partial / partial / not_applicable |
+| `voting.masternode_vote_stored_key` | supported / partial / not_applicable | partial / partial / tested |
+| `identity.load_masternode_voting_key` | supported / partial / not_applicable | partial / partial / tested |
 | `identity.load_shared_masternode_for_voting` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
 | `addresses.balance_history` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `shielded.shield_from_identity` | supported / partial / required | supported / partial / required |

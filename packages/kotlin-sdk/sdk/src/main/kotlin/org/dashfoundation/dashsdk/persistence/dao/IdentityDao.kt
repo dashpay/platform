@@ -130,6 +130,29 @@ interface IdentityDao {
         nowMillis: Long,
     ): Int
 
+    /**
+     * Record a check of the voting key [identifier] names: only while the row is on
+     * [networkRaw] and still names [identifier], so an answer about a key replaced meanwhile
+     * is never written on its successor. Returns the number of rows changed. The low-level
+     * write of `MasternodeVotingKeyRecords.record`, which writes what Rust says to record;
+     * use that instead.
+     */
+    @Query(
+        "UPDATE identities SET votingKeyCheckRaw = :raw, votingKeyCheckMessage = :message, " +
+            "votingKeyCheckAddress = :address, " +
+            "votingKeyCheckRevision = COALESCE(votingKeyCheckRevision, 0) + 1 " +
+            "WHERE identityId = :identityId AND networkRaw = :networkRaw " +
+            "AND votingPrivateKeyIdentifier = :identifier"
+    )
+    suspend fun recordVotingKeyCheck(
+        identityId: ByteArray,
+        networkRaw: Int,
+        identifier: String,
+        raw: String,
+        message: String?,
+        address: ByteArray,
+    ): Int
+
     /** Mirror of `PersistentIdentity.updateBalance(in:identityId:balance:)`. */
     @Query(
         "UPDATE identities SET balance = :balance, lastUpdated = :nowMillis " +

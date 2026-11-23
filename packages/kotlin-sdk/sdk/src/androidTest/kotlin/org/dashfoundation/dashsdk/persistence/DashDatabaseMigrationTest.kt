@@ -814,13 +814,46 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
+    /**
+     * v17 -> v18 (masternode voting key check): the three nullable
+     * `identities.votingKeyCheck*` columns. A masternode identity stored
+     * before the migration keeps its voting key identifier and has nothing
+     * recorded, so its key is checked when it is picked to vote.
+     */
+    @Test
+    fun migrate17To18AddsTheVotingKeyCheckColumns() {
+        helper.createDatabase(dbName, 17).apply {
+            execSQL(
+                "INSERT INTO identities (identityId, balance, revision, isLocal, identityType, " +
+                    "votingPrivateKeyIdentifier, createdAt, lastUpdated, networkRaw, identityIndex) " +
+                    "VALUES (x'04', 0, 0, 1, 'Masternode', 'mnvoting.x', 0, 0, 1, 0)",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 18, true, DashDatabase.MIGRATION_17_18)
+
+        db.query(
+            "SELECT votingPrivateKeyIdentifier, votingKeyCheckRaw, votingKeyCheckMessage, " +
+                "votingKeyCheckAddress, votingKeyCheckRevision FROM identities WHERE identityId = x'04'",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("mnvoting.x", c.getString(0))
+            assertTrue("nothing is recorded before the migration", c.isNull(1))
+            assertTrue(c.isNull(2))
+            assertTrue(c.isNull(3))
+            assertTrue("no check is counted before the migration", c.isNull(4))
+        }
+        db.close()
+    }
+
     /** The requested contiguous path from the pre-u64 v4 schema to latest. */
     @Test
     fun migrate4ToLatest() {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            17,
+            18,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
@@ -835,16 +868,17 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_14_15,
             DashDatabase.MIGRATION_15_16,
             DashDatabase.MIGRATION_16_17,
+            DashDatabase.MIGRATION_17_18,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v17 schema. */
+    /** The full chain from v1 must also land on a valid v18 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            17,
+            18,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -862,6 +896,7 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_14_15,
             DashDatabase.MIGRATION_15_16,
             DashDatabase.MIGRATION_16_17,
+            DashDatabase.MIGRATION_17_18,
         ).close()
     }
 }
