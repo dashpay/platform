@@ -105,6 +105,9 @@ import kotlinx.serialization.Serializable
 /** Pick the identity's main DPNS name (← `SelectMainNameView.swift`). */
 @Serializable data class SelectMainName(val identityIdHex: String)
 
+/** Delete or tombstone one owned DPNS name (← `GiveUpNameView.swift`). */
+@Serializable data class GiveUpName(val identityIdHex: String, val name: String)
+
 /** Browse, buy and manage DPNS marketplace names for one wallet identity. */
 @Serializable data class DpnsMarketplace(val identityIdHex: String)
 

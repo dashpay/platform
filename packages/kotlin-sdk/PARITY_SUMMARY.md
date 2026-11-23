@@ -10,15 +10,15 @@ Capabilities tracked: **40**
 | --- | --- | ---: | ---: | ---: | ---: |
 | Swift | SDK | 25 | 13 | 1 | 1 |
 | Swift | Example app | 6 | 24 | 1 | 9 |
-| Kotlin | SDK | 16 | 16 | 7 | 1 |
-| Kotlin | Example app | 6 | 17 | 7 | 10 |
+| Kotlin | SDK | 17 | 16 | 6 | 1 |
+| Kotlin | Example app | 6 | 18 | 6 | 10 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
 | Swift | 2 | 12 | 26 |
-| Kotlin | 6 | 8 | 26 |
+| Kotlin | 6 | 9 | 25 |
 
 ## Capability status
 
@@ -38,7 +38,7 @@ Capabilities tracked: **40**
 | `identity.asset_lock_resume` | supported / partial / required | partial / partial / required |
 | `core.compact_filter_rescan` | supported / partial / not_applicable | partial / partial / not_applicable |
 | `dpns.contested_names_by_identity` | supported / partial / not_applicable | partial / partial / required |
-| `dpns.give_up_name` | supported / partial / required | unsupported / unsupported / not_applicable |
+| `dpns.give_up_name` | supported / partial / required | supported / partial / required |
 | `persistence.sync_fault_latch` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
 | `persistence.dashpay_payment_history` | partial / not-applicable / required | not-applicable / not-applicable / not_applicable |
 | `network.masternode_discovery` | partial / not-applicable / not_applicable | partial / not-applicable / not_applicable |
