@@ -82,6 +82,10 @@ if ! [[ "${KEY}" =~ ${key_pattern} ]]; then
   usage_error "--key must be the key's full fingerprint, got '${KEY}'"
 fi
 
+# Checked first: with no accepted signer nothing can be signed, and an empty array also cannot be
+# expanded under set -u in bash 3.2.
+[ "${#ALLOWED_SIGNERS[@]}" -gt 0 ] || fail "ALLOWED_SIGNERS lists no key, so this script accepts no signature"
+
 for tool in gh gpg; do
   command -v "${tool}" > /dev/null 2>&1 || fail "${tool} is not installed"
 done

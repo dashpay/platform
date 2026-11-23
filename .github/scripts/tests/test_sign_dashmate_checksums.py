@@ -324,6 +324,16 @@ class ReleaseFixture(unittest.TestCase):
     def state(self):
         return json.loads((self.tmp / 'state.json').read_text())
 
+    def accepting(self, *fingerprints):
+        """A copy of the script whose list of accepted signers is `fingerprints`."""
+        text = SCRIPT.read_text()
+        start = text.index('ALLOWED_SIGNERS=(\n')
+        end = text.index('\n)\n', start)
+        copy = self.tmp / 'sign_dashmate_checksums.sh'
+        copy.write_text(text[:start] + 'ALLOWED_SIGNERS=(\n' + ''.join(f'  {f}\n' for f in fingerprints)
+                        + text[end + 1:])
+        return copy
+
     def edit_asset(self, name, **fields):
         """Change an asset; a changed SHA256SUMS is recorded as the one the checksums job attached."""
         state = self.state()
@@ -599,6 +609,14 @@ class SignDashmateChecksumsTests(ReleaseFixture):
         with self.subTest('a second signature, e.g. from gpg.conf'):
             self.assertRefused(self.sign(GPG_TWO_SIGNATURES='1'), 'exactly one signature')
 
+    def test_should_refuse_to_run_without_any_accepted_signer(self):
+        self.script = self.accepting()
+
+        result = self.sign()
+
+        self.assertRefused(result, 'ALLOWED_SIGNERS lists no key')
+        self.assertEqual(self.calls(), [])
+
     def test_should_refuse_a_key_the_apt_repository_does_not_accept(self):
         result = self.sign(f'--tag={TAG}', f'--key={STRANGER}', '--upload')
 
@@ -695,15 +713,6 @@ class SignWithGnuPGTests(ReleaseFixture):
         self.other = self.new_key('Other <other@example.org>', 'sign')
         self.script = self.accepting(self.primary)
 
-    def accepting(self, *fingerprints):
-        """A copy of the script whose list of accepted signers is `fingerprints`."""
-        text = SCRIPT.read_text()
-        start = text.index('ALLOWED_SIGNERS=(\n')
-        end = text.index('\n)\n', start)
-        copy = self.tmp / 'sign_dashmate_checksums.sh'
-        copy.write_text(text[:start] + 'ALLOWED_SIGNERS=(\n' + ''.join(f'  {f}\n' for f in fingerprints)
-                        + text[end + 1:])
-        return copy
 
     def gpg_env(self):
         return dict(os.environ, GNUPGHOME=str(self.home))
