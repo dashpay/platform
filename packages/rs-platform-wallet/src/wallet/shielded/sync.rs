@@ -54,7 +54,7 @@ use crate::error::PlatformWalletError;
 /// bisects against. Hardcoded rather than imported because
 /// `rs-platform-wallet` doesn't depend on `drive` directly — bump
 /// here and there together if the chunk power ever changes.
-const CHUNK_SIZE: u64 = 2048;
+pub(super) const CHUNK_SIZE: u64 = 2048;
 
 /// In-flight chunk fetches per note-sync stream; tests mock this many chunks.
 const MAX_CONCURRENT_CHUNK_FETCHES: usize = 16;
@@ -1005,7 +1005,7 @@ fn _unused_payment_address(_pa: PaymentAddress) {}
 ///
 /// Format: `recipient(43) || value(8 LE) || rho(32) || rseed(32)` = 115 bytes.
 /// Must be kept in sync with `deserialize_note()` in operations.rs.
-fn serialize_note(note: &grovedb_commitment_tree::Note) -> Vec<u8> {
+pub(super) fn serialize_note(note: &grovedb_commitment_tree::Note) -> Vec<u8> {
     let mut data = Vec::with_capacity(115);
     data.extend_from_slice(&note.recipient().to_raw_address_bytes());
     data.extend_from_slice(&note.value().inner().to_le_bytes());

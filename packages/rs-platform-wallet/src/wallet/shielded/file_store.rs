@@ -212,6 +212,18 @@ enum SavedPrivateContactPayment {
     Unreadable,
 }
 
+impl super::token_pool::TokenPoolConnection for FileBackedShieldedStore {
+    fn with_token_pool_conn<T>(
+        &self,
+        f: impl FnOnce(&mut rusqlite::Connection) -> Result<T, PlatformWalletError>,
+    ) -> Result<T, PlatformWalletError> {
+        let mut conn = self.pending_conn.lock().map_err(|e| {
+            PlatformWalletError::ShieldedStoreError(format!("pending_conn mutex: {e}"))
+        })?;
+        f(&mut conn)
+    }
+}
+
 impl FileBackedShieldedStore {
     /// Drop the private contact request associations of `id` whose record is
     /// gone, as its redrives are removed. The listing joins with the live
@@ -572,6 +584,9 @@ impl FileBackedShieldedStore {
                 [],
             )
             .map_err(|e| FileShieldedStoreError::Storage(format!("create store meta: {e}")))?;
+        super::token_pool::create_tables(&pending_conn).map_err(|e| {
+            FileShieldedStoreError::Storage(format!("create token pool tables: {e}"))
+        })?;
         let mut store = Self {
             tree: Mutex::new(tree),
             path,
@@ -1680,6 +1695,12 @@ impl ShieldedStore for FileBackedShieldedStore {
                 FileShieldedStoreError::Storage(format!("purge pending spends for wallet: {e}"))
             })?;
         }
+        {
+            let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
+            super::token_pool::purge_wallet(&mut conn, wallet_id).map_err(|e| {
+                FileShieldedStoreError::Storage(format!("purge token pools for wallet: {e}"))
+            })?;
+        }
         // Per-subwallet note / watermark / checkpoint state is
         // in-memory only (`subwallets`); the commitment tree in
         // SQLite is chain-wide and intentionally left intact.
@@ -1708,6 +1729,12 @@ impl ShieldedStore for FileBackedShieldedStore {
                 FileShieldedStoreError::Storage(format!("purge pending spends for subwallet: {e}"))
             })?;
         }
+        {
+            let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
+            super::token_pool::purge_subwallet(&mut conn, id).map_err(|e| {
+                FileShieldedStoreError::Storage(format!("purge token pools for subwallet: {e}"))
+            })?;
+        }
         let identity_redrives = self
             .subwallets
             .get(&id)
@@ -1734,6 +1761,12 @@ impl ShieldedStore for FileBackedShieldedStore {
                 .map_err(|e| {
                     FileShieldedStoreError::Storage(format!("purge all pending spends: {e}"))
                 })?;
+        }
+        {
+            let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
+            super::token_pool::purge_all(&mut conn).map_err(|e| {
+                FileShieldedStoreError::Storage(format!("purge all token pools: {e}"))
+            })?;
         }
         self.subwallets.clear();
         self.private_contact_payments.clear();

@@ -9,14 +9,17 @@ use dpp::data_contract::TokenContractPosition;
 use dpp::fee::Credits;
 use dpp::prelude::Identifier;
 use dpp::shielded::builder::OrchardProver;
-use tracing::debug;
+use dpp::tokens::calculate_token_id;
+use tracing::{debug, warn};
 
 use crate::changeset::PlatformWalletPersistence;
 use crate::error::PlatformWalletError;
 use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::manager::PlatformWalletManager;
 use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
-use crate::wallet::shielded::{NetworkShieldedCoordinator, ShieldedTokenPurchaseOutcome};
+use crate::wallet::shielded::{
+    NetworkShieldedCoordinator, ShieldedTokenPoolWatch, ShieldedTokenPurchaseOutcome,
+};
 
 /// What a shielded token purchase from one wallet needs from the manager: the
 /// wallet, the shielded coordinator whose store holds its notes, and the
@@ -67,6 +70,23 @@ impl ShieldedTokenPurchaser {
             )
             .await;
         if purchase_needs_shielded_sync(&result) {
+            // The bought tokens land in the token's pool: watch it, so the
+            // sync that looks for the purchase also finds them.
+            let watch = ShieldedTokenPoolWatch {
+                token_id: Identifier::from(calculate_token_id(
+                    &data_contract_id.to_buffer(),
+                    token_contract_position,
+                )),
+                data_contract_id: *data_contract_id,
+                token_contract_position,
+            };
+            if let Err(e) = self
+                .coordinator
+                .record_token_pool_watch(self.wallet.wallet_id(), watch)
+                .await
+            {
+                warn!(token = %watch.token_id, error = %e, "shielded token purchase: watching the token pool failed");
+            }
             request_shielded_sync(&self.sync);
         }
         result

@@ -1806,7 +1806,7 @@ pub async fn token_shielded_purchase_availability(
 /// [`PlatformWalletError::TokenConfigurationUnavailable`] when the configuration cannot be read.
 /// The fetched contract is registered with the SDK's context provider, as the identity-funded
 /// token paths do, so the result proof of a transition naming it can be verified.
-async fn ensure_token_has_shielded_pool(
+pub(super) async fn ensure_token_has_shielded_pool(
     sdk: &Arc<dash_sdk::Sdk>,
     data_contract_id: Identifier,
     token_contract_position: TokenContractPosition,

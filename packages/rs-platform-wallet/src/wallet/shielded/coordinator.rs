@@ -94,6 +94,7 @@ use super::store::{
     IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, PrivatePaymentRecord, ShieldedStore,
     StalePendingSpend, SubwalletId,
 };
+use super::token_pool::{ShieldedTokenPoolBalance, ShieldedTokenPoolWatch, TokenPoolConnection};
 use super::CAUGHT_UP_COOLDOWN;
 use crate::error::PlatformWalletError;
 use crate::manager::shielded_sync::{ShieldedSyncPassSummary, WalletShieldedOutcome};
@@ -103,9 +104,12 @@ use crate::wallet::platform_wallet::WalletId;
 use dash_sdk::platform::dashpay::PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME;
 use dash_sdk::platform::private_document_scan::MAX_CONCURRENT_PRIVATE_DOCUMENT_PAGE_FETCHES;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::TokenContractPosition;
+use dpp::prelude::Identifier;
 use dpp::serialization::PlatformDeserializableTrusted;
 use dpp::state_transition::shield_from_identity_transition::accessors::ShieldFromIdentityTransitionAccessorsV0;
 use dpp::state_transition::StateTransition;
+use dpp::tokens::calculate_token_id;
 use futures::StreamExt;
 
 /// Network-scoped shielded coordinator.
@@ -1003,6 +1007,111 @@ impl NetworkShieldedCoordinator {
         }
     }
 
+    /// Watch the shielded pool of the token at `token_contract_position` of
+    /// `data_contract_id` for `wallet_id`: every later sync pass scans it for
+    /// the wallet's accounts ([`super::token_pool`]). Refuses a wallet with no
+    /// registered account ([`PlatformWalletError::ShieldedNotBound`]) and a
+    /// token whose verified configuration has no shielded pool or cannot be
+    /// read. Watching a watched pool again changes nothing.
+    pub async fn watch_token_pool(
+        &self,
+        wallet_id: WalletId,
+        data_contract_id: Identifier,
+        token_contract_position: TokenContractPosition,
+    ) -> Result<ShieldedTokenPoolWatch, PlatformWalletError> {
+        self.ensure_registered(wallet_id).await?;
+        super::operations::ensure_token_has_shielded_pool(
+            &self.sdk,
+            data_contract_id,
+            token_contract_position,
+        )
+        .await?;
+        let watch = ShieldedTokenPoolWatch {
+            token_id: Identifier::from(calculate_token_id(
+                &data_contract_id.to_buffer(),
+                token_contract_position,
+            )),
+            data_contract_id,
+            token_contract_position,
+        };
+        self.record_token_pool_watch(wallet_id, watch).await?;
+        Ok(watch)
+    }
+
+    /// Record that `wallet_id` watches `watch`'s pool, with no network read:
+    /// for a pool the wallet just bought into, whose configuration the
+    /// purchase verified.
+    pub(crate) async fn record_token_pool_watch(
+        &self,
+        wallet_id: WalletId,
+        watch: ShieldedTokenPoolWatch,
+    ) -> Result<(), PlatformWalletError> {
+        let _lifecycle = self.lifecycle.lock().await;
+        self.ensure_registered(wallet_id).await?;
+        self.store.read().await.with_token_pool_conn(|conn| {
+            super::token_pool::insert_watch(conn, wallet_id, &watch)
+        })?;
+        // A newly watched pool is unscanned: let the next pass run at once.
+        if let Ok(mut guard) = self.last_caught_up_at.lock() {
+            *guard = None;
+        }
+        Ok(())
+    }
+
+    /// Stop watching `token_id`'s pool for `wallet_id`, dropping the wallet's
+    /// notes and scan state there. Unwatching a pool not watched changes
+    /// nothing.
+    pub async fn unwatch_token_pool(
+        &self,
+        wallet_id: WalletId,
+        token_id: Identifier,
+    ) -> Result<(), PlatformWalletError> {
+        let _lifecycle = self.lifecycle.lock().await;
+        self.store
+            .read()
+            .await
+            .with_token_pool_conn(|conn| super::token_pool::remove_watch(conn, wallet_id, token_id))
+    }
+
+    /// `wallet_id`'s tokens in every pool it watches, one row per watched
+    /// pool and registered account, from the local scan alone. Refuses a
+    /// wallet with no registered account.
+    pub async fn token_pool_balances(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<Vec<ShieldedTokenPoolBalance>, PlatformWalletError> {
+        let accounts: Vec<u32> = self
+            .accounts
+            .read()
+            .await
+            .keys()
+            .filter(|id| id.wallet_id == wallet_id)
+            .map(|id| id.account_index)
+            .collect();
+        if accounts.is_empty() {
+            return Err(PlatformWalletError::ShieldedNotBound);
+        }
+        self.store
+            .read()
+            .await
+            .with_token_pool_conn(|conn| super::token_pool::balances(conn, wallet_id, &accounts))
+    }
+
+    /// Refuse a wallet with no registered account.
+    async fn ensure_registered(&self, wallet_id: WalletId) -> Result<(), PlatformWalletError> {
+        if self
+            .accounts
+            .read()
+            .await
+            .keys()
+            .any(|id| id.wallet_id == wallet_id)
+        {
+            Ok(())
+        } else {
+            Err(PlatformWalletError::ShieldedNotBound)
+        }
+    }
+
     /// Currently-registered subwallet ids (snapshot, ascending
     /// `(wallet_id, account_index)` order). Exposed for tests and
     /// for the sync coordinator's pass enumeration.
@@ -1640,6 +1749,12 @@ impl NetworkShieldedCoordinator {
                 self.discharge_expired_private_payments(&journal, evidence)
                     .await;
             }
+        }
+
+        // The watched token pools, after the credit pool: a pass that stopped
+        // reads none, and a token pool failure fails nothing else.
+        if !cancel.is_cancelled() {
+            super::token_pool::sync_token_pools(&*self.sdk, &self.store, &subwallets, cancel).await;
         }
 
         let balances_per_sub = match super::sync::balances_across(&self.store, &subwallets).await {
@@ -3729,6 +3844,64 @@ mod tests {
             .await
             .expect("register wallet");
         coordinator
+    }
+
+    /// A watch needs a bound wallet; a bound wallet's watched pool lists one
+    /// row per account, unscanned; removing the wallet and Clear drop it.
+    #[tokio::test]
+    async fn should_list_a_watched_token_pool_until_the_wallet_goes() {
+        let dir = temp_dir("token_pool_watch");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let watch = ShieldedTokenPoolWatch {
+            token_id: Identifier::from(calculate_token_id(&[0x66; 32], 1)),
+            data_contract_id: Identifier::from([0x66; 32]),
+            token_contract_position: 1,
+        };
+
+        assert!(matches!(
+            coordinator.record_token_pool_watch([0x99; 32], watch).await,
+            Err(PlatformWalletError::ShieldedNotBound)
+        ));
+        coordinator
+            .record_token_pool_watch(wallet_id, watch)
+            .await
+            .expect("watch");
+        let rows = coordinator
+            .token_pool_balances(wallet_id)
+            .await
+            .expect("balances");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            (rows[0].watch, rows[0].account_index, rows[0].balance),
+            (watch, 0, 0)
+        );
+        assert_eq!(rows[0].scanned_note_count, None);
+
+        coordinator
+            .unwatch_token_pool(wallet_id, watch.token_id)
+            .await
+            .expect("unwatch");
+        assert!(coordinator
+            .token_pool_balances(wallet_id)
+            .await
+            .expect("balances")
+            .is_empty());
+
+        coordinator
+            .record_token_pool_watch(wallet_id, watch)
+            .await
+            .expect("watch again");
+        coordinator.unregister_wallet(wallet_id).await;
+        let left = coordinator
+            .store()
+            .read()
+            .await
+            .with_token_pool_conn(|conn| super::super::token_pool::watches(conn))
+            .expect("watches");
+        assert!(left.is_empty(), "a removed wallet watches nothing");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Success path: a healthy `clear()` empties the shared commitment tree
