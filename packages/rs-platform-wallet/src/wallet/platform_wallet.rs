@@ -3377,12 +3377,27 @@ impl PlatformWallet {
             Some(coordinator) => Some(coordinator.operation_guard().await),
             None => None,
         };
+        #[cfg(all(test, feature = "shielded"))]
+        super::shielded::tips::test_hooks::before_publication_check(self).await;
         #[cfg(feature = "shielded")]
         if let PaymentAddressUpdate::Set(bytes) = &input.shielded_address {
             // Bytes that are not an address are refused by the write below.
             if let Some(address) = validated_shielded_address(bytes) {
                 self.check_shielded_address_publication(identity_id, &address)
                     .await?;
+            }
+            // The check accepts the preparation recorded as it runs. One
+            // recorded after the admission above was chosen is on a
+            // coordinator this write does not hold, so a Clear of it would
+            // not wait: refuse, and the next write holds the right one.
+            let held = prepared_coordinator.as_ref().map(Arc::as_ptr);
+            let recorded = self.prepared_tip_coordinator(identity_id);
+            if held != recorded.as_ref().map(Arc::as_ptr) {
+                return Err(PlatformWalletError::InvalidIdentityData(
+                    "The identity's shielded account was prepared while this profile write \
+                     was starting; write the profile again"
+                        .to_string(),
+                ));
             }
         }
         #[cfg(all(test, feature = "shielded"))]

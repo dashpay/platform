@@ -2741,6 +2741,79 @@ async fn should_hold_a_clear_until_a_profile_write_publishing_a_prepared_address
     assert_eq!(wallet.prepared_shielded_identity_account(&id).await, None);
 }
 
+/// A profile write chooses the coordinator admission to hold from the
+/// preparation recorded as it starts. A first preparation that lands after
+/// that choice is on a coordinator the write does not hold, so a Clear of
+/// it would not wait for the write. The write is paused right after its
+/// choice while the identity is prepared, and must then refuse to publish
+/// the prepared address; written again, it holds the admission and a Clear
+/// waits for it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_refuse_a_profile_write_that_raced_the_first_preparation_of_its_address() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("profile_write_first_prep").await;
+    // The bind already scans the identity's account, but nothing has
+    // prepared it for the identity in this session.
+    assert_eq!(wallet.prepared_shielded_identity_account(&id).await, None);
+    let address = OrchardKeySet::from_seed(
+        &seed,
+        Network::Testnet,
+        crate::shielded_identity_account_index(2).unwrap(),
+    )
+    .unwrap()
+    .default_address
+    .to_raw_address_bytes();
+    let write = |wallet: PlatformWallet| async move {
+        wallet
+            .write_dashpay_profile(
+                &id,
+                crate::ProfileUpdate {
+                    shielded_address: crate::PaymentAddressUpdate::Set(address.to_vec()),
+                    ..Default::default()
+                },
+                &simple_signer::signer::SimpleSigner::default(),
+                false,
+            )
+            .await
+    };
+
+    let (reached, resume) = super::tips::test_hooks::pause_before_publication_check(&wallet);
+    let writing = tokio::spawn(write(wallet.clone()));
+    reached.await.expect("the write chose its admission");
+    assert_eq!(
+        wallet
+            .prepare_shielded_identity_address(&seed, &id, &coordinator)
+            .await
+            .unwrap(),
+        address
+    );
+    resume.send(()).expect("release the parked write");
+    let raced = writing.await.expect("write task");
+    assert!(
+        matches!(
+            raced,
+            Err(crate::PlatformWalletError::InvalidIdentityData(ref message))
+                if message.contains("was prepared while this profile write was starting")
+        ),
+        "{raced:?}"
+    );
+
+    // Written again, the write holds the coordinator the address was
+    // prepared on, and a Clear waits for it.
+    let (reached, resume) = super::tips::test_hooks::pause_after_publication_check(&wallet);
+    let writing = tokio::spawn(write(wallet.clone()));
+    reached
+        .await
+        .expect("the write passed its publication check");
+    let mut clear = std::pin::pin!(coordinator.clear());
+    assert!(
+        futures::poll!(clear.as_mut()).is_pending(),
+        "the Clear must wait for the profile write in flight"
+    );
+    resume.send(()).expect("release the parked write");
+    writing.await.expect("write task").unwrap_err();
+    clear.await.expect("clear succeeds");
+}
+
 #[tokio::test]
 async fn should_refuse_a_profile_write_that_publishes_an_ordinary_account_address() {
     let (wallet, seed, id, coordinator) = tip_race_fixture("profile_write_refusal").await;
