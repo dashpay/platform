@@ -618,6 +618,70 @@ async fn should_free_the_untouched_notes_of_a_spend_another_transition_took_an_i
     let _ = std::fs::remove_file(&path);
 }
 
+/// The pass does cover a height, but one below the height that proved the
+/// conflict: a first range, proved at 999, ends at the tree's end as it was
+/// then. The range after it is proved at 1000, with the first competing
+/// action and a count beyond its end, and the empty tail is proved at 999
+/// again. Coverage through 999 says nothing of a transition that executed at
+/// 1000, so the second note stays reserved.
+#[tokio::test]
+async fn should_hold_the_other_notes_when_the_scan_covers_only_a_lower_height() {
+    let path = temp_tree_path("lower_coverage");
+    let store = open(&path);
+    let (id, _) = subwallet();
+    let (first, second) = (nullifier(0xA1), nullifier(0xA2));
+    save_unconfirmed_spend(
+        &mut *store.write().await,
+        id,
+        SPEND,
+        &transfer(vec![action(first, cmx(1)), action(second, cmx(2))]),
+        &[first, second],
+    );
+
+    let batch = |start_index: u64,
+                 notes: Vec<ShieldedEncryptedNote>,
+                 block_height: u64,
+                 total_count: u64,
+                 is_partial: bool| ShieldedChunkBatch {
+        start_index,
+        notes,
+        decrypted: vec![],
+        block_height,
+        is_partial,
+        total_count,
+    };
+    let result = scan(
+        &store,
+        futures::stream::iter(vec![
+            // Another wallet's action: the whole tree at 999.
+            Ok(batch(
+                0,
+                vec![scanned(nullifier(0x0F), cmx(5))],
+                999,
+                1,
+                false,
+            )),
+            // The first competing action, at 1000, where the tree holds two
+            // more actions.
+            Ok(batch(1, vec![scanned(first, cmx(8))], 1_000, 3, false)),
+            // The tail, proved at 999, with the highest count seen.
+            Ok(batch(2, vec![], 999, 3, true)),
+        ]),
+    )
+    .await;
+
+    assert_eq!(result.covered_height, Some(999));
+    let store = store.read().await;
+    assert_eq!(status(&store, id, SPEND), ShieldedActivityStatus::Failed);
+    assert!(
+        unspent(&store, id).is_empty(),
+        "the second note stays reserved"
+    );
+    assert_eq!(store.spendable_balance(id).expect("balance"), 0);
+    drop(store);
+    let _ = std::fs::remove_file(&path);
+}
+
 /// Every input spent by one other transition, as when both devices select
 /// the same notes: no input is left unspent to tell the two spends apart, and
 /// the actions still do.
