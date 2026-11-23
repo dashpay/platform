@@ -61,6 +61,7 @@ import org.dashfoundation.example.navigation.FundFromAssetLock
 import org.dashfoundation.example.navigation.SeedShieldedPool
 import org.dashfoundation.example.navigation.SendTransaction
 import org.dashfoundation.example.navigation.ShieldedActivity
+import org.dashfoundation.example.navigation.ShieldedTokens
 import org.dashfoundation.example.navigation.ShieldedFund
 import org.dashfoundation.example.navigation.TransferPlatformAddress
 import org.dashfoundation.example.navigation.WalletTransactions
@@ -298,6 +299,7 @@ fun WalletDetailScreen(
                         onSeedPool = { navController.navigate(SeedShieldedPool(walletIdHex)) },
                         onFund = { navController.navigate(ShieldedFund(walletIdHex)) },
                         onActivity = { navController.navigate(ShieldedActivity(walletIdHex)) },
+                        onTokens = { navController.navigate(ShieldedTokens(walletIdHex)) },
                     )
                 }
             }
@@ -630,7 +632,8 @@ private fun PlatformBalanceRow(
 
 /**
  * Shielded Balance row — the DASH value with a trailing overflow menu:
- * Fund Shielded (Core → pool), Seed Pool Notes, Shielded Activity. Wires up
+ * Fund Shielded (Core → pool), Seed Pool Notes, Shielded Activity, Shielded
+ * Tokens (the wallet's tokens in watched token shielded pools). Wires up
  * the Orchard shielded screens (← iOS `BalanceCardView` Shielded row and the
  * SeedShieldedPool / ShieldedActivity affordances). Only rendered on a
  * shielded build.
@@ -641,6 +644,7 @@ private fun ShieldedBalanceRow(
     onSeedPool: () -> Unit,
     onFund: () -> Unit,
     onActivity: () -> Unit,
+    onTokens: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Row(
@@ -700,6 +704,14 @@ private fun ShieldedBalanceRow(
                         onActivity()
                     },
                     modifier = Modifier.testTag("walletDetail.shieldedActivityButton"),
+                )
+                DropdownMenuItem(
+                    text = { Text("Shielded Tokens") },
+                    onClick = {
+                        menuOpen = false
+                        onTokens()
+                    },
+                    modifier = Modifier.testTag("walletDetail.shieldedTokensLink"),
                 )
             }
         }
