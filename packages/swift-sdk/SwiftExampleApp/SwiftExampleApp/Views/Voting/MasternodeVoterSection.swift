@@ -16,9 +16,10 @@ enum MasternodeVoter: Equatable {
     /// The two differ for a masternode stored under its voter identity. The
     /// key stays in the Keychain and signs through `KeychainSigner`.
     case storedKey(identityId: Data, proTxHash: Data)
-    /// A pro_tx_hash (wire order) typed into the sheet, with no key: enough
-    /// to read any masternode's answer, never to cast. Available in every
-    /// build.
+    /// A pro_tx_hash (wire order) with no usable key: enough to read the
+    /// masternode's answer, never to cast. Typed into the sheet (every
+    /// build), or a loaded masternode's recorded pro_tx_hash while its
+    /// voting key is unreadable or still being checked.
     case typedProTxHash(Data)
     #if DEBUG
     /// Debug builds only: a pro_tx_hash (wire order) and a voting private key
@@ -487,9 +488,20 @@ struct MasternodeVoterSection: View {
         )
         let knownProTxHash = identity.masternodeProTxHash
         guard keyUse.checkBeforeUse || knownProTxHash == nil else {
+            // The current key reads and needs no check, so an earlier failure
+            // (such as a resolution that failed before the row was loaded
+            // again) no longer holds.
+            if checkFailure?.identityId == identityId { checkFailure = nil }
             completed = true
             return
         }
+        // What the row recorded when this check started: a result is written
+        // only onto that, never over a verdict recorded since.
+        let startedFrom = (
+            checkRaw: identity.votingKeyCheckRaw,
+            checkAddress: identity.votingKeyCheckAddress,
+            proTxHash: identity.masternodeProTxHash
+        )
         checkingIdentityId = identityId
         defer {
             if checkingIdentityId == identityId { checkingIdentityId = nil }
@@ -529,8 +541,10 @@ struct MasternodeVoterSection: View {
             guard !Task.isCancelled else { return }
             let message = "The voting key could not be checked: \(error.localizedDescription)"
             // A row whose masternode is not known yet cannot vote either way.
-            checkFailure = (identityId, knownProTxHash == nil ? .notResolved(message) : .checkFailed(message))
-            completed = knownProTxHash != nil
+            // A thrown error is not a verdict (a failed Platform fetch comes
+            // back as an undetermined verdict instead): the pick stays
+            // unchecked, so the key is not offered.
+            checkFailure = (identityId, knownProTxHash == nil ? .notResolved(message) : .notFinished(message))
             return
         }
         // A superseded check (the pick changed, then maybe changed back, so a
@@ -567,6 +581,24 @@ struct MasternodeVoterSection: View {
             return
         }
         guard storedAddress == checkedAddress else { return }
+        // A verdict recorded since this check started (another window, or a
+        // load) is newer than this answer: it is kept, and the changed record
+        // starts a check of its own.
+        guard row.votingKeyCheckRaw == startedFrom.checkRaw,
+              row.votingKeyCheckAddress == startedFrom.checkAddress,
+              row.masternodeProTxHash == startedFrom.proTxHash else {
+            return
+        }
+        // The fields this check writes, as stored, to put back if the save
+        // fails. Only these: the context is shared, so a rollback would also
+        // discard other unsaved changes.
+        let stored = (
+            checkRaw: row.votingKeyCheckRaw,
+            checkMessage: row.votingKeyCheckMessage,
+            checkAddress: row.votingKeyCheckAddress,
+            proTxHash: row.masternodeProTxHash,
+            roleRaw: row.masternodeRoleRaw
+        )
         if let resolvedProTxHash {
             row.masternodeProTxHash = resolvedProTxHash
             row.masternodeRole = .owner
@@ -585,7 +617,15 @@ struct MasternodeVoterSection: View {
             if checkFailure?.identityId == identityId { checkFailure = nil }
             completed = true
         } catch {
-            checkFailure = (identityId, .notSaved(
+            // The fields this check wrote go back to what is stored, so
+            // neither this pick nor a rerun can sign on a verdict that was not
+            // saved; nothing else in the context is touched.
+            row.votingKeyCheckRaw = stored.checkRaw
+            row.votingKeyCheckMessage = stored.checkMessage
+            row.votingKeyCheckAddress = stored.checkAddress
+            row.masternodeProTxHash = stored.proTxHash
+            row.masternodeRoleRaw = stored.roleRaw
+            checkFailure = (identityId, .notFinished(
                 "The voting key check could not be saved: \(error.localizedDescription)"
             ))
         }
@@ -615,17 +655,22 @@ struct MasternodeVoterSection: View {
             return
         }
         // An identity whose voting key may not vote, or whose masternode is
-        // not known yet, is not published; nor is one whose key Rust says to
-        // check before use until that check has run for its current record.
+        // not known yet, is not published; nor is any until this pick's check
+        // task has finished for its current record. That task reads the
+        // stored key's address, so Rust's rule sees which key is stored (a
+        // record of another key counts as never checked), and it finishes at
+        // once when no check is needed.
         guard let selected = votingIdentities.first(where: { $0.identityId == selectedIdentityId }),
               !Self.isRefused(selected),
               let proTxHash = selected.masternodeProTxHash else {
             voter = nil
             return
         }
-        let keyUse = MasternodeRecordedVotingKeyUse(recorded: selected.recordedVotingKey, storedVotingAddress: nil)
-        if keyUse.checkBeforeUse && checkedTrigger != currentTrigger {
-            voter = nil
+        guard checkedTrigger == currentTrigger else {
+            // Until then the masternode's answer can still be read: its
+            // recorded pro_tx_hash is published without a key, which casts
+            // nothing.
+            voter = .typedProTxHash(proTxHash)
             return
         }
         voter = .storedKey(identityId: selected.identityId, proTxHash: proTxHash)
@@ -647,17 +692,14 @@ private struct VotingKeyCheckTrigger: Equatable {
 /// Why the check of the picked identity's stored voting key did not happen
 /// or was not saved.
 private enum VotingKeyCheckFailure: Equatable {
-    /// The stored key was read, but the check could not run or its result
-    /// could not be saved.
-    case checkFailed(String)
     /// The stored key could not be read, so it cannot sign either.
     case keyUnreadable(String)
     /// The row records no pro_tx_hash, and Rust's load rule did not resolve
     /// it as a masternode's owner identity, so it cannot vote.
     case notResolved(String)
-    /// The check ran but its result could not be saved, so the key is not
-    /// offered until it is checked again.
-    case notSaved(String)
+    /// The check did not finish (the call failed) or its result could not
+    /// be saved, so the key is not offered until it is checked again.
+    case notFinished(String)
 }
 
 private struct VotingKeyCheckStatus: View {
@@ -674,7 +716,7 @@ private struct VotingKeyCheckStatus: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-        } else if case .notSaved(let message) = failure {
+        } else if case .notFinished(let message) = failure {
             Text(message + " Close and reopen this sheet to check the voting key again.")
                 .font(.caption)
                 .foregroundColor(.red)
@@ -690,10 +732,6 @@ private struct VotingKeyCheckStatus: View {
             Text("This voting key cannot vote for this masternode: \(message) Load the identity again with its voting key under Identities, Load Identity.")
                 .font(.caption)
                 .foregroundColor(.red)
-        } else if case .checkFailed(let message) = failure {
-            Text(message + " You can still vote with it.")
-                .font(.caption)
-                .foregroundColor(.secondary)
         } else if case .undetermined(let message) = check {
             Text(message + " You can still vote with it; it is checked again when you pick this identity.")
                 .font(.caption)

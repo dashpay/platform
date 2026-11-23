@@ -65,6 +65,26 @@ final class MasternodeVotingLoadTests: XCTestCase {
         ))
     }
 
+    /// A typed recipient may carry one leading `id:` or `0x`; a prefix
+    /// anywhere else is refused, not silently removed.
+    func testShouldAcceptOnlyALeadingPrefixOnATypedIdentityId() throws {
+        let id = Data((1...32).map { UInt8($0) })
+        let hex = id.toHexString()
+        let base58 = id.toBase58String()
+        for accepted in [hex, "0x" + hex, "id:" + base58, " id:0x\(hex) ", "id: 0x" + hex, "id: " + base58, base58] {
+            XCTAssertEqual(AddressTransformer.identityId(fromInput: accepted), id, accepted)
+        }
+        let middle = base58.index(base58.startIndex, offsetBy: 10)
+        for refused in [
+            String(base58[..<middle]) + "id:" + String(base58[middle...]),
+            String(hex.prefix(20)) + "0x" + String(hex.dropFirst(20)),
+            "",
+            "id:",
+        ] {
+            XCTAssertNil(AddressTransformer.identityId(fromInput: refused), refused)
+        }
+    }
+
     /// A row stored before the pro_tx_hash was recorded names no masternode:
     /// nothing is inferred from its id until Rust's load rule resolves it,
     /// and it is not a voting-only identity.

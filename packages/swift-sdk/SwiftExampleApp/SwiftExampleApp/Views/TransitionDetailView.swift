@@ -2519,16 +2519,17 @@ struct TransitionDetailView: View {
     formInputs["documentFields"] = schemaTemplate
   }
 
-  /// The recipient typed or picked as `text` (64 hex characters or Base58),
-  /// decoded once to exactly 32 bytes and returned in canonical Base58, so
+  /// The recipient typed or picked as `text` (an optional leading `id:` or
+  /// `0x`, then 64 hex characters or Base58), decoded once to exactly 32
+  /// bytes (`AddressTransformer.identityId(fromInput:)`) and returned in
+  /// canonical Base58, so
   /// the id that is sent is the id that was checked. Throws for text that
   /// does not decode to an identity id, and for an identity this device
   /// stores on `network` as a masternode's voter identity, which holds only
   /// a voting key: what is sent to it could not be spent. An unknown id
   /// passes.
   private func checkedRecipient(_ text: String, network: Network) async throws -> String {
-    guard let identityId = Data.identifier(fromBase58: normalizeIdentityId(text)),
-          identityId.count == 32 else {
+    guard let identityId = AddressTransformer.identityId(fromInput: text) else {
       throw SDKError.invalidParameter(
         "The recipient identity ID must be 64 hex characters or a Base58 identity ID."
       )
@@ -2542,21 +2543,6 @@ struct TransitionDetailView: View {
     return identityId.toBase58String()
   }
 
-  private func normalizeIdentityId(_ identityId: String) -> String {
-    // Remove any prefix
-    let cleanId = identityId
-      .replacingOccurrences(of: "id:", with: "")
-      .replacingOccurrences(of: "0x", with: "")
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-
-    // If it's hex (64 chars = 32 bytes), convert to base58
-    if AddressValidator.isHexIdentityId(cleanId), let data = Data(hexString: cleanId) {
-      return data.toBase58String()
-    }
-
-    // Otherwise assume it's already base58
-    return cleanId
-  }
 }
 
 // IdentityModel's `displayName` extension is gone — the same

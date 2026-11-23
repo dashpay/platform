@@ -63,6 +63,10 @@ struct LoadIdentityView: View {
         /// checked, shown only when that key is in the voting slot after the
         /// replacement.
         let uncheckedVotingKeyNote: String?
+        /// What the load reported when the other voting keys stored for the
+        /// masternode could not be marked to be checked again, repeated in
+        /// the report after the replacement.
+        let siblingNote: String?
     }
 
     /// Held only until the replacement dialog is answered, then cleared.
@@ -901,7 +905,8 @@ struct LoadIdentityView: View {
                                 unstoredNote: unstoredNote,
                                 enteredKeyDigests: enteredKeyDigests,
                                 votingKeyRecord: storedVotingKeyOutcome?.record,
-                                uncheckedVotingKeyNote: uncheckedNoteIfStored
+                                uncheckedVotingKeyNote: uncheckedNoteIfStored,
+                                siblingNote: siblingNote
                             )
                         }
                     }
@@ -1069,6 +1074,31 @@ struct LoadIdentityView: View {
             }
         }
 
+        // Once the entered voting key replaced the stored one, Rust says what
+        // to record for the other voting keys this device stores for the same
+        // masternode, as a load does. A list that cannot be read is reported.
+        var siblingNote = pending.siblingNote
+        if replaced.contains(SpecialKeyType.voting.rawValue), let record = pending.votingKeyRecord,
+           let proTxHash = row.masternodeProTxHash {
+            let target: Data? = proTxHash
+            let network = row.network
+            do {
+                let siblings = try modelContext.fetch(
+                    FetchDescriptor<PersistentIdentity>(predicate: #Predicate { $0.masternodeProTxHash == target })
+                )
+                for sibling in siblings where sibling.identityId != row.identityId && sibling.network == network {
+                    if let siblingRecord = record.check.siblingRecord(
+                        votingAddress: record.votingAddress,
+                        sibling: sibling.recordedVotingKey
+                    ) {
+                        sibling.recordedVotingKey = siblingRecord
+                    }
+                }
+            } catch {
+                siblingNote = "Other voting keys stored for this masternode could not be read, so they were not marked to be checked again: \(error.localizedDescription). Load the identity again to retry."
+            }
+        }
+
         var parts: [String] = []
         var saved = true
         do {
@@ -1153,8 +1183,11 @@ struct LoadIdentityView: View {
         if let uncheckedNote {
             parts.append(uncheckedNote)
         }
+        if let siblingNote {
+            parts.append(siblingNote)
+        }
         if saved && replaced.count == pending.keys.count && pending.unstoredNote == nil && notInPlace.isEmpty
-            && uncheckedNote == nil {
+            && uncheckedNote == nil && siblingNote == nil {
             errorMessage = nil
             showSuccess = true
         } else {
