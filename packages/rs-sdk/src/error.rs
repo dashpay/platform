@@ -66,10 +66,10 @@ pub enum Error {
     /// DAPI client error, for example, connection error
     #[error("Dapi client error: {0}")]
     DapiClientError(rs_dapi_client::DapiClientError),
-    #[cfg(feature = "mocks")]
-    /// DAPI mocks error
+    /// DAPI mocks error. Present without `mocks` too, so exhaustive matches
+    /// don't depend on which crate in the build enabled the feature.
     #[error("Dapi mocks error: {0}")]
-    DapiMocksError(#[from] rs_dapi_client::mock::MockError),
+    DapiMocksError(#[from] rs_dapi_client::MockError),
     /// Dash core error
     #[error("Dash core error: {0}")]
     CoreError(#[from] dpp::dashcore::Error),
