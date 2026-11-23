@@ -67,9 +67,9 @@ class MasternodeVoterKeyCheckTest {
 
         assertTrue(isVotingKeyRefused(state, rules))
         assertEquals(listOf(recorded to addressA), rules.usedWith)
-        // No stored key, no question.
-        assertFalse(isVotingKeyRefused(voterKeyState(row(null)), rules))
-        assertFalse(isVotingKeyRefused(null, rules))
+        // No stored key cannot vote, and Rust is not asked about it.
+        assertTrue(isVotingKeyRefused(voterKeyState(row(null)), rules))
+        assertTrue(isVotingKeyRefused(null, rules))
         assertEquals(1, rules.usedWith.size)
     }
 
@@ -98,7 +98,7 @@ class MasternodeVoterKeyCheckTest {
         val identity = row(identifierA)
         fun publish(refused: Boolean) = publishVoter(
             selected = identity,
-            selectedRefused = refused,
+            selectedCastable = !refused,
             allowsTypedProTxHash = false,
             useTypedProTxHash = false,
             proTxHashText = "",
@@ -107,7 +107,129 @@ class MasternodeVoterKeyCheckTest {
             votingKeyText = "",
         )
         assertNull(publish(refused = true))
-        assertEquals(MasternodeVoter.StoredKey(identityId), publish(refused = false))
+        assertEquals(MasternodeVoter.StoredKey(identityId, identifierA), publish(refused = false))
+    }
+
+    // ── Whether the picked key may be published ─────────────────────────
+
+    private val awaitingCheck = MasternodeRecordedVotingKeyUse(canVote = true, checkBeforeUse = true)
+    private val proven = MasternodeRecordedVotingKeyUse(canVote = true, checkBeforeUse = false)
+    private val refusedUse = MasternodeRecordedVotingKeyUse(canVote = false, checkBeforeUse = false)
+
+    /**
+     * A key Rust says to check first is not castable until a check of that same key finished
+     * in this dialog; an unanswered check still lets it vote, as Swift does.
+     */
+    @Test
+    fun shouldHoldAKeyThatNeedsACheckUntilACheckOfThatKeyFinished() {
+        val state = voterKeyState(row(identifierA))
+        rules.use = awaitingCheck
+
+        assertEquals(StoredVoterDecision.AWAITING_CHECK, storedVoterDecision(state, null, rules))
+        // A check that finished for another key does not count.
+        assertEquals(
+            StoredVoterDecision.AWAITING_CHECK,
+            storedVoterDecision(state, PickedKeyCheckState(identifierB), rules),
+        )
+        assertEquals(
+            StoredVoterDecision.CASTABLE,
+            storedVoterDecision(state, PickedKeyCheckState(identifierA), rules),
+        )
+        rules.use = proven
+        assertEquals(StoredVoterDecision.CASTABLE, storedVoterDecision(state, null, rules))
+    }
+
+    /** A refusal that could not be saved is applied anyway: the key stays refused. */
+    @Test
+    fun shouldApplyARefusalThatCouldNotBeSaved() {
+        val state = voterKeyState(row(identifierA))
+        val unsaved = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Invalid("rotated"), addressA)
+        rules.use = refusedUse
+
+        assertEquals(
+            StoredVoterDecision.REFUSED,
+            storedVoterDecision(state, PickedKeyCheckState(identifierA, unsaved), rules),
+        )
+        assertEquals(unsaved to addressA, rules.usedWith.last())
+    }
+
+    @Test
+    fun shouldNeverPublishAnUnreadableIdentifier() {
+        val state = voterKeyState(row("mnvoting.x"))
+
+        assertEquals(StoredVoterDecision.UNREADABLE, storedVoterDecision(state, null, rules))
+        assertTrue(isVotingKeyRefused(state, rules))
+        assertTrue(rules.usedWith.isEmpty())
+        assertEquals(
+            UNREADABLE_VOTING_KEY_IDENTIFIER_MESSAGE to true,
+            votingKeyCheckStatusText(state, null, false, null),
+        )
+    }
+
+    /** An answer that could not be saved keeps what Rust said to record, for the section. */
+    @Test
+    fun shouldKeepRustsRecordForAnAnswerThatCouldNotBeSaved() = runBlocking {
+        db.identityDao().upsert(row(identifierA))
+        val refusal = MasternodeVotingKeyCheck.Invalid("rotated")
+        val unsaved = MasternodeRecordedVotingKey(refusal, addressA)
+        rules.outcome = MasternodeVotingKeyCheckOutcome(storeKey = false, record = unsaved)
+
+        // The row stops accepting writes while Platform answers, so the record write throws.
+        val result = checkPicked(answer = {
+            db.openHelper.writableDatabase.execSQL(
+                "CREATE TRIGGER refuse_writes BEFORE UPDATE ON identities " +
+                    "BEGIN SELECT RAISE(ABORT, 'disk full'); END",
+            )
+            refusal
+        })
+
+        assertTrue(result is PickedVotingKeyCheck.Failed)
+        assertEquals(unsaved, (result as PickedVotingKeyCheck.Failed).unsaved)
+    }
+
+    /**
+     * Recovery: after a check cut short (process death) wrote nothing, the next pick checks the
+     * stored key's address and records the answer.
+     */
+    @Test
+    fun shouldCheckAndRecordOnTheNextPickAfterACheckWasCutShort() = runBlocking {
+        db.identityDao().upsert(row(identifierA))
+        val recorded = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Valid, addressA)
+        rules.outcome = MasternodeVotingKeyCheckOutcome(storeKey = true, record = recorded)
+        val started = CompletableDeferred<Unit>()
+        val cutShort = async {
+            checkPicked(answer = {
+                started.complete(Unit)
+                CompletableDeferred<MasternodeVotingKeyCheck>().await()
+            })
+        }
+        started.await()
+        cutShort.cancel()
+        yield()
+        assertNull(db.identityDao().getByIdentityId(identityId)!!.votingKeyCheckRaw)
+
+        assertEquals(PickedVotingKeyCheck.Recorded(MasternodeVotingKeyCheck.Valid), checkPicked())
+        assertEquals(addressA, checkedWith.last().second)
+        assertEquals(recorded, db.identityDao().getByIdentityId(identityId)!!.recordedVotingKey)
+    }
+
+    /**
+     * Recovery: a load that stored key B and died before recording its check leaves the row
+     * naming B with the old key's record; the next pick checks B and records the answer.
+     */
+    @Test
+    fun shouldCheckAReplacedKeyOnTheNextPickAfterALoadDiedBeforeRecording() = runBlocking {
+        db.identityDao().upsert(
+            row(identifierA, MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Valid, addressA)),
+        )
+        // The replacement's row write, then the process dies before the record write.
+        db.identityDao().replaceVotingPrivateKeyIdentifier(identityId, testnet, identifierA, identifierB, 0L)
+        val recordedB = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Valid, addressB)
+        rules.outcome = MasternodeVotingKeyCheckOutcome(storeKey = true, record = recordedB)
+
+        assertEquals(PickedVotingKeyCheck.Recorded(MasternodeVotingKeyCheck.Valid), checkPicked(identifier = identifierB))
+        assertEquals(addressB, checkedWith.single().second)
+        assertEquals(recordedB, db.identityDao().getByIdentityId(identityId)!!.recordedVotingKey)
     }
 
     // ── Status line ──────────────────────────────────────────────────────

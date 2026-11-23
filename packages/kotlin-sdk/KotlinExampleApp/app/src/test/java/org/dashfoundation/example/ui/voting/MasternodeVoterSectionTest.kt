@@ -83,7 +83,7 @@ class MasternodeVoterSectionTest {
         val wire = wireOrderProTxHash(identityId)
 
         assertArrayEquals(ByteArray(32) { (31 - it).toByte() }, wire)
-        assertArrayEquals(wire, MasternodeVoter.StoredKey(identityId).wireOrderProTxHash)
+        assertArrayEquals(wire, MasternodeVoter.StoredKey(identityId, "mnvoting.x").wireOrderProTxHash)
         assertArrayEquals(identityId, ByteArray(32) { it.toByte() }) // input untouched
     }
 
@@ -123,7 +123,7 @@ class MasternodeVoterSectionTest {
 
         val voter = publish(selected = selected)
 
-        assertEquals(MasternodeVoter.StoredKey(selected.identityId), voter)
+        assertEquals(MasternodeVoter.StoredKey(selected.identityId, selected.votingPrivateKeyIdentifier!!), voter)
         assertNull(publish(selected = null))
     }
 
@@ -137,7 +137,7 @@ class MasternodeVoterSectionTest {
 
         assertTrue(typed is MasternodeVoter.TypedProTxHash)
         assertArrayEquals(decodeTyped32Bytes(proTxHashHex), typed!!.wireOrderProTxHash)
-        assertEquals(MasternodeVoter.StoredKey(selected.identityId), refused)
+        assertEquals(MasternodeVoter.StoredKey(selected.identityId, selected.votingPrivateKeyIdentifier!!), refused)
         assertNull(malformed)
     }
 
@@ -153,7 +153,7 @@ class MasternodeVoterSectionTest {
             key = keyHex,
         )
 
-        assertEquals(MasternodeVoter.StoredKey(selected.identityId), voter)
+        assertEquals(MasternodeVoter.StoredKey(selected.identityId, selected.votingPrivateKeyIdentifier!!), voter)
     }
 
     @Test
@@ -176,7 +176,7 @@ class MasternodeVoterSectionTest {
     fun shouldCastOnlyAsAStoredKeyOrTypedCredentialsWithAKey() {
         val hash = ByteArray(32)
 
-        assertTrue(MasternodeVoter.StoredKey(hash).canCast)
+        assertTrue(MasternodeVoter.StoredKey(hash, "mnvoting.x").canCast)
         assertFalse(MasternodeVoter.TypedProTxHash(hash).canCast)
         assertFalse(MasternodeVoter.TypedCredentials(hash, null).canCast)
         assertTrue(MasternodeVoter.TypedCredentials(hash, ByteArray(32)).canCast)

@@ -389,26 +389,17 @@ fun IdentityEntity.storedVotingKeyUse(
  */
 object MasternodeVotingKeyRecords {
 
-    /** What the identity's voting key slot held before the checked key was in it. */
-    enum class SlotBefore {
-        /** No key was stored; the checked key was just stored into the empty slot. */
-        EMPTY,
-
-        /** The checked key was already stored (or stays stored, for a refusal of it). */
-        SAME_KEY,
-
-        /** Another key was stored; the checked key replaced it. */
-        DIFFERENT_KEY,
-    }
-
     /**
      * Record [check] of the voting key [storedIdentifier] names on [identityId]'s row on
-     * [networkRaw], as [rules] decide given what the slot held before ([slotBefore]; for
-     * [SlotBefore.SAME_KEY] with the record the row holds now). One Room transaction reads the
-     * row, asks Rust and writes the record, and only while the row still names
-     * [storedIdentifier]: an answer about a key replaced meanwhile is dropped. Nothing is
-     * written before the check's answer exists, so a check that never finishes (process death)
-     * leaves the row as it was.
+     * [networkRaw], as [rules] decide. One Room transaction reads the row, asks Rust and writes
+     * the record, and only while the row still names [storedIdentifier]: an answer about a key
+     * replaced meanwhile is dropped. The slot Rust is given is the row as that transaction reads
+     * it: the checked key, with the record the row holds now. A record written by another check
+     * after the key was stored (a newer refusal of the same key) is therefore weighed by Rust,
+     * never overwritten unseen; a record left by another key is ignored by Rust, so a key just
+     * stored into an empty slot or over another key reads as never checked. Nothing is written
+     * before the check's answer exists, so a check that never finishes (process death) leaves
+     * the row as it was.
      *
      * @return the outcome Rust returned, or null when the row is gone, on another network or
      *   names another key, so nothing was written.
@@ -420,7 +411,6 @@ object MasternodeVotingKeyRecords {
         networkRaw: Int,
         storedIdentifier: String,
         check: MasternodeVotingKeyCheck,
-        slotBefore: SlotBefore,
         rules: MasternodeVotingKeyRules = MasternodeVotingKeyRules.Native,
     ): MasternodeVotingKeyCheckOutcome? {
         val address = MasternodeVotingKeyAddress.ofIdentifier(storedIdentifier)
@@ -432,12 +422,7 @@ object MasternodeVotingKeyRecords {
             val identifier = row.votingPrivateKeyIdentifier
                 ?.takeIf { it.equals(storedIdentifier, ignoreCase = true) }
                 ?: return@withTransaction null
-            val slot = when (slotBefore) {
-                SlotBefore.EMPTY -> MasternodeVotingKeySlot.Empty
-                SlotBefore.SAME_KEY -> MasternodeVotingKeySlot.SameKey(row.recordedVotingKey)
-                SlotBefore.DIFFERENT_KEY -> MasternodeVotingKeySlot.DifferentKey
-            }
-            val outcome = rules.outcome(check, address, slot)
+            val outcome = rules.outcome(check, address, MasternodeVotingKeySlot.SameKey(row.recordedVotingKey))
             outcome.record?.let { record ->
                 val (raw, message) = rawOf(record.check)
                 dao.recordVotingKeyCheck(
