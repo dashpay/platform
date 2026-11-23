@@ -157,6 +157,9 @@ class RewriteDebVersionsTests(unittest.TestCase):
             'a Maintainer without an address': ('4.1.0.61be67f7bf-1',
                                                 CONTROL.replace('{maintainer}', 'Dash Core Team'),
                                                 'Expected a Maintainer'),
+            'an address with a second @': ('4.1.0.61be67f7bf-1',
+                                           CONTROL.replace('{maintainer}', 'Dash Core Team <dev@@dash.org>'),
+                                           'Expected a Maintainer'),
         }
         for case, (version, control, reason) in cases.items():
             with self.subTest(case):

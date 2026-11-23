@@ -92,9 +92,10 @@ rewrite_deb_versions() {
 
     # oclif writes the package's author as the maintainer, and `undefined` when there is
     # none. Debian requires a name and an address there, and apt shows them as the contact.
+    # Only a plain address is accepted: one @, no quoted local part.
     MAINTAINER=$(dpkg-deb --field "$DEB_PATH" Maintainer)
 
-    if ! echo "$MAINTAINER" | LC_ALL=C grep -Eq '^[^<>]*[^<>[:space:]] <[^<>[:space:]@]+@[^<>[:space:]]+>$'
+    if ! echo "$MAINTAINER" | LC_ALL=C grep -Eq '^[^<>]*[^<>[:space:]] <[^<>[:space:]@]+@[^<>[:space:]@]+>$'
     then
       echo "Expected a Maintainer of the form 'Name <address>' in $DEB_PATH, got '$MAINTAINER'; set author in packages/dashmate/package.json"
       exit 1
