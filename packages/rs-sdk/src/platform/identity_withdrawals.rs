@@ -3,10 +3,10 @@
 //! An identity credit withdrawal stores a `withdrawal` document in the withdrawals system
 //! contract, owned by the identity. Platform moves its `status` as the withdrawal travels to
 //! Core: queued; pooled into an asset unlock transaction; broadcasted, which Platform records
-//! when it builds that transaction for a quorum to sign and hands it on to Core, before Core
-//! has accepted anything; then complete once Platform sees the transaction in a chain-locked
-//! Core block, or expired when it does not and Platform builds it again. This module reads
-//! those documents, proved, and returns them as typed rows.
+//! when it builds that transaction and queues it for a quorum to sign and for broadcast to
+//! Core (the status proves neither has happened yet); then complete once Platform sees the
+//! transaction in a chain-locked Core block, or expired when it does not and Platform builds
+//! it again. This module reads those documents, proved, and returns them as typed rows.
 //!
 //! Withdrawals from Platform addresses and from the shielded pool store the same document,
 //! but owned by the contract owner (the all-zero identifier), with an id derived from the
