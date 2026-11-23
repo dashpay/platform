@@ -265,6 +265,34 @@ class MasternodeVoterKeyCheckTest {
         }
     }
 
+    /**
+     * A result this dialog saved stands only until Room shows a change to the row's record: a
+     * newer refusal of the same key, written by another check, then decides. A result that
+     * could not be saved stands, since Room will never show it.
+     */
+    @Test
+    fun shouldLetANewerRefusalInRoomSupersedeASavedResult() {
+        val undetermined = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Undetermined("down"), addressA)
+        val refusal = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Invalid("rotated"), addressA)
+        val saved = PickedKeyCheckState(identifierA, undetermined, saved = true, recordBefore = null)
+
+        // Before Room delivers the write, the dialog's result speaks.
+        assertEquals(undetermined, effectiveRecord(voterKeyState(row(identifierA)), saved))
+        // Room shows this write: the same record either way.
+        assertEquals(undetermined, effectiveRecord(voterKeyState(row(identifierA, undetermined)), saved))
+        // Room shows a newer refusal of the same key: it decides.
+        assertEquals(refusal, effectiveRecord(voterKeyState(row(identifierA, refusal)), saved))
+        rules.use = refusedUse
+        assertEquals(
+            StoredVoterDecision.REFUSED,
+            storedVoterDecision(voterKeyState(row(identifierA, refusal)), saved, rules),
+        )
+
+        // A refusal that could not be saved is never retired by Room's older record.
+        val unsaved = PickedKeyCheckState(identifierA, refusal, saved = false)
+        assertEquals(refusal, effectiveRecord(voterKeyState(row(identifierA, undetermined)), unsaved))
+    }
+
     /** A check started again for a re-picked key holds it until that check finishes. */
     @Test
     fun shouldHoldAReCheckedKeyUntilTheNewCheckFinishes() {
