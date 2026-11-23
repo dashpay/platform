@@ -2609,10 +2609,10 @@
           "reason": null
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
+          "sdk": "supported",
+          "example_app": "supported",
           "restart": "not_applicable",
-          "reason": "No JNI bridge, Kotlin wrapper or KotlinExampleApp screen yet for the contract moderation and fee pot reads. Port from packages/swift-sdk/Sources/SwiftDashSDK/ContractModeration and the SwiftExampleApp Views/ContractModeration screens, reusing their contractModeration.* accessibility identifiers as testTags; the list and team action status arguments are the bytes 0 banlist, 1 suspensions, 2 warnings and 0 active, 1 closed."
+          "reason": null
         }
       },
       "verification": [
@@ -2645,6 +2645,37 @@
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
           "id": "DC-06",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/moderation/ContractModerationModelsTest.kt",
+          "id": "shouldDecodeTheSharedKeptFieldsFixtureByItsTags",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*ContractModerationModelsTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "contractModerationSymbolsBindAndRejectInvalidInput",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/contracts/moderation/ModerationSupportTest.kt",
+          "id": "shouldDropAPageFromASupersededRead",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*ModerationSupportTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "DC-08",
           "covers_restart": false
         }
       ]
