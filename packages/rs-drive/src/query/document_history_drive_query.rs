@@ -142,9 +142,45 @@ pub struct SerializedDocumentHistoryDriveQueryExecutionResult {
 }
 
 impl SerializedDocumentHistoryDriveQueryExecutionResult {
-    /// Materializes each header-validated revision entry into a [`Document`], enforcing
-    /// `budget` across the entire page.
+    /// Materializes each header-validated revision entry into a [`Document`],
+    /// enforcing a decoded-value budget proportional to each revision's encoded
+    /// byte length ([`Document::from_bytes_bounded`]).
     pub fn into_documents(
+        self,
+        document_id: &[u8; 32],
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
+        let entries = self
+            .entries
+            .into_iter()
+            .map(|entry| {
+                let document = Document::from_bytes_bounded(
+                    &entry.document_bytes,
+                    document_type,
+                    platform_version,
+                )?;
+                if document.id().as_slice() != document_id
+                    || document.revision().unwrap_or(1) != entry.revision
+                {
+                    return Err(corrupt("history revision does not match its key"));
+                }
+                Ok(DocumentHistoryEntry {
+                    time_ms: entry.time_ms,
+                    revision: entry.revision,
+                    document,
+                })
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+        Ok(DocumentHistoryDriveQueryExecutionResult {
+            entries,
+            lifecycle: self.lifecycle,
+        })
+    }
+
+    /// Materializes each header-validated revision entry into a [`Document`], enforcing
+    /// an explicit caller-supplied `budget` across the entire page.
+    pub fn into_documents_with_budget(
         self,
         document_id: &[u8; 32],
         document_type: DocumentTypeRef,
@@ -367,9 +403,12 @@ impl DocumentHistoryDriveQuery {
     ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
         let serialized = self.decode_result_serialized(rows, document_type, version)?;
         match budget {
-            Some(budget) => {
-                serialized.into_documents(&self.document_id, document_type, budget, version)
-            }
+            Some(budget) => serialized.into_documents_with_budget(
+                &self.document_id,
+                document_type,
+                budget,
+                version,
+            ),
             None => serialized.into_documents_unbounded(&self.document_id, document_type, version),
         }
     }

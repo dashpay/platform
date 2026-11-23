@@ -17,7 +17,9 @@ use crate::data_contract::config::v0::DataContractConfigGettersV0;
 use crate::data_contract::config::v1::DataContractConfigGettersV1;
 use crate::data_contract::config::v2::DataContractConfigGettersV2;
 use crate::data_contract::config::DataContractConfig;
-use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use crate::data_contract::document_type::accessors::{
+    DocumentTypeV0Getters, DocumentTypeV2Getters,
+};
 use crate::data_contract::document_type::{property_names, DocumentTypeRef};
 use crate::data_contract::DataContract;
 use crate::document::property_names::{CREATOR_ID, ID, OWNER_ID};
@@ -257,17 +259,6 @@ impl DocumentProperty {
     }
 }
 
-/// Default ceiling on decoded [`Value`]s across one client-side query page
-/// (documents, document history, chained documents, or moderator removal
-/// records).
-///
-/// Ordinary pages hold far fewer values than this, while capping at 262,144
-/// decoded values keeps client memory bounded even when reading contracts
-/// registered at protocol version 14 that declare zero-width typed-array
-/// elements (`minItems: 0, maxItems: 0`), or pages of removal records grown by
-/// moderator field changes.
-pub const DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET: usize = 262_144;
-
 /// Remaining budget of decoded [`Value`]s across one or more serialized
 /// property reads (a document, a private document payload, a removal record's
 /// kept fields, or a whole page of them).
@@ -277,6 +268,12 @@ pub const DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET: usize = 262_144;
 /// with [`DataContractError::DecodedValueBudgetExceeded`] so a crafted payload
 /// or a protocol-version-14 schema with zero-width typed-array elements cannot
 /// expand a small byte slice into unbounded memory.
+///
+/// Callers without a specific cap should size the budget proportionally to the
+/// encoded input via [`Self::for_encoded_payload`] or
+/// [`Self::for_encoded_kept_fields`] rather than using a fixed ceiling, so
+/// legitimate pages carrying large non-zero-width typed arrays always fit while
+/// zero-width expansion remains bounded linearly in the encoded bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DecodedValueBudget {
     remaining: usize,
@@ -298,6 +295,20 @@ impl DecodedValueBudget {
     /// this budget while keeping decoded values proportional to encoded size.
     pub fn for_encoded_payload(encoded_len: usize, document_type: DocumentTypeRef) -> Self {
         Self::new(count_property_nodes(document_type.properties()).saturating_add(encoded_len))
+    }
+
+    /// Creates a budget sized to an encoded `kept_fields` slice of `encoded_len`
+    /// bytes on a removal record of `document_type`: the number of kept
+    /// property nodes (system properties plus kept document properties and
+    /// their nested members) plus `encoded_len`.
+    ///
+    /// Every non-zero-width typed-array element consumes at least one encoded
+    /// byte and every kept non-array property node produces at most one value,
+    /// so any valid removal record without zero-width typed-array elements
+    /// stays within this budget while keeping decoded values proportional to
+    /// encoded size.
+    pub fn for_encoded_kept_fields(encoded_len: usize, document_type: DocumentTypeRef) -> Self {
+        Self::new(count_kept_field_nodes(document_type).saturating_add(encoded_len))
     }
 
     /// How many decoded values remain in the budget.
@@ -364,9 +375,31 @@ fn count_value_nodes(root: &Value) -> usize {
 fn count_property_nodes(properties: &IndexMap<String, DocumentProperty>) -> usize {
     let mut count = 0usize;
     for property in properties.values() {
-        count = count.saturating_add(1);
-        if let DocumentPropertyType::Object(members) = &property.property_type {
-            count = count.saturating_add(count_property_nodes(members));
+        count = count.saturating_add(count_property_type_nodes(&property.property_type));
+    }
+    count
+}
+
+fn count_property_type_nodes(property_type: &DocumentPropertyType) -> usize {
+    match property_type {
+        DocumentPropertyType::Object(members) => {
+            1usize.saturating_add(count_property_nodes(members))
+        }
+        _ => 1,
+    }
+}
+
+/// Counts every property node reachable from `document_type`'s kept-fields list:
+/// one node for each kept system property, plus every declared property node
+/// inside each kept document property (recursively through nested objects).
+fn count_kept_field_nodes(document_type: DocumentTypeRef) -> usize {
+    let mut count = 0usize;
+    for path in document_type.moderator_deletion_kept_fields() {
+        match property_at_path(document_type.properties(), path) {
+            Some(property) => {
+                count = count.saturating_add(count_property_type_nodes(&property.property_type));
+            }
+            None => count = count.saturating_add(1),
         }
     }
     count

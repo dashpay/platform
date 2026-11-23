@@ -5,7 +5,6 @@ use crate::data_contract::document_type::accessors::{
 use crate::data_contract::document_type::property_constraints::SystemProperty;
 use crate::data_contract::document_type::{
     property_at_path, DecodedValueBudget, DocumentPropertyType, DocumentTypeRef,
-    DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
 };
 use crate::data_contract::errors::DataContractError;
 use crate::document::{Document, DocumentV0Getters};
@@ -127,13 +126,13 @@ pub fn decode_kept_fields(
     decode_kept_fields_internal(encoded, document_type, None)
 }
 
-/// Like [`decode_kept_fields`], enforcing [`DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET`] on the
-/// decoded values of a single removal record for client-side readers.
+/// Like [`decode_kept_fields`], enforcing a decoded-value budget proportional to
+/// `encoded.len()` ([`DecodedValueBudget::for_encoded_kept_fields`]) for client-side readers.
 pub fn decode_kept_fields_with_default_budget(
     encoded: &[u8],
     document_type: DocumentTypeRef,
 ) -> Result<BTreeMap<String, Value>, ProtocolError> {
-    let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
+    let mut budget = DecodedValueBudget::for_encoded_kept_fields(encoded.len(), document_type);
     decode_kept_fields_with_budget(encoded, document_type, &mut budget)
 }
 
@@ -315,8 +314,8 @@ impl ContractDocumentRemoval {
         decode_kept_fields(&self.kept_fields, document_type)
     }
 
-    /// Like [`Self::kept_values`], enforcing [`DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET`] for
-    /// single-record client reads (see [`decode_kept_fields_with_default_budget`]).
+    /// Like [`Self::kept_values`], enforcing a decoded-value budget proportional to
+    /// `self.kept_fields.len()` for client reads (see [`decode_kept_fields_with_default_budget`]).
     pub fn kept_values_with_default_budget(
         &self,
         document_type: DocumentTypeRef,

@@ -145,6 +145,59 @@ impl ContenderWithSerializedDocumentV0 {
         })
     }
 
+    pub fn try_into_contender_bounded(
+        self,
+        document_type_ref: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<ContenderV0, ProtocolError> {
+        let ContenderWithSerializedDocumentV0 {
+            identity_id,
+            serialized_document,
+            vote_tally,
+        } = self;
+
+        Ok(ContenderV0 {
+            identity_id,
+            document: serialized_document
+                .map(|document| {
+                    Document::from_bytes_bounded(
+                        document.as_slice(),
+                        document_type_ref,
+                        platform_version,
+                    )
+                })
+                .transpose()?,
+            vote_tally,
+        })
+    }
+
+    pub fn try_to_contender_bounded(
+        &self,
+        document_type_ref: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<ContenderV0, ProtocolError> {
+        let ContenderWithSerializedDocumentV0 {
+            identity_id,
+            serialized_document,
+            vote_tally,
+        } = self;
+
+        Ok(ContenderV0 {
+            identity_id: *identity_id,
+            document: serialized_document
+                .as_ref()
+                .map(|document| {
+                    Document::from_bytes_bounded(
+                        document.as_slice(),
+                        document_type_ref,
+                        platform_version,
+                    )
+                })
+                .transpose()?,
+            vote_tally: *vote_tally,
+        })
+    }
+
     pub fn try_into_contender_with_budget(
         self,
         document_type_ref: DocumentTypeRef,

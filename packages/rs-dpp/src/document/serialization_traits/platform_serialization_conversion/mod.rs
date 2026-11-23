@@ -33,11 +33,31 @@ impl Document {
         }
     }
 
-    /// Reads a serialized document while enforcing `budget` on decoded property
-    /// values. Client-side proof verifiers share one budget across every
-    /// document in a page so zero-width typed-array elements on
-    /// protocol-version-14 contracts cannot expand a small response into
-    /// unbounded memory.
+    /// Reads a serialized document while enforcing a decoded-value budget
+    /// proportional to `serialized_document.len()`
+    /// ([`DecodedValueBudget::for_encoded_payload`]).
+    ///
+    /// Any valid document without zero-width typed-array elements fits within
+    /// this budget regardless of page size, while zero-width typed-array
+    /// elements on protocol-version-14 contracts cannot expand a small byte
+    /// slice into unbounded memory.
+    pub fn from_bytes_bounded(
+        serialized_document: &[u8],
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        let mut budget =
+            DecodedValueBudget::for_encoded_payload(serialized_document.len(), document_type);
+        Self::from_bytes_with_budget(
+            serialized_document,
+            document_type,
+            &mut budget,
+            platform_version,
+        )
+    }
+
+    /// Reads a serialized document while enforcing an explicit `budget` on
+    /// decoded property values.
     pub fn from_bytes_with_budget(
         serialized_document: &[u8],
         document_type: DocumentTypeRef,

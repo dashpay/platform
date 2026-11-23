@@ -15,6 +15,7 @@
 use super::chained_query_e2e_tests::{removal_of, remove_post, with_moderated_posts};
 use super::index_only_e2e_tests::assert_live_root_hash;
 use crate::drive::contract::moderation::types::ContractDocumentRemovalEntry;
+use crate::error::proof::ProofError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::moderated_join::removals_path_query;
@@ -2717,34 +2718,235 @@ fn should_charge_shared_page_budget_for_overlapping_composite_join_clones() {
         sub_queries,
     };
 
-    // Single join: 3 distinct payload documents (184,500 values) fit within the page cap.
+    let expected_root = drive
+        .grove
+        .root_hash(None, &pv.drive.grove_version)
+        .value
+        .expect("root hash");
+
+    // Under encoded-size-proportional budgeting, even a single join referencing PV14 zero-width
+    // bomb payloads fails immediately at decode time with the reconstructed root hash so callers
+    // can authenticate it as an honest refusal.
     let single_join_query = make_query(vec![make_join("left")]);
     let (single_proof, _) = drive
         .query_composite_documents_with_proof(&single_join_query, pv)
         .expect("single-join proof generates");
-    let (expected_root, verified_single) = single_join_query
+    let single_error = single_join_query
         .verify_composite_documents_proof(&single_proof, pv)
-        .expect("single join fits in page budget");
-    assert_eq!(verified_single.sub_results[0].documents().len(), 3);
+        .expect_err("zero-width bomb payload must exceed proportional decode budget");
+    assert!(
+        matches!(
+            single_error,
+            Error::Proof(ProofError::DecodedValueBudgetExceeded { root_hash, .. })
+                if root_hash == expected_root
+        ),
+        "expected ProofError::DecodedValueBudgetExceeded with matching root, got: {single_error:?}"
+    );
 
-    // Two overlapping joins referencing the exact same 3 payload documents clone each
-    // payload a second time (369,000 total retained values > 262,144) and must be refused
-    // with the reconstructed root hash so callers can authenticate it as an honest refusal.
+    // Two overlapping joins referencing those same zero-width bomb payloads also fail with
+    // the reconstructed root hash.
     let overlapping_query = make_query(vec![make_join("left"), make_join("right")]);
     let (overlapping_proof, _) = drive
         .query_composite_documents_with_proof(&overlapping_query, pv)
         .expect("overlapping-join proof generates");
     let error = overlapping_query
         .verify_composite_documents_proof(&overlapping_proof, pv)
-        .expect_err("overlapping join clones must exhaust shared page budget");
+        .expect_err("overlapping join over zero-width bomb payloads must fail");
     assert!(
         matches!(
             error,
-            Error::Proof(crate::error::proof::ProofError::DecodedValueBudgetExceeded {
-                root_hash,
-                ..
-            }) if root_hash == expected_root
+            Error::Proof(ProofError::DecodedValueBudgetExceeded { root_hash, .. })
+                if root_hash == expected_root
         ),
         "expected ProofError::DecodedValueBudgetExceeded with matching root, got: {error:?}"
     );
+
+    // Meanwhile, overlapping joins over legitimate non-zero-width u8 typed-array documents
+    // totaling > 262,144 retained values across page/sub-queries succeed cleanly.
+    let honest_contract = DataContract::from_value(
+        platform_value!({
+            "$formatVersion": "1",
+            "id": Identifier::new([0x64; 32]),
+            "version": 1u32,
+            "ownerId": Identifier::new([0x65; 32]),
+            "config": {
+                "$formatVersion": "1",
+                "canBeDeleted": false,
+                "readonly": false,
+                "keepsHistory": false,
+                "documentsKeepHistoryContractDefault": false,
+                "documentsMutableContractDefault": false,
+                "documentsCanBeDeletedContractDefault": false,
+                "requiresIdentityEncryptionBoundedKey": Value::Null,
+                "requiresIdentityDecryptionBoundedKey": Value::Null,
+                "sizedIntegerTypes": true,
+            },
+            "documentSchemas": {
+                "payload": {
+                    "type": "object",
+                    "documentsMutable": false,
+                    "canBeDeleted": false,
+                    "properties": {
+                        "a": { "type": "array", "maxItems": 1024, "items": { "type": "integer", "minimum": 0, "maximum": 255 }, "position": 0u32 },
+                        "b": { "type": "array", "maxItems": 1024, "items": { "type": "integer", "minimum": 0, "maximum": 255 }, "position": 1u32 },
+                        "c": { "type": "array", "maxItems": 1024, "items": { "type": "integer", "minimum": 0, "maximum": 255 }, "position": 2u32 },
+                    },
+                    "required": ["a", "b", "c"],
+                    "additionalProperties": false,
+                },
+                "card": {
+                    "type": "object",
+                    "documentsMutable": false,
+                    "canBeDeleted": false,
+                    "indices": [
+                        {
+                            "name": "byBucket",
+                            "properties": [
+                                { "bucket": "asc" },
+                                { "seq": "asc" }
+                            ]
+                        }
+                    ],
+                    "properties": {
+                        "bucket": { "type": "string", "minLength": 1, "maxLength": 16, "position": 0u32 },
+                        "seq": { "type": "integer", "minimum": 0, "maximum": 1000, "position": 1u32 },
+                        "left": {
+                            "type": "array",
+                            "byteArray": true,
+                            "minItems": 32,
+                            "maxItems": 32,
+                            "contentMediaType": "application/x.dash.dpp.identifier",
+                            "refersTo": {
+                                "type": "permanentDocument",
+                                "documentType": "payload"
+                            },
+                            "position": 2u32
+                        },
+                        "right": {
+                            "type": "array",
+                            "byteArray": true,
+                            "minItems": 32,
+                            "maxItems": 32,
+                            "contentMediaType": "application/x.dash.dpp.identifier",
+                            "refersTo": {
+                                "type": "permanentDocument",
+                                "documentType": "payload"
+                            },
+                            "position": 3u32
+                        }
+                    },
+                    "required": ["bucket", "seq", "left", "right"],
+                    "additionalProperties": false,
+                }
+            }
+        }),
+        true,
+        pv,
+    )
+    .expect("honest composite contract validates");
+    drive
+        .apply_contract(
+            &honest_contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("apply honest contract");
+    let honest_props = BTreeMap::from([
+        ("a".to_string(), Value::Array(vec![Value::U8(1); 1024])),
+        ("b".to_string(), Value::Array(vec![Value::U8(2); 1024])),
+        ("c".to_string(), Value::Array(vec![Value::U8(3); 1024])),
+    ]);
+    // 50 payloads × 2 overlapping joins = 100 retained payload documents × 3,075 values = 307,500
+    // retained decoded values (> old 262,144 fixed cap).
+    for i in 1u8..=50 {
+        let payload_id = Identifier::new([0xa0u8.wrapping_add(i); 32]);
+        let payload = Document::V0(DocumentV0 {
+            id: payload_id,
+            owner_id: owner,
+            properties: honest_props.clone(),
+            ..Default::default()
+        });
+        insert(&drive, &honest_contract, "payload", &payload);
+
+        let card = Document::V0(DocumentV0 {
+            id: Identifier::new([0xd0u8.wrapping_add(i); 32]),
+            owner_id: owner,
+            properties: BTreeMap::from([
+                ("bucket".to_string(), Value::Text("all".to_string())),
+                ("seq".to_string(), Value::U16(i as u16)),
+                (
+                    "left".to_string(),
+                    Value::Identifier(payload_id.to_buffer()),
+                ),
+                (
+                    "right".to_string(),
+                    Value::Identifier(payload_id.to_buffer()),
+                ),
+            ]),
+            ..Default::default()
+        });
+        insert(&drive, &honest_contract, "card", &card);
+    }
+    let honest_card_type = honest_contract
+        .document_type_for_name("card")
+        .expect("honest card type");
+    let honest_payload_type = honest_contract
+        .document_type_for_name("payload")
+        .expect("honest payload type");
+    let make_honest_join = |source_field: &str| DriveSubQuery {
+        contract: &honest_contract,
+        document_type: honest_payload_type,
+        kind: SubQueryKind::Documents,
+        where_clauses: Vec::new(),
+        order_by: Default::default(),
+        limit: None,
+        binding: Some(SubQueryBinding {
+            source: BindingSource::Page,
+            source_property: source_field.to_string(),
+            field: "$id".to_string(),
+        }),
+    };
+    let honest_overlapping_query = DriveDocumentQuery {
+        contract: &honest_contract,
+        document_type: honest_card_type,
+        internal_clauses: InternalClauses {
+            equal_clauses: BTreeMap::from([(
+                "bucket".to_string(),
+                WhereClause {
+                    field: "bucket".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Text("all".to_string()),
+                },
+            )]),
+            ..Default::default()
+        },
+        offset: None,
+        limit: Some(50),
+        order_by: [(
+            "seq".to_string(),
+            OrderClause {
+                field: "seq".to_string(),
+                ascending: true,
+            },
+        )]
+        .into_iter()
+        .collect(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: Vec::new(),
+        sub_queries: vec![make_honest_join("left"), make_honest_join("right")],
+    };
+    let (honest_proof, _) = drive
+        .query_composite_documents_with_proof(&honest_overlapping_query, pv)
+        .expect("honest overlapping-join proof generates");
+    let (_, verified_honest) = honest_overlapping_query
+        .verify_composite_documents_proof(&honest_proof, pv)
+        .expect("honest overlapping joins exceeding 262k retained values must verify cleanly");
+    assert_eq!(verified_honest.page_documents.len(), 50);
+    assert_eq!(verified_honest.sub_results[0].documents().len(), 50);
+    assert_eq!(verified_honest.sub_results[1].documents().len(), 50);
 }
