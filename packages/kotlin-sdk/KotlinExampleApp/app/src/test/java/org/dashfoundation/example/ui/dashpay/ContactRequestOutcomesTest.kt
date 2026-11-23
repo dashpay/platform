@@ -663,6 +663,48 @@ class ContactRequestOutcomesTest {
         assertEquals("This person already sent you a request. Accept it instead?", accept.message)
     }
 
+    /**
+     * Add Contact fixes the submission at the tap: turning "Send privately"
+     * off, editing the label or picking another name afterwards does not
+     * change the request, the collision accept or the notice.
+     */
+    @Test
+    fun shouldKeepTheChoicesMadeAtTheTapThroughLaterEdits() {
+        val recipient = byteArrayOf(1, 2, 3)
+        var sendPrivately = true
+        var label = "  Main wallet "
+        var dpns: String? = "alice"
+        val submission = ContactRequestSubmission.of(recipient, sendPrivately, label, dpns)
+        sendPrivately = false
+        label = "Other"
+        dpns = "bob"
+        recipient[0] = 9
+
+        assertTrue(submission.sendPrivately)
+        assertEquals("Main wallet", submission.accountLabel)
+        assertEquals("alice", submission.dpnsLabel)
+        assertEquals(1.toByte(), submission.recipient[0])
+        assertEquals(CollisionAccept.PrivateReply, submission.collisionAccept)
+        assertFalse(sendPrivately)
+        assertEquals("Other", label)
+        assertEquals("bob", dpns)
+    }
+
+    /** A private submission that may have gone through names the read that shows it; a public one the next sync. */
+    @Test
+    fun shouldNameThePrivateReadForAPrivateSubmissionThatMayHaveGoneThrough() {
+        val private = ContactRequestSubmission.of(byteArrayOf(1), sendPrivately = true, accountLabel = "", dpnsLabel = null)
+        assertNull(private.accountLabel)
+        assertEquals(
+            "This may have gone through. It shows up once private requests are read: pull to refresh " +
+                "on Requests, or tap Sync private requests on Add Contact. Do not submit it again.",
+            private.mayHaveGoneThroughMessage,
+        )
+        val public = ContactRequestSubmission.of(byteArrayOf(1), sendPrivately = false, accountLabel = "", dpnsLabel = null)
+        assertEquals(ContactRequestSubmissionOutcome.MAY_HAVE_GONE_THROUGH_MESSAGE, public.mayHaveGoneThroughMessage)
+        assertEquals(CollisionAccept.ReplyInKind, public.collisionAccept)
+    }
+
     /** An unconfirmed submission marks only its own contact, and a read that does not cover it leaves the mark. */
     @Test
     fun shouldKeepAnUnconfirmedSubmissionAReadDidNotCover() {

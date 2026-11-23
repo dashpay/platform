@@ -60,6 +60,15 @@ sealed interface ContactRequestSubmissionOutcome {
             "after the next sync confirms it; do not submit it again."
 
         /**
+         * [MAY_HAVE_GONE_THROUGH_MESSAGE] for a private send or reply: the
+         * background DashPay sync does not read the private store, so the user
+         * is told which read does.
+         */
+        const val PRIVATE_MAY_HAVE_GONE_THROUGH_MESSAGE = "This may have gone through. It shows " +
+            "up once private requests are read: pull to refresh on Requests, or tap Sync " +
+            "private requests on Add Contact. Do not submit it again."
+
+        /**
          * A public request or accept that may have gone through, as the
          * wallet holds it until a sync settles its outcome.
          */
@@ -493,6 +502,47 @@ enum class CollisionAccept {
 
     companion object {
         fun of(sendPrivately: Boolean): CollisionAccept = if (sendPrivately) PrivateReply else ReplyInKind
+    }
+}
+
+/**
+ * What Add Contact submits, fixed when Send Request is tapped: the
+ * recipient, whether "Send privately" was on, the account label and the DPNS
+ * name the recipient was found by. The local lookup for a request they
+ * already sent runs after the tap, and the collision dialog waits on the
+ * user; both must act on the choice made at the tap, never on the form as it
+ * reads later, or a request submitted privately could go out publicly.
+ */
+class ContactRequestSubmission(
+    val recipient: ByteArray,
+    val sendPrivately: Boolean,
+    val accountLabel: String?,
+    val dpnsLabel: String?,
+) {
+    /** How the collision dialog accepts the request the recipient already sent. */
+    val collisionAccept: CollisionAccept get() = CollisionAccept.of(sendPrivately)
+
+    /** The Submitted notice for a send or accept that may have gone through. */
+    val mayHaveGoneThroughMessage: String
+        get() = if (sendPrivately) {
+            ContactRequestSubmissionOutcome.PRIVATE_MAY_HAVE_GONE_THROUGH_MESSAGE
+        } else {
+            ContactRequestSubmissionOutcome.MAY_HAVE_GONE_THROUGH_MESSAGE
+        }
+
+    companion object {
+        /** The submission the form describes now; the label is trimmed and dropped when empty. */
+        fun of(
+            recipient: ByteArray,
+            sendPrivately: Boolean,
+            accountLabel: String,
+            dpnsLabel: String?,
+        ): ContactRequestSubmission = ContactRequestSubmission(
+            recipient = recipient.copyOf(),
+            sendPrivately = sendPrivately,
+            accountLabel = accountLabel.trim().ifEmpty { null },
+            dpnsLabel = dpnsLabel,
+        )
     }
 }
 
