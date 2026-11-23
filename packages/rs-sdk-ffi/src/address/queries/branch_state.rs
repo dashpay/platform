@@ -7,11 +7,40 @@ use dash_sdk::dapi_grpc::platform::v0::{
 };
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::drive::drive::Drive;
+use dash_sdk::platform::address_sync::address_branch_query_depth;
 use std::panic::{self, AssertUnwindSafe};
 
+use super::address_funds_elements::address_funds_elements_into_ffi;
 use crate::sdk::SDKWrapper;
 use crate::types::{DashSDKBranchState, DashSDKLeafBoundary, DashSDKTrunkStateElement, SDKHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
+
+/// Returned by [`dash_sdk_address_branch_query_depth`] for a null handle; no
+/// valid branch query depth is 0.
+const NO_BRANCH_QUERY_DEPTH: u8 = 0;
+
+/// The depth to pass to [`dash_sdk_address_fetch_branch_state`] for a leaf
+/// boundary of about `estimated_count` elements (0 when the count is
+/// unknown), under the SDK's platform version.
+///
+/// This is the depth the address sync picks for such a leaf; see
+/// `dash_sdk::platform::address_sync::address_branch_query_depth`. Returns
+/// 0 for a null handle.
+///
+/// # Safety
+/// `sdk_handle` must be null or a valid SDK handle for the duration of this
+/// call.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_address_branch_query_depth(
+    sdk_handle: *const SDKHandle,
+    estimated_count: u64,
+) -> u8 {
+    if sdk_handle.is_null() {
+        return NO_BRANCH_QUERY_DEPTH;
+    }
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
+    address_branch_query_depth(estimated_count, wrapper.sdk.version())
+}
 
 /// Fetch the branch state of a subtree in the address tree.
 ///
@@ -106,6 +135,16 @@ unsafe fn dash_sdk_address_fetch_branch_state_inner(
         ));
     }
 
+    // The query depth is a `u8` in GroveDB; a wider value is refused here
+    // rather than truncated. The range itself is checked by the server and
+    // by the proof verification below, from the platform version.
+    let Ok(depth_u8) = u8::try_from(depth) else {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            format!("Depth {depth} is not a valid branch query depth"),
+        ));
+    };
+
     let wrapper = &*(sdk_handle as *const SDKWrapper);
 
     // Convert inputs to Rust types
@@ -158,28 +197,15 @@ unsafe fn dash_sdk_address_fetch_branch_state_inner(
         let branch_result = Drive::verify_address_funds_branch_query(
             &proof_bytes,
             key_vec,
-            depth as u8,
+            depth_u8,
             hash_array,
             platform_version,
         )
         .map_err(|e| FFIError::InternalError(format!("Proof verification failed: {}", e)))?;
 
-        // Convert elements to FFI format
-        let mut elements: Vec<DashSDKTrunkStateElement> = Vec::new();
-        for (elem_key, element) in branch_result.elements.iter() {
-            if let Some((balance, nonce)) = extract_balance_nonce_from_element(element) {
-                let elem_key_vec: Vec<u8> = elem_key.clone();
-                let elem_key_len = elem_key_vec.len();
-                let elem_key_ptr = Box::into_raw(elem_key_vec.into_boxed_slice()) as *mut u8;
-
-                elements.push(DashSDKTrunkStateElement {
-                    key: elem_key_ptr,
-                    key_len: elem_key_len,
-                    nonce,
-                    balance,
-                });
-            }
-        }
+        // Decode every element as address funds; an undecodable one fails
+        // the call instead of being dropped.
+        let elements = address_funds_elements_into_ffi(branch_result.elements.iter())?;
 
         // Convert leaf keys to FFI format
         let mut leaf_boundaries: Vec<DashSDKLeafBoundary> = Vec::new();
@@ -225,36 +251,34 @@ unsafe fn dash_sdk_address_fetch_branch_state_inner(
     }
 }
 
-/// Extract balance and nonce from a GroveDB Element.
-/// Returns None if the element format is not recognized.
-fn extract_balance_nonce_from_element(
-    element: &dash_sdk::drive::grovedb::Element,
-) -> Option<(u64, u32)> {
-    use dash_sdk::drive::grovedb::Element;
+#[cfg(test)]
+mod tests {
+    use dash_sdk::platform::address_sync::address_branch_query_depth;
 
-    match element {
-        Element::Item(data, _) => {
-            // Address funds are encoded as: nonce (4 bytes) + balance (8 bytes)
-            if data.len() >= 12 {
-                let nonce = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
-                let balance = u64::from_be_bytes([
-                    data[4], data[5], data[6], data[7], data[8], data[9], data[10], data[11],
-                ]);
-                Some((balance, nonce))
-            } else if data.len() >= 8 {
-                // Fallback: just balance
-                let balance = u64::from_be_bytes([
-                    data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
-                ]);
-                Some((balance, 0))
-            } else {
-                None
-            }
+    use super::dash_sdk_address_branch_query_depth;
+    use crate::sdk::SDKWrapper;
+    use crate::test_utils::test_utils::{create_mock_sdk_handle, destroy_mock_sdk_handle};
+
+    #[test]
+    fn should_return_zero_branch_query_depth_for_a_null_handle() {
+        let depth = unsafe { dash_sdk_address_branch_query_depth(std::ptr::null(), 100) };
+
+        assert_eq!(depth, 0);
+    }
+
+    #[test]
+    fn should_return_the_sdk_branch_query_depth_for_the_handle_version() {
+        let handle = create_mock_sdk_handle();
+        let platform_version = unsafe { &*(handle as *const SDKWrapper) }.sdk.version();
+
+        for estimated_count in [0, 1, 33, 54, 1_000_000] {
+            let depth = unsafe { dash_sdk_address_branch_query_depth(handle, estimated_count) };
+            assert_eq!(
+                depth,
+                address_branch_query_depth(estimated_count, platform_version)
+            );
         }
-        Element::SumItem(balance, _) => {
-            // SumItem directly contains the balance
-            Some((*balance as u64, 0))
-        }
-        _ => None,
+
+        destroy_mock_sdk_handle(handle);
     }
 }

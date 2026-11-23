@@ -369,10 +369,11 @@ impl ContractDocumentRemovalsPageQuery {
     }
 
     /// Reads the records this query names, each with the values it keeps of its document
-    /// ([`ContractDocumentRemoval::kept_values`]), and the query of the page after them. The
-    /// kept values are encoded under the document's type, so the contract is fetched when a
-    /// record keeps any; a read whose records keep none costs the records' request alone.
-    /// `None` when [`ContractDocumentRemovals::fetch`] returns none.
+    /// ([`ContractDocumentRemovals::decode_kept_values`], sharing
+    /// `DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET` across the whole page), and the query of the
+    /// page after them. The kept values are encoded under the document's type, so the contract is
+    /// fetched when a record keeps any; a read whose records keep none costs the records' request
+    /// alone. `None` when [`ContractDocumentRemovals::fetch`] returns none.
     ///
     /// A compatible contract update can add members to a kept object, and the values read
     /// only the members the type they are read under declares. So the contract must be
@@ -430,18 +431,13 @@ impl ContractDocumentRemovalsPageQuery {
                     .map_err(ProtocolError::from)
             })
             .transpose()?;
-        let removals = page
-            .0
-            .into_iter()
-            .map(|entry| {
-                // A record that keeps nothing reads as no values under any type
-                let kept_values = match document_type {
-                    Some(document_type) => entry.removal.kept_values(document_type)?,
-                    None => BTreeMap::new(),
-                };
-                Ok((entry, kept_values))
-            })
-            .collect::<Result<Vec<_>, Error>>()?;
+        // Share one decoded-value budget across every removal record in the page; a page
+        // whose records keep nothing skips contract fetching and reads as empty maps.
+        let kept_values_list = match document_type {
+            Some(document_type) => page.decode_kept_values(document_type)?,
+            None => vec![BTreeMap::new(); page.0.len()],
+        };
+        let removals = page.0.into_iter().zip(kept_values_list).collect();
         Ok(Some(ContractDocumentRemovalsWithKeptValues {
             removals,
             next,

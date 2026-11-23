@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::io::BufReader;
+use crate::verify::with_proved_root_on_budget_exceeded;
 use crate::drive::balances::balance_path_vec;
 use grovedb::query_result_type::PathKeyOptionalElementTrio;
 use grovedb::PathQuery;
@@ -13,11 +14,12 @@ use dpp::data_contract::associated_token::token_configuration::accessors::v0::To
 use dpp::data_contract::associated_token::token_keeps_history_rules::accessors::v0::TokenKeepsHistoryRulesV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
-use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::document_type::{
+    DecodedValueBudget, DocumentTypeRef, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
+};
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::document::document_methods::DocumentMethodsV0;
-use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::util::hash::hash_double;
 use dpp::document::property_names::PRICE;
 use dpp::fee::Credits;
@@ -468,12 +470,18 @@ impl Drive {
                                 .map(|element| element.into_item_bytes().map_err(Error::from))
                                 .transpose()?
                                 .map(|serialized| {
-                                    Document::from_bytes(
+                                    let mut budget = DecodedValueBudget::new(
+                                        DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
+                                    );
+                                    Document::from_bytes_with_budget(
                                         serialized.as_slice(),
                                         document_type,
+                                        &mut budget,
                                         platform_version,
                                     )
-                                    .map_err(Error::from)
+                                    .map_err(|error| {
+                                        with_proved_root_on_budget_exceeded(root_hash, error.into())
+                                    })
                                 })
                                 .transpose()?;
                             (root_hash, document, Some(owner_balance))
@@ -1502,7 +1510,6 @@ impl Drive {
                 verify_contract_document_restore_execution(
                     proof,
                     transition,
-                    known_contracts_provider_fn,
                     carries_owner_balance,
                     platform_version,
                 )
@@ -2219,7 +2226,6 @@ impl Drive {
                 use crate::drive::shielded::paths::shielded_credit_pool_nullifiers_path_vec;
                 use dpp::data_contracts::withdrawals_contract;
                 use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
-                use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
                 use dpp::document::Document;
                 use dpp::state_transition::proof_result::StateTransitionProofResult::VerifiedShieldedNullifiersWithWithdrawalDocument;
                 use dpp::state_transition::shielded_withdrawal_transition::accessors::ShieldedWithdrawalTransitionAccessorsV0;
@@ -2331,11 +2337,19 @@ impl Drive {
                 })?;
 
                 let doc = match document_element {
-                    Some(Element::Item(serialized, _)) => Document::from_bytes(
-                        serialized.as_slice(),
-                        document_type,
-                        platform_version,
-                    )?,
+                    Some(Element::Item(serialized, _)) => {
+                        let mut budget =
+                            DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
+                        Document::from_bytes_with_budget(
+                            serialized.as_slice(),
+                            document_type,
+                            &mut budget,
+                            platform_version,
+                        )
+                        .map_err(|error| {
+                            with_proved_root_on_budget_exceeded(root_hash, error.into())
+                        })?
+                    }
                     Some(_) => {
                         return Err(Error::Proof(ProofError::CorruptedProof(
                             "expected an item element for withdrawal document".to_string(),
@@ -3548,12 +3562,11 @@ fn verify_contract_team_action_execution(
 /// A moderator's document restore is proved by the document's removal record, now marked
 /// restored by the transition's signer, and holding the hash of the bytes the transition
 /// brought back. The document itself is not in the proof: the record says it is live again,
-/// and the hash says it is the document the transition carries. The id is inside those bytes,
-/// read under the contract's document type, which the verifier resolves through the provider.
+/// and the hash says it is the document the transition carries. The id is read directly from
+/// those bytes' header, without resolving the data contract through the provider.
 fn verify_contract_document_restore_execution(
     proof: &[u8],
     transition: &ContractUserModerationTransition,
-    known_contracts_provider_fn: &ContractLookupFn,
     verify_subset_of_proof: bool,
     platform_version: &PlatformVersion,
 ) -> Result<(RootHash, StateTransitionProofResult), Error> {
@@ -3563,15 +3576,7 @@ fn verify_contract_document_restore_execution(
             "only a document restore is verified by its marked removal record".to_string(),
         )));
     };
-    let contract = known_contracts_provider_fn(&contract_id)?.ok_or(Error::Proof(
-        ProofError::UnknownContract(format!(
-            "unknown contract with id {} in contract document restore verification",
-            contract_id
-        )),
-    ))?;
-    let document_type = contract.document_type_for_name(document_type_name)?;
-    let document = Document::from_bytes(document_bytes, document_type, platform_version)?;
-    let document_id = document.id();
+    let document_id = Document::id_from_bytes(document_bytes, platform_version)?;
     let document_hash = hash_double(document_bytes);
     let (root_hash, mut entries) = Drive::verify_contract_document_removals(
         proof,

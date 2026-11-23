@@ -56,7 +56,9 @@ pub mod yes_no_vote_polls;
 
 use crate::from_request::TryFromRequest;
 use crate::verify::{
-    document_query_proof_bytes, supported_grovedb_proof_bytes, require_supported_grovedb_proof_bytes, verify_page_drive_proves, verify_tenderdash_proof, verify_tenderdash_signature,
+    document_query_proof_bytes, require_supported_grovedb_proof_bytes,
+    supported_grovedb_proof_bytes, verify_page_drive_proves, verify_tenderdash_proof,
+    verify_tenderdash_signature, MapProvedBudgetError,
 };
 use crate::{types::*, ContextProvider, ContextProviderError, Error};
 use dapi_grpc::platform::v0::get_evonodes_proposed_epoch_blocks_by_range_request::get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start;
@@ -1147,7 +1149,16 @@ impl FromProof<platform::GetRecentAddressBalanceChangesRequest> for RecentAddres
                 }
             };
 
-        let limit = Some(100u16); // Same limit as in query handler
+        // The same version-table value the query handler limits its answer
+        // to: 100, the literal used here before, in every shipped protocol
+        // version.
+        let limit = Some(
+            platform_version
+                .drive_abci
+                .query
+                .address_funds_queries
+                .recent_address_balance_changes_max_blocks,
+        );
 
         let (root_hash, verified_changes) = if start_height_exclusive {
             Drive::verify_recent_address_balance_changes_after(
@@ -1215,9 +1226,16 @@ impl FromProof<platform::GetRecentCompactedAddressBalanceChangesRequest>
             }
         };
 
-        // Ensure it is the same limit as in query handler; see
-        // packages/rs-drive-abci/src/query/address_funds/recent_compacted_address_balance_changes/v0/mod.rs
-        let limit = Some(25u16);
+        // The same version-table value the query handler limits its answer
+        // to: 25, the literal used here before, in every shipped protocol
+        // version.
+        let limit = Some(
+            platform_version
+                .drive_abci
+                .query
+                .address_funds_queries
+                .recent_compacted_address_balance_changes_max_ranges,
+        );
 
         if platform_version
             .drive
@@ -1566,7 +1584,7 @@ fn verify_document_history_response_v0(
         offset,
         query_version,
     )
-    .map_drive_error(proof, metadata)?;
+    .map_proved_budget_error(proof, metadata, provider)?;
     verify_tenderdash_proof(proof, metadata, &root, provider)?;
     Ok((
         history.map(|history| DocumentHistory {
@@ -1639,7 +1657,7 @@ fn verify_document_history_response_v1(
             error: error.to_string(),
         })?;
     let query_version = proof_query_platform_version(metadata)?;
-    let (root, history) = Drive::verify_document_history(
+    let (root, serialized_history) = Drive::verify_document_history_serialized(
         &query,
         supported_grovedb_proof_bytes(proof)?,
         document_type,
@@ -1647,6 +1665,19 @@ fn verify_document_history_response_v1(
     )
     .map_drive_error(proof, metadata)?;
     verify_tenderdash_proof(proof, metadata, &root, provider)?;
+    let mut budget = dpp::data_contract::document_type::DecodedValueBudget::new(
+        dpp::data_contract::document_type::DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
+    );
+    let history = serialized_history
+        .into_documents(
+            &query.document_id,
+            document_type,
+            &mut budget,
+            query_version,
+        )
+        .map_err(|error| Error::UnusableVerifiedResult {
+            reason: format!("verified document history revision could not be decoded: {error}"),
+        })?;
     Ok((
         Some(DocumentHistory {
             entries: history.entries,
@@ -1845,7 +1876,7 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
                     query_platform_version,
                     platform_version,
                 )
-                .map_drive_error(proof, mtd)
+                .map_proved_budget_error(proof, mtd, provider)
             })?;
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
@@ -2247,7 +2278,7 @@ where
                 document_query_proof_bytes(proof, mtd, platform_version)?,
                 platform_version,
             )
-            .map_drive_error(proof, mtd)?;
+            .map_proved_budget_error(proof, mtd, provider)?;
 
         let documents = documents
             .into_iter()

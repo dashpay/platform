@@ -26,7 +26,6 @@ use crate::sdk::WasmSdk;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::Identifier;
-use dash_sdk::dpp::ProtocolError;
 use dash_sdk::platform::documents::composite_document_query::{
     CompositeBindingSource, CompositeSubQuery,
 };
@@ -402,6 +401,13 @@ fn composite_result_to_js(
         &query.document_type_name,
     );
 
+    let decoded_removal_groups = composite.decode_sub_result_removal_kept_values(|index| {
+        let sub_query = &query.sub_queries[index];
+        sub_query
+            .data_contract
+            .document_type_for_name(&sub_query.document_type_name)
+    })?;
+
     let sub_results = Array::new();
     for (index, (sub_query, result)) in query
         .sub_queries
@@ -429,16 +435,14 @@ fn composite_result_to_js(
                     .get(index)
                     .map(|removals| removals.as_slice())
                     .unwrap_or_default();
-                if !removals.is_empty() {
-                    let removed_type = sub_query
-                        .data_contract
-                        .document_type_for_name(&sub_query.document_type_name)
-                        .map_err(ProtocolError::from)?;
-                    for removal in removals {
-                        removed.push(&removal_entry_to_js(removal, removed_type, |id| {
-                            IdentifierWasm::from(id).into()
-                        })?);
-                    }
+                let kept_values_list = decoded_removal_groups
+                    .get(index)
+                    .map(|values| values.as_slice())
+                    .unwrap_or_default();
+                for (removal, kept_values) in removals.iter().zip(kept_values_list.iter()) {
+                    removed.push(&removal_entry_to_js(removal, kept_values, |id| {
+                        IdentifierWasm::from(id).into()
+                    })?);
                 }
                 set_field(&entry, "removed", &removed)?;
                 set_field(

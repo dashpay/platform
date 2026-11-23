@@ -4,6 +4,7 @@ use dash_sdk::platform::Fetch;
 use drive_proof_verifier::types::PlatformAddressTrunkState;
 use std::panic::{self, AssertUnwindSafe};
 
+use super::address_funds_elements::address_funds_elements_into_ffi;
 use crate::sdk::SDKWrapper;
 use crate::types::{DashSDKLeafBoundary, DashSDKTrunkState, DashSDKTrunkStateElement, SDKHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
@@ -77,24 +78,9 @@ unsafe fn dash_sdk_address_fetch_trunk_state_inner(sdk_handle: *const SDKHandle)
         let grove_result = trunk_state.into_inner();
         let checkpoint_height = metadata.height;
 
-        // Convert elements to FFI format
-        let mut elements: Vec<DashSDKTrunkStateElement> = Vec::new();
-        for (key, element) in grove_result.elements.iter() {
-            // Extract balance and nonce from Element
-            // Element is typically Item with encoded balance/nonce
-            if let Some((balance, nonce)) = extract_balance_nonce_from_element(element) {
-                let key_vec: Vec<u8> = key.clone();
-                let key_len = key_vec.len();
-                let key_ptr = Box::into_raw(key_vec.into_boxed_slice()) as *mut u8;
-
-                elements.push(DashSDKTrunkStateElement {
-                    key: key_ptr,
-                    key_len,
-                    nonce,
-                    balance,
-                });
-            }
-        }
+        // Decode every element as address funds; an undecodable one fails
+        // the call instead of being dropped.
+        let elements = address_funds_elements_into_ffi(grove_result.elements.iter())?;
 
         // Convert leaf keys to FFI format
         // leaf_keys is a BTreeMap<Vec<u8>, LeafInfo>
@@ -139,39 +125,5 @@ unsafe fn dash_sdk_address_fetch_trunk_state_inner(sdk_handle: *const SDKHandle)
     match result {
         Ok(state) => DashSDKResult::success_trunk_state(state),
         Err(e) => DashSDKResult::error(e.into()),
-    }
-}
-
-/// Extract balance and nonce from a GroveDB Element.
-/// Returns None if the element format is not recognized.
-fn extract_balance_nonce_from_element(
-    element: &dash_sdk::drive::grovedb::Element,
-) -> Option<(u64, u32)> {
-    use dash_sdk::drive::grovedb::Element;
-
-    match element {
-        Element::Item(data, _) => {
-            // Address funds are encoded as: nonce (4 bytes) + balance (8 bytes)
-            if data.len() >= 12 {
-                let nonce = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
-                let balance = u64::from_be_bytes([
-                    data[4], data[5], data[6], data[7], data[8], data[9], data[10], data[11],
-                ]);
-                Some((balance, nonce))
-            } else if data.len() >= 8 {
-                // Fallback: just balance
-                let balance = u64::from_be_bytes([
-                    data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
-                ]);
-                Some((balance, 0))
-            } else {
-                None
-            }
-        }
-        Element::SumItem(balance, _) => {
-            // SumItem directly contains the balance
-            Some((*balance as u64, 0))
-        }
-        _ => None,
     }
 }

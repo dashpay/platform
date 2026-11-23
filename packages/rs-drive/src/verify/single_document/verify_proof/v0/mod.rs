@@ -1,11 +1,12 @@
-use crate::verify::RootHash;
+use crate::verify::{with_proved_root_on_budget_exceeded, RootHash};
 
 use crate::error::Error;
 use crate::query::SingleDocumentDriveQuery;
-use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::document_type::{
+    DecodedValueBudget, DocumentTypeRef, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
+};
 use dpp::document::Document;
 
-use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::version::PlatformVersion;
 
 impl SingleDocumentDriveQuery {
@@ -43,8 +44,17 @@ impl SingleDocumentDriveQuery {
             .map(|(root_hash, serialized)| {
                 let document = serialized
                     .map(|serialized| {
-                        Document::from_bytes(serialized.as_slice(), document_type, platform_version)
-                            .map_err(Error::from)
+                        let mut budget =
+                            DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
+                        Document::from_bytes_with_budget(
+                            serialized.as_slice(),
+                            document_type,
+                            &mut budget,
+                            platform_version,
+                        )
+                        .map_err(|error| {
+                            with_proved_root_on_budget_exceeded(root_hash, error.into())
+                        })
                     })
                     .transpose()?;
                 Ok((root_hash, document))

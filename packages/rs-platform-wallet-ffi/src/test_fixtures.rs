@@ -16,21 +16,42 @@ use crate::xpub_render::platform_wallet_free_string;
 /// A manager over a mock SDK with no-op persistence and event callbacks:
 /// registrable in the handle storage, never touching the network.
 pub(crate) fn mock_manager() -> PlatformWalletManager<FFIPersister> {
+    mock_manager_with(noop_persister())
+}
+
+/// A persister whose changeset brackets succeed and that stores nothing.
+pub(crate) fn noop_persister() -> FFIPersister {
     unsafe extern "C" fn begin(_: *mut std::ffi::c_void, _: *const u8) -> i32 {
         0
     }
     unsafe extern "C" fn end(_: *mut std::ffi::c_void, _: *const u8, _: bool) -> i32 {
         0
     }
-    mock_manager_with(FFIPersister::new(PersistenceCallbacks {
+    FFIPersister::new(PersistenceCallbacks {
         on_changeset_begin_fn: Some(begin),
         on_changeset_end_fn: Some(end),
         ..Default::default()
-    }))
+    })
 }
 
 /// [`mock_manager`] over `persister`.
 pub(crate) fn mock_manager_with(persister: FFIPersister) -> PlatformWalletManager<FFIPersister> {
+    mock_manager_over(
+        dash_sdk::SdkBuilder::new_mock()
+            .with_network(dashcore::Network::Testnet)
+            .build()
+            .expect("mock sdk"),
+        persister,
+    )
+}
+
+/// [`mock_manager_with`] over `sdk`. The manager keeps a clone of `sdk`, and
+/// clones of a mock SDK share its expectations, so a test that keeps `sdk`
+/// can still set the responses the manager's wallets receive.
+pub(crate) fn mock_manager_over(
+    sdk: dash_sdk::Sdk,
+    persister: FFIPersister,
+) -> PlatformWalletManager<FFIPersister> {
     let events = FFIEventHandler::new(
         EventHandlerCallbacks {
             context: std::ptr::null_mut(),
@@ -45,16 +66,7 @@ pub(crate) fn mock_manager_with(persister: FFIPersister) -> PlatformWalletManage
         EventExtensionCallbacks::default(),
     );
     let _runtime_guard = runtime().enter();
-    PlatformWalletManager::new(
-        Arc::new(
-            dash_sdk::SdkBuilder::new_mock()
-                .with_network(dashcore::Network::Testnet)
-                .build()
-                .expect("mock sdk"),
-        ),
-        Arc::new(persister),
-        Arc::new(events),
-    )
+    PlatformWalletManager::new(Arc::new(sdk), Arc::new(persister), Arc::new(events))
 }
 
 /// Runs `call` with a dangling out pointer and returns the C string it wrote,

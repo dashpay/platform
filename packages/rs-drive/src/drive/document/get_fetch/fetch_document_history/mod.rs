@@ -9,6 +9,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::document_history_drive_query::{
     DocumentHistoryDriveQuery, DocumentHistoryDriveQueryExecutionResult,
+    SerializedDocumentHistoryDriveQueryExecutionResult,
 };
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
@@ -80,6 +81,36 @@ impl Drive {
             }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_document_history".to_string(),
+                known_versions: vec![1],
+                received: version,
+            })),
+        }
+    }
+
+    /// Fetches a page and lifecycle from the per-type composite-keyed history tree,
+    /// validating each entry from its header without decoding document properties.
+    pub fn fetch_document_history_serialized(
+        &self,
+        query: &DocumentHistoryDriveQuery,
+        document_type: DocumentTypeRef,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<SerializedDocumentHistoryDriveQueryExecutionResult, Error> {
+        match platform_version
+            .drive
+            .methods
+            .document
+            .query
+            .fetch_document_history
+        {
+            1 => self.fetch_document_history_serialized_v1(
+                query,
+                document_type,
+                transaction,
+                platform_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "fetch_document_history_serialized".to_string(),
                 known_versions: vec![1],
                 received: version,
             })),
@@ -506,6 +537,191 @@ mod tests {
             revisions,
             vec![1, 2, 3],
             "every accepted edit must remain readable"
+        );
+    }
+
+    #[test]
+    fn should_enforce_shared_decoded_value_budget_on_pv15_document_history_proof() {
+        use crate::query::DocumentHistoryFilter;
+        use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+        use dpp::data_contract::DataContract;
+        use dpp::document::DocumentV0;
+        use dpp::platform_value::{platform_value, Identifier, Value};
+        use std::collections::BTreeMap;
+
+        let pv14 = PlatformVersion::get(14).expect("PV14 exists");
+        let latest = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(None);
+
+        // 60 zero-width typed arrays × 1024 elements = 61,500 decoded values per revision:
+        // 1 revision fits comfortably under DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET (262,144),
+        // while 5 revisions (307,500 decoded values) exceed the shared page ceiling.
+        let field_count = 60usize;
+        let mut properties = Vec::with_capacity(field_count);
+        let mut doc_properties = BTreeMap::new();
+        for i in 0..field_count {
+            let name = format!("f{i:02}");
+            properties.push((
+                Value::Text(name.clone()),
+                platform_value!({
+                    "type": "array",
+                    "maxItems": 1024,
+                    "items": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 0,
+                        "maxItems": 0,
+                    },
+                    "position": i as u32,
+                }),
+            ));
+            doc_properties.insert(name, Value::Array(vec![Value::Bytes(vec![]); 1024]));
+        }
+        let contract = DataContract::from_value(
+            platform_value!({
+                "$formatVersion": "1",
+                "id": Identifier::new([0x51; 32]),
+                "version": 1u32,
+                "ownerId": Identifier::new([0x52; 32]),
+                "config": {
+                    "$formatVersion": "1",
+                    "canBeDeleted": false,
+                    "readonly": false,
+                    "keepsHistory": false,
+                    "documentsKeepHistoryContractDefault": true,
+                    "documentsMutableContractDefault": true,
+                    "documentsCanBeDeletedContractDefault": false,
+                    "requiresIdentityEncryptionBoundedKey": Value::Null,
+                    "requiresIdentityDecryptionBoundedKey": Value::Null,
+                    "sizedIntegerTypes": true,
+                },
+                "documentSchemas": {
+                    "note": {
+                        "type": "object",
+                        "documentsKeepHistory": true,
+                        "documentsMutable": true,
+                        "canBeDeleted": false,
+                        "properties": Value::Map(properties),
+                        "additionalProperties": false,
+                    }
+                }
+            }),
+            true,
+            pv14,
+        )
+        .expect("PV14 history contract validates");
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                latest,
+            )
+            .expect("apply contract");
+
+        let document_type = contract
+            .document_type_for_name("note")
+            .expect("note document type");
+        let owner_id = Identifier::new([0x53; 32]);
+        let doc_id = Identifier::new([0x54; 32]);
+        let mut document = Document::V0(DocumentV0 {
+            id: doc_id,
+            owner_id,
+            properties: doc_properties,
+            revision: Some(1),
+            ..Default::default()
+        });
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                true,
+                BlockInfo::default_with_time(1000),
+                true,
+                None,
+                latest,
+            )
+            .expect("insert revision 1");
+
+        for revision in 2u64..=5 {
+            document.set_revision(Some(revision));
+            drive
+                .update_document_for_contract(
+                    &document,
+                    &contract,
+                    document_type,
+                    Some(owner_id.to_buffer()),
+                    BlockInfo::default_with_time(1000 * revision),
+                    true,
+                    StorageFlags::optional_default_as_cow(),
+                    None,
+                    latest,
+                )
+                .expect("update revision");
+        }
+
+        // A 1-revision page fits inside the client page budget.
+        let one_rev_query = DocumentHistoryDriveQuery {
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "note".to_string(),
+            document_id: doc_id.to_buffer(),
+            filter: DocumentHistoryFilter::StartAtTime(0),
+            limit: Some(1),
+        };
+        let one_rev_proof = drive
+            .prove_document_history(&one_rev_query, document_type, None, latest)
+            .expect("prove 1-revision history");
+        let (expected_root, verified_one) =
+            Drive::verify_document_history(&one_rev_query, &one_rev_proof, document_type, latest)
+                .expect("single-revision history page fits in client budget");
+        assert_eq!(verified_one.entries.len(), 1);
+
+        // A 5-revision page can be fetched serialized (header-only validation) and proved
+        // without materializing properties on the node, while client proof verification
+        // refuses it with the reconstructed root hash so callers can authenticate it as an
+        // honest refusal rather than a node fault.
+        let five_rev_query = DocumentHistoryDriveQuery {
+            contract_id: contract.id().to_buffer(),
+            document_type_name: "note".to_string(),
+            document_id: doc_id.to_buffer(),
+            filter: DocumentHistoryFilter::StartAtTime(0),
+            limit: Some(5),
+        };
+        let fetched_serialized = drive
+            .fetch_document_history_serialized(&five_rev_query, document_type, None, latest)
+            .expect(
+                "serialized server history fetch validates headers without expanding properties",
+            );
+        assert_eq!(fetched_serialized.entries.len(), 5);
+
+        let five_rev_proof = drive
+            .prove_document_history(&five_rev_query, document_type, None, latest)
+            .expect("prove 5-revision history");
+        let error =
+            Drive::verify_document_history(&five_rev_query, &five_rev_proof, document_type, latest)
+                .expect_err("five-revision page must exceed shared client decoded-value budget");
+        assert!(
+            matches!(
+                error,
+                Error::Proof(crate::error::proof::ProofError::DecodedValueBudgetExceeded {
+                    root_hash,
+                    ..
+                }) if root_hash == expected_root
+            ),
+            "expected ProofError::DecodedValueBudgetExceeded with matching root, got: {error:?}"
         );
     }
 }

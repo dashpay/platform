@@ -2,14 +2,68 @@ pub(in crate::document) mod deserialize;
 pub(in crate::document) mod serialize;
 mod v0;
 
-use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::document_type::{DecodedValueBudget, DocumentTypeRef};
 use crate::data_contract::DataContract;
 use crate::document::{Document, DocumentV0};
 #[cfg(feature = "validation")]
 use crate::prelude::ConsensusValidationResult;
 use crate::ProtocolError;
+use platform_value::Identifier;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 pub use v0::*;
+
+impl Document {
+    /// Reads only the document `$id` from the header of a serialized document
+    /// (formats 0 through 3) without decoding any document properties.
+    pub fn id_from_bytes(
+        serialized_document: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<Identifier, ProtocolError> {
+        match platform_version
+            .dpp
+            .document_versions
+            .document_structure_version
+        {
+            0 => DocumentV0::id_from_bytes(serialized_document),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "Document::id_from_bytes".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+
+    /// Reads a serialized document while enforcing `budget` on decoded property
+    /// values. Client-side proof verifiers share one budget across every
+    /// document in a page so zero-width typed-array elements on
+    /// protocol-version-14 contracts cannot expand a small response into
+    /// unbounded memory.
+    pub fn from_bytes_with_budget(
+        serialized_document: &[u8],
+        document_type: DocumentTypeRef,
+        budget: &mut DecodedValueBudget,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, ProtocolError> {
+        match platform_version
+            .dpp
+            .document_versions
+            .document_structure_version
+        {
+            0 => Ok(DocumentV0::from_bytes_with_budget(
+                serialized_document,
+                document_type,
+                budget,
+                platform_version,
+            )?
+            .into()),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "Document::from_bytes".to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
+}
 
 impl DocumentPlatformConversionMethodsV0 for Document {
     /// Serializes the document.
@@ -197,5 +251,290 @@ mod tests {
             platform_version,
         )
         .expect("expected to deserialize a document");
+    }
+
+    #[test]
+    fn should_enforce_a_shared_decoded_value_budget_across_documents_while_keeping_from_bytes_unbounded(
+    ) {
+        use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+        use crate::data_contract::document_type::DecodedValueBudget;
+        use crate::data_contract::DataContract;
+        use crate::document::{DocumentV0, DocumentV0Getters};
+        use platform_value::{platform_value, Identifier, Value};
+        use std::collections::BTreeMap;
+
+        // Register a PV14 contract carrying a zero-width byte-array typed array.
+        let pv14 = PlatformVersion::get(14).expect("protocol version 14 exists");
+        let latest = PlatformVersion::latest();
+        let contract = DataContract::from_value(
+            platform_value!({
+                "$formatVersion": "1",
+                "id": Identifier::new([1; 32]),
+                "ownerId": Identifier::new([2; 32]),
+                "version": 1u32,
+                "documentSchemas": {
+                    "doc": {
+                        "type": "object",
+                        "properties": {
+                            "empties": {
+                                "type": "array",
+                                "maxItems": 32,
+                                "items": {
+                                    "type": "array",
+                                    "byteArray": true,
+                                    "minItems": 0,
+                                    "maxItems": 0,
+                                },
+                                "position": 0,
+                            },
+                        },
+                        "additionalProperties": false,
+                    }
+                }
+            }),
+            true,
+            pv14,
+        )
+        .expect("PV14 contract registers");
+        let document_type = contract.document_type_for_name("doc").expect("doc type");
+
+        let doc = Document::V0(DocumentV0 {
+            id: Identifier::new([3; 32]),
+            owner_id: Identifier::new([4; 32]),
+            revision: Some(1),
+            properties: BTreeMap::from([(
+                "empties".to_string(),
+                Value::Array(vec![Value::Bytes(vec![]); 32]),
+            )]),
+            ..Default::default()
+        });
+        let serialized = doc
+            .serialize(document_type, &contract, latest)
+            .expect("document serializes");
+
+        // Consensus `from_bytes` keeps decoding stored PV14 documents without a budget.
+        let decoded = Document::from_bytes(&serialized, document_type, latest)
+            .expect("from_bytes decodes stored PV14 document");
+        assert_eq!(
+            decoded.properties().get("empties"),
+            doc.properties().get("empties")
+        );
+
+        // `from_bytes_with_budget` charges 1 for the array + 32 for its elements = 33 per doc.
+        let mut budget = DecodedValueBudget::new(50);
+        let first =
+            Document::from_bytes_with_budget(&serialized, document_type, &mut budget, latest)
+                .expect("first document fits in budget");
+        assert_eq!(
+            first.properties().get("empties"),
+            doc.properties().get("empties")
+        );
+        assert_eq!(budget.remaining(), 17);
+
+        let error =
+            Document::from_bytes_with_budget(&serialized, document_type, &mut budget, latest)
+                .expect_err("second document must exhaust shared budget");
+        assert!(
+            matches!(
+                error,
+                crate::ProtocolError::DataContractError(
+                    crate::data_contract::errors::DataContractError::DecodedValueBudgetExceeded(_)
+                )
+            ),
+            "unexpected error: {error}"
+        );
+    }
+
+    /// Format 0 falls back to format 1 for actual format errors (legacy rows written
+    /// with sized integers under version 0), but budget exhaustion must be terminal so a
+    /// low remaining budget never causes format 1 to reinterpret format-0 i64 bytes as
+    /// narrower integers + optional markers and return an altered document.
+    #[test]
+    fn should_not_fall_back_to_format_1_when_format_0_exhausts_decoded_value_budget() {
+        use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+        use crate::data_contract::document_type::DecodedValueBudget;
+        use crate::data_contract::errors::DataContractError;
+        use crate::data_contract::DataContract;
+        use crate::document::serialization_traits::deserialize::v0::DocumentPlatformDeserializationMethodsV0;
+        use crate::document::serialization_traits::serialize::v0::DocumentPlatformSerializationMethodsV0;
+        use crate::document::{DocumentV0, DocumentV0Getters};
+        use crate::ProtocolError;
+        use platform_value::{platform_value, Identifier, Value};
+        use std::collections::BTreeMap;
+
+        let latest = PlatformVersion::latest();
+        let contract = DataContract::from_value(
+            platform_value!({
+                "$formatVersion": "1",
+                "id": Identifier::new([10; 32]),
+                "ownerId": Identifier::new([11; 32]),
+                "version": 1u32,
+                "config": {
+                    "$formatVersion": "1",
+                    "sizedIntegerTypes": true,
+                },
+                "documentSchemas": {
+                    "item": {
+                        "type": "object",
+                        "properties": {
+                            "count": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 255,
+                                "position": 0,
+                            },
+                            "note": {
+                                "type": "string",
+                                "maxLength": 20,
+                                "position": 1,
+                            },
+                        },
+                        "required": ["count"],
+                        "additionalProperties": false,
+                    }
+                }
+            }),
+            true,
+            latest,
+        )
+        .expect("contract registers");
+        let document_type = contract.document_type_for_name("item").expect("item type");
+
+        // Serialize in format 0: `count = 0` is 8 zero bytes, followed by optional `note`.
+        // Under format 1, byte 0 reads `count = 0u8` and byte 1 (`0`) looks like `note` absent!
+        let original = DocumentV0 {
+            id: Identifier::new([12; 32]),
+            owner_id: Identifier::new([13; 32]),
+            revision: Some(1),
+            properties: BTreeMap::from([
+                ("count".to_string(), Value::I64(0)),
+                ("note".to_string(), Value::Text("legacy".to_string())),
+            ]),
+            ..Default::default()
+        };
+        let format_0_bytes =
+            DocumentPlatformSerializationMethodsV0::serialize_v0(&original, document_type)
+                .expect("format 0 serializes");
+        assert_eq!(format_0_bytes[0], 0);
+
+        // Confirm format 1 alone would indeed produce a DIFFERENT document (dropping `note`).
+        let misparsed = DocumentV0::from_bytes_v1(&format_0_bytes[1..], document_type, latest)
+            .expect("format 1 misparses the format-0 zero bytes as an absent optional field");
+        assert_eq!(misparsed.properties.get("note"), None);
+
+        // With enough budget (2 values: `count` + `note`), we get the exact historical document.
+        let mut sufficient = DecodedValueBudget::new(2);
+        let decoded = Document::from_bytes_with_budget(
+            &format_0_bytes,
+            document_type,
+            &mut sufficient,
+            latest,
+        )
+        .expect("sufficient budget decodes historical format-0 document");
+        assert_eq!(decoded.properties().get("count"), Some(&Value::I64(0)));
+        assert_eq!(
+            decoded.properties().get("note"),
+            Some(&Value::Text("legacy".to_string()))
+        );
+        assert_eq!(sufficient.remaining(), 0);
+
+        // With budget = 1 (enough for `count`, short for `note`), format 0 hits budget exhaustion
+        // and MUST return `DecodedValueBudgetExceeded`, never falling back to format 1.
+        let mut tight = DecodedValueBudget::new(1);
+        let error =
+            Document::from_bytes_with_budget(&format_0_bytes, document_type, &mut tight, latest)
+                .expect_err("tight budget must fail rather than returning an altered document");
+        assert!(
+            matches!(
+                error,
+                ProtocolError::DataContractError(DataContractError::DecodedValueBudgetExceeded(_))
+            ),
+            "expected DecodedValueBudgetExceeded, got: {error}"
+        );
+    }
+
+    #[test]
+    fn should_read_document_id_from_header_across_all_formats_without_decoding_properties() {
+        use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+        use crate::data_contract::DataContract;
+        use crate::document::serialization_traits::serialize::v0::DocumentPlatformSerializationMethodsV0;
+        use crate::document::DocumentV0;
+        use platform_value::{platform_value, Identifier, Value};
+        use std::collections::BTreeMap;
+
+        let pv14 = PlatformVersion::get(14).expect("PV14 exists");
+        let latest = PlatformVersion::latest();
+        let contract = DataContract::from_value(
+            platform_value!({
+                "$formatVersion": "1",
+                "id": Identifier::new([20; 32]),
+                "ownerId": Identifier::new([21; 32]),
+                "version": 1u32,
+                "documentSchemas": {
+                    "doc": {
+                        "type": "object",
+                        "properties": {
+                            "empties": {
+                                "type": "array",
+                                "maxItems": 1024,
+                                "items": {
+                                    "type": "array",
+                                    "byteArray": true,
+                                    "minItems": 0,
+                                    "maxItems": 0,
+                                },
+                                "position": 0,
+                            },
+                        },
+                        "additionalProperties": false,
+                    }
+                }
+            }),
+            true,
+            pv14,
+        )
+        .expect("PV14 contract registers");
+        let doc_type = contract.document_type_for_name("doc").expect("doc type");
+        let expected_id = Identifier::new([0xAB; 32]);
+        let doc = DocumentV0 {
+            id: expected_id,
+            owner_id: Identifier::new([0xCD; 32]),
+            revision: Some(1),
+            properties: BTreeMap::from([(
+                "empties".to_string(),
+                Value::Array(vec![Value::Bytes(vec![]); 1024]),
+            )]),
+            ..Default::default()
+        };
+
+        for format in 0..=3u16 {
+            let bytes = match format {
+                0 => DocumentPlatformSerializationMethodsV0::serialize_v0(&doc, doc_type),
+                1 => DocumentPlatformSerializationMethodsV0::serialize_v1(&doc, doc_type),
+                2 => DocumentPlatformSerializationMethodsV0::serialize_v2(&doc, doc_type),
+                3 => DocumentPlatformSerializationMethodsV0::serialize_v3(&doc, doc_type),
+                _ => unreachable!(),
+            }
+            .expect("serializes");
+            // Works at both PV14 and latest (PV15), and even when bytes past the ID are truncated.
+            let header_end = if format == 3 { 34 } else { 33 };
+            for pv in [pv14, latest] {
+                assert_eq!(
+                    Document::id_from_bytes(&bytes, pv).expect("reads id"),
+                    expected_id,
+                    "format {format} at pv {}",
+                    pv.protocol_version
+                );
+                assert_eq!(
+                    Document::id_from_bytes(&bytes[..header_end], pv)
+                        .expect("reads id from header prefix only"),
+                    expected_id,
+                    "header prefix format {format}"
+                );
+                assert!(Document::id_from_bytes(&bytes[..header_end - 1], pv).is_err());
+            }
+        }
+        assert!(Document::id_from_bytes(&[], latest).is_err());
+        assert!(Document::id_from_bytes(&[4, 0], latest).is_err());
     }
 }

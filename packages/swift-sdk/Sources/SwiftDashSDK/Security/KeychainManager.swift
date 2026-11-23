@@ -1222,6 +1222,31 @@ extension KeychainManager {
     /// (`identity_privkey.<path>`) accounts uniformly. Idempotent;
     /// no-op when nothing matches.
     public nonisolated func deleteAllIdentityPrivateKeys(forIdentityIdBase58 identityIdBase58: String) throws {
+        try deleteIdentityPrivateKeys(owners: [identityIdBase58], pendingPublicKeys: [])
+    }
+
+    /// Owner tags written into the metadata before the identity id is
+    /// known: `pending` (`MnemonicResolverAndPersister`) and the empty
+    /// string (the DashPay key pair written by Create Identity and by an
+    /// invitation claim). Confirmation links such a key to its public-key
+    /// row without rewriting the owner.
+    private nonisolated static let unattributedIdentityOwners: Set<String> = ["pending", ""]
+
+    /// Deletes the `identity_privkey.*` items whose metadata owner is one
+    /// of `owners`, and the unattributed items (owner `pending` or empty)
+    /// whose full metadata public key is one of `pendingPublicKeys`. An
+    /// item that names another owner is never matched by its public key:
+    /// Platform lets identities share some keys (for example a HASH160
+    /// payout key), so an explicit owner decides. Empty entries in
+    /// `owners` and `pendingPublicKeys` never match.
+    private nonisolated func deleteIdentityPrivateKeys(
+        owners: Set<String>,
+        pendingPublicKeys: [Data]
+    ) throws {
+        let owners = owners.filter { !$0.isEmpty }
+        let pendingPublicKeyHexes = Set(
+            pendingPublicKeys.filter { !$0.isEmpty }.map { $0.toHexString().lowercased() }
+        )
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
@@ -1274,11 +1299,44 @@ extension KeychainManager {
                 )
                 continue
             }
-            guard metadata.identityId == identityIdBase58 else {
+            let ownedHere = owners.contains(metadata.identityId)
+            let pendingHere = Self.unattributedIdentityOwners.contains(metadata.identityId)
+                && !metadata.publicKey.isEmpty
+                && pendingPublicKeyHexes.contains(metadata.publicKey.lowercased())
+            guard ownedHere || pendingHere else {
                 continue
             }
             try deleteGenericPassword(account: account)
         }
+    }
+
+    /// Delete every Keychain item that holds a private key of one
+    /// identity, whatever format it was written in:
+    ///  * `privkey_<identityHex>_*` and `specialkey_<identityHex>_*`
+    ///    (keys imported or loaded directly, and the voting / owner /
+    ///    payout slots), via `deleteAllKeychainItems(forIdentityId:)`;
+    ///  * `identity_privkey.*` items whose metadata names the identity,
+    ///    by its Base58 id or its hex id (Add Key writes the hex id);
+    ///  * unattributed `identity_privkey.*` items (owner `pending` or
+    ///    empty, as registration and the DashPay key pair write them) whose
+    ///    full metadata public key is one of `publicKeys`; confirmation
+    ///    links such a key without rewriting the owner.
+    ///    An item naming another identity is left alone even when its
+    ///    public key matches, since identities can share some keys.
+    ///
+    /// Used when an identity is removed from the device. Idempotent;
+    /// no-op when nothing matches.
+    public nonisolated func deleteAllPrivateKeys(
+        ofIdentityId identityId: Data,
+        publicKeys: [Data]
+    ) throws {
+        try deleteAllKeychainItems(forIdentityId: identityId)
+        // Both owner encodings come from the one binary id, so a caller
+        // cannot mix in another identity's id.
+        try deleteIdentityPrivateKeys(
+            owners: [identityId.toBase58String(), identityId.toHexString().lowercased()],
+            pendingPublicKeys: publicKeys
+        )
     }
 
     /// Subsystem-tagged logger for Keychain operations. Surfaces

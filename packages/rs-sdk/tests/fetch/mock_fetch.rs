@@ -828,6 +828,185 @@ async fn should_refuse_kept_values_as_stale_when_every_contract_absence_is_older
 }
 
 #[tokio::test]
+/// Given a removal page where each record individually fits under the client page budget but
+/// two records together exceed it, when I read the page with `fetch_with_kept_values`, then
+/// the single-record page succeeds and the two-record page fails with
+/// `DecodedValueBudgetExceeded` because the page shares one budget.
+async fn should_enforce_a_shared_decoded_value_budget_across_records_in_fetch_with_kept_values() {
+    use dash_sdk::platform::contract_moderation::{
+        ContractDocumentRemovals, ContractDocumentRemovalsPageQuery,
+    };
+    use dash_sdk::Error;
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
+    use dpp::data_contract::config::moderation::{
+        encode_kept_fields, ContractModerationConfig, ContractModerators,
+    };
+    use dpp::data_contract::config::DataContractConfig;
+    use dpp::data_contract::document_type::DocumentType;
+    use dpp::data_contract::errors::DataContractError;
+    use dpp::document::DocumentV0;
+    use dpp::platform_value::{platform_value, Value};
+    use dpp::ProtocolError;
+    use std::collections::BTreeMap;
+
+    let pv = PlatformVersion::latest();
+    let moderation = ContractModerationConfig {
+        banlist: false,
+        suspensions: false,
+        moderators: ContractModerators::ContractOwner,
+        warnings: false,
+    };
+    let config = DataContractConfig::default_for_version(pv)
+        .expect("default config")
+        .with_moderation(Some(moderation.clone()));
+
+    // 3 kept objects × 50 typed boolean arrays × (1 array + 1024 bools) = 153,753 values per record.
+    // 1 record fits in 262,144; 2 records (307,506) exceed the shared page budget.
+    let groups = 3usize;
+    let arrays_per_group = 50usize;
+    let mut properties = Vec::with_capacity(groups);
+    let mut kept_names = Vec::with_capacity(groups);
+    let mut doc_props = BTreeMap::new();
+    for g in 0..groups {
+        let group_name = format!("g{g}");
+        let mut inner_schema = Vec::with_capacity(arrays_per_group);
+        let mut inner_values = Vec::with_capacity(arrays_per_group);
+        for i in 0..arrays_per_group {
+            let field_name = format!("f{i:02}");
+            inner_schema.push((
+                Value::Text(field_name.clone()),
+                platform_value!({
+                    "type": "array",
+                    "maxItems": 1024,
+                    "items": { "type": "boolean" },
+                    "position": i as u32,
+                }),
+            ));
+            inner_values.push((
+                Value::Text(field_name),
+                Value::Array(vec![Value::Bool(true); 1024]),
+            ));
+        }
+        properties.push((
+            Value::Text(group_name.clone()),
+            platform_value!({
+                "type": "object",
+                "properties": Value::Map(inner_schema),
+                "additionalProperties": false,
+                "position": g as u32,
+            }),
+        ));
+        kept_names.push(Value::Text(group_name.clone()));
+        doc_props.insert(group_name, Value::Map(inner_values));
+    }
+
+    let mut contract = mock_contract_with_moderation(Some(moderation));
+    contract.set_id(Identifier::from([7u8; 32]));
+    let post = DocumentType::try_from_schema(
+        contract.id(),
+        1,
+        config.version(),
+        "post",
+        platform_value!({
+            "type": "object",
+            "properties": Value::Map(properties),
+            "additionalProperties": false,
+            "moderatorAbilities": {
+                "delete": true,
+                "deleteKeepsFields": Value::Array(kept_names),
+            },
+        }),
+        None,
+        &BTreeMap::new(),
+        &config,
+        true,
+        &mut vec![],
+        pv,
+    )
+    .expect("post type parses");
+    let kept_fields = encode_kept_fields(
+        &Document::V0(DocumentV0 {
+            id: Identifier::from([3u8; 32]),
+            properties: doc_props,
+            ..Default::default()
+        }),
+        post.as_ref(),
+    )
+    .expect("encodes");
+    contract
+        .document_types_mut()
+        .insert("post".to_string(), post);
+    let contract_id = contract.id();
+
+    // 1-record page fits in the shared budget.
+    let mut sdk_single = Sdk::new_mock();
+    bootstrap_mock_sdk_to_latest(&mut sdk_single).await;
+    let query_single = ContractDocumentRemovalsPageQuery::new(
+        contract_id,
+        "post".to_string(),
+        sdk_single.version(),
+    );
+    sdk_single
+        .mock()
+        .expect_fetch(
+            query_single.clone(),
+            Some(ContractDocumentRemovals(vec![mock_removal_entry(
+                3,
+                kept_fields.clone(),
+            )])),
+        )
+        .await
+        .unwrap();
+    sdk_single
+        .mock()
+        .expect_fetch(contract_id, Some(contract.clone()))
+        .await
+        .unwrap();
+    let single_page = query_single
+        .fetch_with_kept_values(&sdk_single)
+        .await
+        .expect("single record fits in page budget")
+        .expect("page present");
+    assert_eq!(single_page.removals.len(), 1);
+    assert_eq!(single_page.removals[0].1.len(), groups);
+
+    // 2-record page shares one budget and rejects with DecodedValueBudgetExceeded.
+    let mut sdk_pair = Sdk::new_mock();
+    bootstrap_mock_sdk_to_latest(&mut sdk_pair).await;
+    let query_pair =
+        ContractDocumentRemovalsPageQuery::new(contract_id, "post".to_string(), sdk_pair.version());
+    sdk_pair
+        .mock()
+        .expect_fetch(
+            query_pair.clone(),
+            Some(ContractDocumentRemovals(vec![
+                mock_removal_entry(3, kept_fields.clone()),
+                mock_removal_entry(4, kept_fields),
+            ])),
+        )
+        .await
+        .unwrap();
+    sdk_pair
+        .mock()
+        .expect_fetch(contract_id, Some(contract))
+        .await
+        .unwrap();
+    let refused = query_pair
+        .fetch_with_kept_values(&sdk_pair)
+        .await
+        .expect_err("two records exceeding shared page budget must fail");
+    assert!(
+        matches!(
+            refused,
+            Error::Protocol(ProtocolError::DataContractError(
+                DataContractError::DecodedValueBudgetExceeded(_)
+            ))
+        ),
+        "expected DecodedValueBudgetExceeded, got: {refused:?}"
+    );
+}
+
+#[tokio::test]
 /// Given a moderated contract and an identity's status on the lists it keeps, when I fetch the
 /// identity's status without naming lists, then rs-sdk resolves the lists from the
 /// contract and fetches the status over them; naming lists sends them as they are
