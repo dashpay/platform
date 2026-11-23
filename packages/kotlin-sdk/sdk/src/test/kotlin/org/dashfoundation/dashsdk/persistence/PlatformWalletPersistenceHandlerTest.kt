@@ -26,7 +26,9 @@ import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.PendingInputEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.PublicKeyEntity
+import org.dashfoundation.dashsdk.persistence.entities.TokenBalanceEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
+import org.dashfoundation.dashsdk.security.PendingIdentityKeyDelete
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -1869,6 +1871,43 @@ class PlatformWalletPersistenceHandlerTest {
             fun fakePubkeyFor(identityIndex: Int, keyIndex: Int): ByteArray =
                 ByteArray(33).also { it[0] = identityIndex.toByte(); it[1] = keyIndex.toByte() }
         }
+    }
+
+    /**
+     * A removal Rust persists records the identity's key aliases (with its
+     * wallet) before its round commits, and deletes the dependent rows the
+     * identity cascade does not reach, in the same round.
+     */
+    @Test
+    fun persistedIdentityRemovalRecordsItsKeysAndDeletesItsWholeFootprint() = runTest {
+        val recorded = mutableListOf<PendingIdentityKeyDelete>()
+        handler = PlatformWalletPersistenceHandler(
+            db,
+            Dispatchers.Unconfined,
+            storedTransactionInputs = storedInputs,
+            recordRemovedIdentityKeys = { recorded += it },
+        )
+        val identityId = ByteArray(32) { 32 }
+        seedIdentity(identityId)
+        val pubkey = VerifyingRepairDeriver.fakePubkeyFor(1, 1)
+        upsertIdentityKey(pubkey, identityId)
+        db.tokenDao().insertBalance(
+            TokenBalanceEntity(
+                tokenId = "token-x",
+                identityId = identityId,
+                balance = UInt64Value(1u),
+                networkRaw = testnet,
+            ),
+        )
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityRemoval(walletId, identityId)
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertNull(db.identityDao().getByIdentityId(identityId))
+        assertTrue(db.tokenDao().getBalancesOrderedByAmount().isEmpty())
+        assertEquals(listOf(pubkey.toHex()), recorded.map { it.aliasHex })
+        assertEquals(walletId.toHex(), recorded.single().walletId!!.toHex())
     }
 
     /**

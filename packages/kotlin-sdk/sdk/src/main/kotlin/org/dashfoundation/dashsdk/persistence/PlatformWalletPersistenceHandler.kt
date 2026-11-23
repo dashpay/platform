@@ -44,6 +44,7 @@ import org.dashfoundation.dashsdk.persistence.entities.DashpayIgnoredSenderEntit
 import org.dashfoundation.dashsdk.persistence.entities.DashpayProfileEntity
 import org.dashfoundation.dashsdk.persistence.entities.DpnsNameEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
+import org.dashfoundation.dashsdk.security.PendingIdentityKeyDelete
 import org.dashfoundation.dashsdk.persistence.entities.InvitationEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressesSyncStateEntity
@@ -142,6 +143,14 @@ class PlatformWalletPersistenceHandler(
      */
     private val storedTransactionInputs: StoredTransactionInputs =
         NativeStoredTransactionInputs(network),
+    /**
+     * Durably records the key aliases of an identity whose rows a persisted
+     * identity removal deletes, before the round commits, so their stored
+     * private keys are deleted once nothing needs them (see
+     * `org.dashfoundation.dashsdk.wallet.settlePendingIdentityKeyDeletes`).
+     * The manager wires `WalletStorage`; null (tests) records nothing.
+     */
+    private val recordRemovedIdentityKeys: (suspend (List<PendingIdentityKeyDelete>) -> Unit)? = null,
 ) : NativePersistenceBridge(), AutoCloseable {
 
     override fun persistenceCapabilitiesVersion(): Int = PERSISTENCE_CAPABILITIES_VERSION
@@ -1851,7 +1860,18 @@ class PlatformWalletPersistenceHandler(
 
     override fun onPersistIdentityRemoval(walletId: ByteArray, identityId: ByteArray): Int = guarded {
         val identityBase58 = identityId.toBase58String()
-        stage(walletId) { db -> db.identityDao().deleteByIdentityId(identityId) }
+        stage(walletId) { db ->
+            // Record the aliases the rows hold right now, inside the round,
+            // before the delete below cascades them away.
+            recordRemovedIdentityKeys?.let { record ->
+                val owner = db.identityDao().getByIdentityId(identityId)?.walletId
+                record(
+                    db.publicKeyDao().getByIdentityId(identityBase58)
+                        .map { PendingIdentityKeyDelete(it.publicKeyData.toHex(), owner) },
+                )
+            }
+            deleteIdentityFootprint(db, identityId)
+        }
         // The identity delete cascades away all of its public-key rows, so
         // every pending-repair entry for this identity is now a phantom —
         // the key can never be re-derived/repaired into an identity that no
@@ -3772,14 +3792,24 @@ class PlatformWalletPersistenceHandler(
      * not discarded: it belongs to the whole wallet.
      */
     internal suspend fun deleteIdentityDataLocked(identityId: ByteArray) = runBlockingCatching {
-        database.withTransaction {
-            database.tokenDao().deleteBalancesByIdentity(identityId)
-            database.privateContactScanStateDao().deleteUnmarkedPositionsOfIdentity(identityId)
-            database.privateContactScanStateDao().rewindMarkedPositionsOfIdentity(identityId)
-            database.privateContactScanStateDao().deleteAddressesOwnedBy(identityId)
-            database.identityDao().deleteByIdentityId(identityId)
-        }
+        database.withTransaction { deleteIdentityFootprint(database, identityId) }
         _pendingIdentityKeys.update(clearPendingKeyByIdentityDelta(identityId.toBase58String()))
+    }
+
+    /**
+     * An identity's Room footprint, in the caller's transaction: its token
+     * balances (SET_NULL children), its private contact scan state (a position
+     * marked unresolved kept but rewound to the start), then the identity row,
+     * whose delete cascades its public keys, DPNS names, documents and DashPay
+     * rows. Shared by [deleteIdentityDataLocked] and [onPersistIdentityRemoval],
+     * so a removal Rust persisted leaves no dependent row behind either.
+     */
+    private suspend fun deleteIdentityFootprint(db: DashDatabase, identityId: ByteArray) {
+        db.tokenDao().deleteBalancesByIdentity(identityId)
+        db.privateContactScanStateDao().deleteUnmarkedPositionsOfIdentity(identityId)
+        db.privateContactScanStateDao().rewindMarkedPositionsOfIdentity(identityId)
+        db.privateContactScanStateDao().deleteAddressesOwnedBy(identityId)
+        db.identityDao().deleteByIdentityId(identityId)
     }
 
     // ── Pending identity-key bookkeeping (#4053) ──────────────────────
@@ -3963,6 +3993,9 @@ class PlatformWalletPersistenceHandler(
         walletId: ByteArray,
         publicKeyData: ByteArray,
         verifyRecoverable: suspend (pubkeyHex: String) -> Boolean,
+        abandonStoredKey: suspend (pubkeyHex: String) -> Unit = { pubkeyHex ->
+            privateKeyDeriver?.deleteUnownedStored(listOf(pubkeyHex), walletId)
+        },
         persistDurableIdentifier: suspend (storageIdentifier: String) -> Unit = { storageIdentifier ->
             database.publicKeyDao().getByPublicKeyData(publicKeyData).forEach { row ->
                 if (row.privateKeyKeychainIdentifier != storageIdentifier) {
@@ -4017,12 +4050,14 @@ class PlatformWalletPersistenceHandler(
         )?.identifier ?: return null
 
         // Fence against an identity removal that ran while the key was being
-        // derived: the slot was read from a row that removal has since deleted
-        // with its stored key, so this store must not outlive it. Checked
-        // AFTER the store; a removal still to come deletes the key itself, as
-        // it deletes keys only after the rows are gone.
-        if (database.publicKeyDao().getByPublicKeyData(publicKeyData).isEmpty()) {
-            deriver.deleteUnownedStored(listOf(pubkeyHex), walletId)
+        // derived: the slot was read from a row of this wallet that removal
+        // has since deleted, so this store, and the claim it wrote for this
+        // wallet, must not outlive it. Checked AFTER the store; a removal
+        // still to come records and settles the key itself, as it does so
+        // only after the rows are gone. [abandonStoredKey] records the key for
+        // cleanup before deleting anything, so a failure there is retried.
+        if (database.publicKeyDao().countReferencesForWallet(publicKeyData, walletId) == 0) {
+            abandonStoredKey(pubkeyHex)
             throw DashSdkError.PlatformWallet.SigningKeyUnavailable(
                 "identity-key repair for $pubkeyHex finished after its identity was " +
                     "removed from the device; the repaired key was deleted again",

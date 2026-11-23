@@ -42,6 +42,7 @@ import org.dashfoundation.dashsdk.security.IdentityKeyPrivateKeyDeriver
 import org.dashfoundation.dashsdk.security.KeystoreSigner
 import org.dashfoundation.dashsdk.security.MasternodeVotingKeyNotStoredException
 import org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore
+import org.dashfoundation.dashsdk.security.PendingIdentityKeyDelete
 import org.dashfoundation.dashsdk.security.MnemonicResolverAndPersister
 import org.dashfoundation.dashsdk.security.WalletStorage
 import org.dashfoundation.dashsdk.tokens.ContactRequestRef
@@ -573,6 +574,9 @@ class PlatformWalletManager(
                 database = database,
                 privateKeyDeriver = deriver,
                 network = network,
+                recordRemovedIdentityKeys = { deletes ->
+                    walletStorage.withPrivateKeyExclusion { recordPendingIdentityKeyDeletes(deletes) }
+                },
             )
             CoreChildren(resolver, keySigner, deriver, handler)
         } catch (constructionFailure: Throwable) {
@@ -757,6 +761,16 @@ class PlatformWalletManager(
                 // rules out the wrong-key-behind-locked-gate ambiguity because
                 // the blob was written under the captured public key).
                 walletStorage.probeIdentityKeyRecoverability(pubkeyHex)
+            },
+            // The identity this key was repaired for was removed meanwhile:
+            // record the key, then settle it like an identity removal would
+            // (kept while another identity uses it, this wallet's claim
+            // released), so a failed delete is retried by the next removal.
+            abandonStoredKey = { pubkeyHex ->
+                walletStorage.withPrivateKeyExclusion {
+                    recordPendingIdentityKeyDeletes(listOf(PendingIdentityKeyDelete(pubkeyHex, walletId)))
+                    settlePendingIdentityKeyDeletes(database, this)
+                }
             },
         )
     }

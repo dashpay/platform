@@ -17,6 +17,7 @@ import org.dashfoundation.dashsdk.persistence.entities.TokenBalanceEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
 import org.dashfoundation.dashsdk.persistence.toBase58String
 import org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore
+import org.dashfoundation.dashsdk.security.PendingIdentityKeyDelete
 import org.dashfoundation.dashsdk.security.PlaintextIdentityKeysKeystore
 import org.dashfoundation.dashsdk.security.WalletStorage
 import org.junit.After
@@ -161,7 +162,10 @@ class IdentityDeviceRemovalTest {
 
     private suspend fun remove(
         id: ByteArray = identityId,
-        settleKeys: suspend WalletStorage.PrivateKeyExclusion.(Collection<String>, Collection<String>) -> Unit =
+        settleKeys: suspend WalletStorage.PrivateKeyExclusion.(
+            Collection<String>,
+            Collection<PendingIdentityKeyDelete>,
+        ) -> Unit =
             { delete, settled -> settlePendingIdentityKeyDeletes(delete, settled) },
     ) = deleteIdentityFromDevice(id, handler, db, storage, liveWallets, votingKeys, settleKeys)
 
@@ -300,6 +304,34 @@ class IdentityDeviceRemovalTest {
 
             remove(id = otherIdentity)
             assertFalse("gone once no identity uses it", storage.hasPrivateKey(crossKey.hex()))
+        }
+
+    @Test
+    fun `should delete a shared key whose first removal could not settle once the second identity goes`() =
+        runBlocking {
+            val otherWallet = ByteArray(32) { 0x12 }
+            val otherIdentity = ByteArray(32) { 0x34 }
+            val crossKey = ByteArray(33) { 0x56 }
+            db.walletDao().upsert(WalletEntity(walletId = otherWallet, networkRaw = testnet))
+            db.identityDao().upsert(
+                IdentityEntity(identityId = otherIdentity, networkRaw = testnet, walletId = otherWallet),
+            )
+            insertKey(identityId, 2, crossKey)
+            insertKey(otherIdentity, 0, crossKey)
+            storage.storePrivateKey(crossKey.hex(), ByteArray(32) { 3 }, ownerWalletId = walletId)
+            storage.storePrivateKey(crossKey.hex(), ByteArray(32) { 3 }, ownerWalletId = otherWallet)
+
+            // The first removal's settle is refused: both claims and the
+            // pending entry stay.
+            remove { _, _ -> throw IllegalStateException("storage locked") }
+            assertTrue(storage.hasPrivateKey(crossKey.hex()))
+
+            // Removing the second identity settles both entries for the alias
+            // together, after releasing both wallets' claims, and deletes it.
+            val result = remove(id = otherIdentity)
+            assertTrue(result.keysLeft.isEmpty())
+            assertFalse(storage.hasPrivateKey(crossKey.hex()))
+            assertTrue(storage.withPrivateKeyExclusion { pendingIdentityKeyDeletes() }.isEmpty())
         }
 
     @Test

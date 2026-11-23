@@ -1,6 +1,8 @@
 //! Removing one identity from the device's live wallets
 //! ([`PlatformWalletManager::remove_identity_from_device`]).
 
+use std::sync::Arc;
+
 use dpp::prelude::Identifier;
 
 use crate::changeset::PlatformWalletPersistence;
@@ -18,7 +20,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// [`IdentityManager::check_removable`](crate::IdentityManager::check_removable)
     /// before any is changed, all under one `wallet_manager` write lock, so a
     /// refusal (a contact request in flight or unconfirmed, a journaled private
-    /// sender, private payments not restored yet) removes nothing anywhere.
+    /// sender, private payments not restored yet) removes nothing anywhere. A
+    /// holder registered in `wallet_manager` but not yet published (still being
+    /// loaded) refuses the whole removal the same way, as `WalletNotFound`.
     /// Accepted, each holding wallet removes it through its own persister,
     /// which emits the removal to the host, and the identity's token-sync row
     /// is dropped.
@@ -31,21 +35,27 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         &self,
         identity_id: &Identifier,
     ) -> Result<bool, PlatformWalletError> {
-        let wallets = self.wallets.load_full();
         let removed = {
             let mut wm = self.wallet_manager.write().await;
-            let holders: Vec<_> = wallets
-                .iter()
-                .filter(|(wallet_id, _)| {
-                    wm.get_wallet_info(wallet_id)
-                        .is_some_and(|info| info.identity_manager.identity(identity_id).is_some())
-                })
-                .collect();
-            for (wallet_id, wallet) in &holders {
-                if let Some(info) = wm.get_wallet_info(wallet_id) {
-                    info.identity_manager
-                        .check_removable(identity_id, wallet.persister())?;
+            // Holders come from the wallet infos the write lock guards, so a
+            // wallet registered in `wallet_manager` but not yet published to
+            // `wallets` is not missed. Each needs its own persister, from the
+            // published map read under the same lock.
+            let published = self.wallets.load_full();
+            let mut holders = Vec::new();
+            for (wallet_id, info) in wm.get_all_wallet_infos() {
+                if info.identity_manager.identity(identity_id).is_none() {
+                    continue;
                 }
+                let wallet = published.get(wallet_id).ok_or_else(|| {
+                    PlatformWalletError::WalletNotFound(format!(
+                        "{} is still being loaded; retry the identity removal",
+                        hex::encode(wallet_id)
+                    ))
+                })?;
+                info.identity_manager
+                    .check_removable(identity_id, wallet.persister())?;
+                holders.push((*wallet_id, Arc::clone(wallet)));
             }
             for (wallet_id, wallet) in &holders {
                 if let Some(info) = wm.get_wallet_info_mut(wallet_id) {

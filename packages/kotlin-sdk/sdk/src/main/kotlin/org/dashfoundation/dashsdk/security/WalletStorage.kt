@@ -160,19 +160,19 @@ class WalletStorage(
         suspend fun tombstoneWallet(walletId: ByteArray)
 
         /**
-         * The entries an identity removal recorded and has not settled yet
-         * (see [recordPendingIdentityKeyDeletes]). Opaque to this class: the
-         * removal encodes each alias with the wallet that owned it.
+         * The identity-key deletes recorded and not settled yet (see
+         * [recordPendingIdentityKeyDeletes]).
          */
-        suspend fun pendingIdentityKeyDeletes(): Set<String>
+        suspend fun pendingIdentityKeyDeletes(): List<PendingIdentityKeyDelete>
 
         /**
-         * Durably record [entries] for aliases an identity removal is about to
-         * delete, BEFORE it deletes the identity's rows, so a removal
-         * interrupted after the rows are gone (a refused write, a cancelled
-         * coroutine, process death) can be finished by the next removal.
+         * Durably record [deletes]: identity-key aliases whose identity rows
+         * are being removed, each with the wallet that owned the identity.
+         * Written BEFORE the rows go (an identity removal, a persisted
+         * identity removal, a repair that outlived its identity), so a
+         * cleanup interrupted after them can be finished by the next one.
          */
-        suspend fun recordPendingIdentityKeyDeletes(entries: Collection<String>)
+        suspend fun recordPendingIdentityKeyDeletes(deletes: Collection<PendingIdentityKeyDelete>)
 
         /**
          * In ONE atomic commit: delete the aliases [delete] as
@@ -181,7 +181,7 @@ class WalletStorage(
          */
         suspend fun settlePendingIdentityKeyDeletes(
             delete: Collection<String>,
-            settled: Collection<String>,
+            settled: Collection<PendingIdentityKeyDelete>,
         )
 
         /**
@@ -217,22 +217,25 @@ class WalletStorage(
             tombstonedWalletIds += walletId.toHex()
         }
 
-        override suspend fun pendingIdentityKeyDeletes(): Set<String> =
-            store.data.first()[PENDING_IDENTITY_KEY_DELETES] ?: emptySet()
+        override suspend fun pendingIdentityKeyDeletes(): List<PendingIdentityKeyDelete> =
+            (store.data.first()[PENDING_IDENTITY_KEY_DELETES] ?: emptySet())
+                .map(PendingIdentityKeyDelete::decode)
 
-        override suspend fun recordPendingIdentityKeyDeletes(entries: Collection<String>) {
-            if (entries.isEmpty()) return
+        override suspend fun recordPendingIdentityKeyDeletes(
+            deletes: Collection<PendingIdentityKeyDelete>,
+        ) {
+            if (deletes.isEmpty()) return
             store.edit { prefs ->
                 prefs[PENDING_IDENTITY_KEY_DELETES] =
-                    (prefs[PENDING_IDENTITY_KEY_DELETES] ?: emptySet()) + entries
+                    (prefs[PENDING_IDENTITY_KEY_DELETES] ?: emptySet()) + deletes.map { it.encode() }
             }
         }
 
         override suspend fun settlePendingIdentityKeyDeletes(
             delete: Collection<String>,
-            settled: Collection<String>,
+            settled: Collection<PendingIdentityKeyDelete>,
         ) {
-            val settledEntries = settled.toSet()
+            val settledEntries = settled.map { it.encode() }.toSet()
             deletePrivateKeysLocked(delete) { prefs ->
                 val current = prefs[PENDING_IDENTITY_KEY_DELETES] ?: return@deletePrivateKeysLocked
                 val next = current - settledEntries
@@ -1779,5 +1782,37 @@ class WalletStorage(
         private val MASTER_LOCK_DEFECT_KEY = booleanPreferencesKey("masterkeylockdefect")
 
         private const val TAG = "WalletStorage"
+    }
+}
+
+/**
+ * One identity-key alias to delete once nothing needs it, with the wallet that
+ * owned the removed identity (null for an identity with no wallet link). See
+ * [WalletStorage.PrivateKeyExclusion.recordPendingIdentityKeyDeletes].
+ */
+class PendingIdentityKeyDelete(aliasHex: String, val walletId: ByteArray?) {
+    /** Lowercase hex of the alias (public key or HASH160). */
+    val aliasHex: String = aliasHex.lowercase()
+
+    internal fun encode(): String =
+        if (walletId == null) aliasHex else "$aliasHex@${walletId.joinToString("") { "%02x".format(it) }}"
+
+    override fun equals(other: Any?): Boolean =
+        other is PendingIdentityKeyDelete && other.encode() == encode()
+
+    override fun hashCode(): Int = encode().hashCode()
+
+    override fun toString(): String = "PendingIdentityKeyDelete(${encode()})"
+
+    internal companion object {
+        fun decode(entry: String): PendingIdentityKeyDelete {
+            val at = entry.indexOf('@')
+            if (at < 0) return PendingIdentityKeyDelete(entry, null)
+            val walletHex = entry.substring(at + 1)
+            return PendingIdentityKeyDelete(
+                entry.substring(0, at),
+                ByteArray(walletHex.length / 2) { walletHex.substring(it * 2, it * 2 + 2).toInt(16).toByte() },
+            )
+        }
     }
 }
