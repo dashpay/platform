@@ -234,13 +234,10 @@ class MasternodeVotingKeyChecksTest {
             MasternodeVotingKeyCheckOutcome(true, MasternodeRecordedVotingKey(check, addressA)),
         )
 
-        val outcome = MasternodeVotingKeyRecords.record(
-            db, identityId, testnet, identifierA, check,
-            MasternodeVotingKeyRecords.SlotBefore.EMPTY, rules,
-        )
+        val outcome = MasternodeVotingKeyRecords.record(db, identityId, testnet, identifierA, check, rules)
 
         assertEquals(rules.answer, outcome)
-        assertEquals(listOf(Triple(check, addressA, MasternodeVotingKeySlot.Empty)), rules.asked)
+        assertEquals(listOf(Triple(check, addressA, MasternodeVotingKeySlot.SameKey(null))), rules.asked)
         val stored = db.identityDao().getByIdentityId(identityId)!!
         assertEquals("undetermined", stored.votingKeyCheckRaw)
         assertEquals("timeout", stored.votingKeyCheckMessage)
@@ -257,18 +254,33 @@ class MasternodeVotingKeyChecksTest {
         val rules = RecordingRules(MasternodeVotingKeyCheckOutcome(true, null))
 
         MasternodeVotingKeyRecords.record(
-            db, identityId, testnet, identifierA, MasternodeVotingKeyCheck.Undetermined("down"),
-            MasternodeVotingKeyRecords.SlotBefore.SAME_KEY, rules,
-        )
-        MasternodeVotingKeyRecords.record(
-            db, identityId, testnet, identifierA, MasternodeVotingKeyCheck.Valid,
-            MasternodeVotingKeyRecords.SlotBefore.DIFFERENT_KEY, rules,
+            db, identityId, testnet, identifierA, MasternodeVotingKeyCheck.Undetermined("down"), rules,
         )
 
-        assertEquals(MasternodeVotingKeySlot.SameKey(valid), rules.asked[0].third)
-        assertEquals(MasternodeVotingKeySlot.DifferentKey, rules.asked[1].third)
+        assertEquals(MasternodeVotingKeySlot.SameKey(valid), rules.asked.single().third)
         // A null record leaves what is recorded unchanged.
         assertEquals(valid, db.identityDao().getByIdentityId(identityId)!!.recordedVotingKey)
+    }
+
+    /**
+     * A refusal another check recorded for the same key after it was stored, before this
+     * answer is written, is weighed by Rust: the slot it is given carries that refusal, so an
+     * inconclusive answer cannot erase it unseen.
+     */
+    @Test
+    fun shouldWeighARefusalRecordedMeanwhileForTheSameKey() = runBlocking {
+        db.identityDao().upsert(row(identifierA))
+        val refusal = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Invalid("rotated"), addressA)
+        // The second writer: another check records the refusal after the key was stored.
+        db.identityDao().recordVotingKeyCheck(identityId, testnet, identifierA, "invalid", "rotated", addressA.bytes)
+        val rules = RecordingRules(MasternodeVotingKeyCheckOutcome(true, null))
+
+        MasternodeVotingKeyRecords.record(
+            db, identityId, testnet, identifierA, MasternodeVotingKeyCheck.Undetermined("down"), rules,
+        )
+
+        assertEquals(MasternodeVotingKeySlot.SameKey(refusal), rules.asked.single().third)
+        assertEquals(refusal, db.identityDao().getByIdentityId(identityId)!!.recordedVotingKey)
     }
 
     /**
@@ -284,8 +296,7 @@ class MasternodeVotingKeyChecksTest {
             ),
         )
         suspend fun record(network: Int = testnet) = MasternodeVotingKeyRecords.record(
-            db, identityId, network, identifierA, MasternodeVotingKeyCheck.Valid,
-            MasternodeVotingKeyRecords.SlotBefore.SAME_KEY, rules,
+            db, identityId, network, identifierA, MasternodeVotingKeyCheck.Valid, rules,
         )
 
         assertNull("no row", record())

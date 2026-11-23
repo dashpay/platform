@@ -621,12 +621,9 @@ class LoadIdentityVotingKeyTest {
             networkRaw: Int,
             identifier: String,
             check: MasternodeVotingKeyCheck,
-            slotBefore: MasternodeVotingKeyRecords.SlotBefore,
         ): MasternodeVotingKeyCheckOutcome? {
             recordFailure?.let { throw it }
-            return MasternodeVotingKeyRecords.record(
-                db, identityId, networkRaw, identifier, check, slotBefore, rules,
-            )
+            return MasternodeVotingKeyRecords.record(db, identityId, networkRaw, identifier, check, rules)
         }
 
         /** When set, recording a check throws it. */
@@ -760,7 +757,8 @@ class LoadIdentityVotingKeyTest {
         )
 
         assertEquals(LoadSaveResult.Saved, result)
-        assertEquals(listOf<MasternodeVotingKeySlot>(MasternodeVotingKeySlot.Empty), rules.asked)
+        // The new key is in its slot with nothing recorded for it yet.
+        assertEquals(listOf<MasternodeVotingKeySlot>(MasternodeVotingKeySlot.SameKey(null)), rules.asked)
         assertEquals(valid, dao.getByIdentityId(identityId)!!.recordedVotingKey)
     }
 
@@ -865,7 +863,16 @@ class LoadIdentityVotingKeyTest {
         )
 
         assertEquals(LoadSaveResult.Saved, result)
-        assertEquals(listOf<MasternodeVotingKeySlot>(MasternodeVotingKeySlot.DifferentKey), rules.asked)
+        // Rust is given the new key with the record the row holds, the old key's, which Rust
+        // does not count for the new one.
+        assertEquals(
+            listOf<MasternodeVotingKeySlot>(
+                MasternodeVotingKeySlot.SameKey(
+                    MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Invalid("rotated"), addressOf(keyA)),
+                ),
+            ),
+            rules.asked,
+        )
         assertEquals(valid, dao.getByIdentityId(identityId)!!.recordedVotingKey)
     }
 

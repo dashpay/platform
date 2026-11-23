@@ -458,6 +458,12 @@ class FfiSmokeTest {
         // A refusal of this key: not offered.
         val refusedUse = MasternodeVotingKeyNative.recordedVotingKeyUse(2, address, address)
         assertTrue(refusedUse!!, refusedUse.contains("\"canVote\":false"))
+        // A refusal recorded for another key (address A) does not refuse the stored key B: it
+        // is offered and checked first, so the stored address crosses JNI as its own argument.
+        val otherAddress = ByteArray(20) { 4 }
+        val otherKeyUse = MasternodeVotingKeyNative.recordedVotingKeyUse(2, otherAddress, address)
+        assertTrue(otherKeyUse!!, otherKeyUse.contains("\"canVote\":true"))
+        assertTrue(otherKeyUse, otherKeyUse.contains("\"checkBeforeUse\":true"))
         assertEquals(1, code { MasternodeVotingKeyNative.recordedVotingKeyUse(0, null, ByteArray(21)) })
 
         // The masternode load for voting (#6099): bad lengths at the JNI boundary, a null SDK

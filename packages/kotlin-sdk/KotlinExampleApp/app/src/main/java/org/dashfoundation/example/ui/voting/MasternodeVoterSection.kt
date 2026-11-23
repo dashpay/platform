@@ -41,6 +41,7 @@ import org.dashfoundation.dashsdk.voting.MasternodeVotingKeyAddress
 import org.dashfoundation.dashsdk.voting.MasternodeVotingKeyCheck
 import org.dashfoundation.dashsdk.voting.MasternodeVotingKeyRecords
 import org.dashfoundation.dashsdk.voting.MasternodeVotingKeyRules
+import org.dashfoundation.dashsdk.voting.MasternodeVotingKeySlot
 import org.dashfoundation.dashsdk.voting.MasternodeVotingSigner
 import org.dashfoundation.dashsdk.voting.recordedVotingKey
 import org.dashfoundation.dashsdk.voting.storedVotingKeyAddress
@@ -75,20 +76,28 @@ sealed interface MasternodeVoter {
 
     /**
      * A masternode or evonode identity loaded on this device with its voting key (Load
-     * Identity), and the pro_tx_hash (wire order) its row records for the masternode
-     * (`IdentityEntity.votingProTxHash`). The two differ for a masternode stored under its
-     * voter identity (a shared masternode, #6099). The key stays in `WalletStorage` and signs
-     * through the wallet manager's signer.
+     * Identity), the pro_tx_hash (wire order) its row records for the masternode
+     * (`IdentityEntity.votingProTxHash`), and the identifier of the stored key the section
+     * decided on ([votingKeyIdentifier]). The id and the pro_tx_hash differ for a masternode
+     * stored under its voter identity (a shared masternode, #6099). The vote signs with that
+     * key only, so a key replaced after the pick is never used unchecked. The key stays in
+     * `WalletStorage` and signs through the wallet manager's signer.
      */
-    class StoredKey(identityId: ByteArray, wireOrderProTxHash: ByteArray) : MasternodeVoter {
+    class StoredKey(
+        identityId: ByteArray,
+        wireOrderProTxHash: ByteArray,
+        val votingKeyIdentifier: String,
+    ) : MasternodeVoter {
         private val id = identityId.copyOf()
         private val proTxHash = wireOrderProTxHash.copyOf()
         val identityId: ByteArray get() = id.copyOf()
         override val canCast: Boolean get() = true
         override val wireOrderProTxHash: ByteArray get() = proTxHash.copyOf()
         override fun equals(other: Any?): Boolean =
-            other is StoredKey && id.contentEquals(other.id) && proTxHash.contentEquals(other.proTxHash)
-        override fun hashCode(): Int = 31 * id.contentHashCode() + proTxHash.contentHashCode()
+            other is StoredKey && id.contentEquals(other.id) && proTxHash.contentEquals(other.proTxHash) &&
+                votingKeyIdentifier == other.votingKeyIdentifier
+        override fun hashCode(): Int =
+            (31 * id.contentHashCode() + proTxHash.contentHashCode()) * 31 + votingKeyIdentifier.hashCode()
         override fun toString(): String = "StoredKey(${id.toHex()}, ${proTxHash.toHex()})"
     }
 
@@ -222,14 +231,73 @@ internal fun voterKeyState(identity: IdentityEntity): VoterKeyState = VoterKeySt
 )
 
 /**
- * Whether the stored voting key may not vote, as Rust decides from the recorded check and the
- * stored key's address, which the identifier carries, so no key is read (Swift
- * `MasternodeVoterSection.isRefused`, which reads no address and takes the record as it is).
+ * A candidate row with its key state, from ONE Room snapshot, so a candidate is never judged
+ * against a record from another moment. Equal by value through [state].
  */
-internal fun isVotingKeyRefused(state: VoterKeyState?, rules: MasternodeVotingKeyRules): Boolean {
-    val address = state?.storedAddress ?: return false
-    return !rules.use(state.recorded, address).canVote
+internal data class VoterRow(val identity: IdentityEntity, val state: VoterKeyState)
+
+/** [VoterRow]s of [rows] (one Room emission). */
+internal fun voterRows(rows: List<IdentityEntity>): List<VoterRow> =
+    rows.map { VoterRow(it, voterKeyState(it)) }
+
+/**
+ * What the section knows of the picked key in this dialog: [checkedIdentifier] is the key a
+ * check finished for (whatever it found), and [unsaved] what Rust said to record for it when
+ * that record could not be saved, which stands in for the row's record until it is.
+ */
+internal data class PickedKeyCheckState(
+    val checkedIdentifier: String,
+    val unsaved: MasternodeRecordedVotingKey? = null,
+)
+
+/** Whether a stored key may be published as the voter, and if not, why. */
+internal enum class StoredVoterDecision {
+    /** The key may vote now. */
+    CASTABLE,
+
+    /** Rust says the key may not vote (a refusal recorded for it). */
+    REFUSED,
+
+    /** Rust says to check the key before use, and no check for it has finished yet. */
+    AWAITING_CHECK,
+
+    /** The stored identifier cannot be read, so no key can be found to sign. */
+    UNREADABLE,
 }
+
+/**
+ * The decision for a candidate's stored key, as Rust decides it
+ * (`MasternodeVotingKeyRules.use`) from the record that applies: [picked]'s unsaved record for
+ * the same key when there is one, else the row's. The stored key's address comes from its
+ * identifier, so no key is read. A key Rust says to check first is castable only once a check
+ * of that same key finished in this dialog ([picked]); an unanswered check still lets it vote,
+ * as Swift does.
+ */
+internal fun storedVoterDecision(
+    state: VoterKeyState?,
+    picked: PickedKeyCheckState?,
+    rules: MasternodeVotingKeyRules,
+): StoredVoterDecision {
+    val identifier = state?.identifier ?: return StoredVoterDecision.UNREADABLE
+    val address = state.storedAddress ?: return StoredVoterDecision.UNREADABLE
+    val sameKey = picked?.takeIf { it.checkedIdentifier == identifier }
+    val keyUse = rules.use(sameKey?.unsaved ?: state.recorded, address)
+    return when {
+        !keyUse.canVote -> StoredVoterDecision.REFUSED
+        keyUse.checkBeforeUse && sameKey == null -> StoredVoterDecision.AWAITING_CHECK
+        else -> StoredVoterDecision.CASTABLE
+    }
+}
+
+/**
+ * Whether the stored voting key is known not to vote: refused by Rust, or unreadable. Used for
+ * the label and the default pick (Swift `MasternodeVoterSection.isRefused`, which reads no
+ * address and takes the record as it is).
+ */
+internal fun isVotingKeyRefused(state: VoterKeyState?, rules: MasternodeVotingKeyRules): Boolean =
+    storedVoterDecision(state, null, rules).let {
+        it == StoredVoterDecision.REFUSED || it == StoredVoterDecision.UNREADABLE
+    }
 
 /** How the check of the picked identity's stored voting key went. */
 internal sealed interface PickedVotingKeyCheck {
@@ -245,8 +313,15 @@ internal sealed interface PickedVotingKeyCheck {
      */
     data object Dropped : PickedVotingKeyCheck
 
-    /** The check could not run or its result could not be saved; [message] says why. */
-    data class Failed(val message: String) : PickedVotingKeyCheck
+    /**
+     * The check could not run, or its answer could not be saved; [message] says why. For an
+     * answer that could not be saved, [unsaved] is what Rust said to record for it, which the
+     * section applies until it is saved, so a refusal is never lost to a failed write.
+     */
+    data class Failed(
+        val message: String,
+        val unsaved: MasternodeRecordedVotingKey? = null,
+    ) : PickedVotingKeyCheck
 }
 
 /**
@@ -276,7 +351,8 @@ internal suspend fun checkPickedVotingKeyIfNeeded(
     val row = database.identityDao().getByIdentityId(identityId)
         ?.takeIf { it.networkRaw == networkRaw && it.votingPrivateKeyIdentifier == identifier }
         ?: return PickedVotingKeyCheck.Dropped
-    val address = MasternodeVotingKeyAddress.ofIdentifier(identifier)
+    // An identifier this build cannot read names no key to check; the picker shows it as such.
+    val address = row.storedVotingKeyAddress ?: return PickedVotingKeyCheck.Dropped
     if (!rules.use(row.recordedVotingKey, address).checkBeforeUse) return PickedVotingKeyCheck.NotNeeded
     val answer = try {
         check(row.votingProTxHash, address)
@@ -290,14 +366,14 @@ internal suspend fun checkPickedVotingKeyIfNeeded(
     currentCoroutineContext().ensureActive()
     if (!stillCurrent()) return PickedVotingKeyCheck.Dropped
     val outcome = try {
-        MasternodeVotingKeyRecords.record(
-            database, identityId, networkRaw, identifier, answer,
-            MasternodeVotingKeyRecords.SlotBefore.SAME_KEY, rules,
-        )
+        MasternodeVotingKeyRecords.record(database, identityId, networkRaw, identifier, answer, rules)
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        return PickedVotingKeyCheck.Failed("The voting key check could not be saved: ${e.message}")
+        // The answer stands even though it was not saved: what Rust says to record for it,
+        // against the record read before the check, is held by the section instead.
+        val unsaved = rules.outcome(answer, address, MasternodeVotingKeySlot.SameKey(row.recordedVotingKey)).record
+        return PickedVotingKeyCheck.Failed("The voting key check could not be saved: ${e.message}", unsaved)
     }
     return if (outcome == null) PickedVotingKeyCheck.Dropped else PickedVotingKeyCheck.Recorded(answer)
 }
@@ -325,7 +401,7 @@ internal fun decodeTyped32Bytes(text: String): ByteArray? {
  */
 internal fun publishVoter(
     selected: IdentityEntity?,
-    selectedRefused: Boolean = false,
+    selectedCastable: Boolean = true,
     allowsTypedProTxHash: Boolean,
     useTypedProTxHash: Boolean,
     proTxHashText: String,
@@ -348,9 +424,11 @@ internal fun publishVoter(
     if (allowsTypedProTxHash && useTypedProTxHash) {
         return decodeTyped32Bytes(proTxHashText)?.let { MasternodeVoter.TypedProTxHash(it) }
     }
-    // An identity whose voting key may not vote is not published.
-    if (selectedRefused) return null
-    return selected?.let { MasternodeVoter.StoredKey(it.identityId, it.votingProTxHash) }
+    // A stored key is published only once it may vote now (see [storedVoterDecision]).
+    if (!selectedCastable) return null
+    val identity = selected ?: return null
+    val identifier = identity.votingPrivateKeyIdentifier ?: return null
+    return MasternodeVoter.StoredKey(identity.identityId, identity.votingProTxHash, identifier)
 }
 
 // ── Casting ──────────────────────────────────────────────────────────
@@ -362,6 +440,15 @@ class MasternodeVoteCallException(message: String) : Exception(message)
 internal const val NO_STORED_VOTING_KEY_MESSAGE =
     "No voting key is stored for this masternode identity. Load it again with its voting " +
         "private key."
+
+/** Shown under the picker for a stored voting key identifier this build cannot read. */
+internal const val UNREADABLE_VOTING_KEY_IDENTIFIER_MESSAGE =
+    "This identity's stored voting key cannot be found on this device, so it cannot vote. " +
+        "Load the identity again with its voting key under Identities, Load Identity."
+
+/** Shown when the picked identity's voting key was replaced after the section decided on it. */
+internal const val VOTING_KEY_CHANGED_SINCE_PICK_MESSAGE =
+    "This masternode's voting key changed since it was picked. Pick it again to vote."
 
 /** Shown when there is no wallet manager whose signer could sign the vote. */
 internal const val NO_WALLET_MANAGER_MESSAGE =
@@ -402,9 +489,10 @@ class MasternodeVoteCall(
     }
 
     /**
-     * Cast as [voter]. A stored key signs through the active wallet manager's signer: the
-     * identity's voting key identifier is read from Room now, and the manager refuses the
-     * vote when no readable key is stored under it.
+     * Cast as [voter]. A stored key signs through the active wallet manager's signer, with the
+     * key the section decided on ([MasternodeVoter.StoredKey.votingKeyIdentifier]): when the
+     * identity's row names another key by now, the vote is refused rather than signed with a
+     * key the section never judged, and the manager refuses it when no readable key is stored.
      *
      * @throws MasternodeVoteCallException when the vote cannot be cast as [voter]; any SDK
      *   error from the cast itself propagates.
@@ -415,6 +503,9 @@ class MasternodeVoteCall(
                 val identity = container.database.identityDao().getByIdentityId(voter.identityId)
                 val identifier = identity?.votingPrivateKeyIdentifier
                     ?: throw MasternodeVoteCallException(NO_STORED_VOTING_KEY_MESSAGE)
+                if (identifier != voter.votingKeyIdentifier) {
+                    throw MasternodeVoteCallException(VOTING_KEY_CHANGED_SINCE_PICK_MESSAGE)
+                }
                 val manager = container.walletManagerStore.activeManager.value
                     ?: throw MasternodeVoteCallException(NO_WALLET_MANAGER_MESSAGE)
                 try {
@@ -487,23 +578,23 @@ fun MasternodeVoterSection(
     val container = LocalAppContainer.current
     val appState = LocalAppState.current
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
-    val identities by remember(network) {
-        container.database.identityDao().observeByNetwork(network.ffiValue)
+    // The candidates and their stored keys and records from ONE Room snapshot, compared by
+    // value, so a new record (this section's own check, or a load elsewhere) recomposes the
+    // section and a candidate is never judged against a record from another moment.
+    val rows by remember(network) {
+        container.database.identityDao().observeByNetwork(network.ffiValue).map(::voterRows)
     }.collectAsStateWithLifecycle(initialValue = emptyList())
-    val candidates = remember(identities, network) { votingCandidates(identities, network.ffiValue) }
-    // The candidates' stored keys and records, by identity hex: compared by value, so a new
-    // record (this section's own check, or a load elsewhere) recomposes the section.
-    val keyStates by remember(network) {
-        container.database.identityDao().observeByNetwork(network.ffiValue)
-            .map { rows -> rows.associate { it.identityId.toHex() to voterKeyState(it) } }
-    }.collectAsStateWithLifecycle(initialValue = emptyMap())
+    val candidates = remember(rows, network) { votingCandidates(rows.map { it.identity }, network.ffiValue) }
+    val keyStates = remember(rows) { rows.associate { it.identity.identityId.toHex() to it.state } }
     val rules = MasternodeVotingKeyRules.Native
     fun isRefused(identity: IdentityEntity): Boolean =
         isVotingKeyRefused(keyStates[identity.identityId.toHex()], rules)
-    // The identity whose stored voting key is being checked right now, and why the last check
-    // of a picked identity did not happen or was not saved, by identity hex.
+    // The identity whose stored voting key is being checked right now; why the last check of
+    // a picked identity did not happen or was not saved, by identity hex; and what this dialog
+    // knows of each identity's key from a finished check, by identity hex.
     var checkingIdentityHex by remember { mutableStateOf<String?>(null) }
     var checkFailure by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var pickedChecks by remember { mutableStateOf<Map<String, PickedKeyCheckState>>(emptyMap()) }
 
     var selectedIdentityHex by rememberSaveable { mutableStateOf<String?>(null) }
     var useTypedProTxHash by rememberSaveable { mutableStateOf(false) }
@@ -517,16 +608,30 @@ fun MasternodeVoterSection(
     val selected = effectiveVoterSelection(selectedIdentityHex, candidates, ::isRefused)
     val selectedHex = selected?.identityId?.toHex()
     val selectedState = selectedHex?.let { keyStates[it] }
+    val selectedPicked = selectedHex?.let { pickedChecks[it] }
+        ?.takeIf { it.checkedIdentifier == selectedState?.identifier }
+    // The default pick is kept once shown: a refusal that arrives later labels it and keeps it
+    // from voting, but never swaps the vote to another masternode the operator did not pick.
+    if (selectedIdentityHex == null && selectedHex != null) {
+        SideEffect { selectedIdentityHex = selectedHex }
+    }
     val usesTypedInput = (BuildConfig.DEBUG && useTypedCredentials) ||
         (allowsTypedProTxHash && useTypedProTxHash)
 
     // The voter the inputs name now. Event handlers call [publish] right after their state
     // writes, so the dialog's voter changes in the same event as the mode and inputs: it
     // never casts with a voter the section no longer shows.
-    fun currentVoter(): MasternodeVoter? = publishVoter(
-        selected = effectiveVoterSelection(selectedIdentityHex, candidates, ::isRefused),
-        selectedRefused = effectiveVoterSelection(selectedIdentityHex, candidates, ::isRefused)
-            ?.let(::isRefused) == true,
+    fun currentVoter(): MasternodeVoter? {
+        val pick = effectiveVoterSelection(selectedIdentityHex, candidates, ::isRefused)
+        val hex = pick?.identityId?.toHex()
+        val state = hex?.let { keyStates[it] }
+        return publishVoter(
+        selected = pick,
+        selectedCastable = pick != null && storedVoterDecision(
+            state,
+            hex?.let { pickedChecks[it] },
+            rules,
+        ) == StoredVoterDecision.CASTABLE,
         allowsTypedProTxHash = allowsTypedProTxHash,
         useTypedProTxHash = useTypedProTxHash,
         proTxHashText = proTxHashText,
@@ -534,6 +639,7 @@ fun MasternodeVoterSection(
         useTypedCredentials = useTypedCredentials,
         votingKeyText = votingKeyText,
     )
+    }
     fun publish() = onVoterChange(currentVoter())
     val voter = currentVoter()
     // Changes no handler makes (the identity list, the first composition) are published by
@@ -548,6 +654,8 @@ fun MasternodeVoterSection(
     LaunchedEffect(selectedHex, selectedState?.identifier, network) {
         val identity = selected ?: return@LaunchedEffect
         val identifier = selectedState?.identifier ?: return@LaunchedEffect
+        // An unreadable identifier names no key to check; the status line says so.
+        if (selectedState.storedAddress == null) return@LaunchedEffect
         val sdk = appState.sdk.value ?: return@LaunchedEffect
         val hex = identity.identityId.toHex()
         val networkAtStart = network
@@ -568,9 +676,14 @@ fun MasternodeVoterSection(
             if (checkingIdentityHex == hex) checkingIdentityHex = null
         }
         when (result) {
-            is PickedVotingKeyCheck.Failed -> checkFailure = hex to result.message
-            is PickedVotingKeyCheck.Recorded, PickedVotingKeyCheck.NotNeeded ->
+            is PickedVotingKeyCheck.Failed -> {
+                checkFailure = hex to result.message
+                pickedChecks = pickedChecks + (hex to PickedKeyCheckState(identifier, result.unsaved))
+            }
+            is PickedVotingKeyCheck.Recorded, PickedVotingKeyCheck.NotNeeded -> {
                 if (checkFailure?.first == hex) checkFailure = null
+                pickedChecks = pickedChecks + (hex to PickedKeyCheckState(identifier))
+            }
             PickedVotingKeyCheck.Dropped -> Unit
         }
     }
@@ -604,9 +717,13 @@ fun MasternodeVoterSection(
                 },
             )
             if (!usesTypedInput) {
+                // A record that could not be saved stands in for the row's until it is.
+                val shownState = selectedState?.let { state ->
+                    selectedPicked?.unsaved?.let { state.copy(recorded = it) } ?: state
+                }
                 VotingKeyCheckStatus(
-                    state = selectedState,
-                    keyUse = selectedState?.storedAddress?.let { rules.use(selectedState.recorded, it) },
+                    state = shownState,
+                    keyUse = shownState?.storedAddress?.let { rules.use(shownState.recorded, it) },
                     isChecking = checkingIdentityHex == selectedHex,
                     failure = checkFailure?.takeIf { it.first == selectedHex }?.second,
                     modifier = Modifier.testTag("$testTagPrefix.voterKeyCheck"),
@@ -740,6 +857,9 @@ internal fun votingKeyCheckStatusText(
     failure: String?,
 ): Pair<String, Boolean>? {
     if (isChecking) return "Checking the voting key..." to false
+    if (state?.identifier != null && state.storedAddress == null) {
+        return UNREADABLE_VOTING_KEY_IDENTIFIER_MESSAGE to true
+    }
     val recorded = state?.recorded?.check
     return when {
         keyUse?.canVote == false && recorded is MasternodeVotingKeyCheck.Invalid ->

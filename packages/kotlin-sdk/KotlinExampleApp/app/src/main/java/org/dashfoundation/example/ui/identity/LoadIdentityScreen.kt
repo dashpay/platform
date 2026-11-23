@@ -732,15 +732,14 @@ internal interface VotingKeyEntries {
 
     /**
      * [MasternodeVotingKeyRecords.record]: write on the row what Rust says to record for
-     * [check] of the key [identifier] names, given what the slot held before. Null when the
-     * row no longer names that key, so nothing was written.
+     * [check] of the key [identifier] names, against the record the row holds when it writes.
+     * Null when the row no longer names that key, so nothing was written.
      */
     suspend fun recordCheck(
         identityId: ByteArray,
         networkRaw: Int,
         identifier: String,
         check: MasternodeVotingKeyCheck,
-        slotBefore: MasternodeVotingKeyRecords.SlotBefore,
     ): MasternodeVotingKeyCheckOutcome?
 }
 
@@ -770,9 +769,8 @@ internal class StoredVotingKeyEntries(
         networkRaw: Int,
         identifier: String,
         check: MasternodeVotingKeyCheck,
-        slotBefore: MasternodeVotingKeyRecords.SlotBefore,
     ): MasternodeVotingKeyCheckOutcome? = MasternodeVotingKeyRecords.record(
-        database, identityId, networkRaw, identifier, check, slotBefore,
+        database, identityId, networkRaw, identifier, check,
     )
 }
 
@@ -819,9 +817,7 @@ internal suspend fun checkEnteredVotingKey(
     if (outcome.record != null && stored != null && slot is MasternodeVotingKeySlot.SameKey) {
         // Nothing entered is stored. What Rust says to record is for the key already stored.
         try {
-            entries.recordCheck(
-                identityId, networkRaw, stored, check, MasternodeVotingKeyRecords.SlotBefore.SAME_KEY,
-            )
+            entries.recordCheck(identityId, networkRaw, stored, check)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -875,11 +871,10 @@ private suspend fun recordStoredVotingKeyCheck(
     networkRaw: Int,
     identifier: String,
     check: MasternodeVotingKeyCheck?,
-    slotBefore: MasternodeVotingKeyRecords.SlotBefore,
 ): String? {
     check ?: return null
     val outcome = try {
-        entries.recordCheck(identityId, networkRaw, identifier, check, slotBefore)
+        entries.recordCheck(identityId, networkRaw, identifier, check)
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
@@ -924,9 +919,9 @@ private fun withVotingKeyNote(result: LoadSaveResult, lead: String, note: String
  * a shared masternode, so votes read the pro_tx_hash from here (#6099).
  *
  * Once the key is stored, what Rust says to record for [votingKeyCheck] (its check before the
- * save, see [checkEnteredVotingKey]) is written on the row, from an empty slot for a new key
- * or with the row's record for the same key. A key that could not be checked is reported in a
- * warning saying what happens next.
+ * save, see [checkEnteredVotingKey]) is written on the row, weighed by Rust against the record
+ * the row holds when it is written. A key that could not be checked is reported in a warning
+ * saying what happens next.
  */
 internal suspend fun saveLoadedIdentity(
     dao: IdentityDao,
@@ -973,11 +968,6 @@ internal suspend fun saveLoadedIdentity(
         is VotingKeyAssignment.Assigned -> {
             val note = recordStoredVotingKeyCheck(
                 entries, identityId, networkRaw, assignment.identifier, votingKeyCheck,
-                if (expected == null) {
-                    MasternodeVotingKeyRecords.SlotBefore.EMPTY
-                } else {
-                    MasternodeVotingKeyRecords.SlotBefore.SAME_KEY
-                },
             )
             withVotingKeyNote(
                 savedAfterCleanup(entries, identityId, STALE_VOTING_KEY_NOT_REMOVED_MESSAGE),
@@ -1047,7 +1037,8 @@ private suspend fun saveLoadedFields(
  * to load again, which asks again. [votingKey] stays the caller's to zero.
  *
  * Once the new key is stored, what Rust says to record for [votingKeyCheck] (the entered key's
- * check at the load) is written on the row, the slot having held a different key.
+ * check at the load) is written on the row, weighed by Rust against the record the row holds
+ * then (a record left by the replaced key does not count for the new one).
  */
 internal suspend fun replaceVotingKey(
     dao: IdentityDao,
@@ -1067,7 +1058,6 @@ internal suspend fun replaceVotingKey(
         is VotingKeyAssignment.Assigned -> {
             val note = recordStoredVotingKeyCheck(
                 entries, identityId, networkRaw, assignment.identifier, votingKeyCheck,
-                MasternodeVotingKeyRecords.SlotBefore.DIFFERENT_KEY,
             )
             withVotingKeyNote(
                 savedAfterCleanup(entries, identityId, PREVIOUS_VOTING_KEY_NOT_REMOVED_MESSAGE),
