@@ -1665,6 +1665,7 @@ mod tests {
         use crate::events::PlatformEventManager;
         use crate::spv::SpvRuntime;
         use crate::wallet::asset_lock::manager::AssetLockManager;
+        use crate::wallet::core::WalletGeneration;
         use crate::wallet::persister::WalletPersister;
         use crate::wallet::platform_addresses::PlatformAddressWallet;
         use tokio::sync::Notify;
@@ -1682,6 +1683,8 @@ mod tests {
             Arc::new(Notify::new()),
             broadcaster,
             persister.clone(),
+            // No wallet is registered under this id; nothing builds here.
+            Arc::new(WalletGeneration::new()),
         ));
         let wallet = PlatformAddressWallet::new(
             sdk,

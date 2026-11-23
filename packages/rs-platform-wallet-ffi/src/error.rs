@@ -228,6 +228,11 @@ pub enum PlatformWalletFFIResultCode {
     ErrorAssetLockNotTracked = 23,
     /// Asset-lock funding cannot reuse this one-shot output; Platform
     /// completion for the requested operation is unconfirmed.
+    ///
+    /// Also `PlatformWalletError::AssetLockConsumptionUnknown`: an unbound
+    /// identity top-up lock that records no recipient and whose Platform
+    /// consumption is unknown (rebuilt from the chain after a restore) cannot
+    /// be assigned a recipient. Nothing was assigned; the lock stays tracked.
     ErrorAssetLockAlreadyConsumed = 24,
     /// Existing-lock recovery attempted to use a lock for the wrong funding
     /// family or bound identity index.
@@ -657,6 +662,11 @@ pub enum PlatformWalletFFIResultCode {
     /// was submitted and nothing was paid; resume with the recorded recipient
     /// (the row exposes it). Rows tracked before the recipient was recorded
     /// carry none and accept the caller's.
+    ///
+    /// Also an unbound identity top-up lock resumed (or assigned) to a
+    /// different identity than the one its row recorded
+    /// (`PlatformWalletError::AssetLockIdentityRecipientMismatch`): nothing
+    /// was submitted; resume to the recorded identity, which the row exposes.
     ErrorAssetLockRecipientMismatch = 61,
 
     /// Maps `PlatformWalletError::PrivateContactRequestNeedsPrivateReply`:
@@ -816,6 +826,18 @@ pub enum PlatformWalletFFIResultCode {
     /// fetch releases its notes. Retrying does not help: the host asks the user to update
     /// the app.
     ErrorNetworkProtocolVersionUnsupported = 81,
+    /// Maps `PlatformWalletError::AssetLockRecipientUnknown`: an unbound
+    /// identity top-up lock records no identity to pay (it was rebuilt from
+    /// the chain, for example after a restore from the seed, and its credit
+    /// output names none), so no resume pays it: it may have been meant for
+    /// someone else's identity. Nothing was submitted or paid. Not retryable
+    /// as is. A lock the tracked-lock lists flag `identity_recipient_unassigned`
+    /// is recoverable once the user assigns it a recipient
+    /// (`platform_wallet_assign_identity_top_up_recipient`), after which a
+    /// resume to that identity proceeds. One whose Platform consumption is
+    /// unknown (status `RecoveredFromChain`) is not flagged, and assigning it
+    /// is refused with [`Self::ErrorAssetLockAlreadyConsumed`] (24).
+    ErrorAssetLockRecipientUnknown = 82,
 
     /// The named thing does not exist.
     ///
@@ -1116,6 +1138,12 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::IdentityNotFound(..) => {
                 PlatformWalletFFIResultCode::ErrorIdentityNotFound
             }
+            // A bound top-up lock whose identity (at its registration index)
+            // is not loaded yet: the identity is not found locally, and
+            // nothing was submitted.
+            PlatformWalletError::AssetLockIdentityNotLoaded { .. } => {
+                PlatformWalletFFIResultCode::ErrorIdentityNotFound
+            }
             // The two shielded broadcast/wait variants. Today nothing routes
             // them through this blanket impl — the dedicated match in
             // `platform_wallet_manager_shielded_identity_create_from_pool`
@@ -1248,7 +1276,10 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::InvitationNetworkMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorInvalidNetwork
             }
-            PlatformWalletError::AssetLockAlreadyConsumed(..) => {
+            // An assignment refused because Platform may already have
+            // consumed the lock: this lock cannot be used here either.
+            PlatformWalletError::AssetLockAlreadyConsumed(..)
+            | PlatformWalletError::AssetLockConsumptionUnknown(..) => {
                 PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed
             }
             PlatformWalletError::AssetLockFundingMismatch { .. } => {
@@ -1283,8 +1314,12 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::AssetLockTooManyInputs { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockTooManyInputs
             }
-            PlatformWalletError::AssetLockRecipientMismatch { .. } => {
+            PlatformWalletError::AssetLockRecipientMismatch { .. }
+            | PlatformWalletError::AssetLockIdentityRecipientMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockRecipientMismatch
+            }
+            PlatformWalletError::AssetLockRecipientUnknown(..) => {
+                PlatformWalletFFIResultCode::ErrorAssetLockRecipientUnknown
             }
             // A quiesce/drain barrier that did not complete within budget
             // (clear/reset paths). The host must fail closed: keep its
@@ -1893,6 +1928,10 @@ mod tests {
             ),
             (
                 PlatformWalletError::AssetLockAlreadyConsumed(out_point),
+                PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed,
+            ),
+            (
+                PlatformWalletError::AssetLockConsumptionUnknown(out_point),
                 PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed,
             ),
             (
@@ -2668,6 +2707,54 @@ mod tests {
             "the typed Display must survive the conversion: {message}"
         );
         assert!(message.contains(&hex::encode(recorded)));
+    }
+
+    #[test]
+    fn should_map_an_unbound_top_up_resumed_to_another_identity_to_61() {
+        let recorded = dpp::prelude::Identifier::from([1u8; 32]);
+        let result: PlatformWalletFFIResult =
+            PlatformWalletError::AssetLockIdentityRecipientMismatch {
+                out_point: dashcore::OutPoint::null(),
+                recorded,
+                requested: dpp::prelude::Identifier::from([2u8; 32]),
+            }
+            .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockRecipientMismatch
+        );
+        assert!(message_of(&result).contains(&format!("{recorded}")));
+    }
+
+    /// A bound top-up lock whose identity the wallet has not loaded yet
+    /// crosses as "identity not found": nothing was submitted.
+    #[test]
+    fn should_report_a_bound_lock_without_its_identity_as_identity_not_found() {
+        let result: PlatformWalletFFIResult = PlatformWalletError::AssetLockIdentityNotLoaded {
+            out_point: dashcore::OutPoint::null(),
+            identity_index: 3,
+        }
+        .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorIdentityNotFound
+        );
+        assert!(message_of(&result).contains("index 3"));
+    }
+
+    #[test]
+    fn should_pin_the_unassigned_unbound_top_up_code_at_82() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorAssetLockRecipientUnknown as i32,
+            82
+        );
+        let result: PlatformWalletFFIResult =
+            PlatformWalletError::AssetLockRecipientUnknown(dashcore::OutPoint::null()).into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockRecipientUnknown
+        );
+        assert!(message_of(&result).contains("assign a recipient"));
     }
 
     #[test]

@@ -28,6 +28,7 @@
 //! returns.
 
 use std::slice;
+use std::sync::{Arc, Mutex};
 
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
@@ -36,6 +37,7 @@ use platform_wallet::AssetLockFunding;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
 
 use crate::check_ptr;
+use crate::core_wallet_types::OutPointFFI;
 use crate::error::*;
 use crate::handle::*;
 use crate::identity_registration::IdentityFundingInputFFI;
@@ -279,23 +281,6 @@ pub unsafe extern "C" fn platform_wallet_top_up_external_identity_from_addresses
     )
 }
 
-/// Minimum asset-lock funding for a Core-funded identity top-up, in duffs.
-///
-/// Platform rejects an `IdentityTopUp` whose asset-lock output value (in
-/// credits) is below `IdentityTopUpTransition::calculate_min_required_fee`.
-/// Under the active fee version (v1) that minimum is
-/// `identity_topup_base_cost` (500_000 credits = 500 duffs) **plus**
-/// `required_asset_lock_duff_balance_for_processing_start_for_identity_top_up`
-/// (50_000 duffs) — i.e. 50_500 duffs. Below that, a lock built and broadcast
-/// here is accepted by Core (spending real UTXOs) but rejected by Platform,
-/// stranding the funds in a lock that can never complete the top-up. Reject
-/// sub-floor amounts up front so no such lock is ever broadcast.
-///
-/// (The bare 50_000 asset-lock floor alone was the fee-v0 minimum; the active
-/// v1 calc — `STATE_TRANSITION_VERSIONS_V3`, protocol v11+ — adds the base
-/// cost, so this constant must include it.)
-const MIN_TOP_UP_DUFFS: u64 = 50_500;
-
 /// Top up an existing identity's credit balance by building and
 /// broadcasting a **new Core asset lock** (the same funding mechanism as
 /// identity registration), distinct from
@@ -322,8 +307,11 @@ const MIN_TOP_UP_DUFFS: u64 = 50_500;
 /// credit balance Platform returns; the local `ManagedIdentity` balance is
 /// updated + queued for persistence inside the library call.
 ///
-/// `amount_duffs` must be at least [`MIN_TOP_UP_DUFFS`]; a smaller amount is
-/// rejected with `ErrorInvalidParameter` before any lock is broadcast.
+/// `amount_duffs` must be at least Platform's top-up minimum, the largest
+/// across the protocol versions this build supports
+/// ([`min_top_up_duffs`](platform_wallet::wallet::identity::network::min_top_up_duffs),
+/// 50_500 duffs today); the wallet rejects a smaller amount with
+/// `ErrorInvalidParameter` before any lock is built.
 ///
 /// # Safety
 /// - `wallet_handle` must come from the platform-wallet handle registry.
@@ -350,12 +338,6 @@ pub unsafe extern "C" fn platform_wallet_top_up_identity_with_funding_signer(
     // FFI-safe sentinel before any fallible work, matching the sibling
     // `platform_wallet_topup_identity_with_existing_asset_lock_signer`.
     *out_new_balance = 0;
-    if amount_duffs < MIN_TOP_UP_DUFFS {
-        return PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorInvalidParameter,
-            "`amount_duffs` is below the minimum top-up asset-lock balance",
-        );
-    }
 
     let identity_id_bytes: [u8; 32] = *identity_id;
     let identity_id = Identifier::from_bytes(&identity_id_bytes).unwrap_or_default();
@@ -400,16 +382,248 @@ pub unsafe extern "C" fn platform_wallet_top_up_identity_with_funding_signer(
     PlatformWalletFFIResult::ok()
 }
 
+/// Top up someone else's identity — one this wallet does not manage — by
+/// building and broadcasting a new Core asset lock from the wallet's
+/// balance. The external counterpart of
+/// [`platform_wallet_top_up_identity_with_funding_signer`].
+///
+/// Wraps
+/// `IdentityWallet::top_up_external_identity_with_funding` with
+/// `AssetLockFunding::FromWalletBalance`: the identity is fetched from
+/// Platform, the lock is funded from the wallet's unbound top-up account and
+/// its row records `identity_id` before the broadcast, so an interrupted
+/// top-up resumes to this identity only
+/// ([`crate::platform_wallet_resume_identity_top_up_to_recorded_recipient_signer`]).
+/// No identity is added to the wallet (one the wallet already holds gets its
+/// local balance updated). On success
+/// `out_new_balance` receives the identity's proved post-transition balance.
+///
+/// Errors before anything is built: `ErrorInvalidParameter` for an amount
+/// below [`min_top_up_duffs`](platform_wallet::wallet::identity::network::min_top_up_duffs)
+/// (the largest top-up minimum across the supported protocol versions, 50_500
+/// duffs today), `ErrorIdentityNotFound` (7) for an identity
+/// Platform does not know, and a persistence error when the host's persister
+/// does not declare `ASSET_LOCK_IDENTITY_RECIPIENTS`. A failed lookup is
+/// reported as the SDK error for now. In every one of these
+/// `out_asset_lock_outpoint` is all zero: nothing was built, nothing was
+/// paid, and a new call is safe.
+///
+/// `out_asset_lock_outpoint` receives the outpoint of the lock this call
+/// built, on success and on failure alike (a panic included), and is all zero
+/// when nothing was built. The error code alone does not tell a failure
+/// before the build from one after it (a failed lookup and a failed Platform
+/// submit can share a code); the outpoint does. Once it is non-zero:
+///
+/// - Do not build a new lock to retry, or the identity may be paid twice.
+///   Resume this one with
+///   [`crate::platform_wallet_resume_identity_top_up_to_recorded_recipient_signer`],
+///   which pays the identity its row records.
+/// - `ErrorTransactionBroadcastRejected` (26) means Core definitively
+///   rejected the lock and it was removed, with its inputs released: a new
+///   call is safe.
+/// - `ErrorTransactionBroadcastUnconfirmed` (20) means the lock may be on the
+///   network, or its row may come back after a restart while its inputs stay
+///   reserved: do not retry; resume this outpoint (after the next launch if
+///   it is not tracked now).
+/// - Any other failure: resume this outpoint. A resume answering
+///   `ErrorAssetLockNotTracked` (23) means the lock was removed before it was
+///   sent (its row could not be made durable, and its removal was), so
+///   nothing was paid and a new call is safe.
+///
+/// # Safety
+/// Same contract as [`platform_wallet_top_up_identity_with_funding_signer`],
+/// and `out_asset_lock_outpoint` must be writable for the duration of the
+/// call.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_top_up_external_identity_with_funding_signer(
+    wallet_handle: Handle,
+    identity_id: *const [u8; 32],
+    amount_duffs: u64,
+    account_index: u32,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_new_balance: *mut u64,
+    out_asset_lock_outpoint: *mut OutPointFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_asset_lock_outpoint);
+    // The whole body runs under `catch_unwind`: a panic (most concretely
+    // `block_on_worker`'s `.expect` on a panicking top-up task) must not reach
+    // this `extern "C"` frame. It can strike after the lock was broadcast, so
+    // the ambiguous broadcast-unconfirmed contract applies.
+    report_built_outpoint(out_asset_lock_outpoint, |built| {
+        catch_top_up_panic("external identity top-up", || {
+            top_up_external_identity_with_funding_signer_inner(
+                wallet_handle,
+                identity_id,
+                amount_duffs,
+                account_index,
+                core_signer_handle,
+                out_new_balance,
+                built,
+            )
+        })
+    })
+}
+
+/// The outpoint a funding call's `on_built` observer reported, shared with
+/// the export that writes it out once the call returns.
+type BuiltOutPoint = Arc<Mutex<Option<dashcore::OutPoint>>>;
+
+/// Zero `out`, run `body` with a slot its `on_built` observer fills, then
+/// write the reported outpoint to `out` whatever `body` returned. `body`
+/// catches its own panics, so the outpoint of a lock built before one is
+/// still written.
+///
+/// # Safety
+/// `out` must be non-null and writable for the duration of the call.
+unsafe fn report_built_outpoint(
+    out: *mut OutPointFFI,
+    body: impl FnOnce(BuiltOutPoint) -> PlatformWalletFFIResult,
+) -> PlatformWalletFFIResult {
+    *out = OutPointFFI {
+        txid: [0; 32],
+        vout: 0,
+    };
+    let built = BuiltOutPoint::default();
+    let result = body(Arc::clone(&built));
+    if let Some(out_point) = *built.lock().unwrap_or_else(|e| e.into_inner()) {
+        *out = OutPointFFI::from(&out_point);
+    }
+    result
+}
+
+/// Body of [`platform_wallet_top_up_external_identity_with_funding_signer`],
+/// as an ordinary Rust function so a panic unwinds into
+/// [`catch_top_up_panic`] instead of across the C ABI.
+///
+/// # Safety
+/// Identical contract to the export that calls it.
+unsafe fn top_up_external_identity_with_funding_signer_inner(
+    wallet_handle: Handle,
+    identity_id: *const [u8; 32],
+    amount_duffs: u64,
+    account_index: u32,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_new_balance: *mut u64,
+    built: BuiltOutPoint,
+) -> PlatformWalletFFIResult {
+    check_ptr!(identity_id);
+    check_ptr!(core_signer_handle);
+    check_ptr!(out_new_balance);
+    *out_new_balance = 0;
+    let identity_id = Identifier::from(*identity_id);
+    let core_signer_addr = core_signer_handle as usize;
+
+    // Read what the call needs out of the registry, then release it before
+    // the top-up awaits the network and the host's signer and persister.
+    let (identity_wallet, wallet_id, network) = unwrap_option_or_return!(PLATFORM_WALLET_STORAGE
+        .with_item(wallet_handle, |wallet| {
+            (
+                wallet.identity().clone(),
+                wallet.wallet_id(),
+                wallet.sdk().network,
+            )
+        }));
+    let result = block_on_worker(async move {
+        // SAFETY: see the fn-level safety doc — the handle is pinned alive
+        // for the duration of this FFI call.
+        let asset_lock_signer = unsafe {
+            MnemonicResolverCoreSigner::new(
+                core_signer_addr as *mut MnemonicResolverHandle,
+                wallet_id,
+                network,
+            )
+        };
+        // Runs before the lock's row is stored or the lock is broadcast, so
+        // the outpoint is recorded for every failure after the build.
+        let on_built = move |out_point: dashcore::OutPoint| {
+            *built.lock().unwrap_or_else(|e| e.into_inner()) = Some(out_point);
+        };
+        identity_wallet
+            .top_up_external_identity_with_funding(
+                &identity_id,
+                AssetLockFunding::FromWalletBalance {
+                    amount_duffs,
+                    account_index,
+                },
+                &asset_lock_signer,
+                None,
+                Some(&on_built),
+            )
+            .await
+    });
+    *out_new_balance = unwrap_result_or_return!(result);
+    PlatformWalletFFIResult::ok()
+}
+
+/// Post-panic guidance for the exports that may have paid an identity
+/// top-up. Paired with `ErrorTransactionBroadcastUnconfirmed` in
+/// [`catch_top_up_panic`].
+const TOP_UP_PANIC_GUIDANCE: &str = "The asset lock may or may not have been broadcast and \
+     the top-up may or may not have been submitted — do NOT build a new lock to retry; resume \
+     the tracked lock with platform_wallet_resume_identity_top_up_to_recorded_recipient_signer, \
+     or the identity may be paid twice.";
+
+/// [`catch_panic_to_code`] for the exports that fund or resume an identity
+/// top-up from a Core asset lock.
+///
+/// The panic is mapped to
+/// [`PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed`], not
+/// to a definitive failure: it can strike after the lock reached the wire or
+/// after Platform accepted the top-up, so the outcome is ambiguous, and that
+/// code's contract (do not retry, the lock stays tracked and resumable) is
+/// the conservative one.
+pub(crate) fn catch_top_up_panic(
+    operation: &str,
+    body: impl FnOnce() -> PlatformWalletFFIResult,
+) -> PlatformWalletFFIResult {
+    catch_panic_to_code(
+        operation,
+        PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed,
+        TOP_UP_PANIC_GUIDANCE,
+        body,
+    )
+}
+
 #[cfg(test)]
 mod top_up_with_funding_guard_tests {
     use super::*;
     use crate::error::PlatformWalletFFIResultCode;
+
+    /// Any amount: every guard under test answers before the minimum check.
+    const AMOUNT_DUFFS: u64 = 50_500;
 
     /// A non-null but never-dereferenced core-signer pointer. Every guard
     /// under test returns before the handle is used, so a dangling pointer
     /// is sufficient (and never unsound here).
     fn dangling_core_signer() -> *mut MnemonicResolverHandle {
         std::ptr::NonNull::<MnemonicResolverHandle>::dangling().as_ptr()
+    }
+
+    /// A panic inside a top-up export must not unwind into the `extern "C"`
+    /// frame. It becomes `ErrorTransactionBroadcastUnconfirmed`, the
+    /// ambiguous do-not-retry contract, because it can strike after the lock
+    /// was broadcast.
+    #[test]
+    fn should_map_a_top_up_panic_to_the_broadcast_unconfirmed_contract() {
+        let mut result = catch_top_up_panic("external identity top-up", || {
+            panic!("tokio worker panicked");
+        });
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+        );
+        let message = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert!(
+            message.contains("external identity top-up panicked")
+                && message.contains("tokio worker panicked")
+                && message.contains("do NOT build a new lock"),
+            "{message}"
+        );
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
     }
 
     #[test]
@@ -419,7 +633,7 @@ mod top_up_with_funding_guard_tests {
             platform_wallet_top_up_identity_with_funding_signer(
                 0,
                 std::ptr::null(),
-                MIN_TOP_UP_DUFFS,
+                AMOUNT_DUFFS,
                 0,
                 dangling_core_signer(),
                 &mut balance,
@@ -436,7 +650,7 @@ mod top_up_with_funding_guard_tests {
             platform_wallet_top_up_identity_with_funding_signer(
                 0,
                 &id,
-                MIN_TOP_UP_DUFFS,
+                AMOUNT_DUFFS,
                 0,
                 std::ptr::null_mut(),
                 &mut balance,
@@ -452,7 +666,7 @@ mod top_up_with_funding_guard_tests {
             platform_wallet_top_up_identity_with_funding_signer(
                 0,
                 &id,
-                MIN_TOP_UP_DUFFS,
+                AMOUNT_DUFFS,
                 0,
                 dangling_core_signer(),
                 std::ptr::null_mut(),
@@ -461,26 +675,127 @@ mod top_up_with_funding_guard_tests {
         assert_eq!(res.code, PlatformWalletFFIResultCode::ErrorNullPointer);
     }
 
+    /// The external export guards its pointers like the managed one; the
+    /// minimum amount is the wallet's check, so an unknown wallet answers
+    /// first here.
     #[test]
-    fn rejects_sub_floor_amount() {
+    fn should_refuse_an_external_top_up_with_a_null_pointer_or_an_unknown_wallet() {
         let id = [0u8; 32];
-        let mut balance = 0u64;
-        for amount in [0u64, MIN_TOP_UP_DUFFS - 1] {
-            let res = unsafe {
-                platform_wallet_top_up_identity_with_funding_signer(
-                    0,
-                    &id,
-                    amount,
-                    0,
-                    dangling_core_signer(),
-                    &mut balance,
-                )
-            };
-            assert_eq!(
-                res.code,
-                PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                "amount {amount} below MIN_TOP_UP_DUFFS should be rejected"
-            );
+        let mut balance = 7u64;
+        let mut outpoint = OutPointFFI {
+            txid: [0xab; 32],
+            vout: 9,
+        };
+        let outpoint_ptr: *mut OutPointFFI = &mut outpoint;
+        let call = |identity: *const [u8; 32],
+                    signer: *mut MnemonicResolverHandle,
+                    out: *mut u64,
+                    out_outpoint: *mut OutPointFFI| unsafe {
+            platform_wallet_top_up_external_identity_with_funding_signer(
+                u64::MAX,
+                identity,
+                AMOUNT_DUFFS,
+                0,
+                signer,
+                out,
+                out_outpoint,
+            )
+        };
+        for code in [
+            call(
+                std::ptr::null(),
+                dangling_core_signer(),
+                &mut balance,
+                outpoint_ptr,
+            )
+            .code,
+            call(&id, std::ptr::null_mut(), &mut balance, outpoint_ptr).code,
+            call(
+                &id,
+                dangling_core_signer(),
+                std::ptr::null_mut(),
+                outpoint_ptr,
+            )
+            .code,
+            call(
+                &id,
+                dangling_core_signer(),
+                &mut balance,
+                std::ptr::null_mut(),
+            )
+            .code,
+        ] {
+            assert_eq!(code, PlatformWalletFFIResultCode::ErrorNullPointer);
         }
+        assert_eq!(
+            call(&id, dangling_core_signer(), &mut balance, outpoint_ptr).code,
+            PlatformWalletFFIResultCode::NotFound
+        );
+        assert_eq!(
+            balance, 0,
+            "the out-param is reset before any fallible work"
+        );
+        assert_eq!(
+            (outpoint.txid, outpoint.vout),
+            ([0; 32], 0),
+            "nothing was built, so the outpoint is all zero"
+        );
+    }
+
+    /// The built lock's outpoint reaches the host whatever the call returns:
+    /// on a failure after the build, and after a panic the body caught. It
+    /// stays all zero when nothing was built.
+    #[test]
+    fn should_write_the_built_outpoint_on_failure_and_panic_and_zero_otherwise() {
+        let built_at = dashcore::OutPoint::new(dashcore::Txid::from_byte_array([0x42; 32]), 3);
+        let mut out = OutPointFFI {
+            txid: [0xab; 32],
+            vout: 9,
+        };
+
+        let result = unsafe {
+            report_built_outpoint(&mut out, |_| {
+                PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorIdentityNotFound,
+                    "nothing built",
+                )
+            })
+        };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorIdentityNotFound
+        );
+        assert_eq!((out.txid, out.vout), ([0; 32], 0));
+
+        let result = unsafe {
+            report_built_outpoint(&mut out, |built| {
+                *built.lock().unwrap() = Some(built_at);
+                PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorUnknown,
+                    "the Platform submit failed after the broadcast",
+                )
+            })
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorUnknown);
+        assert_eq!(dashcore::OutPoint::from(&out), built_at);
+
+        out = OutPointFFI {
+            txid: [0; 32],
+            vout: 0,
+        };
+        let mut result = unsafe {
+            report_built_outpoint(&mut out, |built| {
+                catch_top_up_panic("external identity top-up", || {
+                    *built.lock().unwrap() = Some(built_at);
+                    panic!("tokio worker panicked");
+                })
+            })
+        };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+        );
+        assert_eq!(dashcore::OutPoint::from(&out), built_at);
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
     }
 }

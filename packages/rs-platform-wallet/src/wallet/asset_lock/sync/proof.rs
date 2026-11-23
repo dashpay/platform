@@ -2229,6 +2229,7 @@ mod chain_lock_wait_tests {
             Arc::clone(&notify),
             Arc::new(AlwaysRejectedBroadcaster),
             WalletPersister::new(wallet_id, persister(&record)),
+            crate::test_support::wallet_generation(&wallet_manager, &wallet_id),
         );
         if let Some(locator) = locator {
             manager = manager.with_mined_height_locator(locator);
@@ -2243,6 +2244,7 @@ mod chain_lock_wait_tests {
                 TrackedAssetLock {
                     operation_id: None,
                     shielded_recipient: None,
+                    identity_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -2291,7 +2293,7 @@ mod chain_lock_wait_tests {
         proof: Option<AssetLockProof>,
         locator: Option<Arc<dyn MinedHeightLocator>>,
     ) -> OkCtx {
-        let (wallet_manager, wallet_id, _generation, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let sdk = Arc::new(
             dash_sdk::SdkBuilder::new_mock()
@@ -2306,6 +2308,7 @@ mod chain_lock_wait_tests {
             Arc::new(Notify::new()),
             Arc::new(AlwaysOkBroadcaster),
             WalletPersister::new(wallet_id, Arc::new(NoopTestPersister)),
+            Arc::clone(&generation),
         );
         if let Some(locator) = locator {
             manager = manager.with_mined_height_locator(locator);
@@ -2348,6 +2351,7 @@ mod chain_lock_wait_tests {
                 TrackedAssetLock {
                     operation_id: None,
                     shielded_recipient: None,
+                    identity_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,

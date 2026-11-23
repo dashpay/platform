@@ -109,6 +109,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             let lock = TrackedAssetLock {
                 operation_id: None,
                 shielded_recipient: None,
+                identity_recipient: None,
                 out_point,
                 transaction: tx,
                 account_index,
@@ -2187,7 +2188,7 @@ mod tests {
 
     #[tokio::test]
     async fn built_resume_rebroadcasts_original_and_typed_failures_do_not_broadcast() {
-        let (wallet_manager, wallet_id, _balance, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let persistence = Arc::new(RecordingPersistence::default());
         let broadcaster = Arc::new(RecordingBroadcaster::default());
@@ -2204,6 +2205,7 @@ mod tests {
             Arc::new(Notify::new()),
             Arc::clone(&broadcaster),
             WalletPersister::new(wallet_id, persistence),
+            Arc::clone(&generation),
         );
         let (transaction, _path) = manager
             .build_asset_lock_transaction(
@@ -2226,6 +2228,7 @@ mod tests {
                 TrackedAssetLock {
                     operation_id: None,
                     shielded_recipient: None,
+                    identity_recipient: None,
                     out_point,
                     transaction: transaction.clone(),
                     account_index: 0,
@@ -2326,7 +2329,7 @@ mod tests {
         AssetLockManager<dyn TransactionBroadcaster>,
         WalletSigner,
     ) {
-        let (wallet_manager, wallet_id, _balance, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let sdk = Arc::new(
             dash_sdk::SdkBuilder::new_mock()
@@ -2341,6 +2344,7 @@ mod tests {
             Arc::new(Notify::new()),
             broadcaster,
             WalletPersister::new(wallet_id, Arc::new(RecordingPersistence::default())),
+            Arc::clone(&generation),
         );
         let (transaction, _path) = manager
             .build_asset_lock_transaction(
@@ -2363,6 +2367,7 @@ mod tests {
                     TrackedAssetLock {
                         operation_id: None,
                         shielded_recipient: None,
+                        identity_recipient: None,
                         out_point,
                         transaction,
                         account_index: 0,
@@ -2497,7 +2502,7 @@ mod tests {
 
         // --- Session 1: build a top-up asset lock. This lazily creates
         // the IdentityTopUp{7} account and must persist its registration.
-        let (wallet_manager, wallet_id, _balance, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let persistence = Arc::new(RecordingPersistence::default());
         // The mock SDK network must match the testnet wallet fixture:
@@ -2519,6 +2524,7 @@ mod tests {
                 wallet_id,
                 Arc::clone(&persistence) as Arc<dyn PlatformWalletPersistence>,
             ),
+            Arc::clone(&generation),
         );
         let (tx, path) = manager
             .build_asset_lock_transaction(
@@ -2590,6 +2596,7 @@ mod tests {
         let lock = TrackedAssetLock {
             operation_id: None,
             shielded_recipient: None,
+            identity_recipient: None,
             out_point,
             transaction: tx,
             account_index: 0,
@@ -2603,6 +2610,7 @@ mod tests {
             .tracked_asset_locks
             .insert(out_point, lock.clone());
 
+        let generation = Arc::clone(&restored_info.generation);
         let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
         let restored_id = wm
             .insert_wallet(restored_wallet, restored_info)
@@ -2619,6 +2627,7 @@ mod tests {
             Arc::new(Notify::new()),
             Arc::new(AlwaysRejectedBroadcaster),
             WalletPersister::new(wallet_id, persistence as Arc<dyn PlatformWalletPersistence>),
+            generation,
         );
         // Re-derive under a held read guard while a writer is queued behind
         // it — the shape `resume_asset_lock` step 4 runs in. tokio's
@@ -2784,7 +2793,7 @@ mod tests {
                 WalletId,
             ) -> Arc<dyn PlatformWalletPersistence>,
         ) -> Self {
-            let (wallet_manager, wallet_id, _generation, signer) =
+            let (wallet_manager, wallet_id, generation, signer) =
                 funded_wallet_manager(StandardAccountType::BIP44Account).await;
             let broadcaster = Arc::new(broadcaster);
             let sdk = Arc::new(
@@ -2804,6 +2813,7 @@ mod tests {
                     wallet_id,
                     persistence(Arc::clone(&wallet_manager), wallet_id),
                 ),
+                Arc::clone(&generation),
             );
             let (transaction, _path) = manager
                 .build_asset_lock_transaction(
@@ -2868,6 +2878,7 @@ mod tests {
                 TrackedAssetLock {
                     operation_id: None,
                     shielded_recipient: None,
+                    identity_recipient: None,
                     out_point: self.out_point,
                     transaction: self.transaction.clone(),
                     account_index: 0,
@@ -4343,7 +4354,7 @@ mod tests {
         broadcaster: Arc<dyn TransactionBroadcaster>,
         status: AssetLockStatus,
     ) -> TrackedLockFixture {
-        let (wallet_manager, wallet_id, _balance, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let sdk = Arc::new(
             dash_sdk::SdkBuilder::new_mock()
@@ -4358,6 +4369,7 @@ mod tests {
             Arc::new(Notify::new()),
             broadcaster,
             WalletPersister::new(wallet_id, Arc::new(RecordingPersistence::default())),
+            Arc::clone(&generation),
         );
         let (transaction, _path) = manager
             .build_asset_lock_transaction(
@@ -4380,6 +4392,7 @@ mod tests {
                     TrackedAssetLock {
                         operation_id: None,
                         shielded_recipient: None,
+                        identity_recipient: None,
                         out_point,
                         transaction,
                         account_index: 0,
@@ -4835,7 +4848,7 @@ mod tests {
         };
         use key_wallet::transaction_checking::{TransactionContext, TransactionType};
 
-        let (wallet_manager, wallet_id, _balance, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let sdk = Arc::new(
             dash_sdk::SdkBuilder::new_mock()
@@ -4850,6 +4863,7 @@ mod tests {
             Arc::new(Notify::new()),
             Arc::new(AlwaysRejectedBroadcaster),
             WalletPersister::new(wallet_id, Arc::new(RecordingPersistence::default())),
+            Arc::clone(&generation),
         );
         let (transaction, _path) = manager
             .build_asset_lock_transaction(
@@ -4895,6 +4909,7 @@ mod tests {
                 TrackedAssetLock {
                     operation_id: None,
                     shielded_recipient: None,
+                    identity_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -4958,7 +4973,7 @@ mod tests {
         };
         use key_wallet::transaction_checking::{TransactionContext, TransactionType};
 
-        let (wallet_manager, wallet_id, _balance, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let sdk = Arc::new(
             dash_sdk::SdkBuilder::new_mock()
@@ -4975,6 +4990,7 @@ mod tests {
             Arc::new(Notify::new()),
             Arc::clone(&broadcaster) as Arc<dyn TransactionBroadcaster>,
             WalletPersister::new(wallet_id, Arc::clone(&persistence) as Arc<_>),
+            Arc::clone(&generation),
         );
         let (transaction, _path) = manager
             .build_asset_lock_transaction(
@@ -5020,6 +5036,7 @@ mod tests {
                 TrackedAssetLock {
                     operation_id: None,
                     shielded_recipient: None,
+                    identity_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5493,6 +5510,7 @@ mod tests {
                 wallet_id,
                 Arc::clone(&persistence) as Arc<dyn PlatformWalletPersistence>,
             ),
+            crate::test_support::wallet_generation(&wallet_manager, &wallet_id),
         );
         let (transaction, _path) = manager
             .build_asset_lock_transaction(
@@ -5524,6 +5542,7 @@ mod tests {
                 TrackedAssetLock {
                     operation_id: None,
                     shielded_recipient: None,
+                    identity_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5571,7 +5590,7 @@ mod tests {
     /// outcome whose contract says the row and reservation still exist.
     #[tokio::test(start_paused = true)]
     async fn offline_broadcast_resume_preserves_wallet_removal_during_refresh() {
-        let (wallet_manager, wallet_id, _balance, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let persistence = Arc::new(InterleavedPersistence::new(
             Arc::clone(&wallet_manager),
@@ -5600,6 +5619,7 @@ mod tests {
                 wallet_id,
                 Arc::clone(&persistence) as Arc<dyn PlatformWalletPersistence>,
             ),
+            Arc::clone(&generation),
         );
         let (transaction, _path) = manager
             .build_asset_lock_transaction(
@@ -5630,6 +5650,7 @@ mod tests {
                 TrackedAssetLock {
                     operation_id: None,
                     shielded_recipient: None,
+                    identity_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -5852,7 +5873,7 @@ mod tests {
     ) {
         use dashcore::ephemerealdata::instant_lock::InstantLock;
 
-        let (wallet_manager, wallet_id, _balance, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let sdk = Arc::new(
             dash_sdk::SdkBuilder::new_mock()
@@ -5868,6 +5889,7 @@ mod tests {
             Arc::new(Notify::new()),
             Arc::clone(&broadcaster) as Arc<dyn TransactionBroadcaster>,
             WalletPersister::new(wallet_id, Arc::new(RecordingPersistence::default())),
+            Arc::clone(&generation),
         );
         let (transaction, _path) = manager
             .build_asset_lock_transaction(
@@ -5910,6 +5932,7 @@ mod tests {
                 TrackedAssetLock {
                     operation_id: None,
                     shielded_recipient: None,
+                    identity_recipient: None,
                     out_point,
                     transaction,
                     account_index: 0,
@@ -6009,7 +6032,7 @@ mod tests {
     /// thing standing between an already-final lock and a resume that fails
     /// it every launch.
     async fn finality_landing_in_the_transport_wait_completes_the_resume(status: AssetLockStatus) {
-        let (wallet_manager, wallet_id, _balance, signer) =
+        let (wallet_manager, wallet_id, generation, signer) =
             funded_wallet_manager(StandardAccountType::BIP44Account).await;
         let sdk = Arc::new(
             dash_sdk::SdkBuilder::new_mock()
@@ -6030,6 +6053,7 @@ mod tests {
             Arc::new(Notify::new()),
             Arc::clone(&broadcaster) as Arc<dyn TransactionBroadcaster>,
             WalletPersister::new(wallet_id, Arc::new(RecordingPersistence::default())),
+            Arc::clone(&generation),
         );
         let (transaction, _path) = manager
             .build_asset_lock_transaction(
@@ -6056,6 +6080,7 @@ mod tests {
                     TrackedAssetLock {
                         operation_id: None,
                         shielded_recipient: None,
+                        identity_recipient: None,
                         out_point,
                         transaction,
                         account_index: 0,
@@ -6208,7 +6233,7 @@ mod tests {
 
     impl SmallCoinRow {
         async fn tracked(coins: usize, amount_duffs: u64, status: AssetLockStatus) -> Self {
-            let (wallet_manager, wallet_id, _generation, signer) =
+            let (wallet_manager, wallet_id, generation, signer) =
                 crate::test_support::funded_wallet_manager_with_outputs(
                     StandardAccountType::BIP44Account,
                     &vec![10_000; coins],
@@ -6229,6 +6254,7 @@ mod tests {
                 Arc::new(Notify::new()),
                 Arc::clone(&broadcaster),
                 WalletPersister::new(wallet_id, Arc::clone(&persistence) as Arc<_>),
+                Arc::clone(&generation),
             );
             let (transaction, _path) = manager
                 .build_asset_lock_transaction(
@@ -6259,6 +6285,7 @@ mod tests {
                             status,
                             proof: None,
                             shielded_recipient: None,
+                            identity_recipient: None,
                         },
                     );
             }

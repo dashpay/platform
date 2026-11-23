@@ -1659,6 +1659,7 @@ mod plan_withdrawal_seam_tests {
             Arc::new(Notify::new()),
             broadcaster,
             persister.clone(),
+            crate::test_support::wallet_generation(&wallet_manager, &wallet_id),
         ));
         PlatformAddressWallet::new(sdk, wallet_manager, wallet_id, asset_locks, persister)
     }

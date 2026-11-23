@@ -441,6 +441,8 @@ pub(crate) fn rewind_v021(conn: &rusqlite::Connection) {
     conn.execute_batch(
         "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
          DROP TABLE core_locked_outpoints; \
+         DROP TRIGGER asset_locks_identity_recipient_immutable; \
+         ALTER TABLE asset_locks DROP COLUMN identity_recipient; \
          DELETE FROM refinery_schema_history WHERE version >= 21;",
     )
     .unwrap();
