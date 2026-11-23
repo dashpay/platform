@@ -327,13 +327,15 @@ class MasternodeVoterKeyCheckTest {
         assertEquals(PickedVotingKeyCheck.NotNeeded(refusal, 3), result)
         assertTrue(checkedWith.isEmpty())
         assertEquals(refusal to addressA, rules.usedWith.single())
-        // Held as the dialog's record until Room delivers revision 3, no voter is published
-        // against the older displayed row (revision 2, undetermined).
-        val held = PickedKeyCheckState(identifierA, refusal, savedRevision = 3, checkedRevision = 3)
+        // The production transition holds it as the dialog's record until Room delivers
+        // revision 3, so no voter is published against the older displayed row (revision 2,
+        // undetermined): Rust is asked about the refusal, not the stale record.
+        val held = nextPickedState(null, identifierA, result, revisionAtStart = 2)!!
         assertEquals(
             StoredVoterDecision.REFUSED,
             storedVoterDecision(stateAt(2, undetermined), held, rules),
         )
+        assertEquals(refusal to addressA, rules.usedWith.last())
     }
 
     /**
@@ -344,12 +346,50 @@ class MasternodeVoterKeyCheckTest {
     @Test
     fun shouldHoldAKeyAgainWhenItsRecordChangesAfterTheCheck() {
         rules.use = awaitingCheck
-        val picked = PickedKeyCheckState(identifierA, finished = true, checkedRevision = 2)
+        val undetermined = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Undetermined("down"), addressA)
+        val valid = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Valid, addressA)
+        // The check left `undetermined` at revision 2; a sibling write turns a newer record
+        // into another verdict at revision 3.
+        val picked = PickedKeyCheckState(identifierA, undetermined, finished = true, savedRevision = 2, checkedRevision = 2)
+        val newer = stateAt(3, valid)
 
-        assertEquals(StoredVoterDecision.CASTABLE, storedVoterDecision(stateAt(2), picked, rules))
-        assertEquals(StoredVoterDecision.AWAITING_CHECK, storedVoterDecision(stateAt(3), picked, rules))
+        assertEquals(StoredVoterDecision.CASTABLE, storedVoterDecision(stateAt(2, undetermined), picked, rules))
+        assertEquals(StoredVoterDecision.AWAITING_CHECK, storedVoterDecision(newer, picked, rules))
         assertTrue(checkFinishedFor(stateAt(1), picked))
-        assertFalse(checkFinishedFor(stateAt(3), picked))
+        assertFalse(checkFinishedFor(newer, picked))
+    }
+
+    /**
+     * Two open pickers of the same key: a newer write of the same inconclusive verdict is not a
+     * new record, so the finished check still counts and no retry is requested.
+     */
+    @Test
+    fun shouldSettleOnARepeatedInconclusiveVerdict() {
+        val undeterminedA = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Undetermined("down"), addressA)
+        val undeterminedB = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Undetermined("timeout"), addressA)
+        val refusal = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Invalid("rotated"), addressA)
+        val picked = PickedKeyCheckState(identifierA, undeterminedA, savedRevision = 2, checkedRevision = 2)
+
+        assertTrue(sameVerdict(undeterminedA, undeterminedB))
+        assertFalse(sameVerdict(undeterminedA, refusal))
+        assertTrue(checkFinishedFor(stateAt(3, undeterminedB), picked))
+        assertFalse(checkFinishedFor(stateAt(3, refusal), picked))
+    }
+
+    /**
+     * At vote time a newer record Rust says to check first refuses the vote unless it repeats
+     * the verdict the section cleared; the cleared record itself still votes.
+     */
+    @Test
+    fun shouldRefuseAVoteClearedOnAnOlderRecordThatMustBeCheckedAgain() {
+        val undetermined = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Undetermined("down"), addressA)
+        val valid = MasternodeRecordedVotingKey(MasternodeVotingKeyCheck.Valid, addressA)
+        val voter = MasternodeVoter.StoredKey(identityId, identifierA, clearedRevision = 2, clearedRecord = valid)
+
+        assertTrue(clearedRecordStillHolds(voter, 2, valid))
+        assertFalse(clearedRecordStillHolds(voter, 3, undetermined))
+        val repeat = MasternodeVoter.StoredKey(identityId, identifierA, clearedRevision = 2, clearedRecord = undetermined)
+        assertTrue(clearedRecordStillHolds(repeat, 3, undetermined))
     }
 
     /** A check started again for a re-picked key holds it until that check finishes. */

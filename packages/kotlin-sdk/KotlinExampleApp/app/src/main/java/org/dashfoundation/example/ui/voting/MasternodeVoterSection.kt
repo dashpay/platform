@@ -82,14 +82,23 @@ sealed interface MasternodeVoter {
      * pick is never used unchecked. The key stays in `WalletStorage` and signs through the
      * wallet manager's signer.
      */
-    class StoredKey(identityId: ByteArray, val votingKeyIdentifier: String) : MasternodeVoter {
+    class StoredKey(
+        identityId: ByteArray,
+        val votingKeyIdentifier: String,
+        /** The record revision the section cleared the key at. */
+        val clearedRevision: Long = 0,
+        /** The record the section cleared the key on. */
+        val clearedRecord: MasternodeRecordedVotingKey? = null,
+    ) : MasternodeVoter {
         private val id = identityId.copyOf()
         val identityId: ByteArray get() = id.copyOf()
         override val canCast: Boolean get() = true
         override val wireOrderProTxHash: ByteArray get() = wireOrderProTxHash(id)
         override fun equals(other: Any?): Boolean =
-            other is StoredKey && id.contentEquals(other.id) && votingKeyIdentifier == other.votingKeyIdentifier
-        override fun hashCode(): Int = 31 * id.contentHashCode() + votingKeyIdentifier.hashCode()
+            other is StoredKey && id.contentEquals(other.id) && votingKeyIdentifier == other.votingKeyIdentifier &&
+                clearedRevision == other.clearedRevision && clearedRecord == other.clearedRecord
+        override fun hashCode(): Int =
+            (31 * id.contentHashCode() + votingKeyIdentifier.hashCode()) * 31 + clearedRevision.hashCode()
         override fun toString(): String = "StoredKey(${id.toHex()})"
     }
 
@@ -325,7 +334,57 @@ internal fun storedVoterDecision(
  */
 internal fun checkFinishedFor(state: VoterKeyState, picked: PickedKeyCheckState?): Boolean =
     picked != null && picked.checkedIdentifier == state.identifier && picked.finished &&
-        picked.checkedRevision >= state.revision
+        (picked.checkedRevision >= state.revision || sameVerdict(state.recorded, picked.known))
+
+/**
+ * Whether two records say the same thing about the same key: the same verdict for the same
+ * voting address (a message may differ). A newer write of the same verdict (another check that
+ * was also inconclusive) is not a new record to check, so two open pickers settle.
+ */
+internal fun sameVerdict(a: MasternodeRecordedVotingKey?, b: MasternodeRecordedVotingKey?): Boolean =
+    a?.votingAddress == b?.votingAddress && a?.check?.let { it::class } == b?.check?.let { it::class }
+
+/**
+ * Whether the stored key's row at [rowRevision] with [rowRecord] still matches what the
+ * section cleared the [voter] at: the same revision or earlier, or the same verdict. When Rust
+ * says to check the key before use and the row moved past that, the vote waits for a new check.
+ */
+internal fun clearedRecordStillHolds(
+    voter: MasternodeVoter.StoredKey,
+    rowRevision: Long,
+    rowRecord: MasternodeRecordedVotingKey?,
+): Boolean = rowRevision <= voter.clearedRevision || sameVerdict(rowRecord, voter.clearedRecord)
+
+/**
+ * The picker's state for [identifier] after a check of it finished with [result], started
+ * against the row at [revisionAtStart]; null leaves it as it was ([PickedVotingKeyCheck.Dropped],
+ * [PickedVotingKeyCheck.NotResolved]). What Rust said to record, or what the helper's own read
+ * found, stands until Room delivers that revision; a refusal that could not be saved stands for
+ * good, so a refusal is never lost in between.
+ */
+internal fun nextPickedState(
+    previous: PickedKeyCheckState?,
+    identifier: String,
+    result: PickedVotingKeyCheck,
+    revisionAtStart: Long,
+): PickedKeyCheckState? = when (result) {
+    is PickedVotingKeyCheck.Failed -> if (result.unsaved != null) {
+        PickedKeyCheckState(identifier, result.unsaved, savedRevision = null, checkedRevision = revisionAtStart)
+    } else {
+        (previous ?: PickedKeyCheckState(identifier)).copy(finished = true, checkedRevision = revisionAtStart)
+    }
+    is PickedVotingKeyCheck.Recorded -> PickedKeyCheckState(
+        identifier, result.record, savedRevision = result.revision, checkedRevision = result.revision,
+    )
+    is PickedVotingKeyCheck.NotNeeded -> if (previous?.known != null && previous.savedRevision == null) {
+        previous.copy(finished = true, checkedRevision = maxOf(revisionAtStart, result.revision))
+    } else {
+        PickedKeyCheckState(
+            identifier, result.record, savedRevision = result.revision, checkedRevision = result.revision,
+        )
+    }
+    else -> null
+}
 
 /**
  * Whether the stored voting key is known not to vote: refused by Rust, or unreadable. Used for
@@ -471,6 +530,8 @@ internal fun decodeTyped32Bytes(text: String): ByteArray? {
 internal fun publishVoter(
     selected: IdentityEntity?,
     selectedCastable: Boolean = true,
+    clearedRevision: Long = 0,
+    clearedRecord: MasternodeRecordedVotingKey? = null,
     allowsTypedProTxHash: Boolean,
     useTypedProTxHash: Boolean,
     proTxHashText: String,
@@ -497,7 +558,7 @@ internal fun publishVoter(
     if (!selectedCastable) return null
     val identity = selected ?: return null
     val identifier = identity.votingPrivateKeyIdentifier ?: return null
-    return MasternodeVoter.StoredKey(identity.identityId, identifier)
+    return MasternodeVoter.StoredKey(identity.identityId, identifier, clearedRevision, clearedRecord)
 }
 
 // ── Casting ──────────────────────────────────────────────────────────
@@ -523,6 +584,11 @@ internal const val VOTING_KEY_CHANGED_SINCE_PICK_MESSAGE =
 internal const val VOTING_KEY_REFUSED_SINCE_PICK_MESSAGE =
     "Platform refused this masternode's voting key since it was picked, so the vote was not " +
         "cast. Load the identity again with its voting key under Identities, Load Identity."
+
+/** Shown when a newer record of the picked key, to be checked first, arrived after the pick. */
+internal const val VOTING_KEY_RECHECK_SINCE_PICK_MESSAGE =
+    "This masternode's voting key has a newer record that must be checked first. Wait for the " +
+        "check under the picker, then vote again."
 
 /** Shown when there is no wallet manager whose signer could sign the vote. */
 internal const val NO_WALLET_MANAGER_MESSAGE =
@@ -582,8 +648,16 @@ class MasternodeVoteCall(
                 }
                 // A refusal recorded since the pick is honoured before the signer is opened:
                 // Rust decides from the row as read now.
-                if (identity.storedVotingKeyUse()?.canVote == false) {
+                val keyUse = identity.storedVotingKeyUse()
+                if (keyUse?.canVote == false) {
                     throw MasternodeVoteCallException(VOTING_KEY_REFUSED_SINCE_PICK_MESSAGE)
+                }
+                // A newer record that Rust says to check first was not cleared by the section.
+                if (keyUse?.checkBeforeUse == true && !clearedRecordStillHolds(
+                        voter, identity.votingKeyCheckRevision ?: 0, identity.recordedVotingKey,
+                    )
+                ) {
+                    throw MasternodeVoteCallException(VOTING_KEY_RECHECK_SINCE_PICK_MESSAGE)
                 }
                 val manager = container.walletManagerStore.activeManager.value
                     ?: throw MasternodeVoteCallException(NO_WALLET_MANAGER_MESSAGE)
@@ -706,13 +780,13 @@ fun MasternodeVoterSection(
         val pick = effectiveVoterSelection(selectedIdentityHex, candidates, ::isRefused)
         val hex = pick?.identityId?.toHex()
         val state = hex?.let { keyStates[it] }
+        val picked = hex?.let { pickedChecks[it] }
         return publishVoter(
         selected = pick,
-        selectedCastable = pick != null && storedVoterDecision(
-            state,
-            hex?.let { pickedChecks[it] },
-            rules,
-        ) == StoredVoterDecision.CASTABLE,
+        selectedCastable = pick != null && storedVoterDecision(state, picked, rules) == StoredVoterDecision.CASTABLE,
+        // What the vote carries of the record it was cleared on, for the check at vote time.
+        clearedRevision = maxOf(state?.revision ?: 0, picked?.takeIf { it.checkedIdentifier == state?.identifier }?.checkedRevision ?: 0),
+        clearedRecord = state?.let { effectiveRecord(it, picked) },
         allowsTypedProTxHash = allowsTypedProTxHash,
         useTypedProTxHash = useTypedProTxHash,
         proTxHashText = proTxHashText,
@@ -737,7 +811,9 @@ fun MasternodeVoterSection(
     LaunchedEffect(selectedState?.revision, selectedPicked) {
         val state = selectedState ?: return@LaunchedEffect
         val picked = selectedPicked ?: return@LaunchedEffect
-        if (picked.finished && picked.checkedRevision < state.revision) recheckRequest++
+        if (picked.finished && picked.checkedRevision < state.revision && !sameVerdict(state.recorded, picked.known)) {
+            recheckRequest++
+        }
     }
 
     // Once per pick of an identity and its stored key: the key is checked when Rust says to
@@ -777,48 +853,14 @@ fun MasternodeVoterSection(
         } finally {
             if (checkingIdentityHex == hex) checkingIdentityHex = null
         }
-        // What Rust said to record stands until Room delivers it (or for good, when it could
-        // not be saved), so a refusal is never lost in between.
         when (result) {
-            is PickedVotingKeyCheck.Failed -> {
-                checkFailure = hex to result.message
-                pickedChecks = pickedChecks + (
-                    hex to if (result.unsaved != null) {
-                        PickedKeyCheckState(
-                            identifier, result.unsaved, savedRevision = null, checkedRevision = revisionAtStart,
-                        )
-                    } else {
-                        (previous ?: PickedKeyCheckState(identifier))
-                            .copy(finished = true, checkedRevision = revisionAtStart)
-                    }
-                )
-            }
-            is PickedVotingKeyCheck.Recorded -> {
+            is PickedVotingKeyCheck.Failed -> checkFailure = hex to result.message
+            is PickedVotingKeyCheck.Recorded, is PickedVotingKeyCheck.NotNeeded ->
                 if (checkFailure?.first == hex) checkFailure = null
-                pickedChecks = pickedChecks + (
-                    // The row's record after the write stands until Room delivers that revision.
-                    hex to PickedKeyCheckState(
-                        identifier, result.record, savedRevision = result.revision,
-                        checkedRevision = result.revision,
-                    )
-                )
-            }
-            is PickedVotingKeyCheck.NotNeeded -> {
-                if (checkFailure?.first == hex) checkFailure = null
-                pickedChecks = pickedChecks + (
-                    hex to if (previous?.known != null && previous.savedRevision == null) {
-                        // A refusal that could not be saved keeps standing.
-                        previous.copy(finished = true, checkedRevision = maxOf(revisionAtStart, result.revision))
-                    } else {
-                        // What the helper's own read found stands until Room delivers it.
-                        PickedKeyCheckState(
-                            identifier, result.record, savedRevision = result.revision,
-                            checkedRevision = result.revision,
-                        )
-                    }
-                )
-            }
-            PickedVotingKeyCheck.Dropped -> Unit
+            else -> Unit
+        }
+        nextPickedState(previous, identifier, result, revisionAtStart)?.let {
+            pickedChecks = pickedChecks + (hex to it)
         }
     }
 
