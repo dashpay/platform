@@ -20,6 +20,8 @@
 //!   funded by a fixed denomination leaving the pool (any excess re-enters as a change note)
 //! - **TokenPurchaseFromShieldedPool** (Type 28): shielded pool → a token bought at its direct
 //!   purchase price, minted as a note to the wallet's own address in the token's shielded pool
+//! - **TokenShieldedTransferWithShieldedFee** (Type 26): the wallet's notes in a token's shielded
+//!   pool → an Orchard address in that pool, the fee paid from the credit pool
 
 use super::activity::{ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection};
 use super::activity_recorder::{
@@ -29,12 +31,13 @@ use super::keys::{AccountViewingKeys, OrchardKeySet};
 use super::note_selection::{
     ensure_allowed_denomination, ensure_positive_amount, ensure_token_purchase_count,
     max_token_purchase_fee_notes, select_notes_for_denomination, select_notes_with_fee,
-    ShieldedFeeKind,
+    token_pool_spend_token_actions, ShieldedFeeKind, TokenPoolSpendNoteLimits,
 };
 use super::store::{
     PendingRedrive, PrivateContactPayment, PrivatePaymentEntry, ShieldedNote, ShieldedStore,
     SubwalletId,
 };
+use super::token_pool::{self, reserve_token_notes, TokenNoteReservation, TokenPoolConnection};
 use crate::broadcast_outcome::{
     broadcast_tracking_delivery, broadcast_was_refused, carries_consensus_rejection,
     BroadcastDelivery,
@@ -55,7 +58,8 @@ use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
 use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
 use dash_sdk::platform::transition::broadcast::{
     identity_top_up_from_shielded_pool_requirement, shield_from_identity_requirement,
-    token_purchase_from_shielded_pool_requirement, transition_protocol_requirement,
+    token_purchase_from_shielded_pool_requirement,
+    token_shielded_transfer_with_shielded_fee_requirement, transition_protocol_requirement,
     BroadcastStateTransition,
 };
 use dash_sdk::platform::transition::identity_create_from_shielded_pool::IdentityCreateFromShieldedPool;
@@ -86,8 +90,9 @@ use dpp::shielded::builder::{
     build_private_document_create_from_shielded_pool_transition,
     build_shield_from_identity_transition, build_shield_transition,
     build_shielded_transfer_transition, build_shielded_withdrawal_transition,
-    build_token_purchase_from_shielded_pool_transition, build_unshield_transition, OrchardProver,
-    ShieldedFeePayer, SpendableNote,
+    build_token_purchase_from_shielded_pool_transition,
+    build_token_shielded_transfer_with_shielded_fee_transition, build_unshield_transition,
+    OrchardProver, ShieldedFeePayer, SpendableNote, TokenPoolSpender,
 };
 use dpp::shielded::{compute_minimum_shielded_fee, compute_shielded_identity_balance_write_fee};
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -306,6 +311,7 @@ fn shielded_actions(st: &StateTransition) -> &[dpp::shielded::SerializedAction] 
     use dpp::state_transition::unshield_transition::accessors::UnshieldTransitionAccessorsV0;
     use dpp::state_transition::private_document_create_from_shielded_pool_transition::accessors::PrivateDocumentCreateFromShieldedPoolTransitionAccessorsV0;
     use dpp::state_transition::token_purchase_from_shielded_pool_transition::accessors::TokenPurchaseFromShieldedPoolTransitionAccessorsV0;
+    use dpp::state_transition::token_shielded_transfer_with_shielded_fee_transition::accessors::TokenShieldedTransferWithShieldedFeeTransitionAccessorsV0;
 
     match st {
         StateTransition::Shield(ShieldTransition::V0(v0)) => &v0.actions,
@@ -317,10 +323,14 @@ fn shielded_actions(st: &StateTransition) -> &[dpp::shielded::SerializedAction] 
         StateTransition::ShieldFromIdentity(t) => t.actions(),
         StateTransition::IdentityTopUpFromShieldedPool(t) => t.actions(),
         StateTransition::PrivateDocumentCreateFromShieldedPool(t) => t.actions(),
-        // The credit pool fee bundle only: its change is what the wallet's scan sees. The token
-        // bundle's note sits in the token's shielded pool, which the wallet does not scan, so
-        // counting it would key the entry by a commitment no rescan finds.
+        // The credit pool fee bundle only: its change is what the credit pool scan, which
+        // confirms activity rows, sees. The token bundle's note sits in the token's shielded
+        // pool, which only the token pool scan reads, so counting it would key the entry by a
+        // commitment the confirming scan never finds.
         StateTransition::TokenPurchaseFromShieldedPool(t) => t.fee_actions(),
+        // The fee bundle only, as for the purchase: the scan that confirms the entry is the
+        // credit pool's, and the token bundle's notes are found by the token pool scan.
+        StateTransition::TokenShieldedTransferWithShieldedFee(t) => t.fee_actions(),
         _ => &[],
     }
 }
@@ -2177,6 +2187,334 @@ async fn purchase_token_with_outcome<S: ShieldedStore>(
         result,
     )
     .await
+}
+
+// -------------------------------------------------------------------------
+// TokenShieldedTransferWithShieldedFee: a token pool -> the same token pool (Type 26)
+// -------------------------------------------------------------------------
+
+/// The operation name a token shielded transfer reports and logs under.
+const TOKEN_SHIELDED_TRANSFER_OPERATION: &str = "token shielded transfer";
+
+/// How a token pool spend paid from the credit pool (a shielded token transfer,
+/// [`token_shielded_transfer`]) ended when it returned no error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShieldedTokenSpendOutcome {
+    /// Platform accepted the spend. Its proof does not show that this spend
+    /// executed: a transfer's proof shows its token notes spent, which another
+    /// spend of the same notes would show too. So it is kept as a spend whose
+    /// result could not be read: its token notes and fee notes stay reserved,
+    /// its recovery record stays saved and its activity row stays pending.
+    /// Once it lands, the token pool scan marks the token notes spent and
+    /// finds the change, and the credit pool scan confirms the row from the fee
+    /// bundle's change note and marks the fee notes spent.
+    Submitted,
+}
+
+/// The anchors `token_id`'s shielded pool records, read with a proof.
+async fn fetch_token_pool_anchor_set(
+    sdk: &Arc<dash_sdk::Sdk>,
+    token_id: Identifier,
+) -> Result<HashSet<[u8; 32]>, PlatformWalletError> {
+    let anchors = dash_sdk::query_types::ShieldedAnchors::fetch(
+        sdk,
+        dash_sdk::query_types::TokenShieldedPoolQuery { token_id },
+    )
+    .await?;
+    Ok(anchors
+        .map(|dash_sdk::query_types::ShieldedAnchors(anchors)| anchors.into_iter().collect())
+        .unwrap_or_default())
+}
+
+/// Send `amount` of the token at `token_contract_position` of
+/// `data_contract_id` from `account`'s notes in the token's shielded pool to
+/// `recipient`, an Orchard address in the same pool
+/// (`TokenShieldedTransferWithShieldedFee`, type 26). The change goes back to
+/// the account's default address in the token pool, and the fee is paid from
+/// the account's credit pool notes, their change going back there. No identity
+/// is involved.
+///
+/// Before any note is reserved it refuses: a zero amount; a network or SDK
+/// that does not serve type 26 (protocol version 14); a token without a
+/// shielded pool, or whose configuration cannot be read; an SDK whose version
+/// is not the network's (from protocol version 15 the token bundle binds the
+/// fee bundle). Every network read (the activation check, the contract, both
+/// pools' anchor sets) comes before that version check.
+///
+/// It then reserves the account's token notes covering `amount`, largest
+/// first, and credit pool notes covering the fee for the token bundle's action
+/// count, each bounded by what fits one transition. The token notes' Merkle
+/// paths come from the leaves the token pool scan kept, and their root must be
+/// an anchor the token pool records; otherwise the spend is refused with
+/// [`PlatformWalletError::ShieldedNoRecordedAnchor`] and a shielded sync
+/// fixes it.
+///
+/// Waits for the transfer's affected state only: its proof shows its token
+/// nullifiers spent, which does not bind this transfer, so an accepted
+/// transfer stays pending ([`ShieldedTokenSpendOutcome::Submitted`]).
+#[allow(clippy::too_many_arguments)]
+pub async fn token_shielded_transfer<S, P>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    data_contract_id: Identifier,
+    token_contract_position: TokenContractPosition,
+    recipient: &OrchardAddress,
+    amount: TokenAmount,
+    prover: &P,
+) -> Result<ShieldedTokenSpendOutcome, PlatformWalletError>
+where
+    S: ShieldedStore + TokenPoolConnection,
+    P: OrchardProver,
+{
+    ensure_positive_amount(amount)?;
+    sdk.ensure_protocol_requirement(token_shielded_transfer_with_shielded_fee_requirement())
+        .await?;
+    ensure_token_has_shielded_pool(sdk, data_contract_id, token_contract_position).await?;
+    let token_id = Identifier::from(calculate_token_id(
+        &data_contract_id.to_buffer(),
+        token_contract_position,
+    ));
+    let (recorded_anchors, anchors_height) = fetch_recorded_anchor_set(sdk).await?;
+    let token_anchors = fetch_token_pool_anchor_set(sdk, token_id).await?;
+    let platform_version = token_pool_paid_signing_version(
+        sdk.version(),
+        sdk.protocol_version_info().verified_version,
+    )?;
+    let limits = TokenPoolSpendNoteLimits::token_shielded_transfer(platform_version)
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+
+    let views = keys.viewing_keys();
+    let own_addr = default_orchard_address(&views)?;
+    let id = SubwalletId::new(wallet_id, account);
+
+    let (token_notes, mut token_reservation) = reserve_token_notes(
+        &*store.read().await,
+        id,
+        token_id,
+        amount,
+        limits.max_token_notes,
+    )?;
+    let token_actions = token_pool_spend_token_actions(token_notes.len());
+    let max_fee_notes = TokenPoolSpendNoteLimits::token_shielded_transfer_fee_notes(
+        token_actions,
+        platform_version,
+    )
+    .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()));
+    let fee_reserved = match max_fee_notes {
+        Ok(max_fee_notes) => {
+            reserve_notes_covering_at_most(
+                store,
+                id,
+                0,
+                2,
+                ShieldedFeeKind::TokenShieldedTransfer { token_actions },
+                max_fee_notes,
+                platform_version,
+            )
+            .await
+        }
+        Err(e) => Err(e),
+    };
+    let (selected_notes, _total_input, exact_fee, mut reservation) = match fee_reserved {
+        Ok(reserved) => reserved,
+        Err(e) => {
+            token_reservation.release(&*store.read().await);
+            return Err(e);
+        }
+    };
+
+    info!(
+        account,
+        token = %token_id,
+        token_notes = token_notes.len(),
+        "TokenShieldedTransferWithShieldedFee: notes reserved, building"
+    );
+
+    let mut pending_entry = None;
+    let result = async {
+        let (fee_spends, fee_anchor) =
+            select_recorded_spends(&*store.read().await, &selected_notes, &recorded_anchors)?;
+        let (paths, token_anchor) = store
+            .read()
+            .await
+            .with_token_pool_conn(|conn| token_pool::spend_paths(conn, token_id, &token_notes))?;
+        if !token_anchors.contains(&token_anchor.to_bytes()) {
+            return Err(PlatformWalletError::ShieldedNoRecordedAnchor(format!(
+                "the shielded pool of token {token_id} does not record the root of the notes \
+                 this wallet scanned; sync the shielded pools and retry"
+            ))
+            .into());
+        }
+        let token_spends = token_notes
+            .iter()
+            .zip(paths)
+            .map(|(note, (_, merkle_path))| {
+                deserialize_note(&note.note_data)
+                    .map(|note| SpendableNote { note, merkle_path })
+                    .ok_or_else(|| {
+                        PlatformWalletError::ShieldedBuildError(format!(
+                            "the token note at position {} does not deserialize",
+                            note.position
+                        ))
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let (state_transition, fee_used) =
+            build_token_shielded_transfer_with_shielded_fee_transition(
+                token_id,
+                data_contract_id,
+                token_contract_position,
+                TokenPoolSpender {
+                    spends: token_spends,
+                    change_address: &own_addr,
+                    fvk: &keys.full_viewing_key,
+                    ask: &keys.spend_auth_key,
+                    anchor: token_anchor,
+                },
+                recipient,
+                amount,
+                [0u8; 36],
+                ShieldedFeePayer {
+                    spends: fee_spends,
+                    change_address: &own_addr,
+                    fvk: &keys.full_viewing_key,
+                    ask: &keys.spend_auth_key,
+                    anchor: fee_anchor,
+                },
+                prover,
+                platform_version,
+            )
+            .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+        debug_assert_eq!(
+            fee_used, exact_fee,
+            "builder fee must match the reserved token shielded transfer fee"
+        );
+
+        pending_entry = record_pending_activity(
+            store,
+            persister,
+            wallet_id,
+            id,
+            &views,
+            LiveEntryParams {
+                kind: ShieldedActivityKind::TokenShieldedTransfer,
+                direction: ShieldedDirection::Out,
+                amount,
+                fee: Some(fee_used),
+                counterparty: Some(token_id.to_vec()),
+                memo: None,
+                actions: shielded_actions(&state_transition),
+                spent_notes: &selected_notes,
+            },
+        )
+        .await;
+        // The token notes are held under the record's id from here on, so
+        // once this spend has settled the record keeps them held.
+        if let Some(entry) = &pending_entry {
+            token_reservation.rekey(&*store.read().await, entry.id)?;
+        }
+
+        save_spend_then_broadcast(
+            store,
+            id,
+            &pending_entry,
+            fee_anchor.to_bytes(),
+            anchors_height,
+            &selected_notes,
+            &mut reservation,
+            &state_transition,
+            TOKEN_SHIELDED_TRANSFER_OPERATION,
+            || {
+                broadcast_shielded_spend_classified(
+                    sdk,
+                    &state_transition,
+                    TOKEN_SHIELDED_TRANSFER_OPERATION,
+                    SpendResultWait::AffectedState,
+                )
+            },
+        )
+        .await
+    }
+    .await;
+
+    settle_token_pool_spend(
+        store,
+        persister,
+        wallet_id,
+        id,
+        token_id,
+        &pending_entry,
+        reservation,
+        token_reservation,
+        TOKEN_SHIELDED_TRANSFER_OPERATION,
+        result.map(|(proof, _metadata)| proof),
+    )
+    .await
+}
+
+/// Settle a token pool spend paid from the credit pool once its save,
+/// broadcast and result wait returned `result`.
+///
+/// An accepted spend is left pending, never confirmed here
+/// ([`ShieldedTokenSpendOutcome::Submitted`]): its fee notes and record stay
+/// for the scan and the redrive pass, and its token notes stay held under the
+/// record's id. A failure is settled as every note-consuming spend's is
+/// ([`settle_failed_spend`]); its token notes are released exactly when that
+/// releases the fee notes, that is unless the spend may still be on the
+/// network.
+#[allow(clippy::too_many_arguments)]
+async fn settle_token_pool_spend<S>(
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    id: SubwalletId,
+    token_id: Identifier,
+    pending_entry: &Option<super::activity::ShieldedActivityEntry>,
+    reservation: NoteReservation<S>,
+    token_reservation: TokenNoteReservation,
+    operation: &'static str,
+    result: Result<StateTransitionProofResult, SpendFailure>,
+) -> Result<ShieldedTokenSpendOutcome, PlatformWalletError>
+where
+    S: ShieldedStore + TokenPoolConnection,
+{
+    match result {
+        Ok(proof) => {
+            info!(
+                account = id.account_index,
+                token = %token_id,
+                result = ?std::mem::discriminant(&proof),
+                "{operation} accepted; pending until a shielded sync confirms it"
+            );
+            Ok(ShieldedTokenSpendOutcome::Submitted)
+        }
+        Err(failure) => {
+            let error = settle_failed_spend(
+                store,
+                persister,
+                wallet_id,
+                id,
+                pending_entry,
+                reservation,
+                operation,
+                failure,
+            )
+            .await;
+            if !matches!(
+                error,
+                PlatformWalletError::ShieldedSpendUnconfirmed { .. }
+                    | PlatformWalletError::ShieldedBroadcastUnconfirmed { .. }
+            ) {
+                token_reservation.release(&*store.read().await);
+            }
+            Err(error)
+        }
+    }
 }
 
 // -------------------------------------------------------------------------
@@ -9301,6 +9639,275 @@ mod select_recorded_spends_tests {
             Err(other) => panic!("expected ShieldedNoRecordedAnchor, got error: {other:?}"),
             Ok(_) => panic!("expected ShieldedNoRecordedAnchor, got Ok"),
         }
+    }
+}
+
+#[cfg(test)]
+mod token_shielded_transfer_tests {
+    use super::*;
+    use crate::wallet::shielded::file_store::FileBackedShieldedStore;
+    use crate::wallet::shielded::token_pool::{insert_note_for_test, TokenPoolNote};
+    use dash_sdk::SdkBuilder;
+    use dashcore::Network;
+    use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+    use dpp::data_contract::associated_token::token_configuration::v1::TokenConfigurationV1;
+    use dpp::data_contract::config::DataContractConfig;
+    use dpp::data_contract::v1::DataContractV1;
+    use dpp::data_contract::TokenConfiguration;
+    use drive_proof_verifier::types::{NoParamQuery, ShieldedAnchors, TokenShieldedPoolQuery};
+    use grovedb_commitment_tree::ProvingKey;
+    use std::collections::BTreeMap;
+
+    const WALLET_ID: [u8; 32] = [0x72; 32];
+    const CONTRACT_ID: [u8; 32] = [0x46; 32];
+
+    /// A prover the transfers here never reach: each stops before the build.
+    struct UnreachableProver;
+    impl OrchardProver for UnreachableProver {
+        fn proving_key(&self) -> &ProvingKey {
+            panic!("nothing is proved")
+        }
+    }
+
+    fn subwallet() -> SubwalletId {
+        SubwalletId::new(WALLET_ID, 0)
+    }
+
+    fn token_id() -> Identifier {
+        Identifier::from(calculate_token_id(&CONTRACT_ID, 0))
+    }
+
+    fn credit_note(value: u64, index: u8) -> ShieldedNote {
+        ShieldedNote {
+            position: u64::from(index),
+            cmx: [index.wrapping_add(1); 32],
+            nullifier: [0x6B ^ index; 32],
+            block_height: 1,
+            is_spent: false,
+            value,
+            note_data: vec![],
+        }
+    }
+
+    fn token_note(value: u64, index: u8) -> TokenPoolNote {
+        TokenPoolNote {
+            id: subwallet(),
+            token_id: token_id(),
+            position: u64::from(index),
+            cmx: [index.wrapping_add(1); 32],
+            nullifier: [0x9C ^ index; 32],
+            value,
+            note_data: vec![0; 115],
+            block_height: 1,
+            is_spent: false,
+            reserved_by: None,
+        }
+    }
+
+    fn token_contract() -> DataContract {
+        let platform_version = PlatformVersion::latest();
+        DataContract::V1(DataContractV1 {
+            id: Identifier::from(CONTRACT_ID),
+            version: 1,
+            owner_id: Identifier::from([0x47; 32]),
+            document_types: BTreeMap::new(),
+            config: DataContractConfig::default_for_version(platform_version)
+                .expect("a contract config"),
+            schema_defs: None,
+            created_at: None,
+            updated_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            created_at_epoch: None,
+            updated_at_epoch: None,
+            groups: BTreeMap::new(),
+            tokens: BTreeMap::from([(
+                0,
+                TokenConfiguration::V1(TokenConfigurationV1::from_v0(
+                    TokenConfigurationV0::default_most_restrictive(),
+                    true,
+                )),
+            )]),
+            keywords: vec![],
+            description: None,
+        })
+    }
+
+    /// A mock SDK answering the contract and both pools' anchor sets, with
+    /// anchors no note here reaches.
+    async fn pool_sdk() -> Arc<dash_sdk::Sdk> {
+        let mut sdk = SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .with_version(PlatformVersion::latest())
+            .build()
+            .expect("mock sdk");
+        sdk.mock()
+            .expect_fetch(Identifier::from(CONTRACT_ID), Some(token_contract()))
+            .await
+            .expect("contract expectation");
+        sdk.mock()
+            .expect_fetch(NoParamQuery {}, Some(ShieldedAnchors(vec![[0xEE; 32]])))
+            .await
+            .expect("credit anchors expectation");
+        sdk.mock()
+            .expect_fetch(
+                TokenShieldedPoolQuery {
+                    token_id: token_id(),
+                },
+                Some(ShieldedAnchors(vec![[0xEF; 32]])),
+            )
+            .await
+            .expect("token anchors expectation");
+        Arc::new(sdk)
+    }
+
+    async fn store_with(
+        dir: &tempfile::TempDir,
+        credit: &[ShieldedNote],
+        tokens: &[TokenPoolNote],
+    ) -> Arc<RwLock<FileBackedShieldedStore>> {
+        let store = FileBackedShieldedStore::open_path(dir.path().join("tree.sqlite"), 100)
+            .expect("open store");
+        let store = Arc::new(RwLock::new(store));
+        for note in credit {
+            store
+                .write()
+                .await
+                .save_note(subwallet(), note)
+                .expect("a credit note");
+        }
+        for note in tokens {
+            store
+                .read()
+                .await
+                .with_token_pool_conn(|conn| insert_note_for_test(conn, note))
+                .expect("a token note");
+        }
+        store
+    }
+
+    async fn transfer(
+        sdk: &Arc<dash_sdk::Sdk>,
+        store: &Arc<RwLock<FileBackedShieldedStore>>,
+        amount: TokenAmount,
+    ) -> Result<ShieldedTokenSpendOutcome, PlatformWalletError> {
+        let keys = OrchardKeySet::from_seed(&[0x43; 64], Network::Testnet, 0).expect("keys");
+        let recipient = default_orchard_address(&keys.viewing_keys()).expect("an address");
+        token_shielded_transfer(
+            sdk,
+            store,
+            None,
+            WALLET_ID,
+            &keys,
+            0,
+            Identifier::from(CONTRACT_ID),
+            0,
+            &recipient,
+            amount,
+            &UnreachableProver,
+        )
+        .await
+    }
+
+    /// Nothing is held: no credit or token note is reserved, and no record or
+    /// activity row exists.
+    async fn assert_nothing_held(store: &Arc<RwLock<FileBackedShieldedStore>>, credit: usize) {
+        let store = store.read().await;
+        assert_eq!(
+            store.get_unspent_notes(subwallet()).expect("notes").len(),
+            credit,
+            "every credit note is spendable"
+        );
+        let held = store
+            .with_token_pool_conn(|conn| token_pool::notes(conn, subwallet(), token_id()))
+            .expect("token notes");
+        assert!(held.iter().all(|note| note.reserved_by.is_none()));
+        assert!(store
+            .pending_redrives(subwallet())
+            .expect("records")
+            .is_empty());
+        assert!(store
+            .get_activity(subwallet(), 0, 10)
+            .expect("activity")
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_zero_token_transfer_before_any_request() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let sdk = Arc::new(SdkBuilder::new_mock().build().expect("mock sdk"));
+        let store = store_with(&dir, &[], &[]).await;
+        let err = transfer(&sdk, &store, 0).await.expect_err("zero");
+        assert!(
+            matches!(err, PlatformWalletError::ShieldedBuildError(_)),
+            "got {err:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_token_transfer_its_token_notes_cannot_cover_without_reserving() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let sdk = pool_sdk().await;
+        let store = store_with(
+            &dir,
+            &[credit_note(1_000_000_000_000, 0)],
+            &[token_note(10, 0)],
+        )
+        .await;
+
+        let err = transfer(&sdk, &store, 11)
+            .await
+            .expect_err("10 tokens do not cover 11");
+        assert!(
+            matches!(
+                err,
+                PlatformWalletError::TokenShieldedInsufficientBalance {
+                    available: 10,
+                    required: 11,
+                    ..
+                }
+            ),
+            "got {err:?}"
+        );
+        assert_nothing_held(&store, 1).await;
+    }
+
+    /// Token notes are reserved first; when the credit notes cannot pay the
+    /// fee, the token notes come back.
+    #[tokio::test]
+    async fn should_release_the_token_notes_when_the_fee_cannot_be_paid() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let sdk = pool_sdk().await;
+        let store = store_with(&dir, &[credit_note(1, 0)], &[token_note(10, 0)]).await;
+
+        let err = transfer(&sdk, &store, 5)
+            .await
+            .expect_err("one credit cannot pay the fee");
+        assert!(
+            matches!(err, PlatformWalletError::ShieldedInsufficientBalance { .. }),
+            "got {err:?}"
+        );
+        assert_nothing_held(&store, 1).await;
+    }
+
+    /// A transfer that fails before its record is saved (here no witness of
+    /// the reserved fee note reaches a recorded anchor) releases the fee notes
+    /// and the token notes and records no activity.
+    #[tokio::test]
+    async fn should_release_both_reservations_of_a_transfer_that_fails_before_its_broadcast() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let sdk = pool_sdk().await;
+        let store = store_with(
+            &dir,
+            &[credit_note(1_000_000_000_000, 0)],
+            &[token_note(10, 0)],
+        )
+        .await;
+
+        transfer(&sdk, &store, 5)
+            .await
+            .expect_err("the store holds no witness of the fee note");
+        assert_nothing_held(&store, 1).await;
     }
 }
 

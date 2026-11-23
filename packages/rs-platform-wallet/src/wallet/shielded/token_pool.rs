@@ -35,6 +35,9 @@ use dash_sdk::query_types::{
 };
 use dpp::data_contract::TokenContractPosition;
 use dpp::prelude::Identifier;
+use grovedb_commitment_tree::{
+    Anchor, ClientMemoryCommitmentTree, MerklePath, Position, Retention,
+};
 use rusqlite::{params, Connection, OptionalExtension};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
@@ -69,10 +72,15 @@ pub struct ShieldedTokenPoolBalance {
     /// The Orchard account the notes belong to.
     pub account_index: u32,
     /// The value of the account's notes whose nullifiers the scan has not
-    /// seen, in the token's smallest unit.
+    /// seen and that no spend in flight holds, in the token's smallest unit:
+    /// what a token pool spend can use now.
     pub balance: u64,
     /// How many notes make up [`Self::balance`].
     pub unspent_note_count: u32,
+    /// The value of the account's unspent notes a spend in flight holds
+    /// ([`TokenNoteReservation`]): they leave the balance when the scan sees
+    /// them spent, or come back to it if the spend can no longer execute.
+    pub reserved_balance: u64,
     /// How many of the pool's notes, from the first without a gap, were
     /// checked for this account; `None` before the first scan reached it.
     /// The balance covers exactly these.
@@ -108,6 +116,9 @@ pub struct TokenPoolNote {
     pub block_height: u64,
     /// Whether the scan has seen its nullifier.
     pub is_spent: bool,
+    /// The spend in flight that holds it, if one does: a reservation marker
+    /// or the activity id of the spend's saved record.
+    pub reserved_by: Option<[u8; 32]>,
 }
 
 /// What one pass over the watched token pools did, for logs and tests.
@@ -273,7 +284,22 @@ pub(super) fn create_tables(conn: &Connection) -> rusqlite::Result<()> {
         );
         CREATE INDEX IF NOT EXISTS shielded_token_pool_notes_by_nullifier
             ON shielded_token_pool_notes (token_id, nullifier);",
-    )
+    )?;
+    // The spend in flight holding a note ([`TokenNoteReservation`]); added to
+    // a table made before reservations were kept.
+    let has_reserved_by = conn
+        .prepare("PRAGMA table_info(shielded_token_pool_notes)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?
+        .iter()
+        .any(|column| column == "reserved_by");
+    if !has_reserved_by {
+        conn.execute(
+            "ALTER TABLE shielded_token_pool_notes ADD COLUMN reserved_by BLOB",
+            [],
+        )?;
+    }
+    Ok(())
 }
 
 /// Record that `wallet_id` watches `watch`'s pool. Idempotent.
@@ -452,7 +478,6 @@ pub(super) fn watermark(
 }
 
 /// Every note `id` holds in `token_id`'s pool, spent or not, by position.
-#[cfg(test)]
 pub(crate) fn notes(
     conn: &Connection,
     id: SubwalletId,
@@ -460,8 +485,8 @@ pub(crate) fn notes(
 ) -> Result<Vec<TokenPoolNote>, PlatformWalletError> {
     let mut statement = conn
         .prepare(
-            "SELECT position, cmx, nullifier, value, note_data, block_height, spent \
-             FROM shielded_token_pool_notes \
+            "SELECT position, cmx, nullifier, value, note_data, block_height, spent, \
+             reserved_by FROM shielded_token_pool_notes \
              WHERE wallet_id = ?1 AND account_index = ?2 AND token_id = ?3 \
              ORDER BY position",
         )
@@ -482,13 +507,14 @@ pub(crate) fn notes(
                     row.get::<_, Vec<u8>>(4)?,
                     row.get::<_, i64>(5)?,
                     row.get::<_, i64>(6)?,
+                    row.get::<_, Option<Vec<u8>>>(7)?,
                 ))
             },
         )
         .map_err(storage("read notes"))?;
     let mut out = Vec::new();
     for row in rows {
-        let (position, cmx, nullifier, value, note_data, block_height, spent) =
+        let (position, cmx, nullifier, value, note_data, block_height, spent, reserved_by) =
             row.map_err(storage("read notes"))?;
         let value = <[u8; 8]>::try_from(value.as_slice())
             .map(u64::from_le_bytes)
@@ -507,21 +533,25 @@ pub(crate) fn notes(
             note_data,
             block_height: from_sql_u64(block_height, "note height")?,
             is_spent: spent != 0,
+            reserved_by: reserved_by
+                .map(|marker| bytes32(marker, "reservation"))
+                .transpose()?,
         });
     }
     Ok(out)
 }
 
-/// The values of `id`'s unspent notes in `token_id`'s pool, read alone: a
-/// balance needs nothing else of the notes.
+/// The values of `id`'s unspent notes in `token_id`'s pool, each with
+/// whether a spend in flight holds it, read alone: a balance needs nothing
+/// else of the notes.
 fn unspent_values(
     conn: &Connection,
     id: SubwalletId,
     token_id: Identifier,
-) -> Result<Vec<u64>, PlatformWalletError> {
+) -> Result<Vec<(u64, bool)>, PlatformWalletError> {
     let mut statement = conn
         .prepare(
-            "SELECT value FROM shielded_token_pool_notes \
+            "SELECT value, reserved_by IS NOT NULL FROM shielded_token_pool_notes \
              WHERE wallet_id = ?1 AND account_index = ?2 AND token_id = ?3 AND spent = 0",
         )
         .map_err(storage("read note values"))?;
@@ -532,13 +562,13 @@ fn unspent_values(
                 id.account_index,
                 token_id.as_slice()
             ],
-            |row| row.get::<_, Vec<u8>>(0),
+            |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, bool>(1)?)),
         )
         .map_err(storage("read note values"))?;
     rows.map(|row| {
-        let value = row.map_err(storage("read note values"))?;
+        let (value, reserved) = row.map_err(storage("read note values"))?;
         <[u8; 8]>::try_from(value.as_slice())
-            .map(u64::from_le_bytes)
+            .map(|value| (u64::from_le_bytes(value), reserved))
             .map_err(|_| {
                 PlatformWalletError::ShieldedStoreError(
                     "token pool note value is not 8 bytes".to_string(),
@@ -621,21 +651,28 @@ pub(super) fn balances(
             let id = SubwalletId::new(wallet_id, account_index);
             let mut balance = 0u64;
             let mut unspent_note_count = 0u32;
-            for value in unspent_values(conn, id, watch.token_id)? {
-                balance = balance.checked_add(value).ok_or_else(|| {
-                    PlatformWalletError::ShieldedStoreError(format!(
-                        "the notes of account {account_index} in the pool of token {} add up \
-                         past u64",
-                        watch.token_id
-                    ))
-                })?;
-                unspent_note_count = unspent_note_count.saturating_add(1);
+            let mut reserved_balance = 0u64;
+            let overflow = || {
+                PlatformWalletError::ShieldedStoreError(format!(
+                    "the notes of account {account_index} in the pool of token {} add up past \
+                     u64",
+                    watch.token_id
+                ))
+            };
+            for (value, reserved) in unspent_values(conn, id, watch.token_id)? {
+                if reserved {
+                    reserved_balance = reserved_balance.checked_add(value).ok_or_else(overflow)?;
+                } else {
+                    balance = balance.checked_add(value).ok_or_else(overflow)?;
+                    unspent_note_count = unspent_note_count.saturating_add(1);
+                }
             }
             out.push(ShieldedTokenPoolBalance {
                 watch,
                 account_index,
                 balance,
                 unspent_note_count,
+                reserved_balance,
                 scanned_note_count: watermark(conn, id, watch.token_id)?,
                 pool_note_count,
                 scanned_height,
@@ -644,6 +681,310 @@ pub(super) fn balances(
         }
     }
     Ok(out)
+}
+
+/// The markers of the token note reservations this process holds now: a
+/// reservation marker from [`reserve_token_notes`] until the spend's activity
+/// id replaces it, then that id until the spend has settled. Read with the
+/// reservations under the connection's lock, so the sweep
+/// ([`release_orphaned_reservations`]) never releases a spend still being
+/// built or settled.
+static IN_FLIGHT: std::sync::Mutex<BTreeSet<[u8; 32]>> = std::sync::Mutex::new(BTreeSet::new());
+
+fn in_flight() -> std::sync::MutexGuard<'static, BTreeSet<[u8; 32]>> {
+    IN_FLIGHT
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// The token notes one spend holds ([`reserve_token_notes`]).
+///
+/// The reservation is kept in the store, so it outlives the process; what
+/// releases it is either the spend's own settlement ([`Self::release`], for a
+/// spend that never reached the network) or the sweep, for a reservation
+/// whose spend is no longer in flight here and has no saved record left: the
+/// scan found its fee notes spent or their anchor pruned, or the process that
+/// made it is gone. A note the scan sees spent stays spent whatever its
+/// reservation says.
+#[derive(Debug)]
+pub(crate) struct TokenNoteReservation {
+    marker: [u8; 32],
+}
+
+impl TokenNoteReservation {
+    /// Hold the notes under `activity_id`, the id of the spend's saved
+    /// record, from now on.
+    pub(crate) fn rekey<S: TokenPoolConnection>(
+        &mut self,
+        store: &S,
+        activity_id: [u8; 32],
+    ) -> Result<(), PlatformWalletError> {
+        store.with_token_pool_conn(|conn| {
+            conn.execute(
+                "UPDATE shielded_token_pool_notes SET reserved_by = ?1 WHERE reserved_by = ?2",
+                params![activity_id.as_slice(), self.marker.as_slice()],
+            )
+            .map_err(storage("rekey reservation"))?;
+            let mut held = in_flight();
+            held.insert(activity_id);
+            held.remove(&self.marker);
+            Ok(())
+        })?;
+        self.marker = activity_id;
+        Ok(())
+    }
+
+    /// Release the notes, for a spend that cannot execute.
+    pub(crate) fn release<S: TokenPoolConnection>(self, store: &S) {
+        let marker = self.marker;
+        if let Err(e) = store.with_token_pool_conn(|conn| {
+            conn.execute(
+                "UPDATE shielded_token_pool_notes SET reserved_by = NULL WHERE reserved_by = ?1",
+                params![marker.as_slice()],
+            )
+            .map_err(storage("release reservation"))
+        }) {
+            // Left reserved, the notes come back at the next sweep.
+            warn!(error = %e, "releasing token notes failed; the next sync releases them");
+        }
+    }
+}
+
+impl Drop for TokenNoteReservation {
+    fn drop(&mut self) {
+        in_flight().remove(&self.marker);
+    }
+}
+
+/// A reservation marker no other reservation of this or an earlier process
+/// shares: a hash of the process id, the time and a counter.
+fn new_reservation_marker() -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let mut hasher = Sha256::new();
+    hasher.update(b"token note reservation");
+    hasher.update(std::process::id().to_le_bytes());
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos())
+        .unwrap_or_default();
+    hasher.update(nanos.to_le_bytes());
+    hasher.update(
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            .to_le_bytes(),
+    );
+    hasher.finalize().into()
+}
+
+/// Reserve `id`'s unspent, unreserved notes in `token_id`'s pool covering
+/// `amount`, largest first, at most `max_notes` of them. Refuses an amount the
+/// notes do not cover ([`PlatformWalletError::TokenShieldedInsufficientBalance`])
+/// and one needing more notes than allowed
+/// ([`PlatformWalletError::ShieldedTooManyNotes`]) without reserving anything.
+pub(crate) fn reserve_token_notes<S: TokenPoolConnection>(
+    store: &S,
+    id: SubwalletId,
+    token_id: Identifier,
+    amount: u64,
+    max_notes: usize,
+) -> Result<(Vec<TokenPoolNote>, TokenNoteReservation), PlatformWalletError> {
+    store.with_token_pool_conn(|conn| {
+        let mut free: Vec<TokenPoolNote> = notes(conn, id, token_id)?
+            .into_iter()
+            .filter(|note| !note.is_spent && note.reserved_by.is_none())
+            .collect();
+        free.sort_by(|a, b| b.value.cmp(&a.value).then(a.position.cmp(&b.position)));
+        let available = free
+            .iter()
+            .try_fold(0u64, |total, note| total.checked_add(note.value))
+            .unwrap_or(u64::MAX);
+        let mut selected = Vec::new();
+        let mut covered = 0u64;
+        for note in free {
+            if covered >= amount {
+                break;
+            }
+            covered = covered.saturating_add(note.value);
+            selected.push(note);
+        }
+        if covered < amount || selected.is_empty() {
+            return Err(PlatformWalletError::TokenShieldedInsufficientBalance {
+                token_id,
+                available,
+                required: amount,
+            });
+        }
+        if selected.len() > max_notes {
+            return Err(PlatformWalletError::ShieldedTooManyNotes {
+                required_notes: selected.len(),
+                max_notes,
+            });
+        }
+        let marker = new_reservation_marker();
+        let tx = conn.transaction().map_err(storage("reserve"))?;
+        for note in &selected {
+            tx.execute(
+                "UPDATE shielded_token_pool_notes SET reserved_by = ?1 \
+                 WHERE wallet_id = ?2 AND account_index = ?3 AND token_id = ?4 AND nullifier = ?5",
+                params![
+                    marker.as_slice(),
+                    id.wallet_id.as_slice(),
+                    id.account_index,
+                    token_id.as_slice(),
+                    note.nullifier.as_slice()
+                ],
+            )
+            .map_err(storage("reserve"))?;
+        }
+        tx.commit().map_err(storage("reserve"))?;
+        in_flight().insert(marker);
+        let selected = selected
+            .into_iter()
+            .map(|note| TokenPoolNote {
+                reserved_by: Some(marker),
+                ..note
+            })
+            .collect();
+        Ok((selected, TokenNoteReservation { marker }))
+    })
+}
+
+/// Release the reservations in the pools of `scanned` (the pools this pass
+/// scanned to their end) held by neither a spend in flight here nor a saved
+/// record in `live_records`. Their spend can no longer execute (the scan
+/// found its fee notes spent or pruned its anchor, which drops the record) or
+/// its process is gone; a note it did spend is marked spent by the scan, which
+/// ran first. Returns how many notes came back.
+pub(crate) fn release_orphaned_reservations(
+    conn: &Connection,
+    scanned: &BTreeSet<Identifier>,
+    live_records: &BTreeSet<[u8; 32]>,
+) -> Result<usize, PlatformWalletError> {
+    let mut statement = conn
+        .prepare(
+            "SELECT DISTINCT token_id, reserved_by FROM shielded_token_pool_notes \
+             WHERE reserved_by IS NOT NULL AND spent = 0",
+        )
+        .map_err(storage("read reservations"))?;
+    let held: Vec<(Vec<u8>, Vec<u8>)> = statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .map_err(storage("read reservations"))?
+        .collect::<rusqlite::Result<_>>()
+        .map_err(storage("read reservations"))?;
+    let in_flight = in_flight();
+    let mut released = 0;
+    for (token_id, marker) in held {
+        let token_id = Identifier::from(bytes32(token_id, "token id")?);
+        let marker = bytes32(marker, "reservation")?;
+        if !scanned.contains(&token_id)
+            || in_flight.contains(&marker)
+            || live_records.contains(&marker)
+        {
+            continue;
+        }
+        released += conn
+            .execute(
+                "UPDATE shielded_token_pool_notes SET reserved_by = NULL \
+                 WHERE token_id = ?1 AND reserved_by = ?2",
+                params![token_id.as_slice(), marker.as_slice()],
+            )
+            .map_err(storage("release reservation"))?;
+    }
+    Ok(released)
+}
+
+/// The Merkle paths of `selected`, notes of `token_id`'s pool, and the anchor
+/// they share: the root of the pool's tree over the leaves the scan kept, from
+/// position 0 to the first one missing. That is the pool's root when its last
+/// scan ended, which is one of the anchors the pool records while it keeps
+/// it; the caller checks that it is.
+pub(crate) fn spend_paths(
+    conn: &Connection,
+    token_id: Identifier,
+    selected: &[TokenPoolNote],
+) -> Result<(Vec<(u64, MerklePath)>, Anchor), PlatformWalletError> {
+    let positions: BTreeSet<u64> = selected.iter().map(|note| note.position).collect();
+    let mut statement = conn
+        .prepare(
+            "SELECT position, cmx FROM shielded_token_pool_leaves \
+             WHERE token_id = ?1 ORDER BY position",
+        )
+        .map_err(storage("read leaves"))?;
+    let rows = statement
+        .query_map(params![token_id.as_slice()], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
+        })
+        .map_err(storage("read leaves"))?;
+    let built = |e: grovedb_commitment_tree::CommitmentTreeError| {
+        PlatformWalletError::ShieldedMerkleWitnessUnavailable(format!(
+            "the tree of the shielded pool of token {token_id} does not build: {e}"
+        ))
+    };
+    let mut tree = ClientMemoryCommitmentTree::new(1);
+    let mut next = 0u64;
+    for row in rows {
+        let (position, cmx) = row.map_err(storage("read leaves"))?;
+        if from_sql_u64(position, "leaf position")? != next {
+            break;
+        }
+        let retention = if positions.contains(&next) {
+            Retention::Marked
+        } else {
+            Retention::Ephemeral
+        };
+        tree.append(bytes32(cmx, "leaf")?, retention)
+            .map_err(built)?;
+        next += 1;
+    }
+    tree.checkpoint(1).map_err(built)?;
+    let anchor = tree.anchor().map_err(built)?;
+    let mut paths = Vec::with_capacity(selected.len());
+    for note in selected {
+        let path = (note.position < next)
+            .then(|| tree.witness(Position::from(note.position), 0))
+            .transpose()
+            .map_err(built)?
+            .flatten()
+            .ok_or_else(|| {
+                PlatformWalletError::ShieldedMerkleWitnessUnavailable(format!(
+                    "note {} of the shielded pool of token {token_id} is past the leaves kept; \
+                     sync the shielded pools first",
+                    note.position
+                ))
+            })?;
+        paths.push((note.position, path));
+    }
+    Ok((paths, anchor))
+}
+
+/// Insert `note` as the scan would have, for tests that start from owned
+/// token notes.
+#[cfg(test)]
+pub(crate) fn insert_note_for_test(
+    conn: &Connection,
+    note: &TokenPoolNote,
+) -> Result<(), PlatformWalletError> {
+    conn.execute(
+        "INSERT INTO shielded_token_pool_notes \
+         (wallet_id, account_index, token_id, position, cmx, nullifier, value, note_data, \
+          block_height, spent, reserved_by) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        params![
+            note.id.wallet_id.as_slice(),
+            note.id.account_index,
+            note.token_id.as_slice(),
+            to_sql_u64(note.position, "position")?,
+            note.cmx.as_slice(),
+            note.nullifier.as_slice(),
+            note.value.to_le_bytes().as_slice(),
+            note.note_data,
+            to_sql_u64(note.block_height, "height")?,
+            i64::from(note.is_spent),
+            note.reserved_by.map(|marker| marker.to_vec()),
+        ],
+    )
+    .map_err(storage("insert note"))?;
+    Ok(())
 }
 
 /// The accounts that scan one pool and the viewing keys they decrypt with,

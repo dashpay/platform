@@ -877,6 +877,9 @@ impl FileBackedShieldedStore {
             StateTransition::TokenPurchaseFromShieldedPool(_) => {
                 Some("token purchase from shielded pool")
             }
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => {
+                Some("token shielded transfer")
+            }
             _ => None,
         }
     }

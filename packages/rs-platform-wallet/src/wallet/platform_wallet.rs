@@ -54,7 +54,8 @@ use {
     },
     super::shielded::operations::{
         discharge_read_back_private_payments, private_document_create_from_pool_with_metadata,
-        token_purchase_from_pool, ShieldedTokenPurchaseOutcome,
+        token_purchase_from_pool, token_shielded_transfer, ShieldedTokenPurchaseOutcome,
+        ShieldedTokenSpendOutcome,
     },
     super::shielded::store::{
         PendingRedrive, PrivateContactPayment, PrivatePaymentEntry, PrivatePaymentRecord,
@@ -69,6 +70,7 @@ use {
     },
     dash_sdk::dapi_grpc::platform::v0::ResponseMetadata,
     dash_sdk::platform::dashpay::PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+    dpp::address_funds::OrchardAddress,
     dpp::balances::credits::TokenAmount,
     dpp::data_contract::accessors::v0::DataContractV0Getters,
     dpp::data_contract::TokenContractPosition,
@@ -2119,6 +2121,52 @@ impl PlatformWallet {
             token_contract_position,
             token_count,
             total_agreed_price,
+            &prover,
+        )
+        .await
+    }
+
+    /// Send `amount` of the token at `token_contract_position` of
+    /// `data_contract_id` from `account`'s notes in the token's shielded pool
+    /// to `recipient`, an Orchard address in that pool
+    /// (`TokenShieldedTransferWithShieldedFee`, type 26), paying the fee from
+    /// the account's credit pool notes. `seed` supplies the transient spend
+    /// authority (see [`shielded_transfer_to`](Self::shielded_transfer_to)).
+    ///
+    /// An accepted transfer stays pending until a shielded sync sees it
+    /// ([`ShieldedTokenSpendOutcome::Submitted`]). The lifecycle gate is held
+    /// as the purchase holds it, through settlement.
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn shielded_token_transfer<P: OrchardProver>(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+        seed: &[u8],
+        account: u32,
+        data_contract_id: &Identifier,
+        token_contract_position: TokenContractPosition,
+        recipient: &OrchardAddress,
+        amount: TokenAmount,
+        prover: P,
+    ) -> Result<ShieldedTokenSpendOutcome, PlatformWalletError> {
+        let _lifecycle = self.core().generation_payment_guard().await;
+        if !self.core().is_current_generation().await {
+            return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
+                self.wallet_id,
+            )));
+        }
+        let keyset = self.derive_spend_keyset(seed, account).await?;
+        token_shielded_transfer(
+            &self.sdk,
+            coordinator.store(),
+            Some(&self.persister),
+            self.wallet_id,
+            &keyset,
+            account,
+            *data_contract_id,
+            token_contract_position,
+            recipient,
+            amount,
             &prover,
         )
         .await

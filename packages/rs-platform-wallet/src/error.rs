@@ -1320,6 +1320,19 @@ pub enum PlatformWalletError {
         token_id: Identifier,
         reason: String,
     },
+
+    /// The account's spendable notes in the token's shielded pool do not
+    /// cover the amount, both in the token's smallest unit. Notes a spend in
+    /// flight holds are not counted. Refused before anything was reserved.
+    #[error(
+        "Insufficient shielded balance of token {token_id}: available {available}, required \
+         {required}"
+    )]
+    TokenShieldedInsufficientBalance {
+        token_id: Identifier,
+        available: u64,
+        required: u64,
+    },
 }
 
 /// The SDK's invitation errors map onto the variants the wallet used before

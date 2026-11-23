@@ -1097,6 +1097,44 @@ impl NetworkShieldedCoordinator {
             .with_token_pool_conn(|conn| super::token_pool::balances(conn, wallet_id, &accounts))
     }
 
+    /// Release the token notes held by token pool spends that can no longer
+    /// execute, in the pools `scanned` (the ones this pass scanned to their
+    /// end, after the credit pool): a reservation neither a spend in flight
+    /// nor a saved record holds ([`super::token_pool::release_orphaned_reservations`]).
+    /// When a record does not read, nothing is released.
+    async fn release_orphaned_token_reservations(
+        &self,
+        subwallets: &[(SubwalletId, AccountViewingKeys)],
+        scanned: &BTreeSet<Identifier>,
+    ) {
+        if scanned.is_empty() {
+            return;
+        }
+        let store = self.store.read().await;
+        let mut live = BTreeSet::new();
+        for (id, _) in subwallets {
+            match store.pending_redrives(*id) {
+                Ok(records) => live.extend(records.into_iter().map(|record| record.activity_id)),
+                Err(e) => {
+                    tracing::warn!(error = %e, "token note reservations kept: a saved record does not read");
+                    return;
+                }
+            }
+        }
+        match store.with_token_pool_conn(|conn| {
+            super::token_pool::release_orphaned_reservations(conn, scanned, &live)
+        }) {
+            Ok(0) => {}
+            Ok(released) => tracing::info!(
+                released,
+                "released token notes of spends that cannot execute"
+            ),
+            Err(e) => {
+                tracing::warn!(error = %e, "releasing orphaned token note reservations failed")
+            }
+        }
+    }
+
     /// Refuse a wallet with no registered account.
     async fn ensure_registered(&self, wallet_id: WalletId) -> Result<(), PlatformWalletError> {
         if self
@@ -1762,6 +1800,8 @@ impl NetworkShieldedCoordinator {
             let token_pools =
                 super::token_pool::sync_token_pools(&*self.sdk, &self.store, &subwallets, cancel)
                     .await;
+            self.release_orphaned_token_reservations(&subwallets, &token_pools.completed)
+                .await;
             token_pools.new_notes > 0
                 || token_pools.newly_spent > 0
                 || !token_pools.failed.is_empty()
