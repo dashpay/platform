@@ -62,7 +62,7 @@ use crate::data_contract::document_type::property::EncryptedFor;
 use crate::data_contract::document_type::property_names::{
     ITEMS, POSITION, PROPERTIES, REF, REQUIRED,
 };
-use crate::data_contract::document_type::schema::last_value;
+use crate::data_contract::document_type::schema::{follow_json_pointer, json_pointer_of};
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::validator::{
     LoadedValidationSchema, StatelessJsonSchemaLazyValidator,
@@ -76,7 +76,6 @@ use crate::ProtocolError;
 use once_cell::sync::Lazy;
 use platform_value::Value;
 use platform_version::version::{FeatureVersion, PlatformVersion};
-use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
 use url::Url;
