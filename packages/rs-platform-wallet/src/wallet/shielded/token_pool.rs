@@ -1116,8 +1116,9 @@ pub(crate) fn release_reservations<'a>(
     Ok(())
 }
 
-/// Whether `wallet_id` holds unspent token notes in `token_id`'s pool under a
-/// spend in flight or a saved record.
+/// Whether `wallet_id` holds token notes in `token_id`'s pool under a spend in
+/// flight or a saved record, spent or not: a hold on notes another spend used
+/// is still the sweep's only link to the activity row it settles.
 fn has_held_notes(
     conn: &Connection,
     wallet_id: WalletId,
@@ -1125,8 +1126,7 @@ fn has_held_notes(
 ) -> Result<bool, PlatformWalletError> {
     conn.query_row(
         "SELECT 1 FROM shielded_token_pool_notes \
-         WHERE wallet_id = ?1 AND token_id = ?2 AND reserved_by IS NOT NULL AND spent = 0 \
-         LIMIT 1",
+         WHERE wallet_id = ?1 AND token_id = ?2 AND reserved_by IS NOT NULL LIMIT 1",
         params![wallet_id.as_slice(), token_id.as_slice()],
         |_| Ok(()),
     )
