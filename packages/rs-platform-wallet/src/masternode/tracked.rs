@@ -32,7 +32,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use dash_sdk::platform::Fetch;
 use dashcore::transaction::special_transaction::provider_registration::ProviderMasternodeType;
 use dashcore::transaction::TransactionPayload;
-use dashcore::{Address as DashAddress, Network, OutPoint, Transaction, Txid};
+use dashcore::{Address as DashAddress, Network, OutPoint, Transaction};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, Purpose};
@@ -48,6 +48,7 @@ use super::record::{
     owner_payout_script, platform_http_port, ListMembership, MasternodeRecord, MasternodeSource,
     MasternodeStatus,
 };
+use super::update_service::{display_hex, require_requested_transaction};
 use crate::changeset::{PersistenceCapabilities, PlatformWalletPersistence};
 use crate::error::PlatformWalletError;
 use crate::manager::PlatformWalletManager;
@@ -313,6 +314,11 @@ fn list_to_json(list: &MasternodeListSummary) -> Value {
     json!({
         "proTxHash": hex::encode(list.pro_tx_hash),
         "serviceAddress": list.service_address.map(|a| a.to_string()),
+        "serviceAddresses": list
+            .service_addresses
+            .iter()
+            .map(|a| a.to_string())
+            .collect::<Vec<_>>(),
         "platformHttpPort": list.platform_http_port,
         "operatorPubKey": hex::encode(list.operator_public_key),
         "votingKeyId": hex::encode(list.voting_key_id),
@@ -320,15 +326,28 @@ fn list_to_json(list: &MasternodeListSummary) -> Value {
         "isValid": list.is_valid,
         "isEvonode": list.is_evonode,
         "hasExtendedNetInfo": list.has_extended_net_info,
+        "operatorKeyIsLegacy": list.operator_key_is_legacy,
     })
 }
 
 fn list_from_json(value: &Value) -> Option<MasternodeListSummary> {
+    let service_address: Option<std::net::SocketAddr> = value["serviceAddress"]
+        .as_str()
+        .and_then(|s| s.parse().ok());
     Some(MasternodeListSummary {
         pro_tx_hash: parse_hex(&value["proTxHash"])?,
-        service_address: value["serviceAddress"]
-            .as_str()
-            .and_then(|s| s.parse().ok()),
+        service_address,
+        // Absent on pre-field snapshots: the primary alone is the best
+        // reconstruction; the next refresh rewrites it from the live entry.
+        service_addresses: value["serviceAddresses"]
+            .as_array()
+            .map(|entries| {
+                entries
+                    .iter()
+                    .filter_map(|e| e.as_str()?.parse().ok())
+                    .collect()
+            })
+            .unwrap_or_else(|| service_address.into_iter().collect()),
         platform_http_port: value["platformHttpPort"].as_u64().map(|p| p as u16),
         operator_public_key: parse_hex(&value["operatorPubKey"])?,
         voting_key_id: parse_hex(&value["votingKeyId"])?,
@@ -338,6 +357,7 @@ fn list_from_json(value: &Value) -> Option<MasternodeListSummary> {
         // Absent on snapshots persisted before the field existed; the
         // next refresh rewrites it from the live entry.
         has_extended_net_info: value["hasExtendedNetInfo"].as_bool().unwrap_or(false),
+        operator_key_is_legacy: value["operatorKeyIsLegacy"].as_bool().unwrap_or(false),
     })
 }
 
@@ -437,11 +457,9 @@ fn now_unix() -> u64 {
 }
 
 fn not_tracked(pro_tx_hash: &[u8; 32]) -> PlatformWalletError {
-    let mut display = *pro_tx_hash;
-    display.reverse();
     PlatformWalletError::InvalidParameter(format!(
         "masternode {} is not tracked",
-        hex::encode(display)
+        display_hex(pro_tx_hash)
     ))
 }
 
@@ -1163,13 +1181,7 @@ fn fetched_registration(
     transaction: &Transaction,
     height: u32,
 ) -> Result<Option<RegistrationDetails>, PlatformWalletError> {
-    let expected = Txid::from_byte_array(*pro_tx_hash);
-    let actual = transaction.txid();
-    if actual != expected {
-        return Err(PlatformWalletError::InvalidIdentityData(format!(
-            "DAPI returned transaction {actual} for requested registration transaction {expected}"
-        )));
-    }
+    require_requested_transaction(transaction, pro_tx_hash, "registration transaction")?;
     Ok(registration_from_transaction(transaction, height))
 }
 
