@@ -493,7 +493,7 @@ impl DpnsNameGivenUpFFI {
 ///
 /// # Safety
 /// `out_ptr` / `out_count` must be valid, writable, non-null.
-unsafe fn publish_array<T>(values: Vec<T>, out_ptr: *mut *mut T, out_count: *mut usize) {
+pub(crate) unsafe fn publish_array<T>(values: Vec<T>, out_ptr: *mut *mut T, out_count: *mut usize) {
     if values.is_empty() {
         unsafe {
             *out_ptr = ptr::null_mut();
