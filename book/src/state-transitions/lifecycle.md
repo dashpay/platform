@@ -18,7 +18,10 @@ This is fundamentally different from a smart contract model. There is no arbitra
 execution. Every possible mutation is one of a fixed set of state transition types, each
 with its own validation rules hardcoded into the platform. The benefit is predictability:
 you can reason about fees, security, and correctness without worrying about
-Turing-complete execution.
+Turing-complete execution. The smart-contract work in development for Platform
+6.0 ([dashpay/platform#4626](https://github.com/dashpay/platform/issues/4626))
+adds contract execution as further members of this fixed, versioned set rather
+than replacing the model.
 
 ## The StateTransition Enum
 
@@ -55,6 +58,8 @@ pub enum StateTransition {
     ShieldFromIdentity(ShieldFromIdentityTransition),
     IdentityTopUpFromShieldedPool(IdentityTopUpFromShieldedPoolTransition),
     IdentityKeyLimitsUpdate(IdentityKeyLimitsUpdateTransition),
+    ContractUserModeration(ContractUserModerationTransition),
+    ContractFeeClaim(ContractFeeClaimTransition),
 }
 ```
 
@@ -77,19 +82,35 @@ These variants fall into natural groups:
 - `DataContractCreate` -- Register a new data contract (schema)
 - `DataContractUpdate` -- Update an existing data contract
 - `Batch` -- Create, replace, delete, or transfer documents; mint, burn, transfer, or freeze tokens
+- `ContractUserModeration` -- Ban, suspend or warn an identity on a moderated contract
+  (protocol version 14 and later)
+- `ContractFeeClaim` -- Pay out a contract's accumulated owner or moderator fee pot
+  (protocol version 14 and later)
 
 **Governance:**
 - `MasternodeVote` -- Cast a vote in a contested resource election
 
-**Address-based (newer):**
-- `IdentityCreateFromAddresses`, `IdentityTopUpFromAddresses`, `AddressFundsTransfer`,
-  `AddressFundingFromAssetLock`, `AddressCreditWithdrawal` -- Operations that use
-  platform addresses instead of (or in addition to) identity-based authentication
+**Address-based (protocol version 11 and later):**
+- `IdentityCreditTransferToAddresses`, `IdentityCreateFromAddresses`,
+  `IdentityTopUpFromAddresses`, `AddressFundsTransfer`, `AddressFundingFromAssetLock`,
+  `AddressCreditWithdrawal` -- Operations that use platform addresses instead of (or
+  in addition to) identity-based authentication
 
-**Shielded pool:**
-- `Shield`, `ShieldedTransfer`, `Unshield`, `ShieldFromAssetLock`, `ShieldedWithdrawal`,
-  `IdentityCreateFromShieldedPool`, `ShieldFromIdentity`, `IdentityTopUpFromShieldedPool` --
-  Operations that move credits into, inside, and out of the shielded pool
+**Shielded pool (protocol version 12 and later):**
+- `Shield` -- Move credits from transparent platform addresses into the shielded pool
+- `ShieldFromAssetLock` -- Fund the shielded pool directly from a core-chain asset lock
+- `ShieldedTransfer` -- Move value inside the pool; only the fee leaves it
+- `Unshield` -- Move credits from the pool back to a transparent platform address
+- `ShieldedWithdrawal` -- Withdraw credits from the pool to the core chain
+- `IdentityCreateFromShieldedPool` -- Create an identity funded from the pool with a
+  fixed denomination
+- `ShieldFromIdentity` -- Move credits from an identity balance into the pool (protocol
+  version 14 and later)
+- `IdentityTopUpFromShieldedPool` -- Top up an existing identity from the pool (protocol
+  version 14 and later)
+
+The [Shielded Transaction Fees](../fees/shielded-fees.md) chapter covers how each
+of these is priced.
 
 Each variant has its own numeric discriminant, defined in
 `packages/rs-dpp/src/state_transition/state_transition_types.rs`:
@@ -121,6 +142,8 @@ pub enum StateTransitionType {
     ShieldFromIdentity = 21,
     IdentityTopUpFromShieldedPool = 22,
     IdentityKeyLimitsUpdate = 23,
+    ContractUserModeration = 24,
+    ContractFeeClaim = 25,
 }
 ```
 
@@ -134,7 +157,8 @@ The `Batch` variant deserves special attention because it is the most complex. A
 `BatchTransition` can contain multiple sub-transitions, each operating on a different
 document or token. The sub-transitions include:
 
-- **Document operations:** Create, Replace, Delete, Transfer, UpdatePrice, Purchase
+- **Document operations:** Create, Replace, Delete, Transfer, UpdatePrice, Purchase,
+  IndexOnlyDelete
 - **Token operations:** Transfer, Mint, Burn, Freeze, Unfreeze, DestroyFrozenFunds,
   EmergencyAction, ConfigUpdate, Claim, DirectPurchase, SetPriceForDirectPurchase
 
@@ -144,8 +168,8 @@ preventing partial replay attacks.
 
 ## Signatures and Authentication
 
-State transitions carry cryptographic signatures that prove authorization. There are
-two fundamentally different authentication models:
+State transitions carry cryptographic signatures that prove authorization. Several
+distinct authentication models exist:
 
 **Identity-signed transitions** -- The majority of transition types. The signer is an
 identity that already exists on the platform. The transition carries a
@@ -160,6 +184,14 @@ chain. The signature proves ownership of the funds being locked.
 **Address-based transitions** -- Newer transition types like `IdentityCreateFromAddresses`
 use platform address inputs with their own nonces and balances, rather than identity-based
 authentication.
+
+**Shielded transitions** -- The shielded-pool transitions are authorized by the
+zero-knowledge proof and the binding signature of their Orchard bundle. Two of them
+also carry a transition-level signature. `ShieldFromIdentity` is identity-signed: it
+spends an identity balance, so it carries `signature_public_key_id` and a `signature`
+over the signable bytes, which binds the bundle to that identity and its nonce.
+`ShieldFromAssetLock` carries an ECDSA signature made with the asset-lock key; it
+commits to the optional surplus output.
 
 The `sign` method on `StateTransition` handles this:
 
@@ -271,8 +303,8 @@ version's logic. It is how the platform achieves hard-fork-free upgrades.
 
 ## The call_method Macro
 
-Since `StateTransition` is an enum with 15 variants, dispatching a method call to
-the inner type would require writing out a 15-arm match statement every time. The
+Since `StateTransition` is an enum with 26 variants, dispatching a method call to
+the inner type would require writing out a 26-arm match statement every time. The
 codebase solves this with a family of macros:
 
 ```rust
@@ -282,7 +314,7 @@ macro_rules! call_method {
             StateTransition::DataContractCreate(st) => st.$method(),
             StateTransition::DataContractUpdate(st) => st.$method(),
             StateTransition::Batch(st) => st.$method(),
-            // ... all 15 variants
+            // ... all 26 variants
         }
     };
 }
@@ -305,9 +337,20 @@ an error for inapplicable variants).
   for the current protocol version.
 
 **Do not:**
-- Assume all transitions have signatures. `IdentityCreateFromAddresses` and
-  `AddressFundsTransfer` return `None` from `signature()`.
-- Assume all transitions have an `owner_id`. Address-based transitions do not.
+- Assume all transitions have signatures. `signature()` returns `None` for
+  `IdentityCreateFromAddresses`, `IdentityTopUpFromAddresses`, `AddressFundsTransfer`,
+  `AddressCreditWithdrawal`, `Shield`, `ShieldedTransfer`, `Unshield`,
+  `ShieldedWithdrawal`, `IdentityCreateFromShieldedPool` and
+  `IdentityTopUpFromShieldedPool`. Of the transitions that spend from addresses or
+  the shielded pool only `AddressFundingFromAssetLock` and `ShieldFromAssetLock` are
+  signed. `IdentityCreditTransferToAddresses` and `ShieldFromIdentity` are the
+  exceptions in their groups: both are identity-signed like `IdentityCreditTransfer`,
+  because they spend an identity balance rather than address inputs or pool notes
+  (`inputs()` returns `None` for both).
+- Assume all transitions have an `owner_id`. The transitions funded from address
+  inputs, asset locks into addresses, or the shielded pool return `None`;
+  `IdentityCreditTransferToAddresses` and `ShieldFromIdentity` keep their identity
+  owner.
 - Modify the `StateTransitionType` discriminant values -- they are part of the
   wire format and changing them would break all existing serialized data.
 - Add new variants without also updating every `call_method` macro and every
