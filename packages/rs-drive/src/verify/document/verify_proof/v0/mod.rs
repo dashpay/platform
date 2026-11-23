@@ -382,4 +382,123 @@ mod tests {
             "expected DecodedValueBudgetExceeded, got: {error:?}"
         );
     }
+
+    #[test]
+    fn should_strip_cursor_from_distinct_page_without_decoding_document_body() {
+        use crate::query::{InternalClauses, OrderClause, WhereClause, WhereOperator};
+        use dpp::data_contract::accessors::v0::DataContractV0Getters;
+        use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+        use dpp::data_contract::DataContract;
+        use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+        use dpp::document::Document;
+        use dpp::platform_value::{platform_value, Identifier, Value};
+        use indexmap::IndexMap;
+        use std::collections::BTreeMap;
+
+        let latest = PlatformVersion::latest();
+        let contract = DataContract::from_value(
+            platform_value!({
+                "$formatVersion": "1",
+                "id": Identifier::new([0x33; 32]),
+                "version": 1u32,
+                "ownerId": Identifier::new([0x44; 32]),
+                "config": {
+                    "$formatVersion": "1",
+                    "canBeDeleted": false,
+                    "readonly": false,
+                    "keepsHistory": false,
+                    "documentsKeepHistoryContractDefault": false,
+                    "documentsMutableContractDefault": true,
+                    "documentsCanBeDeletedContractDefault": true,
+                    "requiresIdentityEncryptionBoundedKey": Value::Null,
+                    "requiresIdentityDecryptionBoundedKey": Value::Null,
+                    "sizedIntegerTypes": true,
+                },
+                "documentSchemas": {
+                    "item": {
+                        "type": "object",
+                        "indices": [
+                            {
+                                "name": "byCategoryRank",
+                                "properties": [
+                                    { "category": "asc" },
+                                    { "rank": "asc" }
+                                ]
+                            }
+                        ],
+                        "properties": {
+                            "category": { "type": "string", "maxLength": 32, "position": 0 },
+                            "rank": { "type": "integer", "minimum": 0, "maximum": 1000, "position": 1 }
+                        },
+                        "required": ["category", "rank"],
+                        "additionalProperties": false
+                    }
+                }
+            }),
+            false,
+            latest,
+        )
+        .expect("contract builds");
+        let document_type = contract.document_type_for_name("item").expect("item type");
+
+        let cursor_id = Identifier::new([0xAA; 32]);
+        let next_id = Identifier::new([0xBB; 32]);
+
+        // Synthetic format-3 header prefixes (format = 3, stamp = 0, 32-byte $id) with NO
+        // decodable document body. Full `Document::from_bytes` must reject both slices.
+        let mut cursor_header_only = vec![3u8, 0u8];
+        cursor_header_only.extend_from_slice(cursor_id.as_bytes());
+        let mut next_header_only = vec![3u8, 0u8];
+        next_header_only.extend_from_slice(next_id.as_bytes());
+        assert!(Document::from_bytes(&cursor_header_only, document_type, latest).is_err());
+        assert!(Document::from_bytes(&next_header_only, document_type, latest).is_err());
+
+        let query = DriveDocumentQuery {
+            contract: &contract,
+            document_type,
+            internal_clauses: InternalClauses {
+                equal_clauses: BTreeMap::from([(
+                    "category".to_string(),
+                    WhereClause {
+                        field: "category".to_string(),
+                        operator: WhereOperator::Equal,
+                        value: Value::Text("target".to_string()),
+                    },
+                )]),
+                ..Default::default()
+            },
+            offset: None,
+            limit: Some(10),
+            order_by: IndexMap::from([(
+                "rank".to_string(),
+                OrderClause {
+                    field: "rank".to_string(),
+                    ascending: true,
+                },
+            )]),
+            start_at: Some(cursor_id.to_buffer()),
+            start_at_included: false,
+            block_time_ms: None,
+            resolved_time_ranges: Vec::new(),
+            sub_queries: Vec::new(),
+        };
+        assert!(query.pads_cursor_page(latest));
+
+        // When the leading row matches the cursor ID, it is stripped from its header alone.
+        let (stripped, skipped) = query
+            .strip_cursor_from_distinct_page(
+                vec![cursor_header_only.clone(), next_header_only.clone()],
+                latest,
+            )
+            .expect("strip_cursor_from_distinct_page must only inspect the header");
+        assert_eq!(skipped, 0);
+        assert_eq!(stripped, vec![next_header_only.clone()]);
+
+        // When the leading row does not match the cursor ID, it is kept from its header alone.
+        let (kept, skipped) = query
+            .strip_cursor_from_distinct_page(vec![next_header_only.clone()], latest)
+            .expect("non-cursor leading row must be checked from header alone");
+        assert_eq!(skipped, 0);
+        assert_eq!(kept, vec![next_header_only]);
+    }
 }

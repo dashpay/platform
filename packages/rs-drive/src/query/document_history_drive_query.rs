@@ -10,7 +10,9 @@ use crate::error::drive::DriveError;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::verify::RootHash;
-use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
+use dpp::data_contract::document_type::{
+    DecodedValueBudget, DocumentPropertyType, DocumentTypeRef,
+};
 use dpp::document::lifecycle::DocumentLifecycleRecord;
 use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0Getters};
@@ -211,6 +213,7 @@ impl DocumentHistoryDriveQuery {
         &self,
         rows: Vec<grovedb::query_result_type::PathKeyOptionalElementTrio>,
         document_type: DocumentTypeRef,
+        budget: Option<&mut DecodedValueBudget>,
         version: &PlatformVersion,
     ) -> Result<DocumentHistoryDriveQueryExecutionResult, Error> {
         let mut entry_path =
@@ -252,7 +255,7 @@ impl DocumentHistoryDriveQuery {
         } else if entries.len() as u64 > maximum {
             return Err(corrupt("history page exceeds its limit or revision count"));
         }
-        let entries = self.decode_entries(entries, document_type, version)?;
+        let entries = self.decode_entries(entries, document_type, budget, version)?;
         if let Some(record) = record {
             if entries.iter().any(|entry| {
                 entry.time_ms > record.deleted_at_ms() || entry.revision > record.latest_revision()
@@ -312,13 +315,14 @@ impl DocumentHistoryDriveQuery {
                         ))
                     }
                 };
-                let document = Document::from_bytes(&bytes, document_type, version)?;
-                if document.id().as_slice() != self.document_id {
+                let (document_id, revision) =
+                    Document::id_and_revision_from_bytes(&bytes, document_type, version)?;
+                if document_id.as_slice() != self.document_id {
                     return Err(corrupt(
                         "history current document id does not match the query",
                     ));
                 }
-                latest_revision = Some(document.revision().unwrap_or(1));
+                latest_revision = Some(revision.unwrap_or(1));
                 if active {
                     return Err(corrupt("duplicate history current pointer"));
                 }
@@ -417,6 +421,7 @@ impl DocumentHistoryDriveQuery {
         &self,
         entries: Vec<(Vec<u8>, Element)>,
         document_type: DocumentTypeRef,
+        mut budget: Option<&mut DecodedValueBudget>,
         version: &PlatformVersion,
     ) -> Result<Vec<DocumentHistoryEntry>, Error> {
         entries
@@ -440,7 +445,12 @@ impl DocumentHistoryDriveQuery {
                 let Element::Item(bytes, _) = element else {
                     return Err(corrupt("history revision is not a plain item"));
                 };
-                let document = Document::from_bytes(&bytes, document_type, version)?;
+                let document = match budget.as_deref_mut() {
+                    Some(budget) => {
+                        Document::from_bytes_with_budget(&bytes, document_type, budget, version)?
+                    }
+                    None => Document::from_bytes(&bytes, document_type, version)?,
+                };
                 if document.id().as_slice() != self.document_id
                     || document.revision().unwrap_or(1) != revision
                 {

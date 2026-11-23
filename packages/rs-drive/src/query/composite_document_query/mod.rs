@@ -125,6 +125,7 @@ use dpp::identifier::Identifier;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use grovedb::{Element, PathQuery};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1574,7 +1575,7 @@ impl<'a> DriveDocumentQuery<'a> {
             platform_version,
         )?;
         let documents = Self::decode_document_trios(&query, trios, budget, platform_version)?;
-        self.assemble_documents(sub_query, values, &documents)
+        self.assemble_documents(sub_query, values, &documents, None, None)
     }
 
     /// Decodes the proved entries of a count component: one entry per
@@ -1736,20 +1737,43 @@ impl<'a> DriveDocumentQuery<'a> {
         sub_query: &DriveSubQuery<'a>,
         values: &[Identifier],
         documents: &[Document],
+        mut claimed: Option<&mut BTreeSet<usize>>,
+        mut budget: Option<&mut DecodedValueBudget>,
     ) -> Result<Vec<Document>, Error> {
+        let mut claim_and_clone =
+            |position: usize, document: &Document| -> Result<Document, Error> {
+                // The first member to claim `documents[position]` inherits the cost
+                // already charged by `decode_document_trios`. Every additional member
+                // retaining a clone of the same document charges the shared page budget
+                // before cloning so overlapping joins cannot multiply memory past the cap.
+                if let Some(claimed) = claimed.as_deref_mut() {
+                    if !claimed.insert(position) {
+                        if let Some(budget) = budget.as_deref_mut() {
+                            budget
+                                .charge_document(document)
+                                .map_err(ProtocolError::DataContractError)?;
+                        }
+                    }
+                }
+                Ok(document.clone())
+            };
         let Some(binding) = &sub_query.binding else {
-            return Ok(documents.to_vec());
+            return documents
+                .iter()
+                .enumerate()
+                .map(|(position, document)| claim_and_clone(position, document))
+                .collect();
         };
         let admitted: BTreeSet<Identifier> = values.iter().copied().collect();
         if sub_query.is_by_id_join() {
-            let mut by_id: BTreeMap<Identifier, &Document> = BTreeMap::new();
-            for document in documents {
+            let mut by_id: BTreeMap<Identifier, (usize, &Document)> = BTreeMap::new();
+            for (position, document) in documents.iter().enumerate() {
                 let id = document.id();
                 if !admitted.contains(&id) {
                     // Another join on the same type owns it.
                     continue;
                 }
-                if by_id.insert(id, document).is_some() {
+                if by_id.insert(id, (position, document)).is_some() {
                     return Err(corrupted_proof(format!(
                         "composite join results carry document {} twice",
                         id
@@ -1760,7 +1784,9 @@ impl<'a> DriveDocumentQuery<'a> {
             let mut ordered = Vec::with_capacity(values.len());
             for value in values {
                 match by_id.remove(value) {
-                    Some(document) => ordered.push(document.clone()),
+                    Some((position, document)) => {
+                        ordered.push(claim_and_clone(position, document)?);
+                    }
                     None if target_is_permanent => {
                         return Err(corrupted_proof(format!(
                             "composite join results are missing referenced document {}: a \
@@ -1778,9 +1804,11 @@ impl<'a> DriveDocumentQuery<'a> {
             return Ok(ordered);
         }
         let mut mine = Vec::new();
-        for document in documents {
+        for (position, document) in documents.iter().enumerate() {
             match document_bound_value(document, &binding.field)? {
-                Some(value) if admitted.contains(&value) => mine.push(document.clone()),
+                Some(value) if admitted.contains(&value) => {
+                    mine.push(claim_and_clone(position, document)?);
+                }
                 _ => {}
             }
         }
@@ -1976,7 +2004,13 @@ impl<'a> DriveDocumentQuery<'a> {
                                 .as_ref()
                                 .is_none_or(|ids| ids.contains(&document.id()));
                             if is_mine {
-                                claimed.insert(position);
+                                if !claimed.insert(position) {
+                                    if let Some(budget) = budget.as_deref_mut() {
+                                        budget
+                                            .charge_document(document)
+                                            .map_err(ProtocolError::DataContractError)?;
+                                    }
+                                }
                                 mine.push(document.clone());
                             }
                         }
@@ -1984,15 +2018,13 @@ impl<'a> DriveDocumentQuery<'a> {
                     }
                     Component::Sub(index) => {
                         let sub_query = &self.sub_queries[*index];
-                        let mine =
-                            self.assemble_documents(sub_query, &derived[*index], &documents)?;
-                        let mine_ids: BTreeSet<Identifier> =
-                            mine.iter().map(|document| document.id()).collect();
-                        for (position, document) in documents.iter().enumerate() {
-                            if mine_ids.contains(&document.id()) {
-                                claimed.insert(position);
-                            }
-                        }
+                        let mine = self.assemble_documents(
+                            sub_query,
+                            &derived[*index],
+                            &documents,
+                            Some(&mut claimed),
+                            budget.as_deref_mut(),
+                        )?;
                         sub_results[*index] = Some(SubQueryResult::Documents(mine));
                     }
                 }
@@ -2243,9 +2275,9 @@ impl<'a> DriveDocumentQuery<'a> {
                     drive_operations,
                     platform_version,
                 )?;
-                Ok(SubQueryResult::Documents(
-                    self.assemble_documents(sub_query, values, &documents)?,
-                ))
+                Ok(SubQueryResult::Documents(self.assemble_documents(
+                    sub_query, values, &documents, None, None,
+                )?))
             }
             SubQueryKind::Count => {
                 let count_query =

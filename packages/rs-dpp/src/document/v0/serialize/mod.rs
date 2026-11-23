@@ -8,6 +8,7 @@ use crate::prelude::DataContract;
 
 use crate::ProtocolError;
 
+use crate::document::id_and_revision_from_bytes::read_document_header_prefix;
 use crate::document::serialization_traits::deserialize::v0::DocumentPlatformDeserializationMethodsV0;
 use crate::document::serialization_traits::serialize::v0::DocumentPlatformSerializationMethodsV0;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
@@ -15,7 +16,6 @@ use crate::document::v0::DocumentV0;
 use crate::version::PlatformVersion;
 use integer_encoding::VarIntReader;
 use platform_value::Identifier;
-use std::io::Read;
 
 use platform_version::version::FeatureVersion;
 
@@ -115,43 +115,10 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
 impl DocumentV0 {
     /// Reads only the document `$id` from the header of a serialized document
     /// (formats 0 through 3) without decoding any document properties.
-    pub fn id_from_bytes(mut serialized_document: &[u8]) -> Result<Identifier, ProtocolError> {
-        let format: FeatureVersion = serialized_document.read_varint().map_err(|_| {
-            DataContractError::DecodingDocumentError(DecodingError::new(
-                "error reading serialization format from serialized document".to_string(),
-            ))
-        })?;
-        match format {
-            0..=2 => {}
-            3 => {
-                let stamp: u64 = serialized_document.read_varint().map_err(|_| {
-                    DataContractError::DecodingDocumentError(DecodingError::new(
-                        "error reading contract version stamp from serialized document".to_string(),
-                    ))
-                })?;
-                if stamp > u32::MAX as u64 {
-                    return Err(ProtocolError::DataContractError(
-                        DataContractError::CorruptedSerialization(
-                            "contract version stamp does not fit in a u32".to_string(),
-                        ),
-                    ));
-                }
-            }
-            version => {
-                return Err(ProtocolError::UnknownVersionMismatch {
-                    method: "Document::id_from_bytes (serialization format)".to_string(),
-                    known_versions: vec![0, 1, 2, 3],
-                    received: version,
-                });
-            }
-        }
-        let mut id = [0u8; 32];
-        serialized_document.read_exact(&mut id).map_err(|_| {
-            DataContractError::DecodingDocumentError(DecodingError::new(
-                "error reading id from serialized document header".to_string(),
-            ))
-        })?;
-        Ok(Identifier::new(id))
+    pub fn id_from_bytes(serialized_document: &[u8]) -> Result<Identifier, ProtocolError> {
+        let (_, id, _) =
+            read_document_header_prefix(serialized_document, "Document::id_from_bytes")?;
+        Ok(id)
     }
 
     /// Reads a serialized document while enforcing `budget` on decoded property

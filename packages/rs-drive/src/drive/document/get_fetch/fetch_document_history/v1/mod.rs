@@ -59,6 +59,7 @@ impl Drive {
                 .map(|(path, key, element)| (path, key, Some(element)))
                 .collect(),
             document_type,
+            None,
             version,
         )
     }

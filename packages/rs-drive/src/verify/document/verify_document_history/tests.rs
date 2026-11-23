@@ -774,6 +774,7 @@ fn should_authenticate_history_pages_metadata_and_absence() {
             .decode_entries(
                 vec![(key, Element::new_item(bytes.clone()))],
                 document_type,
+                None,
                 version
             )
             .is_err());
@@ -1200,6 +1201,7 @@ fn should_reject_history_keys_that_are_not_sixteen_bytes() {
             .decode_entries(
                 vec![(key.clone(), Element::new_item(bytes.clone()))],
                 document_type,
+                None,
                 version
             )
             .unwrap()[0]
@@ -1213,6 +1215,7 @@ fn should_reject_history_keys_that_are_not_sixteen_bytes() {
             .decode_entries(
                 vec![(invalid, Element::new_item(bytes.clone()))],
                 document_type,
+                None,
                 version,
             )
             .unwrap_err();

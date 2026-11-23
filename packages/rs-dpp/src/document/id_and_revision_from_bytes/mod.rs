@@ -1,5 +1,7 @@
 mod v0;
 
+pub(crate) use v0::read_document_header_prefix;
+
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
 use crate::prelude::Revision;

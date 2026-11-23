@@ -646,61 +646,100 @@ mod tests {
     /// client page ceiling, while bounded client readers refuse the same stored record.
     #[test]
     fn should_keep_consensus_kept_values_unbounded_while_client_budget_refuses_same_record() {
+        use crate::data_contract::accessors::v0::DataContractV0Getters;
+        use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+        use crate::data_contract::DataContract;
+
         let pv14 = PlatformVersion::get(14).expect("PV14 exists");
-        let config = DataContractConfig::default_for_version(pv14)
-            .expect("default config")
-            .with_moderation(Some(ContractModerationConfig {
-                banlist: false,
-                suspensions: false,
-                moderators: ContractModerators::ContractOwner,
-                warnings: false,
-            }));
-        // 257 kept fields × (1 array + 1024 zero-width elements) = 263,425 > 262,144
-        let field_count = 257usize;
-        let mut properties = Vec::with_capacity(field_count);
-        let mut kept_names = Vec::with_capacity(field_count);
+        // Group the zero-width typed arrays into 4 nested objects of 65 fields each so every
+        // object stays well under the meta-schema `maxProperties: 100` limit and passes full
+        // PV14 contract validation (`full_validation: true`).
+        // Total decoded values: 4 × (1 object + 65 × (1 array + 1024 elements)) = 266,504 > 262,144.
+        let group_count = 4usize;
+        let fields_per_group = 65usize;
+        let mut top_properties = Vec::with_capacity(group_count);
+        let mut kept_names = Vec::with_capacity(group_count);
         let mut doc_properties = BTreeMap::new();
-        for i in 0..field_count {
-            let name = format!("f{i:03}");
-            properties.push((
-                Value::Text(name.clone()),
-                platform_value!({
-                    "type": "array",
-                    "maxItems": 1024,
-                    "items": {
+        for g in 0..group_count {
+            let group_name = format!("g{g}");
+            let mut nested_schema_props = Vec::with_capacity(fields_per_group);
+            let mut nested_doc_entries = Vec::with_capacity(fields_per_group);
+            for i in 0..fields_per_group {
+                let name = format!("f{i:02}");
+                nested_schema_props.push((
+                    Value::Text(name.clone()),
+                    platform_value!({
                         "type": "array",
-                        "byteArray": true,
-                        "minItems": 0,
-                        "maxItems": 0,
-                    },
-                    "position": i as u32,
+                        "maxItems": 1024,
+                        "items": {
+                            "type": "array",
+                            "byteArray": true,
+                            "minItems": 0,
+                            "maxItems": 0,
+                        },
+                        "position": i as u32,
+                    }),
+                ));
+                nested_doc_entries.push((
+                    Value::Text(name),
+                    Value::Array(vec![Value::Bytes(vec![]); 1024]),
+                ));
+            }
+            top_properties.push((
+                Value::Text(group_name.clone()),
+                platform_value!({
+                    "type": "object",
+                    "properties": Value::Map(nested_schema_props),
+                    "additionalProperties": false,
+                    "position": g as u32,
                 }),
             ));
-            kept_names.push(Value::Text(name.clone()));
-            doc_properties.insert(name, Value::Array(vec![Value::Bytes(vec![]); 1024]));
+            kept_names.push(Value::Text(group_name.clone()));
+            doc_properties.insert(group_name, Value::Map(nested_doc_entries));
         }
-        let doc_type = DocumentType::try_from_schema(
-            Identifier::new([9; 32]),
-            1,
-            config.version(),
-            "post",
-            platform_value!({
-                "type": "object",
-                "properties": Value::Map(properties),
-                "additionalProperties": false,
-                "moderatorAbilities": {
-                    "delete": true,
-                    "deleteKeepsFields": Value::Array(kept_names),
+
+        let contract_value = platform_value!({
+            "$formatVersion": "1",
+            "id": Identifier::new([9; 32]),
+            "version": 1u32,
+            "ownerId": Identifier::new([1; 32]),
+            "config": {
+                "$formatVersion": "2",
+                "canBeDeleted": false,
+                "readonly": false,
+                "keepsHistory": false,
+                "documentsKeepHistoryContractDefault": false,
+                "documentsMutableContractDefault": true,
+                "documentsCanBeDeletedContractDefault": true,
+                "requiresIdentityEncryptionBoundedKey": Value::Null,
+                "requiresIdentityDecryptionBoundedKey": Value::Null,
+                "sizedIntegerTypes": true,
+                "moderation": {
+                    "moderators": {
+                        "$type": "contractOwner",
+                    },
+                    "banlist": false,
+                    "suspensions": false,
+                    "warnings": false,
                 },
-            }),
-            None,
-            &BTreeMap::new(),
-            &config,
-            false,
-            &mut vec![],
-            pv14,
-        )
-        .expect("oversized PV14 document type parses");
+            },
+            "documentSchemas": {
+                "post": {
+                    "type": "object",
+                    "properties": Value::Map(top_properties),
+                    "additionalProperties": false,
+                    "moderatorAbilities": {
+                        "delete": true,
+                        "deleteKeepsFields": Value::Array(kept_names),
+                    },
+                },
+            },
+        });
+        let contract = DataContract::from_value(contract_value, true, pv14)
+            .expect("oversized PV14 contract must pass full PV14 validation");
+        let doc_type = contract
+            .document_type_for_name("post")
+            .expect("post document type");
 
         let document = Document::V0(DocumentV0 {
             id: Identifier::new([2; 32]),
@@ -709,19 +748,19 @@ mod tests {
             ..Default::default()
         });
         let removal = ContractDocumentRemoval {
-            kept_fields: encode_kept_fields(&document, doc_type.as_ref()).expect("encodes"),
+            kept_fields: encode_kept_fields(&document, doc_type).expect("encodes"),
             ..Default::default()
         };
 
         // Consensus read succeeds on the stored record.
         let decoded = removal
-            .kept_values(doc_type.as_ref())
+            .kept_values(doc_type)
             .expect("consensus kept_values must stay unbounded for PV14 replay");
-        assert_eq!(decoded.len(), field_count);
+        assert_eq!(decoded.len(), group_count);
 
         // Client bounded read refuses the exact same stored record with the typed error.
         let error = removal
-            .kept_values_with_default_budget(doc_type.as_ref())
+            .kept_values_with_default_budget(doc_type)
             .expect_err("client bounded read must refuse oversized record");
         assert!(
             matches!(

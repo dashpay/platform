@@ -12,7 +12,7 @@ use dash_sdk::dpp::voting::vote_polls::contested_document_resource_vote_poll::Co
 use dash_sdk::drive::query::vote_poll_vote_state_query::{
     ContestedDocumentVotePollDriveQuery, ContestedDocumentVotePollDriveQueryResultType,
 };
-use dash_sdk::platform::dpns_usernames::ContenderRequest;
+use dash_sdk::platform::dpns_usernames::{ContenderRequest, ContestRequests};
 use dash_sdk::platform::FetchMany;
 use dash_sdk::platform::{DataContract, Fetch, Identifier};
 use dash_sdk::query_types::Contenders;
@@ -306,14 +306,21 @@ fn vote_state_json(
             winner_json, block_info.height, block_info.core_height, block_info.time_ms
         ));
     }
+    let requests = result_type.has_documents().then(|| {
+        ContestRequests::decode(
+            contenders.contenders.values(),
+            document_type,
+            platform_version,
+        )
+        .requests
+    });
     let contenders_json: Vec<String> = contenders
         .contenders
         .iter()
-        .map(|(id, contender)| {
-            let request = result_type
-                .has_documents()
-                .then(|| ContenderRequest::decode(contender, document_type, platform_version));
-            contender_json(id, contender, request.as_ref())
+        .enumerate()
+        .map(|(index, (id, contender))| {
+            let request = requests.as_ref().and_then(|requests| requests.get(index));
+            contender_json(id, contender, request)
         })
         .collect();
     result_json_parts.push(format!(r#""contenders":[{}]"#, contenders_json.join(",")));

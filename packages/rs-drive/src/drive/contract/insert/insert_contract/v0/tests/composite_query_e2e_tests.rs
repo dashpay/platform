@@ -2511,3 +2511,244 @@ fn should_reject_a_proof_withholding_a_removal_record_of_a_moderated_document_jo
         );
     }
 }
+
+/// Overlapping composite joins that clone the same proved documents into multiple sub-results
+/// must charge each additional retained copy against the shared client page budget.
+#[test]
+fn should_charge_shared_page_budget_for_overlapping_composite_join_clones() {
+    use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+    use dpp::data_contract::errors::DataContractError;
+    use dpp::document::DocumentV0;
+    use dpp::platform_value::platform_value;
+    use dpp::ProtocolError;
+
+    let pv14 = PlatformVersion::get(14).expect("PV14 exists");
+    let pv = platform_version();
+    let drive = setup_drive_with_initial_state_structure(None);
+
+    // Each `payload` document decodes 60 × 1025 = 61,500 values.
+    // 3 distinct `payload` documents total 184,500 values (under the 262,144 page cap),
+    // while two overlapping joins referencing those same 3 payloads clone them into
+    // 6 returned documents (369,000 values > 262,144).
+    let field_count = 60usize;
+    let mut payload_props = Vec::with_capacity(field_count);
+    let mut payload_doc_props = BTreeMap::new();
+    for i in 0..field_count {
+        let name = format!("f{i:02}");
+        payload_props.push((
+            Value::Text(name.clone()),
+            platform_value!({
+                "type": "array",
+                "maxItems": 1024,
+                "items": {
+                    "type": "array",
+                    "byteArray": true,
+                    "minItems": 0,
+                    "maxItems": 0,
+                },
+                "position": i as u32,
+            }),
+        ));
+        payload_doc_props.insert(name, Value::Array(vec![Value::Bytes(vec![]); 1024]));
+    }
+    let contract = DataContract::from_value(
+        platform_value!({
+            "$formatVersion": "1",
+            "id": Identifier::new([0x61; 32]),
+            "version": 1u32,
+            "ownerId": Identifier::new([0x62; 32]),
+            "config": {
+                "$formatVersion": "1",
+                "canBeDeleted": false,
+                "readonly": false,
+                "keepsHistory": false,
+                "documentsKeepHistoryContractDefault": false,
+                "documentsMutableContractDefault": false,
+                "documentsCanBeDeletedContractDefault": false,
+                "requiresIdentityEncryptionBoundedKey": Value::Null,
+                "requiresIdentityDecryptionBoundedKey": Value::Null,
+                "sizedIntegerTypes": true,
+            },
+            "documentSchemas": {
+                "payload": {
+                    "type": "object",
+                    "documentsMutable": false,
+                    "canBeDeleted": false,
+                    "properties": Value::Map(payload_props),
+                    "additionalProperties": false,
+                },
+                "card": {
+                    "type": "object",
+                    "documentsMutable": false,
+                    "canBeDeleted": false,
+                    "indices": [
+                        {
+                            "name": "byBucket",
+                            "properties": [
+                                { "bucket": "asc" },
+                                { "seq": "asc" }
+                            ]
+                        }
+                    ],
+                    "properties": {
+                        "bucket": { "type": "string", "minLength": 1, "maxLength": 16, "position": 0 },
+                        "seq": { "type": "integer", "minimum": 0, "maximum": 1000, "position": 1 },
+                        "left": {
+                            "type": "array",
+                            "byteArray": true,
+                            "minItems": 32,
+                            "maxItems": 32,
+                            "contentMediaType": "application/x.dash.dpp.identifier",
+                            "refersTo": {
+                                "type": "permanentDocument",
+                                "documentType": "payload"
+                            },
+                            "position": 2
+                        },
+                        "right": {
+                            "type": "array",
+                            "byteArray": true,
+                            "minItems": 32,
+                            "maxItems": 32,
+                            "contentMediaType": "application/x.dash.dpp.identifier",
+                            "refersTo": {
+                                "type": "permanentDocument",
+                                "documentType": "payload"
+                            },
+                            "position": 3
+                        }
+                    },
+                    "required": ["bucket", "seq", "left", "right"],
+                    "additionalProperties": false,
+                }
+            }
+        }),
+        true,
+        pv14,
+    )
+    .expect("PV14 composite overlap contract validates");
+
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            pv,
+        )
+        .expect("apply contract");
+
+    let owner = Identifier::new([0x63; 32]);
+    for i in 1u8..=3 {
+        let payload_id = Identifier::new([0x70 + i; 32]);
+        let payload = Document::V0(DocumentV0 {
+            id: payload_id,
+            owner_id: owner,
+            properties: payload_doc_props.clone(),
+            ..Default::default()
+        });
+        insert(&drive, &contract, "payload", &payload);
+
+        let card = Document::V0(DocumentV0 {
+            id: Identifier::new([0x80 + i; 32]),
+            owner_id: owner,
+            properties: BTreeMap::from([
+                ("bucket".to_string(), Value::Text("all".to_string())),
+                ("seq".to_string(), Value::U16(i as u16)),
+                (
+                    "left".to_string(),
+                    Value::Identifier(payload_id.to_buffer()),
+                ),
+                (
+                    "right".to_string(),
+                    Value::Identifier(payload_id.to_buffer()),
+                ),
+            ]),
+            ..Default::default()
+        });
+        insert(&drive, &contract, "card", &card);
+    }
+
+    let card_type = contract.document_type_for_name("card").expect("card type");
+    let payload_type = contract
+        .document_type_for_name("payload")
+        .expect("payload type");
+    let make_join = |source_field: &str| DriveSubQuery {
+        contract: &contract,
+        document_type: payload_type,
+        kind: SubQueryKind::Documents,
+        where_clauses: Vec::new(),
+        order_by: Default::default(),
+        limit: None,
+        binding: Some(SubQueryBinding {
+            source: BindingSource::Page,
+            source_property: source_field.to_string(),
+            field: "$id".to_string(),
+        }),
+    };
+    let make_query = |sub_queries| DriveDocumentQuery {
+        contract: &contract,
+        document_type: card_type,
+        internal_clauses: InternalClauses {
+            equal_clauses: BTreeMap::from([(
+                "bucket".to_string(),
+                WhereClause {
+                    field: "bucket".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Text("all".to_string()),
+                },
+            )]),
+            ..Default::default()
+        },
+        offset: None,
+        limit: Some(3),
+        order_by: [(
+            "seq".to_string(),
+            OrderClause {
+                field: "seq".to_string(),
+                ascending: true,
+            },
+        )]
+        .into_iter()
+        .collect(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: Vec::new(),
+        sub_queries,
+    };
+
+    // Single join: 3 distinct payload documents (184,500 values) fit within the page cap.
+    let single_join_query = make_query(vec![make_join("left")]);
+    let (single_proof, _) = drive
+        .query_composite_documents_with_proof(&single_join_query, pv)
+        .expect("single-join proof generates");
+    let (_, verified_single) = single_join_query
+        .verify_composite_documents_proof(&single_proof, pv)
+        .expect("single join fits in page budget");
+    assert_eq!(verified_single.sub_results[0].documents().len(), 3);
+
+    // Two overlapping joins referencing the exact same 3 payload documents clone each
+    // payload a second time (369,000 total retained values > 262,144) and must be refused.
+    let overlapping_query = make_query(vec![make_join("left"), make_join("right")]);
+    let (overlapping_proof, _) = drive
+        .query_composite_documents_with_proof(&overlapping_query, pv)
+        .expect("overlapping-join proof generates");
+    let error = overlapping_query
+        .verify_composite_documents_proof(&overlapping_proof, pv)
+        .expect_err("overlapping join clones must exhaust shared page budget");
+    assert!(
+        matches!(
+            error,
+            Error::Protocol(ref protocol_error)
+                if matches!(
+                    protocol_error.as_ref(),
+                    ProtocolError::DataContractError(
+                        DataContractError::DecodedValueBudgetExceeded(_)
+                    )
+                )
+        ),
+        "expected DecodedValueBudgetExceeded, got: {error:?}"
+    );
+}

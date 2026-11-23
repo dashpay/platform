@@ -6,7 +6,9 @@
 //! the request was made. Bindings read both from here rather than decoding
 //! the document themselves.
 
-use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::document_type::{
+    DecodedValueBudget, DocumentTypeRef, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
+};
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::prelude::TimestampMillis;
 use dpp::version::PlatformVersion;
@@ -37,20 +39,33 @@ impl ContenderRequest {
         document_type: Option<DocumentTypeRef>,
         platform_version: &PlatformVersion,
     ) -> Self {
+        let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
+        Self::decode_with_budget(contender, document_type, &mut budget, platform_version)
+    }
+
+    /// Decode `contender`'s document against `document_type` while charging a shared
+    /// decoded-value `budget`.
+    pub fn decode_with_budget(
+        contender: &ContenderWithSerializedDocument,
+        document_type: Option<DocumentTypeRef>,
+        budget: &mut DecodedValueBudget,
+        platform_version: &PlatformVersion,
+    ) -> Self {
         let Some(document_type) = document_type else {
             return Self::default();
         };
-        let decoded = match contender.try_to_contender(document_type, platform_version) {
-            Ok(decoded) => decoded,
-            Err(error) => {
-                debug!(
-                    contender = %contender.identity_id_ref(),
-                    %error,
-                    "contender document did not decode; its request is left empty"
-                );
-                return Self::default();
-            }
-        };
+        let decoded =
+            match contender.try_to_contender_with_budget(document_type, budget, platform_version) {
+                Ok(decoded) => decoded,
+                Err(error) => {
+                    debug!(
+                        contender = %contender.identity_id_ref(),
+                        %error,
+                        "contender document did not decode; its request is left empty"
+                    );
+                    return Self::default();
+                }
+            };
         Self::from_document(decoded.document().as_ref())
     }
 
@@ -81,16 +96,25 @@ pub struct ContestRequests {
 }
 
 impl ContestRequests {
-    /// Decode each contender's document once (see [`ContenderRequest::decode`])
-    /// and derive the contest's requested labels from the results.
+    /// Decode each contender's document once under a shared page decoded-value
+    /// budget (see [`ContenderRequest::decode_with_budget`]) and derive the
+    /// contest's requested labels from the results.
     pub fn decode<'a>(
         contenders: impl IntoIterator<Item = &'a ContenderWithSerializedDocument>,
         document_type: Option<DocumentTypeRef>,
         platform_version: &PlatformVersion,
     ) -> Self {
+        let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
         let requests: Vec<ContenderRequest> = contenders
             .into_iter()
-            .map(|contender| ContenderRequest::decode(contender, document_type, platform_version))
+            .map(|contender| {
+                ContenderRequest::decode_with_budget(
+                    contender,
+                    document_type,
+                    &mut budget,
+                    platform_version,
+                )
+            })
             .collect();
         let requested_labels = requested_labels(&requests);
         Self {
@@ -317,5 +341,47 @@ mod tests {
     #[test]
     fn should_list_no_labels_when_none_decoded() {
         assert!(requested_labels(&[request(None)]).is_empty());
+    }
+
+    #[test]
+    fn should_stop_decoding_contender_requests_when_shared_budget_is_exhausted() {
+        let contenders = [
+            serialized(domain_document("pizza", Some(CREATED_AT_MS))),
+            serialized(domain_document("Pizza", Some(CREATED_AT_MS + 1))),
+        ];
+        let platform_version = PlatformVersion::latest();
+        let contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+            .expect("DPNS system contract");
+        let document_type = contract.document_type_for_name("domain").ok();
+
+        // Measure one domain document's budget cost.
+        let mut measure_budget = DecodedValueBudget::new(1_000);
+        let first = ContenderRequest::decode_with_budget(
+            &contenders[0],
+            document_type,
+            &mut measure_budget,
+            platform_version,
+        );
+        assert_eq!(first.label.as_deref(), Some("pizza"));
+        let per_doc = 1_000 - measure_budget.remaining();
+        assert!(per_doc > 0);
+
+        // With a shared budget sized for one document, the first contender decodes
+        // and the second falls back to an empty request once the budget runs out.
+        let mut tight_budget = DecodedValueBudget::new(per_doc);
+        let first = ContenderRequest::decode_with_budget(
+            &contenders[0],
+            document_type,
+            &mut tight_budget,
+            platform_version,
+        );
+        let second = ContenderRequest::decode_with_budget(
+            &contenders[1],
+            document_type,
+            &mut tight_budget,
+            platform_version,
+        );
+        assert_eq!(first.label.as_deref(), Some("pizza"));
+        assert_eq!(second, ContenderRequest::default());
     }
 }

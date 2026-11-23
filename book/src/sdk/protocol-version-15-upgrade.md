@@ -67,8 +67,10 @@ As long as its nodes are not banned by one of the failures above:
    one epoch before the switch.
 2. If the app still supports an older build in the field, show its users an update notice
    before the activation: after it, name lookups and DashPay stop working there.
-3. Rust apps that match `dash_sdk::error::StaleNodeError` exhaustively need arms for the
-   variants 5.1 adds (`PrivateDocumentStoreBehind`, `NewerProtocolVersion`), or a wildcard arm.
+3. Rust apps that match `dash_sdk::error::StaleNodeError` or
+   `dpp::data_contract::errors::DataContractError` exhaustively need arms for the variants 5.1
+   adds (`StaleNodeError::PrivateDocumentStoreBehind`, `StaleNodeError::NewerProtocolVersion`,
+   `DataContractError::DecodedValueBudgetExceeded`), or a wildcard arm.
 
 ## Other changes in 5.1 SDKs that can change an app's handling
 

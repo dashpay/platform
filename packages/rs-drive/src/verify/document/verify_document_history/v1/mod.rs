@@ -9,7 +9,9 @@ use crate::verify::grovedb_proof_envelope::{
 };
 use crate::verify::RootHash;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::DocumentTypeRef;
+use dpp::data_contract::document_type::{
+    DecodedValueBudget, DocumentTypeRef, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
+};
 use dpp::version::PlatformVersion;
 
 // Count-tree offset pagination requires GroveDB proof envelopes from version 1.
@@ -40,6 +42,10 @@ impl Drive {
             },
             &version.drive.grove_version,
         )?;
-        Ok((root, query.decode_result(rows, document_type, version)?))
+        let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
+        Ok((
+            root,
+            query.decode_result(rows, document_type, Some(&mut budget), version)?,
+        ))
     }
 }
