@@ -1024,11 +1024,13 @@ pub unsafe extern "C" fn platform_wallet_dpns_give_up_name(
 /// [`platform_wallet_dpns_give_up_name`] returned success for `given_up_name`:
 /// `*out_clears` is true exactly when `main_name` names the same DPNS name,
 /// compared by normalized label (`"Alice"` and `"a11ce.dash"` are one name).
-/// A null or empty `main_name` (no pick) names nothing.
+/// A null `main_name` (no pick), or one whose label is empty (`""`,
+/// `".dash"`), names nothing.
 ///
 /// Goes through `platform_wallet::give_up_clears_main_dpns_name`, which owns
-/// the rule. Call it only after a confirmed give-up, never after an error.
-/// Pure: no wallet, no network.
+/// the rule. Pure: no wallet, no network, so reading it before a give-up (to
+/// say the name is the main name) is fine. Only clearing the pick waits for a
+/// confirmed give-up, never an error.
 ///
 /// `out_clears` is caller-owned and set to `false` before any fallible work.
 #[no_mangle]

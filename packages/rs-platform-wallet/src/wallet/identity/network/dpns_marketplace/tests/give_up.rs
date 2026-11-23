@@ -176,7 +176,7 @@ async fn should_offer_a_delete_and_a_tombstone_for_a_name_that_is_not_contested(
 }
 
 /// A host's main-name pick is cleared for the name given up, whatever its spelling, and for
-/// no other name; an empty pick names nothing
+/// no other name; a pick with an empty label names nothing
 #[test]
 fn should_clear_the_main_name_pick_only_for_the_name_given_up() {
     use super::super::give_up_clears_main_dpns_name;
@@ -187,6 +187,9 @@ fn should_clear_the_main_name_pick_only_for_the_name_given_up() {
     assert!(!give_up_clears_main_dpns_name("Keeper77", "Alice7"));
     assert!(!give_up_clears_main_dpns_name("Alice", "Alice7"));
     assert!(!give_up_clears_main_dpns_name("", "Alice7"));
+    // A pick whose label is empty names nothing, even against an empty given-up name
+    assert!(!give_up_clears_main_dpns_name(".dash", ".DASH"));
+    assert!(!give_up_clears_main_dpns_name("", ""));
 }
 
 /// The network refuses the delete of a contested name, so only the tombstone is offered

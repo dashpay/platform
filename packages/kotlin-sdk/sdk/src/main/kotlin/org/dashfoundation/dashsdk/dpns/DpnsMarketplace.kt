@@ -261,9 +261,10 @@ class DpnsMarketplace internal constructor(
      * Whether to clear an identity's main-name pick ([mainName], null for no
      * pick) after [giveUpName] returned success for [givenUpName]. Rust owns
      * the rule (`platform_wallet::give_up_clears_main_dpns_name`): true
-     * exactly when the pick names the same DPNS name by normalized label.
-     * Call it only after a confirmed give-up, never after an error. Pure: no
-     * wallet, no network.
+     * exactly when the pick names the same DPNS name by normalized label; a
+     * pick with an empty label names nothing. Pure: no wallet, no network, so
+     * reading it before a give-up (to say the name is the main name) is fine.
+     * Only clearing the pick waits for a confirmed give-up, never an error.
      */
     fun giveUpClearsMainName(mainName: String?, givenUpName: String): Boolean =
         mapNativeErrors { DpnsGiveUpNative.clearsMainName(mainName, givenUpName) }
