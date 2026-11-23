@@ -2,7 +2,6 @@ import SwiftUI
 import SwiftDashSDK
 import SwiftData
 import DashSDKFFI
-import LocalAuthentication
 
 /// Routes for value-based navigation from the wallets tab. All
 /// pushes go through `.navigationDestination(for:)` modifiers
@@ -726,36 +725,29 @@ struct WalletInfoView: View {
         .animation(.easeInOut(duration: 0.2), value: isUpdatingNetworks)
     }
 
-    /// Prompt the user via biometric / passcode, then pull the
-    /// wallet's mnemonic out of the keychain for display. On failure
-    /// surfaces the error via `errorMessage`/`showError`.
+    /// Prompt the user via biometric / passcode (`DeviceOwnerAuthentication`),
+    /// then pull the wallet's mnemonic out of the keychain for display. A
+    /// cancelled prompt shows nothing; other failures surface via
+    /// `errorMessage`/`showError`.
     @MainActor
     private func authorizeAndRevealMnemonic() async {
         guard !isAuthorizingSeedPhrase else { return }
         isAuthorizingSeedPhrase = true
         defer { isAuthorizingSeedPhrase = false }
 
-        let context = LAContext()
-        context.localizedCancelTitle = "Cancel"
-        var policyError: NSError?
-        guard context.canEvaluatePolicy(
-            .deviceOwnerAuthentication,
-            error: &policyError
-        ) else {
-            errorMessage = "Authentication is unavailable on this device: "
-                + (policyError?.localizedDescription ?? "unknown")
+        switch await DeviceOwnerAuthentication.authorize(
+            reason: "Reveal your wallet's recovery phrase."
+        ) {
+        case .authorized:
+            break
+        case .cancelled:
+            return
+        case .unavailable(let detail):
+            errorMessage = "Authentication is unavailable on this device: \(detail)"
             showError = true
             return
-        }
-
-        do {
-            let authorized = try await context.evaluatePolicy(
-                .deviceOwnerAuthentication,
-                localizedReason: "Reveal your wallet's recovery phrase."
-            )
-            guard authorized else { return }
-        } catch {
-            errorMessage = "Authorization failed: \(error.localizedDescription)"
+        case .failed(let detail):
+            errorMessage = "Authorization failed: \(detail)"
             showError = true
             return
         }

@@ -69,6 +69,28 @@ As long as its nodes are not banned by one of the failures above:
    before the activation: after it, name lookups and DashPay stop working there.
 3. Rust apps that match `dash_sdk::error::StaleNodeError` exhaustively need arms for the
    variants 5.1 adds (`PrivateDocumentStoreBehind`, `NewerProtocolVersion`), or a wildcard arm.
+4. Apps that read document sums or averages: a type that keeps its sums in 128 bits can hold a
+   sum past what a 64-bit integer holds, and a 5.1 SDK returns it whole from a proved query.
+   The result types widen, so code that stored a sum in a 64-bit integer has to change:
+   - Rust: `DocumentSum(i128)`, `DocumentAverage { count: u64, sum: i128 }`, and `i128` sums
+     in `DocumentSplitSums` and `DocumentSplitAverages`. `DocumentAverage::to_decimal_string`
+     gives the exact average; `as_f64` loses digits past 2^53. A proved `In` plus range query
+     grouped by the `In` field now returns each group with the `In` value in `key` and
+     `in_key: None`, as a point lookup grouped by the `In` field does; code that matched
+     those groups by `in_key` reads `key` instead.
+   - Swift: `DocumentSumResult.sums` is `[String: Int128]`, `DocumentAverageEntry.sum` is
+     `Int128`, and `DocumentAverageEntry.average` is the exact average as a `String?`
+     (`nil` when nothing matched) instead of a `Double`.
+   - Native bindings over `rs-sdk-ffi` (`dash_sdk_document_sum`, `dash_sdk_document_average`):
+     every sum is a base-10 JSON string, each average entry also carries `average`, a
+     decimal string or `null`, and the result carries `grouped` (in a grouped result the
+     empty key is a group of documents missing the value, not the total); see [Document Sum Trees](../drive/document-sum-trees.md#rs-sdk-ffi-ios--native-bindings).
+     Use `DashSDKFFI.xcframework` with the Swift SDK sources of the same release: a wrapper
+     from another release does not read this shape.
+   - JavaScript (`wasm-sdk`): sums were `bigint` already and stay so.
+
+   A query answered without a proof still carries sums as 64-bit integers (`sint64`), so a
+   node refuses an unproven sum past 64 bits; the SDKs always ask for proofs.
 
 ## Other changes in 5.1 SDKs that can change an app's handling
 

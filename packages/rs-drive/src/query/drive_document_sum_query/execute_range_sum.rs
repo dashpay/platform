@@ -195,7 +195,7 @@ impl DriveDocumentSumQuery<'_> {
                 return Ok(vec![SumEntry {
                     in_key: None,
                     key: Vec::new(),
-                    sum: Some(total),
+                    sum: Some(i128::from(total)),
                 }]);
             }
             // Flat summed (no In on prefix): single aggregate read.
@@ -210,7 +210,7 @@ impl DriveDocumentSumQuery<'_> {
             return Ok(vec![SumEntry {
                 in_key: None,
                 key: Vec::new(),
-                sum: Some(sum),
+                sum: Some(i128::from(sum)),
             }]);
         }
 
@@ -262,7 +262,7 @@ impl DriveDocumentSumQuery<'_> {
             entries.push(SumEntry {
                 in_key,
                 key,
-                sum: Some(sum),
+                sum: Some(i128::from(sum)),
             });
         }
 

@@ -40,6 +40,10 @@
     "dash_sdk_get_context_provider_source": "packages/rs-sdk-ffi/src/sdk.rs",
     "dash_sdk_set_context_provider_mode": "packages/rs-sdk-ffi/src/sdk.rs",
     "dash_sdk_sign_async_completion": "packages/rs-sdk-ffi/src/signer.rs",
+    "dash_sdk_system_get_blocks": "packages/rs-sdk-ffi/src/system/queries/blocks.rs",
+    "dash_sdk_system_get_owner_transactions_in_block": "packages/rs-sdk-ffi/src/system/queries/blocks.rs",
+    "dash_sdk_system_get_recent_state_transition_status": "packages/rs-sdk-ffi/src/system/queries/transition_status.rs",
+    "dash_sdk_system_get_state_transition_status_by_hash": "packages/rs-sdk-ffi/src/system/queries/transition_status.rs",
     "dpns_name_array_free": "packages/rs-platform-wallet-ffi/src/dpns.rs",
     "managed_identity_get_contested_dpns_names": "packages/rs-platform-wallet-ffi/src/dpns.rs",
     "managed_identity_get_dashpay_payments": "packages/rs-platform-wallet-ffi/src/dashpay_payment.rs",
@@ -2334,6 +2338,126 @@
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
           "id": "DC-06",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "system.block_and_transition_status_reads",
+      "title": "Read blocks with their state transitions, an identity's transitions in a block, and a transition's status by hash (protocol version 15)",
+      "area": "example_app",
+      "shared_apis": [
+        "dash_sdk_system_get_blocks",
+        "dash_sdk_system_get_owner_transactions_in_block",
+        "dash_sdk_system_get_recent_state_transition_status",
+        "dash_sdk_system_get_state_transition_status_by_hash"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "SDK.getBlocks, getOwnerTransactionsInBlock, getRecentStateTransitionStatus and getStateTransitionStatusByHash decode the FFI's JSON one to one, with the proved flag Rust sets. The example app reaches them from the Platform Queries catalog and from two views, the Block Explorer (blocks, a block's transitions, an identity's transitions in it) and the Transition Status Checker (proved in a block, otherwise the node's unproved word), but no gate has run them against a protocol version 15 network yet: TEST_PLAN SYS-09..12 are the manual gates still to run. No write result screen links to the status checker, since none has the transition hash at hand. The reads keep nothing, so there is nothing to resume after a restart."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "Not ported: rs-unified-sdk-jni binds none of dash_sdk_system_get_blocks, dash_sdk_system_get_owner_transactions_in_block, dash_sdk_system_get_recent_state_transition_status or dash_sdk_system_get_state_transition_status_by_hash, and KotlinExampleApp has no block or transition status screen."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk/src/platform/transition/status_by_hash.rs",
+          "id": "should_prove_a_transition_the_named_block_holds",
+          "command": "cargo test -p dash-sdk --lib status_by_hash",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk/src/platform/transition/status_by_hash.rs",
+          "id": "should_refute_a_committed_claim_the_proved_block_does_not_hold",
+          "command": "cargo test -p dash-sdk --lib status_by_hash",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk-ffi/src/system/queries/blocks.rs",
+          "id": "should_write_a_block_with_its_transactions",
+          "command": "cargo test -p rs-sdk-ffi --lib system::queries::blocks",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk-ffi/src/system/queries/blocks.rs",
+          "id": "should_refuse_a_missing_or_malformed_owner_id_before_asking_the_network",
+          "command": "cargo test -p rs-sdk-ffi --lib system::queries::blocks",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk-ffi/src/system/queries/transition_status.rs",
+          "id": "should_write_only_a_transition_found_in_its_block_as_proved",
+          "command": "cargo test -p rs-sdk-ffi --lib system::queries::transition_status",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk-ffi/src/system/queries/transition_status.rs",
+          "id": "should_write_a_node_view_as_unproved",
+          "command": "cargo test -p rs-sdk-ffi --lib system::queries::transition_status",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/PlatformBlocksDecodingTests.swift",
+          "id": "testShouldDecodeEveryStatusByHash",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:SwiftDashSDKTests/PlatformBlocksDecodingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/PlatformBlocksDecodingTests.swift",
+          "id": "testShouldDecodeBlocksWithTheirTransactions",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:SwiftDashSDKTests/PlatformBlocksDecodingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "SYS-09",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "SYS-10",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "SYS-11",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "SYS-12",
           "covers_restart": false
         }
       ]

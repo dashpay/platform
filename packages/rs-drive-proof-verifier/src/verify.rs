@@ -97,9 +97,10 @@ fn ensure_proof_signed_at_verifier_version(
     Err(Error::ProofProtocolVersionMismatch { signed, verifier })
 }
 
-/// [`MapGroveDbError::map_drive_error`] for the Drive verifiers of document sums, which refuse a
-/// proved sum past the 64 bits a sum result carries with the root their proof reconstructs
-/// (`ProofError::SumPastResultWidth`). That root's signature is verified first: a sum every
+/// [`MapGroveDbError::map_drive_error`] for the Drive verifiers of ranked and HAVING entries,
+/// which refuse a proved sum past the 64 bits such an entry carries with the root their proof
+/// reconstructs (`ProofError::SumPastResultWidth`). The sum and average verifiers return a
+/// proved sum at 128 bits and never refuse one. That root's signature is verified first: a sum every
 /// honest node proves alike is then a result the request can not use
 /// ([`Error::UnusableVerifiedResult`]), not a proof the node got wrong, while a root the
 /// signature does not authenticate stays the node's failure.
