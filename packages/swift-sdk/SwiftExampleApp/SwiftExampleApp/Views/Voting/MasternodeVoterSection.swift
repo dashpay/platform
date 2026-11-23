@@ -617,16 +617,15 @@ struct MasternodeVoterSection: View {
             return
         }
         // An identity whose voting key may not vote, or whose masternode is
-        // not known yet, is not published; nor is one whose key Rust says to
-        // check before use until that check has run for its current record.
+        // not known yet, is not published; nor is any until this pick's check
+        // task has finished for its current record. That task reads the
+        // stored key's address, so Rust's rule sees which key is stored (a
+        // record of another key counts as never checked), and it finishes at
+        // once when no check is needed.
         guard let selected = votingIdentities.first(where: { $0.identityId == selectedIdentityId }),
               !Self.isRefused(selected),
-              let proTxHash = selected.masternodeProTxHash else {
-            voter = nil
-            return
-        }
-        let keyUse = MasternodeRecordedVotingKeyUse(recorded: selected.recordedVotingKey, storedVotingAddress: nil)
-        if keyUse.checkBeforeUse && checkedTrigger != currentTrigger {
+              let proTxHash = selected.masternodeProTxHash,
+              checkedTrigger == currentTrigger else {
             voter = nil
             return
         }
