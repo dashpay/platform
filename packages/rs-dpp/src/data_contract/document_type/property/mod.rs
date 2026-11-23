@@ -3266,6 +3266,9 @@ impl DocumentPropertyType {
                     let mut value_map =
                         Value::map_into_btree_string_map(map).map_err(ProtocolError::ValueError)?;
                     let mut r_vec = vec![];
+                    // As the borrowed encoder does: a member required from a contract version
+                    // is written like an optional one. Only protocol version 15 parses such a
+                    // member, so before it `always_required` is `required`.
                     inner_fields.iter().try_for_each(|(key, field)| {
                         if let Some(value) = value_map.remove(key) {
                             let mut serialized_value = field

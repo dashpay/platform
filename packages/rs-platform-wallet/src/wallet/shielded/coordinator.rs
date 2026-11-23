@@ -1899,8 +1899,10 @@ impl NetworkShieldedCoordinator {
 
         // Residual-spend resolution: `sync_notes_across` above marked every
         // landed spend (clearing its reservation and dropping its redrive
-        // record via the store hook). Two passes over what's left, both
-        // judged against the PRE-scan recorded-anchor set:
+        // record via the store hook), and failed every saved spend it read
+        // another transition's action spending an input of, freeing its
+        // other notes. Two passes over what's left, both judged against the
+        // PRE-scan recorded-anchor set:
         //
         // 1. Re-drive — for each armed unconfirmed spend whose anchor is
         //    still recorded, re-broadcast the stored byte-identical
@@ -3253,6 +3255,8 @@ mod tests {
     use crate::wallet::shielded::store::{
         InMemoryShieldedStore, PendingRedrive, PrivateContactPayment, ShieldedNote,
     };
+    use crate::wallet::shielded::sync::sync_notes_from_stream;
+    use dash_sdk::platform::shielded::notes_sync::types::{DecryptedNote, ShieldedChunkBatch};
     use dash_sdk::platform::shielded::try_decrypt_note;
     use dpp::address_funds::OrchardAddress;
     use dpp::platform_value::BinaryData;
@@ -3263,6 +3267,7 @@ mod tests {
     };
     use dpp::shielded::SerializedAction;
     use dpp::state_transition::shield_from_identity_transition::v0::ShieldFromIdentityTransitionV0;
+    use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
     use dpp::state_transition::token_purchase_from_shielded_pool_transition::accessors::TokenPurchaseFromShieldedPoolTransitionAccessorsV0;
     use dpp::state_transition::StateTransition;
     use dpp::tokens::calculate_token_id;
@@ -3866,6 +3871,172 @@ mod tests {
         }
         coordinator
             .derive_activity_into_changeset(&[(id, keys)], &mut ShieldedChangeSet::default())
+            .await
+            .unwrap();
+        assert_eq!(
+            row_status(&coordinator, id, &row.id).await,
+            ShieldedActivityStatus::Confirmed
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A landed spend whose change the scan reads a pass after the action
+    /// that spends its input (the two sit in different actions of the bundle,
+    /// and so can sit in separately proved ranges). The first pass marks the
+    /// input spent by the saved transition's own action: the row is not
+    /// failed, and stays pending. The second pass reads the change and the
+    /// row is Confirmed.
+    #[tokio::test]
+    async fn should_keep_a_landed_spend_pending_until_a_later_pass_reads_its_change() {
+        let dir = temp_dir("change_a_pass_later");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let views = coordinator.accounts.read().await[&id].clone();
+        let keys = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+            .expect("the coordinator wallet's keys");
+
+        // The change note the spend pays back to the wallet.
+        let mut rng = OsRng;
+        let (rho, rseed) = loop {
+            let mut b = [0u8; 32];
+            rng.fill_bytes(&mut b);
+            let Some(rho) = Rho::from_bytes(&b).into_option() else {
+                continue;
+            };
+            rng.fill_bytes(&mut b);
+            if let Some(rseed) = RandomSeed::from_bytes(b, &rho).into_option() {
+                break (rho, rseed);
+            }
+        };
+        let change = Note::from_parts(keys.default_address, NoteValue::from_raw(400), rho, rseed)
+            .into_option()
+            .expect("a note");
+        let change_cmx = ExtractedNoteCommitment::from(change.commitment()).to_bytes();
+
+        // The saved transition: one action spends the wallet's note and
+        // creates a note of the recipient's, the other holds the change.
+        let mut recipient_cmx = [0u8; 32];
+        recipient_cmx[0] = 7;
+        let action = |nullifier: [u8; 32], cmx: [u8; 32]| SerializedAction {
+            nullifier,
+            rk: [2; 32],
+            cmx,
+            encrypted_note: vec![4; 216],
+            cv_net: [5; 32],
+            spend_auth_sig: [6; 64],
+        };
+        let padding_nullifier = [0xD0; 32];
+        let transition: StateTransition = ShieldedTransferTransitionV0 {
+            actions: vec![
+                action(PURCHASE_INPUT_NF, recipient_cmx),
+                action(padding_nullifier, change_cmx),
+            ],
+            value_balance: 0,
+            anchor: [0x52; 32],
+            proof: vec![],
+            binding_signature: [0; 64],
+        }
+        .into();
+        let row = pending_purchase_row(PURCHASE_INPUT_NF, change_cmx);
+        {
+            let mut store = coordinator.store().write().await;
+            let mut input = test_note(PURCHASE_INPUT_NF, 0, false);
+            input.cmx = [0xA2; 32];
+            store.save_note(id, &input).unwrap();
+            store.save_activity(id, &row).unwrap();
+            store.mark_pending(id, &PURCHASE_INPUT_NF).unwrap();
+            store
+                .set_pending_spend(id, &PURCHASE_INPUT_NF, [0x52; 32], row.id, Some(5))
+                .unwrap();
+            store
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: row.id,
+                        anchor: [0x52; 32],
+                        nullifiers: vec![PURCHASE_INPUT_NF],
+                        st_bytes: transition.serialize_to_bytes().unwrap(),
+                        attempts: 0,
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                        anchor_height: Some(5),
+                    },
+                )
+                .unwrap();
+        }
+
+        let wire = |nullifier: [u8; 32], cmx: [u8; 32]| ShieldedEncryptedNote {
+            cmx: cmx.to_vec(),
+            nullifier: nullifier.to_vec(),
+            cv_net: vec![],
+            encrypted_note: vec![],
+        };
+        let subwallets = [(id, views)];
+        let cancel = CancellationToken::new();
+        let pass = |batch: ShieldedChunkBatch| {
+            sync_notes_from_stream(
+                coordinator.store(),
+                &subwallets,
+                None,
+                &cancel,
+                move |_, _| futures::stream::iter([Ok(batch)]),
+            )
+        };
+
+        // Pass 1: a range proved before the change's action was appended.
+        pass(ShieldedChunkBatch {
+            start_index: 0,
+            notes: vec![wire(PURCHASE_INPUT_NF, recipient_cmx)],
+            decrypted: vec![],
+            block_height: 200,
+            is_partial: true,
+            total_count: 1,
+        })
+        .await
+        .expect("the first pass");
+        coordinator
+            .derive_activity_into_changeset(&subwallets, &mut ShieldedChangeSet::default())
+            .await
+            .unwrap();
+        assert_eq!(
+            row_status(&coordinator, id, &row.id).await,
+            ShieldedActivityStatus::Pending,
+            "its own action spent the input: not failed, and not confirmed before its change"
+        );
+        assert!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .get_all_notes(id)
+                .unwrap()
+                .iter()
+                .any(|note| note.nullifier == PURCHASE_INPUT_NF && note.is_spent),
+            "the input is spent"
+        );
+
+        // Pass 2: the range again, now with the change.
+        pass(ShieldedChunkBatch {
+            start_index: 0,
+            notes: vec![
+                wire(PURCHASE_INPUT_NF, recipient_cmx),
+                wire(padding_nullifier, change_cmx),
+            ],
+            decrypted: vec![DecryptedNote {
+                position: 1,
+                note: change,
+                address: keys.default_address,
+                nullifier: change.nullifier(&keys.full_viewing_key).to_bytes(),
+                cmx: change_cmx,
+            }],
+            block_height: 201,
+            is_partial: true,
+            total_count: 2,
+        })
+        .await
+        .expect("the second pass");
+        coordinator
+            .derive_activity_into_changeset(&subwallets, &mut ShieldedChangeSet::default())
             .await
             .unwrap();
         assert_eq!(

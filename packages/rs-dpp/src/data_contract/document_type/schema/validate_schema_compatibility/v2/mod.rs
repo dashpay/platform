@@ -5,8 +5,9 @@
 //! at every depth of the inline objects below the root `properties`. Document
 //! type `validate_update` v2 judges them
 //! against the parsed types instead (its member rules): an object's list may
-//! gain a member the same update adds with `requiredSince`, which the differ's
-//! frozen `required` rule cannot express, and may lose nothing.
+//! gain a member the same update adds with `requiredSince` (or one the type
+//! already requires through a dotted name), which the differ's frozen
+//! `required` rule cannot express, and may lose nothing.
 //!
 //! Only the keyword is removed, at the schema positions that hold one: a
 //! member named `required` is a property schema like any other and is still

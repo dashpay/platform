@@ -61,6 +61,7 @@ import org.dashfoundation.example.ui.identity.IdentitiesHomeScreen
 import org.dashfoundation.example.ui.identity.IdentityDetailScreen
 import org.dashfoundation.example.ui.identity.KeyDetailScreen
 import org.dashfoundation.example.ui.identity.KeysListScreen
+import org.dashfoundation.example.ui.identity.UpdateKeyLimitsScreen
 import org.dashfoundation.example.ui.identity.LoadIdentityScreen
 import org.dashfoundation.example.ui.identity.RegisterNameScreen
 import org.dashfoundation.example.ui.identity.RegistrationProgressScreen
@@ -223,6 +224,10 @@ fun AppNavHost(
         composable<KeyDetail> { entry ->
             val route = entry.toRoute<KeyDetail>()
             KeyDetailScreen(route.identityIdHex, route.keyId, navController)
+        }
+        composable<UpdateKeyLimits> { entry ->
+            val route = entry.toRoute<UpdateKeyLimits>()
+            UpdateKeyLimitsScreen(route.identityIdHex, route.keyId, navController)
         }
 
         composable<AddIdentityKey> { entry ->

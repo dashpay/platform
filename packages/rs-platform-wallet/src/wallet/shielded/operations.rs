@@ -291,13 +291,15 @@ pub(super) async fn queue_shielded_activity<S: ShieldedStore>(
     queue_shielded_changeset(persister, wallet_id, changeset_for_entry(id, entry));
 }
 
-/// Extract the serialized Orchard actions from a built shielded
-/// `StateTransition`, for live activity-entry recording.
+/// Extract the serialized Orchard actions a built shielded `StateTransition`
+/// leaves in the credit pool, for live activity-entry recording and for the
+/// note scan to tell a saved spend's own actions from another spend's
+/// (`sync::saved_spend_inputs`).
 ///
 /// Returns `&[]` for any non-shielded variant (none reach the recorder).
 /// Each shielded variant's `actions()` comes from its own accessor /
 /// methods trait, so the relevant traits are imported locally.
-fn shielded_actions(st: &StateTransition) -> &[dpp::shielded::SerializedAction] {
+pub(super) fn shielded_actions(st: &StateTransition) -> &[dpp::shielded::SerializedAction] {
     // `actions()` is on each type's accessor trait; Shield exposes `actions`
     // only as a public field on its V0 struct, so match down to that
     // variant for it.

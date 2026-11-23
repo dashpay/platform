@@ -93,6 +93,7 @@ pub(crate) mod property_names {
     pub const INDICES: &str = "indices";
     pub const NULL_SEARCHABLE: &str = "nullSearchable";
     pub const PROPERTIES: &str = "properties";
+    pub const ADDITIONAL_PROPERTIES: &str = "additionalProperties";
     pub const POSITION: &str = "position";
     pub const REQUIRED: &str = "required";
     pub const REQUIRED_SINCE: &str = "requiredSince";
