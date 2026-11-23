@@ -56,7 +56,10 @@ data class IdentityDeviceRemovalResult(
  *  3. Under the callback and private-key exclusions: delete the footprint in
  *     one Room transaction
  *     ([PlatformWalletPersistenceHandler.deleteIdentityDataLocked]; the whole
- *     removal for an identity no wallet managed, a no-op otherwise), then
+ *     removal for an identity no wallet managed, a no-op otherwise). If it
+ *     fails while the row is still there, the error propagates and the still
+ *     listed identity can be removed again; if the row is already gone (Rust's
+ *     persisted removal committed), the cleanup goes on. Then
  *     [settlePendingIdentityKeyDeletes]. A refusal there is reported in
  *     [IdentityDeviceRemovalResult.keysLeft] and the record stays.
  *  4. Outside both exclusions (the voting store takes its own lock and must
@@ -91,7 +94,19 @@ internal suspend fun deleteIdentityFromDevice(
     val keysLeft = mutableListOf<String>()
     persistenceHandler.withCallbackExclusion {
         walletStorage.withPrivateKeyExclusion {
-            persistenceHandler.deleteIdentityDataLocked(identityId)
+            try {
+                persistenceHandler.deleteIdentityDataLocked(identityId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Still listed: nothing of the footprint went with this
+                // transaction, and removing again retries (Rust, having
+                // removed it already, answers "not managed"). Gone: Rust's
+                // persisted removal already deleted the whole footprint in its
+                // own round, so only this redundant pass failed; the keys and
+                // the voting key are still to clean up below.
+                if (database.identityDao().getByIdentityId(identityId) != null) throw e
+            }
             try {
                 settlePendingIdentityKeyDeletes(database, this, settleKeys)
             } catch (e: CancellationException) {

@@ -139,10 +139,11 @@ internal suspend fun removeIdentityFromDeviceMessage(
         throw e
     } catch (e: Exception) {
         // A refusal from the live wallet (a DashPay contact request in flight,
-        // private payments not restored) lands here with Rust's reason;
-        // nothing on the device was deleted.
+        // private payments not restored) lands here with Rust's reason, as
+        // does a failed row delete; either way the identity is still listed,
+        // and removing it again retries.
         return "The identity was not removed from this device: ${e.message ?: e.javaClass.simpleName}. " +
-            "Nothing was deleted."
+            "It is still listed; remove it again to retry."
     }
     return keysLeftMessage(result.keysLeft)
 }

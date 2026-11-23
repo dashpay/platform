@@ -268,6 +268,27 @@ class IdentityDeviceRemovalTest {
     }
 
     @Test
+    fun `should still clean up keys when the host pass fails after the persisted removal committed`() =
+        runBlocking {
+            // Rust accepts and its persisted round deletes the identity row.
+            liveWallets = { id -> db.identityDao().deleteByIdentityId(id); true }
+            // The host's redundant footprint pass then fails.
+            db.openHelper.writableDatabase.execSQL(
+                "CREATE TRIGGER refuse_balance_delete BEFORE DELETE ON token_balances " +
+                    "BEGIN SELECT RAISE(ABORT, 'refused'); END",
+            )
+
+            val result = remove()
+
+            assertTrue(result.wasManaged)
+            assertTrue(result.keysLeft.isEmpty())
+            assertNull(db.identityDao().getByIdentityId(identityId))
+            assertFalse(storage.hasPrivateKey(ownKey.hex()))
+            assertFalse(storage.hasPrivateKey(votingIdentifier))
+            assertTrue(storage.hasPrivateKey(sharedKey.hex()))
+        }
+
+    @Test
     fun `should finish an interrupted key cleanup when removed again`() = runBlocking {
         val first = remove { _, _ -> throw IllegalStateException("storage locked") }
 
