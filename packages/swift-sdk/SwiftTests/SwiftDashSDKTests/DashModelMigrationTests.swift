@@ -639,7 +639,7 @@ final class DashModelMigrationTests: XCTestCase {
         }
     }
 
-    /// V5 adds payment-address and private-contact entities. Payment addresses
+    /// V5 adds payment-address, private-contact and locked-outpoint entities. Payment addresses
     /// live in their own table, preserving the published V4 profile columns.
     func testV5AddsPaymentAddressesAndPrivateContactEntitiesToPublishedV4() throws {
         let v4 = Schema(versionedSchema: DashSchemaV4.self)
@@ -647,7 +647,7 @@ final class DashModelMigrationTests: XCTestCase {
         XCTAssertEqual(
             Set(current.entities.map(\.name)).subtracting(v4.entities.map(\.name)),
             ["PersistentDashpayPaymentAddresses", "PersistentPrivateContactRequestsPosition",
-             "PersistentPrivateShieldedAddress"])
+             "PersistentPrivateShieldedAddress", "PersistentLockedOutpoint"])
         XCTAssertEqual(Set(v4.entities.map(\.name)).subtracting(current.entities.map(\.name)), [])
         for name in ["PersistentDashpayProfile", "PersistentDashpayContactProfile"] {
             let published = try XCTUnwrap(v4.entities.first { $0.name == name })
