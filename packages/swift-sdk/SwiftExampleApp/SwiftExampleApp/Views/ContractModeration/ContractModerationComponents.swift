@@ -12,6 +12,9 @@ enum ContractModerationRoute: Hashable {
     /// connection the listing was read through (``AppState/sdkGeneration``).
     case teamAction(ContractTeamActionEntry, ContractTeamActionStatus, connection: Int)
     case actionCounts
+    /// Moderate a document of the type: delete it, change its moderator
+    /// fields, propose a settled deletion.
+    case document(documentTypeName: String)
 }
 
 /// The state of one read: what the node answered, or why it did not.

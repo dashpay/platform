@@ -1,9 +1,18 @@
 import SwiftUI
+import SwiftData
 import SwiftDashSDK
 
-/// One team action: who proposed it, what it does, and who approved it.
+/// One team action: who proposed it, what it does, and who approved it, and,
+/// for an action listed active, an approval (state transition type 24) by
+/// each identity of a loaded wallet Rust names a member of the seated team.
+/// Whether the approval still counts (already given, the action closed
+/// since, the document changed) is Platform's to answer; the proved status
+/// says whether more approvals are needed.
 struct ContractTeamActionDetailView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var offers: ContractModerationOfferStore
+    @Environment(\.modelContext) private var modelContext
     /// The contract and the connection it was opened on: this screen reads
     /// only through that connection, and the hub hides it once replaced.
     let scope: ModerationScope
@@ -19,6 +28,10 @@ struct ContractTeamActionDetailView: View {
 
     @StateObject private var loader = ModerationSingleLoader<ContractTeamActionSigners?>()
     private var signers: ModerationLoad<ContractTeamActionSigners?> { loader.load }
+
+    @State private var approvingAs: String?
+    @State private var approval: ContractTeamActionSignature?
+    @State private var approvalError: String?
 
     var body: some View {
         List {
@@ -38,6 +51,10 @@ struct ContractTeamActionDetailView: View {
                 eventView
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("contractModeration.teamAction.event")
+            }
+
+            if status == .active && !offers.approvers.isEmpty {
+                approveSection
             }
 
             Section {
@@ -79,6 +96,73 @@ struct ContractTeamActionDetailView: View {
                 }
                 ModerationReasonView(reason: event.reason)
             }
+        }
+    }
+
+    private var approveSection: some View {
+        Section {
+            ForEach(offers.approvers) { approver in
+                Button {
+                    approve(as: approver)
+                } label: {
+                    HStack {
+                        if approvingAs == approver.identityIdBase58 { ProgressView().controlSize(.small) }
+                        Text("Approve as \(approver.offer.role.title) \(approver.identityIdBase58.prefix(8))…")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .disabled(approvingAs != nil)
+                .accessibilityIdentifier("contractModeration.teamAction.approve.\(approver.identityIdBase58)")
+            }
+            if let approvalError {
+                ModerationMessageRow(
+                    kind: .error,
+                    text: approvalError,
+                    identifier: "contractModeration.teamAction.approveError"
+                )
+            }
+            if let approval {
+                ModerationFieldRow(
+                    label: "Status after the approval",
+                    value: approval.status == .closed
+                        ? "Closed: the action ran"
+                        : "Active: more approvals are needed"
+                )
+                .accessibilityIdentifier("contractModeration.teamAction.approveResult")
+            }
+        } header: {
+            Text("Approve")
+        } footer: {
+            Text("Shown for each identity of a loaded wallet on the seated team.")
+        }
+    }
+
+    private func approve(as approver: ContractModerationOfferStore.Moderator) {
+        guard let wallet = walletManager.wallet(for: approver.walletId),
+              let moderatorId = Data.identifier(fromBase58: approver.identityIdBase58),
+              let contractIdBytes = Data.identifier(fromBase58: contractId),
+              let actionIdBytes = Data.identifier(fromBase58: action.actionId) else {
+            approvalError = DocumentActionError.noWallet.localizedDescription
+            return
+        }
+        // Fresh `KeychainSigner` per approval, as `CreateDocumentView` does.
+        let signer = KeychainSigner(modelContainer: modelContext.container)
+        approvingAs = approver.identityIdBase58
+        approvalError = nil
+        approval = nil
+        Task {
+            do {
+                approval = try await wallet.approveContractTeamAction(
+                    moderatorIdentityId: moderatorId,
+                    contractId: contractIdBytes,
+                    actionId: actionIdBytes,
+                    signer: signer
+                )
+            } catch {
+                approvalError = moderationWriteErrorText(error)
+            }
+            approvingAs = nil
+            await loadSigners()
         }
     }
 
