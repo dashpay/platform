@@ -28,7 +28,8 @@ struct ShieldedTokensRoute: Hashable {
 /// the balances again. A type 28 purchase watches the bought token's pool by
 /// itself; "Watch a Token Pool" adds one of the app's known tokens by hand,
 /// and swiping a row stops watching that token. **Send** on a row opens
-/// `ShieldedTokenSendSheet` for that token and account (type 26, SH-26).
+/// `ShieldedTokenSendSheet` for that token and account (type 26, SH-26), and
+/// **Unshield** opens `ShieldedTokenUnshieldSheet` (type 27, SH-27).
 struct ShieldedTokenPoolsView: View {
     let walletId: Data
     @EnvironmentObject private var walletManager: PlatformWalletManager
@@ -43,7 +44,9 @@ struct ShieldedTokenPoolsView: View {
     @State private var showWatchSheet = false
     @State private var unwatchError: String?
     /// The row whose Send form is open.
-    @State private var sendTarget: ShieldedTokenSendTarget?
+    @State private var sendTarget: ShieldedTokenSpendTarget?
+    /// The row whose Unshield form is open.
+    @State private var unshieldTarget: ShieldedTokenSpendTarget?
     /// Only the newest read may apply its result.
     @State private var readGeneration: UInt64 = 0
 
@@ -182,6 +185,14 @@ struct ShieldedTokenPoolsView: View {
                 onSubmitted: { Task { await loadBalances() } }
             )
         }
+        .sheet(item: $unshieldTarget) { target in
+            ShieldedTokenUnshieldSheet(
+                walletId: walletId,
+                target: target,
+                token: knownToken(target.balance),
+                onSubmitted: { Task { await loadBalances() } }
+            )
+        }
         .alert(
             "Could not stop watching",
             isPresented: Binding(
@@ -261,14 +272,24 @@ struct ShieldedTokenPoolsView: View {
                     .foregroundColor(.red)
                     .accessibilityIdentifier("shieldedTokens.lastError")
             }
-            Button {
-                sendTarget = ShieldedTokenSendTarget(balance: balance, showsAccount: showsAccount)
-            } label: {
-                Label("Send", systemImage: "paperplane")
+            HStack(spacing: 24) {
+                Button {
+                    sendTarget = ShieldedTokenSpendTarget(balance: balance, showsAccount: showsAccount)
+                } label: {
+                    Label("Send", systemImage: "paperplane")
+                }
+                .buttonStyle(.borderless)
+                .disabled(balance.balance == 0)
+                .accessibilityIdentifier("shieldedTokens.sendButton")
+                Button {
+                    unshieldTarget = ShieldedTokenSpendTarget(balance: balance, showsAccount: showsAccount)
+                } label: {
+                    Label("Unshield", systemImage: "lock.open")
+                }
+                .buttonStyle(.borderless)
+                .disabled(balance.balance == 0)
+                .accessibilityIdentifier("shieldedTokens.unshieldButton")
             }
-            .buttonStyle(.borderless)
-            .disabled(balance.balance == 0)
-            .accessibilityIdentifier("shieldedTokens.sendButton")
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .contain)
@@ -341,8 +362,8 @@ struct ShieldedTokenPoolsView: View {
 
 // MARK: - Send
 
-/// The row a Send form is open for: one token and one account.
-struct ShieldedTokenSendTarget: Identifiable {
+/// The row a Send or Unshield form is open for: one token and one account.
+struct ShieldedTokenSpendTarget: Identifiable {
     let balance: ShieldedTokenPoolBalance
     /// The token has more than one account row, so the form names the
     /// account it sends from.
@@ -360,16 +381,13 @@ struct ShieldedTokenSendTarget: Identifiable {
 /// the amount, the token and the network, picks the token notes and the
 /// credit pool notes that pay the fee, proves, broadcasts and records the
 /// activity. The form only reads the recipient (a pasted bech32m Orchard
-/// address, or this account's own one) and the amount, and shows Rust's
-/// answer.
-///
-/// The amount is typed in the token's smallest unit, as a whole number, and
-/// passed to Rust unchanged. The app's cached token decimals can be stale or
-/// from another network, so they never convert the amount; when the app has
-/// them they only give a non-authoritative hint under the field.
+/// address, or this account's own one) and the amount, which it converts to
+/// the token's smallest unit with the token's decimals when the app has the
+/// token locally (the same decimals the list shows amounts with), and shows
+/// Rust's fee preview and answer.
 struct ShieldedTokenSendSheet: View {
     let walletId: Data
-    let target: ShieldedTokenSendTarget
+    let target: ShieldedTokenSpendTarget
     /// The app's local record of the token, for its name and decimals only.
     let token: PersistentToken?
     let onSubmitted: () -> Void
@@ -389,6 +407,10 @@ struct ShieldedTokenSendSheet: View {
 
     private var balance: ShieldedTokenPoolBalance { target.balance }
 
+    /// The token's decimals when the app has the token; otherwise amounts
+    /// are typed in the token's smallest unit.
+    private var decimals: Int { token?.decimals ?? 0 }
+
     /// The 43 raw bytes of the typed recipient when it is an Orchard address
     /// on the current network.
     private var recipientRaw: Data? {
@@ -399,26 +421,7 @@ struct ShieldedTokenSendSheet: View {
         return raw
     }
 
-    private var trimmedAmountText: String {
-        amountText.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    /// The amount in the token's smallest unit: the typed whole number,
-    /// exactly. `nil` for empty text and for anything else (a decimal point,
-    /// a sign, other characters, or a number past `UInt64`).
-    private var amount: UInt64? { Self.smallestUnitAmount(trimmedAmountText) }
-
-    /// The typed text is not a whole number of smallest units.
-    private var amountRefused: Bool { !trimmedAmountText.isEmpty && amount == nil }
-
-    /// Parse `text` as a whole number of the token's smallest unit: ASCII
-    /// digits only, nothing rounded or converted.
-    static func smallestUnitAmount(_ text: String) -> UInt64? {
-        guard !text.isEmpty, text.utf8.allSatisfy({ $0 >= 0x30 && $0 <= 0x39 }) else {
-            return nil
-        }
-        return UInt64(text)
-    }
+    private var amount: UInt64? { parseTokenAmount(amountText, decimals: decimals) }
 
     /// This account's own default Orchard address, when the wallet's
     /// shielded account is bound.
@@ -437,17 +440,7 @@ struct ShieldedTokenSendSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    LabeledContent("Token", value: token?.displayName ?? balance.tokenId.toBase58String())
-                    if target.showsAccount {
-                        LabeledContent("From account", value: "\(balance.accountIndex)")
-                    }
-                    // In smallest units, the unit the amount is typed in.
-                    LabeledContent("Available", value: "\(balance.balance) (smallest units)")
-                    if balance.reservedBalance > 0 {
-                        LabeledContent("Pending", value: "\(balance.reservedBalance) (smallest units)")
-                    }
-                }
+                ShieldedTokenSpendSourceSection(target: target, token: token)
 
                 Section {
                     TextField("tdash1… or dash1…", text: $recipientText, axis: .vertical)
@@ -488,28 +481,24 @@ struct ShieldedTokenSendSheet: View {
                 }
 
                 Section {
-                    TextField("0", text: $amountText)
-                        .keyboardType(.numberPad)
+                    TextField(decimals > 0 ? "0.0" : "0", text: $amountText)
+                        .keyboardType(decimals > 0 ? .decimalPad : .numberPad)
                         .font(.body.monospacedDigit())
                         .accessibilityIdentifier("shieldedTokenSend.amount")
-                    if amountRefused {
-                        Text("Enter a whole number of the token's smallest unit: no decimal point or other characters.")
-                            .font(.caption)
-                            .foregroundColor(.red)
-                            .accessibilityIdentifier("shieldedTokenSend.precisionError")
-                    } else if let amount, let token {
-                        // Display only: the cached decimals may be stale or
-                        // from another network, so they never change what is
-                        // sent.
-                        Text("≈ \(formatTokenAmount(amount, decimals: token.decimals)) tokens if the token has \(token.decimals) decimals (from this app's token cache).")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .accessibilityIdentifier("shieldedTokenSend.decimalsHint")
-                    }
+                    ShieldedTokenSpendFeeLine(
+                        walletId: walletId,
+                        balance: balance,
+                        kind: .shieldedTransfer,
+                        amount: amount,
+                        accessibilityId: "shieldedTokenSend.fee"
+                    )
                 } header: {
-                    Text("Amount (smallest unit)")
+                    Text("Amount")
                 } footer: {
-                    Text("A whole number of the token's smallest unit, sent exactly as typed.")
+                    Text(
+                        token.map { "In \($0.displayName) units (\(decimals) decimals)." }
+                            ?? "In the token's smallest unit: the app does not have this token's decimals."
+                    )
                 }
 
                 Section {
@@ -588,6 +577,350 @@ struct ShieldedTokenSendSheet: View {
             // a second transfer.
             resultMayHaveGoneThrough = true
             resultMessage = "The transfer may have gone through; a shielded sync confirms it once it lands. Do not retry. (\(unconfirmed.localizedDescription))"
+            onSubmitted()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+// MARK: - Fee preview
+
+/// The fee line of a token pool spend form, from Rust's local preview
+/// (`walletManager.shieldedTokenSpendPreview`): the fee in credits and the
+/// notes the spend would take, or Rust's refusal when the spend would be
+/// refused on the wallet's notes. Asks again a moment after the amount stops
+/// changing (a newer amount cancels the pending ask). Never computes a fee.
+struct ShieldedTokenSpendFeeLine: View {
+    let walletId: Data
+    let balance: ShieldedTokenPoolBalance
+    let kind: ShieldedTokenPoolSpendKind
+    /// The amount in the token's smallest unit; `nil` while the field does
+    /// not parse.
+    let amount: UInt64?
+    let accessibilityId: String
+
+    @EnvironmentObject private var walletManager: PlatformWalletManager
+    @State private var state: FeeState = .idle
+
+    private enum FeeState: Equatable {
+        case idle
+        case loading
+        case quoted(ShieldedTokenSpendPreview)
+        case refused(String)
+    }
+
+    var body: some View {
+        content
+            .task(id: amount) { await quote() }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch state {
+        case .idle:
+            Text("Enter an amount to see the fee.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .accessibilityIdentifier(accessibilityId)
+        case .loading:
+            HStack {
+                Text("Fee")
+                Spacer()
+                ProgressView()
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier(accessibilityId)
+        case .quoted(let preview):
+            VStack(alignment: .leading, spacing: 2) {
+                LabeledContent("Fee", value: formatCreditsAsDash(preview.fee))
+                Text("Spends \(preview.tokenNotes) token \(preview.tokenNotes == 1 ? "note" : "notes"); \(preview.feeNotes) credit \(preview.feeNotes == 1 ? "note pays" : "notes pay") the fee.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier(accessibilityId)
+        case .refused(let message):
+            Text(message)
+                .font(.caption)
+                .foregroundColor(.orange)
+                .accessibilityIdentifier(accessibilityId)
+        }
+    }
+
+    private func quote() async {
+        guard let amount else {
+            state = .idle
+            return
+        }
+        state = .loading
+        // Debounce: a newer amount cancels this task during the wait.
+        do {
+            try await Task.sleep(nanoseconds: 400_000_000)
+        } catch {
+            return
+        }
+        do {
+            let preview = try await walletManager.shieldedTokenSpendPreview(
+                walletId: walletId,
+                account: balance.accountIndex,
+                dataContractId: balance.dataContractId,
+                tokenContractPosition: balance.tokenContractPosition,
+                kind: kind,
+                amount: amount
+            )
+            guard !Task.isCancelled else { return }
+            state = .quoted(preview)
+        } catch {
+            guard !Task.isCancelled else { return }
+            state = .refused(error.localizedDescription)
+        }
+    }
+}
+
+/// The token, account and balances at the top of a token pool spend form.
+struct ShieldedTokenSpendSourceSection: View {
+    let target: ShieldedTokenSpendTarget
+    let token: PersistentToken?
+
+    var body: some View {
+        Section {
+            LabeledContent("Token", value: token?.displayName ?? target.balance.tokenId.toBase58String())
+            if target.showsAccount {
+                LabeledContent("From account", value: "\(target.balance.accountIndex)")
+            }
+            LabeledContent(
+                "Available",
+                value: ShieldedTokenPoolsView.amountText(target.balance.balance, token: token)
+            )
+            if target.balance.reservedBalance > 0 {
+                LabeledContent(
+                    "Pending",
+                    value: ShieldedTokenPoolsView.amountText(target.balance.reservedBalance, token: token)
+                )
+            }
+        }
+    }
+}
+
+// MARK: - Unshield
+
+/// Move tokens from one account's notes in a token's shielded pool into an
+/// existing identity's token balance (type 27, SH-27) through
+/// `walletManager.shieldedTokenUnshield`. Rust decides everything, as for
+/// `ShieldedTokenSendSheet`. The form only reads the recipient identity (one
+/// of this wallet's identities, or a pasted Base58 id decoded with
+/// `Data.identifier(fromBase58:)`) and the amount, and shows Rust's fee
+/// preview and answer.
+struct ShieldedTokenUnshieldSheet: View {
+    let walletId: Data
+    let target: ShieldedTokenSpendTarget
+    /// The app's local record of the token, for its name and decimals only.
+    let token: PersistentToken?
+    let onSubmitted: () -> Void
+
+    @EnvironmentObject private var walletManager: PlatformWalletManager
+    @Environment(\.dismiss) private var dismiss
+    @Query private var identities: [PersistentIdentity]
+
+    @State private var recipientText = ""
+    @State private var amountText = ""
+    @State private var isSubmitting = false
+    /// Rust accepted the unshield, or it may have gone through: either way
+    /// the form must not send it again.
+    @State private var resultMessage: String?
+    @State private var resultMayHaveGoneThrough = false
+    @State private var errorMessage: String?
+
+    init(
+        walletId: Data,
+        target: ShieldedTokenSpendTarget,
+        token: PersistentToken?,
+        onSubmitted: @escaping () -> Void
+    ) {
+        self.walletId = walletId
+        self.target = target
+        self.token = token
+        self.onSubmitted = onSubmitted
+        _identities = Query(
+            filter: #Predicate<PersistentIdentity> { $0.wallet?.walletId == walletId }
+        )
+    }
+
+    private var balance: ShieldedTokenPoolBalance { target.balance }
+
+    /// The token's decimals when the app has the token; otherwise amounts
+    /// are typed in the token's smallest unit.
+    private var decimals: Int { token?.decimals ?? 0 }
+
+    /// The 32-byte identity id the recipient field decodes to.
+    private var recipientId: Data? {
+        let trimmed = recipientText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let id = Data.identifier(fromBase58: trimmed),
+              id.count == 32
+        else { return nil }
+        return id
+    }
+
+    /// The wallet's identity the recipient field names, for its name.
+    private var recipientIdentity: PersistentIdentity? {
+        guard let recipientId else { return nil }
+        return identities.first { $0.identityId == recipientId }
+    }
+
+    private var amount: UInt64? { parseTokenAmount(amountText, decimals: decimals) }
+
+    private var canSubmit: Bool {
+        !isSubmitting && resultMessage == nil && recipientId != nil && amount != nil
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                ShieldedTokenSpendSourceSection(target: target, token: token)
+
+                Section {
+                    TextField("Identity ID (Base58)", text: $recipientText, axis: .vertical)
+                        .font(.caption.monospaced())
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .accessibilityIdentifier("shieldedTokenUnshield.recipient")
+                    HStack {
+                        Button {
+                            if let pasted = UIPasteboard.general.string {
+                                recipientText = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
+                            }
+                        } label: {
+                            Label("Paste", systemImage: "doc.on.clipboard")
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityIdentifier("shieldedTokenUnshield.pasteButton")
+                        Spacer()
+                        if !identities.isEmpty {
+                            Menu {
+                                ForEach(identities, id: \.identityId) { identity in
+                                    Button(identity.displayName) {
+                                        recipientText = identity.identityIdBase58
+                                    }
+                                }
+                            } label: {
+                                Label("My Identities", systemImage: "person.crop.circle")
+                            }
+                            .accessibilityIdentifier("shieldedTokenUnshield.identityPicker")
+                        }
+                    }
+                    if let recipientIdentity {
+                        Text(recipientIdentity.displayName)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .accessibilityIdentifier("shieldedTokenUnshield.recipientName")
+                    } else if !recipientText.isEmpty, recipientId == nil {
+                        Text("Not a Base58 identity id.")
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                } header: {
+                    Text("Recipient Identity")
+                } footer: {
+                    Text("The tokens leave the shielded pool and are added to this identity's token balance, where they are public.")
+                }
+
+                Section {
+                    TextField(decimals > 0 ? "0.0" : "0", text: $amountText)
+                        .keyboardType(decimals > 0 ? .decimalPad : .numberPad)
+                        .font(.body.monospacedDigit())
+                        .accessibilityIdentifier("shieldedTokenUnshield.amount")
+                    ShieldedTokenSpendFeeLine(
+                        walletId: walletId,
+                        balance: balance,
+                        kind: .unshield,
+                        amount: amount,
+                        accessibilityId: "shieldedTokenUnshield.fee"
+                    )
+                } header: {
+                    Text("Amount")
+                } footer: {
+                    Text(
+                        token.map { "In \($0.displayName) units (\(decimals) decimals). The fee is paid from this account's shielded credit balance." }
+                            ?? "In the token's smallest unit: the app does not have this token's decimals. The fee is paid from this account's shielded credit balance."
+                    )
+                }
+
+                Section {
+                    Button {
+                        Task { await submit() }
+                    } label: {
+                        HStack {
+                            Text(isSubmitting ? "Proving and broadcasting…" : "Unshield")
+                            if isSubmitting {
+                                Spacer()
+                                ProgressView()
+                            }
+                        }
+                    }
+                    .disabled(!canSubmit)
+                    .accessibilityIdentifier("shieldedTokenUnshield.submit")
+                }
+
+                if let resultMessage {
+                    Section {
+                        Text(resultMessage)
+                            .font(.callout)
+                            .foregroundColor(resultMayHaveGoneThrough ? .orange : .green)
+                            .accessibilityIdentifier("shieldedTokenUnshield.result")
+                    }
+                }
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage)
+                            .font(.callout)
+                            .foregroundColor(.red)
+                            .accessibilityIdentifier("shieldedTokenUnshield.error")
+                    }
+                }
+            }
+            .accessibilityIdentifier("shieldedTokenUnshield.form")
+            .navigationTitle("Unshield Tokens")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(resultMessage == nil ? "Cancel" : "Done") { dismiss() }
+                        .disabled(isSubmitting)
+                        .accessibilityIdentifier("shieldedTokenUnshield.close")
+                }
+            }
+            .interactiveDismissDisabled(isSubmitting)
+        }
+    }
+
+    private func submit() async {
+        guard let recipient = recipientId, let amount else { return }
+        isSubmitting = true
+        errorMessage = nil
+        defer { isSubmitting = false }
+        do {
+            // Per-operation spend authority: the resolver fires for this
+            // spend only.
+            try await walletManager.shieldedTokenUnshield(
+                walletId: walletId,
+                resolver: MnemonicResolver(),
+                account: balance.accountIndex,
+                dataContractId: balance.dataContractId,
+                tokenContractPosition: balance.tokenContractPosition,
+                recipientIdentityId: recipient,
+                amount: amount
+            )
+            resultMayHaveGoneThrough = false
+            resultMessage = "Submitted, pending until the next shielded sync. Do not send it again."
+            onSubmitted()
+        } catch let unconfirmed as PlatformWalletError
+            where SendViewModel.mayHaveGoneThrough(unconfirmed) {
+            // The unshield may already be on chain and Rust keeps its notes
+            // reserved: report it without inviting a retry, which would sign
+            // a second unshield.
+            resultMayHaveGoneThrough = true
+            resultMessage = "The unshield may have gone through; a shielded sync confirms it once it lands. Do not retry. (\(unconfirmed.localizedDescription))"
             onSubmitted()
         } catch {
             errorMessage = error.localizedDescription
