@@ -30,6 +30,7 @@ permissions:
   pull-requests: write
   issues: write
   statuses: write
+  id-token: write
 jobs:
   policy:
     # Only comments this controller actually reads can change an outcome, and a

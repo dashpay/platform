@@ -105,7 +105,8 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome =
-            run_chain_for_strategy(&mut platform, 5, strategy, config, 15, &mut None, &mut None).await;
+            run_chain_for_strategy(&mut platform, 5, strategy, config, 15, &mut None, &mut None)
+                .await;
 
         // Count successful shield transitions across all blocks
         let shield_count = outcome
@@ -156,7 +157,8 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome =
-            run_chain_for_strategy(&mut platform, 5, strategy, config, 15, &mut None, &mut None).await;
+            run_chain_for_strategy(&mut platform, 5, strategy, config, 15, &mut None, &mut None)
+                .await;
 
         let shield_from_asset_lock_count = outcome
             .state_transition_results_per_block
@@ -230,7 +232,8 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome =
-            run_chain_for_strategy(&mut platform, 8, strategy, config, 15, &mut None, &mut None).await;
+            run_chain_for_strategy(&mut platform, 8, strategy, config, 15, &mut None, &mut None)
+                .await;
 
         // Count all shielded transitions
         let shield_count = outcome
@@ -317,7 +320,8 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome =
-            run_chain_for_strategy(&mut platform, 8, strategy, config, 15, &mut None, &mut None).await;
+            run_chain_for_strategy(&mut platform, 8, strategy, config, 15, &mut None, &mut None)
+                .await;
 
         let shield_count = outcome
             .state_transition_results_per_block
@@ -403,7 +407,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        ).await;
+        )
+        .await;
 
         // Verify at least one shield succeeded (prerequisite for anchors)
         let shield_count = outcome
@@ -638,7 +643,8 @@ mod tests {
             .build_with_mock_rpc();
 
         let outcome =
-            run_chain_for_strategy(&mut platform, 8, strategy, config, 15, &mut None, &mut None).await;
+            run_chain_for_strategy(&mut platform, 8, strategy, config, 15, &mut None, &mut None)
+                .await;
 
         let shield_count = outcome
             .state_transition_results_per_block

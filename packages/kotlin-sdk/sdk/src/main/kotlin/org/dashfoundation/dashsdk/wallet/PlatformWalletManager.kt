@@ -1793,7 +1793,7 @@ class PlatformWalletManager(
      * Shield from Platform balance (Type 15) — port of Swift's
      * `shieldedShield`. Spends [amount] credits from the wallet's
      * [paymentAccount] Platform-Payment addresses (auto-selected in
-     * ascending derivation order) into its own bound shielded pool
+     * lexicographic Platform-address order) into its own bound shielded pool
      * ([shieldedAccount]). Signed by the Keystore address signer
      * ([signerHandle]); self-shield only (Rust always targets this wallet's
      * own default Orchard address, so there is no recipient parameter).
@@ -1829,6 +1829,89 @@ class PlatformWalletManager(
     }
 
     /**
+     * Platform → EXTERNAL shielded (Type 15) — port of Swift's
+     * `PlatformWalletManager.shieldedShieldToRecipient(walletId:shieldedAccount:paymentAccount:recipientRaw43:amount:memo:addressSigner:)`
+     * in
+     * packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PlatformWalletManagerShieldedSync.swift.
+     *
+     * This is the same Type 15 shield as [shieldedShield], with the same
+     * input selection (the [paymentAccount] Platform-Payment addresses,
+     * lexicographic Platform-address order), the same fees, the same error
+     * shapes and the same Keystore address signer ([signerHandle]). The only
+     * difference is that the note is assigned to [recipientRaw43], a third
+     * party's raw 43-byte Orchard payment address, instead of this wallet's
+     * own default address.
+     *
+     * The recipient must actually be a third party: Rust rejects an address
+     * the account's own IVK recognizes (default or any diversified index).
+     * Self-shields must use [shieldedShield].
+     *
+     * A bound shielded account ([shieldedAccount]) is still required: the
+     * send is OVK-encrypted to that account and recorded there, which is how
+     * the wallet's own scan later shows it as sent history.
+     *
+     * [memo] is optional: null or empty means no memo. When set, its UTF-8
+     * byte length must be at most 32. Rust owns these rules (and the 36-byte
+     * on-chain encoding), so an over-long memo surfaces as a native error,
+     * not a Kotlin precondition.
+     *
+     * Throws
+     * [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed]
+     * when the broadcast was accepted but its execution result couldn't be
+     * confirmed. The shield may already be on chain, so the caller must NOT
+     * retry: a retry rebuilds the bundle and could double-pay. The next sync
+     * reconciles the outcome. A shield spends no notes, so nothing is
+     * reserved wallet-side.
+     *
+     * Cancellation: if the caller is cancelled after the native call has
+     * completed, this still returns normally (see
+     * [opReturningCompletedResult]), so a completed shield is never hidden.
+     * Handle the return before the next suspension point.
+     *
+     * Blocks for the ~30s Halo 2 proof.
+     *
+     * @param walletId the 32-byte wallet id.
+     * @param recipientRaw43 the recipient's raw 43-byte Orchard payment
+     *   address (11-byte diversifier + 32-byte pk_d), the same shape
+     *   [shieldedTransfer] takes.
+     * @param amount credits to shield (1 DASH = 1e11). Negative values are
+     *   rejected here; Rust rejects zero.
+     * @param memo optional UTF-8 memo for the recipient's note.
+     */
+    suspend fun shieldedShieldToRecipient(
+        walletId: ByteArray,
+        recipientRaw43: ByteArray,
+        amount: Long,
+        shieldedAccount: Int = 0,
+        paymentAccount: Int = 0,
+        memo: String? = null,
+    ): Unit = teardownGate.opReturningCompletedResult {
+        // Sign check only, before the native unsigned cast; zero is Rust's call.
+        require(amount >= 0) { "amount must be non-negative, got $amount" }
+        require(shieldedAccount >= 0) {
+            "shieldedAccount must be non-negative, got $shieldedAccount"
+        }
+        require(paymentAccount >= 0) {
+            "paymentAccount must be non-negative, got $paymentAccount"
+        }
+        require(recipientRaw43.size == 43) {
+            "recipientRaw43 must be exactly 43 bytes, got ${recipientRaw43.size}"
+        }
+        mapNativeErrors {
+            FundingNative.shieldedShieldToRecipient(
+                managerHandle,
+                walletId,
+                shieldedAccount,
+                paymentAccount,
+                recipientRaw43,
+                amount,
+                memo,
+                signerHandle,
+            )
+        }
+    }
+
+    /**
      * Shield from a Platform IDENTITY's balance (Type 21). Sibling of
      * [shieldedShield] with the identity, rather than the transparent
      * Platform-Payment addresses, as the funding side: [amount] credits move
@@ -1845,12 +1928,22 @@ class PlatformWalletManager(
      * default Orchard address, so there is no recipient parameter). Blocks for
      * the ~30s Halo 2 proof; the note arrives on the next shielded sync pass.
      *
+     * Refused before anything is signed or broadcast, so nothing was debited:
+     *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.InsufficientIdentityCredits]:
+     *    the identity's proved balance cannot cover [amount] plus the
+     *    admission fee floor. The error reports the required and available
+     *    credits, not the final metered fee, which can be lower.
+     *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentityBalanceUnavailable]:
+     *    Platform has no balance for the identity yet; retry later.
+     *
      * @param walletId the 32-byte wallet id.
      * @param identityId the 32-byte funding identity id.
      * @param amount credits to shield (1 DASH = 1e11).
-     * @return the identity's proven post-debit credit balance; the wallet only
-     *   confirms on the identity's own balance proof, any other result throws
-     *   the shielded-spend-unconfirmed error (do not resubmit).
+     * @return the funding identity's credit balance from the verified snapshot,
+     *   or a newer balance already known to the wallet. This balance does not
+     *   confirm the debit; the shielded scan confirms the activity separately.
+     *   An unconfirmed outcome throws the shielded-spend-unconfirmed error
+     *   (do not resubmit).
      */
     suspend fun shieldedShieldFromIdentity(
         walletId: ByteArray,
@@ -1872,6 +1965,100 @@ class PlatformWalletManager(
                 shieldedAccount,
                 identityId,
                 amount,
+                signerHandle,
+            )
+        }
+    }
+
+    /**
+     * Identity → EXTERNAL shielded (Type 21). The same `ShieldFromIdentity`
+     * transition as [shieldedShieldFromIdentity], with the same identity
+     * debit ([amount] plus the metered fee plus the shielded compute fee),
+     * the same Keystore identity signer ([signerHandle], TRANSFER key) and
+     * the same error shapes. The only difference is that the note is
+     * assigned to [recipientRaw43], a third party's raw 43-byte Orchard
+     * payment address, instead of this wallet's own default address.
+     *
+     * The recipient must actually be a third party: Rust rejects an address
+     * the account's own IVK recognizes (default or any diversified index).
+     * Self-shields must use [shieldedShieldFromIdentity]. A bound shielded
+     * account ([shieldedAccount]) is still required: the send is
+     * OVK-encrypted to that account and recorded there, which is how the
+     * wallet's own scan later shows it as sent history.
+     *
+     * [memo] is optional: null or empty means no memo. When set, its UTF-8
+     * byte length must be at most 32. Rust owns these rules, as it owns the
+     * zero-amount rejection, so a violation surfaces as a native error, not a
+     * Kotlin precondition.
+     *
+     * Refused before anything is signed or broadcast, so nothing was debited:
+     *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.InsufficientIdentityCredits]:
+     *    the identity's proved balance cannot cover [amount] plus the
+     *    admission fee floor. The error reports the required and available
+     *    credits, not the final metered fee, which can be lower.
+     *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentityBalanceUnavailable]:
+     *    Platform has no balance for the identity yet; retry later.
+     *
+     * Do NOT retry on either of these errors; the original debit may have executed:
+     *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed]:
+     *    the transition may already have executed.
+     *  - [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.ShieldedIdentityDebitPending]:
+     *    an earlier identity debit is still unresolved, so this one was
+     *    never built or broadcast.
+     *
+     * Sync attempts reconciliation but can leave the debit unresolved. Use
+     * [shieldedIdentityDebitRecoveryRecords] to inspect its recovery state;
+     * a completed sync is not permission to resubmit the payment.
+     *
+     * Cancellation: if the native call successfully returns a balance,
+     * cancellation during the handoff does not discard it (see
+     * [opReturningCompletedResult]). Handle the result before the next
+     * suspension point.
+     *
+     * Blocks for the ~30s Halo 2 proof. A successful return does not confirm
+     * that this debit executed or that the recipient received the note. The
+     * wallet confirms the outgoing activity when shielded sync observes its
+     * note commitments on-chain. Do not use the returned balance as a receipt.
+     *
+     * @param walletId the 32-byte wallet id.
+     * @param identityId the 32-byte funding identity id; must be managed by
+     *   this wallet.
+     * @param recipientRaw43 the recipient's raw 43-byte Orchard payment
+     *   address (11-byte diversifier + 32-byte pk_d), the same shape
+     *   [shieldedTransfer] takes.
+     * @param amount credits to shield (1 DASH = 1e11).
+     * @param memo optional UTF-8 memo for the recipient's note.
+     * @return the funding identity's credit balance from the verified
+     *   snapshot, or a newer balance already known to the wallet.
+     */
+    suspend fun shieldedShieldFromIdentityToRecipient(
+        walletId: ByteArray,
+        identityId: ByteArray,
+        recipientRaw43: ByteArray,
+        amount: Long,
+        shieldedAccount: Int = 0,
+        memo: String? = null,
+    ): Long = teardownGate.opReturningCompletedResult {
+        require(identityId.size == 32) {
+            "identityId must be exactly 32 bytes, got ${identityId.size}"
+        }
+        require(recipientRaw43.size == 43) {
+            "recipientRaw43 must be exactly 43 bytes, got ${recipientRaw43.size}"
+        }
+        // Sign checks only, before the native unsigned casts; zero is Rust's call.
+        require(amount >= 0) { "amount must be non-negative, got $amount" }
+        require(shieldedAccount >= 0) {
+            "shieldedAccount must be non-negative, got $shieldedAccount"
+        }
+        mapNativeErrors {
+            FundingNative.shieldedShieldFromIdentityToRecipient(
+                managerHandle,
+                walletId,
+                shieldedAccount,
+                identityId,
+                recipientRaw43,
+                amount,
+                memo,
                 signerHandle,
             )
         }

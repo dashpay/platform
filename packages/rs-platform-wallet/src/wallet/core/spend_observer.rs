@@ -274,6 +274,7 @@ mod tests {
             balance: WalletCoreBalance::default(),
             account_balances: std::collections::BTreeMap::new(),
             addresses_derived: Vec::new(),
+            locked_outpoints: Vec::new(),
         }
     }
 
@@ -288,6 +289,7 @@ mod tests {
             balance: WalletCoreBalance::default(),
             account_balances: std::collections::BTreeMap::new(),
             addresses_derived: Vec::new(),
+            locked_outpoints: Vec::new(),
         }
     }
 

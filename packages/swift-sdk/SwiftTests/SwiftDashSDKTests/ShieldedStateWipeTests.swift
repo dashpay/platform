@@ -32,7 +32,7 @@ final class ShieldedStateWipeTests: XCTestCase {
     func testShouldDeclareTheCapabilityAndWireTheCallback() throws {
         let container = try DashModelContainer.createInMemory()
         let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
-        XCTAssertEqual(PlatformWalletPersistenceCapabilities.shieldedStateWipe, 1 << 16)
+        XCTAssertEqual(PlatformWalletPersistenceCapabilities.shieldedStateWipe, 1 << 17)
         XCTAssertEqual(
             PlatformWalletPersistenceCapabilities.shieldedStateWipe,
             UInt64(PLATFORM_WALLET_PERSISTENCE_CAPABILITY_SHIELDED_STATE_WIPE))

@@ -114,13 +114,13 @@ abstract class NativePersistenceBridge {
         const val CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long = 1L shl 15
 
         /**
-         * `PersistenceCapabilities::SHIELDED_STATE_WIPE` (bit 16,
-         * `0x10000`): the store deletes its shielded rows for a network when
+         * `PersistenceCapabilities::SHIELDED_STATE_WIPE` (bit 17,
+         * `0x20000`): the store deletes its shielded rows for a network when
          * native Clear asks ([onWipeShieldedState]). Native Clear refuses
          * without it. The one Kotlin home of this bit, aliased by the public
          * diagnostic mirror.
          */
-        const val CAPABILITY_SHIELDED_STATE_WIPE: Long = 1L shl 16
+        const val CAPABILITY_SHIELDED_STATE_WIPE: Long = 1L shl 17
 
         /**
          * Packed row widths of [onPersistPrivateContactScanState] and

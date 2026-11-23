@@ -11,16 +11,17 @@ use crate::handle::*;
 use crate::persistence::PLATFORM_WALLET_PERSISTENCE_CAPABILITY_SHIELDED_STATE_WIPE;
 use crate::persistence::{
     FFIPersister, FreePrivateContactScanStateFn, FreePrivateContactScanStateWalletsFn,
-    FreeTrackedMasternodesFn, LoadAssetLockOperationIdFn, LoadAssetLockShieldedRecipientFn,
-    LoadIdentityBalanceBlockTimeFn, LoadPrivateContactScanStateFn,
-    LoadPrivateContactScanStateWalletsFn, LoadTrackedMasternodesFn, PersistAssetLockOperationIdFn,
+    FreeTrackedMasternodesFn, FreeWalletLockedOutpointsFn, LoadAssetLockOperationIdFn,
+    LoadAssetLockShieldedRecipientFn, LoadIdentityBalanceBlockTimeFn,
+    LoadPrivateContactScanStateFn, LoadPrivateContactScanStateWalletsFn, LoadTrackedMasternodesFn,
+    LoadWalletLockedOutpointsFn, PersistAssetLockOperationIdFn,
     PersistAssetLockShieldedRecipientFn, PersistDpnsNameStatesFn,
     PersistIdentityBalanceBlockTimeFn, PersistPrivateContactScanStateFn,
     PersistTrackedMasternodesFn, PersistWalletChangesetChainLockHeightFn,
-    PersistWalletChangesetSweepsFn, PersistWalletChangesetUtxoVerdictsFn,
-    PersistWalletDashPayBackfillFn, PersistenceCallbacks, PersistenceCallbacksExtension,
-    PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks, WipeShieldedStateFn,
-    PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
+    PersistWalletChangesetOutpointLocksFn, PersistWalletChangesetSweepsFn,
+    PersistWalletChangesetUtxoVerdictsFn, PersistWalletDashPayBackfillFn, PersistenceCallbacks,
+    PersistenceCallbacksExtension, PersistenceCapabilitiesFFI, PersistenceExtensionCallbacks,
+    WipeShieldedStateFn, PLATFORM_WALLET_PERSISTENCE_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::runtime::runtime;
 use crate::types::{FFINetwork, Network};
@@ -409,6 +410,18 @@ unsafe fn persistence_extension_callbacks(
         load_private_contact_scan_state_wallets_free: slot!(
             on_load_private_contact_scan_state_wallets_free_fn,
             FreePrivateContactScanStateWalletsFn
+        ),
+        wallet_changeset_outpoint_locks: slot!(
+            on_persist_wallet_changeset_outpoint_locks_fn,
+            PersistWalletChangesetOutpointLocksFn
+        ),
+        load_wallet_locked_outpoints: slot!(
+            on_load_wallet_locked_outpoints_fn,
+            LoadWalletLockedOutpointsFn
+        ),
+        load_wallet_locked_outpoints_free: slot!(
+            on_load_wallet_locked_outpoints_free_fn,
+            FreeWalletLockedOutpointsFn
         ),
         wipe_shielded_state: slot!(on_wipe_shielded_state_fn, WipeShieldedStateFn),
     }

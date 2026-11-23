@@ -1296,10 +1296,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         &self,
         wallet_id: &WalletId,
     ) -> Option<ProviderMasternodeTxs> {
+        use crate::wallet::provider_key_at_index::PROVIDER_KEY_WINDOW;
         use key_wallet::managed_account::address_pool::PublicKeyType;
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-        // Default provider-key pre-derivation / scan window.
-        const PROVIDER_KEY_WINDOW: u32 = 20;
 
         // Scope the wallet-manager read lock so it's released before we
         // acquire the SPV client / engine locks for the DML snapshot — the
@@ -1414,15 +1413,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     false,
                 ) {
                     Ok(key) => {
-                        if let Ok(bytes) = <[u8; 48]>::try_from(key.public_key_bytes.as_slice()) {
-                            operator_index.insert(bytes, index);
-                        }
-                        if let Some(legacy) = key
-                            .legacy_public_key_bytes
-                            .as_deref()
-                            .and_then(|b| <[u8; 48]>::try_from(b).ok())
-                        {
-                            operator_index.insert(legacy, index);
+                        if let Some((basic, legacy)) = key.operator_key_forms() {
+                            operator_index.insert(basic, index);
+                            if let Some(legacy) = legacy {
+                                operator_index.insert(legacy, index);
+                            }
                         }
                     }
                     // First failure ⇒ no operator account (or unavailable) ⇒ stop.
@@ -2033,6 +2028,7 @@ pub(crate) mod txo_inventory_tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            tracked_collaterals: Default::default(),
             observed_input_conflicts: Default::default(),
             finalized_spends: Default::default(),
         };

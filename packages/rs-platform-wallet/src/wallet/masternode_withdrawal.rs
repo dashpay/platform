@@ -499,7 +499,7 @@ async fn broadcast_masternode_withdrawal(
     identity_id: Identifier,
     amount_credits: u64,
 ) -> Result<u64, PlatformWalletError> {
-    let delivery = broadcast_tracking_delivery(sdk, state_transition).await;
+    let delivery = broadcast_tracking_delivery(sdk, state_transition, None).await;
     settle_masternode_withdrawal(identity_id, amount_credits, delivery, || {
         state_transition.wait_for_affected_state::<StateTransitionProofResult>(sdk, None)
     })

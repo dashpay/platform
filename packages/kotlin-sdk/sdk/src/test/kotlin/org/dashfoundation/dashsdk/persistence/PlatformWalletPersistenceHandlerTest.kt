@@ -222,8 +222,8 @@ class PlatformWalletPersistenceHandlerTest {
 
         assertEquals(1, handler.persistenceCapabilitiesVersion())
         // The private contact request scan state is bit 15 (0x8000), the
-        // shielded state wipe bit 16 (0x10000).
-        assertEquals(0x18bbfL, handler.persistenceCapabilitiesBits())
+        // shielded state wipe bit 17 (0x20000).
+        assertEquals(0x28bbfL, handler.persistenceCapabilitiesBits())
         // Android has no pending-contact-crypto callback, so it must not
         // attest that semantic contract.
         assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x40L)
