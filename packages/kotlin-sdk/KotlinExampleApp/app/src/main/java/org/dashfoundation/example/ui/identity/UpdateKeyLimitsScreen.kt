@@ -653,6 +653,15 @@ private fun ChangeSection(opening: IdentityKeyLimitsUpdatePreview, state: Update
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        if (opening.currentExpiresAt != null && state.expiryPickable && state.restoredExpiryDropped) {
+            // Dropped on an earlier restore, when the picker could not offer it; shown until
+            // the person acts on Extend expiry.
+            Text(
+                "The expiry change you had started was dropped. Turn on Extend expiry to pick a date again.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         if (opening.currentExpiresAt != null && state.expiryPickable) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Text("Extend expiry", modifier = Modifier.weight(1f))
