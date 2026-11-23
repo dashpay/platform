@@ -38,6 +38,7 @@ use std::os::raw::c_char;
 use dash_sdk::platform::dashpay::PrivateContactRequest;
 use dash_sdk::platform::private_document_entries::PrivateDocumentEntries;
 use dash_sdk::platform::private_document_scan::PrivateDocumentScan;
+use dash_sdk::platform::private_document_seal::PrivateDocumentEntryRequest;
 use dpp::identity::{Identity, KeyID};
 use dpp::platform_value::BinaryData;
 use dpp::prelude::{DataContract, Identifier};
@@ -1329,6 +1330,23 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
             )
             .map_err(private_document_signer_error)
     }
+
+    async fn seal_private_document_entry(
+        &self,
+        sender_encryption_key_path: &key_wallet::bip32::DerivationPath,
+        request: &PrivateDocumentEntryRequest<'_>,
+        esk_seed: &[u8; 32],
+        platform_version: &PlatformVersion,
+    ) -> Result<BinaryData, PlatformWalletError> {
+        self.signer
+            .seal_private_document_entry(
+                sender_encryption_key_path,
+                request,
+                esk_seed,
+                platform_version,
+            )
+            .map_err(private_document_signer_error)
+    }
 }
 
 /// A signer failure of a private document operation, or of the receiving xpub
@@ -1340,9 +1358,8 @@ impl platform_wallet::ContactCryptoProvider for ResolverContactCryptoProvider {
 /// it; the rest are reported as the other provider methods report theirs.
 fn private_document_signer_error(error: MnemonicResolverSignerError) -> PlatformWalletError {
     match error {
-        MnemonicResolverSignerError::PrivateContactRequest(error) => {
-            PlatformWalletError::Sdk(error)
-        }
+        MnemonicResolverSignerError::PrivateContactRequest(error)
+        | MnemonicResolverSignerError::PrivateDocument(error) => PlatformWalletError::Sdk(error),
         error @ MnemonicResolverSignerError::NotFound => PlatformWalletError::Sdk(
             dash_sdk::Error::Protocol(ProtocolError::Generic(error.to_string())),
         ),
