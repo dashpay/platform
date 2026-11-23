@@ -236,16 +236,33 @@ internal fun voterRows(rows: List<IdentityEntity>): List<VoterRow> =
 
 /**
  * What this dialog knows of an identity's stored key, [checkedIdentifier]: [known] is what Rust
- * said to record for it from a check made here, saved or not, which stands in for the row's
- * record (a refusal whose write failed, or one Room has not delivered yet, still counts); and
+ * said to record for it from a check made here; [saved] whether that record was written; and
  * [finished] whether a check of it has finished since it was last picked. Picking the identity
- * again starts a new check with [finished] false and [known] kept.
+ * again starts a new check with [finished] false. How [known] counts against the row's record
+ * is [effectiveRecord]'s rule.
+ *
+ * @property recordBefore the row's record when that check started, so a saved [known] is
+ *   retired as soon as Room shows any change to it (this write, or a newer one).
  */
 internal data class PickedKeyCheckState(
     val checkedIdentifier: String,
     val known: MasternodeRecordedVotingKey? = null,
     val finished: Boolean = true,
+    val saved: Boolean = false,
+    val recordBefore: MasternodeRecordedVotingKey? = null,
 )
+
+/**
+ * The record that speaks for [state]'s stored key: the row's, unless this dialog learned
+ * something Room has not shown. A record that could not be saved stands for the dialog's life
+ * (Room will never show it); a saved one stands only until the row's record changes from what
+ * it was when the check started, after which Room, holding that write or a newer one, decides.
+ */
+internal fun effectiveRecord(state: VoterKeyState, picked: PickedKeyCheckState?): MasternodeRecordedVotingKey? {
+    val sameKey = picked?.takeIf { it.checkedIdentifier == state.identifier } ?: return state.recorded
+    val known = sameKey.known ?: return state.recorded
+    return if (!sameKey.saved || state.recorded == sameKey.recordBefore) known else state.recorded
+}
 
 /** Whether a stored key may be published as the voter, and if not, why. */
 internal enum class StoredVoterDecision {
@@ -278,7 +295,7 @@ internal fun storedVoterDecision(
     val identifier = state?.identifier ?: return StoredVoterDecision.UNREADABLE
     val address = state.storedAddress ?: return StoredVoterDecision.UNREADABLE
     val sameKey = picked?.takeIf { it.checkedIdentifier == identifier }
-    val keyUse = rules.use(sameKey?.known ?: state.recorded, address)
+    val keyUse = rules.use(effectiveRecord(state, picked), address)
     return when {
         !keyUse.canVote -> StoredVoterDecision.REFUSED
         keyUse.checkBeforeUse && sameKey?.finished != true -> StoredVoterDecision.AWAITING_CHECK
@@ -675,6 +692,9 @@ fun MasternodeVoterSection(
         } else {
             pickedChecks - hex
         }
+        // The record that speaks for the key now, and the row's, before this check.
+        val knownNow = effectiveRecord(selectedState, previous)
+        val recordBefore = selectedState.recorded
         checkingIdentityHex = hex
         val result = try {
             checkPickedVotingKeyIfNeeded(
@@ -683,7 +703,7 @@ fun MasternodeVoterSection(
                 networkRaw = networkAtStart.ffiValue,
                 identifier = identifier,
                 rules = rules,
-                known = previous?.known,
+                known = knownNow,
                 check = { proTxHash, address -> sdk.voting.checkMasternodeVotingKey(proTxHash, address) },
                 stillCurrent = {
                     appState.sdk.value === sdk && appState.currentNetwork.value == networkAtStart
@@ -697,17 +717,27 @@ fun MasternodeVoterSection(
         when (result) {
             is PickedVotingKeyCheck.Failed -> {
                 checkFailure = hex to result.message
-                pickedChecks = pickedChecks +
-                    (hex to PickedKeyCheckState(identifier, result.unsaved ?: previous?.known))
+                pickedChecks = pickedChecks + (
+                    hex to if (result.unsaved != null) {
+                        PickedKeyCheckState(identifier, result.unsaved, saved = false)
+                    } else {
+                        (previous ?: PickedKeyCheckState(identifier)).copy(finished = true)
+                    }
+                )
             }
             is PickedVotingKeyCheck.Recorded -> {
                 if (checkFailure?.first == hex) checkFailure = null
-                pickedChecks = pickedChecks +
-                    (hex to PickedKeyCheckState(identifier, result.record ?: previous?.known))
+                pickedChecks = pickedChecks + (
+                    hex to if (result.record != null) {
+                        PickedKeyCheckState(identifier, result.record, saved = true, recordBefore = recordBefore)
+                    } else {
+                        (previous ?: PickedKeyCheckState(identifier)).copy(finished = true)
+                    }
+                )
             }
             PickedVotingKeyCheck.NotNeeded -> {
                 if (checkFailure?.first == hex) checkFailure = null
-                pickedChecks = pickedChecks + (hex to PickedKeyCheckState(identifier, previous?.known))
+                pickedChecks = pickedChecks + (hex to (previous ?: PickedKeyCheckState(identifier)).copy(finished = true))
             }
             PickedVotingKeyCheck.Dropped -> Unit
         }
@@ -747,7 +777,7 @@ fun MasternodeVoterSection(
             if (!usesTypedInput) {
                 // A record that could not be saved stands in for the row's until it is.
                 val shownState = selectedState?.let { state ->
-                    selectedPicked?.known?.let { state.copy(recorded = it) } ?: state
+                    state.copy(recorded = effectiveRecord(state, selectedPicked))
                 }
                 VotingKeyCheckStatus(
                     state = shownState,
