@@ -7085,7 +7085,7 @@ fn build_unused_asset_locks(
     Ok(map)
 }
 
-fn funding_type_from_u8(
+pub(crate) fn funding_type_from_u8(
     b: u8,
 ) -> Result<
     key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType,
@@ -7108,7 +7108,7 @@ fn funding_type_from_u8(
     })
 }
 
-fn status_from_u8(b: u8) -> Result<platform_wallet::AssetLockStatus, PersistenceError> {
+pub(crate) fn status_from_u8(b: u8) -> Result<platform_wallet::AssetLockStatus, PersistenceError> {
     use platform_wallet::AssetLockStatus;
     Ok(match b {
         0 => AssetLockStatus::Built,

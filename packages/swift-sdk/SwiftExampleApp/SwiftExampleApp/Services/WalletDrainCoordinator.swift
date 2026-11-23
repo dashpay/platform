@@ -212,22 +212,39 @@ final class WalletDrainCoordinator: ObservableObject {
         return UUID(uuidString: String(value.dropFirst(controllerOperationIdPrefix.count)))
     }
 
-    /// The row rule. A running attempt wins; otherwise only an outpoint
-    /// from a `pending` report allows a spend, and that spend is an
-    /// exact-outpoint resume. Any other row can only read the status again,
-    /// which for a finished one also retries removing its marker.
+    /// The row rule, asked of Rust (`WalletDrainRules.recoveryAction`). A
+    /// running attempt wins; otherwise only an outpoint from a `pending`
+    /// report allows a spend, and that spend is an exact-outpoint resume.
+    /// Any other row can only read the status again, which for a finished
+    /// one also retries removing its marker.
     nonisolated static func rowAction(
         controllerPhase: ShieldedFundFromAssetLockController.Phase?,
         reportedState: WalletDrainOutcome.State?,
         outpoint: WalletDrainOutpoint?
     ) -> RowAction {
+        let attemptInFlight: Bool
         if case .inFlight? = controllerPhase {
+            attemptInFlight = true
+        } else {
+            attemptInFlight = false
+        }
+        // `reportedState` is `nil` before any read and after a failed one;
+        // the entry keeps no other trace of a read, so `nil` is "no read".
+        let action = WalletDrainRules.recoveryAction(
+            attemptInFlight: attemptInFlight,
+            lastRead: reportedState.map { .reported($0) },
+            readNamedAssetLock: outpoint != nil
+        )
+        switch action {
+        case .inProgress:
             return .inProgress
-        }
-        if reportedState == .pending, let outpoint {
+        case .resume:
+            // Rust offers a resume only for a read that named a lock.
+            guard let outpoint else { return .checkAgain }
             return .resume(outpoint)
+        case .checkAgain:
+            return .checkAgain
         }
-        return .checkAgain
     }
 
     /// The row's status line, from the entry and the live controller phase.
@@ -260,35 +277,42 @@ final class WalletDrainCoordinator: ObservableObject {
         }
     }
 
-    /// The marker rule. `completed` is done. `notSent` from a successful
-    /// durable read means nothing was dispatched, unless an attempt started
-    /// while the read was in progress (its dispatch may postdate the read).
-    /// `pending` and a failed read keep the marker.
+    /// The marker rule, asked of Rust (`WalletDrainRules.keepsStoredId`).
+    /// `completed` is done. `notSent` from a successful durable read means
+    /// nothing was dispatched, unless an attempt started while the read was
+    /// in progress (its dispatch may postdate the read). `pending` and a
+    /// failed read keep the marker.
     nonisolated static func markerDecision(
         for read: StatusRead,
         attemptOverlappedRead: Bool
     ) -> MarkerDecision {
+        let sdkRead: WalletDrainStatusRead
         switch read {
-        case .reported(.completed):
-            return .forget
-        case .reported(.notSent):
-            return attemptOverlappedRead ? .keep : .forget
-        case .reported(.pending), .failed:
-            return .keep
+        case .reported(let state):
+            sdkRead = .reported(state)
+        case .failed:
+            sdkRead = .failed
         }
+        return WalletDrainRules.keepsStoredId(after: sdkRead, attemptOverlappedRead: attemptOverlappedRead)
+            ? .keep
+            : .forget
     }
 
     /// The error a finished attempt throws, or `nil` when Rust reported it
-    /// completed (even if it also carried an error, such as "already
-    /// consumed" for a repeated operation id).
+    /// finished (`WalletDrainRules.attemptFinished`: `completed`, even if it
+    /// also carried an error, such as "already consumed" for a repeated
+    /// operation id).
     nonisolated static func attemptError(for outcome: WalletDrainOutcome) -> WalletDrainAttemptError? {
+        if WalletDrainRules.attemptFinished(outcome.state) {
+            return nil
+        }
         let rustText = outcome.error?.localizedDescription
         switch outcome.state {
-        case .completed:
-            return nil
         case .notSent:
             return WalletDrainAttemptError(message: rustText ?? "Nothing was sent.")
-        case .pending:
+        case .pending, .completed:
+            // `completed` lands here only if the rule call itself failed:
+            // shown as unfinished, the fail-closed reading.
             let notice = "This transfer is not finished: resume it from the wallet screen "
                 + "and do not start a new Max."
             let message = rustText.map { "\($0) \(notice)" } ?? notice

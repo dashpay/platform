@@ -105,6 +105,14 @@ class Sdk private constructor(
         org.dashfoundation.dashsdk.voting.MultipleChoiceProposals(this)
     }
 
+    /**
+     * Contract moderation and fee pot reads (protocol version 14); mirrors the Swift SDK's
+     * `SDK+ContractModeration.swift`.
+     */
+    val contractModeration: org.dashfoundation.dashsdk.moderation.ContractModeration by lazy {
+        org.dashfoundation.dashsdk.moderation.ContractModeration(this)
+    }
+
     /** Evonode proposed-epoch-block queries. */
     val evonodes: org.dashfoundation.dashsdk.queries.Evonodes by lazy {
         org.dashfoundation.dashsdk.queries.Evonodes(this)
@@ -118,6 +126,14 @@ class Sdk private constructor(
     /** Group (multi-party control) read queries. */
     val groups: org.dashfoundation.dashsdk.queries.Groups by lazy {
         org.dashfoundation.dashsdk.queries.Groups(this)
+    }
+
+    /**
+     * Blocks with their state transitions and a transition's status by hash (protocol
+     * version 15) — mirrors Swift's `SDK.getBlocks` and its siblings.
+     */
+    val blocks: org.dashfoundation.dashsdk.queries.PlatformBlocks by lazy {
+        org.dashfoundation.dashsdk.queries.PlatformBlocks(this)
     }
 
     /**

@@ -17,9 +17,11 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.persistence.DashDatabase
+import org.dashfoundation.example.services.shielded.asWalletDrainWallet
 import org.dashfoundation.example.state.AppState
 import org.dashfoundation.example.state.AppUiState
 import org.dashfoundation.example.util.Base58
+import org.dashfoundation.example.util.hexToBytes
 
 private val Context.preferencesStore by preferencesDataStore(name = "example_prefs")
 
@@ -125,6 +127,21 @@ class AppContainer(private val context: Context) {
         )
 
     /**
+     * Core to shielded "Max" transfers: the stored operation ids and what
+     * Rust last reported for each. Port of the `WalletDrainCoordinator` iOS
+     * hosts on `PlatformWalletManager`. App-scoped so a transfer survives
+     * its screen, and reads the SDK database's `wallet_drain_operations`
+     * table, so a stored id survives the process.
+     */
+    val walletDrainCoordinator =
+        org.dashfoundation.example.services.shielded.WalletDrainCoordinator(
+            store = org.dashfoundation.example.services.shielded.RoomWalletDrainOperationStore(
+                database.walletDrainOperationDao(),
+            ),
+            fundingCoordinator = shieldedFundCoordinator,
+        )
+
+    /**
      * Ephemeral pricing / purchase-eligibility for the state-transition
      * catalog — port of `TransitionState.swift`. App-scoped (the Swift
      * `@StateObject` lives on the app) so it survives category ↔ detail
@@ -179,6 +196,12 @@ class AppContainer(private val context: Context) {
         )
         platformBalanceSyncService.configure(manager)
 
+        // Ask Rust what became of every Max transfer stored before the last
+        // process ended (← the launch reconcile in `SwiftExampleAppApp.swift`).
+        // Its own coroutine: each read loads the wallet list from the store,
+        // and activation must not wait on that.
+        applicationScope.launch { reconcileWalletDrains(manager) }
+
         // Bind the wallet-scoped services against the deterministic first
         // wallet now, and re-bind whenever the wallet set changes (create /
         // import / remove) so a wallet created mid-session binds and starts
@@ -214,6 +237,28 @@ class AppContainer(private val context: Context) {
                     ).takeIf { p.isSyncing },
                 )
             }
+        }
+    }
+
+    /**
+     * Read the status of every stored Max transfer of [manager]'s network
+     * whose wallet is loaded. Sends nothing.
+     */
+    private suspend fun reconcileWalletDrains(
+        manager: org.dashfoundation.dashsdk.wallet.PlatformWalletManager,
+    ) {
+        if (!shieldedService.isAvailable) return
+        try {
+            walletDrainCoordinator.refreshFromStore()
+            walletDrainCoordinator.reconcile(
+                network = manager.network,
+                walletIds = manager.wallets.value.keys.map { it.hexToBytes() },
+                wallet = manager.asWalletDrainWallet(),
+            )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "Failed to reconcile saved Max transfers", e)
         }
     }
 

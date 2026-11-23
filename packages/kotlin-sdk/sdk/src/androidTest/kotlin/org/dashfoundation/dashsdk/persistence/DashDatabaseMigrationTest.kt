@@ -740,13 +740,87 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
+    /**
+     * v16 -> v17 (Core to shielded "Max"): the nullable
+     * `asset_locks.operationId` column with its unique
+     * `(walletId, operationId)` index, and the `wallet_drain_operations`
+     * table. A lock stored before the migration keeps every column and has
+     * no operation id; afterwards an id is stored once per wallet, and
+     * locks without one are not constrained by the index.
+     */
+    @Test
+    fun migrate16To17AddsAssetLockOperationIdsAndWalletDrainOperations() {
+        helper.createDatabase(dbName, 16).apply {
+            execSQL(
+                "INSERT INTO asset_locks (outPointHex, walletId, transactionBytes, fundingTypeRaw, " +
+                    "identityIndexRaw, accountIndexRaw, amountDuffs, statusRaw, createdAt, updatedAt) " +
+                    "VALUES ('aa:0', x'01', x'0102', 5, 0, 0, 100000, 1, 0, 0)",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 17, true, DashDatabase.MIGRATION_16_17)
+
+        db.query(
+            "SELECT amountDuffs, statusRaw, operationId FROM asset_locks WHERE outPointHex = 'aa:0'",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(100_000L, c.getLong(0))
+            assertEquals(1, c.getInt(1))
+            assertTrue("no lock built before the migration belongs to a drain", c.isNull(2))
+        }
+        db.query("SELECT COUNT(*) FROM wallet_drain_operations").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(0, c.getInt(0))
+        }
+
+        // A second lock without an id: NULLs are distinct in the unique index.
+        db.execSQL(
+            "INSERT INTO asset_locks (outPointHex, walletId, transactionBytes, fundingTypeRaw, " +
+                "identityIndexRaw, accountIndexRaw, amountDuffs, statusRaw, createdAt, updatedAt) " +
+                "VALUES ('bb:0', x'01', x'0102', 5, 0, 0, 1, 0, 0, 0)",
+        )
+        db.execSQL("UPDATE asset_locks SET operationId = x'0A' WHERE outPointHex = 'aa:0'")
+        var refused = false
+        try {
+            db.execSQL("UPDATE asset_locks SET operationId = x'0A' WHERE outPointHex = 'bb:0'")
+        } catch (e: android.database.sqlite.SQLiteConstraintException) {
+            refused = true
+        }
+        assertTrue("one lock per operation id within a wallet", refused)
+        // Another wallet may carry the same bytes.
+        db.execSQL(
+            "INSERT INTO asset_locks (outPointHex, walletId, transactionBytes, fundingTypeRaw, " +
+                "identityIndexRaw, accountIndexRaw, amountDuffs, statusRaw, operationId, createdAt, updatedAt) " +
+                "VALUES ('cc:0', x'02', x'0102', 5, 0, 0, 1, 0, x'0A', 0, 0)",
+        )
+
+        db.execSQL(
+            "INSERT INTO wallet_drain_operations (operationId, walletId, networkRaw, " +
+                "fundingAccountIndex, recipientRaw43, createdAtMillis) " +
+                "VALUES (x'0A', x'01', 1, 0, x'09', 1700000000000)",
+        )
+        db.query(
+            "SELECT walletId, networkRaw, fundingAccountIndex, recipientRaw43, createdAtMillis " +
+                "FROM wallet_drain_operations WHERE operationId = x'0A'",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue(byteArrayOf(1).contentEquals(c.getBlob(0)))
+            assertEquals(1, c.getInt(1))
+            assertEquals(0, c.getInt(2))
+            assertTrue(byteArrayOf(9).contentEquals(c.getBlob(3)))
+            assertEquals(1_700_000_000_000L, c.getLong(4))
+        }
+        db.close()
+    }
+
     /** The requested contiguous path from the pre-u64 v4 schema to latest. */
     @Test
     fun migrate4ToLatest() {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            16,
+            17,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
@@ -760,16 +834,17 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_13_14,
             DashDatabase.MIGRATION_14_15,
             DashDatabase.MIGRATION_15_16,
+            DashDatabase.MIGRATION_16_17,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v16 schema. */
+    /** The full chain from v1 must also land on a valid v17 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            16,
+            17,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -786,6 +861,7 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_13_14,
             DashDatabase.MIGRATION_14_15,
             DashDatabase.MIGRATION_15_16,
+            DashDatabase.MIGRATION_16_17,
         ).close()
     }
 }

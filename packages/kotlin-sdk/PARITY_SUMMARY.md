@@ -10,15 +10,15 @@ Capabilities tracked: **42**
 | --- | --- | ---: | ---: | ---: | ---: |
 | Swift | SDK | 25 | 15 | 1 | 1 |
 | Swift | Example app | 6 | 26 | 1 | 9 |
-| Kotlin | SDK | 17 | 16 | 8 | 1 |
-| Kotlin | Example app | 6 | 18 | 8 | 10 |
+| Kotlin | SDK | 20 | 17 | 4 | 1 |
+| Kotlin | Example app | 7 | 21 | 4 | 10 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
 | Swift | 2 | 13 | 27 |
-| Kotlin | 5 | 9 | 28 |
+| Kotlin | 6 | 10 | 26 |
 
 ## Capability status
 
@@ -56,14 +56,14 @@ Capabilities tracked: **42**
 | `errors.platform_wallet_not_found_typed` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
 | `persistence.pending_identity_key_repair` | unsupported / unsupported / not_applicable | supported / not-applicable / tested |
 | `errors.signing_key_unavailable_discriminator` | supported / not-applicable / not_applicable | supported / not-applicable / not_applicable |
-| `shielded.core_wallet_drain` | supported / partial / tested | unsupported / unsupported / not_applicable |
+| `shielded.core_wallet_drain` | supported / partial / tested | supported / partial / tested |
 | `network.adaptive_quorum_source` | supported / supported / tested | supported / supported / tested |
-| `contracts.moderation_reads` | supported / supported / not_applicable | unsupported / unsupported / not_applicable |
-| `system.block_and_transition_status_reads` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
+| `contracts.moderation_reads` | supported / supported / not_applicable | supported / supported / not_applicable |
+| `system.block_and_transition_status_reads` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `voting.masternode_vote_stored_key` | supported / partial / not_applicable | partial / partial / not_applicable |
 | `identity.load_masternode_voting_key` | supported / partial / not_applicable | partial / partial / not_applicable |
 | `addresses.balance_history` | supported / partial / not_applicable | supported / partial / not_applicable |
-| `shielded.token_purchase_from_pool` | partial / partial / required | unsupported / unsupported / not_applicable |
+| `shielded.token_purchase_from_pool` | partial / partial / required | partial / partial / required |
 | `identity.withdrawal_status` | supported / partial / not_applicable | unsupported / unsupported / not_applicable |
 | `dashpay.profile_payment_addresses` | partial / partial / not_applicable | unsupported / unsupported / not_applicable |
 

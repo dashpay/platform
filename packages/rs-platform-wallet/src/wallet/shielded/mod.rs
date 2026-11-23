@@ -59,6 +59,7 @@ pub mod seed_pool;
 pub mod store;
 pub mod sync;
 pub mod tips;
+pub mod wallet_drain_recovery;
 pub use tips::{
     is_shielded_identity_account, shielded_identity_account_index, SHIELDED_IDENTITY_ACCOUNT_BASE,
 };

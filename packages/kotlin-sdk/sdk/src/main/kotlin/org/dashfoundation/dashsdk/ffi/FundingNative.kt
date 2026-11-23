@@ -41,7 +41,9 @@ internal object FundingNative {
      * (0 = ShieldedTransfer/Shield, 1 = Unshield, 2 = ShieldedWithdrawal,
      * 3 = ShieldFromIdentity: the compute-only floor, no storage term,
      * 4 = IdentityTopUpFromShieldedPool: base plus the flat
-     * identity-balance write cost)
+     * identity-balance write cost,
+     * 5 = TokenPurchaseFromShieldedPool: the fee a purchase paid from the
+     * notes adds on top of the price)
      * and Orchard action count [numActions], computed at [managerHandle]'s
      * network-tracked platform version. No network round-trip; throws on
      * an unknown kind, an invalid manager handle, or overflow.
