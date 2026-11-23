@@ -2,9 +2,7 @@ use crate::verify::{with_proved_root_on_budget_exceeded, RootHash};
 
 use crate::error::Error;
 use crate::query::SingleDocumentDriveQuery;
-use dpp::data_contract::document_type::{
-    DecodedValueBudget, DocumentTypeRef, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
-};
+use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::document::Document;
 
 use dpp::version::PlatformVersion;
@@ -44,12 +42,9 @@ impl SingleDocumentDriveQuery {
             .map(|(root_hash, serialized)| {
                 let document = serialized
                     .map(|serialized| {
-                        let mut budget =
-                            DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
-                        Document::from_bytes_with_budget(
+                        Document::from_bytes_bounded(
                             serialized.as_slice(),
                             document_type,
-                            &mut budget,
                             platform_version,
                         )
                         .map_err(|error| {
