@@ -2672,6 +2672,7 @@ struct ShieldedActivityStorageDetailView: View {
         case 9: name = "IdentityTopUpFromPool"
         case 10: name = "TokenPurchase"
         case 11: name = "TokenShieldedTransfer"
+        case 12: name = "TokenUnshield"
         default: return "Unknown(\(tag))"
         }
         return "\(name) (\(tag))"

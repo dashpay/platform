@@ -1211,6 +1211,72 @@ async fn should_refuse_an_account_add_after_a_clear_until_the_wallet_is_bound_ag
     assert_eq!(wallet.shielded_account_indices().await, vec![0, 1]);
 }
 
+/// A Clear drops the wallet's registration while the handle keeps its keys,
+/// so a token pool spend from the same seed and account would still derive
+/// its keys. The public entry points refuse it as not bound, before any
+/// network read, note selection or proving.
+#[tokio::test]
+async fn should_refuse_token_pool_spends_after_a_clear_until_the_wallet_is_bound_again() {
+    use dpp::prelude::Identifier;
+    use dpp::shielded::builder::OrchardProver;
+    use grovedb_commitment_tree::ProvingKey;
+
+    struct PanicProver;
+    impl OrchardProver for PanicProver {
+        fn proving_key(&self) -> &ProvingKey {
+            panic!("a spend refused at admission must not prove");
+        }
+    }
+
+    let wallet = platform_wallet_with(Arc::new(CapturingPersistence::default())).await;
+    let coordinator = coordinator_at(&temp_dir("token_spend_after_clear"));
+    let seed = [0x42u8; 64];
+    wallet
+        .bind_shielded(&seed, &[0], &coordinator)
+        .await
+        .expect("seed bind succeeds");
+    coordinator.clear().await.expect("clear succeeds");
+
+    let contract = Identifier::from([0x66; 32]);
+    let recipient = dpp::address_funds::OrchardAddress::from(
+        OrchardKeySet::from_seed(&[0x43; 64], wallet.network(), 0)
+            .expect("recipient keys")
+            .default_address,
+    );
+    let transfer = wallet
+        .shielded_token_transfer(
+            &coordinator,
+            &seed,
+            0,
+            &contract,
+            0,
+            &recipient,
+            5,
+            PanicProver,
+        )
+        .await;
+    assert!(
+        matches!(transfer, Err(crate::PlatformWalletError::ShieldedNotBound)),
+        "{transfer:?}"
+    );
+    let unshield = wallet
+        .shielded_token_unshield(
+            &coordinator,
+            &seed,
+            0,
+            &contract,
+            0,
+            &Identifier::from([0x11; 32]),
+            5,
+            PanicProver,
+        )
+        .await;
+    assert!(
+        matches!(unshield, Err(crate::PlatformWalletError::ShieldedNotBound)),
+        "{unshield:?}"
+    );
+}
+
 /// An account add that waited for a Clear is refused the same way: by the
 /// time it is admitted the Clear has dropped the registration.
 #[tokio::test]

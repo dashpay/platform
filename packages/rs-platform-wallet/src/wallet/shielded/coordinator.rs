@@ -305,11 +305,13 @@ pub struct NetworkShieldedCoordinator {
 }
 
 /// Whether `kind` is a token pool spend paid from the credit pool whose token
-/// bundle carries tokens out of the wallet (a shielded token transfer).
+/// bundle carries tokens out of the wallet (a shielded token transfer or a
+/// token unshield).
 fn is_token_pool_spend(kind: &super::activity::ShieldedActivityKind) -> bool {
     matches!(
         kind,
         super::activity::ShieldedActivityKind::TokenShieldedTransfer
+            | super::activity::ShieldedActivityKind::TokenUnshield { .. }
     )
 }
 
@@ -4278,13 +4280,14 @@ mod tests {
         coordinator
     }
 
-    /// A token shielded transfer whose saved record is gone is settled from
+    /// A token pool spend (a shielded token transfer or a token unshield)
+    /// whose saved record is gone is settled from
     /// how it was signed, how its record went, whether the token scan saw a
     /// note it holds spent, and the token pool's own scan version, whatever
     /// version the SDK has seen. A row is shown failed only where nothing can
     /// have delivered it, and its notes stay held while it can still land.
     #[tokio::test]
-    async fn should_settle_a_token_transfer_from_how_it_was_signed_and_its_record_went() {
+    async fn should_settle_a_token_pool_spend_from_how_it_was_signed_and_its_record_went() {
         use super::super::store::PendingRedrive;
         use super::super::token_pool::{insert_note_for_test, insert_watch, TokenPoolNote};
 
@@ -4295,9 +4298,15 @@ mod tests {
             FeeNoteSpent,
         }
         use ShieldedActivityStatus::{Failed, Pending};
+        let kinds = [
+            ShieldedActivityKind::TokenShieldedTransfer,
+            ShieldedActivityKind::TokenUnshield {
+                identity_id: Some([0x5E; 32]),
+            },
+        ];
         // (signed bound, how the record went, how many of its two held token
         // notes are spent, pool scan version, row after, notes still held)
-        for (signed_bound, record, token_spent, network, settled, held) in [
+        for ((signed_bound, record, token_spent, network, settled, held), kind) in [
             (false, Record::NeverSaved, 0, 14, Failed, false),
             (false, Record::NeverSaved, 0, 15, Failed, false),
             // Signed at 14: its token bundle can land with another fee bundle.
@@ -4317,13 +4326,18 @@ mod tests {
             (true, Record::FeeNoteSpent, 2, 15, Pending, false),
             (true, Record::FeeNoteSpent, 1, 15, Failed, false),
             (true, Record::FeeNoteSpent, 0, 15, Failed, false),
-        ] {
+        ]
+        .into_iter()
+        .flat_map(|case| kinds.clone().map(move |kind| (case, kind)))
+        {
             let case = format!(
-                "signed bound {signed_bound}, {record:?}, token note spent {token_spent}, \
-                 scan at {network}"
+                "kind {}, signed bound {signed_bound}, {record:?}, token notes spent \
+                 {token_spent}, scan at {network}",
+                kind.tag()
             );
             let dir = temp_dir(&format!(
-                "token_transfer_settle_{signed_bound}_{record:?}_{token_spent}_{network}"
+                "token_spend_settle_{}_{signed_bound}_{record:?}_{token_spent}_{network}",
+                kind.tag()
             ));
             let sdk = dash_sdk::Sdk::new_mock();
             sdk.mock_verified_protocol_version(15).expect("a mock SDK");
@@ -4344,7 +4358,7 @@ mod tests {
             let fee_nf = [0xF1u8; 32];
             let pruned_anchor = [0xF2u8; 32];
             let row = ShieldedActivityEntry {
-                kind: ShieldedActivityKind::TokenShieldedTransfer,
+                kind: kind.clone(),
                 ..pending_purchase_row(fee_nf, [0xF3; 32])
             };
             {
