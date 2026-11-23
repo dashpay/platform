@@ -165,7 +165,7 @@ class MasternodeVotingKeySigningTest {
         database.identityDao().upsert(
             IdentityEntity(identityId = identityId, identityType = "Masternode", networkRaw = 1),
         )
-        val assignment = keys.assignToIdentity(database, identityId, keyOne, null)
+        val assignment = keys.assignToIdentity(database, identityId, 1, keyOne, null)
         assertTrue(assignment.toString(), assignment is VotingKeyAssignment.Assigned)
         return (assignment as VotingKeyAssignment.Assigned).identifier
     }

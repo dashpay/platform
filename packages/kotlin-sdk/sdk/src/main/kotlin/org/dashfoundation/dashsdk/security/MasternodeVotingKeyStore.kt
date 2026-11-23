@@ -96,14 +96,15 @@ class MasternodeVotingKeyStore private constructor(
     }
 
     /**
-     * Make the 32-byte voting [privateKey] the voting key of [identityId]'s row, as one
-     * [withVotingKeyLock] section: write the identity's entry from the supplied bytes and
-     * point the row at it only while the row still names [expectedIdentifier].
+     * Make the 32-byte voting [privateKey] the voting key of [identityId]'s row on
+     * [networkRaw], as one [withVotingKeyLock] section: write the identity's entry from the
+     * supplied bytes and point the row at it only while the row is on [networkRaw] and still
+     * names [expectedIdentifier].
      *
      * - The row named [expectedIdentifier]: [VotingKeyAssignment.Assigned] with the new
      *   identifier.
-     * - The row is gone or names another key: [VotingKeyAssignment.Changed] with what the row
-     *   names now. The row is checked first, inside the lock, so then nothing is written; the
+     * - The row is gone, on another network (then the result carries null) or names another
+     *   key: [VotingKeyAssignment.Changed] with what the row on [networkRaw] names now. The row is checked first, inside the lock, so then nothing is written; the
      *   conditional update after the write checks again, and if that finds a change the
      *   entry just written is deleted unless the row names it.
      *
@@ -121,6 +122,7 @@ class MasternodeVotingKeyStore private constructor(
      *   only a best-effort safety net: Room carries a transaction in the coroutine context,
      *   which a thread check cannot see after a dispatcher switch. What keeps a rollback safe
      *   is that nothing but the entry this call wrote is ever deleted here.
+     * @param networkRaw the `Network.ffiValue` the identity is loaded on.
      * @param expectedIdentifier the identifier the row is expected to name, null for none.
      * @throws IllegalStateException when the calling thread is in a Room transaction, before
      *   anything is written.
@@ -130,35 +132,40 @@ class MasternodeVotingKeyStore private constructor(
     suspend fun assignToIdentity(
         database: DashDatabase,
         identityId: ByteArray,
+        networkRaw: Int,
         privateKey: ByteArray,
         expectedIdentifier: String?,
         nowMillis: Long = System.currentTimeMillis(),
     ): VotingKeyAssignment {
         refuseInTransaction(database, "assignToIdentity")
         return withVotingKeyLock {
-            assignLocked(database, identityId, privateKey, expectedIdentifier, nowMillis)
+            assignLocked(database, identityId, networkRaw, privateKey, expectedIdentifier, nowMillis)
         }
     }
 
     private suspend fun assignLocked(
         database: DashDatabase,
         identityId: ByteArray,
+        networkRaw: Int,
         privateKey: ByteArray,
         expectedIdentifier: String?,
         nowMillis: Long,
     ): VotingKeyAssignment {
         val identityDao = database.identityDao()
-        // Nothing is written for a row that is gone or names another key by now.
-        val before = identityDao.getByIdentityId(identityId)
+        // Nothing is written for a row that is gone, on another network, or names another
+        // key by now.
+        val before = identityDao.getByIdentityId(identityId)?.takeIf { it.networkRaw == networkRaw }
         if (before == null || before.votingPrivateKeyIdentifier != expectedIdentifier) {
             return VotingKeyAssignment.Changed(before?.votingPrivateKeyIdentifier)
         }
         val identifier = store(identityId, privateKey)
         val changed = identityDao.replaceVotingPrivateKeyIdentifier(
-            identityId, expectedIdentifier, identifier, nowMillis,
+            identityId, networkRaw, expectedIdentifier, identifier, nowMillis,
         )
         if (changed == 0) {
-            val current = identityDao.getByIdentityId(identityId)?.votingPrivateKeyIdentifier
+            val current = identityDao.getByIdentityId(identityId)
+                ?.takeIf { it.networkRaw == networkRaw }
+                ?.votingPrivateKeyIdentifier
             if (current != identifier) storage.deletePrivateKey(identifier)
             return VotingKeyAssignment.Changed(current)
         }

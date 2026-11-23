@@ -82,15 +82,17 @@ interface IdentityDao {
      * the current row, and only while the row is on [networkRaw]. The fetched [balance]
      * replaces the stored one only on a row no wallet owns: a wallet's own identity has its
      * balance kept current by wallet sync, which may have written a newer one than the fetch
-     * saw. The alias changes only when one is given; every other column (wallet link, key
-     * identifiers, DPNS names) is left as the row has it. Returns the number of rows changed
-     * (0 when the row is gone or on another network).
+     * saw. The alias and the type change only when one is given (a null [identityType] keeps
+     * the stored type, so a type the user did not pick never overwrites a newer one); every
+     * other column (wallet link, key identifiers, DPNS names) is left as the row has it.
+     * Returns the number of rows changed (0 when the row is gone or on another network).
      */
     @Query(
         "UPDATE identities SET " +
             "balance = CASE WHEN walletId IS NULL THEN :balance ELSE balance END, " +
             "alias = COALESCE(:alias, alias), " +
-            "isLocal = :isLocal, identityType = :identityType, lastUpdated = :nowMillis " +
+            "isLocal = :isLocal, identityType = COALESCE(:identityType, identityType), " +
+            "lastUpdated = :nowMillis " +
             "WHERE identityId = :identityId AND networkRaw = :networkRaw"
     )
     suspend fun updateLoadedFields(
@@ -99,15 +101,16 @@ interface IdentityDao {
         balance: Long,
         alias: String?,
         isLocal: Boolean,
-        identityType: String,
+        identityType: String?,
         nowMillis: Long,
     ): Int
 
     /**
-     * Point the row at the voting key [newIdentifier] only while it still names
-     * [expectedIdentifier] (null for none), so a key association changed by another write
-     * since it was read is never overwritten. Returns the number of rows changed: 0 when the
-     * row is gone or names another key.
+     * Point the row at the voting key [newIdentifier] only while it is on [networkRaw] and
+     * still names [expectedIdentifier] (null for none), so a key association changed by
+     * another write since it was read, or a row recreated on another network, is never
+     * overwritten. Returns the number of rows changed: 0 when the row is gone, on another
+     * network, or names another key.
      *
      * The low-level row write of `MasternodeVotingKeyStore.assignToIdentity`, which also
      * writes the key and runs both under the voting key lock. Use that instead: changing the
@@ -116,11 +119,12 @@ interface IdentityDao {
     @Query(
         "UPDATE identities SET votingPrivateKeyIdentifier = :newIdentifier, " +
             "lastUpdated = :nowMillis " +
-            "WHERE identityId = :identityId " +
+            "WHERE identityId = :identityId AND networkRaw = :networkRaw " +
             "AND votingPrivateKeyIdentifier IS :expectedIdentifier"
     )
     suspend fun replaceVotingPrivateKeyIdentifier(
         identityId: ByteArray,
+        networkRaw: Int,
         expectedIdentifier: String?,
         newIdentifier: String?,
         nowMillis: Long,

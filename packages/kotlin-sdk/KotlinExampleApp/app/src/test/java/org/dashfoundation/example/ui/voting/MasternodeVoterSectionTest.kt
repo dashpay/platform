@@ -97,6 +97,14 @@ class MasternodeVoterSectionTest {
         assertNull(decodeTyped32Bytes(""))
     }
 
+    /** Char.isDigit() accepts other scripts' digits; a pro_tx_hash is ASCII hex only. */
+    @Test
+    fun shouldRefuseNonAsciiDigits() {
+        val arabicIndic = "\u0661".repeat(64)
+        assertNull(decodeTyped32Bytes(arabicIndic))
+        assertNull(decodeTyped32Bytes("\u0660" + proTxHashHex.drop(1)))
+    }
+
     @Test
     fun shouldKeepTheSelectionWhileItIsACandidateElseTakeTheFirst() {
         val first = identity(1, alias = "a")

@@ -281,7 +281,7 @@ class LoadIdentityVotingKeyTest {
     fun shouldKeepAnAssociationWrittenWhileStoringANewKey() = runBlocking {
         val meanwhile = identifierOf(keyB)
         entries.onStore = {
-            dao.replaceVotingPrivateKeyIdentifier(identityId, null, meanwhile, 0)
+            dao.replaceVotingPrivateKeyIdentifier(identityId, testnet, null, meanwhile, 0)
         }
 
         val result = save(pickedType = LoadIdentityType.MASTERNODE, typePicked = true, votingKey = keyA)
@@ -307,7 +307,7 @@ class LoadIdentityVotingKeyTest {
         dao.upsert(row(type = "Masternode", votingIdentifier = identifierOf(keyA)))
         entries.live += identifierOf(keyA)
 
-        val result = replaceVotingKey(dao, entries, identityId, identifierOf(keyA), keyB)
+        val result = replaceVotingKey(dao, entries, identityId, testnet, identifierOf(keyA), keyB)
 
         assertEquals(LoadSaveResult.Saved, result)
         assertEquals(identifierOf(keyB), dao.getByIdentityId(identityId)!!.votingPrivateKeyIdentifier)
@@ -321,7 +321,7 @@ class LoadIdentityVotingKeyTest {
         entries.live += identifierOf(keyA)
         entries.sweepFailure = IllegalStateException("secure storage unavailable")
 
-        val result = replaceVotingKey(dao, entries, identityId, identifierOf(keyA), keyB)
+        val result = replaceVotingKey(dao, entries, identityId, testnet, identifierOf(keyA), keyB)
 
         assertEquals(LoadSaveResult.SavedWithWarning(PREVIOUS_VOTING_KEY_NOT_REMOVED_MESSAGE), result)
         assertEquals(identifierOf(keyB), dao.getByIdentityId(identityId)!!.votingPrivateKeyIdentifier)
@@ -342,7 +342,7 @@ class LoadIdentityVotingKeyTest {
         val current = identifierOf(ByteArray(32) { 0x0c })
         dao.upsert(row(type = "Masternode", votingIdentifier = current))
 
-        val result = replaceVotingKey(dao, entries, identityId, shown, keyB)
+        val result = replaceVotingKey(dao, entries, identityId, testnet, shown, keyB)
 
         assertEquals(LoadSaveResult.Failed(VOTING_KEY_CHANGED_MESSAGE), result)
         assertEquals(current, dao.getByIdentityId(identityId)!!.votingPrivateKeyIdentifier)
@@ -392,7 +392,7 @@ class LoadIdentityVotingKeyTest {
 
         try {
             val replacement = async(Dispatchers.IO) {
-                replaceVotingKey(dao, entries, identityId, identifierOf(keyA), keyB)
+                replaceVotingKey(dao, entries, identityId, testnet, identifierOf(keyA), keyB)
             }
             withTimeout(10_000) { storing.await() }
             val reloadWaiting = CompletableDeferred<Unit>()
@@ -429,6 +429,74 @@ class LoadIdentityVotingKeyTest {
         assertEquals(LoadSaveResult.SavedWithWarning(STALE_VOTING_KEY_NOT_REMOVED_MESSAGE), result)
         assertEquals(setOf(identifierOf(keyA), stale), entries.live)
         assertEquals("again", dao.getByIdentityId(identityId)!!.alias)
+    }
+
+    /** Item 1: the draft belongs to the decoded id and network, not to the text. */
+    @Test
+    fun shouldClearTheVotingKeyDraftOnlyWhenTheIdentityOrNetworkChanges() {
+        val hex = identityId.joinToString("") { "%02x".format(it) }
+        val base58 = org.dashfoundation.example.util.Base58.encode(identityId)
+        val scope = votingKeyDraftScope(hex, testnet)
+        // The same id typed as hex or Base58 is one scope.
+        assertEquals(scope, votingKeyDraftScope(base58, testnet))
+        assertFalse(shouldClearVotingKeyDraft(scope, votingKeyDraftScope(base58, testnet)))
+        // Another identity, or the same one on another network, clears the draft.
+        val other = votingKeyDraftScope("06".repeat(32), testnet)
+        assertTrue(shouldClearVotingKeyDraft(scope, other))
+        assertTrue(shouldClearVotingKeyDraft(scope, votingKeyDraftScope(hex, mainnet)))
+        // A half-typed id clears nothing, and a draft typed before any id is kept.
+        assertNull(votingKeyDraftScope(hex.dropLast(2), testnet))
+        assertFalse(shouldClearVotingKeyDraft(scope, null))
+        assertFalse(shouldClearVotingKeyDraft(null, scope))
+    }
+
+    /** Item 2: keeping the stored key runs the cleanup a previous warning promised. */
+    @Test
+    fun shouldCleanUpWhenTheStoredKeyIsKept() = runBlocking<Unit> {
+        val stale = identifierOf(ByteArray(32) { 0x0d })
+        dao.upsert(row(type = "Masternode", votingIdentifier = identifierOf(keyA)))
+        entries.live += setOf(identifierOf(keyA), stale)
+        entries.sweepFailure = IllegalStateException("secure storage unavailable")
+
+        assertEquals(
+            LoadSaveResult.SavedWithWarning(STALE_VOTING_KEY_NOT_REMOVED_MESSAGE),
+            keepStoredVotingKey(entries, identityId),
+        )
+        assertEquals(setOf(identifierOf(keyA), stale), entries.live)
+
+        entries.sweepFailure = null
+        assertEquals(LoadSaveResult.Saved, keepStoredVotingKey(entries, identityId))
+        assertEquals(setOf(identifierOf(keyA)), entries.live)
+    }
+
+    /** Item 3: a row recreated on another network is not the one being loaded. */
+    @Test
+    fun shouldRefuseToReplaceAKeyOnAnotherNetworksRow() = runBlocking<Unit> {
+        dao.upsert(row(type = "Masternode", votingIdentifier = identifierOf(keyA), network = mainnet))
+
+        val result = replaceVotingKey(dao, entries, identityId, testnet, identifierOf(keyA), keyB)
+
+        assertEquals(LoadSaveResult.Failed(VOTING_KEY_CHANGED_MESSAGE), result)
+        assertEquals(identifierOf(keyA), dao.getByIdentityId(identityId)!!.votingPrivateKeyIdentifier)
+        assertEquals(emptyList<String>(), entries.storedIdentifiers)
+    }
+
+    /** Item 10: an unpicked type keeps the stored one; a picked type is written. */
+    @Test
+    fun shouldKeepTheStoredTypeUnlessOneIsGiven() = runBlocking<Unit> {
+        dao.upsert(row(type = "Evonode"))
+
+        assertEquals(1, dao.updateLoadedFields(identityId, testnet, 1L, null, true, identityType = null, nowMillis = 0))
+        assertEquals("Evonode", dao.getByIdentityId(identityId)!!.identityType)
+
+        assertEquals(1, dao.updateLoadedFields(identityId, testnet, 1L, null, true, identityType = "Masternode", nowMillis = 0))
+        assertEquals("Masternode", dao.getByIdentityId(identityId)!!.identityType)
+
+        // Through the load: an unpicked type leaves the stored one.
+        save(alias = "x", pickedType = LoadIdentityType.USER, typePicked = false)
+        assertEquals("Masternode", dao.getByIdentityId(identityId)!!.identityType)
+        save(alias = "x", pickedType = LoadIdentityType.EVONODE, typePicked = true)
+        assertEquals("Evonode", dao.getByIdentityId(identityId)!!.identityType)
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
@@ -493,12 +561,13 @@ class LoadIdentityVotingKeyTest {
          */
         override suspend fun assign(
             identityId: ByteArray,
+            networkRaw: Int,
             votingKey: ByteArray,
             expectedIdentifier: String?,
             nowMillis: Long,
         ): VotingKeyAssignment = MasternodeVotingKeyStore.withVotingKeyLock {
             failure?.let { throw it }
-            val before = dao.getByIdentityId(identityId)
+            val before = dao.getByIdentityId(identityId)?.takeIf { it.networkRaw == networkRaw }
             if (before == null || before.votingPrivateKeyIdentifier != expectedIdentifier) {
                 return@withVotingKeyLock VotingKeyAssignment.Changed(before?.votingPrivateKeyIdentifier)
             }
@@ -506,7 +575,7 @@ class LoadIdentityVotingKeyTest {
             storedIdentifiers += identifier
             live += identifier
             onStore?.invoke()
-            if (dao.replaceVotingPrivateKeyIdentifier(identityId, expectedIdentifier, identifier, nowMillis) == 0) {
+            if (dao.replaceVotingPrivateKeyIdentifier(identityId, networkRaw, expectedIdentifier, identifier, nowMillis) == 0) {
                 val current = dao.getByIdentityId(identityId)?.votingPrivateKeyIdentifier
                 if (current != identifier) {
                     deletedIdentifiers += identifier

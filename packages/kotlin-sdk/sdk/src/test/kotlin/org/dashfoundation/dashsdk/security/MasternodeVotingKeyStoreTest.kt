@@ -39,6 +39,9 @@ class MasternodeVotingKeyStoreTest {
     private val identifier = "mnvoting.$identityIdHex.$addressHex"
 
     private lateinit var db: DashDatabase
+
+    /** The network every fixture row is on (`Network.TESTNET.ffiValue`). */
+    private val testnet = 1
     private lateinit var keystore: PlaintextIdentityKeysKeystore
 
     /** A store whose voting address of a key is its first 20 bytes (no native library). */
@@ -83,7 +86,7 @@ class MasternodeVotingKeyStoreTest {
         storage.storePrivateKey(identifierOfKey(3), keyWithAddress(3))
 
         val assignment = assigning.assignToIdentity(
-            db, identityId, keyWithAddress(2), expectedIdentifier = identifierOfKey(1),
+            db, identityId, testnet, keyWithAddress(2), expectedIdentifier = identifierOfKey(1),
         )
 
         assertEquals(VotingKeyAssignment.Assigned(identifierOfKey(2)), assignment)
@@ -108,7 +111,7 @@ class MasternodeVotingKeyStoreTest {
         val writesBefore = keystore.writes
 
         val assignment = assigning.assignToIdentity(
-            db, identityId, keyWithAddress(2), expectedIdentifier = null,
+            db, identityId, testnet, keyWithAddress(2), expectedIdentifier = null,
         )
 
         assertEquals(VotingKeyAssignment.Changed(identifierOfKey(1)), assignment)
@@ -122,7 +125,7 @@ class MasternodeVotingKeyStoreTest {
     @Test
     fun shouldWriteNothingWhenTheRowIsGone() = runBlocking<Unit> {
         val assignment = assigning.assignToIdentity(
-            db, identityId, keyWithAddress(2), expectedIdentifier = null,
+            db, identityId, testnet, keyWithAddress(2), expectedIdentifier = null,
         )
 
         assertEquals(VotingKeyAssignment.Changed(null), assignment)
@@ -138,12 +141,12 @@ class MasternodeVotingKeyStoreTest {
         // Records key 1 on the row while key 2 is being written, outside the lock.
         val racing = MasternodeVotingKeyStore.forTesting(storage) { key ->
             runBlocking {
-                db.identityDao().replaceVotingPrivateKeyIdentifier(identityId, null, identifierOfKey(1), 0)
+                db.identityDao().replaceVotingPrivateKeyIdentifier(identityId, testnet, null, identifierOfKey(1), 0)
             }
             key.copyOf(20)
         }
 
-        val assignment = racing.assignToIdentity(db, identityId, keyWithAddress(2), expectedIdentifier = null)
+        val assignment = racing.assignToIdentity(db, identityId, testnet, keyWithAddress(2), expectedIdentifier = null)
 
         assertEquals(VotingKeyAssignment.Changed(identifierOfKey(1)), assignment)
         assertTrue(storage.hasPrivateKey(identifierOfKey(1)))
@@ -168,7 +171,7 @@ class MasternodeVotingKeyStoreTest {
             withTimeout(20_000) {
                 db.withTransaction {
                     assignedInside = withContext(Dispatchers.IO) {
-                        assigning.assignToIdentity(db, identityId, keyWithAddress(2), identifierOfKey(1))
+                        assigning.assignToIdentity(db, identityId, testnet, keyWithAddress(2), identifierOfKey(1))
                     }
                     throw IllegalStateException("roll back")
                 }
@@ -185,6 +188,24 @@ class MasternodeVotingKeyStoreTest {
         assertTrue(assigning.removeStaleEntries(db, identityId))
         assertTrue(storage.hasPrivateKey(identifierOfKey(1)))
         assertFalse(storage.hasPrivateKey(identifierOfKey(2)))
+    }
+
+    /** A row recreated on another network is not this load's: nothing is written. */
+    @Test
+    fun shouldWriteNothingForARowOnAnotherNetwork() = runBlocking<Unit> {
+        insertRow(votingIdentifier = null)
+        val writesBefore = keystore.writes
+
+        val assignment = assigning.assignToIdentity(
+            db, identityId, networkRaw = 0, privateKey = keyWithAddress(2), expectedIdentifier = null,
+        )
+
+        assertEquals(VotingKeyAssignment.Changed(null), assignment)
+        assertEquals(null, db.identityDao().getByIdentityId(identityId)?.votingPrivateKeyIdentifier)
+        assertFalse(storage.hasPrivateKey(identifierOfKey(2)))
+        assertEquals(writesBefore, keystore.writes)
+        // The row write itself is scoped to the network too.
+        assertEquals(0, db.identityDao().replaceVotingPrivateKeyIdentifier(identityId, 0, null, identifierOfKey(2), 0))
     }
 
     /** With the row gone, the cleanup removes every entry of the identity, and only those. */
@@ -210,7 +231,7 @@ class MasternodeVotingKeyStoreTest {
         var refused: Throwable? = null
         db.withTransaction {
             refused = try {
-                assigning.assignToIdentity(db, identityId, keyWithAddress(2), identifierOfKey(1))
+                assigning.assignToIdentity(db, identityId, testnet, keyWithAddress(2), identifierOfKey(1))
                 null
             } catch (e: IllegalStateException) {
                 e

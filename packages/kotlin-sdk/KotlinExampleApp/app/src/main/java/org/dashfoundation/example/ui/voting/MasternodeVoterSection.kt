@@ -10,7 +10,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -178,7 +178,8 @@ internal fun effectiveVoterSelection(
  */
 internal fun decodeTyped32Bytes(text: String): ByteArray? {
     val trimmed = text.trim()
-    if (trimmed.length != 64 || !trimmed.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }) {
+    // ASCII hex only: Char.isDigit() also accepts other scripts' digits.
+    if (trimmed.length != 64 || !trimmed.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) {
         return null
     }
     return trimmed.hexToBytes()
@@ -363,8 +364,12 @@ fun MasternodeVoterSection(
     val selected = effectiveVoterSelection(selectedIdentityHex, candidates)
     val usesTypedInput = (BuildConfig.DEBUG && useTypedCredentials) ||
         (allowsTypedProTxHash && useTypedProTxHash)
-    val voter = publishVoter(
-        selected = selected,
+
+    // The voter the inputs name now. Event handlers call [publish] right after their state
+    // writes, so the dialog's voter changes in the same event as the mode and inputs: it
+    // never casts with a voter the section no longer shows.
+    fun currentVoter(): MasternodeVoter? = publishVoter(
+        selected = effectiveVoterSelection(selectedIdentityHex, candidates),
         allowsTypedProTxHash = allowsTypedProTxHash,
         useTypedProTxHash = useTypedProTxHash,
         proTxHashText = proTxHashText,
@@ -372,7 +377,14 @@ fun MasternodeVoterSection(
         useTypedCredentials = useTypedCredentials,
         votingKeyText = votingKeyText,
     )
-    LaunchedEffect(voter) { onVoterChange(voter) }
+    fun publish() = onVoterChange(currentVoter())
+    val voter = currentVoter()
+    // Changes no handler makes (the identity list, the first composition) are published by
+    // SideEffect, which runs when the composition that shows them is applied, in that same
+    // frame and before any further input is handled, so a tap can never cast with a voter
+    // the section stopped showing. Publishing an unchanged voter is a no-op for the dialog's
+    // state (voters compare by value).
+    SideEffect { onVoterChange(voter) }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
@@ -397,7 +409,10 @@ fun MasternodeVoterSection(
                 optionLabel = { voterLabel(it, candidates) },
                 testTag = "$testTagPrefix.voter",
                 enabled = enabled && !usesTypedInput,
-                onSelected = { selectedIdentityHex = it.identityId.toHex() },
+                onSelected = {
+                    selectedIdentityHex = it.identityId.toHex()
+                    publish()
+                },
             )
         }
 
@@ -409,11 +424,19 @@ fun MasternodeVoterSection(
                 testTag = "$testTagPrefix.useTypedProTxHash",
                 onCheckedChange = { isOn ->
                     useTypedProTxHash = isOn
-                    if (isOn) useTypedCredentials = false
+                    if (isOn) {
+                        // The read-only lookup keeps the shared pro_tx_hash, never the key.
+                        useTypedCredentials = false
+                        votingKeyText = ""
+                    }
+                    publish()
                 },
             )
             if (useTypedProTxHash) {
-                ProTxHashField(proTxHashText, enabled, testTagPrefix) { proTxHashText = it }
+                ProTxHashField(proTxHashText, enabled, testTagPrefix) {
+                    proTxHashText = it
+                    publish()
+                }
                 Caption(
                     "Reads the answer of the masternode with this pro_tx_hash; no key is " +
                         "needed and no vote can be cast. The pro_tx_hash goes in wire order, " +
@@ -433,13 +456,20 @@ fun MasternodeVoterSection(
                     useTypedCredentials = isOn
                     if (isOn) useTypedProTxHash = false
                     if (!isOn) votingKeyText = ""
+                    publish()
                 },
             )
             if (useTypedCredentials) {
-                ProTxHashField(proTxHashText, enabled, testTagPrefix) { proTxHashText = it }
+                ProTxHashField(proTxHashText, enabled, testTagPrefix) {
+                    proTxHashText = it
+                    publish()
+                }
                 OutlinedTextField(
                     value = votingKeyText,
-                    onValueChange = { votingKeyText = it },
+                    onValueChange = {
+                        votingKeyText = it
+                        publish()
+                    },
                     label = { Text("voting private key (64 hex chars)") },
                     singleLine = true,
                     enabled = enabled,

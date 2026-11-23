@@ -121,6 +121,17 @@ fun LoadIdentityScreen(navController: NavHostController) {
             }
     }
 
+    // The voting key draft belongs to the identity (decoded id) and network it was typed
+    // for: when either changes, by a manual edit or a QR scan, the draft is cleared, so one
+    // masternode's key is never saved under another identity. Re-encoding the same id (hex
+    // or Base58) keeps it.
+    val draftScope = votingKeyDraftScope(identityIdText, network.ffiValue)
+    var lastDraftScope by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(draftScope) {
+        if (shouldClearVotingKeyDraft(lastDraftScope, draftScope)) votingKeyText = ""
+        if (draftScope != null) lastDraftScope = draftScope
+    }
+
     // Until the user picks a type, the picker follows the typed id: the stored row's type
     // when the id names a row on this network, so a reload shows (and keeps) it and its
     // voting key field, else User, so another identity's type never carries over.
@@ -312,6 +323,7 @@ fun LoadIdentityScreen(navController: NavHostController) {
                             is LoadSaveResult.ConfirmReplacement ->
                                 pendingReplacement = PendingVotingKeyReplacement(
                                     identityId = idBytes,
+                                    networkRaw = activeNetwork.ffiValue,
                                     storedIdentifier = result.storedIdentifier,
                                 )
                         }
@@ -372,6 +384,7 @@ fun LoadIdentityScreen(navController: NavHostController) {
                                         dao = container.database.identityDao(),
                                         entries = StoredVotingKeyEntries(keys, container.database),
                                         identityId = pending.identityId,
+                                        networkRaw = pending.networkRaw,
                                         expectedIdentifier = pending.storedIdentifier,
                                         votingKey = key,
                                     )
@@ -404,7 +417,28 @@ fun LoadIdentityScreen(navController: NavHostController) {
                 TextButton(
                     onClick = {
                         pendingReplacement = null
-                        showIdentity(pending.identityId)
+                        isLoading = true
+                        scope.launch {
+                            try {
+                                // Keeping the stored key is a completed load too: it retries
+                                // the cleanup a previous warning promised.
+                                val result = keepStoredVotingKey(
+                                    StoredVotingKeyEntries(
+                                        MasternodeVotingKeyStore(container.walletStorage),
+                                        container.database,
+                                    ),
+                                    pending.identityId,
+                                )
+                                if (result is LoadSaveResult.SavedWithWarning) {
+                                    showAfterError = pending.identityId
+                                    error = result.message
+                                } else {
+                                    showIdentity(pending.identityId)
+                                }
+                            } finally {
+                                isLoading = false
+                            }
+                        }
                     },
                     modifier = Modifier.testTag("loadIdentity.replaceKey.cancel"),
                 ) { Text("Keep stored key") }
@@ -471,13 +505,15 @@ internal fun votingKeyRefusedMessage(reason: String?): String {
 /** A conflicting voting key waiting for the user's answer. Holds no key bytes. */
 private data class PendingVotingKeyReplacement(
     val identityId: ByteArray,
+    val networkRaw: Int,
     val storedIdentifier: String,
 ) {
     override fun equals(other: Any?): Boolean =
         other is PendingVotingKeyReplacement && identityId.contentEquals(other.identityId) &&
-            storedIdentifier == other.storedIdentifier
+            networkRaw == other.networkRaw && storedIdentifier == other.storedIdentifier
 
-    override fun hashCode(): Int = 31 * identityId.contentHashCode() + storedIdentifier.hashCode()
+    override fun hashCode(): Int =
+        (31 * identityId.contentHashCode() + networkRaw) * 31 + storedIdentifier.hashCode()
 }
 
 /**
@@ -572,6 +608,7 @@ internal interface VotingKeyEntries {
     /** [MasternodeVotingKeyStore.assignToIdentity]: store and record, under the lock. */
     suspend fun assign(
         identityId: ByteArray,
+        networkRaw: Int,
         votingKey: ByteArray,
         expectedIdentifier: String?,
         nowMillis: Long,
@@ -591,11 +628,13 @@ internal class StoredVotingKeyEntries(
 
     override suspend fun assign(
         identityId: ByteArray,
+        networkRaw: Int,
         votingKey: ByteArray,
         expectedIdentifier: String?,
         nowMillis: Long,
-    ): VotingKeyAssignment =
-        keys.assignToIdentity(database, identityId, votingKey, expectedIdentifier, nowMillis)
+    ): VotingKeyAssignment = keys.assignToIdentity(
+        database, identityId, networkRaw, votingKey, expectedIdentifier, nowMillis,
+    )
 
     override suspend fun removeStaleEntries(identityId: ByteArray): Boolean =
         keys.removeStaleEntries(database, identityId)
@@ -644,7 +683,7 @@ internal suspend fun saveLoadedIdentity(
         is VotingKeyOutcome.Conflicting ->
             return LoadSaveResult.ConfirmReplacement(outcome.storedIdentifier)
     }
-    val assignment = assignOrFail(entries, identityId, votingKey, expected, nowMillis) { reason ->
+    val assignment = assignOrFail(entries, identityId, networkRaw, votingKey, expected, nowMillis) { reason ->
         return LoadSaveResult.Failed(votingKeyNotStoredMessage(reason))
     }
     return when (assignment) {
@@ -694,7 +733,9 @@ private suspend fun saveLoadedFields(
         balance = balance,
         alias = alias,
         isLocal = true,
-        identityType = identityTypeToSave(current.identityType, pickedType, typePicked),
+        // Null keeps the stored type: an unpicked type never overwrites a newer one written
+        // since [current] was read.
+        identityType = if (typePicked) pickedType.rawValue else null,
         nowMillis = nowMillis,
     )
     return if (changed == 0) LoadSaveResult.Failed(IDENTITY_CHANGED_MESSAGE) else null
@@ -713,12 +754,13 @@ internal suspend fun replaceVotingKey(
     dao: IdentityDao,
     entries: VotingKeyEntries,
     identityId: ByteArray,
+    networkRaw: Int,
     expectedIdentifier: String,
     votingKey: ByteArray,
     nowMillis: Long = System.currentTimeMillis(),
 ): LoadSaveResult {
     val assignment =
-        assignOrFail(entries, identityId, votingKey, expectedIdentifier, nowMillis) { reason ->
+        assignOrFail(entries, identityId, networkRaw, votingKey, expectedIdentifier, nowMillis) { reason ->
             return LoadSaveResult.Failed(votingKeyNotReplacedMessage(reason))
         }
     return when (assignment) {
@@ -727,6 +769,31 @@ internal suspend fun replaceVotingKey(
         is VotingKeyAssignment.Changed -> LoadSaveResult.Failed(VOTING_KEY_CHANGED_MESSAGE)
     }
 }
+
+/**
+ * The scope a voting key draft belongs to: the decoded identity id (so hex and Base58 of one
+ * id match) on [networkRaw], or null while the text is not an identity id.
+ */
+internal fun votingKeyDraftScope(identityIdText: String, networkRaw: Int): String? =
+    Base58.decodeIdentifier(identityIdText.trim())?.let { "${it.toHex()}@$networkRaw" }
+
+/**
+ * Whether a voting key draft typed for [lastScope] must be cleared now that the form names
+ * [newScope]: when both name an identity and they differ. Text that is not an id yet (a
+ * half-typed edit) clears nothing; the draft is kept for the next id only when it is the
+ * same one.
+ */
+internal fun shouldClearVotingKeyDraft(lastScope: String?, newScope: String?): Boolean =
+    lastScope != null && newScope != null && lastScope != newScope
+
+/**
+ * The user kept the stored key instead of replacing it: the load is complete, so the
+ * identity's stale voting entries are cleaned up as after any load (see [savedAfterCleanup]).
+ */
+internal suspend fun keepStoredVotingKey(
+    entries: VotingKeyEntries,
+    identityId: ByteArray,
+): LoadSaveResult = savedAfterCleanup(entries, identityId, STALE_VOTING_KEY_NOT_REMOVED_MESSAGE)
 
 /**
  * [LoadSaveResult.Saved] once [MasternodeVotingKeyStore.removeStaleEntries] deleted the
@@ -755,12 +822,13 @@ private suspend fun savedAfterCleanup(
 private suspend inline fun assignOrFail(
     entries: VotingKeyEntries,
     identityId: ByteArray,
+    networkRaw: Int,
     votingKey: ByteArray,
     expectedIdentifier: String?,
     nowMillis: Long,
     onFailure: (reason: String?) -> Nothing,
 ): VotingKeyAssignment = try {
-    entries.assign(identityId, votingKey, expectedIdentifier, nowMillis)
+    entries.assign(identityId, networkRaw, votingKey, expectedIdentifier, nowMillis)
 } catch (e: CancellationException) {
     throw e
 } catch (e: Exception) {

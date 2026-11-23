@@ -133,7 +133,7 @@ class DataManagerTest {
 
         try {
             val import = async(Dispatchers.IO) {
-                keys.assignToIdentity(db, importedId, ByteArray(32) { 1 }, null)
+                keys.assignToIdentity(db, importedId, 1, ByteArray(32) { 1 }, null)
             }
             assertTrue("the import never started", importing.await(10, TimeUnit.SECONDS))
             MasternodeVotingKeyStore.onLockContendedForTesting = { clearWaiting.complete(Unit) }
@@ -181,7 +181,7 @@ class DataManagerTest {
             withTimeout(10_000) { clearing.await() }
             MasternodeVotingKeyStore.onLockContendedForTesting = { importWaiting.complete(Unit) }
             val import = async(Dispatchers.IO) {
-                keys.assignToIdentity(db, importedId, ByteArray(32) { 1 }, null)
+                keys.assignToIdentity(db, importedId, 1, ByteArray(32) { 1 }, null)
             }
             // Bounded, so a lock that never contends fails the test instead of hanging it.
             withTimeout(10_000) { importWaiting.await() }

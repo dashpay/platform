@@ -29,9 +29,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.services.DataManager
 import org.dashfoundation.example.di.LocalAppContainer
+import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 
@@ -49,6 +51,7 @@ fun DataManagementScreen(navController: NavHostController) {
 
     var pendingClear by remember { mutableStateOf<DataManager.Category?>(null) }
     var pendingClearAll by remember { mutableStateOf(false) }
+    var clearError by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         topBar = {
@@ -125,7 +128,15 @@ fun DataManagementScreen(navController: NavHostController) {
             },
             confirmButton = {
                 TextButton(onClick = {
-                    scope.launch { dataManager.clear(category) }
+                    scope.launch {
+                        try {
+                            dataManager.clear(category)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            clearError = clearFailedMessage(category.displayName, e.message)
+                        }
+                    }
                     pendingClear = null
                 }) { Text("Clear", color = MaterialTheme.colorScheme.error) }
             },
@@ -142,7 +153,15 @@ fun DataManagementScreen(navController: NavHostController) {
             text = { Text("Every locally stored wallet, identity, contract, and token record will be deleted, and so are imported masternode voting keys. Mnemonics in secure storage are kept.") },
             confirmButton = {
                 TextButton(onClick = {
-                    scope.launch { dataManager.clearAll() }
+                    scope.launch {
+                        try {
+                            dataManager.clearAll()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            clearError = clearAllFailedMessage(e.message)
+                        }
+                    }
                     pendingClearAll = false
                 }) { Text("Clear Everything", color = MaterialTheme.colorScheme.error) }
             },
@@ -151,4 +170,18 @@ fun DataManagementScreen(navController: NavHostController) {
             },
         )
     }
+
+    ErrorAlertDialog(message = clearError, title = "Clear failed", onDismiss = { clearError = null })
 }
+
+/** A failed category clear; clearing again finishes it. */
+internal fun clearFailedMessage(category: String, reason: String?): String =
+    "$category could not be cleared${reasonSuffix(reason)}. Try again."
+
+/** A failed Clear All: the categories cleared before the failure stay deleted. */
+internal fun clearAllFailedMessage(reason: String?): String =
+    "Clearing all data stopped${reasonSuffix(reason)}. Categories cleared before the " +
+        "failure stay deleted and are not restored. Try again to clear the rest."
+
+private fun reasonSuffix(reason: String?): String =
+    reason?.trim()?.trimEnd('.')?.takeIf { it.isNotEmpty() }?.let { ": $it" } ?: ""
