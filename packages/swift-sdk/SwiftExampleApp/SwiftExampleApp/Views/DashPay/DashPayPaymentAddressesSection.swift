@@ -45,25 +45,19 @@ extension DashPayPaymentAddressKind {
 ///
 /// `isLastKnown` marks addresses read from a cached copy of someone else's
 /// profile (contact detail): the section is titled as the last known
-/// addresses and its footer says they may have changed since `checkedAt`.
+/// addresses and its footer says they were read when the contact's profile
+/// was last checked and may have changed since.
 struct DashPayPublishedPaymentAddressesSection: View {
     let profile: DashPayProfile?
     let network: Network
     let identifierPrefix: String
     let showsUnpublished: Bool
     var isLastKnown: Bool = false
-    /// When the cached profile was last checked, if known.
-    var checkedAt: Date?
 
     @State private var copiedKind: DashPayPaymentAddressKind?
 
-    private var lastKnownNote: String {
-        if let checkedAt {
-            let when = checkedAt.formatted(date: .abbreviated, time: .shortened)
-            return "Read from this contact's profile when it was last checked (\(when)). They may have changed since."
-        }
-        return "Read from this contact's profile when it was last checked. They may have changed since."
-    }
+    private let lastKnownNote =
+        "Read from this contact's profile when it was last checked. They may have changed since."
 
     private var publishedKinds: [DashPayPaymentAddressKind] {
         DashPayPaymentAddressKind.allCases.filter { profile?.paymentAddress($0) != nil }

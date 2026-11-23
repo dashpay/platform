@@ -26,10 +26,6 @@ struct ContactDetailView: View {
     /// rows and Send Dash re-enables without a manual refresh.
     @Query private var pairRows: [PersistentDashpayContactRequest]
 
-    /// The persisted copy of this contact's cached profile, read only for
-    /// when it was last checked.
-    @Query private var cachedProfileRows: [PersistentDashpayContactProfile]
-
     @State private var showPaymentSheet = false
     @State private var showAliasEditor = false
     @State private var showNoteEditor = false
@@ -52,12 +48,6 @@ struct ContactDetailView: View {
             filter: #Predicate<PersistentDashpayContactRequest> {
                 $0.ownerIdentityId == ownerId && $0.contactIdentityId == contact
             }
-        )
-        _cachedProfileRows = Query(
-            filter: PersistentDashpayContactProfile.predicate(
-                ownerIdentityId: ownerId,
-                contactIdentityId: contact
-            )
         )
     }
 
@@ -109,13 +99,6 @@ struct ContactDetailView: View {
         )
     }
 
-    /// When the wallet last checked this contact's profile, if it has a
-    /// cached row for it.
-    private var profileCheckedAt: Date? {
-        guard let ms = cachedProfileRows.first?.checkedAtMs, ms > 0 else { return nil }
-        return Date(timeIntervalSince1970: TimeInterval(ms) / 1000)
-    }
-
     private var displayName: String {
         dashPayContactDisplayName(
             contactId: contactId,
@@ -145,8 +128,7 @@ struct ContactDetailView: View {
                 network: identity.network,
                 identifierPrefix: "dashpay.contact.paymentAddress",
                 showsUnpublished: false,
-                isLastKnown: true,
-                checkedAt: profileCheckedAt
+                isLastKnown: true
             )
             sendSection
             paymentsSection
