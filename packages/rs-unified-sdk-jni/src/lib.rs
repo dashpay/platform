@@ -26,6 +26,7 @@ mod dpns_marketplace;
 mod events;
 mod funding;
 mod identity;
+mod identity_key_limits;
 mod identity_removal;
 mod identity_withdrawals;
 mod masternode_voting_key;
