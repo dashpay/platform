@@ -321,7 +321,7 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
             modifier = Modifier.fillMaxSize().padding(padding),
         ) {
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().testTag("dashpay.requests.list"),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -414,7 +414,10 @@ private fun IncomingRequestRow(
         }
         if (isInFlight) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp).testTag("dashpay.request.busy"),
+                    strokeWidth = 2.dp,
+                )
             }
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -434,6 +437,7 @@ private fun IncomingRequestRow(
                 errorMessage,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.testTag("dashpay.request.message"),
             )
         }
     }
@@ -460,6 +464,7 @@ private fun OutgoingRequestRow(item: RequestRowItem) {
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.tertiary,
+            modifier = Modifier.testTag("dashpay.request.outgoingPending"),
         )
     }
 }
