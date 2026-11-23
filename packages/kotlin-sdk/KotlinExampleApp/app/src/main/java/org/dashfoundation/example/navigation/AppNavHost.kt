@@ -89,6 +89,7 @@ import org.dashfoundation.example.ui.storage.StorageRecordDetailScreen
 import org.dashfoundation.example.ui.scanner.QrScannerScreen
 import org.dashfoundation.example.ui.sync.SyncStatusScreen
 import org.dashfoundation.example.ui.wallet.AccountDetailScreen
+import org.dashfoundation.example.ui.wallet.CoreAddressDetailScreen
 import org.dashfoundation.example.ui.wallet.CreateWalletScreen
 import org.dashfoundation.example.ui.wallet.SeedBackupScreen
 import org.dashfoundation.example.ui.wallet.SendTransactionScreen
@@ -132,6 +133,11 @@ fun AppNavHost(
         composable<AccountDetail> { entry ->
             val route = entry.toRoute<AccountDetail>()
             AccountDetailScreen(route.walletIdHex, route.accountId, navController)
+        }
+
+        composable<CoreAddressDetail> { entry ->
+            val route = entry.toRoute<CoreAddressDetail>()
+            CoreAddressDetailScreen(route.walletIdHex, route.address, navController)
         }
 
         composable<SendTransaction> { entry ->

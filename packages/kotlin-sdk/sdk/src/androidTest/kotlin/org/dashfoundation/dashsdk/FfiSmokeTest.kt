@@ -3,6 +3,7 @@ package org.dashfoundation.dashsdk
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.Dispatchers
+import org.dashfoundation.dashsdk.ffi.AddressPrivateKeyNative
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
@@ -192,6 +193,21 @@ class FfiSmokeTest {
         }
         assertThrows(DashSDKException::class.java) {
             DashpayNative.privatePaymentsRestoreFailure(0L, ByteArray(32))
+        }
+    }
+
+    /**
+     * The core address private-key reveal binds, and an unknown wallet handle
+     * throws the mapped [DashSDKException] instead of crashing. The reveal on a
+     * real wallet is `CoreAddressPrivateKeyRevealTest`.
+     */
+    @Test
+    fun coreAddressPrivateKeySymbolBindsAndRejectsInvalidHandle() {
+        NativeLoader.ensureLoaded()
+        assertThrows(DashSDKException::class.java) {
+            AddressPrivateKeyNative.revealCoreAddressPrivateKey(
+                0L, 0L, "yMqShkrgjTRuReBGFpQr7FozEF1QcNBBYA",
+            )
         }
     }
 

@@ -43,6 +43,9 @@ import kotlinx.serialization.Serializable
 /** One account's addresses/UTXOs (← `AccountDetailView.swift`). */
 @Serializable data class AccountDetail(val walletIdHex: String, val accountId: Long)
 
+/** One core address and its gated private-key reveal (← `CoreAddressDetailView`, `StorageRecordDetailViews.swift`). */
+@Serializable data class CoreAddressDetail(val walletIdHex: String, val address: String)
+
 /** Send form (← `SendTransactionView.swift` + `SendViewModel.swift`). */
 @Serializable data class SendTransaction(val walletIdHex: String)
 
