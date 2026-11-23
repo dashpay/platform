@@ -444,6 +444,8 @@ pub(crate) fn rewind_v021(conn: &rusqlite::Connection) {
          DROP TRIGGER asset_locks_identity_recipient_immutable; \
          ALTER TABLE asset_locks DROP COLUMN identity_recipient; \
          DROP TABLE core_locked_outpoints; \
+         DROP TRIGGER asset_locks_platform_address_recipients_immutable; \
+         ALTER TABLE asset_locks DROP COLUMN platform_address_recipients; \
          DELETE FROM refinery_schema_history WHERE version >= 21;",
     )
     .unwrap();
