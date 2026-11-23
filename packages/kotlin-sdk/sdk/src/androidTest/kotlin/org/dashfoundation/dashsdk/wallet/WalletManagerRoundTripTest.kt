@@ -518,6 +518,15 @@ class WalletManagerRoundTripTest {
                     refused is org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet
                         .AssetLockRecipientMismatch,
                 )
+                // The exact bytes were restored, not merely some 43 bytes
+                // other than the requested address: Rust names the recipient
+                // it holds for the lock ("was built to pay shielded recipient
+                // <hex>").
+                val recordedHex = recorded.joinToString("") { "%02x".format(it) }
+                assertTrue(
+                    "the refusal names the recorded recipient: ${refused?.message}",
+                    refused?.message.orEmpty().contains("shielded recipient $recordedHex"),
+                )
             }
         } finally {
             storeDir.deleteRecursively()
