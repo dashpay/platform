@@ -9842,30 +9842,23 @@ mod spend_plan_tests {
         assert_eq!(unspent(&store).await, 3, "nothing reserved");
     }
 
-    /// A pinned SDK that verified a newer network version while the plan's notes also moved
-    /// quotes no replacement selection: the selection it would quote is priced at the pinned
-    /// version, which a new plan on the same SDK refuses. The spend is a changed plan with no
-    /// fresh selection, and nothing is reserved.
+    /// A pinned SDK that verifies a newer, supported network version while the spend waits
+    /// for the store, as the plan's notes also move, quotes no replacement selection: the
+    /// selection it would quote is priced at the pinned version, which a new plan on the same
+    /// SDK refuses. The version is checked under the store lock, so the spend is a changed plan
+    /// with no fresh selection, and nothing is reserved.
     #[tokio::test]
     async fn should_quote_no_fresh_selection_when_notes_and_network_version_both_moved() {
-        let kind = ShieldedSpendKind::Transfer;
-        let case = VersionMovesDuringAnchorFetch::serving_pinned(kind, start_version(kind)).await;
-        case.sdk
-            .mock_verified_protocol_version(PlatformVersion::latest().protocol_version)
-            .expect("a mock SDK");
-        assert_ne!(
-            start_version(kind),
-            PlatformVersion::latest().protocol_version
-        );
-        {
-            let mut guard = case.store.write().await;
-            guard
-                .mark_spent(ID, &case.plan.nullifiers[0])
-                .expect("spent");
-            guard.save_note(ID, &note(9, 10 * NOTE)).expect("a note");
-        }
+        use std::task::{Context, Poll, Waker};
 
-        let refused = reserve_unspent_notes(
+        let kind = ShieldedSpendKind::Transfer;
+        let network = PlatformVersion::latest().protocol_version;
+        assert_ne!(start_version(kind), network);
+        let case = VersionMovesDuringAnchorFetch::serving_pinned(kind, start_version(kind)).await;
+        // Hold the store so that the reservation suspends at its write lock, after every
+        // check it runs before the lock.
+        let mut held = case.store.write().await;
+        let mut reserving = Box::pin(reserve_unspent_notes(
             &case.sdk,
             &case.store,
             ID,
@@ -9873,8 +9866,24 @@ mod spend_plan_tests {
             kind,
             Some(&case.plan.digest),
             PlatformVersion::get(start_version(kind)).expect("the pinned version"),
-        )
-        .await;
+        ));
+        let mut cx = Context::from_waker(Waker::noop());
+        assert!(
+            reserving.as_mut().poll(&mut cx).is_pending(),
+            "the reservation waits for the store"
+        );
+        // Meanwhile the planned note is replaced and another task verifies a newer version.
+        held.mark_spent(ID, &case.plan.nullifiers[0])
+            .expect("spent");
+        held.save_note(ID, &note(9, 10 * NOTE)).expect("a note");
+        case.sdk
+            .mock_verified_protocol_version(network)
+            .expect("a mock SDK");
+        drop(held);
+
+        let Poll::Ready(refused) = reserving.as_mut().poll(&mut cx) else {
+            panic!("the reservation finishes once the store is free");
+        };
 
         assert!(
             matches!(
