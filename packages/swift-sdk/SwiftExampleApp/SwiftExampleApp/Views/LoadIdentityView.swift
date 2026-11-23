@@ -452,11 +452,29 @@ struct LoadIdentityView: View {
                     )
                     let loaded: MasternodeVotingLoadedIdentity
                     switch load {
-                    case .refused(let message):
-                        await MainActor.run {
-                            errorMessage = message
-                            isLoading = false
-                            loadStartTime = nil
+                    case .refused(let message, let votingKeyRefusedFor):
+                        // A refused voting key is recorded on a row this
+                        // device already stores for the voter identity it
+                        // was refused for, holding the same key, as Rust's
+                        // outcome says. Nothing is created or replaced.
+                        if let votingKeyRefusedFor, let votingKeyData, let votingKeyAddress,
+                           appState.sdk === sdk {
+                            _ = await MainActor.run {
+                                applyVotingKeyCheck(
+                                    .invalid(message: message),
+                                    of: votingKeyData,
+                                    votingAddress: votingKeyAddress,
+                                    identityId: votingKeyRefusedFor,
+                                    network: network,
+                                    refusal: message
+                                )
+                            }
+                        } else {
+                            await MainActor.run {
+                                errorMessage = message
+                                isLoading = false
+                                loadStartTime = nil
+                            }
                         }
                         return
                     case .loaded(let identity):
@@ -492,37 +510,17 @@ struct LoadIdentityView: View {
                 // made of.
                 if let votingKeyData, let check = votingKeyCheck, let votingAddress = votingKeyAddress {
                     let refusal = "The voting key does not belong to masternode \(validIdData.toHexString()), so the identity was not saved: \(Self.reason(of: check))"
-                    let outcome = await MainActor.run { () -> MasternodeVotingKeyCheckOutcome in
-                        let read = Self.votingKeySlot(
-                            holding: votingKeyData,
+                    let storeKey = await MainActor.run {
+                        applyVotingKeyCheck(
+                            check,
+                            of: votingKeyData,
+                            votingAddress: votingAddress,
                             identityId: rowId,
                             network: network,
-                            in: modelContext
+                            refusal: refusal
                         )
-                        let outcome = check.outcome(votingAddress: votingAddress, slot: read.slot)
-                        if !outcome.storeKey {
-                            // Nothing entered is stored. What Rust says to
-                            // record is for the key already stored.
-                            var text = refusal
-                            if let record = outcome.record,
-                               let row = Self.identityRow(rowId, on: network, in: modelContext) {
-                                row.recordedVotingKey = record
-                                do {
-                                    try modelContext.save()
-                                } catch {
-                                    text += " The verdict on the stored voting key could not be saved: \(error.localizedDescription). Load the identity again to retry."
-                                }
-                            }
-                            if read.storedKeyUnreadable {
-                                text += " The stored voting key could not be read, so what is recorded for it was not updated. Unlock the device and load the identity again."
-                            }
-                            errorMessage = text
-                            isLoading = false
-                            loadStartTime = nil
-                        }
-                        return outcome
                     }
-                    guard outcome.storeKey else { return }
+                    guard storeKey else { return }
                 }
 
                 // Debug: Print the entire identity data to see its structure
@@ -884,6 +882,48 @@ struct LoadIdentityView: View {
                 loadStartTime = nil
             }
         }
+    }
+
+    /// Applies Rust's outcome for a checked voting key
+    /// (`MasternodeVotingKeyCheck.outcome(votingAddress:slot:)`) to what this
+    /// device stores for `identityId`, and returns whether the entered key is
+    /// stored. When it is not, nothing entered is stored, what Rust says to
+    /// record is written on the identity's existing row (for the same stored
+    /// key only), and the load reports `refusal`.
+    @MainActor
+    private func applyVotingKeyCheck(
+        _ check: MasternodeVotingKeyCheck,
+        of votingKeyData: Data,
+        votingAddress: MasternodeVotingKeyAddress,
+        identityId: Data,
+        network: Network,
+        refusal: String
+    ) -> Bool {
+        let read = Self.votingKeySlot(
+            holding: votingKeyData,
+            identityId: identityId,
+            network: network,
+            in: modelContext
+        )
+        let outcome = check.outcome(votingAddress: votingAddress, slot: read.slot)
+        guard !outcome.storeKey else { return true }
+        var text = refusal
+        if let record = outcome.record,
+           let row = Self.identityRow(identityId, on: network, in: modelContext) {
+            row.recordedVotingKey = record
+            do {
+                try modelContext.save()
+            } catch {
+                text += " The verdict on the stored voting key could not be saved: \(error.localizedDescription). Load the identity again to retry."
+            }
+        }
+        if read.storedKeyUnreadable {
+            text += " The stored voting key could not be read, so what is recorded for it was not updated. Unlock the device and load the identity again."
+        }
+        errorMessage = text
+        isLoading = false
+        loadStartTime = nil
+        return false
     }
 
     /// Replace the stored masternode keys in `keys` after the user confirmed

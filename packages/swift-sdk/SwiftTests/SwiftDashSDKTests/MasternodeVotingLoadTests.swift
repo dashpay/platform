@@ -61,10 +61,24 @@ final class MasternodeVotingLoadTests: XCTestCase {
     func testShouldReadARefusalWithoutAMessageAsAnEmptyReason() throws {
         var load = DashSDKMasternodeVotingLoad()
         load.kind = DashSDKMasternodeVotingLoadKind_Refused
-        guard case .refused(let message) = try MasternodeVotingLoadFFI.consume(&load) else {
+        guard case .refused(let message, let refusedFor) = try MasternodeVotingLoadFFI.consume(&load) else {
             return XCTFail("expected a refusal")
         }
         XCTAssertEqual(message, "")
+        XCTAssertNil(refusedFor, "no verdict: the refusal names no voter identity")
+    }
+
+    /// A refused voting key names the voter identity it was refused for.
+    func testShouldCarryTheVoterIdentityARefusedVotingKeyNames() throws {
+        var load = DashSDKMasternodeVotingLoad()
+        load.kind = DashSDKMasternodeVotingLoadKind_Refused
+        load.has_voting_key_verdict = true
+        load.voting_key_verdict = DashSDKVotingKeyVerdict_Invalid
+        withUnsafeMutableBytes(of: &load.identity_id) { $0.copyBytes(from: Data(repeating: 0x5a, count: 32)) }
+        guard case .refused(_, let refusedFor) = try MasternodeVotingLoadFFI.consume(&load) else {
+            return XCTFail("expected a refusal")
+        }
+        XCTAssertEqual(refusedFor, Data(repeating: 0x5a, count: 32))
     }
 
     /// A loaded identity always carries its JSON; a load without it is an
