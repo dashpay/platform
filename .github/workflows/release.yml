@@ -484,7 +484,9 @@ jobs:
       # before the upload, so SHA256SUMS lists the bytes that were built and
       # signed rather than whatever the release holds later. Each file is
       # recorded under the name the upload gives it, its base name; the upload
-      # skips hidden files, and so does this.
+      # skips hidden files, and so does this. The records go into this job's
+      # own log, one `dashmate package: <sha256>  <name>` line each, where the
+      # checksums job reads them: no other job can write to it.
       - name: Record package checksums
         env:
           LC_ALL: C
@@ -513,18 +515,7 @@ jobs:
             echo "::error::No packages to record"
             exit 1
           fi
-          cat "${RECORD}"
-
-      # Replaced when this leg is re-run, so the record always describes the
-      # packages the leg published last.
-      - name: Upload package checksums
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: dashmate-checksums-${{ matrix.package_type }}-${{ github.sha }}
-          path: ${{ runner.temp }}/dashmate-${{ matrix.package_type }}.sha256
-          if-no-files-found: error
-          retention-days: 90
-          overwrite: true
+          sed 's/^/dashmate package: /' "${RECORD}"
 
       - name: Upload artifacts to release
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v0.1.15
@@ -534,8 +525,8 @@ jobs:
 
   # SHA256SUMS for the packages the release legs recorded. Maintainers sign it
   # out of band and attach the signature as SHA256SUMS.asc. Nothing is checked
-  # out or installed here: the one action downloads the records, and the rest
-  # is the runner's gh and coreutils.
+  # out or installed here and no action runs: everything is the runner's gh
+  # and coreutils.
   release-dashmate-checksums:
     name: Release Dashmate checksums
     needs:
@@ -554,17 +545,56 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
+      actions: read
     env:
       GH_TOKEN: ${{ github.token }}
       RELEASE_ID: ${{ github.event.release.id }}
       TAG: ${{ github.event.release.tag_name }}
     steps:
-      - name: Download package checksums
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          pattern: dashmate-checksums-*-${{ github.sha }}
-          path: checksums
-          merge-multiple: true
+      # Each package type's records come from the log of its one release leg in
+      # this run attempt. A re-run attempt lists the legs it did not re-run
+      # again, under new ids that still serve their logs.
+      - name: Read package checksums from the release legs' logs
+        env:
+          LC_ALL: C
+        run: |
+          set -euo pipefail
+          # The runner colours the commands it echoes into a log, and newer gh
+          # versions refuse such a response unless told to allow it; older
+          # versions do not know that option. The help is read whole: a reader
+          # that stopped at the first match would cut gh off and fail the check.
+          help="$(gh api --help 2> /dev/null || true)"
+          job_log() {
+            case "${help}" in
+              *--allow-escape-sequences*) gh api --allow-escape-sequences "repos/${GITHUB_REPOSITORY}/actions/jobs/$1/logs" ;;
+              *) gh api "repos/${GITHUB_REPOSITORY}/actions/jobs/$1/logs" ;;
+            esac
+          }
+          legs="$(gh api --paginate \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs?per_page=100" \
+            --jq '.jobs[] | select(.name | startswith("Release Dashmate packages (")) | [.name, .id, .conclusion] | @tsv')"
+          mkdir -p checksums
+          for package_type in tarballs win deb macos; do
+            leg="$(echo "${legs}" | awk -F'\t' -v prefix="Release Dashmate packages (${package_type}, " 'index($1, prefix) == 1')"
+            case "${leg}" in
+              '' | *$'\n'*)
+                echo "::error::Expected one Release Dashmate packages job for ${package_type} in attempt ${GITHUB_RUN_ATTEMPT} of this run, found: ${leg:-none}"
+                exit 1
+                ;;
+            esac
+            IFS=$'\t' read -r name id conclusion <<< "${leg}"
+            if [ "${conclusion}" != success ]; then
+              echo "::error::${name} (job ${id}) did not succeed: ${conclusion:-unfinished}"
+              exit 1
+            fi
+            job_log "${id}" > log
+            sed -nE 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z dashmate package: ([0-9a-f]{64}  dashmate[A-Za-z0-9._-]*)$/\1/p' \
+              log > "checksums/dashmate-${package_type}.sha256"
+            if [ ! -s "checksums/dashmate-${package_type}.sha256" ]; then
+              echo "::error::The log of ${name} (job ${id}) records no packages"
+              exit 1
+            fi
+          done
 
       # One `<sha256>  <name>` line per package, as sha256sum writes them,
       # sorted by name, so the same packages always give the same file.
@@ -574,14 +604,15 @@ jobs:
         run: |
           set -euo pipefail
           # One record per package type of the release-dashmate-packages
-          # matrix. The download succeeds even when one is missing or expired.
+          # matrix, and nothing else.
+          : > records
           for package_type in tarballs win deb macos; do
             if [ ! -s "checksums/dashmate-${package_type}.sha256" ]; then
               echo "::error::No checksums were recorded for the ${package_type} packages"
               exit 1
             fi
+            cat "checksums/dashmate-${package_type}.sha256" >> records
           done
-          cat checksums/*.sha256 > records
           if grep -Evx '[0-9a-f]{64}  dashmate[A-Za-z0-9._-]*' records; then
             echo "::error::The lines above are not in the form '<sha256>  <package name>'"
             exit 1

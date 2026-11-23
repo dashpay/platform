@@ -1,5 +1,4 @@
 """Record, generate, check and attach the SHA256SUMS of the Dashmate release packages."""
-import fnmatch
 import hashlib
 import json
 import os
@@ -34,12 +33,17 @@ PACKAGES = {
 }
 
 ASSETS_CALL = 'api --paginate repos/dashpay/platform/releases/123/assets?per_page=100'
+JOBS_CALL = 'api --paginate repos/dashpay/platform/actions/runs/4462/attempts/3/jobs?per_page=100'
+OS = {'tarballs': 'ubuntu-24.04', 'win': 'ubuntu-24.04', 'deb': 'ubuntu-24.04', 'macos': 'macos-15'}
 
 # gh needs GH_TOKEN in a workflow. `gh api` answers listings with the release assets in GH_ASSETS,
-# filtered through real jq as gh's --jq would. An upload through the API keeps a copy of the file
+# or with the run attempt's jobs in GH_JOBS, filtered through real jq as gh's --jq would; a job's
+# log is the file named by its id in GH_JOB_LOGS. An upload through the API keeps a copy of the file
 # and answers with asset id GH_NEW_ID; reading that asset back reports the uploaded bytes' digest,
-# or GH_ATTACHED_STATE / GH_ATTACHED_DIGEST ('null' for none). GH_FAIL fails the listings. The log
-# has one line per call, without the jq filter.
+# or GH_ATTACHED_STATE / GH_ATTACHED_DIGEST ('null' for none). GH_FAIL fails the listings.
+# GH_ESCAPE_GUARD makes it a gh that refuses a response with terminal escape sequences unless
+# --allow-escape-sequences is given; any other gh does not know that option. The log has one line
+# per call, without the jq filter.
 GH_STUB = '''#!/usr/bin/env python3
 import hashlib, json, os, shutil, subprocess, sys
 args = sys.argv[1:]
@@ -57,11 +61,38 @@ def respond(text):
     sys.exit(result.returncode)
 
 uploaded = os.path.join(os.environ['UPLOADED'], 'SHA256SUMS')
+guard = bool(os.environ.get('GH_ESCAPE_GUARD'))
+if args == ['api', '--help']:
+    # As long as gh's own help, so a reader that stops at the first match closes the pipe early.
+    print('Usage: gh api <endpoint> [flags]')
+    if guard:
+        print('      --allow-escape-sequences   Allow terminal escape sequences in the response')
+    for number in range(5000):
+        print(f'  --option-{number} string   Another option of gh api')
+    sys.exit(0)
+if '--allow-escape-sequences' in args and not guard:
+    print('unknown flag: --allow-escape-sequences', file=sys.stderr)
+    sys.exit(1)
 if args[:2] == ['api', '--paginate']:
     if os.environ.get('GH_FAIL'):
         print('gh: Server Error (HTTP 502)', file=sys.stderr)
         sys.exit(1)
+    if '/actions/runs/' in args[2]:
+        respond(json.dumps({'jobs': json.loads(os.environ['GH_JOBS'])}))
     respond(os.environ['GH_ASSETS'])
+path = [a for a in args[1:] if a != '--allow-escape-sequences'][0] if args[0] == 'api' else ''
+if path.startswith('repos/dashpay/platform/actions/jobs/') and path.endswith('/logs'):
+    log = os.path.join(os.environ['GH_JOB_LOGS'], path.split('/')[-2])
+    if not os.path.exists(log):
+        print('gh: Not Found (HTTP 404)', file=sys.stderr)
+        sys.exit(1)
+    with open(log) as handle:
+        text = handle.read()
+    if guard and '--allow-escape-sequences' not in args and '\x1b' in text:
+        print('the response contains terminal escape sequences', file=sys.stderr)
+        sys.exit(1)
+    sys.stdout.write(text)
+    sys.exit(0)
 if args[:3] == ['api', '--method', 'DELETE']:
     sys.exit(0)
 if args[:3] == ['api', '--method', 'POST']:
@@ -175,7 +206,8 @@ class ReleaseChecksumsTests(unittest.TestCase):
         """
         context = self.context(package_type) if package_type else {}
         env = {'PATH': f"{self.tmp / 'bin'}{os.pathsep}{os.environ['PATH']}", 'HOME': str(self.tmp),
-               'LANG': 'en_US.UTF-8', 'GITHUB_REPOSITORY': 'dashpay/platform',
+               'LANG': 'en_US.UTF-8', 'GITHUB_REPOSITORY': 'dashpay/platform', 'GITHUB_RUN_ID': '4462',
+               'GITHUB_RUN_ATTEMPT': '3', 'GH_JOBS': '[]', 'GH_JOB_LOGS': str(self.tmp / 'job-logs'),
                'GH_LOG': str(self.tmp / 'gh.log'), 'GH_ASSETS': json.dumps(list(assets)),
                'UPLOADED': str(self.tmp / 'uploaded'), **knobs}
         env.update({key: evaluate(value, **context) for key, value in step_env(name).items()})
@@ -201,35 +233,51 @@ class ReleaseChecksumsTests(unittest.TestCase):
         return leg, contents
 
     def record(self, package_type, files=None):
-        """Run a leg's Record step; returns the file its upload step would take as the record."""
+        """Run a leg's Record step; returns its result and the packages the leg would upload."""
         leg, contents = self.leg(package_type, files)
         result = self.run_step('Record package checksums', cwd=leg, package_type=package_type)
-        record = Path(evaluate(step_with('Upload package checksums')['path'], **self.context(package_type)))
-        return result, record, contents
+        return result, contents
 
-    def transfer_records(self):
-        """Move the records as upload-artifact and download-artifact (pattern, merge-multiple) would."""
-        upload, download = step_with('Upload package checksums'), step_with('Download package checksums')
-        self.assertEqual(download.get('merge-multiple'), 'true')
-        target = self.tmp / evaluate(download['path'])
-        target.mkdir(exist_ok=True)
-        # overwrite: true replaces an artifact of the same name, so each leg needs its own
-        names = [evaluate(upload['name'], **self.context(package_type)) for package_type in PACKAGES]
-        self.assertEqual(len(set(names)), len(names), names)
-        for package_type in PACKAGES:
-            context = self.context(package_type)
-            source = Path(evaluate(upload['path'], **context))
-            if source.exists() and fnmatch.fnmatchcase(evaluate(upload['name'], **context),
-                                                       evaluate(download['pattern'])):
-                shutil.copy(source, target)
+    @staticmethod
+    def job_log(lines, step=None):
+        """A job's log as the API serves it: timestamped, the step's commands echoed in colour."""
+        script = step_script(step).splitlines() if step else ['make dist']
+        echoed = [f'##[group]Run {script[0]}', *(f'\x1b[36;1m{line}\x1b[0m' for line in script),
+                  'shell: /usr/bin/bash -e {0}', '##[endgroup]']
+        return '\ufeff' + ''.join(f'2026-11-23T10:00:00.{n:07d}Z {line}\n'
+                                  for n, line in enumerate(echoed + list(lines)))
 
-    def record_all(self):
-        published = {}
-        for package_type in PACKAGES:
-            result, _, contents = self.record(package_type)
+    def leg_logs(self):
+        """Run every leg's Record step; returns the run attempt's jobs, their logs and the packages."""
+        jobs, logs, published = [], {}, {}
+        for number, package_type in enumerate(PACKAGES):
+            result, contents = self.record(package_type)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             published.update(contents)
-        self.transfer_records()
+            jobs.append({'name': f'Release Dashmate packages ({package_type}, {OS[package_type]})',
+                         'id': 9001 + number, 'conclusion': 'success'})
+            logs[9001 + number] = self.job_log((result.stdout + result.stderr).splitlines(),
+                                               'Record package checksums')
+        # jobs that are not release legs: one without a log of its own yet, and one whose package
+        # type only starts like a leg's
+        jobs += [{'name': 'Build Dashmate packages (deb, ubuntu-24.04)', 'id': 8001, 'conclusion': 'success'},
+                 {'name': 'Release Dashmate checksums', 'id': 9999, 'conclusion': None},
+                 {'name': 'Release Dashmate packages (debug, ubuntu-24.04)', 'id': 8002, 'conclusion': 'failure'}]
+        logs[8001] = self.job_log(['Packing dashmate_5.1.0-1_amd64.deb'])
+        return jobs, logs, published
+
+    def read_records(self, jobs, logs, **knobs):
+        """Run the step that reads the records from the logs of the jobs the API lists."""
+        shutil.rmtree(self.tmp / 'job-logs', ignore_errors=True)
+        (self.tmp / 'job-logs').mkdir()
+        for number, log in logs.items():
+            (self.tmp / 'job-logs' / str(number)).write_text(log)
+        return self.run_step("Read package checksums from the release legs' logs", GH_JOBS=json.dumps(jobs), **knobs)
+
+    def record_all(self):
+        jobs, logs, published = self.leg_logs()
+        result = self.read_records(jobs, logs)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return published
 
     @staticmethod
@@ -243,12 +291,12 @@ class ReleaseChecksumsTests(unittest.TestCase):
             listed = [dict(asset, **change) if asset['name'] == name else asset for asset in listed]
         return listed
 
-    def test_should_record_each_uploaded_package_under_its_release_name(self):
-        result, record, contents = self.record('deb')
+    def test_should_record_each_uploaded_package_under_its_release_name_in_the_legs_log(self):
+        result, contents = self.record('deb')
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(sorted(record.read_text().splitlines()),
-                         sorted(f'{sha256(data)}  {name}' for name, data in contents.items()))
+        self.assertEqual(sorted(line for line in result.stdout.splitlines() if line.startswith('dashmate package: ')),
+                         sorted(f'dashmate package: {sha256(data)}  {name}' for name, data in contents.items()))
 
     def test_should_refuse_to_publish_anything_but_dashmate_packages(self):
         cases = {
@@ -262,7 +310,7 @@ class ReleaseChecksumsTests(unittest.TestCase):
         }
         for case, files in cases.items():
             with self.subTest(case):
-                result, record, _ = self.record('deb', files)
+                result, _ = self.record('deb', files)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn('::error::Refusing to publish', result.stdout)
         with self.subTest('a symlink, which the upload would follow'):
@@ -273,9 +321,87 @@ class ReleaseChecksumsTests(unittest.TestCase):
             self.assertIn('::error::Not a regular file', result.stdout)
 
     def test_should_refuse_a_leg_without_packages(self):
-        result, _, _ = self.record('deb', [])
+        result, _ = self.record('deb', [])
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('::error::No packages to record', result.stdout)
+
+    def test_should_read_each_package_types_records_from_the_log_of_its_release_leg(self):
+        for guard in ['', '1']:
+            # gh 2.105 refuses a log with the runner's colour codes unless told to allow them;
+            # older versions do not know that option.
+            with self.subTest(refuses_escape_sequences=bool(guard)):
+                shutil.rmtree(self.tmp / 'checksums', ignore_errors=True)
+                (self.tmp / 'gh.log').unlink(missing_ok=True)
+                jobs, logs, published = self.leg_logs()
+
+                result = self.read_records(jobs, logs, GH_ESCAPE_GUARD=guard)
+
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                for package_type, files in PACKAGES.items():
+                    names = [Path(path).name for path in files]
+                    self.assertEqual(
+                        sorted((self.tmp / f'checksums/dashmate-{package_type}.sha256').read_text().splitlines()),
+                        sorted(f'{sha256(published[name])}  {name}' for name in names))
+                # the jobs of this run attempt, then the logs of the four legs and nothing else
+                calls = self.gh_calls()
+                self.assertEqual(calls[:2], ['api --help', JOBS_CALL])
+                self.assertEqual(sorted(call.split()[-1] for call in calls[2:]),
+                                 [f'repos/dashpay/platform/actions/jobs/{9001 + n}/logs' for n in range(4)])
+
+    def test_should_take_records_only_from_the_release_legs(self):
+        # A record from anywhere else, here for a deb an earlier build left on the release, adds
+        # nothing to SHA256SUMS, and the leftover asset then fails the check: another job of the
+        # run that prints a record line, or a record file beside the four of the matrix.
+        jobs, logs, published = self.leg_logs()
+        leftover = {'name': 'dashmate_5.1.0-2_amd64.deb', 'state': 'uploaded', 'digest': 'sha256:' + 'e' * 64}
+        logs[8001] = self.job_log([f"dashmate package: {'e' * 64}  {leftover['name']}"])
+
+        self.assertEqual(self.read_records(jobs, logs).returncode, 0)
+        (self.tmp / 'checksums/dashmate-extra.sha256').write_text(f"{'e' * 64}  {leftover['name']}\n")
+        generate = self.run_step('Generate SHA256SUMS')
+        check = self.run_step('Check the release serves the recorded packages',
+                              assets=self.assets(published) + [leftover])
+
+        self.assertEqual(generate.returncode, 0, generate.stdout + generate.stderr)
+        self.assertNotIn(leftover['name'], (self.tmp / 'SHA256SUMS').read_text())
+        self.assertNotEqual(check.returncode, 0)
+        self.assertIn('::error::', check.stdout)
+
+    def test_should_refuse_a_package_type_without_one_successful_leg_that_recorded_it(self):
+        deb = 'Release Dashmate packages (deb, ubuntu-24.04)'
+
+        def leg(jobs):
+            return next(j for j in jobs if j['name'] == deb)
+
+        cases = {
+            'no leg': lambda jobs, logs: jobs.remove(leg(jobs)),
+            'two legs': lambda jobs, logs: (jobs.append(dict(leg(jobs), id=9100)),
+                                            logs.update({9100: logs[leg(jobs)['id']]})),
+            'a leg that did not succeed': lambda jobs, logs: leg(jobs).update(conclusion='failure'),
+            'a leg whose log records nothing': lambda jobs, logs: logs.update(
+                {leg(jobs)['id']: self.job_log(['Uploading dashmate_5.1.0-1_amd64.deb'])}),
+            # a record is a whole line a step printed, not part of a command the runner echoed
+            # or of another line
+            'a record that is not a whole line': lambda jobs, logs: logs.update({leg(jobs)['id']: self.job_log([
+                f"\x1b[36;1mdashmate package: {'a' * 64}  dashmate_x.deb\x1b[0m",
+                f"Uploading dashmate package: {'a' * 64}  dashmate_x.deb",
+                f"dashmate package: {'a' * 64}  dashmate_x.deb (uploaded)"])}),
+        }
+        for case, damage in cases.items():
+            with self.subTest(case):
+                jobs, logs, _ = self.leg_logs()
+                damage(jobs, logs)
+
+                result = self.read_records(jobs, logs)
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('::error::', result.stdout)
+        for case, knobs, damage in [('the jobs cannot be listed', {'GH_FAIL': '1'}, lambda logs: None),
+                                    ('a log that cannot be read', {}, lambda logs: logs.pop(9003))]:
+            with self.subTest(case):
+                jobs, logs, _ = self.leg_logs()
+                damage(logs)
+                self.assertNotEqual(self.read_records(jobs, logs, **knobs).returncode, 0)
 
     def test_should_list_every_package_once_sorted_by_name_in_sha256sum_format(self):
         published = self.record_all()
@@ -297,7 +423,6 @@ class ReleaseChecksumsTests(unittest.TestCase):
 
     def test_should_refuse_records_that_are_missing_malformed_or_collide(self):
         cases = {
-            # the download does not fail when a record has expired
             'a package type without a record': lambda checksums: (checksums / 'dashmate-macos.sha256').unlink(),
             'a line that is not <sha256>  <name>': lambda checksums: (checksums / 'dashmate-win.sha256').write_text(
                 'not-a-hash  dashmate-v5.1.0-3a5da22021-x64.exe\n'),
@@ -321,6 +446,8 @@ class ReleaseChecksumsTests(unittest.TestCase):
         published = self.record_all()
         result = self.run_step('Generate SHA256SUMS')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        # so a test sees the gh calls of the steps it runs, not of reading the records
+        (self.tmp / 'gh.log').unlink()
         return published
 
     def test_should_accept_a_release_that_serves_exactly_the_recorded_packages(self):
@@ -433,23 +560,29 @@ class ReleaseChecksumsTests(unittest.TestCase):
         legs = job('release-dashmate-packages')
         order = [legs.index('- name: ' + step) for step in [
             'Sign and notarize macOS installers', 'Refuse to replace the packages of a signed release',
-            'Record package checksums', 'Upload package checksums', 'Upload artifacts to release']]
+            'Record package checksums', 'Upload artifacts to release']]
         self.assertEqual(order, sorted(order))
-        # a re-run leg replaces its record, so the record describes what it published last
-        self.assertEqual(step_with('Upload package checksums')['overwrite'], 'true')
 
     def test_should_compare_names_bytewise(self):
         # The C locale keeps the name check to ASCII and the sort order fixed. Set explicitly,
         # because a runner without the locale a test picks would hide its absence.
-        for step in ['Record package checksums', 'Generate SHA256SUMS', 'Check the release serves the recorded packages']:
+        for step in ['Record package checksums', "Read package checksums from the release legs' logs",
+                     'Generate SHA256SUMS', 'Check the release serves the recorded packages']:
             with self.subTest(step):
                 self.assertEqual(step_env(step).get('LC_ALL'), 'C')
 
     def test_should_require_a_record_from_every_package_type_of_the_matrix(self):
         matrix = re.findall(r'- package_type: (\S+)', job('release-dashmate-packages'))
-        required = re.search(r'for package_type in ([^;]+); do', step_script('Generate SHA256SUMS')).group(1)
-        self.assertEqual(sorted(required.split()), sorted(matrix))
         self.assertEqual(sorted(PACKAGES), sorted(matrix))
+        # GitHub names each leg after the job and its matrix values, package type first:
+        # `Release Dashmate packages (deb, ubuntu-24.04)`, the name the checksums job looks for.
+        self.assertIn('\n    name: Release Dashmate packages\n', job('release-dashmate-packages'))
+        self.assertEqual(re.findall(r'- package_type: (\S+)\n +os: (\S+)', job('release-dashmate-packages')),
+                         list(OS.items()))
+        for step in ["Read package checksums from the release legs' logs", 'Generate SHA256SUMS']:
+            with self.subTest(step):
+                required = re.search(r'for package_type in ([^;]+); do', step_script(step)).group(1)
+                self.assertEqual(sorted(required.split()), sorted(matrix))
 
     def test_should_publish_checksums_only_after_every_build_and_release_leg_succeeded(self):
         # A release leg also runs after its build failed, and can then publish the packages an
@@ -463,13 +596,15 @@ class ReleaseChecksumsTests(unittest.TestCase):
                          " && needs.build-dashmate-packages.result == 'success'"
                          " && needs.release-dashmate-packages.result == 'success'")
 
-    def test_should_publish_checksums_from_a_job_that_runs_no_repository_code(self):
+    def test_should_publish_checksums_from_a_job_that_runs_no_repository_code_and_no_action(self):
+        # The records come from the release legs' logs, which no other job can write, rather
+        # than from artifacts, which any job of the run can upload or replace.
         checksums = job('release-dashmate-checksums')
-        uses = re.findall(r'uses: (\S+)', checksums)
-        self.assertEqual(len(uses), 1)
-        self.assertRegex(uses[0], r'^actions/download-artifact@[0-9a-f]{40}$')
+        self.assertNotIn('uses:', checksums)
         self.assertNotIn('checkout', checksums)
         self.assertIn('!cancelled()', checksums)
+        # listing the run's jobs and reading their logs needs actions: read
+        self.assertRegex(checksums, r'\n    permissions:\n      contents: write\n      actions: read\n')
 
 
 if __name__ == '__main__':
