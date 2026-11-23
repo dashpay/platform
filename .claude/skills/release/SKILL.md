@@ -32,15 +32,26 @@ The `vX.Y-dev` branches require the `PR Hygiene` check and no approvals. The hea
 
 ### 3. Publish the GitHub release
 
-Publishing a GitHub **release** creates the tag and starts `.github/workflows/release.yml` (`on: release: published`). It builds and attaches the dashmate packages and `SHA256SUMS`, the Docker images, the Kotlin SDK AAR (`dash-sdk-android-<version>.aar`, also published to Maven Central as `org.dashj:dash-sdk-android:<version>` via the `maven-central` environment) and the Swift `DashSDKFFI-<version>.xcframework.zip` with its checksum.
+Publishing a GitHub **release** creates its tag, unless the tag exists already, and starts `.github/workflows/release.yml` (`on: release: published`). It builds and attaches the dashmate packages and `SHA256SUMS`, the Docker images, the Kotlin SDK AAR (`dash-sdk-android-<version>.aar`, also published to Maven Central as `org.dashj:dash-sdk-android:<version>` via the `maven-central` environment) and the Swift `DashSDKFFI-<version>.xcframework.zip` with its checksum.
 
 1. Confirm the release PR is merged and the dev-branch tip carries the version bump.
 2. Write concise, **non-technical** release notes: a short highlights list (main features), a bug-fixes/hardening summary, and a link to the changelog. Summarize from the version's `CHANGELOG.md` section (its `### Features` / `### Bug Fixes` blocks); don't paste the raw commit list. Changelog link: `https://github.com/dashpay/platform/blob/v<version>/CHANGELOG.md` (or the compare URL `.../compare/v<prev>...v<version>`).
    - **Upgrade notices are not in the changelog.** `CHANGELOG.md` is regenerated from commit titles, so what operators and app developers must do lives in the book and has to be carried into the notes' **Upgrading** section by hand. For a release line that brings a new protocol version, check the book for an "Updating Apps for Protocol Version N" chapter and state its requirement under **Upgrading → App developers**, with a link. For 5.1 (protocol version 15) that is `book/src/sdk/protocol-version-15-upgrade.md`: wallets and apps must update to a 5.1 SDK before protocol version 15 activates, because a 5.0.x client can no longer read DPNS, DashPay, contracts created at protocol version 15, document history or 128-bit sums. Include it in every 5.1 prerelease's notes too, since testnet activates first.
-3. Create the release from the merge commit. Confirm the notes and the command with the user first.
+3. Check whether `v<version>` already exists on GitHub: a tag can exist without a release (`v4.1.2` does), and publishing a release for an existing tag uses that tag whatever `--target` says. This prints the commit the tag names, or nothing when there is no such tag:
+
+   ```sh
+   git ls-remote origin "refs/tags/v<version>" "refs/tags/v<version>^{}" | sort -k2 | tail -n 1 | cut -f1
+   ```
+
+   If it prints another commit than the merge commit, stop and ask the user.
+4. Create the release. Confirm the notes and the command with the user first. Without a tag, create it at the merge commit; with a tag that names the merge commit, publish that tag:
 
 ```sh
+# no v<version> tag yet
 gh release create v<version> --target <merge-commit-sha> \
+  --title "Dash Platform v<version>" --notes-file <notes.md> <marker>
+# v<version> already names the merge commit
+gh release create v<version> --verify-tag \
   --title "Dash Platform v<version>" --notes-file <notes.md> <marker>
 ```
 
@@ -51,6 +62,8 @@ gh release create v<version> --target <merge-commit-sha> \
 | Stable on an older line (e.g. `5.0.4` after `5.1.0`) | `--latest=false` |
 
 GitHub marks a stable release "Latest" by default, and the install docs download the deb from the latest release, so a patch on an older line must say `--latest=false`. Tell the user before publishing such a patch that `release.yml` still moves npm's `latest` dist-tag and the Docker `latest` image to it.
+
+5. Run the tag check from item 3 again: it must now print the merge commit. Steps 5 and 6 run it once more before they sign or touch `master`.
 
 ### 4. Wait for `release.yml` and check the assets
 
@@ -81,7 +94,7 @@ The Kotlin and Swift SDK jobs fill the release page in as they finish. The Maven
 
 One signature per release is enough. The keys that may sign are listed, by primary key fingerprint, in `ALLOWED_SIGNERS` at the top of `scripts/release/sign_dashmate_checksums.sh`, and the script refuses any other: today Ivan Shumkov's, with QuantumExplorer's added once his key exists. The apt publisher accepts signatures from these keys only.
 
-`scripts/release/sign_dashmate_checksums.sh` runs where the maintainer's key is, and gpg asks the maintainer for the passphrase. Run it there, or hand the maintainer the command. It refuses until every `release.yml` run of the tag has finished, so sign after step 4. Don't re-run any job of that run until the signature is attached: a release job checks for a signature before it uploads, so one that is already running can still replace packages. It checks that `SHA256SUMS` is the asset the run's `Release Dashmate checksums` job attached, by the record that job keeps with the run, downloads the packages and the file into a new empty directory, checks every line, signs the downloaded file and verifies the signature. Without `--upload` it stops there and prints the upload command:
+Before signing, run the tag check from step 3 once more: `v<version>` must still name the merge commit; if not, stop and ask the user. `scripts/release/sign_dashmate_checksums.sh` runs where the maintainer's key is, and gpg asks the maintainer for the passphrase. Run it there, or hand the maintainer the command. It refuses until every `release.yml` run of the tag has finished, so sign after step 4. Don't re-run any job of that run until the signature is attached: a release job checks for a signature before it uploads, so one that is already running can still replace packages. It checks that `SHA256SUMS` is the asset the run's `Release Dashmate checksums` job attached, by the record that job keeps with the run, downloads the packages and the file into a new empty directory, checks every line, signs the downloaded file and verifies the signature. Without `--upload` it stops there and prints the upload command:
 
 ```sh
 scripts/release/sign_dashmate_checksums.sh --tag=v<version> --key=<full fingerprint, quoted if it has spaces>
@@ -99,7 +112,7 @@ scripts/release/sign_dashmate_checksums.sh --tag=v<version> --key=<full fingerpr
 
 `master` tracks the newest stable release. Skip this step for a prerelease, and for a stable release that is not the newest stable version (step 1): a patch on an older line must not move `master` back.
 
-Merge the release **tag**, not the moving dev-branch tip, and push the merge commit straight to `master`. `master` has only ever moved by merge commits, never by a reset (`git log --first-parent origin/master`), and it cannot be force-pushed (`allow_force_pushes: false`; `required_linear_history: false` allows the merge commit), so a wrong merge stays. Run it in a temporary worktree:
+First run the tag check from step 3: `v<version>` must still name the merge commit; if not, stop and ask the user. Merge the release **tag**, not the moving dev-branch tip, and push the merge commit straight to `master`. `master` has only ever moved by merge commits, never by a reset (`git log --first-parent origin/master`), and it cannot be force-pushed (`allow_force_pushes: false`; `required_linear_history: false` allows the merge commit), so a wrong merge stays. Run it in a temporary worktree:
 
 ```sh
 git fetch origin --force --tags master
