@@ -282,10 +282,11 @@ pub(crate) fn classify_platform_hrp(hrp: &str) -> Result<bool, ProtocolError> {
 ///
 /// The HRP is classified before the checksum is checked, so a string of
 /// another chain is reported as not a platform address. Only the Bech32m
-/// checksum is accepted. `bech32::decode` also accepts a string carrying the
-/// legacy Bech32 checksum, which DIP-0018 does not allow: such a string would
-/// decode to the same bytes as its Bech32m form, so one address would have
-/// two spellings.
+/// checksum is accepted, and the padding bits after the last byte must be
+/// zero. `bech32::decode` also accepts a string carrying the legacy Bech32
+/// checksum, and ignores the padding bits; DIP-0018 allows neither. Such a
+/// string would decode to the same bytes as the canonical one, so one
+/// address would have several spellings.
 pub(crate) fn decode_platform_bech32m(s: &str) -> Result<(bool, Vec<u8>), ProtocolError> {
     let unchecked = UncheckedHrpstring::new(s)
         .map_err(|e| ProtocolError::DecodingError(format!("parsing failed: {e}")))?;
@@ -293,6 +294,13 @@ pub(crate) fn decode_platform_bech32m(s: &str) -> Result<(bool, Vec<u8>), Protoc
     let checked = unchecked
         .validate_and_remove_checksum::<Bech32m>()
         .map_err(|e| ProtocolError::DecodingError(format!("invalid Bech32m checksum: {e}")))?;
+    // The data part is whole 5-bit groups, so its last group can carry bits
+    // past the last byte. They are dropped when the bytes are collected, so
+    // unless they are required to be zero, strings that differ only there
+    // decode to one address.
+    checked
+        .validate_segwit_padding()
+        .map_err(|e| ProtocolError::DecodingError(format!("invalid Bech32m padding: {e}")))?;
     Ok((is_mainnet, checked.byte_iter().collect()))
 }
 
@@ -1452,6 +1460,37 @@ mod tests {
             PlatformAddress::P2pkh([0x11; 20])
         );
         assert!(!PlatformAddress::is_mainnet_bech32m(&current).unwrap());
+    }
+
+    #[test]
+    fn should_reject_non_zero_padding_bits_under_a_valid_bech32m_checksum() {
+        use bech32::primitives::iter::{ByteIterExt, Fe32IterExt};
+        use bech32::Fe32;
+
+        // 21 bytes are 168 bits in 34 five-bit groups, so the last group
+        // carries two padding bits. Set one and checksum the result.
+        let hrp = Hrp::parse(PLATFORM_HRP_TESTNET).unwrap();
+        let mut payload = vec![PlatformAddress::P2PKH_TYPE];
+        payload.extend_from_slice(&[0x11; 20]);
+        let mut groups: Vec<Fe32> = payload.iter().copied().bytes_to_fes().collect();
+        let last = groups.pop().unwrap();
+        assert_eq!(last.to_u8() & 0b11, 0, "canonical padding is zero");
+        groups.push(Fe32::try_from(last.to_u8() | 0b01).unwrap());
+        let padded: String = groups
+            .into_iter()
+            .with_checksum::<Bech32m>(&hrp)
+            .chars()
+            .collect();
+
+        let err = PlatformAddress::from_bech32m_string(&padded).unwrap_err();
+        assert!(err.to_string().contains("padding"), "{err}");
+        assert!(PlatformAddress::is_mainnet_bech32m(&padded).is_err());
+
+        let canonical = bech32::encode::<Bech32m>(hrp, &payload).unwrap();
+        assert_eq!(
+            PlatformAddress::from_bech32m_string(&canonical).unwrap(),
+            PlatformAddress::P2pkh([0x11; 20])
+        );
     }
 
     #[test]

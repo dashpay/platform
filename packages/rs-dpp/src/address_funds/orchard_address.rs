@@ -219,6 +219,29 @@ mod tests {
     }
 
     #[test]
+    fn should_reject_non_zero_padding_bits_under_a_valid_bech32m_checksum() {
+        use bech32::primitives::iter::{ByteIterExt, Fe32IterExt};
+        use bech32::Fe32;
+
+        // 44 bytes are 352 bits in 71 five-bit groups, so the last group
+        // carries three padding bits. Set one and checksum the result.
+        let hrp = Hrp::parse("tdash").unwrap();
+        let mut payload = vec![OrchardAddress::ORCHARD_TYPE];
+        payload.extend_from_slice(&test_orchard_address().to_raw_bytes());
+        let mut groups: Vec<Fe32> = payload.iter().copied().bytes_to_fes().collect();
+        let last = groups.pop().unwrap();
+        groups.push(Fe32::try_from(last.to_u8() | 0b001).unwrap());
+        let padded: String = groups
+            .into_iter()
+            .with_checksum::<Bech32m>(&hrp)
+            .chars()
+            .collect();
+
+        let err = OrchardAddress::from_bech32m_string(&padded).unwrap_err();
+        assert!(err.to_string().contains("padding"), "{err}");
+    }
+
+    #[test]
     fn test_orchard_bech32m_wrong_type_byte_fails() {
         // Manually construct an address with P2PKH type byte (0xb0) but 44-byte payload
         let hrp = Hrp::parse("dash").unwrap();
