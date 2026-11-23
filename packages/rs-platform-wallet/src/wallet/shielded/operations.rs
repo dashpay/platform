@@ -2673,7 +2673,7 @@ where
         let (credit_anchors_now, _) = fetch_recorded_anchor_set(sdk).await?;
         if !credit_anchors_now.contains(&fee_anchor.to_bytes()) {
             return Err(PlatformWalletError::ShieldedNoRecordedAnchor(
-                "the credit pool no longer records the anchor this transfer's fee was built \
+                "the credit pool no longer records the anchor this spend's fee was built \
                  on; sync and retry"
                     .to_string(),
             )
