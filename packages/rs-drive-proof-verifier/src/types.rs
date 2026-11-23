@@ -41,9 +41,7 @@ pub mod yes_no_vote_polls;
 use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::core_types::validator_set::ValidatorSet;
-use dpp::data_contract::document_type::{
-    DecodedValueBudget, DocumentType, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
-};
+use dpp::data_contract::document_type::{DecodedValueBudget, DocumentType};
 use dpp::fee::Credits;
 use dpp::platform_value::Value;
 use dpp::prelude::{AddressNonce, IdentityNonce, TimestampMillis};
@@ -212,16 +210,25 @@ impl Contenders {
     /// Return a map of deserialized [Contender] objects indexed by the ids the contest
     /// names them by: identity ids, or document ids in a vote among documents.
     ///
-    /// Decoding shares a single [`DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET`] across all
-    /// contenders in the page so attached documents from protocol-version-14 contracts
-    /// with zero-width typed arrays cannot expand a page into unbounded memory.
+    /// Each attached document is decoded under a decoded-value budget proportional to
+    /// its encoded byte length ([`ContenderWithSerializedDocument::try_to_contender_bounded`]),
+    /// so legitimate contender pages carrying large non-zero-width typed arrays always fit
+    /// while zero-width typed arrays on protocol-version-14 contracts cannot expand a small
+    /// payload into unbounded memory.
     pub fn to_contenders(
         &self,
         document_type: &DocumentType,
         platform_version: &PlatformVersion,
     ) -> Result<BTreeMap<Identifier, Contender>, crate::Error> {
-        let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
-        self.to_contenders_with_budget(document_type, &mut budget, platform_version)
+        self.contenders
+            .iter()
+            .map(|(id, v)| {
+                let contender =
+                    v.try_to_contender_bounded(document_type.as_ref(), platform_version)?;
+                Ok((*id, contender))
+            })
+            .collect::<Result<BTreeMap<Identifier, Contender>, dpp::ProtocolError>>()
+            .map_err(Into::into)
     }
 
     /// Return a map of deserialized [Contender] objects while enforcing a shared `budget`
@@ -1063,6 +1070,7 @@ pub struct TokenShieldedNullifiersQuery {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Error;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use dpp::data_contract::errors::DataContractError;
@@ -1074,12 +1082,11 @@ mod tests {
     use dpp::ProtocolError;
 
     #[test]
-    fn should_enforce_shared_decoded_value_budget_across_contenders_page() {
+    fn should_enforce_proportional_and_explicit_decoded_value_budgets_on_contenders_page() {
         let pv14 = PlatformVersion::get(14).expect("PV14 exists");
         let latest = PlatformVersion::latest();
-        // 60 zero-width typed arrays × 1024 elements = 61,500 decoded values per contender.
-        // One contender fits well under DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET (262,144),
-        // while 5 contenders (307,500 values) exceed the shared page budget.
+        // 60 zero-width typed arrays × 1024 elements = 61,500 decoded values from a few hundred
+        // bytes: even a single contender exceeds its encoded-size-proportional budget.
         let field_count = 60usize;
         let mut properties = Vec::with_capacity(field_count);
         let mut doc_properties = BTreeMap::new();
@@ -1157,33 +1164,49 @@ mod tests {
             )
         };
 
-        let single_page = Contenders {
+        // Even a single zero-width bomb contender is refused by the proportional budget.
+        let single_bomb = Contenders {
             contenders: BTreeMap::from([make_contender(1)]),
             ..Default::default()
         };
-        assert_eq!(
-            single_page
-                .to_contenders(&document_type, latest)
-                .expect("single contender fits in default page budget")
-                .len(),
-            1
+        let bomb_error = single_bomb
+            .to_contenders(&document_type, latest)
+            .expect_err("zero-width bomb contender must exceed proportional budget");
+        assert!(
+            matches!(
+                bomb_error,
+                Error::ProtocolError { ref error }
+                    if error.contains("decoded value budget exceeded")
+            ),
+            "expected ProtocolError with decoded value budget exceeded, got: {bomb_error:?}"
         );
 
-        let oversized_page = Contenders {
-            contenders: (1u8..=5).map(make_contender).collect(),
+        // Explicit caller-supplied shared budget still stops when exhausted across contenders.
+        let pair_page = Contenders {
+            contenders: (1u8..=2).map(make_contender).collect(),
             ..Default::default()
         };
-        // Direct DPP shared-budget check verifies the typed DecodedValueBudgetExceeded error.
-        let mut dpp_budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
-        let dpp_error = oversized_page
+        let mut explicit_budget = DecodedValueBudget::new(70_000);
+        let explicit_error = pair_page
+            .to_contenders_with_budget(&document_type, &mut explicit_budget, latest)
+            .expect_err("pair must exhaust 70,000 explicit shared budget");
+        assert!(
+            matches!(
+                explicit_error,
+                Error::ProtocolError { ref error }
+                    if error.contains("decoded value budget exceeded")
+            ),
+            "expected ProtocolError with decoded value budget exceeded, got: {explicit_error:?}"
+        );
+
+        // Direct DPP bounded check verifies the typed DecodedValueBudgetExceeded error.
+        let dpp_error = single_bomb
             .contenders
             .values()
-            .try_for_each(|contender| {
-                contender
-                    .try_to_contender_with_budget(document_type.as_ref(), &mut dpp_budget, latest)
-                    .map(|_| ())
-            })
-            .expect_err("five contenders must exhaust shared DPP budget");
+            .next()
+            .expect("one contender")
+            .try_to_contender_bounded(document_type.as_ref(), latest)
+            .expect_err("zero-width bomb contender must fail bounded decode");
         assert!(
             matches!(
                 dpp_error,
@@ -1192,16 +1215,79 @@ mod tests {
             "expected DecodedValueBudgetExceeded, got: {dpp_error:?}"
         );
 
-        let error = oversized_page
-            .to_contenders(&document_type, latest)
-            .expect_err("five contenders must exhaust shared page budget");
-        assert!(
-            matches!(
-                error,
-                crate::Error::ProtocolError { ref error }
-                    if error.contains("decoded value budget exceeded")
-            ),
-            "expected ProtocolError with decoded value budget exceeded, got: {error:?}"
-        );
+        // Legitimate 100-contender page where each contender holds three 1,024-element u8 arrays
+        // (~307,500 decoded values > old 262,144 fixed cap) succeeds under proportional budgeting.
+        let u8_contract = DataContract::from_value(
+            platform_value!({
+                "$formatVersion": "1",
+                "id": Identifier::new([0x33; 32]),
+                "version": 1u32,
+                "ownerId": Identifier::new([0x44; 32]),
+                "config": {
+                    "$formatVersion": "1",
+                    "canBeDeleted": false,
+                    "readonly": false,
+                    "keepsHistory": false,
+                    "documentsKeepHistoryContractDefault": false,
+                    "documentsMutableContractDefault": true,
+                    "documentsCanBeDeletedContractDefault": true,
+                    "requiresIdentityEncryptionBoundedKey": Value::Null,
+                    "requiresIdentityDecryptionBoundedKey": Value::Null,
+                    "sizedIntegerTypes": true,
+                },
+                "documentSchemas": {
+                    "entry": {
+                        "type": "object",
+                        "properties": {
+                            "a": { "type": "array", "maxItems": 1024, "items": { "type": "integer", "minimum": 0, "maximum": 255 }, "position": 0u32 },
+                            "b": { "type": "array", "maxItems": 1024, "items": { "type": "integer", "minimum": 0, "maximum": 255 }, "position": 1u32 },
+                            "c": { "type": "array", "maxItems": 1024, "items": { "type": "integer", "minimum": 0, "maximum": 255 }, "position": 2u32 },
+                        },
+                        "additionalProperties": false,
+                    }
+                }
+            }),
+            true,
+            latest,
+        )
+        .expect("u8 array contract validates");
+        let u8_type = u8_contract
+            .document_type_for_name("entry")
+            .expect("entry document type")
+            .to_owned_document_type();
+        let u8_props = BTreeMap::from([
+            ("a".to_string(), Value::Array(vec![Value::U8(1); 1024])),
+            ("b".to_string(), Value::Array(vec![Value::U8(2); 1024])),
+            ("c".to_string(), Value::Array(vec![Value::U8(3); 1024])),
+        ]);
+        let legitimate_page = Contenders {
+            contenders: (0u8..100)
+                .map(|seed| {
+                    let identity_id = Identifier::new([seed; 32]);
+                    let doc = Document::V0(DocumentV0 {
+                        id: Identifier::new([seed.wrapping_add(128); 32]),
+                        owner_id: identity_id,
+                        properties: u8_props.clone(),
+                        ..Default::default()
+                    });
+                    let bytes = doc
+                        .serialize(u8_type.as_ref(), &u8_contract, latest)
+                        .expect("serialize u8 doc");
+                    (
+                        identity_id,
+                        ContenderWithSerializedDocument::V0(ContenderWithSerializedDocumentV0 {
+                            identity_id,
+                            serialized_document: Some(bytes),
+                            vote_tally: Some(1),
+                        }),
+                    )
+                })
+                .collect(),
+            ..Default::default()
+        };
+        let decoded = legitimate_page
+            .to_contenders(&u8_type, latest)
+            .expect("100 legitimate contenders with 3x1024 u8 arrays must fit proportional budget");
+        assert_eq!(decoded.len(), 100);
     }
 }

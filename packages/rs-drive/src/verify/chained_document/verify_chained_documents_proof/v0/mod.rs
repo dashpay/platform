@@ -7,9 +7,6 @@ use crate::query::{ChainedDocumentsResult, ChainedOuterDocuments, DriveDocumentQ
 use crate::verify::{with_proved_root_on_budget_exceeded, RootHash};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::{
-    DecodedValueBudget, DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET,
-};
 use dpp::document::Document;
 use dpp::version::PlatformVersion;
 use grovedb::{GroveDb, PathQuery};
@@ -99,7 +96,6 @@ impl DriveDocumentQuery<'_> {
         let mut inner_documents: Vec<Document> = Vec::new();
         let mut outer_documents: Vec<Document> = Vec::new();
         let mut removal_entries = Vec::new();
-        let mut budget = DecodedValueBudget::new(DEFAULT_CLIENT_PAGE_DECODED_VALUE_BUDGET);
         for (path, key, element) in proved_path_key_values {
             let Some(element) = element else {
                 continue;
@@ -119,12 +115,6 @@ impl DriveDocumentQuery<'_> {
                         Some(&element),
                         platform_version,
                     )?;
-                    budget.charge_document(&document).map_err(|error| {
-                        with_proved_root_on_budget_exceeded(
-                            root_hash,
-                            Error::Protocol(Box::new(error.into())),
-                        )
-                    })?;
                     inner_documents.push(document);
                 }
                 Some(segment) if segment == outer_type_name => {
@@ -141,10 +131,9 @@ impl DriveDocumentQuery<'_> {
                         )));
                     };
                     outer_documents.push(
-                        Document::from_bytes_with_budget(
+                        Document::from_bytes_bounded(
                             serialized.as_slice(),
                             outer_document_type,
-                            &mut budget,
                             platform_version,
                         )
                         .map_err(|error| {
