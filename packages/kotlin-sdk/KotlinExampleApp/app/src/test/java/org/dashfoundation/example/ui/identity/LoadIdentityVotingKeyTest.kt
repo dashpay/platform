@@ -847,6 +847,28 @@ class LoadIdentityVotingKeyTest {
         assertEquals(valid, dao.getByIdentityId(identityId)!!.recordedVotingKey)
     }
 
+    /** #6099: a masternode row records the wire-order pro_tx_hash its votes name. */
+    @Test
+    fun shouldRecordTheMasternodesProTxHashBesideTheRow() = runBlocking {
+        val proTxHash = ByteArray(32) { 0x5a }
+
+        val result = saveLoadedIdentity(
+            dao = dao,
+            entries = entries,
+            identityId = identityId,
+            networkRaw = testnet,
+            balance = 1L,
+            alias = null,
+            pickedType = LoadIdentityType.MASTERNODE,
+            typePicked = true,
+            votingKey = null,
+            masternodeProTxHash = proTxHash,
+        )
+
+        assertEquals(LoadSaveResult.Saved, result)
+        assertTrue(proTxHash.contentEquals(dao.getByIdentityId(identityId)!!.masternodeProTxHash))
+    }
+
     @Test
     fun shouldWordTheUncheckedNoteFromRustsOutcome() {
         val undetermined = MasternodeVotingKeyCheck.Undetermined("Down.")

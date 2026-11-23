@@ -44,6 +44,7 @@ import org.dashfoundation.dashsdk.voting.MasternodeVotingKeyRules
 import org.dashfoundation.dashsdk.voting.MasternodeVotingSigner
 import org.dashfoundation.dashsdk.voting.recordedVotingKey
 import org.dashfoundation.dashsdk.voting.storedVotingKeyAddress
+import org.dashfoundation.dashsdk.voting.votingProTxHash
 import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 import org.dashfoundation.example.BuildConfig
 import org.dashfoundation.example.di.AppContainer
@@ -74,17 +75,21 @@ sealed interface MasternodeVoter {
 
     /**
      * A masternode or evonode identity loaded on this device with its voting key (Load
-     * Identity). The key stays in `WalletStorage` and signs through the wallet manager's
-     * signer.
+     * Identity), and the pro_tx_hash (wire order) its row records for the masternode
+     * (`IdentityEntity.votingProTxHash`). The two differ for a masternode stored under its
+     * voter identity (a shared masternode, #6099). The key stays in `WalletStorage` and signs
+     * through the wallet manager's signer.
      */
-    class StoredKey(identityId: ByteArray) : MasternodeVoter {
+    class StoredKey(identityId: ByteArray, wireOrderProTxHash: ByteArray) : MasternodeVoter {
         private val id = identityId.copyOf()
+        private val proTxHash = wireOrderProTxHash.copyOf()
         val identityId: ByteArray get() = id.copyOf()
         override val canCast: Boolean get() = true
-        override val wireOrderProTxHash: ByteArray get() = wireOrderProTxHash(id)
-        override fun equals(other: Any?): Boolean = other is StoredKey && id.contentEquals(other.id)
-        override fun hashCode(): Int = id.contentHashCode()
-        override fun toString(): String = "StoredKey(${id.toHex()})"
+        override val wireOrderProTxHash: ByteArray get() = proTxHash.copyOf()
+        override fun equals(other: Any?): Boolean =
+            other is StoredKey && id.contentEquals(other.id) && proTxHash.contentEquals(other.proTxHash)
+        override fun hashCode(): Int = 31 * id.contentHashCode() + proTxHash.contentHashCode()
+        override fun toString(): String = "StoredKey(${id.toHex()}, ${proTxHash.toHex()})"
     }
 
     /**
@@ -131,13 +136,14 @@ sealed interface MasternodeVoter {
 // ── Pure logic (unit tested) ─────────────────────────────────────────
 
 /**
- * A loaded masternode identity's id is the pro_tx_hash as Platform names it, the hex Core
- * displays. The vote calls take the wire order, its reverse, and Rust reverses it back
- * (see "pro_tx_hash byte order" in `rs-sdk-ffi/src/voting/masternode_vote.rs`). This is
- * the only place the app converts between the two (Swift
- * `MasternodeVoter.wireOrderProTxHash(identityId:)`).
+ * A pro_tx_hash typed as Platform names it, the hex Core displays, in the wire order the vote
+ * calls take: its reverse, which Rust reverses back (see "pro_tx_hash byte order" in
+ * `rs-sdk-ffi/src/voting/masternode_vote.rs`). Load Identity converts the typed pro_tx_hash once
+ * with it and stores the result on the row (Swift
+ * `MasternodeVoter.wireOrderProTxHash(displayOrder:)`); votes read the row's
+ * `IdentityEntity.votingProTxHash`.
  */
-fun wireOrderProTxHash(identityId: ByteArray): ByteArray = identityId.reversedArray()
+fun wireOrderProTxHash(displayOrderProTxHash: ByteArray): ByteArray = displayOrderProTxHash.reversedArray()
 
 /** The identity types that carry a masternode voting key (`IdentityType.rawValue`). */
 internal val VOTING_IDENTITY_TYPES = setOf("Masternode", "Evonode")
@@ -273,7 +279,7 @@ internal suspend fun checkPickedVotingKeyIfNeeded(
     val address = MasternodeVotingKeyAddress.ofIdentifier(identifier)
     if (!rules.use(row.recordedVotingKey, address).checkBeforeUse) return PickedVotingKeyCheck.NotNeeded
     val answer = try {
-        check(wireOrderProTxHash(identityId), address)
+        check(row.votingProTxHash, address)
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
@@ -344,7 +350,7 @@ internal fun publishVoter(
     }
     // An identity whose voting key may not vote is not published.
     if (selectedRefused) return null
-    return selected?.let { MasternodeVoter.StoredKey(it.identityId) }
+    return selected?.let { MasternodeVoter.StoredKey(it.identityId, it.votingProTxHash) }
 }
 
 // ── Casting ──────────────────────────────────────────────────────────

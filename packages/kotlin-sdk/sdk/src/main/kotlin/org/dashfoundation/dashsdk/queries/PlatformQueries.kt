@@ -189,6 +189,40 @@ class Addresses internal constructor(private val sdk: Sdk) {
 class Voting internal constructor(private val sdk: Sdk) {
 
     /**
+     * Load the masternode [wireOrderProTxHash] for voting, with the voting key of
+     * [votingAddress] when one is given (`dash_sdk_masternode_load_for_voting`, rs-sdk's
+     * `load_masternode_for_voting`, which holds the rule): its owner identity when Platform
+     * holds one, or else, for a masternode without an owner identity (a shared masternode),
+     * its voter identity when Platform proves the owner absent and the voter holding the
+     * enabled voting key. Port of Swift `SDK.loadMasternodeForVoting(proTxHash:votingAddress:)`
+     * (`SDK+MasternodeVotingLoad.swift`).
+     *
+     * @param wireOrderProTxHash the masternode's 32-byte pro_tx_hash in **wire order**.
+     * @throws DashSdkError when nothing is proved (the owner identity, or the voter identity
+     *   after a proved-absent owner, could not be fetched), and
+     *   [DashSdkError.InvalidParameter] for a value of the wrong length.
+     */
+    suspend fun loadMasternodeForVoting(
+        wireOrderProTxHash: ByteArray,
+        votingAddress: org.dashfoundation.dashsdk.voting.MasternodeVotingKeyAddress?,
+    ): org.dashfoundation.dashsdk.voting.MasternodeVotingLoad {
+        if (wireOrderProTxHash.size != 32) {
+            throw DashSdkError.InvalidParameter("proTxHash must be exactly 32 bytes")
+        }
+        return sdk.queryGate.op {
+            org.dashfoundation.dashsdk.voting.MasternodeVotingKeyCheckCodec.decodeLoad(
+                mapNativeErrors {
+                    org.dashfoundation.dashsdk.ffi.MasternodeVotingKeyNative.loadForVoting(
+                        sdk.handle,
+                        wireOrderProTxHash,
+                        votingAddress?.bytes,
+                    )
+                },
+            )
+        }
+    }
+
+    /**
      * Whether the voting key with [votingAddress] can vote for the masternode
      * [wireOrderProTxHash], as Platform's state proves it
      * (`dash_sdk_masternode_check_voting_key`, rs-sdk's `check_masternode_voting_key`). Port of

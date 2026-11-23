@@ -127,6 +127,47 @@ class MasternodeVotingKeyChecksTest {
         }
     }
 
+    /** The load JSON `rs-unified-sdk-jni`'s `should_write_the_load_json_the_kotlin_decoder_reads` pins. */
+    @Test
+    fun shouldDecodeEachLoadKind() {
+        val id = "cd".repeat(32)
+        val voter = MasternodeVotingKeyCheckCodec.decodeLoad(
+            """{"kind":1,"identityId":"$id","identityJson":"{\"id\":\"x\"}","votingKeyVerdict":0,"message":null}""",
+        ) as MasternodeVotingLoad.Loaded
+        assertEquals(MasternodeVotingLoadedIdentity.Role.VOTER, voter.identity.role)
+        assertArrayEquals(ByteArray(32) { 0xcd.toByte() }, voter.identity.identityId)
+        assertEquals("""{"id":"x"}""", voter.identity.identityJson)
+        assertEquals(MasternodeVotingKeyCheck.Valid, voter.identity.votingKeyCheck)
+
+        val owner = MasternodeVotingKeyCheckCodec.decodeLoad(
+            """{"kind":0,"identityId":"$id","identityJson":"{}","votingKeyVerdict":2,"message":"down"}""",
+        ) as MasternodeVotingLoad.Loaded
+        assertEquals(MasternodeVotingLoadedIdentity.Role.OWNER, owner.identity.role)
+        assertEquals(MasternodeVotingKeyCheck.Undetermined("down"), owner.identity.votingKeyCheck)
+
+        val noKey = MasternodeVotingKeyCheckCodec.decodeLoad(
+            """{"kind":0,"identityId":"$id","identityJson":"{}","votingKeyVerdict":null,"message":null}""",
+        ) as MasternodeVotingLoad.Loaded
+        assertNull(noKey.identity.votingKeyCheck)
+
+        assertEquals(
+            MasternodeVotingLoad.Refused("no owner"),
+            MasternodeVotingKeyCheckCodec.decodeLoad(
+                """{"kind":2,"identityId":null,"identityJson":null,"votingKeyVerdict":null,"message":"no owner"}""",
+            ),
+        )
+        assertThrows(DashSdkError.SerializationError::class.java) {
+            MasternodeVotingKeyCheckCodec.decodeLoad("""{"kind":1,"identityId":"ab","identityJson":"{}"}""")
+        }
+    }
+
+    @Test
+    fun shouldVoteWithTheRecordedProTxHashElseTheIdReversed() {
+        val proTxHash = ByteArray(32) { 0x5a }
+        assertArrayEquals(proTxHash, row(identifierA).copy(masternodeProTxHash = proTxHash).votingProTxHash)
+        assertArrayEquals(identityId.reversedArray(), row(identifierA).votingProTxHash)
+    }
+
     /** The C enum values the JNI exports read, as `rs-sdk-ffi`'s `voting_key_check.rs` declares. */
     @Test
     fun shouldPassTheCEnumValues() {

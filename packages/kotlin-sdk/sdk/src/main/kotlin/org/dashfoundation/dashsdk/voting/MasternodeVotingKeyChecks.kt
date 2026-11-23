@@ -211,6 +211,48 @@ interface MasternodeVotingKeyRules {
 }
 
 /**
+ * An identity loaded to vote for a masternode (`Voting.loadMasternodeForVoting`). Swift
+ * `MasternodeVotingLoadedIdentity` (`SDK+MasternodeVotingLoad.swift`).
+ *
+ * @property role which identity Rust loaded.
+ * @property identityJson the identity as JSON, the shape `Identities.fetch` returns.
+ * @property votingKeyCheck the voting key's verdict when one was given; always
+ *   [MasternodeVotingKeyCheck.Valid] for [Role.VOTER].
+ */
+class MasternodeVotingLoadedIdentity internal constructor(
+    val role: Role,
+    identityId: ByteArray,
+    val identityJson: String,
+    val votingKeyCheck: MasternodeVotingKeyCheck?,
+) {
+    private val id = identityId.copyOf()
+
+    /** A copy of the 32-byte id to store the identity's row under. */
+    val identityId: ByteArray get() = id.copyOf()
+
+    /** Which identity Rust loaded for the masternode. */
+    enum class Role {
+        /** The owner identity, whose id is the pro_tx_hash in the order Platform names it. */
+        OWNER,
+
+        /**
+         * The voter identity of a masternode without an owner identity (a shared masternode):
+         * its id is not the pro_tx_hash, so the host keeps the pro_tx_hash beside it.
+         */
+        VOTER,
+    }
+}
+
+/** What `Voting.loadMasternodeForVoting` decided. Swift `MasternodeVotingLoad`. */
+sealed interface MasternodeVotingLoad {
+    /** An identity to store for the masternode. */
+    data class Loaded(val identity: MasternodeVotingLoadedIdentity) : MasternodeVotingLoad
+
+    /** Nothing is loaded; [message] says why, worded in Rust. */
+    data class Refused(val message: String) : MasternodeVotingLoad
+}
+
+/**
  * The C enum values and the JSON the JNI exports write (`rs-unified-sdk-jni`'s
  * `masternode_voting_key.rs`), both ways. Internal and pure, so JVM tests cover it.
  */
@@ -302,6 +344,43 @@ internal object MasternodeVotingKeyCheckCodec {
         return MasternodeVotingKeyCheckOutcome(storeKey, record)
     }
 
+    // DashSDKMasternodeVotingLoadKind
+    const val LOAD_OWNER_IDENTITY = 0
+    const val LOAD_VOTER_IDENTITY = 1
+    const val LOAD_REFUSED = 2
+
+    /**
+     * `{"kind":0|1|2,"identityId":hex|null,"identityJson":string|null,
+     * "votingKeyVerdict":0|1|2|null,"message":string|null}` from `loadForVoting`.
+     */
+    fun decodeLoad(text: String?): MasternodeVotingLoad {
+        val function = "dash_sdk_masternode_load_for_voting"
+        val root = parse(function, text)
+        val message = root["message"]?.jsonPrimitive?.contentOrNull
+        val role = when (val kind = root["kind"]?.jsonPrimitive?.intOrNull) {
+            LOAD_OWNER_IDENTITY -> MasternodeVotingLoadedIdentity.Role.OWNER
+            LOAD_VOTER_IDENTITY -> MasternodeVotingLoadedIdentity.Role.VOTER
+            LOAD_REFUSED -> return MasternodeVotingLoad.Refused(message.orEmpty())
+            else -> throw DashSdkError.SerializationError("$function returned an unknown kind $kind")
+        }
+        val identityId = root["identityId"]?.jsonPrimitive?.contentOrNull
+            ?.let { runCatching { it.hexToByteArray() }.getOrNull() }
+            ?.takeIf { it.size == 32 }
+            ?: throw DashSdkError.SerializationError("$function returned no 32-byte identity id")
+        val identityJson = root["identityJson"]?.jsonPrimitive?.contentOrNull
+            ?: throw DashSdkError.SerializationError("$function returned no identity")
+        val check = when (val verdict = root["votingKeyVerdict"]?.jsonPrimitive?.intOrNull) {
+            null -> null
+            VERDICT_VALID -> MasternodeVotingKeyCheck.Valid
+            VERDICT_INVALID -> MasternodeVotingKeyCheck.Invalid(message.orEmpty())
+            VERDICT_UNDETERMINED -> MasternodeVotingKeyCheck.Undetermined(message.orEmpty())
+            else -> throw DashSdkError.SerializationError("$function returned an unknown verdict $verdict")
+        }
+        return MasternodeVotingLoad.Loaded(
+            MasternodeVotingLoadedIdentity(role, identityId, identityJson, check),
+        )
+    }
+
     /** `{"canVote":bool,"checkBeforeUse":bool}` from `recordedVotingKeyUse`. */
     fun decodeUse(text: String?): MasternodeRecordedVotingKeyUse {
         val function = "dash_sdk_masternode_recorded_voting_key_use"
@@ -357,6 +436,16 @@ val IdentityEntity.recordedVotingKey: MasternodeRecordedVotingKey?
         val address = votingKeyCheckAddress?.let { MasternodeVotingKeyAddress.of(it) } ?: return null
         return MasternodeRecordedVotingKey(check, address)
     }
+
+/**
+ * The pro_tx_hash, in wire order, that votes cast with this row's voting key name: the
+ * recorded [IdentityEntity.masternodeProTxHash]. A row stored before it was recorded could only
+ * have been loaded at its owner identity, whose id is the pro_tx_hash in the order Platform
+ * names it, so it gets that id reversed until it is loaded again. Swift
+ * `PersistentIdentity.votingProTxHash`.
+ */
+val IdentityEntity.votingProTxHash: ByteArray
+    get() = masternodeProTxHash?.copyOf() ?: identityId.reversedArray()
 
 /**
  * The voting address of the key the row names (`votingPrivateKeyIdentifier`), read from the

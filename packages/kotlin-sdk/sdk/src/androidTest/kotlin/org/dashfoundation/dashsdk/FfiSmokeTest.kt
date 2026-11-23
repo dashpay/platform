@@ -459,6 +459,13 @@ class FfiSmokeTest {
         val refusedUse = MasternodeVotingKeyNative.recordedVotingKeyUse(2, address, address)
         assertTrue(refusedUse!!, refusedUse.contains("\"canVote\":false"))
         assertEquals(1, code { MasternodeVotingKeyNative.recordedVotingKeyUse(0, null, ByteArray(21)) })
+
+        // The masternode load for voting (#6099): bad lengths at the JNI boundary, a null SDK
+        // handle in the C function; with or without a voting address.
+        assertEquals(1, code { MasternodeVotingKeyNative.loadForVoting(0L, ByteArray(31), null) })
+        assertEquals(1, code { MasternodeVotingKeyNative.loadForVoting(0L, proTxHash, ByteArray(19)) })
+        assertEquals(1, code { MasternodeVotingKeyNative.loadForVoting(0L, proTxHash, null) })
+        assertEquals(1, code { MasternodeVotingKeyNative.loadForVoting(0L, proTxHash, address) })
     }
 
     @Test

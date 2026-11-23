@@ -80,6 +80,15 @@ data class IdentityEntity(
      * `PersistentIdentity.votingKeyCheckAddress`.
      */
     val votingKeyCheckAddress: ByteArray? = null,
+    /**
+     * The 32-byte pro_tx_hash, in wire order, of the masternode or evonode this row votes for,
+     * recorded when it is loaded for voting (`Voting.loadMasternodeForVoting`). Kept apart from
+     * [identityId]: a masternode without an owner identity (a shared masternode) is stored
+     * under its voter identity, whose id is not the pro_tx_hash. Null for a row stored before
+     * it was recorded; read it through `org.dashfoundation.dashsdk.voting.votingProTxHash`.
+     * Swift `PersistentIdentity.masternodeProTxHash`.
+     */
+    val masternodeProTxHash: ByteArray? = null,
 ) {
     override fun equals(other: Any?): Boolean =
         other is IdentityEntity && identityId.contentEquals(other.identityId)

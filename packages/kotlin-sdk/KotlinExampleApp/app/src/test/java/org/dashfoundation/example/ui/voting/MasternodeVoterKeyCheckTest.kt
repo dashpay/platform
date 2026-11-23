@@ -107,7 +107,7 @@ class MasternodeVoterKeyCheckTest {
             votingKeyText = "",
         )
         assertNull(publish(refused = true))
-        assertEquals(MasternodeVoter.StoredKey(identityId), publish(refused = false))
+        assertEquals(MasternodeVoter.StoredKey(identityId, identityId.reversedArray()), publish(refused = false))
     }
 
     // ── Status line ──────────────────────────────────────────────────────
@@ -184,6 +184,17 @@ class MasternodeVoterKeyCheckTest {
     }
 
     /** A key replaced during the check is not given the old key's answer. */
+    /** #6099: a shared masternode's row is checked for the pro_tx_hash it records. */
+    @Test
+    fun shouldCheckTheRecordedProTxHashOfASharedMasternode() = runBlocking {
+        val proTxHash = ByteArray(32) { 0x5a }
+        db.identityDao().upsert(row(identifierA).copy(masternodeProTxHash = proTxHash))
+
+        checkPicked()
+
+        assertArrayEquals(proTxHash, checkedWith.single().first)
+    }
+
     @Test
     fun shouldDropAnAnswerAboutAKeyReplacedDuringTheCheck() = runBlocking {
         db.identityDao().upsert(row(identifierA))

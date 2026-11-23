@@ -152,6 +152,17 @@ interface IdentityDao {
         address: ByteArray,
     ): Int
 
+    /**
+     * Record the wire-order pro_tx_hash of the masternode the row votes for, only while the
+     * row is on [networkRaw]. Returns the number of rows changed. Load Identity writes it for
+     * a masternode or evonode loaded for voting (Swift `PersistentIdentity.masternodeProTxHash`).
+     */
+    @Query(
+        "UPDATE identities SET masternodeProTxHash = :proTxHash " +
+            "WHERE identityId = :identityId AND networkRaw = :networkRaw"
+    )
+    suspend fun setMasternodeProTxHash(identityId: ByteArray, networkRaw: Int, proTxHash: ByteArray): Int
+
     /** Mirror of `PersistentIdentity.updateBalance(in:identityId:balance:)`. */
     @Query(
         "UPDATE identities SET balance = :balance, lastUpdated = :nowMillis " +

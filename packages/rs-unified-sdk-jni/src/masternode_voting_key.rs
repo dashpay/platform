@@ -11,9 +11,11 @@
 //! * `votingKeyCheckOutcome` -> `dash_sdk_masternode_voting_key_check_outcome`
 //!   (Swift `MasternodeVotingKeyCheck.outcome(votingAddress:slot:)`),
 //! * `recordedVotingKeyUse` -> `dash_sdk_masternode_recorded_voting_key_use`
-//!   (Swift `MasternodeRecordedVotingKeyUse.init(recorded:storedVotingAddress:)`).
+//!   (Swift `MasternodeRecordedVotingKeyUse.init(recorded:storedVotingAddress:)`),
+//! * `loadForVoting` -> `dash_sdk_masternode_load_for_voting`
+//!   (Swift `SDK.loadMasternodeForVoting(proTxHash:votingAddress:)`).
 //!
-//! rs-sdk decides every verdict and rule (`masternode_vote_keys.rs`); the last three exports
+//! rs-sdk decides every verdict and rule (`masternode_vote_keys.rs`); the last four exports
 //! only read JVM values into the C types, call the function and write its result as compact
 //! JSON. An enum value the C side does not declare is refused (code 1), never cast.
 //!
@@ -32,14 +34,17 @@ use jni::objects::{JByteArray, JClass};
 use jni::sys::{jbyteArray, jint, jlong, jstring};
 use jni::JNIEnv;
 use rs_sdk_ffi::{
-    dash_sdk_masternode_check_voting_key, dash_sdk_masternode_recorded_voting_key_use,
+    dash_sdk_masternode_check_voting_key, dash_sdk_masternode_load_for_voting,
+    dash_sdk_masternode_recorded_voting_key_use,
     dash_sdk_masternode_voting_address_from_private_key,
     dash_sdk_masternode_voting_key_check_outcome, dash_sdk_private_key_bytes_from_text,
-    dash_sdk_string_free, DashSDKRecordedVotingKey, DashSDKRecordedVotingKeyCheck,
-    DashSDKVotingAddress, DashSDKVotingKeySlot, DashSDKVotingKeyVerdict, SDKHandle,
+    dash_sdk_string_free, DashSDKMasternodeVotingLoad, DashSDKMasternodeVotingLoadKind,
+    DashSDKRecordedVotingKey, DashSDKRecordedVotingKeyCheck, DashSDKVotingAddress,
+    DashSDKVotingKeySlot, DashSDKVotingKeyVerdict, SDKHandle,
 };
 use serde_json::json;
 use std::ffi::CStr;
+use std::mem::MaybeUninit;
 use std::os::raw::c_char;
 use std::ptr;
 use zeroize::Zeroizing;
@@ -307,6 +312,109 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_MasternodeVotingKeyNa
     })
 }
 
+/// Loads the masternode `wireOrderProTxHash` (32 bytes, wire order) for voting, with the
+/// voting key of `votingAddress` (20 bytes) when one is given (null otherwise):
+/// `dash_sdk_masternode_load_for_voting`, which calls rs-sdk's `load_masternode_for_voting`
+/// and holds the rule (the owner identity when Platform holds one, else the voter identity
+/// when Platform proves the owner absent and the voter holding the enabled voting key).
+///
+/// Returns `{"kind":0|1|2,"identityId":hex|null,"identityJson":string|null,
+/// "votingKeyVerdict":0|1|2|null,"message":string|null}`: kind `OwnerIdentity`,
+/// `VoterIdentity` or `Refused`, the loaded identity's id and JSON (the shape
+/// `dash_sdk_identity_fetch` returns), the voting key's verdict when it was checked, and the
+/// sentence Rust wrote for a refusal or an `Invalid` or `Undetermined` verdict. Null after
+/// throwing: a value of the wrong length (code 1), or the C function's error when nothing is
+/// proved (the owner identity, or the voter identity after a proved-absent owner, could not
+/// be fetched).
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_MasternodeVotingKeyNative_loadForVoting(
+    mut env: JNIEnv,
+    _class: JClass,
+    sdk: jlong,
+    wire_order_pro_tx_hash: JByteArray,
+    voting_address: JByteArray,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(pro_tx_hash) =
+            read_fixed_bytes::<32>(env, &wire_order_pro_tx_hash, "wireOrderProTxHash")
+        else {
+            return ptr::null_mut();
+        };
+        let address = if voting_address.is_null() {
+            None
+        } else {
+            let Some(address) = read_fixed_bytes::<20>(env, &voting_address, "votingAddress")
+            else {
+                return ptr::null_mut();
+            };
+            Some(address)
+        };
+        let mut out = MaybeUninit::<DashSDKMasternodeVotingLoad>::uninit();
+        let result = unsafe {
+            dash_sdk_masternode_load_for_voting(
+                sdk as *const SDKHandle,
+                pro_tx_hash.as_ptr(),
+                address.is_some(),
+                DashSDKVotingAddress {
+                    bytes: address.unwrap_or([0u8; 20]),
+                },
+                out.as_mut_ptr(),
+            )
+        };
+        // On an error nothing was written to `out`.
+        if unsafe { take_error(env, &result) } {
+            return ptr::null_mut();
+        }
+        // SAFETY: on success the C function wrote the whole struct, whose two strings are
+        // ours to free, and freed here only.
+        let load = unsafe { out.assume_init() };
+        let identity_json = unsafe { take_c_string(load.identity_json) };
+        let message = unsafe { take_c_string(load.message) };
+        new_jstring(
+            env,
+            load_json(
+                load.kind,
+                load.identity_id,
+                identity_json,
+                load.has_voting_key_verdict
+                    .then_some(load.voting_key_verdict),
+                message,
+            ),
+        )
+    })
+}
+
+/// The Rust string at `pointer`, freed; `None` for null.
+///
+/// # Safety
+/// `pointer` must be null or a C string the FFI allocated and nothing else frees.
+unsafe fn take_c_string(pointer: *mut c_char) -> Option<String> {
+    if pointer.is_null() {
+        return None;
+    }
+    let text = CStr::from_ptr(pointer).to_string_lossy().into_owned();
+    dash_sdk_string_free(pointer);
+    Some(text)
+}
+
+fn load_json(
+    kind: DashSDKMasternodeVotingLoadKind,
+    identity_id: [u8; 32],
+    identity_json: Option<String>,
+    verdict: Option<DashSDKVotingKeyVerdict>,
+    message: Option<String>,
+) -> String {
+    let refused = kind == DashSDKMasternodeVotingLoadKind::Refused;
+    json!({
+        "kind": kind as i32,
+        "identityId": (!refused).then(|| to_hex(&identity_id)),
+        "identityJson": identity_json,
+        "votingKeyVerdict": verdict.map(|verdict| verdict as i32),
+        "message": message,
+    })
+    .to_string()
+}
+
 /// The C verdict for `value`; throws code 1 for a value the C enum does not declare.
 fn verdict_from(env: &mut JNIEnv, value: jint) -> Option<DashSDKVotingKeyVerdict> {
     match value {
@@ -392,13 +500,14 @@ fn to_hex(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{check_json, outcome_json};
+    use super::{check_json, load_json, outcome_json};
     use crate::decision_proposals::tests::kotlin_signature_in;
     use dashcore::{Network, PrivateKey};
     use rs_sdk_ffi::{
         dash_sdk_error_free, dash_sdk_masternode_voting_address_from_private_key,
-        dash_sdk_private_key_bytes_from_text, DashSDKRecordedVotingKey,
-        DashSDKRecordedVotingKeyCheck, DashSDKVotingAddress, DashSDKVotingKeyVerdict,
+        dash_sdk_private_key_bytes_from_text, DashSDKMasternodeVotingLoadKind,
+        DashSDKRecordedVotingKey, DashSDKRecordedVotingKeyCheck, DashSDKVotingAddress,
+        DashSDKVotingKeyVerdict,
     };
     use serde_json::{json, Value};
     use std::ffi::CString;
@@ -510,6 +619,17 @@ mod tests {
             )
         );
         assert_eq!(
+            kotlin_signature_in(MASTERNODE_VOTING_KEY_NATIVE_KT, "loadForVoting"),
+            (
+                vec![
+                    "Long".to_string(),       // sdk
+                    "ByteArray".to_string(),  // wire_order_pro_tx_hash
+                    "ByteArray?".to_string(), // voting_address
+                ],
+                "String?".to_string()
+            )
+        );
+        assert_eq!(
             kotlin_signature_in(MASTERNODE_VOTING_KEY_NATIVE_KT, "recordedVotingKeyUse"),
             (
                 vec![
@@ -563,6 +683,45 @@ mod tests {
             json!({
                 "storeKey": false,
                 "record": { "check": 2, "votingAddress": "ab".repeat(20) },
+            })
+        );
+    }
+
+    /// The load JSON `MasternodeVotingKeyCheckCodec.decodeLoad` reads: no id for a refusal,
+    /// and no verdict when no key was checked.
+    #[test]
+    fn should_write_the_load_json_the_kotlin_decoder_reads() {
+        let parsed = |text: String| -> Value { serde_json::from_str(&text).expect("JSON") };
+        assert_eq!(
+            parsed(load_json(
+                DashSDKMasternodeVotingLoadKind::VoterIdentity,
+                [0xcd; 32],
+                Some("{\"id\":\"x\"}".to_string()),
+                Some(DashSDKVotingKeyVerdict::Valid),
+                None,
+            )),
+            json!({
+                "kind": 1,
+                "identityId": "cd".repeat(32),
+                "identityJson": "{\"id\":\"x\"}",
+                "votingKeyVerdict": 0,
+                "message": null,
+            })
+        );
+        assert_eq!(
+            parsed(load_json(
+                DashSDKMasternodeVotingLoadKind::Refused,
+                [0u8; 32],
+                None,
+                None,
+                Some("no owner".to_string()),
+            )),
+            json!({
+                "kind": 2,
+                "identityId": null,
+                "identityJson": null,
+                "votingKeyVerdict": null,
+                "message": "no owner",
             })
         );
     }

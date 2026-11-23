@@ -77,4 +77,20 @@ internal object MasternodeVotingKeyNative {
         recordedVotingAddress: ByteArray?,
         storedVotingAddress: ByteArray?,
     ): String?
+
+    /**
+     * Load the masternode [wireOrderProTxHash] (32 bytes, wire order) for voting, with the
+     * voting key of the 20-byte [votingAddress] when one is given. Bridges
+     * `dash_sdk_masternode_load_for_voting` (Swift
+     * `SDK.loadMasternodeForVoting(proTxHash:votingAddress:)`). Blocks for up to two Platform
+     * round trips.
+     *
+     * @return `{"kind":0|1|2,"identityId":hex|null,"identityJson":string|null,
+     *   "votingKeyVerdict":0|1|2|null,"message":string|null}`.
+     */
+    external fun loadForVoting(
+        sdkHandle: Long,
+        wireOrderProTxHash: ByteArray,
+        votingAddress: ByteArray?,
+    ): String?
 }

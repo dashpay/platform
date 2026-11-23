@@ -1,6 +1,7 @@
 package org.dashfoundation.example.ui.voting
 
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
+import org.dashfoundation.dashsdk.voting.votingProTxHash
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -83,8 +84,31 @@ class MasternodeVoterSectionTest {
         val wire = wireOrderProTxHash(identityId)
 
         assertArrayEquals(ByteArray(32) { (31 - it).toByte() }, wire)
-        assertArrayEquals(wire, MasternodeVoter.StoredKey(identityId).wireOrderProTxHash)
+        // A row without a recorded pro_tx_hash (loaded before it was recorded) votes as its id
+        // reversed, which is all a row loaded at its owner identity could be.
+        assertArrayEquals(wire, identity(0).copy(identityId = identityId).votingProTxHash)
         assertArrayEquals(identityId, ByteArray(32) { it.toByte() }) // input untouched
+    }
+
+    /**
+     * #6099: a shared masternode is stored under its voter identity, so a vote names the
+     * pro_tx_hash recorded on the row, never the row's id.
+     */
+    @Test
+    fun shouldPublishTheRecordedProTxHashOfASharedMasternode() {
+        val proTxHash = ByteArray(32) { 0x5a }
+        val voterRow = identity(9).copy(masternodeProTxHash = proTxHash)
+        val voter = publishVoter(
+            selected = voterRow,
+            allowsTypedProTxHash = false,
+            useTypedProTxHash = false,
+            proTxHashText = "",
+            debugBuild = false,
+            useTypedCredentials = false,
+            votingKeyText = "",
+        )
+        assertArrayEquals(proTxHash, voter!!.wireOrderProTxHash)
+        assertArrayEquals(voterRow.identityId, (voter as MasternodeVoter.StoredKey).identityId)
     }
 
     @Test
@@ -123,7 +147,7 @@ class MasternodeVoterSectionTest {
 
         val voter = publish(selected = selected)
 
-        assertEquals(MasternodeVoter.StoredKey(selected.identityId), voter)
+        assertEquals(MasternodeVoter.StoredKey(selected.identityId, selected.votingProTxHash), voter)
         assertNull(publish(selected = null))
     }
 
@@ -137,7 +161,7 @@ class MasternodeVoterSectionTest {
 
         assertTrue(typed is MasternodeVoter.TypedProTxHash)
         assertArrayEquals(decodeTyped32Bytes(proTxHashHex), typed!!.wireOrderProTxHash)
-        assertEquals(MasternodeVoter.StoredKey(selected.identityId), refused)
+        assertEquals(MasternodeVoter.StoredKey(selected.identityId, selected.votingProTxHash), refused)
         assertNull(malformed)
     }
 
@@ -153,7 +177,7 @@ class MasternodeVoterSectionTest {
             key = keyHex,
         )
 
-        assertEquals(MasternodeVoter.StoredKey(selected.identityId), voter)
+        assertEquals(MasternodeVoter.StoredKey(selected.identityId, selected.votingProTxHash), voter)
     }
 
     @Test
@@ -176,7 +200,7 @@ class MasternodeVoterSectionTest {
     fun shouldCastOnlyAsAStoredKeyOrTypedCredentialsWithAKey() {
         val hash = ByteArray(32)
 
-        assertTrue(MasternodeVoter.StoredKey(hash).canCast)
+        assertTrue(MasternodeVoter.StoredKey(hash, hash).canCast)
         assertFalse(MasternodeVoter.TypedProTxHash(hash).canCast)
         assertFalse(MasternodeVoter.TypedCredentials(hash, null).canCast)
         assertTrue(MasternodeVoter.TypedCredentials(hash, ByteArray(32)).canCast)

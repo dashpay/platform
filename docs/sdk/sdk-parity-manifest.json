@@ -3322,10 +3322,10 @@
           "reason": "SDK.loadMasternodeForVoting bridges dash_sdk_masternode_load_for_voting, whose rule is rs-sdk's load_masternode_for_voting: the owner identity when Platform holds one, else the voter identity when Platform proves it holds the enabled voting key (unit and mock-SDK tested in Rust). Load Identity stores a masternode or evonode under the identity the rule returns and records its pro_tx_hash apart from the id (PersistentIdentity.masternodeProTxHash, round-trip tested); the vote sheets name that pro_tx_hash. No gate loads a shared masternode on a network: the test network probably has none (TEST_PLAN VOTE-10). The load is one call with nothing to resume."
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
+          "sdk": "supported",
+          "example_app": "partial",
           "restart": "not_applicable",
-          "reason": "Not ported yet: KotlinExampleApp still loads a masternode at its owner identity and derives the pro_tx_hash from the identity id. The port calls the same Rust rule through JNI (dash_sdk_masternode_load_for_voting) in a PR stacked on the Swift one."
+          "reason": "Voting.loadMasternodeForVoting bridges dash_sdk_masternode_load_for_voting through one JNI export (MasternodeVotingKeyNative.loadForVoting, descriptor checked by FfiSmokeTest; the JSON shape is pinned on both sides). Load Identity loads a masternode or evonode through it, stores the row under the identity the rule returns and records the wire-order pro_tx_hash apart from the id (IdentityEntity.masternodeProTxHash, Room v19, migration instrumented); the vote dialogs and the pick-time key check name that pro_tx_hash (IdentityEntity.votingProTxHash, which falls back to the id reversed for a row stored before it was recorded). Unit-tested on the JVM; no gate loads a shared masternode on a network: the test network probably has none (TEST_PLAN VOTE-22). The load is one call with nothing to resume."
         }
       },
       "verification": [
@@ -3374,6 +3374,53 @@
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
           "id": "VOTE-10",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/voting/MasternodeVotingKeyChecksTest.kt",
+          "id": "shouldDecodeEachLoadKind",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests 'org.dashfoundation.dashsdk.voting.MasternodeVotingKeyChecksTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/voting/MasternodeVotingKeyChecksTest.kt",
+          "id": "shouldVoteWithTheRecordedProTxHashElseTheIdReversed",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests 'org.dashfoundation.dashsdk.voting.MasternodeVotingKeyChecksTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/identity/LoadIdentityVotingKeyTest.kt",
+          "id": "shouldRecordTheMasternodesProTxHashBesideTheRow",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/voting/MasternodeVoterSectionTest.kt",
+          "id": "shouldPublishTheRecordedProTxHashOfASharedMasternode",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "masternodeVotingKeyCheckSymbolsBindAndRejectInvalidInput",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "VOTE-22",
           "covers_restart": false
         }
       ]
