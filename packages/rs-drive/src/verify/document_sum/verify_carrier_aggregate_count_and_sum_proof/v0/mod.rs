@@ -1,6 +1,5 @@
 use crate::error::Error;
 use crate::query::drive_document_sum_query::DriveDocumentSumQuery;
-use crate::query::sum_width::proved_sum_in_64_bits;
 use crate::verify::RootHash;
 use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::version::PlatformVersion;
@@ -13,7 +12,7 @@ impl DriveDocumentSumQuery<'_> {
     /// [`Self::carrier_aggregate_count_and_sum_path_query`] and feeds
     /// it through
     /// [`grovedb::GroveDb::verify_aggregate_count_and_sum_query_per_key`].
-    /// Returns one `(in_key, u64, i64)` triple per resolved outer In
+    /// Returns one `(in_key, u64, i128)` triple per resolved outer In
     /// branch — the same shape the leaf entry point
     /// `verify_aggregate_count_and_sum_query` returns per key, just
     /// fanned out across the carrier's outer dimension.
@@ -37,7 +36,7 @@ impl DriveDocumentSumQuery<'_> {
         limit: Option<u16>,
         left_to_right: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, Vec<(Vec<u8>, u64, i64)>), Error> {
+    ) -> Result<(RootHash, Vec<(Vec<u8>, u64, i128)>), Error> {
         let path_query = self.carrier_aggregate_count_and_sum_path_query(
             limit,
             left_to_right,
@@ -46,7 +45,10 @@ impl DriveDocumentSumQuery<'_> {
         // A type that keeps its sums in 128 bits is verified through the verifier that
         // returns one: the 64-bit one refuses its trees. No type keeps them so before
         // protocol version 15 (`DocumentTypeV2Getters::uses_big_sums`), so earlier
-        // versions verify as they did.
+        // versions verify as they did. Both branches return the sum at 128 bits. Edited in
+        // place in this shipped generation: it returned the sum at 64 bits and refused a
+        // wider one; a verifier runs on the client and decides nothing in a block, and every
+        // sum it verified before is returned as the same number.
         if self.document_type.uses_big_sums() {
             let (root_hash, entries) = GroveDb::verify_aggregate_count_and_big_sum_query_per_key(
                 proof,
@@ -54,10 +56,6 @@ impl DriveDocumentSumQuery<'_> {
                 &platform_version.drive.grove_version,
             )
             .map_err(|e| Error::GroveDB(Box::new(e)))?;
-            let entries = entries
-                .into_iter()
-                .map(|(key, count, sum)| Ok((key, count, proved_sum_in_64_bits(sum, root_hash)?)))
-                .collect::<Result<Vec<_>, Error>>()?;
             return Ok((root_hash, entries));
         }
         let (root_hash, entries) = GroveDb::verify_aggregate_count_and_sum_query_per_key(
@@ -66,6 +64,12 @@ impl DriveDocumentSumQuery<'_> {
             &platform_version.drive.grove_version,
         )
         .map_err(|e| Error::GroveDB(Box::new(e)))?;
-        Ok((root_hash, entries))
+        Ok((
+            root_hash,
+            entries
+                .into_iter()
+                .map(|(key, count, sum)| (key, count, i128::from(sum)))
+                .collect(),
+        ))
     }
 }

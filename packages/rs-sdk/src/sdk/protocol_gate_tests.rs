@@ -3046,6 +3046,93 @@ fn unbuilt_bundle() -> OrchardBundleParams {
     }
 }
 
+/// A signer the direct identity-shield send must not reach when the gate refuses it.
+#[derive(Debug)]
+struct UnreachableSigner;
+
+#[async_trait::async_trait]
+impl dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> for UnreachableSigner {
+    async fn sign(
+        &self,
+        _: &dpp::identity::IdentityPublicKey,
+        _: &[u8],
+    ) -> Result<BinaryData, dpp::ProtocolError> {
+        panic!("the refused send must not sign")
+    }
+
+    async fn sign_create_witness(
+        &self,
+        _: &dpp::identity::IdentityPublicKey,
+        _: &[u8],
+    ) -> Result<dpp::address_funds::AddressWitness, dpp::ProtocolError> {
+        panic!("the refused send must not sign")
+    }
+
+    fn can_sign_with(&self, _: &dpp::identity::IdentityPublicKey) -> bool {
+        true
+    }
+}
+
+/// The direct identity-shield send refuses an SDK pinned below protocol version 14 before it
+/// fetches or bumps the identity nonce or asks the signer: the mock has no nonce answer and
+/// the signer panics, so either step would end the test differently.
+#[tokio::test]
+async fn should_refuse_a_direct_identity_shield_before_the_nonce_and_signer() {
+    use crate::platform::transition::shield_from_identity::ShieldFromIdentity;
+    use dpp::identity::v0::IdentityV0;
+
+    let sdk = mock_sdk(V13, true, 0);
+    let identity = Identity::V0(IdentityV0 {
+        id: Identifier::new([4; 32]),
+        public_keys: Default::default(),
+        balance: 1_000_000_000,
+        revision: 0,
+    });
+    let result = identity
+        .shield_from_identity(
+            &sdk,
+            1_000,
+            unbuilt_bundle(),
+            None,
+            &UnreachableSigner,
+            None,
+        )
+        .await;
+    match result {
+        Err(Error::ProtocolVersionNotActive {
+            method: "broadcast_state_transition",
+            required: V14,
+            pinned: true,
+            ..
+        }) => {}
+        other => panic!("expected the pinned refusal, got {other:?}"),
+    }
+    assert_eq!(probes(&sdk).await, 0, "a pinned SDK below 14 asks nothing");
+}
+
+/// The direct pool top-up send refuses an SDK pinned below protocol version 14 before it
+/// builds or structure-checks the transition: the bundle is empty, so building first would
+/// end in a structure error instead.
+#[tokio::test]
+async fn should_refuse_a_direct_identity_top_up_from_the_pool_before_building_it() {
+    use crate::platform::transition::identity_top_up_from_shielded_pool::IdentityTopUpFromShieldedPool;
+
+    let sdk = mock_sdk(V13, true, 0);
+    let result = sdk
+        .identity_top_up_from_shielded_pool(Identifier::new([4; 32]), 1_000, unbuilt_bundle(), None)
+        .await;
+    match result {
+        Err(Error::ProtocolVersionNotActive {
+            method: "broadcast_state_transition",
+            required: V14,
+            pinned: true,
+            ..
+        }) => {}
+        other => panic!("expected the pinned refusal, got {other:?}"),
+    }
+    assert_eq!(probes(&sdk).await, 0, "a pinned SDK below 14 asks nothing");
+}
+
 /// An unpinned SDK below protocol version 15 that asks for no proofs still learns the
 /// network's version before refusing a private document send: the gate's probe asks for a
 /// proof whatever the SDK's setting, and the refusal is of the network proven at 14, not of
@@ -3235,6 +3322,71 @@ async fn should_refuse_a_generic_broadcast_of_a_private_document_transition_unti
             other => panic!("pinned {pinned}: expected a local refusal, got {other:?}"),
         }
         assert_eq!(probes(&sdk).await, 1, "pinned {pinned}");
+    }
+}
+
+/// A shield from an identity (type 21) or an identity top-up from the shielded pool (type 22)
+/// built elsewhere and sent through the generic broadcast is gated from protocol version 14:
+/// from an SDK at 14, seeded or pinned, on a network a verified answer shows at 13, it is
+/// refused locally instead of broadcast to be rejected.
+#[tokio::test]
+async fn should_refuse_a_generic_broadcast_of_identity_shielded_payments_until_14() {
+    use dpp::state_transition::identity_top_up_from_shielded_pool_transition::v0::IdentityTopUpFromShieldedPoolTransitionV0;
+    use dpp::state_transition::identity_top_up_from_shielded_pool_transition::IdentityTopUpFromShieldedPoolTransition;
+    use dpp::state_transition::shield_from_identity_transition::v0::ShieldFromIdentityTransitionV0;
+    use dpp::state_transition::shield_from_identity_transition::ShieldFromIdentityTransition;
+    use dpp::state_transition::StateTransition;
+
+    let action = SerializedAction {
+        nullifier: [1; 32],
+        rk: [2; 32],
+        cmx: [3; 32],
+        encrypted_note: vec![4; 216],
+        cv_net: [5; 32],
+        spend_auth_sig: [6; 64],
+    };
+    let shield = StateTransition::ShieldFromIdentity(ShieldFromIdentityTransition::V0(
+        ShieldFromIdentityTransitionV0 {
+            identity_id: Identifier::new([4; 32]),
+            amount: 1_000,
+            actions: vec![action.clone(), action.clone()],
+            anchor: [7; 32],
+            proof: vec![8; 64],
+            binding_signature: [9; 64],
+            nonce: 1,
+            user_fee_increase: 0,
+            signature_public_key_id: 0,
+            signature: Default::default(),
+        },
+    ));
+    let top_up = StateTransition::IdentityTopUpFromShieldedPool(
+        IdentityTopUpFromShieldedPoolTransition::V0(IdentityTopUpFromShieldedPoolTransitionV0 {
+            identity_id: Identifier::new([4; 32]),
+            actions: vec![action.clone(), action],
+            top_up_amount: 1_000,
+            anchor: [7; 32],
+            proof: vec![8; 64],
+            binding_signature: [9; 64],
+        }),
+    );
+    for (kind, transition) in [("type 21", shield), ("type 22", top_up)] {
+        for pinned in [false, true] {
+            let sdk = mock_sdk(V14, pinned, V13);
+            answer_probe(&sdk, "pv13").await;
+            match transition.broadcast(&sdk, None).await {
+                Err(Error::ProtocolVersionNotActive {
+                    method: "broadcast_state_transition",
+                    required: V14,
+                    network: V13,
+                    cause: None,
+                    ..
+                }) => {}
+                other => {
+                    panic!("{kind}, pinned {pinned}: expected a local refusal, got {other:?}")
+                }
+            }
+            assert_eq!(probes(&sdk).await, 1, "{kind}, pinned {pinned}");
+        }
     }
 }
 

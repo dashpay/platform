@@ -35,7 +35,7 @@ impl DriveDocumentSumQuery<'_> {
         &self,
         proof: &[u8],
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, u64, i64), Error> {
+    ) -> Result<(RootHash, u64, i128), Error> {
         match platform_version
             .drive
             .methods

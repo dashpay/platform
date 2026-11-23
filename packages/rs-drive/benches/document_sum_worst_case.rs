@@ -1846,7 +1846,7 @@ fn drive_sum_outcome(
     {
         Ok(DocumentSumResponse::Aggregate(s)) => format!("Aggregate({s})"),
         Ok(DocumentSumResponse::Entries(entries)) => {
-            let summed: i64 = entries.iter().filter_map(|e| e.sum).sum();
+            let summed: i128 = entries.iter().filter_map(|e| e.sum).sum();
             format!("Entries(len={}, sum={})", entries.len(), summed)
         }
         Ok(DocumentSumResponse::Proof(p)) => format!("Proof({} bytes)", p.len()),

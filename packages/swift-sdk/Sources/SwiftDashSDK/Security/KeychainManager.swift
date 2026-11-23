@@ -163,8 +163,22 @@ public final class KeychainManager: Sendable {
             query[kSecAttrAccessGroup as String] = accessGroup
         }
 
-        // Delete any existing item first
-        SecItemDelete(query as CFDictionary)
+        // Delete any existing item first, matched by its identity only
+        // (class, service, account and access group). The add query also
+        // carries the key bytes and a metadata blob with a fresh
+        // `createdAt`, so deleting with it matched no stored item and the
+        // add below then failed as a duplicate: storing a key into an
+        // occupied slot, even the same key again on a retried load, always
+        // returned nil.
+        var existingItem: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrAccount as String: keyIdentifier,
+        ]
+        if let accessGroup = accessGroup {
+            existingItem[kSecAttrAccessGroup as String] = accessGroup
+        }
+        SecItemDelete(existingItem as CFDictionary)
 
         // Add the new item
         let status = SecItemAdd(query as CFDictionary, nil)

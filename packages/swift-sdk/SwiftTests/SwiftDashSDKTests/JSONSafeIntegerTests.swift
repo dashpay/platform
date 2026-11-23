@@ -1,5 +1,5 @@
 import XCTest
-@testable import SwiftExampleApp
+import SwiftDashSDK
 
 /// Tests for `UInt64(jsonValue:)`, the reader the hand-rolled key builders
 /// use for every protocol `u64` they pull out of DPP's JSON.

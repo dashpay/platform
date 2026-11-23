@@ -275,30 +275,35 @@ fn invalid(message: &str) -> FFIError {
     FFIError::InvalidParameter(message.to_string())
 }
 
-/// Renders a [`VotingKeyProblem`] as the message a host shows.
+/// Renders a [`VotingKeyProblem`] as the error a refused vote returns.
+fn describe_voting_key_problem(problem: VotingKeyProblem) -> FFIError {
+    FFIError::InvalidParameter(voting_key_problem_message(problem))
+}
+
+/// The sentence a host shows for a [`VotingKeyProblem`], whether a vote was refused or the
+/// key was checked before any vote (`dash_sdk_masternode_check_voting_key`).
 ///
 /// rs-sdk reports the fact; phrasing it is a binding concern, so the sentence lives here
 /// rather than in the SDK where every caller would inherit it.
-fn describe_voting_key_problem(problem: VotingKeyProblem) -> FFIError {
+pub(crate) fn voting_key_problem_message(problem: VotingKeyProblem) -> String {
     match problem {
         VotingKeyProblem::NoVoterIdentity {
             pro_tx_hash,
             expected_voter_identity,
-        } => FFIError::InvalidParameter(format!(
+        } => format!(
             "No voting identity exists on Platform for masternode {} with this voting key \
-             (expected voter identity {}). Either the voting key does not match the \
-             masternode's registered voting address, or Platform has not created the \
-             voter identity yet.",
+             (expected voter identity {}). Either it is not a masternode, the voting key does \
+             not match the masternode's registered voting address, or Platform has not \
+             created the voter identity yet.",
             Identifier::new(pro_tx_hash.to_byte_array()),
             expected_voter_identity
-        )),
-        VotingKeyProblem::NoUsableVotingKey { voter_identity } => {
-            FFIError::InvalidParameter(format!(
-                "Voter identity {} has no enabled ECDSA_HASH160 voting key matching this \
-                 private key. The masternode's voting key may have been rotated.",
-                voter_identity
-            ))
-        }
+        ),
+        VotingKeyProblem::NoUsableVotingKey { voter_identity } => format!(
+            "Voter identity {} has no enabled ECDSA_HASH160 voting key matching this \
+             private key. The masternode's voting key may have been rotated, or the masternode \
+             removed.",
+            voter_identity
+        ),
     }
 }
 
