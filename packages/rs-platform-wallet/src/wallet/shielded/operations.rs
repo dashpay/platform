@@ -1759,9 +1759,12 @@ pub enum ShieldedTokenPurchaseOutcome {
     /// That proof binds neither the notes the purchase spent nor the tokens it minted, so it
     /// does not show that this purchase executed. The purchase is kept exactly as a spend whose
     /// result could not be read is: its notes stay reserved, its recovery record stays saved and
-    /// its activity row stays pending. The next shielded sync confirms the row when it finds the
-    /// change note of the purchase's fee bundle, and marks the notes spent (dropping the record)
-    /// when it finds their nullifiers.
+    /// its activity row stays pending. Once the purchase lands, a shielded sync confirms the row
+    /// when it finds the change note of the purchase's fee bundle, and marks the notes spent
+    /// (dropping the record) when it finds their nullifiers; until then the row stays pending.
+    /// A purchase another device on the same seed displaced, by spending one of its notes
+    /// first, also stays pending: a known limitation of every pending spend kind, tracked
+    /// separately.
     Submitted,
 }
 
@@ -1887,7 +1890,7 @@ fn token_pool_paid_signing_version(
 /// Waits for the token pool's state at the proof's block: type 28 proves the
 /// affected state only, so the strict wait would reject every success. That
 /// state binds nothing of this purchase, so an accepted purchase stays pending
-/// for the next shielded sync to confirm
+/// until a shielded sync confirms it once it lands
 /// ([`ShieldedTokenPurchaseOutcome::Submitted`]).
 #[allow(clippy::too_many_arguments)]
 pub async fn token_purchase_from_pool<S: ShieldedStore, P: OrchardProver>(

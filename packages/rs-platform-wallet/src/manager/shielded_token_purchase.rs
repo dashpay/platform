@@ -1,6 +1,6 @@
 //! Buying a token at its direct purchase price from a wallet's shielded notes
 //! (`TokenPurchaseFromShieldedPool`, type 28), and the shielded sync that
-//! resolves the purchase, requested once it may have reached the network.
+//! looks for it, requested once it may have reached the network.
 
 use std::sync::Arc;
 
@@ -20,7 +20,7 @@ use crate::wallet::shielded::{NetworkShieldedCoordinator, ShieldedTokenPurchaseO
 
 /// What a shielded token purchase from one wallet needs from the manager: the
 /// wallet, the shielded coordinator whose store holds its notes, and the
-/// shielded sync that resolves the purchase. Taken from the manager in one
+/// shielded sync that looks for the purchase. Taken from the manager in one
 /// call ([`PlatformWalletManager::shielded_token_purchaser`]) and owned, so a
 /// host runs the purchase, which proves for up to a minute, without holding
 /// the manager.
@@ -38,10 +38,10 @@ impl ShieldedTokenPurchaser {
     /// shielded sync when the purchase may have reached the network without
     /// being confirmed: accepted ([`ShieldedTokenPurchaseOutcome::Submitted`])
     /// or unconfirmed ([`PlatformWalletError::ShieldedSpendUnconfirmed`],
-    /// [`PlatformWalletError::ShieldedBroadcastUnconfirmed`]). That sync
-    /// confirms the purchase's activity row, marks its notes spent and runs
-    /// the redrive of its saved record. It is requested, not awaited: a pass
-    /// already in flight owns it.
+    /// [`PlatformWalletError::ShieldedBroadcastUnconfirmed`]). Once the
+    /// purchase lands, a sync confirms its activity row and marks its notes
+    /// spent; a sync also runs the redrive of its saved record. It is
+    /// requested, not awaited: a pass already in flight takes its place.
     #[allow(clippy::too_many_arguments)]
     pub async fn purchase<P: OrchardProver>(
         &self,
@@ -98,8 +98,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         })
     }
 
-    /// Buy a token from `wallet_id`'s shielded notes and request the shielded
-    /// sync that resolves the purchase ([`ShieldedTokenPurchaser::purchase`]).
+    /// Buy a token from `wallet_id`'s shielded notes and request a shielded
+    /// sync to look for it ([`ShieldedTokenPurchaser::purchase`]).
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_token_purchase_from_pool<Pr: OrchardProver>(
         &self,
@@ -128,7 +128,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 }
 
 /// Whether a token purchase that ended as `result` may be on the network
-/// without being confirmed, so a shielded sync must resolve it: accepted
+/// without being confirmed, so a shielded sync should look for it: accepted
 /// (its proof does not show it executed) or unconfirmed. A refusal before
 /// anything was sent needs none.
 fn purchase_needs_shielded_sync(
@@ -144,10 +144,10 @@ fn purchase_needs_shielded_sync(
 
 /// Start one shielded sync pass on `sync` without waiting for it. A pass
 /// already in flight takes its place, and outside a runtime nothing starts:
-/// the next scheduled pass resolves the purchase.
+/// a later scheduled pass looks for the purchase.
 fn request_shielded_sync(sync: &Arc<ShieldedSyncManager>) {
     let Ok(runtime) = tokio::runtime::Handle::try_current() else {
-        debug!("shielded token purchase: no runtime to start a sync on; the next pass resolves it");
+        debug!("shielded token purchase: no runtime to start a sync on; a later pass looks for it");
         return;
     };
     let sync = Arc::clone(sync);
@@ -156,7 +156,7 @@ fn request_shielded_sync(sync: &Arc<ShieldedSyncManager>) {
         if summary.sync_unix_seconds == 0 {
             debug!(
                 "shielded token purchase: sync skipped (a pass was in flight or shielded is \
-                 unconfigured); the next pass resolves it"
+                 unconfigured); a later pass looks for it"
             );
         } else {
             debug!(

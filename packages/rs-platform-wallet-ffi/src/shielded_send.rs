@@ -1417,7 +1417,7 @@ unsafe fn shielded_identity_top_up_from_pool_inner(
 /// of the token at `token_contract_position` of `data_contract_id` are minted
 /// as a note to the account's own address in the token's shielded pool. The
 /// manager checks, selects, builds, broadcasts, records the activity and
-/// requests the shielded sync that resolves the purchase
+/// requests a shielded sync to look for it
 /// (`PlatformWalletManager::shielded_token_purchase_from_pool`); this export
 /// only marshals the arguments and the result.
 ///
@@ -1526,9 +1526,9 @@ unsafe fn shielded_token_purchase_from_pool_inner(
     map_token_purchase_result(result)
 }
 
-/// Map a shielded token purchase's result: submitted is success (the next
-/// shielded sync confirms it), every error as the other note-spending exports
-/// map it ([`map_spend_result`]).
+/// Map a shielded token purchase's result: submitted is success (a shielded
+/// sync confirms it once it lands), every error as the other note-spending
+/// exports map it ([`map_spend_result`]).
 fn map_token_purchase_result(
     result: Result<ShieldedTokenPurchaseOutcome, PlatformWalletError>,
 ) -> PlatformWalletFFIResult {
@@ -2925,8 +2925,9 @@ mod tests {
         );
     }
 
-    /// A submitted token purchase is a success (the next shielded sync confirms
-    /// it), and one that may have reached a node keeps the do-not-retry code.
+    /// A submitted token purchase is a success (a shielded sync confirms it once
+    /// it lands), and one that may have reached a node keeps the do-not-retry
+    /// code.
     #[test]
     fn should_map_a_submitted_token_purchase_to_success_and_unconfirmed_apart() {
         assert_eq!(

@@ -1344,13 +1344,13 @@ extension PlatformWalletManager {
     /// and `tokenCount` tokens of the token at `tokenPosition` of
     /// `contractId` are minted as a note to the wallet's own address in the
     /// token's shielded pool. Rust checks the token, the network and the
-    /// notes, builds, broadcasts, records the activity and requests the
-    /// shielded sync that resolves the purchase.
+    /// notes, builds, broadcasts, records the activity and requests a
+    /// shielded sync to look for the purchase.
     ///
     /// Returning means submitted, not confirmed: Platform accepted the
     /// purchase, but its answer does not show that it executed, so its
     /// activity row stays pending (and its notes reserved) until a shielded
-    /// sync confirms it. Do not retry it.
+    /// sync confirms it once it lands. Do not retry it.
     ///
     /// `totalAgreedPrice` is the price the buyer agreed to; Drive refuses
     /// the purchase unless it covers the token's configured price for
@@ -1365,7 +1365,7 @@ extension PlatformWalletManager {
     /// failed result wait, a node's refusal or consensus verdict
     /// included): it may already be on chain or may still execute, so the
     /// caller must NOT retry (the spent notes stay reserved Rust-side
-    /// until a later shielded sync resolves them).
+    /// until a shielded sync sees the purchase land).
     public func shieldedTokenPurchaseFromPool(
         walletId: Data,
         resolver: MnemonicResolver,

@@ -348,7 +348,7 @@ struct ShieldedActivityDetailView: View {
         case 2:
             return "The purchase did not go through; no tokens were minted."
         default:
-            return "Not confirmed yet: the next shielded sync confirms the purchase. The app does not show the shielded token pool yet."
+            return "Not confirmed yet: a shielded sync confirms the purchase once it lands. The app does not show the shielded token pool yet."
         }
     }
 

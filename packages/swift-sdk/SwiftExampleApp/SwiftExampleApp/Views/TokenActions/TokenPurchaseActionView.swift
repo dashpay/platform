@@ -29,8 +29,8 @@ import SwiftDashSDK
 /// shielded choice is offered only when Rust reports the token can be bought
 /// that way (`shieldedTokenPurchaseAvailability`: the token has a shielded
 /// pool); identity funding stays available either way. A shielded purchase
-/// that returns is submitted, not confirmed: the next shielded sync confirms
-/// it.
+/// that returns is submitted, not confirmed: a shielded sync confirms it once
+/// it lands.
 struct TokenPurchaseActionView: View {
     let token: PersistentToken
     let identity: PersistentIdentity
@@ -548,7 +548,7 @@ struct TokenPurchaseActionView: View {
                 await MainActor.run {
                     guard self.submitGeneration == gen else { return }
                     self.isSubmitting = false
-                    self.shieldedOutcome = .init(message: "Purchase submitted. Platform accepted it; the next shielded sync confirms it, and it shows as pending in Shielded Activity until then. Do not retry. The tokens go to this wallet's shielded token pool, which the app does not show yet.")
+                    self.shieldedOutcome = .init(message: "Purchase submitted. Platform accepted it; a shielded sync confirms it once it lands, and it shows as pending in Shielded Activity until then. Do not retry. The tokens go to this wallet's shielded token pool, which the app does not show yet.")
                 }
             } catch let unconfirmed as PlatformWalletError
                 where SendViewModel.mayHaveGoneThrough(unconfirmed) {
@@ -558,7 +558,7 @@ struct TokenPurchaseActionView: View {
                 await MainActor.run {
                     guard self.submitGeneration == gen else { return }
                     self.isSubmitting = false
-                    self.shieldedOutcome = .init(message: "The purchase may have gone through; the next shielded sync confirms it. Do not retry.")
+                    self.shieldedOutcome = .init(message: "The purchase may have gone through; a shielded sync confirms it once it lands. Do not retry.")
                 }
             } catch {
                 await MainActor.run {

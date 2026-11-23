@@ -26,7 +26,7 @@
 //! [`NetworkShieldedCoordinator::sync`]:
 //!     super::coordinator::NetworkShieldedCoordinator::sync
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use dash_sdk::platform::shielded::notes_sync::types::ShieldedChunkBatch;
@@ -154,11 +154,6 @@ fn checked_balance_sum<'a>(
 ///
 /// [`NetworkShieldedCoordinator::sync`]:
 ///     super::coordinator::NetworkShieldedCoordinator::sync
-/// Per subwallet, the nullifiers of its notes a scan saw spent, each with the
-/// lowest proved batch height it was seen at
-/// ([`MultiSyncNotesResult::spend_heights`]).
-pub type SpendHeights = BTreeMap<SubwalletId, BTreeMap<[u8; 32], u64>>;
-
 #[derive(Debug, Clone, Default)]
 pub struct MultiSyncNotesResult {
     /// Per-subwallet count of new notes discovered in this pass.
@@ -189,12 +184,6 @@ pub struct MultiSyncNotesResult {
     /// `total_count` is the highest seen). `None` when no batch shows that:
     /// a proof of a longer tree than the run reached.
     pub covered_height: Option<u64>,
-    /// Per subwallet, each of its notes' nullifiers this pass's scan saw
-    /// revealed, with the lowest proved height of a batch that held the
-    /// revealing action: the note was spent at or below that height. Seen
-    /// again on a re-fetch, an already spent note is listed too. A spend
-    /// counts as covered only once [`Self::covered_height`] reaches it.
-    pub spend_heights: SpendHeights,
 }
 
 impl MultiSyncNotesResult {
@@ -509,9 +498,6 @@ where
     // and across passes the receipt was persisted on an earlier pass,
     // so `mark_spent`'s by-nullifier lookup still resolves.
     let mut scanned_nullifiers: Vec<[u8; 32]> = Vec::new();
-    // The proved height of the batch each of `scanned_nullifiers` came in,
-    // index for index: the action revealing it was appended at or below it.
-    let mut scanned_heights: Vec<u64> = Vec::new();
 
     // The stream lives in this block so it — and the up-to-`max_concurrent`
     // network fetches it holds in flight — is dropped before the finalize
@@ -584,7 +570,6 @@ where
                         PlatformWalletError::ShieldedSyncFailed("Invalid nullifier length".into())
                     })?;
                 scanned_nullifiers.push(nf_bytes);
-                scanned_heights.push(batch.block_height);
                 let global_pos = batch.start_index + i as u64;
                 if global_pos < tree_size {
                     continue;
@@ -850,13 +835,6 @@ where
         &mut changeset,
     )
     .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-    let spend_heights = wallet_spend_heights(
-        &*store,
-        &subwallet_ids,
-        &scanned_nullifiers,
-        &scanned_heights,
-    )
-    .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
 
     // Advance every subwallet's watermark to the same global
     // tree position so the next sync resumes coherently across
@@ -906,43 +884,7 @@ where
         total_scanned: scanned_volume,
         changeset,
         covered_height,
-        spend_heights,
     })
-}
-
-/// Per subwallet, each of its notes' nullifiers among `scanned_nullifiers`,
-/// with the lowest of the batch heights (`scanned_heights`, index for index)
-/// it was seen at ([`MultiSyncNotesResult::spend_heights`]).
-fn wallet_spend_heights<S: ShieldedStore>(
-    store: &S,
-    subwallet_ids: &[SubwalletId],
-    scanned_nullifiers: &[[u8; 32]],
-    scanned_heights: &[u64],
-) -> Result<SpendHeights, S::Error> {
-    let mut by_subwallet = BTreeMap::new();
-    if scanned_nullifiers.is_empty() {
-        return Ok(by_subwallet);
-    }
-    for id in subwallet_ids {
-        let owned: HashSet<[u8; 32]> = store
-            .get_all_notes(*id)?
-            .into_iter()
-            .map(|note| note.nullifier)
-            .collect();
-        let mut heights: BTreeMap<[u8; 32], u64> = BTreeMap::new();
-        for (nullifier, height) in scanned_nullifiers.iter().zip(scanned_heights) {
-            if owned.contains(nullifier) {
-                heights
-                    .entry(*nullifier)
-                    .and_modify(|lowest: &mut u64| *lowest = (*lowest).min(*height))
-                    .or_insert(*height);
-            }
-        }
-        if !heights.is_empty() {
-            by_subwallet.insert(*id, heights);
-        }
-    }
-    Ok(by_subwallet)
 }
 
 /// Scan-based spend detection: replay the set of nullifiers seen on
@@ -1074,9 +1016,7 @@ fn serialize_note(note: &grovedb_commitment_tree::Note) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        apply_scanned_nullifier_spends, balances_across, wallet_spend_heights, ShieldedSyncSummary,
-    };
+    use super::{apply_scanned_nullifier_spends, balances_across, ShieldedSyncSummary};
     use crate::changeset::ShieldedChangeSet;
     use crate::error::PlatformWalletError;
     use crate::wallet::shielded::keys::OrchardKeySet;
@@ -1153,29 +1093,6 @@ mod tests {
 
     fn sub(account: u32) -> SubwalletId {
         SubwalletId::new([0xCC; 32], account)
-    }
-
-    /// A scan reports, per subwallet, only its own notes' nullifiers, each at
-    /// the lowest batch height it was seen at: a re-fetched batch proved at a
-    /// different height lowers it or leaves it, and a spent note seen again
-    /// is still reported.
-    #[test]
-    fn should_report_each_owned_spend_at_the_lowest_height_it_was_seen() {
-        let mut store = InMemoryShieldedStore::new();
-        let (owned, spent_earlier, foreign) = ([0xA1; 32], [0xA2; 32], [0xF1; 32]);
-        store.save_note(sub(0), &received_note(owned, 0)).unwrap();
-        store
-            .save_note(sub(0), &received_note(spent_earlier, 1))
-            .unwrap();
-        store.mark_spent(sub(0), &spent_earlier).unwrap();
-        let scanned = [owned, foreign, owned, spent_earlier];
-        let heights = [200, 150, 180, 90];
-        let reported = wallet_spend_heights(&store, &[sub(0), sub(1)], &scanned, &heights).unwrap();
-        assert_eq!(
-            reported,
-            BTreeMap::from([(sub(0), BTreeMap::from([(owned, 180), (spent_earlier, 90)]))]),
-            "no foreign nullifier, and no entry for a subwallet that owns none"
-        );
     }
 
     /// Build a received (unspent) note carrying `nullifier` at `position`.
