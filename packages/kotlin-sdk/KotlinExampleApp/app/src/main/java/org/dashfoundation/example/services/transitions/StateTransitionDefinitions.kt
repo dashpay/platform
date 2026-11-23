@@ -1,5 +1,7 @@
 package org.dashfoundation.example.services.transitions
 
+import org.dashfoundation.example.BuildConfig
+
 /**
  * The state-transition catalog — 1:1 port of `TransitionTypes.swift` +
  * `StateTransitionDefinitions.swift`. Drives the transitions catalog UI:
@@ -117,7 +119,7 @@ object StateTransitionDefinitions {
         SelectOption("towardsIdentity", "Towards Identity"),
     )
 
-    val all: List<TransitionDefinition> = listOf(
+    private val commonCatalog: List<TransitionDefinition> = listOf(
         // ── Identity ──────────────────────────────────────────────────
         TransitionDefinition(
             key = "identityCreate",
@@ -320,38 +322,55 @@ object StateTransitionDefinitions {
             executable = true,
             dedicatedRoute = DedicatedTransition.CONTEST_DETAIL,
         ),
-        TransitionDefinition(
-            key = "masternodeVote",
-            category = TransitionCategory.VOTING,
-            label = "Masternode Vote",
-            description = "Cast a masternode vote on a contested resource",
-            inputs = listOf(
-                TransitionInput("contractId", text, "Contract ID", true),
-                TransitionInput("documentType", text, "Document type", true),
-                TransitionInput("indexName", text, "Index name", true),
-                TransitionInput(
-                    "indexValues", text, "Index values", true,
-                    placeholder = "Comma-separated",
-                    help = "Sent as typed: a value starting with 0x is hex bytes, one starting " +
-                        "with \\ is text with that backslash removed. Put \\ before a text " +
-                        "value that starts with 0x or \\ (DPNS label oxford -> \\0xf0rd).",
-                ),
-                TransitionInput("voteChoice", select, "Vote choice", true, options = voteChoiceOptions),
-                TransitionInput("targetIdentity", identityPicker, "Target identity", false),
-                TransitionInput(
-                    "proTxHash", text, "Masternode pro_tx_hash", true,
-                    placeholder = "64 hex chars",
-                ),
-                TransitionInput(
-                    "votingPrivateKey", text, "Masternode voting private key", true,
-                    placeholder = "64 hex chars",
-                    help = "The ECDSA_HASH160 voting key + signer derive from this " +
-                        "Rust-side; the bytes are not stored",
-                ),
-            ),
-            executable = true,
-        ),
     )
+
+    /**
+     * The generic masternode vote takes a raw voting private key, so only a debug build
+     * lists it, as Swift gates its raw-key forms behind `#if DEBUG`
+     * (`TransitionCategoryView.swift`). A release build casts masternode votes only from the
+     * contest and proposal screens, signed with a stored voting key.
+     */
+    private val masternodeVoteDefinition = TransitionDefinition(
+        key = "masternodeVote",
+        category = TransitionCategory.VOTING,
+        label = "Masternode Vote",
+        description = "Cast a masternode vote on a contested resource",
+        inputs = listOf(
+            TransitionInput("contractId", text, "Contract ID", true),
+            TransitionInput("documentType", text, "Document type", true),
+            TransitionInput("indexName", text, "Index name", true),
+            TransitionInput(
+                "indexValues", text, "Index values", true,
+                placeholder = "Comma-separated",
+                help = "Sent as typed: a value starting with 0x is hex bytes, one starting " +
+                    "with \\ is text with that backslash removed. Put \\ before a text " +
+                    "value that starts with 0x or \\ (DPNS label oxford -> \\0xf0rd).",
+            ),
+            TransitionInput("voteChoice", select, "Vote choice", true, options = voteChoiceOptions),
+            TransitionInput("targetIdentity", identityPicker, "Target identity", false),
+            TransitionInput(
+                "proTxHash", text, "Masternode pro_tx_hash", true,
+                placeholder = "64 hex chars",
+            ),
+            TransitionInput(
+                "votingPrivateKey", text, "Masternode voting private key", true,
+                placeholder = "64 hex chars",
+                help = "The ECDSA_HASH160 voting key + signer derive from this " +
+                    "Rust-side; the bytes are not stored",
+            ),
+        ),
+        executable = true,
+    )
+
+    /** The full catalog, the debug-only entries included when [includeDebugOnly]. */
+    internal fun catalog(includeDebugOnly: Boolean): List<TransitionDefinition> =
+        if (includeDebugOnly) commonCatalog + masternodeVoteDefinition else commonCatalog
+
+    /**
+     * The catalog this build offers: [catalog] with the debug-only entries only in a debug
+     * build.
+     */
+    val all: List<TransitionDefinition> = catalog(includeDebugOnly = BuildConfig.DEBUG)
 
     /** Shared shape of the eight token-transition rows. */
     private fun tokenTransition(

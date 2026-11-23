@@ -28,6 +28,7 @@
     "core_wallet_tx_builder_change_to_first_input": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
     "core_wallet_tx_builder_finalize": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
     "core_wallet_tx_builder_preserve_output_order": "packages/rs-platform-wallet-ffi/src/core_wallet/transaction_builder.rs",
+    "dash_sdk_contested_resource_cast_vote_with_signer": "packages/rs-sdk-ffi/src/contested_resource/transitions/cast_vote.rs",
     "dash_sdk_contract_get_fee_pots": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
     "dash_sdk_contract_moderation_get_action_counts": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
     "dash_sdk_contract_moderation_get_document_removals": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
@@ -37,7 +38,11 @@
     "dash_sdk_contract_moderation_get_team_action_signers": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
     "dash_sdk_contract_moderation_get_team_actions": "packages/rs-sdk-ffi/src/contract_moderation/queries.rs",
     "dash_sdk_create_adaptive": "packages/rs-sdk-ffi/src/sdk.rs",
+    "dash_sdk_decision_proposal_cast_vote_with_signer": "packages/rs-sdk-ffi/src/decision_proposal/transitions.rs",
     "dash_sdk_get_context_provider_source": "packages/rs-sdk-ffi/src/sdk.rs",
+    "dash_sdk_masternode_voting_address_from_private_key": "packages/rs-sdk-ffi/src/voting/masternode_vote.rs",
+    "dash_sdk_multiple_choice_proposal_cast_vote_with_signer": "packages/rs-sdk-ffi/src/decision_proposal/multiple_choice/mod.rs",
+    "dash_sdk_private_key_bytes_from_text": "packages/rs-sdk-ffi/src/crypto/mod.rs",
     "dash_sdk_set_context_provider_mode": "packages/rs-sdk-ffi/src/sdk.rs",
     "dash_sdk_sign_async_completion": "packages/rs-sdk-ffi/src/signer.rs",
     "dash_sdk_system_get_blocks": "packages/rs-sdk-ffi/src/system/queries/blocks.rs",
@@ -2460,6 +2465,200 @@
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
           "id": "SYS-12",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "voting.masternode_vote_stored_key",
+      "title": "Cast masternode votes signed with a stored voting key, with raw keys only in debug builds",
+      "area": "example_app",
+      "shared_apis": [
+        "dash_sdk_contested_resource_cast_vote_with_signer",
+        "dash_sdk_decision_proposal_cast_vote_with_signer",
+        "dash_sdk_multiple_choice_proposal_cast_vote_with_signer"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "KeychainSigner.withStoredMasternodeVotingKey makes an identity's stored voting key signable under its voting address for one call, unit-tested. The DPNS contest, decision proposal and multiple choice proposal vote sheets pick a loaded masternode or evonode identity on the current network (MasternodeVoterSection.swift) and cast through the signer forms; typed credentials (pro_tx_hash and raw voting key) are compiled only under #if DEBUG, and a typed pro_tx_hash without a key reads any masternode's answer in every build (TEST_PLAN VOTE-01, VOTE-08, VOTE-09). No gate recorded here casts a vote with a stored key against a network holding a registered masternode. The vote itself is one call, and the key is read from the Keychain at vote time, so there is nothing to resume."
+        },
+        "kotlin": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "VoteCasting.castVote, DecisionProposals.castVote and MultipleChoiceProposals.castVote have overloads that take a MasternodeVotingSigner; no public vote takes a bare signer handle. MasternodeVotingKeyStore keeps each identity's voting key in its own WalletStorage entry (mnvoting.<identityIdHex>.<votingAddressHex>), never shared with a wallet's identity keys, and refuses any other name. PlatformWalletManager.withStoredMasternodeVotingKey (port of the per-vote KeychainSigner of MasternodeVoterSection.swift and of KeychainSigner.withStoredMasternodeVotingKey) refuses an identifier that no identity row names or whose key is not readable, and otherwise builds a KeystoreSigner for that one call bound to exactly the voting address with key type ECDSA_HASH160, which reads that entry and refuses every other key (wallet keys and platform addresses included), holding the manager's teardown gate; the manager's own signer never can, so a vote does not change what a concurrent wallet operation signs with, and the vote's signer is freed after votes in flight return. The identifier format, the refusal of bare addresses and the absent-key paths are unit-tested; an instrumented test signs a payload with the stored key through the vote's own signer, matches Rust's signature of the fixture key, shows the vote's signer refuses a wallet key present in the same storage, and shows the manager's signer cannot sign for the address during or after the vote. The JNI marshalling is exercised only by instrumented tests. The example app's three vote dialogs pick a loaded masternode or evonode identity with a stored voting key on the current network (MasternodeVoterSection.kt) and cast inside withStoredMasternodeVotingKey; typed credentials are composed and cast only when BuildConfig.DEBUG, the generic raw-key Masternode Vote transition is listed only in debug builds, and a typed pro_tx_hash without a key reads any masternode's answer in every build (TEST_PLAN VOTE-01, VOTE-12, VOTE-19). The picker, wire-order and publishing logic are unit-tested; no gate records a vote cast with a stored key against a network holding a registered masternode. The vote is one call and the key is read from WalletStorage at vote time, so there is nothing to resume."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/KeychainSignerStoredVotingKeyTests.swift",
+          "id": "testStoredVotingKeyIsSignableUnderItsAddressWithinScopeOnly",
+          "command": "swift test --package-path packages/swift-sdk --filter KeychainSignerStoredVotingKeyTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "VOTE-01",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/voting/MasternodeVoterSectionTest.kt",
+          "id": "shouldNeverPublishTypedCredentialsInAReleaseBuild",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/voting/MasternodeVoterSectionTest.kt",
+          "id": "shouldReverseTheIdentityIdIntoWireOrder",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/voting/MasternodeVoterSectionTest.kt",
+          "id": "shouldKeepOnlyMasternodeAndEvonodeIdentitiesOnTheNetworkWithAVotingKey",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/services/transitions/StateTransitionDefinitionsTest.kt",
+          "id": "shouldListTheRawKeyMasternodeVoteOnlyAmongTheDebugEntries",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/security/MasternodeVotingKeyStoreTest.kt",
+          "id": "shouldReportAKeyNeverStoredAsAbsentAndDeleteItQuietly",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests 'org.dashfoundation.dashsdk.security.MasternodeVotingKeyStoreTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/security/MasternodeVotingKeyStoreTest.kt",
+          "id": "shouldRefuseABareAddressInLookupsAndDeletes",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests 'org.dashfoundation.dashsdk.security.MasternodeVotingKeyStoreTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/security/MasternodeVotingKeySigningTest.kt",
+          "id": "shouldSignWithTheStoredKeyOnlyThroughTheVotesOwnSigner",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "VOTE-01",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "identity.load_masternode_voting_key",
+      "title": "Load a masternode or evonode identity with its voting private key",
+      "area": "example_app",
+      "shared_apis": [
+        "dash_sdk_private_key_bytes_from_text",
+        "dash_sdk_masternode_voting_address_from_private_key"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "Load Identity reads the voting, owner and payout keys as hex or WIF through Rust (KeyValidation.privateKeyBytes(fromText:)), stops the load on a refused key, and stores each into an empty Keychain slot only (KeychainManager.storeSpecialKeyIfAbsent, unit-tested), asking before a conflicting key replaces the stored one (loadIdentity.replaceKey.*). No gate recorded here loads a registered masternode with its real voting key. The key is written once at load time; there is no flow to resume."
+        },
+        "kotlin": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "MasternodeVotingKeyStore reads hex or WIF through Rust, and its one public write, assignToIdentity, stores the voting key in the identity's own WalletStorage entry (mnvoting.<identityIdHex>.<votingAddressHex>, apart from every wallet key) and records it on the identity row only while the row is on the network being loaded and names the expected key (checked before anything is written, and again after), deleting nothing else, so a rolled-back enclosing transaction leaves the row's old key stored (unit-tested with the dispatcher hop a thread check cannot see); removeStaleEntries then deletes the identity's other entries once the change has committed, keeping (and reporting as an incomplete cleanup, which the app shows as a warning) any entry an assignment wrote that no row has been seen to name yet, so a cleanup during an uncommitted enclosing transaction cannot delete the key its commit records (unit-tested on a WAL database with the cleanup running inside the open transaction; a rolled-back leftover is removed by the next process's first cleanup); the JNI marshalling is exercised only by instrumented tests. Load Identity offers the identity type (loadIdentity.identityType, following the typed id's stored type and User for an unseen id until the user picks one; an unpicked type never overwrites a stored one) and, for a masternode or evonode, a masked voting key field (loadIdentity.votingKey); a refused key stops the load with Rust's reason, an identity stored for another network is refused, an existing row changes only in the fields a load owns (a wallet's identity keeps its synced balance), the same key entered again rewrites its entry and a write failure is shown, the key is stored when the row names none, and a different stored key is kept until the user confirms replacing it (loadIdentity.replaceKey.voting / .cancel), which happens only while the row still names the key the question showed; every other entry of the identity is then deleted after each successful load or replacement, a failure there is reported and retried by the next load (TEST_PLAN ID-02). Clearing Identities & Keys, or all data, deletes the imported voting keys before the rows, so an interrupted clear can be finished. Every store-and-record (assignToIdentity), sweep (removeStaleEntries) and clear runs under one process-wide lock (MasternodeVotingKeyStore.withVotingKeyLock), so a reload cannot sweep away a key a replacement is recording and a clear cannot miss a key an import is recording; the interleavings are unit-tested with the public operation as the importer, each waiting until the other operation is seen waiting on the lock. The outcome decision and the Room writes are unit-tested; no gate records a load of a registered masternode with its real voting key. Owner and payout keys are not imported: nothing in the app signs with them. The key is written once at load time; there is no flow to resume."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/KeychainManagerStoreSpecialKeyIfAbsentTests.swift",
+          "id": "testAStoredKeyIsNeverReplaced",
+          "command": "swift test --package-path packages/swift-sdk --filter KeychainManagerStoreSpecialKeyIfAbsentTests",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/identity/LoadIdentityVotingKeyTest.kt",
+          "id": "shouldKeepADifferentStoredKeyAndNameItInTheConflict",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/identity/LoadIdentityVotingKeyTest.kt",
+          "id": "shouldTreatTheKeyTheRowAlreadyNamesAsStored",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/identity/LoadIdentityVotingKeyTest.kt",
+          "id": "shouldKeepAnEvonodesTypeAndVotingKeyOnAnAliasOnlyReload",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/identity/LoadIdentityVotingKeyTest.kt",
+          "id": "shouldKeepTheCurrentKeyWhenTheRowChangedAfterTheQuestion",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/services/DataManagerTest.kt",
+          "id": "shouldDeleteImportedVotingKeysWhenClearingIdentities",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests 'org.dashfoundation.dashsdk.services.DataManagerTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/security/MasternodeVotingKeyStoreTest.kt",
+          "id": "shouldReadAnIdentifierBackAsItsIdentityAndVotingAddress",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests 'org.dashfoundation.dashsdk.security.MasternodeVotingKeyStoreTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "ID-02",
           "covers_restart": false
         }
       ]

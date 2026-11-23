@@ -2,6 +2,8 @@ package org.dashfoundation.dashsdk.persistence.dao
 
 import androidx.room.Dao
 import androidx.room.Delete
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
@@ -68,6 +70,66 @@ interface IdentityDao {
     @Upsert
     suspend fun upsert(identity: IdentityEntity)
 
+    /**
+     * Insert [identity] unless a row with its id exists. Returns the new row id, or -1 when
+     * a row was already there and nothing was written.
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIfAbsent(identity: IdentityEntity): Long
+
+    /**
+     * Load Identity's write to a row already on the device: only the fields a load owns, on
+     * the current row, and only while the row is on [networkRaw]. The fetched [balance]
+     * replaces the stored one only on a row no wallet owns: a wallet's own identity has its
+     * balance kept current by wallet sync, which may have written a newer one than the fetch
+     * saw. The alias and the type change only when one is given (a null [identityType] keeps
+     * the stored type, so a type the user did not pick never overwrites a newer one); every
+     * other column (wallet link, key identifiers, DPNS names) is left as the row has it.
+     * Returns the number of rows changed (0 when the row is gone or on another network).
+     */
+    @Query(
+        "UPDATE identities SET " +
+            "balance = CASE WHEN walletId IS NULL THEN :balance ELSE balance END, " +
+            "alias = COALESCE(:alias, alias), " +
+            "isLocal = :isLocal, identityType = COALESCE(:identityType, identityType), " +
+            "lastUpdated = :nowMillis " +
+            "WHERE identityId = :identityId AND networkRaw = :networkRaw"
+    )
+    suspend fun updateLoadedFields(
+        identityId: ByteArray,
+        networkRaw: Int,
+        balance: Long,
+        alias: String?,
+        isLocal: Boolean,
+        identityType: String?,
+        nowMillis: Long,
+    ): Int
+
+    /**
+     * Point the row at the voting key [newIdentifier] only while it is on [networkRaw] and
+     * still names [expectedIdentifier] (null for none), so a key association changed by
+     * another write since it was read, or a row recreated on another network, is never
+     * overwritten. Returns the number of rows changed: 0 when the row is gone, on another
+     * network, or names another key.
+     *
+     * The low-level row write of `MasternodeVotingKeyStore.assignToIdentity`, which also
+     * writes the key and runs both under the voting key lock. Use that instead: changing the
+     * association here alone can name a key that is not stored, or race a clear.
+     */
+    @Query(
+        "UPDATE identities SET votingPrivateKeyIdentifier = :newIdentifier, " +
+            "lastUpdated = :nowMillis " +
+            "WHERE identityId = :identityId AND networkRaw = :networkRaw " +
+            "AND votingPrivateKeyIdentifier IS :expectedIdentifier"
+    )
+    suspend fun replaceVotingPrivateKeyIdentifier(
+        identityId: ByteArray,
+        networkRaw: Int,
+        expectedIdentifier: String?,
+        newIdentifier: String?,
+        nowMillis: Long,
+    ): Int
+
     /** Mirror of `PersistentIdentity.updateBalance(in:identityId:balance:)`. */
     @Query(
         "UPDATE identities SET balance = :balance, lastUpdated = :nowMillis " +
@@ -116,6 +178,10 @@ interface IdentityDao {
     /** StorageExplorer row count. */
     @Query("SELECT COUNT(*) FROM identities")
     fun count(): Flow<Long>
+
+    /** Whether any identity row names the voting key [identifier]. */
+    @Query("SELECT EXISTS(SELECT 1 FROM identities WHERE votingPrivateKeyIdentifier = :identifier)")
+    suspend fun existsByVotingPrivateKeyIdentifier(identifier: String): Boolean
 
     /** StorageExplorer network-scoped row count. */
     @Query("SELECT COUNT(*) FROM identities WHERE networkRaw = :networkRaw")
