@@ -1045,6 +1045,32 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
+    fun profileDeletionFailsTheRoundWhenTheCallbackWalletHasNoNetwork() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val identityId = ByteArray(32) { 17 }
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityUpsert(
+            walletId, identityId, 1, 0, true, 0, 0, true, walletId,
+            emptyArray(), LongArray(0), false, null, null, null,
+            ByteArray(32), false, ByteArray(8), false, null,
+        )
+        handler.onPersistDashpayProfile(
+            walletId, identityId, true, "Kept", null, null, ByteArray(32), false,
+            ByteArray(8), false, null, null, null, ByteArray(43) { 3 },
+        )
+        handler.onChangesetEnd(walletId, success = true)
+
+        val unknownWalletId = ByteArray(32) { 18 }
+        handler.onChangesetBegin(unknownWalletId)
+        handler.onPersistDashpayProfile(
+            unknownWalletId, identityId, false, null, null, null, ByteArray(32), false,
+            ByteArray(8), false, null, null, null, null,
+        )
+        assertTrue(handler.onChangesetEnd(unknownWalletId, success = true) != 0)
+        assertEquals("Kept", db.dashpayDao().getProfile(testnet, identityId)?.displayName)
+    }
+
+    @Test
     fun identityDpnsSnapshotRemovesStaleOwnedLabels() = runTest {
         handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
         val identityId = ByteArray(32) { 12 }

@@ -2135,13 +2135,19 @@ class PlatformWalletManager(
         mapNativeErrors { FundingNative.prepareShieldedIdentityAddress(managerHandle, walletId, mnemonicResolver.nativeHandle, identityId) }
     }
 
-    /** Send only if fresh resolution still matches the recipient shown in confirmation. */
+    /**
+     * Send only if fresh resolution still matches the recipient shown in confirmation.
+     *
+     * Cancellation after the native send completed still returns normally (see
+     * [opReturningCompletedResult]), so a confirmed tip is never reported as
+     * cancelled and retried.
+     */
     suspend fun sendShieldedTip(
         walletId: ByteArray, username: String,
         recipient: org.dashfoundation.dashsdk.tokens.ShieldedTipRecipient,
         amount: Long, source: org.dashfoundation.dashsdk.tokens.ShieldedTipSource,
         memo: String? = null,
-    ): Unit = teardownGate.op {
+    ): Unit = teardownGate.opReturningCompletedResult {
         require(amount > 0) { "amount must be positive, got $amount" }
         val (sourceIdentityId, sourceAccount) = when (source) {
             is org.dashfoundation.dashsdk.tokens.ShieldedTipSource.Identity -> source.identityId to 0

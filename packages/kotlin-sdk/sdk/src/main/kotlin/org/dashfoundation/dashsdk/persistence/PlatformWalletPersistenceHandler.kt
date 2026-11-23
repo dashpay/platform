@@ -1871,8 +1871,11 @@ class PlatformWalletPersistenceHandler(
         shieldedAddress: ByteArray?,
     ): Int = guarded {
         stage(walletId) { db ->
-            val networkRaw = db.walletDao().getByWalletId(walletId)?.networkRaw
-                ?: return@stage
+            // Returning here would acknowledge a deletion that was never
+            // applied, so Rust would stop re-emitting it; fail the round instead.
+            val networkRaw = checkNotNull(db.walletDao().getByWalletId(walletId)?.networkRaw) {
+                "no wallet row resolves the network of this profile write"
+            }
             val identity = requireNotNull(
                 db.identityDao().getByIdentityAndNetwork(identityId, networkRaw)
             )
