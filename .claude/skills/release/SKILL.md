@@ -1,16 +1,157 @@
 ---
 name: release
-description: Cut a Dash Platform release (stable or prerelease) with `yarn release`. Use when asked to release/publish a new platform version, bump versions, or cut a beta/rc/dev/alpha prerelease (e.g. "release 4.1.0-beta.1").
+description: Cut a Dash Platform release (stable or prerelease) from start to finish - the `yarn release` PR, its merge, the GitHub release, the release.yml assets, signing the dashmate SHA256SUMS, and master after a stable release. Use when asked to release/publish a new platform version, bump versions, or cut a beta/rc/dev/alpha prerelease (e.g. "release 4.1.0-beta.1").
 argument-hint: "[target-version | type]"
 ---
 
 # Cut a Platform release
 
-`yarn release` (→ `scripts/release/release.sh`) bumps every workspace version, regenerates the changelog, and opens a release PR. It does **not** publish artifacts or tag — a maintainer merges the PR, then publishes a GitHub release, which creates the tag and triggers the asset build (see *Publishing the GitHub release* below).
+A release goes through the seven steps of **Release flow** in order. A **stable** release is a final version (`5.1.0`, `5.0.4`); a **prerelease** carries an id (`5.1.0-dev.3`, `-alpha`, `-beta`, `-rc`). Each step says where the two differ. The sections after the flow are reference for the steps.
 
-Full flow: **`yarn release` → fix offset versions on the PR → merge → publish the GitHub release (tags + builds assets)**.
+**Every write to GitHub needs the user's explicit go immediately before it:** pushing a branch, opening or merging a PR, publishing the release, setting or deleting a repository variable, dispatching or re-running a workflow, uploading or deleting a release asset, and pushing `master`. Being asked to "release X" is not that go.
 
-## What one run does
+## Release flow
+
+### 1. Cut the release PR
+
+1. Confirm the target version and base branch with the user, and resolve the version the params will produce (dry-check with the [derivation rules](#-t-derivation-rules-from-bump_versionjs-when--v-is-not-given)).
+2. **Stable only:** work out now whether it will be the newest stable version. Steps 3 and 6 depend on it.
+   ```sh
+   git fetch origin --tags
+   git tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1
+   ```
+   It is the newest stable version when it sorts above the tag this prints. A `5.0.4` cut after `5.1.0` is not. Run the same check again right before step 3 and step 6, since another release may come out in between.
+3. Verify the [preconditions](#preconditions--check-before-running). If the tree is dirty, surface it and ask how to handle it; never fold stray files into the release.
+4. Run `yarn release -v=<target-version>`, only after the user's go: it pushes `release_<version>` and opens a PR against the branch you ran it from.
+5. Fix the [offset package versions](#known-gotcha-offset-package-versions-fix-on-the-pr) on the release branch and push.
+6. Report the new version, the `release_<version>` branch, the changelog-from tag used and the PR URL. Check that the bump landed in `package.json` and `Cargo.toml` and that the versions match.
+
+### 2. Merge the release PR
+
+The `vX.Y-dev` branches require the `PR Hygiene` check and no approvals. The heavy E2E suites (`test:browsers`, `test:suite`, functional, dashmate E2E) and the Swift SDK build often only run once the Docker images build, and can be red for **environmental** reasons (devnet bring-up, self-hosted-runner Keychain perms) unrelated to the release. Report their state; merging is the user's decision. Note the merge commit: the release is created from it.
+
+### 3. Publish the GitHub release
+
+Publishing a GitHub **release** creates the tag and starts `.github/workflows/release.yml` (`on: release: published`). It builds and attaches the dashmate packages and `SHA256SUMS`, the Docker images, the Kotlin SDK AAR (`dash-sdk-android-<version>.aar`, also published to Maven Central as `org.dashj:dash-sdk-android:<version>` via the `maven-central` environment) and the Swift `DashSDKFFI-<version>.xcframework.zip` with its checksum.
+
+1. Confirm the release PR is merged and the dev-branch tip carries the version bump.
+2. Write concise, **non-technical** release notes: a short highlights list (main features), a bug-fixes/hardening summary, and a link to the changelog. Summarize from the version's `CHANGELOG.md` section (its `### Features` / `### Bug Fixes` blocks); don't paste the raw commit list. Changelog link: `https://github.com/dashpay/platform/blob/v<version>/CHANGELOG.md` (or the compare URL `.../compare/v<prev>...v<version>`).
+   - **Upgrade notices are not in the changelog.** `CHANGELOG.md` is regenerated from commit titles, so what operators and app developers must do lives in the book and has to be carried into the notes' **Upgrading** section by hand. For a release line that brings a new protocol version, check the book for an "Updating Apps for Protocol Version N" chapter and state its requirement under **Upgrading → App developers**, with a link. For 5.1 (protocol version 15) that is `book/src/sdk/protocol-version-15-upgrade.md`: wallets and apps must update to a 5.1 SDK before protocol version 15 activates, because a 5.0.x client can no longer read DPNS, DashPay, contracts created at protocol version 15, document history or 128-bit sums. Include it in every 5.1 prerelease's notes too, since testnet activates first.
+3. Create the release from the merge commit. Confirm the notes and the command with the user first.
+
+```sh
+gh release create v<version> --target <merge-commit-sha> \
+  --title "Dash Platform v<version>" --notes-file <notes.md> <marker>
+```
+
+| Release | `<marker>` |
+|---|---|
+| Prerelease | `--prerelease` |
+| Stable, the newest stable version (step 1) | `--latest` |
+| Stable on an older line (e.g. `5.0.4` after `5.1.0`) | `--latest=false` |
+
+GitHub marks a stable release "Latest" by default, and the install docs download the deb from the latest release, so a patch on an older line must say `--latest=false`. Tell the user before publishing such a patch that `release.yml` still moves npm's `latest` dist-tag and the Docker `latest` image to it.
+
+### 4. Wait for `release.yml` and check the assets
+
+The run takes hours: the Kotlin native build alone can run about 3 h. Wait in the background rather than blocking, for example:
+
+```sh
+gh run list --repo dashpay/platform --workflow release.yml --event release --branch v<version> \
+  --json databaseId,status,conclusion,url
+gh run watch <run-id> --repo dashpay/platform --exit-status --interval 60
+```
+
+When it has finished, check that the release carries the dashmate packages and `SHA256SUMS`, and that the `Release Dashmate checksums` job is green:
+
+```sh
+gh release view v<version> --repo dashpay/platform --json assets --jq '.assets[].name'
+```
+
+Expect two debs, `dashmate_5.1.0-1_amd64.deb` and `_arm64.deb` (for a prerelease the `-` before its id becomes `.`: `dashmate_5.1.0.beta.1-1_amd64.deb`), `dashmate-v<version>-<sha>-linux-x64.tar.gz` and `-linux-arm64.tar.gz`, `-x64.exe`, `-x64.pkg` and `-arm64.pkg`, and `SHA256SUMS`. For a stable release, check which release is now Latest: `gh api repos/dashpay/platform/releases/latest --jq .tag_name`. A failed job is re-run only with the user's go.
+
+The Kotlin and Swift SDK jobs fill the release page in as they finish. The Maven Central deploy runs automatically after the Kotlin build (no approval gate); note that PR CI does **not** exercise the release-profile arm64 SDK builds, so an SDK build break surfaces here first — for a stable release, confirm the SDK jobs were green on the preceding rc. To re-run just one SDK release: `gh workflow run release-kotlin-sdk.yml --ref v<version> -f tag=v<version>` (same for `release-swift-sdk.yml`) — must be dispatched **at the tag ref**, with the **plain tag name** as input (no `refs/tags/` prefix). **Confirm with the release owner immediately before dispatching**: the re-run attaches public release assets and the Kotlin one can publish an irrevocable Maven Central version (no approval gate). Works only for tags that already contain these workflow files (post-consolidation); for older tags, dispatch at the dev branch — assets attach, Maven deploy skips — and use the manual runbook in `packages/kotlin-sdk/PUBLISHING.md` for Maven.
+
+### 5. Sign `SHA256SUMS`
+
+`SHA256SUMS` lists the dashmate packages only, not the SDK assets. The apt repository's `stable` suite takes a release only with a maintainer's detached signature of it, `SHA256SUMS.asc`.
+
+- **Stable:** signing is required.
+- **Prerelease:** ask the maintainer whether to sign it.
+
+Signers, one signature per release:
+
+- Ivan Shumkov, key `19E460D55429A91B40E9E7C5EDBC0AA6BC1AA13C`
+- QuantumExplorer: his fingerprint will be added here once his key exists.
+
+The apt publisher enforces this list; a signature by any other key is not accepted there.
+
+`scripts/release/sign_dashmate_checksums.sh` runs where the maintainer's key is, and gpg asks the maintainer for the passphrase. Run it there, or hand the maintainer the command. It refuses until every `release.yml` run of the tag has finished, so sign after step 4. Don't re-run any job of that run until the signature is attached: a release job checks for a signature before it uploads, so one that is already running can still replace packages. It checks that the release workflow uploaded `SHA256SUMS`, downloads the packages and the file into a new empty directory, checks every line, signs the downloaded file and verifies the signature. Without `--upload` it stops there and prints the upload command:
+
+```sh
+scripts/release/sign_dashmate_checksums.sh --tag=v<version> --key=<full fingerprint, quoted if it has spaces>
+```
+
+Ask the user, then attach the signature. With `--upload` the script checks the release again right before the upload and reads the signature back:
+
+```sh
+scripts/release/sign_dashmate_checksums.sh --tag=v<version> --key=<full fingerprint> --upload
+```
+
+**To rebuild a signed release:** once a release carries `SHA256SUMS.asc` (or any `SHA256SUMS.*`), release jobs started afterwards refuse to replace its packages or its `SHA256SUMS` and fail instead. To change either, delete the signature first (`gh release delete-asset v<version> SHA256SUMS.asc --repo dashpay/platform`), re-run the jobs, and sign the new file.
+
+### 6. Stable only: update `master`
+
+`master` tracks the newest stable release. Skip this step for a prerelease, and for a stable release that is not the newest stable version (step 1): a patch on an older line must not move `master` back.
+
+Merge the release **tag**, not the moving dev-branch tip, and push the merge commit straight to `master`. `master` has only ever moved by merge commits, never by a reset (`git log --first-parent origin/master`), and it cannot be force-pushed (`allow_force_pushes: false`; `required_linear_history: false` allows the merge commit), so a wrong merge stays. Run it in a temporary worktree:
+
+```sh
+git fetch origin --force --tags master
+git tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1   # must print v<version>
+git merge-base --is-ancestor v<version> origin/master && echo "v<version> is already in master"
+gh api repos/dashpay/platform/rulesets/501248 --jq .current_user_can_bypass   # must print "always"
+worktree="$(mktemp -d)" && echo "${worktree}"
+git worktree add --detach "${worktree:?}" origin/master
+git -C "${worktree:?}" merge --no-ff -m "Merge tag 'v<version>' into master" v<version>
+git -C "${worktree:?}" diff --quiet v<version> HEAD && echo "the merge has exactly the tree of v<version>"
+```
+
+Stop, and skip the rest of this step, if the first check prints another tag or the second says the tag is already in `master`. If the merge conflicts or the tree differs from the tag's, run `git -C <worktree> merge --abort`, remove the worktree and ask the user; don't push. Otherwise, after the user's go, push and remove the worktree, using the path printed above (a shell variable does not survive into a later command):
+
+```sh
+git -C <worktree> push origin HEAD:master
+git worktree remove <worktree>
+```
+
+**The ruleset, not classic protection, is what blocks direct pushes.** `master`, `main`, `develop` and every `v*` branch are covered by a repo **ruleset** (`Block deletions, require PR`, `id 501248`) that requires a PR. It is **separate** from classic branch protection: a repo admin does **not** automatically bypass it, and `gh api repos/.../branches/<b>/protection` does **not** show it. Classic protection on `master` asks for one approval but does not enforce it for admins. Only users in the ruleset's `bypass_actors` can push directly (currently shumkov `24296` and QuantumExplorer `11468583`, both `always`). To grant a user standing bypass, fetch the ruleset, append them, and PUT it back:
+
+```sh
+gh api repos/dashpay/platform/rulesets/501248 > r.json
+jq '{name,target,enforcement,bypass_actors:(.bypass_actors+[{actor_id:<userId>,actor_type:"User",bypass_mode:"always"}]),conditions,rules}' r.json > put.json
+gh api --method PUT repos/dashpay/platform/rulesets/501248 --input put.json   # find <userId>: gh api users/<login> --jq .id
+```
+
+For a stable `X.Y.0`, continue with [Graduate the dev branch](#post-stable-release-graduate-the-dev-branch) before reporting.
+
+### 7. Report
+
+Tell the user:
+
+- the version and the release PR;
+- the release URL, and which release is Latest (`gh api repos/dashpay/platform/releases/latest --jq .tag_name`);
+- the `release.yml` run and its result, including anything still running or re-run;
+- whether the dashmate packages and `SHA256SUMS` are attached;
+- the signature: attached by whom, or why not (a prerelease the maintainer chose not to sign, or still waiting for the run);
+- `master`: the merge commit pushed, or why it was skipped;
+- for `X.Y.0`, the graduation steps done;
+- anything left pending.
+
+## `yarn release`
+
+`yarn release` (`scripts/release/release.sh`) bumps every workspace version, regenerates the changelog, and opens a release PR. It does **not** tag or publish anything.
+
+### What one run does
 
 1. Bumps the version in **all npm `package.json` files**, the **root `package.json`**, and the **`[workspace.package]` version in `Cargo.toml`** (all Rust crates inherit it).
 2. Runs `cargo metadata` to refresh `Cargo.lock`.
@@ -18,7 +159,7 @@ Full flow: **`yarn release` → fix offset versions on the PR → merge → publ
 4. Creates branch `release_<new-version>`, commits `chore(release): update changelog and version to <new-version>`.
 5. Pushes the branch and opens a PR **against the branch you ran it from** (e.g. `v4.1-dev`), body from `scripts/release/pr_description.md`, assigned to a milestone.
 
-## Command
+### Command
 
 ```sh
 yarn release -v=<target-version>     # explicit exact version — preferred, unambiguous
@@ -30,7 +171,7 @@ yarn release -c=<tag>                # override the changelog-from tag (optional
 - `-t` / `--type` — `release`, or a prerelease id: `dev`, `alpha`, `beta`, `rc` (any id works). Version is derived from the current version (see rules below).
 - `-c` / `--changelog-from` — tag to build the changelog from. Omit to auto-detect via `find_latest_tag.js`.
 
-### `-t` derivation rules (from `bump_version.js`, when `-v` is not given)
+#### `-t` derivation rules (from `bump_version.js`, when `-v` is not given)
 
 Given current root version and its type:
 
@@ -48,13 +189,6 @@ Given current root version and its type:
 2. **Clean working tree.** The script aborts if `git status -su` is non-empty. Stash or set aside unrelated changes first — do **not** sweep them into the release commit. (`.serena/project.yml` is a common stray; confirm with the user how to handle it, don't just commit it.)
 3. **`gh` authenticated** (`gh auth status`) — the script calls `gh auth login` interactively otherwise.
 4. **`cargo` available** — the script runs `cargo metadata`.
-
-## Steps
-
-1. Confirm the target version and base branch with the user, and resolve the version the params will produce (dry-check with the derivation rules above).
-2. Verify all preconditions. If the tree is dirty, surface it and ask how to handle — never fold stray files into the release.
-3. Run `yarn release -v=<target-version>` (this pushes a branch and opens a PR — an outward-facing action; confirm before running unless already told to proceed).
-4. Report back: new version, the `release_<version>` branch, the changelog-from tag used, and the PR URL. Verify the bump landed in `package.json` + `Cargo.toml` and that the versions match.
 
 **Changelog base tag.** `find_latest_tag.js` resolves the tag the changelog is generated from and `release.sh` prints it (`Changelog base tag : <tag>`) for verification before generating — an interactive run also pauses for confirmation. The base must be the **immediately-preceding release** (by creation date); a too-far-back base regenerates already-present `CHANGELOG.md` sections and duplicates them. The resolver bases a first prerelease of a new id (e.g. the first `rc` after betas) off the newest prerelease on that `X.Y.0` line, and warns if existing tags would be duplicated. If the base is ever wrong, abort and re-run with `-c=<correct-tag>`.
 
@@ -77,27 +211,6 @@ yarn constraints --fix
 ```
 
 then commit (`chore(release): restore offset major versions via yarn constraints`) and push. E.g. for `4.1.0-beta.1`: dash-spv `5.1.0-beta.1`, dash `7.1.0-beta.1`, wallet-lib `11.1.0-beta.1`.
-
-Note also that the heavy E2E suites (`test:browsers`, `test:suite`, functional, dashmate E2E) and the Swift SDK build often only run once the Docker images build, and can be red for **environmental** reasons (devnet bring-up, self-hosted-runner Keychain perms) unrelated to the release. Branch protection has **0 required status checks**, so these don't block the merge — only human review does.
-
-## Publishing the GitHub release (after the PR merges)
-
-Tagging is a **separate manual step after the release PR is merged** into the dev branch. Publishing a GitHub **release** (with the version tag) is what triggers the asset pipeline: `.github/workflows/release.yml` runs `on: release: published` and builds + attaches the dashmate packages, Docker images, the Kotlin SDK AAR (`dash-sdk-android-<version>.aar`, also published to Maven Central as `org.dashj:dash-sdk-android:<version>` via the `maven-central` environment) and the Swift `DashSDKFFI-<version>.xcframework.zip` + checksum.
-
-1. Confirm the release PR is merged and the dev-branch tip carries the version bump.
-2. Write concise, **non-technical** release notes: a short highlights list (main features) + a bug-fixes/hardening summary + a link to the changelog. Summarize from the version's `CHANGELOG.md` section (its `### Features` / `### Bug Fixes` blocks) — don't paste the raw commit list.
-   - **Upgrade notices are not in the changelog.** `CHANGELOG.md` is regenerated from commit titles, so what operators and app developers must do lives in the book and has to be carried into the notes' **Upgrading** section by hand. For a release line that brings a new protocol version, check the book for an "Updating Apps for Protocol Version N" chapter and state its requirement under **Upgrading → App developers**, with a link. For 5.1 (protocol version 15) that is `book/src/sdk/protocol-version-15-upgrade.md`: wallets and apps must update to a 5.1 SDK before protocol version 15 activates, because a 5.0.x client can no longer read DPNS, DashPay, contracts created at protocol version 15, document history or 128-bit sums. Include it in every 5.1 prerelease's notes too, since testnet activates first.
-3. Create the release, pinned to the merge commit, marked `--prerelease` for `-beta`/`-rc`/`-dev`/`-alpha` (drop it for a stable release). This is outward-facing and triggers builds — confirm the notes with the user first.
-
-```sh
-gh release create v<version> --target <merge-commit-sha> \
-  --title "Dash Platform v<version>" --prerelease \
-  --notes-file <notes.md>
-```
-
-Changelog link for the notes: `https://github.com/dashpay/platform/blob/v<version>/CHANGELOG.md` (or the compare URL `.../compare/v<prev>...v<version>`).
-
-4. Publishing fires `release.yml` — verify the release build succeeds and the dashmate / Docker assets attach to the release. The Kotlin and Swift SDK jobs run in the same workflow but take longer (the Kotlin native build can run ~3 h) — the release page fills in as they finish. The Maven Central deploy runs automatically after the Kotlin build (no approval gate); note that PR CI does **not** exercise the release-profile arm64 SDK builds, so an SDK build break surfaces here first — for a stable release, confirm the SDK jobs were green on the preceding rc. To re-run just one SDK release: `gh workflow run release-kotlin-sdk.yml --ref v<version> -f tag=v<version>` (same for `release-swift-sdk.yml`) — must be dispatched **at the tag ref**, with the **plain tag name** as input (no `refs/tags/` prefix). **Confirm with the release owner immediately before dispatching**: the re-run attaches public release assets and the Kotlin one can publish an irrevocable Maven Central version (no approval gate). Works only for tags that already contain these workflow files (post-consolidation); for older tags, dispatch at the dev branch — assets attach, Maven deploy skips — and use the manual runbook in `packages/kotlin-sdk/PUBLISHING.md` for Maven.
 
 ## Known gotcha: a new npm package without a trusted publisher breaks the publish
 
@@ -135,29 +248,6 @@ gh run rerun <release-run-id> --repo dashpay/platform --failed
 
 **Prevention:** whenever you add a new publishable npm package, bootstrap it **before** cutting the release that ships it — publish one version with a token so the package exists, then configure its npm trusted publisher (org `dashpay`, repo `platform`, workflow `release.yml`) on the freshly created package. The publisher cannot be configured until the package exists, so the token publish is the required first step, not an optional stopgap. `release.sh` prints this reminder after opening the release PR.
 
-## Verifying and signing the dashmate SHA256SUMS
-
-Once every dashmate package is attached, `release.yml`'s `Release Dashmate checksums` job attaches `SHA256SUMS`: one `<sha256>  <file name>` line per dashmate package (debs, tarballs, Windows installer, macOS pkgs), hashed from the bytes each release job uploaded and checked against what the release serves. It does not cover the SDK assets. The apt repository's `stable` suite also needs a maintainer's detached signature, `SHA256SUMS.asc`. To sign a release:
-
-1. Check that the release's `release.yml` run has finished, with no attempt still in progress, that its `Release Dashmate checksums` job is green, and that `github-actions[bot]` uploaded the release's `SHA256SUMS` (`gh api repos/dashpay/platform/releases/tags/v<version> --jq '.assets[] | select(.name == "SHA256SUMS") | .uploader.login'`). Don't re-run any job of that run until the signature is attached: a release job checks for a signature before it uploads, so one that is already running can still replace packages.
-2. Download the packages and the file into an empty directory and check every line. Sign the downloaded file as it is, never one you regenerated, and don't pass `--ignore-missing`: the signature vouches for every line.
-
-```sh
-mkdir dashmate-v<version> && cd dashmate-v<version>
-gh release download v<version> --repo dashpay/platform --pattern 'dashmate*' --pattern SHA256SUMS
-sha256sum --check --strict SHA256SUMS   # macOS: shasum -a 256 --check --strict SHA256SUMS
-```
-
-3. Sign with your key from the list the apt publisher trusts, verify the signature and attach it. One detached, armored signature per release (not `--clearsign`):
-
-```sh
-gpg --armor --detach-sign --local-user <key fingerprint> SHA256SUMS   # writes SHA256SUMS.asc
-gpg --verify SHA256SUMS.asc SHA256SUMS
-gh release upload v<version> SHA256SUMS.asc --repo dashpay/platform
-```
-
-Once a release carries `SHA256SUMS.asc` (or any `SHA256SUMS.*`), release jobs started after that refuse to replace its packages or its `SHA256SUMS` and fail instead. To change either, delete the signature first (`gh release delete-asset v<version> SHA256SUMS.asc --repo dashpay/platform`), re-run the jobs, and sign the new file.
-
 ## Rebuilding the dashmate deb of a published release
 
 The dashmate deb's Debian version comes from the tag: `5.1.0-1`, `5.1.0~rc.1-1`, `5.1.0~~dev.1-1` (`packages/dashmate/scripts/deb-version.mjs`). A rebuild from the same tag produces the same version, which apt reports as already installed, so operators never receive it. A rebuild re-runs the release run's deb build, which needs the run's `js-build-<sha>` artifact, so it only works within 7 days of the release. To ship a rebuilt deb:
@@ -167,7 +257,7 @@ The dashmate deb's Debian version comes from the tag: `5.1.0-1`, `5.1.0~rc.1-1`,
 3. Delete `DASHMATE_DEB_REVISION` as soon as the build job has finished, whether it succeeded or failed. It is a repository variable, so any other release built while it is set gets that revision too. Only the build job reads it: the later steps don't need it, and it has to be set again only to re-run the build.
 4. Check that `Release Dashmate packages (deb, ubuntu-24.04)` ran after the build and attached debs whose names carry the new revision (`dashmate_5.1.0-2_amd64.deb`); re-run that job if it did not. `Release Dashmate checksums` runs after it and fails while the earlier debs are still attached.
 5. Delete every other `dashmate_*_amd64.deb` and `dashmate_*_arm64.deb` asset of the release, keeping only the two that carry the new revision. Earlier builds have different names, so they stay attached, and the install docs and deploy tooling take the first matching asset.
-6. Re-run the `Release Dashmate checksums` job by its id, not with `--failed`, which also re-runs unrelated jobs, so `SHA256SUMS` lists the new debs; then sign it as above. The id is not the number in the job's URL:
+6. Re-run the `Release Dashmate checksums` job by its id, not with `--failed`, which also re-runs unrelated jobs, so `SHA256SUMS` lists the new debs; then sign it as in [step 5](#5-sign-sha256sums). The id is not the number in the job's URL:
 
 ```sh
 gh run view <run-id> --repo dashpay/platform --json jobs \
@@ -179,26 +269,12 @@ Never set `DASHMATE_DEB_EPOCH` except to re-release a version that was published
 
 ## Post-stable-release: graduate the dev branch
 
-After a **stable** `vX.Y.0` release PR merges into `vX.Y-dev`, promote the branches so `vX.Y-dev` becomes the `X.Y.x` patch line and the next dev line takes over. Only do this for a **stable** release, not prereleases. (Example below is the 4.1.0 run: current dev `v4.1-dev`, next dev `v4.2-dev`. If the next release is a **major** bump, the user says so — e.g. `v5.0-dev`.)
-
-**Read first — the ruleset, not classic protection, is what blocks direct pushes.** `master`, `main`, `develop`, and every `v*` branch are covered by a repo **ruleset** (`Block deletions, require PR`, `id 501248`) that requires a PR and is **separate** from classic branch protection — a repo admin does **not** automatically bypass it, and `gh api repos/.../branches/<b>/protection` does **not** show it. Only users in the ruleset's `bypass_actors` can push directly (currently shumkov `24296` and QuantumExplorer `11468583`, both `always`). To grant a user standing bypass, fetch the ruleset, append them, and PUT it back:
-
-```sh
-gh api repos/dashpay/platform/rulesets/501248 > r.json
-jq '{name,target,enforcement,bypass_actors:(.bypass_actors+[{actor_id:<userId>,actor_type:"User",bypass_mode:"always"}]),conditions,rules}' r.json > put.json
-gh api --method PUT repos/dashpay/platform/rulesets/501248 --input put.json   # find <userId>: gh api users/<login> --jq .id
-```
+After a **stable** `vX.Y.0` release PR merges into `vX.Y-dev`, promote the branches so `vX.Y-dev` becomes the `X.Y.x` patch line and the next dev line takes over. Only do this for a **stable** `X.Y.0`, not for prereleases or patches. (Example below is the 4.1.0 run: current dev `v4.1-dev`, next dev `v4.2-dev`. If the next release is a **major** bump, the user says so — e.g. `v5.0-dev`.) Pushing to a `v*` branch directly needs the same ruleset bypass as `master` ([step 6](#6-stable-only-update-master)).
 
 Steps (skip whatever is already done — e.g. the next dev branch and default may have been set early):
 
 1. **Ensure the next dev branch exists** — `v(X.Y+1)-dev`. If it exists but is behind current dev, it just needs the sync in step 3.
-2. **Merge current dev → `master`** (master tracks the latest stable). master is usually far behind and its only unique commits are **auto-generated** (e.g. `.github/grpc-queries-cache.json`, committed by `tests-rs-sdk-grpc-coverage.yml` as `chore: update gRPC queries cache [skip ci]`) — disposable. **Merge, don't force-reset** (master sets `allow_force_pushes:false`, and `required_linear_history:false` so a merge commit is allowed); resolve the generated cache toward the dev branch:
-   ```sh
-   git checkout master && git reset --hard origin/master
-   git merge origin/vX.Y-dev                                    # conflicts only on generated caches
-   git checkout --theirs .github/grpc-queries-cache.json && git add -A
-   git commit --no-edit && git push origin master
-   ```
+2. **`master`** is updated in [step 6](#6-stable-only-update-master) of the release flow, from the release tag.
 3. **Fast-forward next dev to current dev** (carry the release commits into the next line). It is typically strictly behind → a clean fast-forward:
    ```sh
    git push origin origin/vX.Y-dev:v(X.Y+1)-dev
