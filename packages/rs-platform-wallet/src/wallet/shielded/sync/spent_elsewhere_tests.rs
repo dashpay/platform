@@ -439,8 +439,9 @@ async fn should_drop_the_transition_of_a_failed_spend_whose_note_the_store_does_
         assert_eq!(store.pending_redrives(id).expect("records").len(), 1);
     }
 
-    // The competing action in a range proved at 1000, and a tail proved at
-    // 999: the pass covers 999 only.
+    // The competing action is in a range proved at 1000. The empty tail is
+    // proved at 999, and carries the highest count seen, as the SDK's stream
+    // emits it: no batch ends at its count, so the pass covers no height.
     let result = scan(
         &store,
         futures::stream::iter(vec![
@@ -458,13 +459,13 @@ async fn should_drop_the_transition_of_a_failed_spend_whose_note_the_store_does_
                 decrypted: vec![],
                 block_height: 999,
                 is_partial: true,
-                total_count: 1,
+                total_count: 2,
             }),
         ]),
     )
     .await;
 
-    assert_eq!(result.covered_height, Some(999));
+    assert_eq!(result.covered_height, None);
     assert_eq!(
         reported(&result, id, SPEND),
         vec![ShieldedActivityStatus::Failed]
@@ -493,9 +494,9 @@ async fn should_drop_the_transition_of_a_failed_spend_whose_note_the_store_does_
 /// The competing transition spent both inputs, in actions on either side of
 /// a range boundary, and the second range is proved a block before it
 /// executed, so it holds nothing. The pass reads only the first action. The
-/// row fails on it, but the second note is not released: the scan does not
-/// cover the height that proved the conflict, so it cannot show the note
-/// unspent. The next pass reads the second action and marks the note spent.
+/// row fails on it, but the second note is not released: no batch reaches
+/// the tree's end, so the scan covers no height, least of all the one that
+/// proved the conflict, and cannot show the note unspent. The next pass reads the second action and marks the note spent.
 #[tokio::test]
 async fn should_hold_the_other_notes_until_the_scan_covers_the_competing_spend() {
     let path = temp_tree_path("stale_tail");
@@ -519,21 +520,22 @@ async fn should_hold_the_other_notes_until_the_scan_covers_the_competing_spend()
         is_partial: false,
         total_count: 2,
     };
-    // The second range, proved at 999, where the tree ends before it.
+    // The second range, proved at 999, where the tree ends before it. It
+    // carries the highest count seen, as the SDK's stream emits it.
     let stale_tail = ShieldedChunkBatch {
         start_index: 1,
         notes: vec![],
         decrypted: vec![],
         block_height: 999,
         is_partial: true,
-        total_count: 1,
+        total_count: 2,
     };
     let result = scan(
         &store,
         futures::stream::iter(vec![Ok(fresh_head), Ok(stale_tail)]),
     )
     .await;
-    assert_eq!(result.covered_height, Some(999));
+    assert_eq!(result.covered_height, None);
     {
         let store = store.read().await;
         assert_eq!(status(&store, id, SPEND), ShieldedActivityStatus::Failed);
