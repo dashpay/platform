@@ -61,18 +61,19 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// profile state was updated. Results for a removed or replaced wallet
     /// generation are discarded without changing state or persistence.
     pub async fn sync_profiles(&self) -> Result<u32, PlatformWalletError> {
-        // 1. Collect all managed identity IDs under a short read lock.
-        let identity_ids: Vec<Identifier> = {
+        // 1. Collect all managed identity IDs, with how many profile writes
+        //    each had stored, under a short read lock.
+        let writes_before: std::collections::BTreeMap<Identifier, u64> = {
             let wm = self.wallet_manager.read().await;
             let info = wm
                 .get_wallet_info(&self.wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
             info.identity_manager
-                .all_identities()
-                .into_iter()
-                .map(|i| i.id())
+                .managed_identities()
+                .map(|managed| (managed.id(), managed.dashpay().profile_writes))
                 .collect()
         };
+        let identity_ids: Vec<Identifier> = writes_before.keys().copied().collect();
 
         if identity_ids.is_empty() {
             return Ok(0);
@@ -109,6 +110,11 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             let Some(managed) = info.identity_manager.managed_identity_mut(&identity_id) else {
                 continue;
             };
+            // A write stored while this fetch was in flight is newer than
+            // what the fetch saw; the next sweep reads it back.
+            if writes_before.get(&identity_id) != Some(&managed.dashpay().profile_writes) {
+                continue;
+            }
             if (managed.dashpay().profile_checked || managed.dashpay().profile.is_some())
                 && managed.dashpay().profile == profile
             {
@@ -1722,6 +1728,119 @@ mod sync_generation_tests {
             assert_eq!(
                 profile.as_ref().and_then(|p| p.shielded_address.as_ref()),
                 present.then_some(&fetched_address)
+            );
+        }
+    }
+
+    /// A profile write confirmed while an own-profile fetch is in flight, in
+    /// the same wallet generation, is newer than what the fetch saw: the fetch
+    /// must neither tombstone it (it saw absence) nor restore an older address
+    /// over it (it saw a superseded profile), and the write is what stays stored.
+    #[tokio::test]
+    async fn should_keep_a_profile_written_while_an_older_fetch_was_in_flight() {
+        for present in [false, true] {
+            let owner = Identifier::from([0x61; 32]);
+            let query = DocumentQuery::new(dashpay_contract().unwrap(), "profile")
+                .unwrap()
+                .with_where(WhereClause {
+                    field: "$ownerId".into(),
+                    operator: WhereOperator::In,
+                    value: Value::Array(vec![owner.into()]),
+                })
+                .with_order_by(OrderClause {
+                    field: "$ownerId".into(),
+                    ascending: true,
+                })
+                .with_limit(100);
+            let stale = Document::V0(DocumentV0 {
+                id: Identifier::from([0x63; 32]),
+                owner_id: owner,
+                revision: Some(1),
+                properties: [("displayName".into(), Value::Text("Superseded".into()))].into(),
+                ..Default::default()
+            });
+            let docs: Documents = if present {
+                [(stale.id(), Some(stale))].into()
+            } else {
+                Default::default()
+            };
+            let mut sdk = SdkBuilder::new_mock()
+                .with_network(Network::Testnet)
+                .with_version(PlatformVersion::latest())
+                .build()
+                .unwrap();
+            sdk.mock()
+                .expect_fetch_many::<Identifier, Document, _, Documents>(query, Some(docs))
+                .await
+                .unwrap();
+            let persistence = Arc::new(CapturingPersistence::default());
+            let manager = PlatformWalletManager::new(
+                Arc::new(sdk),
+                Arc::clone(&persistence),
+                Arc::new(NoopTestEventHandler),
+            );
+            let wallet = add_wallet(&manager).await;
+            wallet
+                .state_mut()
+                .await
+                .unwrap()
+                .identity_manager
+                .add_identity(
+                    Identity::V0(IdentityV0 {
+                        id: owner,
+                        public_keys: Default::default(),
+                        balance: 0,
+                        revision: 0,
+                    }),
+                    0,
+                    wallet.wallet_id(),
+                    wallet.persister(),
+                )
+                .unwrap();
+            let (reached_tx, reached_rx) = oneshot::channel();
+            let (resume_tx, resume_rx) = oneshot::channel();
+            FETCH_PAUSES.lock().unwrap().insert(
+                Arc::as_ptr(&wallet.identity().generation) as usize,
+                (reached_tx, resume_rx),
+            );
+            let syncing = {
+                let wallet = Arc::clone(&wallet);
+                tokio::spawn(async move { sync(&wallet, false).await })
+            };
+            tokio::time::timeout(Duration::from_secs(10), reached_rx)
+                .await
+                .unwrap()
+                .unwrap();
+            let written = DashPayProfile {
+                display_name: Some("Confirmed write".into()),
+                ..Default::default()
+            };
+            wallet
+                .state_mut()
+                .await
+                .unwrap()
+                .identity_manager
+                .managed_identity_mut(&owner)
+                .unwrap()
+                .set_dashpay_profile(Some(written.clone()), wallet.persister());
+            let after_write = persistence.0.lock().unwrap().len();
+            resume_tx.send(()).unwrap();
+            assert_eq!(syncing.await.unwrap(), 0, "the older fetch is discarded");
+            assert_eq!(persistence.0.lock().unwrap().len(), after_write);
+            let stored = persistence.0.lock().unwrap()[after_write - 1]
+                .dashpay_profiles
+                .clone()
+                .unwrap();
+            assert_eq!(stored.get(&owner), Some(&Some(written.clone())));
+            let state = wallet.state().await;
+            assert_eq!(
+                state
+                    .identity_manager
+                    .managed_identity(&owner)
+                    .unwrap()
+                    .dashpay()
+                    .profile,
+                Some(written)
             );
         }
     }

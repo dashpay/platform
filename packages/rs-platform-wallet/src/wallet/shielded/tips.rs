@@ -168,13 +168,17 @@ impl PlatformWallet {
         #[cfg(test)]
         test_hooks::after_snapshot(self).await;
         accounts.push(account);
+        let flush_mark = self.persister().flush_mark();
         self.bind_shielded_locked_unfenced(seed, &accounts, &coordinator)
             .await?;
         #[cfg(test)]
         test_hooks::after_bind(self).await;
+        // A plain flush can succeed over a buffer another flush already
+        // drained and lost, leaving the key off disk and seedless restore
+        // unable to bind the account this address belongs to.
         self.persister()
-            .flush()
-            .map_err(|e| PlatformWalletError::Persistence(e.to_string()))?;
+            .flush_durably_since(flush_mark)
+            .map_err(|reason| self.persister().classify_not_durable(reason))?;
         let address = self
             .shielded_default_address(account)
             .await

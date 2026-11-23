@@ -191,6 +191,13 @@ struct StoredPrivateMarkers {
     losses: u64,
 }
 
+/// A point in a wallet's flush ledger ([`WalletPersister::flush_mark`]).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FlushMark {
+    lost: u64,
+    failed: u64,
+}
+
 /// Why records stored for a wallet are not known to be durable
 /// ([`WalletPersister::store_durably`], [`WalletPersister::flush_durably`]).
 #[derive(Debug, thiserror::Error)]
@@ -760,8 +767,25 @@ impl WalletPersister {
         &self,
         changeset: PlatformWalletChangeSet,
     ) -> Result<(), NotDurable> {
-        let (lost_before, failed_before) = (self.flush_ledger.lost(), self.flush_ledger.failed());
+        let mark = self.flush_mark();
         self.store(changeset).map_err(NotDurable::Store)?;
+        self.flush_durably_since(mark)
+    }
+
+    /// Where this wallet's flush ledger stands, for
+    /// [`Self::flush_durably_since`].
+    pub(crate) fn flush_mark(&self) -> FlushMark {
+        FlushMark {
+            lost: self.flush_ledger.lost(),
+            failed: self.flush_ledger.failed(),
+        }
+    }
+
+    /// Flush, and answer `Ok` only once every record stored since `mark` is
+    /// durable, as [`Self::store_durably`] answers for its one changeset: a
+    /// flush that failed before `mark` dropped none of them and does not
+    /// refuse them.
+    pub(crate) fn flush_durably_since(&self, mark: FlushMark) -> Result<(), NotDurable> {
         if self.store_commits_inline() {
             return Ok(());
         }
@@ -769,10 +793,10 @@ impl WalletPersister {
         if self.flush_ledger.in_flight() != 0 {
             return Err(NotDurable::OtherFlushUnsettled);
         }
-        if self.flush_ledger.lost() != lost_before {
+        if self.flush_ledger.lost() != mark.lost {
             return Err(NotDurable::Lost);
         }
-        if self.flush_ledger.failed() != failed_before {
+        if self.flush_ledger.failed() != mark.failed {
             return Err(NotDurable::OtherFlushUnsettled);
         }
         Ok(())

@@ -39,7 +39,7 @@ use key_wallet::dip9::{
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
 use key_wallet_manager::WalletManager;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, RwLockWriteGuard};
 use zeroize::Zeroizing;
 
 use crate::broadcaster::{SpvBroadcaster, TransactionBroadcaster};
@@ -577,6 +577,20 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
 }
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+    /// The locks a live write that can occupy an identity slot takes:
+    /// `identity_placement` for writing, then the wallet manager. A tip send
+    /// or preparation that checked a slot holds placement for reading, so a
+    /// registration waits for it instead of filling the slot underneath it.
+    pub(crate) async fn lock_for_placement(
+        &self,
+    ) -> (
+        RwLockWriteGuard<'_, ()>,
+        RwLockWriteGuard<'_, WalletManager<PlatformWalletInfo>>,
+    ) {
+        let placement = self.identity_placement.write().await;
+        (placement, self.wallet_manager.write().await)
+    }
+
     /// This handle's wallet in `wm`, the wallet manager under its write lock,
     /// while it is still this handle's generation: refused, as not found, once
     /// the wallet was removed, or re-created under its id, since the handle

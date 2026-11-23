@@ -1567,7 +1567,7 @@ async fn should_restore_tip_account_from_identity_discovery_and_register_for_syn
             wallet
                 .prepare_shielded_identity_address(&seed[..], &id, &coordinator)
                 .await,
-            Err(crate::PlatformWalletError::Persistence(_))
+            Err(crate::PlatformWalletError::PersisterFlush(_))
         ));
         assert_eq!(
             *persister.durability_events.lock().unwrap(),
@@ -1715,6 +1715,19 @@ async fn tip_race_fixture(
     dpp::prelude::Identifier,
     Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
 ) {
+    let (wallet, seed, id, coordinator, _) = tip_race_fixture_with_persistence(tag).await;
+    (wallet, seed, id, coordinator)
+}
+
+async fn tip_race_fixture_with_persistence(
+    tag: &str,
+) -> (
+    PlatformWallet,
+    [u8; 64],
+    dpp::prelude::Identifier,
+    Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+    Arc<CapturingPersistence>,
+) {
     use dpp::identity::{Identity, IdentityV0};
     use dpp::prelude::Identifier;
     let phrase = crate::test_support::MESSAGE_SIGNING_TEST_MNEMONIC;
@@ -1778,7 +1791,7 @@ async fn tip_race_fixture(
         .bind_shielded(&seed[..], &[0], &coordinator)
         .await
         .unwrap();
-    (wallet, *seed, id, coordinator)
+    (wallet, *seed, id, coordinator, persister)
 }
 
 /// Pause tip preparation right after its account snapshot, run `writer`
@@ -2036,6 +2049,49 @@ async fn should_reject_ordinary_account_profile_addresses_at_every_diversifier()
     }
 }
 
+/// Another flush of the wallet's records can take the buffered tip viewing
+/// key and fail for good. Preparation's own flush then succeeds over an empty
+/// buffer, so it must ask whether the key is durable rather than whether its
+/// flush succeeded, or it hands out an address seedless restore cannot bind.
+#[tokio::test]
+async fn should_refuse_a_tip_address_whose_viewing_key_a_competing_flush_lost() {
+    use std::sync::atomic::Ordering;
+    let (wallet, seed, id, coordinator, persistence) =
+        tip_race_fixture_with_persistence("tips_competing_flush_lost").await;
+    let (reached, resume) = super::tips::test_hooks::pause_after_bind(&wallet);
+    let preparing = {
+        let wallet = wallet.clone();
+        let coordinator = Arc::clone(&coordinator);
+        tokio::spawn(async move {
+            wallet
+                .prepare_shielded_identity_address(&seed[..], &id, &coordinator)
+                .await
+        })
+    };
+    reached.await.expect("preparation bound the tip account");
+
+    persistence.fail_flush.store(true, Ordering::SeqCst);
+    assert!(wallet.persister().flush().is_err());
+    persistence.fail_flush.store(false, Ordering::SeqCst);
+
+    resume.send(()).unwrap();
+    let prepared = preparing.await.unwrap();
+    assert!(
+        prepared.is_err(),
+        "a tip address whose viewing key a competing flush lost must not be returned"
+    );
+    assert!(wallet
+        .check_tip_address_publication(
+            &id,
+            &wallet
+                .shielded_default_address(crate::shielded_identity_account_index(2).unwrap())
+                .await
+                .unwrap()
+        )
+        .await
+        .is_err());
+}
+
 #[tokio::test]
 async fn should_require_fresh_tip_preparation_after_clear_even_after_rebind() {
     let (wallet, seed, id, coordinator) = tip_race_fixture("tips_clear").await;
@@ -2284,6 +2340,24 @@ async fn should_order_blocking_public_state_mutation_against_identity_placement(
     );
 }
 
+/// Live registration (shielded pool, asset lock, platform addresses,
+/// invitation) occupies a slot through `lock_for_placement`, so it waits for a
+/// tip send or preparation that holds placement after checking that slot.
+#[tokio::test]
+async fn should_order_live_identity_registration_after_a_placement_reader() {
+    use futures::FutureExt;
+    let (wallet, _, _, _) = tip_race_fixture("tips_live_registration").await;
+    let placement = wallet.identity.identity_placement.read().await;
+    let mut registering = Box::pin(wallet.identity.lock_for_placement());
+    assert!(
+        registering.as_mut().now_or_never().is_none(),
+        "registration must wait for the placement reader"
+    );
+    drop(placement);
+    let (_placement, wm) = registering.await;
+    assert!(wm.get_wallet_info(&wallet.wallet_id()).is_some());
+}
+
 mod tip_lifecycle_tests {
     use super::*;
     use crate::events::{EventHandler, PlatformEventHandler};
@@ -2491,6 +2565,91 @@ mod tip_lifecycle_tests {
                 .unwrap();
             false
         }
+    }
+
+    /// A host signer that answers only once told to.
+    #[derive(Debug)]
+    struct PromptingSigner {
+        reached: Mutex<Option<oneshot::Sender<()>>>,
+        answer: tokio::sync::Mutex<Option<oneshot::Receiver<()>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> for PromptingSigner {
+        async fn sign(
+            &self,
+            _: &dpp::identity::IdentityPublicKey,
+            _: &[u8],
+        ) -> Result<dpp::platform_value::BinaryData, dpp::ProtocolError> {
+            let reached = self.reached.lock().unwrap().take().unwrap();
+            reached.send(()).unwrap();
+            let answer = self.answer.lock().await.take().unwrap();
+            answer.await.unwrap();
+            Ok(dpp::platform_value::BinaryData::new(vec![1; 65]))
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _: &dpp::identity::IdentityPublicKey,
+            _: &[u8],
+        ) -> Result<dpp::address_funds::AddressWitness, dpp::ProtocolError> {
+            unreachable!("profile writes create no witness")
+        }
+
+        fn can_sign_with(&self, _: &dpp::identity::IdentityPublicKey) -> bool {
+            true
+        }
+    }
+
+    /// An open signing prompt must not hold back the signing wallet's
+    /// removal; the write it belongs to is then refused before broadcast.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn should_remove_a_wallet_while_its_profile_signer_prompts_and_refuse_the_write() {
+        use crate::wallet::platform_wallet::{AdmittedProfileSigner, ProfileWriteGate};
+        use dpp::identity::signer::Signer;
+        use dpp::prelude::Identifier;
+
+        let (_dir, manager, wallet, _coordinator) = fixture().await;
+        let (reached_tx, reached_rx) = oneshot::channel();
+        let (answer_tx, answer_rx) = oneshot::channel();
+        let host = PromptingSigner {
+            reached: Mutex::new(Some(reached_tx)),
+            answer: tokio::sync::Mutex::new(Some(answer_rx)),
+        };
+        let gate = ProfileWriteGate {
+            wallet: &wallet,
+            identity_id: Identifier::from([0x66; 32]),
+            sets_shielded: false,
+            shielded_address: None,
+            coordinator: None,
+        };
+        let signer = AdmittedProfileSigner {
+            held: Mutex::new(Some(gate.admit().await.unwrap())),
+            gate: &gate,
+            inner: &host,
+            refused: Mutex::new(None),
+        };
+        let key = seed_master_key(&SEED, 2)[&0].clone();
+        let wallet_id = wallet.wallet_id();
+        let (signed, removed) = tokio::join!(signer.sign(&key, b"profile"), async {
+            reached_rx.await.unwrap();
+            let removed =
+                tokio::time::timeout(Duration::from_secs(5), manager.remove_wallet(&wallet_id))
+                    .await;
+            answer_tx.send(()).unwrap();
+            removed
+        });
+        removed
+            .expect("removal must not wait for the signing prompt")
+            .unwrap();
+        assert!(
+            signed.is_err(),
+            "a removed wallet's write must not be signed off"
+        );
+        assert!(matches!(
+            signer.refused.lock().unwrap().take(),
+            Some(crate::PlatformWalletError::WalletNotFound(_))
+        ));
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

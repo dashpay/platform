@@ -272,8 +272,8 @@ impl IdentityWallet {
         {
             use dpp::identity::accessors::IdentityGettersV0;
 
-            let mut wm = self.wallet_manager.write().await;
-            match wm.get_wallet_info_mut(&self.wallet_id) {
+            let (_placement, mut wm) = self.lock_for_placement().await;
+            match self.current_wallet_info_mut(&mut wm).ok() {
                 Some(info) => match info.identity_manager.add_identity(
                     identity.clone(),
                     identity_index,

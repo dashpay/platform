@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use dashcore::{OutPoint, Txid};
 use dpp::prelude::CoreBlockHeight;
@@ -44,13 +44,15 @@ use crate::validated_shielded_address;
 use crate::{DashPayProfile, PaymentAddressUpdate, ProfileUpdate};
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::query_types::AddressInfos;
-use dpp::address_funds::PlatformAddress;
+use dpp::address_funds::{AddressWitness, PlatformAddress};
 use dpp::fee::Credits;
 #[cfg(feature = "shielded")]
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
+use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
+use dpp::ProtocolError;
 #[cfg(feature = "shielded")]
 use {
     super::identity::network::{
@@ -73,7 +75,6 @@ use {
     dash_sdk::dapi_grpc::platform::v0::ResponseMetadata,
     dash_sdk::platform::dashpay::PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
     dpp::data_contract::accessors::v0::DataContractV0Getters,
-    dpp::platform_value::BinaryData,
     dpp::serialization::PlatformDeserializableTrusted,
     dpp::shielded::builder::OrchardProver,
     dpp::state_transition::private_document_create_from_shielded_pool_transition::accessors::PrivateDocumentCreateFromShieldedPoolTransitionAccessorsV0,
@@ -2590,13 +2591,14 @@ impl PlatformWallet {
         // `register_from_addresses`' Step 3 — this drives the host persister's
         // `IdentityChangeSet` / `IdentityKeysChangeSet` emit so the app's identity row is created.
         {
-            let mut wm = self.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
-                PlatformWalletError::IdentityCreatedButNotRegistered {
+            let (_placement, mut wm) = self.identity.lock_for_placement().await;
+            let info = self
+                .identity
+                .current_wallet_info_mut(&mut wm)
+                .map_err(|_| PlatformWalletError::IdentityCreatedButNotRegistered {
                     identity_id,
                     reason: "wallet was removed from the manager".to_string(),
-                }
-            })?;
+                })?;
             info.identity_manager
                 .add_identity(identity, identity_index, self.wallet_id, &self.persister)
                 .map_err(
@@ -3244,10 +3246,18 @@ impl Clone for PlatformWallet {
 impl PlatformWallet {
     /// Create (`create`) or update `identity_id`'s DashPay profile. A
     /// shielded address that is one of this wallet's dedicated tip addresses
-    /// must have been prepared for this identity at the slot it holds, and
-    /// the placement lock is held through a write that sets one, so the slot
-    /// cannot change before it lands. Wallet removal waits for the complete
-    /// write; removed or replaced wallet handles cannot publish.
+    /// must have been prepared for this identity at the slot it holds.
+    ///
+    /// The write runs under the wallet's lifecycle gate, the prepared tip's
+    /// coordinator admission and the placement lock, except while the host
+    /// signer is asked to sign ([`WalletGeneration::teardown_guard`] requires
+    /// that of an external signer): an open prompt never holds back removal,
+    /// Clear or a slot move. Every check is made again when they are retaken,
+    /// before anything is broadcast, so a write that one of them overtook is
+    /// refused unsent.
+    ///
+    /// [`WalletGeneration::teardown_guard`]:
+    /// crate::wallet::core::WalletGeneration::teardown_guard
     pub async fn write_dashpay_profile<S>(
         &self,
         identity_id: &Identifier,
@@ -3258,12 +3268,6 @@ impl PlatformWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        let _lifecycle = self.core().generation_payment_guard().await;
-        if !self.core().is_current_generation().await {
-            return Err(PlatformWalletError::WalletNotFound(hex::encode(
-                self.wallet_id(),
-            )));
-        }
         let sets_shielded = matches!(input.shielded_address, PaymentAddressUpdate::Set(_));
         #[cfg(not(feature = "shielded"))]
         if sets_shielded {
@@ -3281,33 +3285,166 @@ impl PlatformWallet {
         } else {
             None
         };
+        let gate = ProfileWriteGate {
+            wallet: self,
+            #[cfg(feature = "shielded")]
+            identity_id: *identity_id,
+            sets_shielded,
+            #[cfg(feature = "shielded")]
+            shielded_address: match &input.shielded_address {
+                PaymentAddressUpdate::Set(bytes) => validated_shielded_address(bytes),
+                _ => None,
+            },
+            #[cfg(feature = "shielded")]
+            coordinator: prepared_coordinator.as_deref(),
+        };
+        let signer = AdmittedProfileSigner {
+            held: Mutex::new(Some(gate.admit().await?)),
+            gate: &gate,
+            inner: signer,
+            refused: Mutex::new(None),
+        };
+        let dashpay = self.identity.dashpay();
+        let written = if create {
+            dashpay
+                .create_profile_with_external_signer(identity_id, input, &signer)
+                .await
+        } else {
+            dashpay
+                .update_profile_with_external_signer(identity_id, input, &signer)
+                .await
+        };
+        match signer
+            .refused
+            .into_inner()
+            .unwrap_or_else(PoisonError::into_inner)
+        {
+            Some(error) => Err(error),
+            None => written,
+        }
+    }
+}
+
+/// What a profile write checks under its locks, each time it takes them.
+pub(crate) struct ProfileWriteGate<'a> {
+    pub(crate) wallet: &'a PlatformWallet,
+    #[cfg(feature = "shielded")]
+    pub(crate) identity_id: Identifier,
+    pub(crate) sets_shielded: bool,
+    #[cfg(feature = "shielded")]
+    pub(crate) shielded_address: Option<[u8; 43]>,
+    #[cfg(feature = "shielded")]
+    pub(crate) coordinator: Option<&'a NetworkShieldedCoordinator>,
+}
+
+/// The locks a profile write holds outside signing.
+pub(crate) struct ProfileWriteAdmission<'a> {
+    _lifecycle: RwLockReadGuard<'a, ()>,
+    #[cfg(feature = "shielded")]
+    _coordinator: Option<RwLockReadGuard<'a, ()>>,
+    _placement: Option<RwLockReadGuard<'a, ()>>,
+}
+
+impl<'a> ProfileWriteGate<'a> {
+    pub(crate) async fn admit(&self) -> Result<ProfileWriteAdmission<'a>, PlatformWalletError> {
+        let wallet = self.wallet;
+        let lifecycle = wallet.core().generation_payment_guard().await;
+        if !wallet.core().is_current_generation().await {
+            return Err(PlatformWalletError::WalletNotFound(hex::encode(
+                wallet.wallet_id(),
+            )));
+        }
         #[cfg(feature = "shielded")]
-        let _coordinator_operation = match prepared_coordinator.as_ref() {
+        let coordinator = match self.coordinator {
             Some(coordinator) => Some(coordinator.operation_guard().await),
             None => None,
         };
-        let _placement = if sets_shielded {
-            Some(self.identity.identity_placement.read().await)
+        let placement = if self.sets_shielded {
+            Some(wallet.identity.identity_placement.read().await)
         } else {
             None
         };
         #[cfg(feature = "shielded")]
-        if let PaymentAddressUpdate::Set(bytes) = &input.shielded_address {
-            if let Some(address) = validated_shielded_address(bytes) {
-                self.check_tip_address_publication(identity_id, &address)
-                    .await?;
+        if let Some(address) = &self.shielded_address {
+            wallet
+                .check_tip_address_publication(&self.identity_id, address)
+                .await?;
+        }
+        Ok(ProfileWriteAdmission {
+            _lifecycle: lifecycle,
+            #[cfg(feature = "shielded")]
+            _coordinator: coordinator,
+            _placement: placement,
+        })
+    }
+}
+
+/// The host's signer, asked with the profile write's locks released and
+/// answering only once they are retaken and the write admitted again, so the
+/// SDK broadcasts only what the current admission allows.
+pub(crate) struct AdmittedProfileSigner<'a, 'g, S> {
+    pub(crate) gate: &'g ProfileWriteGate<'a>,
+    pub(crate) inner: &'g S,
+    pub(crate) held: Mutex<Option<ProfileWriteAdmission<'a>>>,
+    pub(crate) refused: Mutex<Option<PlatformWalletError>>,
+}
+
+impl<S> std::fmt::Debug for AdmittedProfileSigner<'_, '_, S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AdmittedProfileSigner").finish()
+    }
+}
+
+impl<S> AdmittedProfileSigner<'_, '_, S> {
+    async fn outside_admission<T>(
+        &self,
+        signing: impl Future<Output = Result<T, ProtocolError>>,
+    ) -> Result<T, ProtocolError> {
+        drop(
+            self.held
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .take(),
+        );
+        let signed = signing.await?;
+        match self.gate.admit().await {
+            Ok(admission) => {
+                *self.held.lock().unwrap_or_else(PoisonError::into_inner) = Some(admission);
+                Ok(signed)
+            }
+            Err(error) => {
+                let message = error.to_string();
+                *self.refused.lock().unwrap_or_else(PoisonError::into_inner) = Some(error);
+                Err(ProtocolError::Generic(message))
             }
         }
-        let dashpay = self.identity.dashpay();
-        if create {
-            dashpay
-                .create_profile_with_external_signer(identity_id, input, signer)
-                .await
-        } else {
-            dashpay
-                .update_profile_with_external_signer(identity_id, input, signer)
-                .await
-        }
+    }
+}
+
+#[async_trait::async_trait]
+impl<S> Signer<IdentityPublicKey> for AdmittedProfileSigner<'_, '_, S>
+where
+    S: Signer<IdentityPublicKey> + Send + Sync,
+{
+    async fn sign(
+        &self,
+        key: &IdentityPublicKey,
+        data: &[u8],
+    ) -> Result<BinaryData, ProtocolError> {
+        self.outside_admission(self.inner.sign(key, data)).await
+    }
+
+    async fn sign_create_witness(
+        &self,
+        key: &IdentityPublicKey,
+        data: &[u8],
+    ) -> Result<AddressWitness, ProtocolError> {
+        self.outside_admission(self.inner.sign_create_witness(key, data))
+            .await
+    }
+
+    fn can_sign_with(&self, key: &IdentityPublicKey) -> bool {
+        self.inner.can_sign_with(key)
     }
 }
 

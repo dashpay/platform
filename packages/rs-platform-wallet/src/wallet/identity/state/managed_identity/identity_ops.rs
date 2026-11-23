@@ -137,7 +137,10 @@ impl ManagedIdentity {
         let mut cs: PlatformWalletChangeSet = self.snapshot_changeset().into();
         cs.dashpay_profiles = Some(BTreeMap::from([(self.id(), profile)]));
         match persister.store(cs) {
-            Ok(()) => self.dashpay.profile_checked = true,
+            Ok(()) => {
+                self.dashpay.profile_checked = true;
+                self.dashpay.profile_writes += 1;
+            }
             Err(e) => {
                 self.dashpay.profile = previous;
                 tracing::error!("Failed to persist changeset: {}", e);

@@ -253,6 +253,11 @@ pub struct DashPayState {
     /// Session-only authority: a successful fetch or explicit update checked this profile.
     pub(crate) profile_checked: bool,
 
+    /// How many profile writes were stored this process. A profile fetch
+    /// applies its result only if none was stored since it started, so an
+    /// older response never replaces a newer write.
+    pub(crate) profile_writes: u64,
+
     /// DashPay payment history keyed by transaction id (hex string).
     /// Each entry records a single Dash payment to or from a contact
     /// identity, with direction, amount, memo, and status.
