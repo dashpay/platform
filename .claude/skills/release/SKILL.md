@@ -135,14 +135,45 @@ gh run rerun <release-run-id> --repo dashpay/platform --failed
 
 **Prevention:** whenever you add a new publishable npm package, bootstrap it **before** cutting the release that ships it — publish one version with a token so the package exists, then configure its npm trusted publisher (org `dashpay`, repo `platform`, workflow `release.yml`) on the freshly created package. The publisher cannot be configured until the package exists, so the token publish is the required first step, not an optional stopgap. `release.sh` prints this reminder after opening the release PR.
 
+## Verifying and signing the dashmate SHA256SUMS
+
+Once every dashmate package is attached, `release.yml`'s `Release Dashmate checksums` job attaches `SHA256SUMS`: one `<sha256>  <file name>` line per dashmate package (debs, tarballs, Windows installer, macOS pkgs), hashed from the bytes each release job uploaded and checked against what the release serves. It does not cover the SDK assets. The apt repository's `stable` suite also needs a maintainer's detached signature, `SHA256SUMS.asc`. To sign a release:
+
+1. Check that the release's `release.yml` run has finished, with no attempt still in progress, that its `Release Dashmate checksums` job is green, and that `github-actions[bot]` uploaded the release's `SHA256SUMS` (`gh api repos/dashpay/platform/releases/tags/v<version> --jq '.assets[] | select(.name == "SHA256SUMS") | .uploader.login'`). Don't re-run any job of that run until the signature is attached: a release job checks for a signature before it uploads, so one that is already running can still replace packages.
+2. Download the packages and the file into an empty directory and check every line. Sign the downloaded file as it is, never one you regenerated, and don't pass `--ignore-missing`: the signature vouches for every line.
+
+```sh
+mkdir dashmate-v<version> && cd dashmate-v<version>
+gh release download v<version> --repo dashpay/platform --pattern 'dashmate*' --pattern SHA256SUMS
+sha256sum --check --strict SHA256SUMS   # macOS: shasum -a 256 --check --strict SHA256SUMS
+```
+
+3. Sign with your key from the list the apt publisher trusts, verify the signature and attach it. One detached, armored signature per release (not `--clearsign`):
+
+```sh
+gpg --armor --detach-sign --local-user <key fingerprint> SHA256SUMS   # writes SHA256SUMS.asc
+gpg --verify SHA256SUMS.asc SHA256SUMS
+gh release upload v<version> SHA256SUMS.asc --repo dashpay/platform
+```
+
+Once a release carries `SHA256SUMS.asc` (or any `SHA256SUMS.*`), release jobs started after that refuse to replace its packages or its `SHA256SUMS` and fail instead. To change either, delete the signature first (`gh release delete-asset v<version> SHA256SUMS.asc --repo dashpay/platform`), re-run the jobs, and sign the new file.
+
 ## Rebuilding the dashmate deb of a published release
 
 The dashmate deb's Debian version comes from the tag: `5.1.0-1`, `5.1.0~rc.1-1`, `5.1.0~~dev.1-1` (`packages/dashmate/scripts/deb-version.mjs`). A rebuild from the same tag produces the same version, which apt reports as already installed, so operators never receive it. A rebuild re-runs the release run's deb build, which needs the run's `js-build-<sha>` artifact, so it only works within 7 days of the release. To ship a rebuilt deb:
 
-1. Set the repository variable `DASHMATE_DEB_REVISION` to the next revision (`2`, then `3`, ...).
-2. In the release's `release.yml` run, re-run the `Build Dashmate packages (deb, ubuntu-24.04)` job (`gh run rerun --job <job-id> --repo dashpay/platform`), then check that `Release Dashmate packages (deb, ubuntu-24.04)` ran after it and attached debs whose names carry the new revision (`dashmate_5.1.0-2_amd64.deb`); re-run that job too if it did not.
+1. Set the repository variable `DASHMATE_DEB_REVISION` to the next revision (`2`, then `3`, ...). If the release carries `SHA256SUMS.asc`, delete it now: the release jobs refuse to replace a signed release's packages.
+2. In the release's `release.yml` run, re-run the `Build Dashmate packages (deb, ubuntu-24.04)` job (`gh run rerun --job <job-id> --repo dashpay/platform`), then check that `Release Dashmate packages (deb, ubuntu-24.04)` ran after it and attached debs whose names carry the new revision (`dashmate_5.1.0-2_amd64.deb`); re-run that job too if it did not. `Release Dashmate checksums` runs after it and fails while the earlier debs are still attached.
 3. Delete every other `dashmate_*_amd64.deb` and `dashmate_*_arm64.deb` asset of the release, keeping only the two that carry the new revision. Earlier builds have different names, so they stay attached, and the install docs and deploy tooling take the first matching asset.
-4. Delete `DASHMATE_DEB_REVISION` again, so the next release starts at revision 1.
+4. Re-run the `Release Dashmate checksums` job by its id, not with `--failed`, which also re-runs unrelated jobs, so `SHA256SUMS` lists the new debs; then sign it as above. The id is not the number in the job's URL:
+
+```sh
+gh run view <run-id> --repo dashpay/platform --json jobs \
+  --jq '.jobs[] | select(.name == "Release Dashmate checksums") | .databaseId'
+gh run rerun --job <job-id> --repo dashpay/platform
+```
+
+5. Delete `DASHMATE_DEB_REVISION` again, so the next release starts at revision 1.
 
 Never set `DASHMATE_DEB_EPOCH` except to re-release a version that was published under oclif's old `<version>.<git sha>-1` scheme: once a package carries an epoch, every later package needs it too. Re-releasing that way also leaves the old `<version>.<git sha>-1` debs attached, so delete them the same way.
 

@@ -464,8 +464,161 @@ jobs:
           notary_api_key_id: ${{ secrets.MACOS_NOTARY_API_KEY_ID }}
           notary_api_issuer_id: ${{ secrets.MACOS_NOTARY_API_ISSUER_ID }}
 
+      # A maintainer's signature covers SHA256SUMS, which covers these
+      # packages, so the packages of a signed release are never replaced.
+      - name: Refuse to replace the packages of a signed release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ github.event.release.id }}
+        run: |
+          set -euo pipefail
+          signatures="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?per_page=100" \
+            --jq '.[].name | select(startswith("SHA256SUMS."))' | paste -sd ' ' -)"
+          if [ -n "${signatures}" ]; then
+            echo "::error::The release is signed (${signatures}), so its packages are not replaced. To rebuild them, delete the signature first, then sign the new SHA256SUMS."
+            exit 1
+          fi
+
+      # Hashed in the job that publishes the packages, after signing and right
+      # before the upload, so SHA256SUMS lists the bytes that were built and
+      # signed rather than whatever the release holds later. Each file is
+      # recorded under the name the upload gives it, its base name; the upload
+      # skips hidden files, and so does this.
+      - name: Record package checksums
+        env:
+          LC_ALL: C
+          RECORD: ${{ runner.temp }}/dashmate-${{ matrix.package_type }}.sha256
+        run: |
+          set -euo pipefail
+          others="$(find release-artifacts ! -path '*/.*' ! -type f ! -type d)"
+          if [ -n "${others}" ]; then
+            echo "::error::Not a regular file: ${others}"
+            exit 1
+          fi
+          # Every package name starts with dashmate. Nothing else, and above all
+          # no SHA256SUMS, reaches the release from a build artifact.
+          name_pattern='^dashmate[A-Za-z0-9._-]*$'
+          : > "${RECORD}"
+          while IFS= read -r -d '' file; do
+            name="${file##*/}"
+            if ! [[ "${name}" =~ ${name_pattern} ]]; then
+              echo "::error::Refusing to publish ${file}: a package name must match ${name_pattern}"
+              exit 1
+            fi
+            sum="$(shasum -a 256 "${file}" | cut -d' ' -f1)"
+            printf '%s  %s\n' "${sum}" "${name}" >> "${RECORD}"
+          done < <(find release-artifacts -type f ! -path '*/.*' -print0)
+          if [ ! -s "${RECORD}" ]; then
+            echo "::error::No packages to record"
+            exit 1
+          fi
+          cat "${RECORD}"
+
+      # Replaced when this leg is re-run, so the record always describes the
+      # packages the leg published last.
+      - name: Upload package checksums
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dashmate-checksums-${{ matrix.package_type }}-${{ github.sha }}
+          path: ${{ runner.temp }}/dashmate-${{ matrix.package_type }}.sha256
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: true
+
       - name: Upload artifacts to release
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844 # v0.1.15
         if: github.event_name == 'release'
         with:
           files: release-artifacts/**
+
+  # SHA256SUMS for the packages the release legs recorded. Maintainers sign it
+  # out of band and attach the signature as SHA256SUMS.asc. Nothing is checked
+  # out or installed here: the one action downloads the records, and the rest
+  # is the runner's gh and coreutils.
+  release-dashmate-checksums:
+    name: Release Dashmate checksums
+    needs: release-dashmate-packages
+    # Only once every leg has attached its packages, so the file is never
+    # partial. The result is tested directly, because the implicit success()
+    # also looks at the build jobs and would skip this job silently after a
+    # failed build re-run whose release legs still published.
+    if: >-
+      !cancelled()
+      && github.event_name == 'release'
+      && needs.release-dashmate-packages.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_ID: ${{ github.event.release.id }}
+      TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - name: Download package checksums
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: dashmate-checksums-*-${{ github.sha }}
+          path: checksums
+          merge-multiple: true
+
+      # One `<sha256>  <name>` line per package, as sha256sum writes them,
+      # sorted by name, so the same packages always give the same file.
+      - name: Generate SHA256SUMS
+        env:
+          LC_ALL: C
+        run: |
+          set -euo pipefail
+          # One record per package type of the release-dashmate-packages
+          # matrix. The download succeeds even when one is missing or expired.
+          for package_type in tarballs win deb macos; do
+            if [ ! -s "checksums/dashmate-${package_type}.sha256" ]; then
+              echo "::error::No checksums were recorded for the ${package_type} packages"
+              exit 1
+            fi
+          done
+          cat checksums/*.sha256 > records
+          if grep -Evx '[0-9a-f]{64}  dashmate[A-Za-z0-9._-]*' records; then
+            echo "::error::The lines above are not in the form '<sha256>  <package name>'"
+            exit 1
+          fi
+          duplicates="$(cut -d' ' -f3 records | sort | uniq -d | paste -sd ' ' -)"
+          if [ -n "${duplicates}" ]; then
+            echo "::error::More than one package would be published as: ${duplicates}"
+            exit 1
+          fi
+          sort -k2,2 records > SHA256SUMS
+          cat SHA256SUMS
+
+      # GitHub reports a sha256 digest for each asset it serves. The release's
+      # dashmate assets must be exactly the recorded packages: none missing,
+      # none with other bytes, none left over from an earlier build.
+      - name: Check the release serves the recorded packages
+        env:
+          LC_ALL: C
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?per_page=100" \
+            --jq '.[] | select(.name | startswith("dashmate"))
+              | (if .state == "uploaded" and ((.digest // "") | startswith("sha256:"))
+                 then .digest[7:] else "missing" end) + "  " + .name' \
+            | sort -k2,2 > published
+          if ! diff -u --label recorded --label published SHA256SUMS published; then
+            echo "::error::The release's dashmate assets are not the packages the release jobs recorded. Delete assets left from an earlier build, or re-run the release job of the package type that differs."
+            exit 1
+          fi
+
+      # A signed SHA256SUMS is never replaced: the signature would then vouch
+      # for a file it never saw. Listed right before the upload, so a signature
+      # attached while this job ran is seen too.
+      - name: Attach SHA256SUMS to the release
+        run: |
+          set -euo pipefail
+          signatures="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?per_page=100" \
+            --jq '.[].name | select(startswith("SHA256SUMS."))' | paste -sd ' ' -)"
+          if [ -n "${signatures}" ]; then
+            echo "::error::${TAG} is signed (${signatures}), so its SHA256SUMS is not replaced. If its packages changed, delete the signature and SHA256SUMS, re-run this job, and sign the new file."
+            exit 1
+          fi
+          gh release upload "${TAG}" SHA256SUMS --clobber
