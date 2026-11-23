@@ -1825,8 +1825,6 @@ impl NetworkShieldedCoordinator {
         // WalletId directly — each per-wallet `WalletPersister.store`
         // only sees its own wallet's deltas.
         let consolidated = notes.changeset.clone();
-        // The wallets whose host stored this pass's changeset.
-        let mut stored_by_host: HashSet<WalletId> = HashSet::new();
         if !Merge::is_empty(&consolidated) {
             let per_wallet = consolidated.split_by_wallet_id();
             let persisters = self.persisters.read().await;
@@ -1842,22 +1840,15 @@ impl NetworkShieldedCoordinator {
                     shielded: Some(cs),
                     ..Default::default()
                 };
-                match persister.store(full) {
-                    Ok(()) => {
-                        stored_by_host.insert(wallet_id);
-                    }
-                    Err(e) => tracing::warn!(
+                if let Err(e) = persister.store(full) {
+                    tracing::warn!(
                         wallet_id = %hex::encode(wallet_id),
                         error = %e,
                         "Failed to queue shielded changeset from coordinator"
-                    ),
+                    );
                 }
             }
         }
-        // The host has the failed rows of the wallets it stored: the saved
-        // transitions kept to fail them again after a restart can go.
-        self.retire_failed_spends(&notes.spends_spent_elsewhere, &stored_by_host)
-            .await;
 
         // Cooldown decision based on aggregate activity across
         // every subwallet — any new commitment scanned or
@@ -2195,43 +2186,6 @@ impl NetworkShieldedCoordinator {
                          kept; its reservations stay until it is"
                     );
                 }
-            }
-        }
-    }
-
-    /// Drop the saved transitions of `failed`, the spends a scan pass failed
-    /// because another transition spent one of their inputs
-    /// (`MultiSyncNotesResult::spends_spent_elsewhere`), for the wallets in
-    /// `stored_by_host`: those whose host stored the pass's changeset, and
-    /// with it the failed rows.
-    ///
-    /// The scan keeps each transition, parked, so that a process that exits
-    /// before the host has the row fails it again from the next scan. A
-    /// wallet whose host did not store the changeset keeps its transitions:
-    /// the host still reads the row as pending, and a scan after a restart
-    /// fails it again.
-    async fn retire_failed_spends(
-        &self,
-        failed: &[(SubwalletId, [u8; 32])],
-        stored_by_host: &HashSet<WalletId>,
-    ) {
-        let stored: Vec<&(SubwalletId, [u8; 32])> = failed
-            .iter()
-            .filter(|(id, _)| stored_by_host.contains(&id.wallet_id))
-            .collect();
-        if stored.is_empty() {
-            return;
-        }
-        let mut store = self.store.write().await;
-        for (id, activity_id) in stored {
-            if let Err(e) = store.clear_redrive(*id, activity_id) {
-                tracing::warn!(
-                    wallet_id = %hex::encode(id.wallet_id),
-                    account = id.account_index,
-                    error = %e,
-                    "a failed spend's saved transition was not dropped; a restart drops it \
-                     with its spent note"
-                );
             }
         }
     }
@@ -3055,9 +3009,7 @@ mod tests {
         compute_activity_id, ShieldedActivityEntry, ShieldedActivityKind, ShieldedDirection,
     };
     use crate::wallet::shielded::note_selection::compute_token_purchase_from_pool_fee;
-    use crate::wallet::shielded::operations::{
-        record_pending_token_purchase, MAX_REDRIVE_ATTEMPTS,
-    };
+    use crate::wallet::shielded::operations::record_pending_token_purchase;
     use crate::wallet::shielded::prover::CachedOrchardProver;
     use crate::wallet::shielded::store::{
         InMemoryShieldedStore, PendingRedrive, PrivateContactPayment, ShieldedNote,
@@ -3850,54 +3802,6 @@ mod tests {
             row_status(&coordinator, id, &row.id).await,
             ShieldedActivityStatus::Confirmed
         );
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// The transition of a spend the scan failed is dropped only for a wallet
-    /// whose host stored the pass's changeset: a host that did not still
-    /// reads the row as pending, and needs the transition for a scan after a
-    /// restart to fail it again.
-    #[tokio::test]
-    async fn should_drop_a_failed_spend_s_transition_only_once_its_host_stored_the_row() {
-        let dir = temp_dir("retire_failed");
-        let coordinator = coordinator_with_one_wallet(&dir).await;
-        let stored_wallet: WalletId = [0x11; 32];
-        let stored = SubwalletId::new(stored_wallet, 0);
-        let unstored = SubwalletId::new([0x22; 32], 0);
-        let parked = |activity_id: [u8; 32]| PendingRedrive {
-            activity_id,
-            anchor: [0x52; 32],
-            nullifiers: vec![[0xA1; 32]],
-            st_bytes: vec![1, 2, 3],
-            attempts: MAX_REDRIVE_ATTEMPTS,
-            identity_nonce_finalized: false,
-            identity_user_abandoned: false,
-            anchor_height: Some(5),
-        };
-        {
-            let mut store = coordinator.store().write().await;
-            store.arm_redrive(stored, parked([0xE1; 32])).unwrap();
-            store.arm_redrive(unstored, parked([0xE2; 32])).unwrap();
-        }
-
-        coordinator
-            .retire_failed_spends(
-                &[(stored, [0xE1; 32]), (unstored, [0xE2; 32])],
-                &HashSet::from([stored_wallet]),
-            )
-            .await;
-
-        let store = coordinator.store().read().await;
-        assert!(
-            store.pending_redrives(stored).unwrap().is_empty(),
-            "the host has the row"
-        );
-        assert_eq!(
-            store.pending_redrives(unstored).unwrap().len(),
-            1,
-            "the host does not have the row yet"
-        );
-        drop(store);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

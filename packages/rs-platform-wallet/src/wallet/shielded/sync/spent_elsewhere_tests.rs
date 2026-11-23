@@ -31,7 +31,6 @@ use crate::wallet::shielded::activity::{
 };
 use crate::wallet::shielded::file_store::FileBackedShieldedStore;
 use crate::wallet::shielded::keys::{AccountViewingKeys, OrchardKeySet};
-use crate::wallet::shielded::operations::MAX_REDRIVE_ATTEMPTS;
 use crate::wallet::shielded::store::{PendingRedrive, ShieldedNote, ShieldedStore, SubwalletId};
 
 type BatchItem = Result<ShieldedChunkBatch, dash_sdk::Error>;
@@ -280,16 +279,6 @@ fn unspent(store: &FileBackedShieldedStore, id: SubwalletId) -> Vec<[u8; 32]> {
     nullifiers
 }
 
-/// Whether `activity_id`'s transition is still saved and parked: kept for a
-/// scan after a restart, and never broadcast again.
-fn parked(store: &FileBackedShieldedStore, id: SubwalletId, activity_id: [u8; 32]) -> bool {
-    store
-        .pending_redrives(id)
-        .expect("records")
-        .iter()
-        .any(|record| record.activity_id == activity_id && record.attempts == MAX_REDRIVE_ATTEMPTS)
-}
-
 /// The statuses of `activity_id`'s row the pass handed the host.
 fn reported(
     result: &MultiSyncNotesResult,
@@ -350,17 +339,17 @@ async fn should_fail_a_pending_spend_whose_single_input_another_transition_spent
     );
     assert!(unspent(&store, id).is_empty());
     assert!(
-        parked(&store, id, SPEND),
-        "its transition is kept until the host has the row, and never broadcast again"
+        store.pending_redrives(id).expect("records").is_empty(),
+        "its transition is never broadcast again"
     );
-    assert_eq!(result.spends_spent_elsewhere, vec![(id, SPEND)]);
     drop(store);
     let _ = std::fs::remove_file(&path);
 }
 
 /// The same after a restart: the reopened store restores the saved
 /// transition, the host restores the note and the pending row, and the scan
-/// that then reads the competing action fails the row.
+/// that then reads the competing action fails the row. A later restart finds
+/// nothing saved.
 #[tokio::test]
 async fn should_fail_a_restored_pending_spend_whose_single_input_another_transition_spent() {
     let path = temp_tree_path("restart");
@@ -401,84 +390,20 @@ async fn should_fail_a_restored_pending_spend_whose_single_input_another_transit
             reported(&result, id, SPEND),
             vec![ShieldedActivityStatus::Failed]
         );
+        assert!(store.pending_redrives(id).expect("records").is_empty());
     }
     drop(store);
-    let _ = std::fs::remove_file(&path);
-}
-
-/// The process exits after the scan failed the row and before the host
-/// stored it: the host still holds the row as pending and the note as
-/// unspent, at the watermark before that pass. The transition is still saved,
-/// so the scan after the restart, which reads the competing action again,
-/// fails the row again and hands it to the host again.
-#[tokio::test]
-async fn should_fail_the_spend_again_after_a_restart_before_the_host_stored_its_row() {
-    let path = temp_tree_path("lost_row");
-    let (id, _) = subwallet();
-    let input = nullifier(0xA1);
-    {
-        let store = open(&path);
-        save_unconfirmed_spend(
-            &mut *store.write().await,
-            id,
-            SPEND,
-            &single_input_spend(),
-            &[input],
-        );
-        let result = scan_pool(&store, vec![scanned(input, cmx(9))]).await;
-        assert_eq!(
-            reported(&result, id, SPEND),
-            vec![ShieldedActivityStatus::Failed],
-            "the row the host never stores"
-        );
-    }
-
-    let store = open(&path);
-    {
-        let mut store = store.write().await;
-        assert!(parked(&store, id, SPEND), "the transition is still saved");
-        restore_notes_and_row(&mut store, id, SPEND, &[input]);
-        assert_eq!(status(&store, id, SPEND), ShieldedActivityStatus::Pending);
-    }
-
-    let result = scan_pool(&store, vec![scanned(input, cmx(9))]).await;
-
-    let store = store.read().await;
-    assert_eq!(status(&store, id, SPEND), ShieldedActivityStatus::Failed);
-    assert_eq!(
-        reported(&result, id, SPEND),
-        vec![ShieldedActivityStatus::Failed]
+    let reopened = open(&path);
+    assert!(
+        reopened
+            .read()
+            .await
+            .pending_redrives(id)
+            .expect("records")
+            .is_empty(),
+        "nothing is left to restore"
     );
-    assert!(unspent(&store, id).is_empty(), "the note is spent");
-    drop(store);
-    let _ = std::fs::remove_file(&path);
-}
-
-/// A host that failed to store the row is handed it again by a later pass
-/// that reads the competing action, for as long as the transition is saved.
-#[tokio::test]
-async fn should_hand_the_host_the_failed_row_again_while_its_transition_is_saved() {
-    let path = temp_tree_path("again");
-    let store = open(&path);
-    let (id, _) = subwallet();
-    let input = nullifier(0xA1);
-    save_unconfirmed_spend(
-        &mut *store.write().await,
-        id,
-        SPEND,
-        &single_input_spend(),
-        &[input],
-    );
-    scan_pool(&store, vec![scanned(input, cmx(9))]).await;
-
-    let result = scan_pool(&store, vec![scanned(input, cmx(9))]).await;
-
-    assert_eq!(
-        reported(&result, id, SPEND),
-        vec![ShieldedActivityStatus::Failed]
-    );
-    assert_eq!(result.spends_spent_elsewhere, vec![(id, SPEND)]);
-    drop(store);
+    drop(reopened);
     let _ = std::fs::remove_file(&path);
 }
 
@@ -532,6 +457,10 @@ async fn should_hold_the_other_notes_until_the_scan_covers_the_competing_spend()
         assert!(
             unspent(&store, id).is_empty(),
             "the second note stays reserved"
+        );
+        assert!(
+            store.pending_redrives(id).expect("records").is_empty(),
+            "its transition is gone all the same"
         );
         assert_eq!(store.spendable_balance(id).expect("balance"), 0);
     }
@@ -597,14 +526,9 @@ async fn should_free_the_untouched_notes_of_a_spend_another_transition_took_an_i
         status(&store, id, OTHER_SPEND),
         ShieldedActivityStatus::Pending
     );
-    assert!(
-        store
-            .pending_redrives(id)
-            .expect("records")
-            .iter()
-            .any(|record| record.activity_id == OTHER_SPEND && record.attempts == 0),
-        "the other attempt keeps its transition, to be broadcast again"
-    );
+    let records = store.pending_redrives(id).expect("records");
+    assert_eq!(records.len(), 1, "the other attempt keeps its transition");
+    assert_eq!(records[0].activity_id, OTHER_SPEND);
     drop(store);
     let _ = std::fs::remove_file(&path);
 }
@@ -635,7 +559,7 @@ async fn should_fail_a_pending_spend_whose_every_input_another_transition_spent(
     let store = store.read().await;
     assert_eq!(status(&store, id, SPEND), ShieldedActivityStatus::Failed);
     assert!(unspent(&store, id).is_empty(), "both notes are spent");
-    assert!(parked(&store, id, SPEND));
+    assert!(store.pending_redrives(id).expect("records").is_empty());
     drop(store);
     let _ = std::fs::remove_file(&path);
 }
@@ -739,10 +663,6 @@ async fn should_fail_the_spend_on_the_pass_after_a_cancelled_one() {
     {
         let store = store.read().await;
         assert_eq!(status(&store, id, SPEND), ShieldedActivityStatus::Pending);
-        assert!(
-            !parked(&store, id, SPEND),
-            "its transition is saved as it was, to be broadcast again"
-        );
         assert_eq!(store.pending_redrives(id).expect("records").len(), 1);
     }
 
@@ -750,7 +670,7 @@ async fn should_fail_the_spend_on_the_pass_after_a_cancelled_one() {
 
     let store = store.read().await;
     assert_eq!(status(&store, id, SPEND), ShieldedActivityStatus::Failed);
-    assert!(parked(&store, id, SPEND));
+    assert!(store.pending_redrives(id).expect("records").is_empty());
     drop(store);
     let _ = std::fs::remove_file(&path);
 }

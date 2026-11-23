@@ -47,7 +47,7 @@ use tracing::{debug, info, warn};
 use super::activity::ShieldedActivityStatus;
 use super::activity_recorder::with_status;
 use super::keys::AccountViewingKeys;
-use super::operations::{shielded_actions, MAX_REDRIVE_ATTEMPTS};
+use super::operations::shielded_actions;
 use super::store::{PendingRedrive, ShieldedStore, SubwalletId};
 use super::tips::is_shielded_identity_account;
 use crate::changeset::ShieldedChangeSet;
@@ -192,12 +192,6 @@ pub struct MultiSyncNotesResult {
     /// `total_count` is the highest seen). `None` when no batch shows that:
     /// a proof of a longer tree than the run reached.
     pub covered_height: Option<u64>,
-    /// The saved spends this pass failed because another transition spent
-    /// one of their inputs, by subwallet and activity id. Each keeps its
-    /// saved transition, parked, until the host has stored the pass's
-    /// changeset, which carries the failed row
-    /// (`NetworkShieldedCoordinator::retire_failed_spends`).
-    pub spends_spent_elsewhere: Vec<(SubwalletId, [u8; 32])>,
 }
 
 impl MultiSyncNotesResult {
@@ -932,7 +926,6 @@ where
         total_scanned: scanned_volume,
         changeset,
         covered_height,
-        spends_spent_elsewhere: spent_elsewhere.into_keys().collect(),
     })
 }
 
@@ -1101,25 +1094,22 @@ fn saved_spend_inputs<S: ShieldedStore>(
 /// Settle the saved spends an action other than their own took an input of
 /// ([`SavedSpendInput`]). Each can never execute:
 ///
-/// - Its row reads failed, in the store and on `changeset` for the host. A
-///   row that reads failed already is put on `changeset` again: the host may
-///   not have stored it (see below).
-/// - Its saved transition is kept, parked: saved again with its re-broadcasts
-///   used up, so it is never sent again. The spent mark dropped it with the
-///   note it spent, and the host learns of the failure only when the pass
-///   ends. A process that exits before then restores the pending row, and
-///   scans the action again from the watermark the host kept: with the
-///   transition still saved, that scan fails the row again. The coordinator
-///   drops it once the host has stored the row.
+/// - Its saved transition goes: the spent mark dropped it with the note it
+///   spent, and one whose note the store does not hold is dropped here, so
+///   it is never sent again.
+/// - Its pending row reads failed, in the store and on `changeset` for the
+///   host.
 /// - The notes it still holds are released once `covered_height`, what the
 ///   pass's scan covers, reaches the height that proved the other action.
 ///   The transition that action belongs to executed at or below that height,
 ///   and may have spent those notes too, in actions of a range proved before
 ///   it executed. Covered through that height, the scan read every one of
 ///   its actions and marked the notes they spent. Short of that the notes
-///   stay reserved, and are released when the spend's anchor expires, as
-///   before. A note is released only while its reservation still carries the
-///   spend's activity id, so another attempt's hold on it stays.
+///   stay reserved for the session, and are released when the spend's anchor
+///   expires, as before: with the saved transition gone, no later pass
+///   releases them sooner. A note is released only while its reservation
+///   still carries the spend's activity id, so another attempt's hold on it
+///   stays.
 ///
 /// A store call that fails is logged and the rest goes on: what is left (a
 /// record or a reservation) resolves as it did before, at the anchor's
@@ -1131,6 +1121,13 @@ fn fail_spends_spent_elsewhere<S: ShieldedStore>(
     changeset: &mut ShieldedChangeSet,
 ) {
     for ((id, activity_id), spend) in spent_elsewhere {
+        if let Err(e) = store.clear_redrive(*id, activity_id) {
+            warn!(
+                activity_id = %hex::encode(activity_id),
+                error = %e,
+                "a spend whose input another transition spent kept its saved transition"
+            );
+        }
         let covered = covered_height.is_some_and(|covered| covered >= spend.proved_at);
         if covered {
             match store.stale_pending_spends(*id) {
@@ -1158,20 +1155,6 @@ fn fail_spends_spent_elsewhere<S: ShieldedStore>(
                 ),
             }
         }
-        // Parked after the release: releasing a note drops the records that
-        // carry it.
-        let parked = PendingRedrive {
-            attempts: MAX_REDRIVE_ATTEMPTS,
-            ..PendingRedrive::clone(&spend.record)
-        };
-        if let Err(e) = store.arm_redrive(*id, parked) {
-            warn!(
-                activity_id = %hex::encode(activity_id),
-                error = %e,
-                "the transition of a spend whose input another transition spent was not kept; \
-                 a restart before the host stores its failed row leaves the row pending"
-            );
-        }
         match store.get_activity_by_entry_id(*id, activity_id) {
             Ok(Some(entry)) if entry.status == ShieldedActivityStatus::Pending => {
                 let failed = with_status(&entry, ShieldedActivityStatus::Failed, None);
@@ -1184,9 +1167,6 @@ fn fail_spends_spent_elsewhere<S: ShieldedStore>(
                     );
                 }
                 changeset.record_activity_entry(*id, failed);
-            }
-            Ok(Some(entry)) if entry.status == ShieldedActivityStatus::Failed => {
-                changeset.record_activity_entry(*id, entry);
             }
             Ok(_) => {}
             Err(e) => warn!(
