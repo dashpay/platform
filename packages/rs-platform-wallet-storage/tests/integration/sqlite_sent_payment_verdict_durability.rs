@@ -145,7 +145,11 @@ async fn a_swept_sent_payments_failed_verdict_survives_a_reopen() {
             wallet_id,
             txids: vec![loser_txid()],
             superseded_by: { dashcore::Txid::from_byte_array([0x77; 32]) },
-            winner_mined_height: Some(1_499_050),
+            winner_block: Some(key_wallet::transaction_checking::BlockInfo::new(
+                1_499_050,
+                dashcore::BlockHash::all_zeros(),
+                0,
+            )),
             released_outpoints: Vec::new(),
             balance: key_wallet::WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
