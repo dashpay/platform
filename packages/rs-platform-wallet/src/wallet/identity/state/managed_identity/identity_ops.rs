@@ -510,7 +510,7 @@ impl ManagedIdentity {
     /// A key the cache lacks is left out of an older fetch's decisions, since
     /// an older answer cannot show whether a later update disabled it, and a
     /// fetch at least as new will bring it.
-    fn key_decisions_for_fetch(
+    pub(crate) fn key_decisions_for_fetch(
         &self,
         fetched: &Identity,
         decisions: Vec<KeyWithBreadcrumb>,

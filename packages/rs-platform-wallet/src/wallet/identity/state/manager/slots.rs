@@ -352,8 +352,9 @@ impl IdentityManager {
         Ok(SlotPlacement::Placed)
     }
 
-    /// [`Self::place_in_slot_unstored`], with `keys` layered onto the
-    /// identity, stored durably as one changeset: the identity, `keys` with
+    /// [`Self::place_in_slot_unstored`], with `keys` (from `identity`, a
+    /// fetch) folded by revision onto the identity as a load or discovery
+    /// folds them, stored durably as one changeset: the identity, `keys` with
     /// their breadcrumbs and, when the slot was a claim's, the end of its
     /// lease. Memory keeps the placement only once the store is durable; on a
     /// failed store it is undone and the store's error returned, so no caller
@@ -377,11 +378,16 @@ impl IdentityManager {
                 .copied(),
             marker: self.retained_private_payment_markers.contains(&identity_id),
         };
+        let fetched = identity.clone();
         let placement = self.place_in_slot_unstored(identity, identity_index, wallet_id)?;
 
         let managed = self
             .managed_identity_mut(&identity_id)
             .ok_or(PlatformWalletError::IdentityNotFound(identity_id))?;
+        // An identity already held (in this slot, or observed) keeps its
+        // cached state: `keys` come from a fetch that may predate an update
+        // the cache holds, so they are folded by revision first.
+        let keys = managed.key_decisions_for_fetch(&fetched, keys);
         let keys_cs = managed.layer_keys(keys);
         let mut changeset = PlatformWalletChangeSet {
             identities: Some(managed.snapshot_changeset()),
@@ -705,6 +711,39 @@ mod tests {
             write.identity_slot_leases.as_ref().unwrap().released,
             [invitation].into()
         );
+    }
+
+    /// A placement answered by a node behind the cache keeps a key the cache
+    /// holds disabled disabled, in memory and in the stored row.
+    #[test]
+    fn should_keep_a_cached_disable_when_an_older_fetch_places_the_identity() {
+        use dpp::identity::accessors::IdentitySettersV0;
+        use dpp::identity::identity_public_key::accessors::v0::{
+            IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
+        };
+        let backend = std::sync::Arc::new(Recording::default());
+        let persister = persister_of(backend.clone());
+        let mut manager = IdentityManager::new();
+        let mut cached = identity_with_key(1);
+        cached.set_revision(2);
+        let mut disabled = cached.public_keys()[&0].clone();
+        disabled.set_disabled_at(1_000);
+        cached.set_public_keys(BTreeMap::from([(0, disabled)]));
+        manager.place_in_slot_unstored(cached, 2, WALLET).unwrap();
+        let older = identity_with_key(1);
+        let keys = keys_of(&older, 2);
+
+        let placed = manager.place_in_slot(older, 2, WALLET, keys, &persister);
+
+        assert_eq!(placed.unwrap(), SlotPlacement::AlreadyPlaced);
+        let id = Identifier::from([1u8; 32]);
+        let held = &manager.managed_identity(&id).unwrap().identity;
+        assert_eq!(held.public_keys()[&0].disabled_at(), Some(1_000));
+        let stored = backend.stored.lock().unwrap();
+        let rows = &stored[0].identity_keys.as_ref().unwrap().upserts;
+        assert!(rows
+            .get(&(id, 0))
+            .is_none_or(|row| row.public_key.disabled_at() == Some(1_000)));
     }
 
     #[test]
