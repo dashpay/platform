@@ -611,34 +611,38 @@ mod evidence_policy_tests {
         })
     }
 
+    /// Protocol version 15 installs the zero evidence byte budget: an upgrade into it, or one
+    /// that skips from below it to any later version, carries the full policy.
     #[test]
     fn should_install_zero_evidence_bytes_on_activation_and_skipped_upgrades() {
         let latest = PlatformVersion::latest();
-        for original in 1..latest.protocol_version {
-            for network in [
-                Network::Mainnet,
-                Network::Testnet,
-                Network::Regtest,
-                Network::Devnet,
-            ] {
-                let response = consensus_params_update(
-                    network,
-                    PlatformVersion::get(original).unwrap(),
-                    latest,
-                    &epoch_info(true, 20),
-                )
-                .unwrap()
-                .expect("activation update");
-                let evidence = response
-                    .evidence
-                    .expect("explicit evidence policy on activation");
-                assert_eq!(evidence.max_bytes, 0);
-                assert_eq!(evidence.max_age_num_blocks, 100_000);
-                let duration = evidence.max_age_duration.expect("positive evidence age");
-                assert_eq!((duration.seconds, duration.nanos), (172_800, 0));
-                let version = response.version.unwrap();
-                assert_eq!(version.app_version, latest.protocol_version as u64);
-                assert_eq!(version.consensus_version, 2);
+        for target in [PlatformVersion::get(15).unwrap(), latest] {
+            for original in 1..15 {
+                for network in [
+                    Network::Mainnet,
+                    Network::Testnet,
+                    Network::Regtest,
+                    Network::Devnet,
+                ] {
+                    let response = consensus_params_update(
+                        network,
+                        PlatformVersion::get(original).unwrap(),
+                        target,
+                        &epoch_info(true, 20),
+                    )
+                    .unwrap()
+                    .expect("activation update");
+                    let evidence = response
+                        .evidence
+                        .expect("explicit evidence policy on activation");
+                    assert_eq!(evidence.max_bytes, 0);
+                    assert_eq!(evidence.max_age_num_blocks, 100_000);
+                    let duration = evidence.max_age_duration.expect("positive evidence age");
+                    assert_eq!((duration.seconds, duration.nanos), (172_800, 0));
+                    let version = response.version.unwrap();
+                    assert_eq!(version.app_version, target.protocol_version as u64);
+                    assert_eq!(version.consensus_version, 2);
+                }
             }
         }
     }
