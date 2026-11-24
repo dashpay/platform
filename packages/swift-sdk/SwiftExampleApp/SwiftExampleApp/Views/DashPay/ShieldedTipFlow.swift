@@ -176,11 +176,10 @@ enum ShieldedTipPresentation {
 
 /// The paying identity's shielded balance as last read.
 ///
-/// A read that fails with `walletOperation` keeps the last balance shown with
-/// the wallet's message under it and reads again after a backoff: the wallet
-/// reports both a busy store and a permanent failure with that code
-/// (dashpay/platform#6201 asks for a distinct one), so the message is shown
-/// rather than parsed. Other errors replace the balance with their message.
+/// `shieldedBalanceBusy` (a scan or a spend held the shielded store past the
+/// read's wait) keeps the last state shown with a short busy note and reads
+/// again after `busyRetryDelay`. Every other error, `walletOperation`
+/// included, replaces the balance with its message and is not retried.
 ///
 /// Every read is numbered by `beginRead()`; only the latest one may apply
 /// its result, so a read that finishes after a newer one changes nothing.
@@ -191,17 +190,15 @@ struct ShieldedTipBalanceState: Equatable {
         case failed(String)
     }
 
-    /// The first pause before reading again after a `walletOperation`.
-    static let firstRetryDelay: Duration = .seconds(2)
-    /// The longest pause between reads.
-    static let maxRetryDelay: Duration = .seconds(30)
+    /// The pause before reading again while the store is busy.
+    static let busyRetryDelay: Duration = .seconds(2)
+
+    static let busyNote = "The shielded store is busy. Reading again shortly."
 
     private(set) var shown: Shown = .notRead
-    /// The wallet's message from the latest read, when it failed with
-    /// `walletOperation`; `shown` is what the read before it said.
-    private(set) var readError: String?
-    /// `walletOperation` failures since the last read that did not fail so.
-    private(set) var failedReads = 0
+    /// The latest read found the store busy; `shown` is what the read
+    /// before it said.
+    private(set) var busy = false
     /// The number of the latest read started.
     private(set) var latestRead = 0
 
@@ -219,32 +216,21 @@ struct ShieldedTipBalanceState: Equatable {
         switch result {
         case .success(let balance):
             shown = .balance(balance)
-            readError = nil
-            failedReads = 0
+            busy = false
         case .failure(let error):
-            if let walletError = error as? PlatformWalletError, case .walletOperation = walletError {
-                readError = walletError.localizedDescription
-                failedReads += 1
+            if let walletError = error as? PlatformWalletError, case .shieldedBalanceBusy = walletError {
+                busy = true
             } else {
                 shown = .failed(error.localizedDescription)
-                readError = nil
-                failedReads = 0
+                busy = false
             }
         }
         return true
     }
 
     /// The pause before reading again, or nil when the latest read needs
-    /// none: 2 seconds after the first `walletOperation`, doubling to 30.
-    var retryDelay: Duration? {
-        guard failedReads > 0 else { return nil }
-        var delay = Self.firstRetryDelay
-        for _ in 1..<failedReads {
-            delay = delay * 2
-            if delay >= Self.maxRetryDelay { return Self.maxRetryDelay }
-        }
-        return min(delay, Self.maxRetryDelay)
-    }
+    /// none.
+    var retryDelay: Duration? { busy ? Self.busyRetryDelay : nil }
 
     /// Whether to offer proving the identity's account
     /// (`prepareShieldedIdentityAddress`).
@@ -253,7 +239,7 @@ struct ShieldedTipBalanceState: Equatable {
     var text: String {
         switch shown {
         case .notRead:
-            return readError == nil ? "Reading the shielded balance…" : "Not read yet."
+            return busy ? "Not read yet." : "Reading the shielded balance…"
         case .balance(.unverified):
             return "Not verified yet. The wallet proves this identity's shielded account with "
                 + "its seed once per session; prepare it to read the balance."
@@ -267,11 +253,8 @@ struct ShieldedTipBalanceState: Equatable {
         }
     }
 
-    /// The line under the balance while the latest read failed with
-    /// `walletOperation`.
-    var readErrorText: String? {
-        readError.map { "Could not read the shielded balance now: \($0). Reading again." }
-    }
+    /// The note under the kept balance while the store is busy.
+    var busyText: String? { busy ? Self.busyNote : nil }
 
     var isFailure: Bool {
         if case .failed = shown { return true }

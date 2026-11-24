@@ -12,8 +12,9 @@ import SwiftDashSDK
 /// and steers nobody to send again; a tip from a contact passes the
 /// contact's identity id to the review and the send, and a name that moved
 /// to another identity (86) is explained; and the paying identity's balance shows
-/// the wallet's state, keeps the last one through a `walletOperation` with
-/// a backoff, and ignores a read that finishes after a newer one.
+/// the wallet's state, keeps the last one through a busy store and reads
+/// again, shows every other read error (`walletOperation` included) without
+/// a retry, and ignores a read that finishes after a newer one.
 @MainActor
 final class ShieldedTipFlowTests: XCTestCase {
 
@@ -454,42 +455,40 @@ final class ShieldedTipFlowTests: XCTestCase {
         XCTAssertFalse(state.offersPrepare)
         XCTAssertEqual(state.text, "\(formatCreditsAsDash(150_000_000_000)) (account 3)")
         XCTAssertFalse(state.isFailure)
-        XCTAssertNil(state.readErrorText)
+        XCTAssertNil(state.busyText)
         XCTAssertNil(state.retryDelay)
     }
 
-    func testShouldShowTheWalletsMessageUnderTheKeptBalance() {
+    func testShouldKeepTheLastBalanceAndReadAgainWhileTheStoreIsBusy() {
         var state = ShieldedTipBalanceState()
         state.apply(.success(.available(account: 1, credits: 5)), for: state.beginRead())
-        let error = PlatformWalletError.walletOperation("the shielded store is busy")
-        state.apply(.failure(error), for: state.beginRead())
+        state.apply(
+            .failure(PlatformWalletError.shieldedBalanceBusy("a scan holds the store")),
+            for: state.beginRead())
 
         XCTAssertEqual(state.shown, .balance(.available(account: 1, credits: 5)))
         XCTAssertEqual(state.text, "\(formatCreditsAsDash(5)) (account 1)")
-        XCTAssertEqual(
-            state.readErrorText,
-            "Could not read the shielded balance now: \(error.localizedDescription). Reading again.")
+        XCTAssertEqual(state.busyText, "The shielded store is busy. Reading again shortly.")
+        XCTAssertEqual(state.retryDelay, .seconds(2))
         XCTAssertFalse(state.isFailure)
 
         state.apply(.success(.available(account: 1, credits: 7)), for: state.beginRead())
-        XCTAssertNil(state.readErrorText)
+        XCTAssertNil(state.busyText)
+        XCTAssertNil(state.retryDelay)
         XCTAssertEqual(state.shown, .balance(.available(account: 1, credits: 7)))
     }
 
-    func testShouldBackOffTheRetryAndResetItAfterASuccessfulRead() {
+    func testShouldShowAWalletOperationBalanceErrorAsAFailureWithoutRetrying() {
         var state = ShieldedTipBalanceState()
+        state.apply(.success(.available(account: 1, credits: 5)), for: state.beginRead())
         let error = PlatformWalletError.walletOperation("unknown wallet")
-        var delays: [Duration] = []
-        for _ in 0..<6 {
-            state.apply(.failure(error), for: state.beginRead())
-            delays.append(state.retryDelay ?? .zero)
-        }
-        XCTAssertEqual(delays, [.seconds(2), .seconds(4), .seconds(8), .seconds(16), .seconds(30), .seconds(30)])
-
-        state.apply(.success(.unavailable(account: 0)), for: state.beginRead())
-        XCTAssertNil(state.retryDelay)
         state.apply(.failure(error), for: state.beginRead())
-        XCTAssertEqual(state.retryDelay, .seconds(2))
+
+        XCTAssertEqual(state.shown, .failed(error.localizedDescription))
+        XCTAssertEqual(state.text, "Could not read the shielded balance: \(error.localizedDescription)")
+        XCTAssertTrue(state.isFailure)
+        XCTAssertNil(state.busyText)
+        XCTAssertNil(state.retryDelay)
     }
 
     func testShouldShowOtherBalanceErrorsWithTheirMessage() {
@@ -499,7 +498,7 @@ final class ShieldedTipFlowTests: XCTestCase {
 
         XCTAssertEqual(state.shown, .failed(error.localizedDescription))
         XCTAssertTrue(state.isFailure)
-        XCTAssertNil(state.readErrorText)
+        XCTAssertNil(state.busyText)
         XCTAssertNil(state.retryDelay)
     }
 
@@ -511,10 +510,10 @@ final class ShieldedTipFlowTests: XCTestCase {
         XCTAssertTrue(state.apply(.success(.available(account: 2, credits: 9)), for: newer))
         XCTAssertFalse(state.apply(.success(.unverified), for: older))
         XCTAssertFalse(state.apply(
-            .failure(PlatformWalletError.walletOperation("busy")), for: older))
+            .failure(PlatformWalletError.shieldedBalanceBusy("busy")), for: older))
 
         XCTAssertEqual(state.shown, .balance(.available(account: 2, credits: 9)))
-        XCTAssertNil(state.readErrorText)
+        XCTAssertNil(state.busyText)
         XCTAssertNil(state.retryDelay)
     }
 }

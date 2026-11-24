@@ -407,11 +407,11 @@ struct ShieldedTipBalanceRow: View {
                 .font(.caption)
                 .foregroundColor(state.isFailure ? .red : .primary)
                 .accessibilityIdentifier("dashpay.tip.balance")
-            if let readErrorText = state.readErrorText {
-                Text(readErrorText)
+            if let busyText = state.busyText {
+                Text(busyText)
                     .font(.caption)
-                    .foregroundColor(.orange)
-                    .accessibilityIdentifier("dashpay.tip.balance.readError")
+                    .foregroundColor(.secondary)
+                    .accessibilityIdentifier("dashpay.tip.balance.busy")
             }
             if state.offersPrepare {
                 Button {
@@ -457,7 +457,7 @@ struct ShieldedTipBalanceRow: View {
     }
 
     /// Read, and while the latest read asks for it, read again after its
-    /// backoff. Stops when the task is cancelled or a newer read started.
+    /// pause. Stops when the task is cancelled or a newer read started.
     private func readUntilSettled() async {
         while !Task.isCancelled {
             let request = state.beginRead()
