@@ -444,6 +444,12 @@ pub struct PlatformWallet {
     /// wallet handles share the one lock.
     #[cfg(feature = "shielded")]
     pub(crate) shield_guard: Arc<tokio::sync::Mutex<()>>,
+    /// One shield-class spend at a time waits for `shield_guard`
+    /// ([`Self::admit_single_flight_shielded_spend`]); the others wait here,
+    /// holding nothing. Taken before every other lock of the wallet and
+    /// held only until the spend has `shield_guard`.
+    #[cfg(feature = "shielded")]
+    shield_turn: Arc<tokio::sync::Mutex<()>>,
     /// Serializes changes to the bound shielded account set. A bind
     /// replaces the registration with the accounts it was given, so a
     /// caller that reads the current set and binds an augmented copy (tip
@@ -922,6 +928,8 @@ impl PlatformWallet {
             shielded_keys,
             #[cfg(feature = "shielded")]
             shield_guard: Arc::new(tokio::sync::Mutex::new(())),
+            #[cfg(feature = "shielded")]
+            shield_turn: Arc::new(tokio::sync::Mutex::new(())),
             #[cfg(feature = "shielded")]
             shielded_config_lock: Arc::new(tokio::sync::Mutex::new(())),
             #[cfg(feature = "shielded")]
@@ -1799,23 +1807,30 @@ impl PlatformWallet {
     ///
     /// The admission is never awaited while `shield_guard` is held, nor
     /// `shield_guard` while the admission is, so a bind's order (the gate,
-    /// the admission, then `shield_guard`) is kept. Waiting spends are not
-    /// served in arrival order.
+    /// the admission, then `shield_guard`) is kept.
+    ///
+    /// Only one spend at a time waits this way; the others wait their turn
+    /// on `shield_turn`, in arrival order, holding nothing. Two spends that
+    /// both waited on `shield_guard` and gave it up at once would hand it to
+    /// each other and never find it free.
     #[cfg(feature = "shielded")]
     async fn admit_single_flight_shielded_spend<'a>(
         &'a self,
         coordinator: &'a Arc<NetworkShieldedCoordinator>,
     ) -> Result<(ShieldedSpendAdmission<'a>, tokio::sync::MutexGuard<'a, ()>), PlatformWalletError>
     {
+        let _turn = self.shield_turn.lock().await;
         loop {
             let admission = self.admit_shielded_spend(coordinator).await?;
             if let Ok(single_flight) = self.shield_guard.try_lock() {
                 return Ok((admission, single_flight));
             }
             drop(admission);
-            // Wait for the operation in flight, holding nothing, then go
-            // round again: the guard is given up at once so it is only ever
-            // taken under a fresh admission.
+            // Wait for the operation in flight, holding nothing but the
+            // turn, then go round again: the guard is given up at once so it
+            // is only ever taken under a fresh admission. The other waiters
+            // on it (a bind, an asset-lock funding) keep it once they have
+            // it, so the round ends when they are done.
             drop(self.shield_guard.lock().await);
         }
     }
@@ -3723,6 +3738,8 @@ impl Clone for PlatformWallet {
             shielded_keys: self.shielded_keys.clone(),
             #[cfg(feature = "shielded")]
             shield_guard: self.shield_guard.clone(),
+            #[cfg(feature = "shielded")]
+            shield_turn: self.shield_turn.clone(),
             #[cfg(feature = "shielded")]
             shielded_config_lock: self.shielded_config_lock.clone(),
             #[cfg(feature = "shielded")]
