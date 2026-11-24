@@ -486,6 +486,8 @@ struct ShieldedTipBalanceRow: View {
                 identityId: identity.identityId,
                 resolver: MnemonicResolver()
             )
+            // Keeps Prepare off until a fresh read that is not busy applies.
+            state.prepareSucceeded()
         } catch {
             prepareError = "Couldn't prepare the shielded account: \(error.localizedDescription)"
         }

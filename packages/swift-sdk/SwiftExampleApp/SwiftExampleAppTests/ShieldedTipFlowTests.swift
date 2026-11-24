@@ -502,6 +502,35 @@ final class ShieldedTipFlowTests: XCTestCase {
         XCTAssertNil(state.retryDelay)
     }
 
+    func testShouldKeepPrepareOffAfterASuccessfulPrepareUntilAReadThatIsNotBusy() {
+        var state = ShieldedTipBalanceState()
+        let beforePrepare = state.beginRead()
+        state.apply(.success(.unverified), for: beforePrepare)
+        XCTAssertTrue(state.offersPrepare)
+
+        let inFlight = state.beginRead()
+        state.prepareSucceeded()
+        XCTAssertFalse(state.offersPrepare)
+
+        // A read started before the prepare no longer applies.
+        XCTAssertFalse(state.apply(.success(.unverified), for: inFlight))
+        XCTAssertFalse(state.offersPrepare)
+
+        // A busy read keeps the old `.unverified` and keeps Prepare off.
+        state.apply(.failure(PlatformWalletError.shieldedBalanceBusy("busy")), for: state.beginRead())
+        XCTAssertEqual(state.shown, .balance(.unverified))
+        XCTAssertFalse(state.offersPrepare)
+
+        // A read that is not busy decides: still unverified offers it again.
+        state.apply(.success(.unverified), for: state.beginRead())
+        XCTAssertTrue(state.offersPrepare)
+
+        state.prepareSucceeded()
+        state.apply(.success(.unavailable(account: 4)), for: state.beginRead())
+        XCTAssertFalse(state.offersPrepare)
+        XCTAssertFalse(state.awaitingReadAfterPrepare)
+    }
+
     func testShouldIgnoreABalanceReadThatFinishesAfterANewerOne() {
         var state = ShieldedTipBalanceState()
         let older = state.beginRead()

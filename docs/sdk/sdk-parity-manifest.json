@@ -5054,6 +5054,14 @@
           "host": "swift",
           "kind": "unit",
           "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
+          "id": "testShouldKeepPrepareOffAfterASuccessfulPrepareUntilAReadThatIsNotBusy",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
           "id": "testShouldPassTheContactsIdentityIdToTheReviewAndTheSend",
           "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
           "covers_restart": false

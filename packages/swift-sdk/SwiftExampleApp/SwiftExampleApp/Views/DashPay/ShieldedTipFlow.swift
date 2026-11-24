@@ -201,11 +201,23 @@ struct ShieldedTipBalanceState: Equatable {
     private(set) var busy = false
     /// The number of the latest read started.
     private(set) var latestRead = 0
+    /// A prepare succeeded and no current read that was not busy has been
+    /// applied since: Prepare stays off, so a busy read that keeps the old
+    /// `.unverified` does not offer it (and the seed prompt) again.
+    private(set) var awaitingReadAfterPrepare = false
 
     /// Start a read and return its number.
     mutating func beginRead() -> Int {
         latestRead += 1
         return latestRead
+    }
+
+    /// Record a prepare that succeeded. Reads started before it no longer
+    /// apply, and Prepare stays off until a read started after it is applied
+    /// with a result that is not busy.
+    mutating func prepareSucceeded() {
+        latestRead += 1
+        awaitingReadAfterPrepare = true
     }
 
     /// Apply the result of read `request`. Returns false, changing nothing,
@@ -217,12 +229,14 @@ struct ShieldedTipBalanceState: Equatable {
         case .success(let balance):
             shown = .balance(balance)
             busy = false
+            awaitingReadAfterPrepare = false
         case .failure(let error):
             if let walletError = error as? PlatformWalletError, case .shieldedBalanceBusy = walletError {
                 busy = true
             } else {
                 shown = .failed(error.localizedDescription)
                 busy = false
+                awaitingReadAfterPrepare = false
             }
         }
         return true
@@ -234,7 +248,7 @@ struct ShieldedTipBalanceState: Equatable {
 
     /// Whether to offer proving the identity's account
     /// (`prepareShieldedIdentityAddress`).
-    var offersPrepare: Bool { shown == .balance(.unverified) }
+    var offersPrepare: Bool { !awaitingReadAfterPrepare && shown == .balance(.unverified) }
 
     var text: String {
         switch shown {
