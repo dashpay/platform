@@ -97,6 +97,7 @@ erDiagram
         BLOB wallet_id PK
         BLOB txid PK
         BLOB islock_blob "bincode-encoded InstantLock"
+        INTEGER verified "V023: 1 on a row written as verified; 0 is not restored"
     }
 
     CORE_SYNC_STATE {
@@ -473,7 +474,21 @@ changing accounting. Later repairs cannot replace this recovery copy.
 ### `core_instant_locks`
 
 Instant-lock blobs for transactions that are broadcast but not yet
-finalized. Rows are removed when the transaction becomes confirmed.
+finalized. Rows are removed when their transaction is swept, or with the
+wallet.
+
+`verified` (V023, `INTEGER NOT NULL DEFAULT 0`, CHECK `IN (0, 1)`) is 1 on
+every row the writer stores. That is sound only while the SPV client hands
+the wallet nothing but verified locks, which this column relies on rather
+than checks. A row written before V023 reads 0 and is never loaded, so it
+does not make its transaction or coins final.
+
+The row also decides how final a stored `core_transactions` record reads, the
+one rule the bulk load, `get_tx_record`, coin restoration and the sweep's
+stored claims share: a mined record stands on its block; any other record is
+InstantSend-locked exactly when a row with `verified = 1` backs it (and its
+lock names the same transaction as its key), and is otherwise in the mempool,
+whatever context its blob was written with.
 
 - PK: `(wallet_id, txid)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
@@ -883,3 +898,4 @@ table-rebuild migration, as V004 does.
 | V020 | `V020__asset_lock_shielded_recipient.rs` | Adds the nullable `asset_locks.shielded_recipient BLOB` column (CHECK: NULL or exactly 43 bytes, the raw Orchard address) recording the recipient a shielded asset-lock funding was built to pay, so a resume after restart pays that recipient and refuses another; the lifecycle blob is untouched. Adds the `asset_locks_shielded_recipient_immutable` BEFORE UPDATE trigger, which aborts any change to a non-NULL `shielded_recipient`. Purely additive; existing rows read back NULL and keep accepting the resuming caller's recipient. |
 | V021 | `V021__core_transaction_accounting.rs` | Adds the raw-input index and original-record archive. Backfills all decodable history and repairs accounting from retained TXOs, preserving coins, claims, checkpoints and unrelated wallet state. |
 | V022 | `V022__core_locked_outpoints.rs` | Adds `core_locked_outpoints`, one row per `(wallet_id, outpoint)` the wallet keeps out of coin selection: the collateral of a registered masternode, or an outpoint locked by hand. A table of its own rather than a `core_utxos` column, because a lock can exist before its coin and outlives the coin's spend. Deleting the row unlocks the outpoint. Purely additive; an upgraded database starts with no locks. |
+| V023 | `V023__instant_lock_verified.rs` | Adds `core_instant_locks.verified INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0, 1))`. Rows already on disk read 0 and are no longer restored: they may hold a lock that was never verified. Every row written from here on carries 1 (sound only while the SPV client hands the wallet verified locks alone). A record whose lock is no longer trusted also stops vetoing a sweep release of its inputs until its lock is stored again or it is mined. Applied only when the column is missing (`migrations::v023`): a database that already has it with this definition keeps it and its values, and one with another definition is refused with `ColumnDefinitionMismatch`. An affected payment shows as unconfirmed until its lock is announced again or it is mined. |
