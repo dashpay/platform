@@ -618,6 +618,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // the journal keeps that no marker shows. Restored below once the
             // load is published when a store is configured, by
             // `configure_shielded` otherwise.
+            // Its identity slots wait the same way for the store's saved
+            // identity creates from the shielded pool, which may hold any of
+            // them.
             #[cfg(feature = "shielded")]
             if bound_shielded.contains(&wallet_id)
                 || platform_wallet
@@ -627,6 +630,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 platform_wallet
                     .persister()
                     .hold_until_private_payments_restored()
+                    .await;
+                platform_wallet
+                    .hold_slots_until_shielded_creates_read()
                     .await;
             }
 
@@ -2233,6 +2239,81 @@ mod private_payment_hold_tests {
         manager.load_from_persistor().await.expect("loaded");
         assert!(!held(&manager, bound).await, "restored by the load");
         assert!(pair_held(&manager, bound).await, "the pair is held");
+    }
+
+    /// Save, in the shielded store at `path`, the bound wallet's identity
+    /// create from the pool that may still execute, holding slot 1, as an
+    /// earlier process left it.
+    fn save_identity_create(path: &std::path::Path, bound: WalletId) {
+        let mut store = FileBackedShieldedStore::open_path(path, 100).expect("the store");
+        store
+            .arm_redrive(
+                SubwalletId::new(bound, 0),
+                PendingRedrive {
+                    activity_id: [0x31; 32],
+                    anchor: [0x23; 32],
+                    nullifiers: vec![[0x32; 32]],
+                    st_bytes: crate::wallet::shielded::file_store::identity_create_bytes(0x32),
+                    attempts: 0,
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                    anchor_height: None,
+                    identity_index: Some(1),
+                },
+            )
+            .expect("the create saved");
+    }
+
+    /// The registration slot `wallet_id` leases next, or why none is.
+    async fn next_slot(
+        manager: &PlatformWalletManager<ShieldedTracePersister>,
+        wallet_id: WalletId,
+    ) -> Result<u32, crate::error::PlatformWalletError> {
+        manager
+            .get_wallet(&wallet_id)
+            .await
+            .expect("loaded")
+            .identity()
+            .acquire_identity_slot(crate::wallet::identity::SlotRequest::Registration)
+            .await
+            .map(|slot| slot.identity_index)
+    }
+
+    /// A loaded wallet that bound a shielded account before leases no
+    /// identity slot until the shielded store is read, which then holds the
+    /// slot of its saved identity create; one that never bound is not held.
+    #[tokio::test]
+    async fn should_lease_no_slot_of_a_loaded_shielded_wallet_until_the_store_is_read() {
+        let (manager, bound, unbound) = manager();
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("tree.sqlite");
+        save_identity_create(&path, bound);
+        manager.load_from_persistor().await.expect("loaded");
+        assert!(matches!(
+            next_slot(&manager, bound).await,
+            Err(crate::error::PlatformWalletError::IdentitySlotsUnresolved)
+        ));
+        assert_eq!(next_slot(&manager, unbound).await.unwrap(), 0);
+
+        manager.configure_shielded(&path).await.expect("configured");
+        assert_eq!(
+            next_slot(&manager, bound).await.unwrap(),
+            2,
+            "0 holds an identity, 1 the saved create"
+        );
+    }
+
+    /// A wallet loaded once the shielded store is configured has its saved
+    /// identity creates read by the load itself.
+    #[tokio::test]
+    async fn should_hold_a_saved_create_slot_for_a_wallet_loaded_once_the_store_is_configured() {
+        let (manager, bound, _) = manager();
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("tree.sqlite");
+        save_identity_create(&path, bound);
+        manager.configure_shielded(&path).await.expect("configured");
+        manager.load_from_persistor().await.expect("loaded");
+        assert_eq!(next_slot(&manager, bound).await.unwrap(), 2);
     }
 }
 

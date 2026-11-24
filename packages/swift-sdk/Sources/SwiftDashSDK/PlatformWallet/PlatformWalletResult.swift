@@ -355,6 +355,11 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// claim (it gets the same slot). The message is a JSON detail naming
     /// the index.
     case errorIdentitySlotClaimSubmitted = 83
+    /// No identity slot of the wallet is leased while its saved identity
+    /// creates from the shielded pool are not read: one may still execute at
+    /// any slot. Nothing was funded or sent; retry after the next shielded
+    /// sync pass.
+    case errorIdentitySlotsUnresolved = 84
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -522,6 +527,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorIdentitySlotTakenOnChain
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_SLOT_CLAIM_SUBMITTED:
             self = .errorIdentitySlotClaimSubmitted
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_SLOTS_UNRESOLVED:
+            self = .errorIdentitySlotsUnresolved
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -834,6 +841,12 @@ public enum PlatformWalletError: LocalizedError {
     /// Platform, so its slot was not given up (code 83); only the claim's
     /// outcome frees it. Retry the claim, which gets the same slot.
     case identitySlotClaimSubmitted(identityIndex: UInt32)
+    /// No identity slot of the wallet is leased while its saved identity
+    /// creates from the shielded pool are not read (code 84): one may still
+    /// execute at any slot. Nothing was funded or sent. They are read when
+    /// the shielded store is configured, at a bind and after every shielded
+    /// sync pass; retry after the next pass.
+    case identitySlotsUnresolved(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition never
     /// left the wallet (refused before anything was sent), so it cannot
@@ -1077,6 +1090,7 @@ public enum PlatformWalletError: LocalizedError {
              .privateContactRecoveryUnsupported(let m),
              .privateContactStoreNotRead(let m), .sdkPinnedBelowProtocolVersion(let m),
              .publicContactRequestUnconfirmed(let m), .identityLookupFailed(let m),
+             .identitySlotsUnresolved(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
@@ -1274,6 +1288,7 @@ public enum PlatformWalletError: LocalizedError {
             } else {
                 self = .unknown(detail)
             }
+        case .errorIdentitySlotsUnresolved: self = .identitySlotsUnresolved(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)

@@ -923,6 +923,20 @@ sealed class DashSdkError(
         )
 
         /**
+         * `ErrorIdentitySlotsUnresolved` (native code 84): no identity slot of
+         * the wallet is leased while its saved identity creates from the
+         * shielded pool are not read, since one may still execute at any
+         * slot. Nothing was funded or sent. They are read when the shielded
+         * store is configured, at a bind and after every shielded sync pass;
+         * retry after the next pass.
+         * ← Swift `PlatformWalletError.identitySlotsUnresolved`.
+         */
+        class IdentitySlotsUnresolved(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -1176,6 +1190,7 @@ sealed class DashSdkError(
                     )
                 }.getOrNull()
             } ?: PlatformWallet.Generic(code, message, cause)
+            84 -> PlatformWallet.IdentitySlotsUnresolved(message, cause) // ErrorIdentitySlotsUnresolved
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

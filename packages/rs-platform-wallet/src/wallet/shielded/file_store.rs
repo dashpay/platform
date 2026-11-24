@@ -32,6 +32,7 @@ use crate::wallet::platform_wallet::WalletId;
 /// The note-spend kind of a private document create from the shielded pool
 /// (type 29), the transition a private contact request payment is.
 const PRIVATE_DOCUMENT_CREATE_KIND: &str = "private document create from shielded pool";
+const IDENTITY_CREATE_KIND: &str = "identity create from shielded pool";
 
 /// A private payment journal row: the entry's commitment, which keys it, and
 /// the record's bytes ([`PrivatePaymentRecord::to_bytes`]).
@@ -131,6 +132,11 @@ pub struct FileBackedShieldedStore {
     /// restoring a covered wallet's reservations fails
     /// ([`ShieldedStore::private_contact_redrives_for_wallet`]).
     unloaded_private_contact_payments: BTreeSet<Option<WalletId>>,
+    /// The wallets of damaged identity creates from the pool retained but not
+    /// loaded, `None` for one whose wallet does not read either: the slot
+    /// each holds is not known, so reading a covered wallet's create slots
+    /// fails ([`Self::identity_create_slots_for_wallet`]).
+    unloaded_identity_creates: BTreeSet<Option<WalletId>>,
     /// The private payment journal's records, by wallet and commitment, as
     /// the `shielded_private_payment_journal` table keeps them.
     private_payment_journal: BTreeMap<(WalletId, [u8; 32]), PrivatePaymentRecord>,
@@ -530,6 +536,7 @@ impl FileBackedShieldedStore {
             pending_conn: Mutex::new(pending_conn),
             private_contact_payments: BTreeMap::new(),
             unloaded_private_contact_payments: BTreeSet::new(),
+            unloaded_identity_creates: BTreeSet::new(),
             private_payment_journal: BTreeMap::new(),
             private_payment_journals: BTreeSet::new(),
             unreadable_private_payment_journal: BTreeSet::new(),
@@ -695,6 +702,9 @@ impl FileBackedShieldedStore {
                             self.unloaded_private_contact_payments
                                 .insert(readable_wallet_id);
                         }
+                        if kind == IDENTITY_CREATE_KIND {
+                            self.unloaded_identity_creates.insert(readable_wallet_id);
+                        }
                         continue;
                     }
                     return Err(FileShieldedStoreError::RecoveryCorrupted {
@@ -775,6 +785,9 @@ impl FileBackedShieldedStore {
                             self.unloaded_private_contact_payments
                                 .insert(readable_wallet_id);
                         }
+                        if kind == IDENTITY_CREATE_KIND {
+                            self.unloaded_identity_creates.insert(readable_wallet_id);
+                        }
                         continue;
                     }
                     return Err(error);
@@ -799,6 +812,48 @@ impl FileBackedShieldedStore {
         Ok(())
     }
 
+    /// The identity slots `wallet_id`'s saved identity creates from the pool
+    /// hold while they may still execute ([`PendingRedrive::identity_index`]).
+    /// Fails when one of them keeps no slot that reads (a record saved before
+    /// slots were kept, or a damaged index), when a damaged one of the wallet
+    /// was retained without being loaded, or when a saved transition of the
+    /// wallet does not decode: the slot it may take is not known, so the
+    /// caller holds every slot of the wallet until it resolves or expires.
+    pub fn identity_create_slots_for_wallet(
+        &self,
+        wallet_id: WalletId,
+    ) -> Result<BTreeSet<u32>, FileShieldedStoreError> {
+        let unknown = |reason: &str| FileShieldedStoreError::RecoveryCorrupted {
+            account_index: None,
+            reason: reason.to_owned(),
+        };
+        if self.unloaded_identity_creates.contains(&Some(wallet_id))
+            || self.unloaded_identity_creates.contains(&None)
+        {
+            return Err(unknown(
+                "a damaged saved identity create of the wallet was not loaded",
+            ));
+        }
+        let mut slots = BTreeSet::new();
+        for (_, redrive) in self.pending_redrives_for_wallet(wallet_id)? {
+            match StateTransition::deserialize_from_bytes_trusted(&redrive.st_bytes) {
+                Ok(StateTransition::IdentityCreateFromShieldedPool(_)) => {
+                    let Some(identity_index) = redrive.identity_index else {
+                        return Err(unknown(
+                            "a saved identity create of the wallet keeps no identity slot",
+                        ));
+                    };
+                    slots.insert(identity_index);
+                }
+                Ok(_) => {}
+                Err(_) => {
+                    return Err(unknown("a saved transition of the wallet does not decode"));
+                }
+            }
+        }
+        Ok(slots)
+    }
+
     /// Identify only transition families whose funding comes from shielded
     /// note nullifiers. A complete outer transition decode is required so
     /// corrupt, unknown, or identity-funded bytes remain fail-closed.
@@ -811,9 +866,7 @@ impl FileBackedShieldedStore {
             StateTransition::ShieldedTransfer(_) => Some("shielded transfer"),
             StateTransition::Unshield(_) => Some("unshield"),
             StateTransition::ShieldedWithdrawal(_) => Some("shielded withdrawal"),
-            StateTransition::IdentityCreateFromShieldedPool(_) => {
-                Some("identity create from shielded pool")
-            }
+            StateTransition::IdentityCreateFromShieldedPool(_) => Some(IDENTITY_CREATE_KIND),
             StateTransition::IdentityTopUpFromShieldedPool(_) => {
                 Some("identity top up from shielded pool")
             }
@@ -1646,6 +1699,7 @@ impl ShieldedStore for FileBackedShieldedStore {
             .retain(|(id, _), _| id.wallet_id != wallet_id);
         self.unloaded_private_contact_payments
             .remove(&Some(wallet_id));
+        self.unloaded_identity_creates.remove(&Some(wallet_id));
         Ok(())
     }
 
@@ -1696,6 +1750,7 @@ impl ShieldedStore for FileBackedShieldedStore {
         self.subwallets.clear();
         self.private_contact_payments.clear();
         self.unloaded_private_contact_payments.clear();
+        self.unloaded_identity_creates.clear();
         Ok(())
     }
 
@@ -1768,6 +1823,35 @@ impl ShieldedStore for FileBackedShieldedStore {
             .map_err(|e| FileShieldedStoreError::Storage(format!("reopen commitment tree: {e}")))?;
         Ok(())
     }
+}
+
+#[cfg(test)]
+/// A signed identity create from the pool, as a saved record keeps it, for
+/// tests.
+pub(crate) fn identity_create_bytes(fill: u8) -> Vec<u8> {
+    use dpp::address_funds::PlatformAddress;
+    use dpp::shielded::SerializedAction;
+    use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
+    let action = SerializedAction {
+        nullifier: [fill; 32],
+        rk: [2; 32],
+        cmx: [3; 32],
+        encrypted_note: vec![4; 216],
+        cv_net: [5; 32],
+        spend_auth_sig: [6; 64],
+    };
+    StateTransition::from(IdentityCreateFromShieldedPoolTransitionV0 {
+        public_keys: vec![],
+        denomination: 1_000_000,
+        actions: vec![action],
+        anchor: [0x23; 32],
+        proof: vec![8; 64],
+        binding_signature: [9; 64],
+        send_to_address_on_creation_failure: PlatformAddress::P2pkh([7; 20]),
+        identity_id: dpp::prelude::Identifier::from([fill; 32]),
+    })
+    .serialize_to_bytes()
+    .expect("serializes")
 }
 
 #[cfg(test)]
@@ -3481,6 +3565,80 @@ mod tests {
         assert!(store
             .private_contact_redrives_for_wallet([0x7B; 32])
             .is_ok());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn should_read_the_slots_a_wallets_saved_identity_creates_hold() {
+        let path = temp_tree_path("identity_create_slots");
+        let wallet_id = [0x93; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let record = |activity: u8, st_bytes: Vec<u8>, identity_index| PendingRedrive {
+            activity_id: [activity; 32],
+            anchor: [0x23; 32],
+            nullifiers: vec![[activity; 32]],
+            st_bytes,
+            attempts: 0,
+            identity_nonce_finalized: false,
+            identity_user_abandoned: false,
+            anchor_height: None,
+            identity_index,
+        };
+        let transfer: Vec<u8> = StateTransition::from(ShieldedTransferTransitionV0 {
+            actions: vec![],
+            value_balance: 1_000,
+            anchor: [0x52; 32],
+            proof: vec![],
+            binding_signature: [0; 64],
+        })
+        .serialize_to_bytes()
+        .unwrap();
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+        store
+            .arm_redrive(id, record(1, identity_create_bytes(1), Some(3)))
+            .unwrap();
+        store.arm_redrive(id, record(2, transfer, None)).unwrap();
+        assert_eq!(
+            store.identity_create_slots_for_wallet(wallet_id).unwrap(),
+            [3].into(),
+            "only the create holds a slot"
+        );
+        assert!(store
+            .identity_create_slots_for_wallet([0x94; 32])
+            .unwrap()
+            .is_empty());
+
+        // A create saved before slots were kept: its slot is not known.
+        store
+            .arm_redrive(id, record(3, identity_create_bytes(3), None))
+            .unwrap();
+        assert!(matches!(
+            store.identity_create_slots_for_wallet(wallet_id),
+            Err(FileShieldedStoreError::RecoveryCorrupted { .. })
+        ));
+        store.clear_redrive(id, &[3; 32]).unwrap();
+        assert_eq!(
+            store.identity_create_slots_for_wallet(wallet_id).unwrap(),
+            [3].into()
+        );
+
+        // A damaged create retained without being loaded.
+        store
+            .pending_conn
+            .lock()
+            .expect("pending_conn mutex")
+            .execute(
+                "UPDATE shielded_pending_spends SET anchor = x'01' WHERE activity_id = ?1",
+                rusqlite::params![[1u8; 32].as_slice()],
+            )
+            .unwrap();
+        drop(store);
+        let store = FileBackedShieldedStore::open_path(&path, 100).expect("still opens");
+        assert!(matches!(
+            store.identity_create_slots_for_wallet(wallet_id),
+            Err(FileShieldedStoreError::RecoveryCorrupted { .. })
+        ));
+        assert!(store.identity_create_slots_for_wallet([0x94; 32]).is_ok());
         let _ = std::fs::remove_file(&path);
     }
 }

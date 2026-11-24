@@ -95,6 +95,20 @@ pub(crate) struct ClaimLease {
     pub(crate) restored: bool,
 }
 
+/// A wallet's identity slots held for identity creates from the shielded
+/// pool that may still execute ([`IdentityManager::apply_shielded_create_slots`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ShieldedCreateHolds {
+    /// The slots the creates hold.
+    held: BTreeSet<RegistrationIndex>,
+    /// The saved creates are not known: not read yet, a read failed, or one
+    /// keeps no slot that reads. No slot is leased while it is set.
+    unresolved: bool,
+    /// How many holds [`IdentityManager::hold_for_shielded_create`] added, so
+    /// a read that started before one does not drop it.
+    added: u64,
+}
+
 /// Result of [`IdentityManager::place_in_slot_unstored`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SlotPlacement {
@@ -150,6 +164,9 @@ impl IdentityManager {
     /// index in `funded_registrations` (the indices of unconsumed
     /// `IdentityRegistration` asset locks) and no shielded identity create
     /// ([`Self::hold_for_shielded_create`]) is leased in the `Reserved` phase.
+    /// While the wallet's shielded creates are not known
+    /// ([`Self::mark_shielded_creates_unresolved`]) none is leased:
+    /// [`PlatformWalletError::IdentitySlotsUnresolved`].
     /// The lowest one rather than one past the highest, so an abandoned
     /// registration leaves no hole the identity discovery gap limit could
     /// stop at; an on-chain identity this wallet does not know at that index
@@ -164,6 +181,9 @@ impl IdentityManager {
             // An operation of this process holds it now.
             self.forget_restored_claim(&wallet_id, &holder);
             return Ok(existing);
+        }
+        if self.shielded_creates_unresolved(&wallet_id) {
+            return Err(PlatformWalletError::IdentitySlotsUnresolved);
         }
         let identity_index = (0..=RegistrationIndex::MAX)
             .find(|index| {
@@ -189,47 +209,89 @@ impl IdentityManager {
     }
 
     /// Whether `wallet_id`'s slot `identity_index` holds no identity, no
-    /// lease and no pending shielded identity create: what an acquisition
-    /// needs, besides no unconsumed registration asset lock there.
+    /// lease and no pending shielded identity create, with the wallet's
+    /// shielded creates known: what an acquisition needs, besides no
+    /// unconsumed registration asset lock there.
     pub fn slot_allocatable(
         &self,
         wallet_id: &WalletId,
         identity_index: RegistrationIndex,
     ) -> bool {
         !self
-            .shielded_create_holds
+            .shielded_creates
             .get(wallet_id)
-            .is_some_and(|held| held.contains(&identity_index))
+            .is_some_and(|creates| creates.unresolved || creates.held.contains(&identity_index))
             && self.slot_state(wallet_id, identity_index) == SlotState::Free
+    }
+
+    /// Whether `wallet_id`'s identity creates from the shielded pool are not
+    /// known ([`Self::mark_shielded_creates_unresolved`]).
+    pub fn shielded_creates_unresolved(&self, wallet_id: &WalletId) -> bool {
+        self.shielded_creates
+            .get(wallet_id)
+            .is_some_and(|creates| creates.unresolved)
     }
 
     /// Hold `wallet_id`'s slot `identity_index` for an identity create from
     /// the shielded pool that may still execute: no slot is leased there
-    /// until [`Self::release_shielded_create_hold`]. The create's saved
-    /// record keeps the index across a restart, which holds it again.
+    /// until a read of the saved creates no longer finds it
+    /// ([`Self::apply_shielded_create_slots`]). The create's saved record
+    /// keeps the index across a restart, which holds it again.
     pub fn hold_for_shielded_create(
         &mut self,
         wallet_id: WalletId,
         identity_index: RegistrationIndex,
     ) {
-        self.shielded_create_holds
-            .entry(wallet_id)
-            .or_default()
-            .insert(identity_index);
+        let creates = self.shielded_creates.entry(wallet_id).or_default();
+        creates.held.insert(identity_index);
+        creates.added += 1;
     }
 
-    /// Drop the hold [`Self::hold_for_shielded_create`] put on `wallet_id`'s
-    /// slot `identity_index`.
-    pub fn release_shielded_create_hold(
+    /// Lease no slot of `wallet_id` until its saved identity creates from the
+    /// shielded pool are read ([`Self::apply_shielded_create_slots`]): one of
+    /// them may hold any slot.
+    pub fn mark_shielded_creates_unresolved(&mut self, wallet_id: WalletId) {
+        self.shielded_creates
+            .entry(wallet_id)
+            .or_default()
+            .unresolved = true;
+    }
+
+    /// The count a read of `wallet_id`'s saved shielded creates passes back
+    /// to [`Self::apply_shielded_create_slots`], taken before it reads.
+    pub fn shielded_create_epoch(&self, wallet_id: &WalletId) -> u64 {
+        self.shielded_creates
+            .get(wallet_id)
+            .map_or(0, |creates| creates.added)
+    }
+
+    /// Hold `wallet_id`'s slots as a read of its saved identity creates from
+    /// the shielded pool found them, begun at `epoch`
+    /// ([`Self::shielded_create_epoch`]): `Some` with the slots they keep,
+    /// which replace the held ones, so a create that resolved or expired
+    /// frees its slot; `None` when they are not known, which holds every
+    /// slot. A hold [`Self::hold_for_shielded_create`] added since `epoch`
+    /// is kept, as the read may have missed its record.
+    pub fn apply_shielded_create_slots(
         &mut self,
-        wallet_id: &WalletId,
-        identity_index: RegistrationIndex,
+        wallet_id: WalletId,
+        read: Option<BTreeSet<RegistrationIndex>>,
+        epoch: u64,
     ) {
-        if let Some(held) = self.shielded_create_holds.get_mut(wallet_id) {
-            held.remove(&identity_index);
-            if held.is_empty() {
-                self.shielded_create_holds.remove(wallet_id);
+        let creates = self.shielded_creates.entry(wallet_id).or_default();
+        match read {
+            Some(held) => {
+                if creates.added == epoch {
+                    creates.held = held;
+                } else {
+                    creates.held.extend(held);
+                }
+                creates.unresolved = false;
             }
+            None => creates.unresolved = true,
+        }
+        if *creates == ShieldedCreateHolds::default() {
+            self.shielded_creates.remove(&wallet_id);
         }
     }
 
@@ -980,9 +1042,54 @@ mod tests {
         let (_, first) = manager.acquire_registration_slot(WALLET, &none()).unwrap();
         assert_eq!(first.identity_index, 1, "index 0 is held for the create");
 
-        manager.release_shielded_create_hold(&WALLET, 0);
+        // A read that no longer finds the create: it resolved or expired.
+        let epoch = manager.shielded_create_epoch(&WALLET);
+        manager.apply_shielded_create_slots(WALLET, Some(BTreeSet::new()), epoch);
         let (_, second) = manager.acquire_registration_slot(WALLET, &none()).unwrap();
         assert_eq!(second.identity_index, 0);
+    }
+
+    #[test]
+    fn should_lease_no_slot_while_the_shielded_creates_are_not_known() {
+        let mut manager = IdentityManager::new();
+        manager.mark_shielded_creates_unresolved(WALLET);
+
+        assert!(matches!(
+            manager.acquire_registration_slot(WALLET, &none()),
+            Err(PlatformWalletError::IdentitySlotsUnresolved)
+        ));
+        assert!(!manager.slot_allocatable(&WALLET, 0));
+        assert!(
+            manager
+                .acquire_registration_slot([8u8; 32], &none())
+                .is_ok(),
+            "another wallet's creates are its own"
+        );
+
+        // A failed read keeps it unresolved; one that reads frees it.
+        let epoch = manager.shielded_create_epoch(&WALLET);
+        manager.apply_shielded_create_slots(WALLET, None, epoch);
+        assert!(manager.acquire_registration_slot(WALLET, &none()).is_err());
+        manager.apply_shielded_create_slots(WALLET, Some([0].into()), epoch);
+        let (_, acquired) = manager.acquire_registration_slot(WALLET, &none()).unwrap();
+        assert_eq!(acquired.identity_index, 1, "the create read at 0 holds it");
+    }
+
+    #[test]
+    fn should_keep_a_shielded_create_hold_added_after_its_read_began() {
+        let mut manager = IdentityManager::new();
+        let epoch = manager.shielded_create_epoch(&WALLET);
+        // An unconfirmed create holds its slot while a read that began
+        // before its record was saved is in flight.
+        manager.hold_for_shielded_create(WALLET, 0);
+        manager.apply_shielded_create_slots(WALLET, Some(BTreeSet::new()), epoch);
+
+        assert!(!manager.slot_allocatable(&WALLET, 0));
+
+        // The next read is the newer answer.
+        let epoch = manager.shielded_create_epoch(&WALLET);
+        manager.apply_shielded_create_slots(WALLET, Some(BTreeSet::new()), epoch);
+        assert!(manager.slot_allocatable(&WALLET, 0));
     }
 
     #[test]

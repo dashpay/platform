@@ -699,6 +699,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             Arc::clone(&event_manager),
             Arc::clone(&shielded_coordinator),
             Arc::clone(&registry),
+            Arc::clone(&wallets),
         ));
         Self {
             sdk,
@@ -1040,7 +1041,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// whose id another process journaled payments under. Nothing else holds a
     /// store just opened, so this waits for nothing long. A wallet whose
     /// restoration fails stays held, until a bind, a contact request's own
-    /// retry or a later call restores it.
+    /// retry or a later call restores it. Every wallet's identity slots are
+    /// held as the store's saved identity creates from the shielded pool
+    /// keep them ([`PlatformWallet::refresh_shielded_create_holds`]).
     #[cfg(feature = "shielded")]
     pub(crate) async fn restore_private_contact_payment_holds(
         &self,
@@ -1048,6 +1051,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ) {
         let wallets: Vec<Arc<PlatformWallet>> = self.wallets.load().values().cloned().collect();
         for wallet in wallets {
+            wallet
+                .refresh_shielded_create_holds(coordinator, true)
+                .await;
             if !wallet.private_payments_held().await
                 && !coordinator.may_journal_private_payments_of(wallet.wallet_id())
             {
@@ -1072,7 +1078,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// id the journal may keep payments of
     /// (`NetworkShieldedCoordinator::may_journal_private_payments_of`, a busy
     /// store counting as may): a load passes it, a repeat configure does not,
-    /// so a configure during a scan holds no wallet that was not held.
+    /// so a configure during a scan holds no wallet that was not held. Every
+    /// wallet's identity slots are held as the store's saved identity creates
+    /// from the shielded pool keep them, a busy store leaving that to the end
+    /// of the next sync pass ([`PlatformWallet::refresh_shielded_create_holds`]).
     #[cfg(feature = "shielded")]
     pub(crate) async fn restore_private_payments_without_waiting(
         &self,
@@ -1081,6 +1090,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ) {
         let wallets: Vec<Arc<PlatformWallet>> = self.wallets.load().values().cloned().collect();
         for wallet in wallets {
+            wallet
+                .refresh_shielded_create_holds(coordinator, false)
+                .await;
             if wallet.private_payments_held().await
                 || (journaled_too
                     && coordinator.may_journal_private_payments_of(wallet.wallet_id()))
@@ -1103,18 +1115,26 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// keeps the private scan state is held until `configure_shielded` or a
     /// bind reads the journal: only such a persister lets a private payment be
     /// paid, so only its wallet can have journal records no marker shows. One
-    /// that does not is never held for want of a store.
+    /// that does not is never held for want of a store. The wallet's identity
+    /// slots are held the same way until the store's saved identity creates
+    /// from the shielded pool are read
+    /// ([`PlatformWallet::refresh_shielded_create_holds`]).
     #[cfg(feature = "shielded")]
     pub(crate) async fn hold_or_restore_private_payments(&self, wallet: &PlatformWallet) {
         match self.shielded_coordinator().await {
             Some(coordinator) => {
                 wallet.restore_private_payments_or_defer(&coordinator).await;
+                wallet.hold_slots_until_shielded_creates_read().await;
+                wallet
+                    .refresh_shielded_create_holds(&coordinator, false)
+                    .await;
             }
             None if wallet.persister().persists_private_contact_scan_state() => {
                 wallet
                     .persister()
                     .hold_until_private_payments_restored()
                     .await;
+                wallet.hold_slots_until_shielded_creates_read().await;
             }
             None => {}
         }
@@ -1127,6 +1147,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     #[cfg(feature = "shielded")]
     pub(crate) async fn restore_private_payments_configured_since(&self, wallet: &PlatformWallet) {
         if let Some(coordinator) = self.shielded_coordinator().await {
+            wallet
+                .refresh_shielded_create_holds(&coordinator, false)
+                .await;
             if wallet.private_payments_held().await {
                 wallet.restore_private_payments_or_defer(&coordinator).await;
             }

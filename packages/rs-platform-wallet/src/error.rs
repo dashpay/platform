@@ -136,6 +136,17 @@ pub enum PlatformWalletError {
     )]
     IdentitySlotClaimSubmitted { identity_index: u32 },
 
+    /// No identity slot of the wallet is leased while its saved identity
+    /// creates from the shielded pool are not known: one may still execute
+    /// at any slot. They are read when the shielded store is configured, at
+    /// a bind and after every shielded sync pass; a saved create that keeps
+    /// no slot holds them until it resolves or expires.
+    #[error(
+        "the wallet's identity creates from the shielded pool are not known yet; \
+         no identity slot is leased until they are read"
+    )]
+    IdentitySlotsUnresolved,
+
     #[error("Identity not found: {0}")]
     IdentityNotFound(Identifier),
 

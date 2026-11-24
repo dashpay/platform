@@ -8,7 +8,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
-/** Codes 81-83 from the identity-slot lease (`rs-platform-wallet-ffi/src/error.rs`). */
+/** Codes 81-84 from the identity-slot lease (`rs-platform-wallet-ffi/src/error.rs`). */
 @RunWith(RobolectricTestRunner::class)
 class IdentitySlotErrorTest {
     private fun map(code: Int, message: String) =
@@ -39,6 +39,13 @@ class IdentitySlotErrorTest {
         assertTrue(submitted is DashSdkError.PlatformWallet.IdentitySlotClaimSubmitted)
         assertEquals(5, (submitted as DashSdkError.PlatformWallet.IdentitySlotClaimSubmitted).identityIndex)
         assertFalse(submitted.isRetryable)
+    }
+
+    @Test
+    fun shouldReportUnresolvedSlotsAsRetryable() {
+        val unresolved = map(84, "not read")
+        assertTrue(unresolved is DashSdkError.PlatformWallet.IdentitySlotsUnresolved)
+        assertTrue("retried after the next shielded sync pass", unresolved.isRetryable)
     }
 
     @Test

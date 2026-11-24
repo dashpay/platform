@@ -515,11 +515,17 @@ final class ErrorHandlingTests: XCTestCase {
              .errorIdentitySlotTakenOnChain, 82),
             (PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_SLOT_CLAIM_SUBMITTED,
              .errorIdentitySlotClaimSubmitted, 83),
+            (PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_SLOTS_UNRESOLVED,
+             .errorIdentitySlotsUnresolved, 84),
         ]
         for (ffi, code, raw) in codes {
             XCTAssertEqual(PlatformWalletResultCode(ffi: ffi), code)
             XCTAssertEqual(code.rawValue, raw)
         }
+
+        guard case .identitySlotsUnresolved = PlatformWalletError(
+            code: .errorIdentitySlotsUnresolved, message: "not read"
+        ) else { return XCTFail("lost typed identity-slots-unresolved error") }
 
         guard case .identitySlotNotHeld(let notHeldIndex) = PlatformWalletError(
             code: .errorIdentitySlotNotHeld, message: "{\"identityIndex\":3}"

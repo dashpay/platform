@@ -842,6 +842,15 @@ pub enum PlatformWalletFFIResultCode {
     /// JSON object `{ "identityIndex": <u32> }`.
     ErrorIdentitySlotClaimSubmitted = 83,
 
+    /// Maps `PlatformWalletError::IdentitySlotsUnresolved`: no identity slot
+    /// of the wallet is leased, and no registration asset lock is funded,
+    /// while its saved identity creates from the shielded pool are not known
+    /// (one may still execute at any slot). Nothing was funded or sent. They
+    /// are read when the shielded store is configured, at a bind and after
+    /// every shielded sync pass: retry after the next pass. A saved create
+    /// that keeps no slot holds them until it resolves or expires.
+    ErrorIdentitySlotsUnresolved = 84,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1388,6 +1397,11 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // restored yet: wallet readiness, not one contact's pending request.
             PlatformWalletError::PrivateContactPaymentsNotRestored => {
                 PlatformWalletFFIResultCode::ErrorPrivateContactPaymentsNotRestored
+            }
+            // The wallet's saved shielded identity creates are not read yet:
+            // wallet readiness, nothing funded.
+            PlatformWalletError::IdentitySlotsUnresolved => {
+                PlatformWalletFFIResultCode::ErrorIdentitySlotsUnresolved
             }
             // The persister cannot keep a private payment's recovery marker.
             PlatformWalletError::PrivateContactRecoveryUnsupported => {
@@ -2763,6 +2777,10 @@ mod tests {
         assert_eq!(submitted.code as u32, 83);
         let detail: serde_json::Value = serde_json::from_str(&message_of(&submitted)).unwrap();
         assert_eq!(detail["identityIndex"], 5);
+
+        let unresolved: PlatformWalletFFIResult =
+            PlatformWalletError::IdentitySlotsUnresolved.into();
+        assert_eq!(unresolved.code as u32, 84);
     }
 
     #[test]

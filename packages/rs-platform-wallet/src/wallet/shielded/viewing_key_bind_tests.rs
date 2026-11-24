@@ -1178,17 +1178,17 @@ mod identity_slot_tests {
 
     /// A record of an identity create from `id`'s notes that may still
     /// execute, holding slot `identity_index`.
-    fn identity_create(identity_index: u32) -> PendingRedrive {
+    fn identity_create(identity_index: Option<u32>) -> PendingRedrive {
         PendingRedrive {
             activity_id: [4; 32],
             anchor: [5; 32],
             nullifiers: vec![[6; 32]],
-            st_bytes: vec![7; 32],
+            st_bytes: crate::wallet::shielded::file_store::identity_create_bytes(6),
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
             anchor_height: None,
-            identity_index: Some(identity_index),
+            identity_index,
         }
     }
 
@@ -1204,7 +1204,10 @@ mod identity_slot_tests {
             let mut store =
                 FileBackedShieldedStore::open_path(dir.join("tree.sqlite"), 100).unwrap();
             store
-                .arm_redrive(SubwalletId::new(wallet.wallet_id(), 0), identity_create(0))
+                .arm_redrive(
+                    SubwalletId::new(wallet.wallet_id(), 0),
+                    identity_create(Some(0)),
+                )
                 .unwrap();
         }
 
@@ -1220,6 +1223,224 @@ mod identity_slot_tests {
             .await
             .unwrap();
         assert_eq!(slot.identity_index, 1, "index 0 is the create's");
+    }
+
+    #[tokio::test]
+    async fn should_free_the_slot_of_a_shielded_identity_create_once_its_record_retires() {
+        let dir = temp_dir("shielded_create_retired");
+        let seed = [0x42; 64];
+        let wallet = platform_wallet_with(Arc::new(CapturingPersistence::default())).await;
+        let id = SubwalletId::new(wallet.wallet_id(), 0);
+        {
+            std::fs::create_dir_all(&dir).unwrap();
+            let mut store =
+                FileBackedShieldedStore::open_path(dir.join("tree.sqlite"), 100).unwrap();
+            store.arm_redrive(id, identity_create(Some(0))).unwrap();
+        }
+        let coordinator = coordinator_at(&dir);
+        wallet
+            .bind_shielded(&seed, &[0], &coordinator)
+            .await
+            .unwrap();
+        let held = wallet
+            .identity()
+            .acquire_identity_slot(SlotRequest::Registration)
+            .await
+            .unwrap();
+        assert_eq!(held.identity_index, 1, "index 0 is the create's");
+        wallet
+            .identity()
+            .release_identity_slot(held.holder)
+            .await
+            .unwrap();
+
+        // The create expired: a sync pass removed its record.
+        coordinator
+            .store()
+            .write()
+            .await
+            .clear_redrive(id, &[4; 32])
+            .unwrap();
+        wallet
+            .refresh_shielded_create_holds(&coordinator, true)
+            .await;
+
+        let freed = wallet
+            .identity()
+            .acquire_identity_slot(SlotRequest::Registration)
+            .await
+            .unwrap();
+        assert_eq!(freed.identity_index, 0, "the expired create's slot is free");
+    }
+
+    #[tokio::test]
+    async fn should_free_an_expired_creates_slot_at_the_end_of_a_sync_pass() {
+        use crate::manager::shielded_sync::ShieldedSyncManager;
+        use crate::manager::WalletWorker;
+
+        let dir = temp_dir("shielded_create_sync_pass");
+        let seed = [0x42; 64];
+        let wallet =
+            Arc::new(platform_wallet_with(Arc::new(CapturingPersistence::default())).await);
+        let id = SubwalletId::new(wallet.wallet_id(), 0);
+        {
+            std::fs::create_dir_all(&dir).unwrap();
+            let mut store =
+                FileBackedShieldedStore::open_path(dir.join("tree.sqlite"), 100).unwrap();
+            store.arm_redrive(id, identity_create(Some(0))).unwrap();
+        }
+        let coordinator = coordinator_at(&dir);
+        wallet
+            .bind_shielded(&seed, &[0], &coordinator)
+            .await
+            .unwrap();
+        // The create expired: the store no longer keeps it.
+        coordinator
+            .store()
+            .write()
+            .await
+            .clear_redrive(id, &[4; 32])
+            .unwrap();
+        let sync = ShieldedSyncManager::new(
+            Arc::new(crate::events::PlatformEventManager::new(Vec::new())),
+            Arc::new(tokio::sync::RwLock::new(Some(Arc::clone(&coordinator)))),
+            dash_async::ThreadRegistry::<WalletWorker>::new(),
+            Arc::new(arc_swap::ArcSwap::from_pointee(BTreeMap::from([(
+                wallet.wallet_id(),
+                Arc::clone(&wallet),
+            )]))),
+        );
+
+        sync.sync_now(true).await;
+
+        let freed = wallet
+            .identity()
+            .acquire_identity_slot(SlotRequest::Registration)
+            .await
+            .unwrap();
+        assert_eq!(freed.identity_index, 0, "the pass read the store");
+    }
+
+    #[tokio::test]
+    async fn should_lease_no_slot_while_a_saved_shielded_create_keeps_none() {
+        let dir = temp_dir("shielded_create_legacy");
+        let seed = [0x42; 64];
+        let wallet = platform_wallet_with(Arc::new(CapturingPersistence::default())).await;
+        let id = SubwalletId::new(wallet.wallet_id(), 0);
+        {
+            std::fs::create_dir_all(&dir).unwrap();
+            let mut store =
+                FileBackedShieldedStore::open_path(dir.join("tree.sqlite"), 100).unwrap();
+            // Saved by a build that did not keep the slot.
+            store.arm_redrive(id, identity_create(None)).unwrap();
+        }
+        let coordinator = coordinator_at(&dir);
+        wallet
+            .bind_shielded(&seed, &[0], &coordinator)
+            .await
+            .unwrap();
+
+        let refused = wallet
+            .identity()
+            .acquire_identity_slot(SlotRequest::Registration)
+            .await;
+        assert!(
+            matches!(refused, Err(PlatformWalletError::IdentitySlotsUnresolved)),
+            "{refused:?}"
+        );
+        assert!(matches!(
+            wallet
+                .asset_locks
+                .ensure_registration_index_unallocated(5)
+                .await,
+            Err(PlatformWalletError::IdentitySlotsUnresolved)
+        ));
+
+        // It resolved or expired.
+        coordinator
+            .store()
+            .write()
+            .await
+            .clear_redrive(id, &[4; 32])
+            .unwrap();
+        wallet
+            .refresh_shielded_create_holds(&coordinator, true)
+            .await;
+        let slot = wallet
+            .identity()
+            .acquire_identity_slot(SlotRequest::Registration)
+            .await
+            .unwrap();
+        assert_eq!(slot.identity_index, 0);
+    }
+
+    #[tokio::test]
+    async fn should_hand_an_unconfirmed_creates_lease_over_to_its_saved_record() {
+        let dir = temp_dir("shielded_create_hand_off");
+        let seed = [0x42; 64];
+        let wallet = platform_wallet_with(Arc::new(CapturingPersistence::default())).await;
+        let id = SubwalletId::new(wallet.wallet_id(), 0);
+        let coordinator = coordinator_at(&dir);
+        wallet
+            .bind_shielded(&seed, &[0], &coordinator)
+            .await
+            .unwrap();
+        let slot = wallet
+            .identity()
+            .acquire_identity_slot(SlotRequest::Registration)
+            .await
+            .unwrap();
+        assert_eq!(slot.identity_index, 0);
+        // The create saved its record before it was sent.
+        coordinator
+            .store()
+            .write()
+            .await
+            .arm_redrive(id, identity_create(Some(0)))
+            .unwrap();
+
+        wallet
+            .identity()
+            .hand_off_to_shielded_create(0, &slot.holder)
+            .await
+            .unwrap();
+        assert!(
+            matches!(
+                wallet.identity().release_identity_slot(slot.holder).await,
+                Ok(None)
+            ),
+            "the lease ended"
+        );
+        wallet
+            .refresh_shielded_create_holds(&coordinator, true)
+            .await;
+        let next = wallet
+            .identity()
+            .acquire_identity_slot(SlotRequest::Registration)
+            .await
+            .unwrap();
+        assert_eq!(next.identity_index, 1, "the record holds index 0");
+
+        coordinator
+            .store()
+            .write()
+            .await
+            .clear_redrive(id, &[4; 32])
+            .unwrap();
+        wallet
+            .refresh_shielded_create_holds(&coordinator, true)
+            .await;
+        wallet
+            .identity()
+            .release_identity_slot(next.holder)
+            .await
+            .unwrap();
+        let freed = wallet
+            .identity()
+            .acquire_identity_slot(SlotRequest::Registration)
+            .await
+            .unwrap();
+        assert_eq!(freed.identity_index, 0, "freed in the same process");
     }
 
     #[tokio::test]

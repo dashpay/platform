@@ -30,7 +30,10 @@ pub const IDENTITY_SLOT_TAKEN_RETRY_LIMIT: u32 = 5;
 /// and the slot's token to `*out_slot_token`: pass both to
 /// `platform_wallet_register_identity_with_funding_signer`, or the token to
 /// [`platform_wallet_identity_slot_release_registration`] when the
-/// registration is abandoned. The lease lives in memory only.
+/// registration is abandoned. The lease lives in memory only. Refused with
+/// `ErrorIdentitySlotsUnresolved` while the wallet's saved identity creates
+/// from the shielded pool are not read; retry after the next shielded sync
+/// pass.
 ///
 /// # Safety
 /// `out_identity_index` and `out_slot_token` must be valid writable pointers.
@@ -70,7 +73,9 @@ pub unsafe extern "C" fn platform_wallet_identity_slot_acquire_registration(
 /// for [`platform_wallet_identity_slot_release_invitation_claim`], and whether
 /// an earlier attempt of this claim may have reached Platform to
 /// `*out_submitted`. The lease is stored durably; a persister that cannot keep
-/// it refuses the claim.
+/// it refuses the claim. A new lease is refused with
+/// `ErrorIdentitySlotsUnresolved` while the wallet's saved identity creates
+/// from the shielded pool are not read.
 ///
 /// # Safety
 /// - `uri` must be a valid NUL-terminated UTF-8 C string.

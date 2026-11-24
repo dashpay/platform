@@ -136,6 +136,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         let info = wm
             .get_wallet_info(&self.wallet_id)
             .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        if info
+            .identity_manager
+            .shielded_creates_unresolved(&self.wallet_id)
+        {
+            return Err(PlatformWalletError::IdentitySlotsUnresolved);
+        }
         let funded = info.tracked_asset_locks.values().any(|lock| {
             lock.funding_type == AssetLockFundingType::IdentityRegistration
                 && !lock.status.is_consumed()

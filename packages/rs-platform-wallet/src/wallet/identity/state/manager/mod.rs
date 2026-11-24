@@ -32,6 +32,7 @@ mod lifecycle;
 mod slots;
 
 pub(crate) use slots::ClaimLease;
+use slots::ShieldedCreateHolds;
 pub use slots::{SlotAcquisition, SlotHolder, SlotLease, SlotLeasePhase, SlotPlacement, SlotState};
 
 use super::managed_identity::ManagedIdentity;
@@ -133,10 +134,10 @@ pub struct IdentityManager {
     next_registration_token: u64,
 
     /// The slots identity creates from the shielded pool hold while they may
-    /// still execute, `shielded_create_holds[wallet_id]`: their saved records
-    /// keep the index durably, and these mirror them (see
-    /// [`Self::hold_for_shielded_create`]).
-    shielded_create_holds: BTreeMap<WalletId, BTreeSet<RegistrationIndex>>,
+    /// still execute, `shielded_creates[wallet_id]`: their saved records keep
+    /// the index durably, and these mirror them as last read (see
+    /// [`Self::apply_shielded_create_slots`]).
+    shielded_creates: BTreeMap<WalletId, ShieldedCreateHolds>,
 
     /// Claim leases as restored from the store and not touched since by an
     /// operation of this process, `restored_claim_leases[wallet_id]`: only
@@ -180,7 +181,7 @@ impl From<IdentityManagerStartState> for IdentityManager {
             retained_private_payment_markers: BTreeSet::new(),
             slot_leases: BTreeMap::new(),
             next_registration_token: 0,
-            shielded_create_holds: BTreeMap::new(),
+            shielded_creates: BTreeMap::new(),
             restored_claim_leases: BTreeMap::new(),
         };
         for (wallet_id, leases) in claim_leases {

@@ -42,7 +42,7 @@ use crate::manager::{
     coordinator_worker_config, drain_pass, QuiesceGate, QuiesceGuard, SyncSlotGuard, WalletWorker,
     COORDINATOR_DRAIN_BUDGET, LATCHED_RETRY_INTERVAL,
 };
-use crate::wallet::platform_wallet::WalletId;
+use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
 use crate::wallet::shielded::{NetworkShieldedCoordinator, ShieldedSyncSummary};
 
 /// Default cadence — 60s. Shielded sync is heavier than address sync
@@ -172,6 +172,12 @@ pub struct ShieldedSyncManager {
     pass_cancel: std::sync::Mutex<CancellationToken>,
     /// Unix seconds of the last completed pass. `0` = never.
     last_sync_unix: AtomicU64,
+    /// The manager's wallets, shared with the owning
+    /// `PlatformWalletManager`: after each pass, each one's identity slots
+    /// are held as the store's saved identity creates from the shielded pool
+    /// keep them ([`PlatformWallet::refresh_shielded_create_holds`]), so a
+    /// create that resolved or expired in the pass frees its slot.
+    wallets: Arc<arc_swap::ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
 }
 
 impl ShieldedSyncManager {
@@ -179,11 +185,13 @@ impl ShieldedSyncManager {
         event_manager: Arc<PlatformEventManager>,
         coordinator_slot: Arc<RwLock<Option<Arc<NetworkShieldedCoordinator>>>>,
         registry: Arc<ThreadRegistry<WalletWorker>>,
+        wallets: Arc<arc_swap::ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
     ) -> Self {
         Self {
             event_manager,
             coordinator_slot,
             registry,
+            wallets,
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
             quiescing: QuiesceGate::default(),
@@ -481,7 +489,9 @@ impl ShieldedSyncManager {
         };
 
         let mut summary = if let Some(coordinator) = coordinator_snapshot {
-            coordinator.sync(force, &pass_cancel).await
+            let summary = coordinator.sync(force, &pass_cancel).await;
+            self.refresh_shielded_create_holds(&coordinator).await;
+            summary
         } else {
             ShieldedSyncPassSummary::default()
         };
@@ -519,6 +529,19 @@ impl ShieldedSyncManager {
         self.event_manager.on_shielded_sync_completed(&summary);
 
         summary
+    }
+
+    /// Hold each wallet's identity slots as `coordinator`'s store keeps its
+    /// saved identity creates from the shielded pool, after a pass that may
+    /// have resolved or expired some
+    /// ([`PlatformWallet::refresh_shielded_create_holds`]).
+    async fn refresh_shielded_create_holds(&self, coordinator: &Arc<NetworkShieldedCoordinator>) {
+        let wallets: Vec<Arc<PlatformWallet>> = self.wallets.load().values().cloned().collect();
+        for wallet in wallets {
+            wallet
+                .refresh_shielded_create_holds(coordinator, true)
+                .await;
+        }
     }
 
     /// Sync a single wallet on demand.
@@ -585,6 +608,7 @@ impl ShieldedSyncManager {
         }
 
         let pass = coordinator.sync(force, &pass_cancel).await;
+        self.refresh_shielded_create_holds(&coordinator).await;
 
         // Extract this wallet's slice from the network-wide pass
         // summary. If the wallet is registered, we'll get back an
@@ -653,6 +677,7 @@ mod tests {
                 event_manager,
                 Arc::new(RwLock::new(None)),
                 ThreadRegistry::<WalletWorker>::new(),
+                Arc::default(),
             )),
             counter,
         )

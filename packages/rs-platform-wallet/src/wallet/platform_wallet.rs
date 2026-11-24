@@ -1392,7 +1392,7 @@ impl PlatformWallet {
         match install.restore(&start.shielded).await {
             Ok(()) => {
                 install.mark_hydrated(true).await;
-                self.hold_shielded_create_slots(coordinator).await;
+                self.refresh_shielded_create_holds(coordinator, true).await;
             }
             Err(e) => {
                 install.mark_hydrated(false).await;
@@ -2178,44 +2178,66 @@ impl PlatformWallet {
                 .await
     }
 
-    /// Hold the identity slot of each identity create from this wallet's
-    /// notes that `coordinator`'s store keeps as possibly executing, as it
-    /// was held before a restart (`PendingRedrive::identity_index`). A store
-    /// that does not read holds nothing here: the slot is then held by the
-    /// identity once it lands, and the pre-funding check of a registration
-    /// at that index finds it.
+    /// Lease no identity slot of this wallet until a read of its saved
+    /// identity creates from the shielded pool
+    /// ([`Self::refresh_shielded_create_holds`]) succeeds: a wallet published
+    /// that may have some from an earlier process, or under an earlier wallet
+    /// of its id.
     #[cfg(feature = "shielded")]
-    async fn hold_shielded_create_slots(&self, coordinator: &Arc<NetworkShieldedCoordinator>) {
-        let indices: Vec<u32> = {
-            let store = coordinator.store().read().await;
-            match store.pending_redrives_for_wallet(self.wallet_id) {
-                Ok(redrives) => redrives
-                    .iter()
-                    .filter_map(|(_, redrive)| redrive.identity_index)
-                    .collect(),
-                Err(e) => {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(self.wallet_id),
-                        error = %e,
-                        "could not read the shielded identity creates that may still execute; \
-                         their identity slots are not held"
-                    );
-                    return;
+    pub(crate) async fn hold_slots_until_shielded_creates_read(&self) {
+        if let Err(e) = self.identity.mark_shielded_creates_unresolved().await {
+            tracing::warn!(
+                wallet_id = %hex::encode(self.wallet_id),
+                error = %e,
+                "could not hold the identity slots of a wallet whose shielded creates are not read"
+            );
+        }
+    }
+
+    /// Hold this wallet's identity slots as `coordinator`'s store keeps its
+    /// identity creates from the shielded pool that may still execute
+    /// (`PendingRedrive::identity_index`): the slot of each, and none of one
+    /// that resolved or expired since the last read. A read that fails, or
+    /// finds a create whose slot is not known, holds every slot of the wallet
+    /// ([`PlatformWalletError::IdentitySlotsUnresolved`]) until a later read
+    /// succeeds. Without `wait`, a store busy now (a scan may hold it for
+    /// minutes) is read at the end of the next sync pass instead. Run at a
+    /// bind, when the store is configured or a wallet is loaded or created
+    /// with one, and after every shielded sync pass.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn refresh_shielded_create_holds(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+        wait: bool,
+    ) {
+        let Some(epoch) = self.identity.shielded_create_epoch().await else {
+            return;
+        };
+        let read = {
+            let store = if wait {
+                coordinator.store().read().await
+            } else {
+                match coordinator.store().try_read() {
+                    Ok(store) => store,
+                    Err(_) => return,
                 }
+            };
+            store.identity_create_slots_for_wallet(self.wallet_id)
+        };
+        let read = match read {
+            Ok(slots) => Some(slots),
+            Err(e) => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(self.wallet_id),
+                    error = %e,
+                    "the shielded identity creates that may still execute are not known; \
+                     no identity slot of the wallet is leased until they are read"
+                );
+                None
             }
         };
-        for identity_index in indices {
-            if let Err(e) = self
-                .identity
-                .set_shielded_create_hold(identity_index, true)
-                .await
-            {
-                tracing::warn!(
-                    identity_index,
-                    error = %e,
-                    "could not hold the identity slot of a shielded identity create"
-                );
-            }
+        if let Err(e) = self.identity.apply_shielded_create_slots(read, epoch).await {
+            tracing::debug!(error = %e, "shielded create slots read for a replaced wallet");
         }
     }
 
@@ -2409,9 +2431,10 @@ impl PlatformWallet {
     /// `IdentityKeysChangeSet` that creates the app's identity row. A failed recording after a
     /// successful broadcast is logged and swallowed — the identity already exists on chain, so the
     /// next sync heals the local row. A create reported unconfirmed
-    /// ([`PlatformWalletError::ShieldedBroadcastUnconfirmed`]) holds the slot while it may still
-    /// execute, across a restart too (its saved record keeps the index), whatever becomes of the
-    /// lease. Returns the new identity's id.
+    /// ([`PlatformWalletError::ShieldedBroadcastUnconfirmed`]) ends the lease and holds the slot
+    /// while its saved record keeps it, across a restart too: the slot frees once the record
+    /// resolves or expires ([`Self::refresh_shielded_create_holds`]). Returns the new identity's
+    /// id.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_identity_create_from_pool<P, IS>(
@@ -2457,6 +2480,22 @@ impl PlatformWallet {
                 prover,
             )
             .await;
+        if let Err(PlatformWalletError::ShieldedBroadcastUnconfirmed { .. }) = &result {
+            // It may still execute: its saved record holds the slot from now on, in this process
+            // as after a restart, until it resolves or expires.
+            if let Err(e) = self
+                .identity
+                .hand_off_to_shielded_create(identity_index, &holder)
+                .await
+            {
+                tracing::warn!(
+                    identity_index,
+                    error = %e,
+                    "IdentityCreateFromShieldedPool unconfirmed but its slot could not be held \
+                     in memory; its saved record holds it after a restart"
+                );
+            }
+        }
         self.identity
             .end_registration(identity_index, &holder, &result)
             .await;
@@ -2535,23 +2574,6 @@ impl PlatformWallet {
         };
         let (identity_id, identity) = match created {
             Ok(created) => created,
-            Err(error @ PlatformWalletError::ShieldedBroadcastUnconfirmed { .. }) => {
-                // It may still execute: hold the slot for it, as its saved record does after a
-                // restart.
-                if let Err(e) = self
-                    .identity
-                    .set_shielded_create_hold(identity_index, true)
-                    .await
-                {
-                    tracing::warn!(
-                        identity_index,
-                        error = %e,
-                        "IdentityCreateFromShieldedPool unconfirmed but its slot could not be held \
-                         in memory; its saved record holds it after a restart"
-                    );
-                }
-                return Err(error);
-            }
             Err(error) => return Err(error),
         };
 

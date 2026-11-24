@@ -448,26 +448,69 @@ impl IdentityWallet {
         Ok(())
     }
 
-    /// Hold slot `identity_index` for an identity create from the shielded
-    /// pool that may still execute
-    /// ([`IdentityManager::hold_for_shielded_create`](crate::wallet::identity::IdentityManager::hold_for_shielded_create)),
-    /// or drop that hold
-    /// once it resolved.
+    /// Hand `holder`'s registration lease on slot `identity_index` over to
+    /// the identity create from the shielded pool it sent, reported
+    /// unconfirmed: the slot is held for the create while its saved record
+    /// keeps it ([`IdentityManager::hold_for_shielded_create`](crate::wallet::identity::IdentityManager::hold_for_shielded_create)),
+    /// and the lease ends, so the slot frees once a read of the saved creates
+    /// no longer finds it ([`Self::apply_shielded_create_slots`]): resolved or
+    /// expired, in this process too.
     #[cfg(feature = "shielded")]
-    pub(crate) async fn set_shielded_create_hold(
+    pub(crate) async fn hand_off_to_shielded_create(
         &self,
         identity_index: RegistrationIndex,
-        held: bool,
+        holder: &SlotHolder,
     ) -> Result<(), PlatformWalletError> {
         let mut wm = self.wallet_manager.write().await;
         let info = self.current_wallet_info_mut(&mut wm)?;
-        if held {
-            info.identity_manager
-                .hold_for_shielded_create(self.wallet_id, identity_index);
-        } else {
-            info.identity_manager
-                .release_shielded_create_hold(&self.wallet_id, identity_index);
+        let manager = &mut info.identity_manager;
+        manager.hold_for_shielded_create(self.wallet_id, identity_index);
+        if matches!(holder, SlotHolder::Registration { .. })
+            && manager
+                .leased_slot(&self.wallet_id, holder)
+                .map(|slot| slot.identity_index)
+                == Some(identity_index)
+        {
+            manager.release_identity_slot(&self.wallet_id, holder);
         }
+        Ok(())
+    }
+
+    /// Lease no slot of this wallet until its saved identity creates from the
+    /// shielded pool are read
+    /// ([`IdentityManager::mark_shielded_creates_unresolved`](crate::wallet::identity::IdentityManager::mark_shielded_creates_unresolved)).
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn mark_shielded_creates_unresolved(&self) -> Result<(), PlatformWalletError> {
+        let mut wm = self.wallet_manager.write().await;
+        self.current_wallet_info_mut(&mut wm)?
+            .identity_manager
+            .mark_shielded_creates_unresolved(self.wallet_id);
+        Ok(())
+    }
+
+    /// The count a read of this wallet's saved shielded creates passes to
+    /// [`Self::apply_shielded_create_slots`], or `None` for a wallet no
+    /// longer this handle's.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn shielded_create_epoch(&self) -> Option<u64> {
+        let wm = self.wallet_manager.read().await;
+        self.current_wallet_and_info(&wm)
+            .map(|(_, info)| info.identity_manager.shielded_create_epoch(&self.wallet_id))
+    }
+
+    /// Hold this wallet's slots as a read of its saved identity creates from
+    /// the shielded pool, begun at `epoch`, found them
+    /// ([`IdentityManager::apply_shielded_create_slots`](crate::wallet::identity::IdentityManager::apply_shielded_create_slots)).
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn apply_shielded_create_slots(
+        &self,
+        read: Option<BTreeSet<RegistrationIndex>>,
+        epoch: u64,
+    ) -> Result<(), PlatformWalletError> {
+        let mut wm = self.wallet_manager.write().await;
+        self.current_wallet_info_mut(&mut wm)?
+            .identity_manager
+            .apply_shielded_create_slots(self.wallet_id, read, epoch);
         Ok(())
     }
 

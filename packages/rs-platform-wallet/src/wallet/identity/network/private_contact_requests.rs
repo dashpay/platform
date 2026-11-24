@@ -13008,6 +13008,67 @@ mod tests {
         );
     }
 
+    /// A wallet created again under an id whose identity create from the
+    /// shielded pool the store still keeps holds that create's slot.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_hold_a_saved_create_slot_for_a_wallet_created_again() {
+        use crate::wallet::shielded::store::PendingRedrive;
+        use crate::wallet::shielded::{ShieldedStore, SubwalletId};
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let manager = manager_on(RecordingPersistence::attesting(
+            PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
+        ))
+        .await;
+        manager
+            .configure_shielded(dir.path().join("tree.sqlite"))
+            .await
+            .expect("the shielded store is configured");
+        let create = || async {
+            manager
+                .create_wallet_from_seed_bytes(
+                    Network::Testnet,
+                    &seed(ALICE_PHRASE),
+                    WalletAccountCreationOptions::Default,
+                    Some(0),
+                )
+                .await
+                .expect("the wallet")
+        };
+        let wallet_id = create().await.wallet_id();
+        manager.remove_wallet(&wallet_id).await.expect("removed");
+        manager
+            .shielded_coordinator()
+            .await
+            .expect("configured")
+            .store()
+            .write()
+            .await
+            .arm_redrive(
+                SubwalletId::new(wallet_id, 0),
+                PendingRedrive {
+                    activity_id: [0x31; 32],
+                    anchor: [0x23; 32],
+                    nullifiers: vec![[0x32; 32]],
+                    st_bytes: crate::wallet::shielded::file_store::identity_create_bytes(0x32),
+                    attempts: 0,
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                    anchor_height: None,
+                    identity_index: Some(0),
+                },
+            )
+            .expect("the create saved");
+
+        let again = create().await;
+        let slot = again
+            .identity()
+            .acquire_identity_slot(crate::wallet::identity::SlotRequest::Registration)
+            .await
+            .expect("a slot");
+        assert_eq!(slot.identity_index, 1, "the saved create holds index 0");
+    }
+
     /// A registration racing the store's configuration ends restored, however
     /// the two interleave: one that found no store holds the wallet, and the
     /// configuration either finds it published or the registration finds the
