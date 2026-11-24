@@ -6,24 +6,31 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use dashcore::Network;
+use dpp::address_funds::OrchardAddress;
 use dpp::address_funds::PlatformAddress;
 use dpp::identity::{Identity, IdentityV0};
 use dpp::prelude::Identifier;
-use dpp::serialization::PlatformSerializable;
+use dpp::serialization::{PlatformDeserializableTrusted, PlatformSerializable};
+use dpp::shielded::builder::{build_shielded_transfer_transition, SpendableNote};
 use dpp::shielded::SerializedAction;
 use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
 use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
 use dpp::state_transition::unshield_transition::v0::UnshieldTransitionV0;
 use dpp::state_transition::unshield_transition::UnshieldTransition;
 use dpp::state_transition::StateTransition;
+use dpp::version::PlatformVersion;
 use grovedb_commitment_tree::{
-    DashMemo, Domain, ExtractedNoteCommitment, Note, NoteValue, Nullifier, OrchardDomain,
-    OutgoingViewingKey, PaymentAddress, RandomSeed, Rho, ValueCommitTrapdoor, ValueCommitment,
+    DashMemo, Domain, ExtractedNoteCommitment, Hashable, MerkleHashOrchard, MerklePath, Note,
+    NoteValue, Nullifier, OrchardDomain, OutgoingViewingKey, PaymentAddress, RandomSeed, Rho,
+    ValueCommitTrapdoor, ValueCommitment, NOTE_COMMITMENT_TREE_DEPTH,
 };
 use rand::rngs::OsRng;
 use rand::RngCore;
 
+use super::activity::compute_activity_id;
+use super::activity_recorder::visible_output_cmxs;
 use super::keys::{AccountViewingKeys, OrchardKeySet};
+use super::operations::shielded_actions;
 use super::prover::CachedOrchardProver;
 use super::store::{PendingRedrive, ShieldedNote, ShieldedStore, SubwalletId};
 use super::tip_payment::{
@@ -32,7 +39,7 @@ use super::tip_payment::{
     ShieldedTipRecipientChange, ShieldedTipSource,
 };
 use super::viewing_key_bind_tests::{
-    add_identity_at_slot, seed_master_key, temp_dir, tip_race_fixture,
+    add_identity_at_slot, coordinator_at, seed_master_key, temp_dir, tip_race_fixture,
 };
 use super::{shielded_identity_account_index, FileBackedShieldedStore};
 use crate::PlatformWalletError;
@@ -136,20 +143,31 @@ fn transfer_record(activity: u8, actions: Vec<SerializedAction>) -> PendingRedri
     record_of(activity, transition, &actions)
 }
 
+/// The id a spend with `actions` is saved under: the hash of the outputs its
+/// account reads, as the live recorder computes it.
+fn saved_id(actions: &[SerializedAction], payer: &AccountViewingKeys) -> [u8; 32] {
+    compute_activity_id(&visible_output_cmxs(actions, payer))
+}
+
+/// The saved record of the transfer with `actions`, under the id `payer`'s
+/// spend saves it with.
+fn saved_transfer(actions: Vec<SerializedAction>, payer: &AccountViewingKeys) -> PendingRedrive {
+    PendingRedrive {
+        activity_id: saved_id(&actions, payer),
+        ..transfer_record(0, actions)
+    }
+}
+
 /// The saved record of a transfer from `payer` to `recipient`, with the
 /// change it returns to `payer`'s own default address.
-fn transfer_paying(
-    activity: u8,
-    payer: &AccountViewingKeys,
-    recipient: PaymentAddress,
-) -> PendingRedrive {
+fn transfer_paying(payer: &AccountViewingKeys, recipient: PaymentAddress) -> PendingRedrive {
     let ovk = payer.outgoing_viewing_key.clone();
-    transfer_record(
-        activity,
+    saved_transfer(
         vec![
             output_to(recipient, Some(ovk.clone())),
             output_to(payer.default_address, Some(ovk)),
         ],
+        payer,
     )
 }
 
@@ -298,7 +316,7 @@ fn should_read_whom_an_unresolved_transfer_pays_from_its_saved_transition() {
     let payer = keys_of(1, 0);
     let keys = BTreeMap::from([(0, payer.clone())]);
     let paid = keys_of(2, 0).default_address;
-    let record = transfer_paying(1, &payer, paid);
+    let record = transfer_paying(&payer, paid);
     let spent = record.nullifiers[0];
     arm_spend(&mut store, id, record);
 
@@ -336,7 +354,7 @@ fn should_stop_counting_a_transfer_released_as_unable_to_execute() {
     let id = SubwalletId::new(WALLET, 0);
     let payer = keys_of(1, 0);
     let keys = BTreeMap::from([(0, payer.clone())]);
-    let record = transfer_paying(1, &payer, keys_of(2, 0).default_address);
+    let record = transfer_paying(&payer, keys_of(2, 0).default_address);
     let released = record.nullifiers[0];
     arm_spend(&mut store, id, record);
     assert_eq!(
@@ -408,7 +426,7 @@ fn should_fail_closed_when_a_saved_transfer_does_not_say_whom_it_pays() {
             id,
             PendingRedrive {
                 st_bytes: vec![0xAB; 96],
-                ..transfer_paying(1, &payer, paid)
+                ..transfer_paying(&payer, paid)
             },
         )
         .expect("arm");
@@ -432,6 +450,40 @@ fn should_fail_closed_when_a_saved_transfer_does_not_say_whom_it_pays() {
             ..
         })
     ));
+    // The payment's ciphertext no longer opens while the change still does:
+    // the outputs the account reads are not the ones the record was saved
+    // with, so the change alone does not make it read as "pays nobody".
+    let (mut store, _) = store_at("tip_damaged_recipient_output");
+    let intact = transfer_paying(&payer, paid);
+    let transition =
+        StateTransition::deserialize_from_bytes_trusted(&intact.st_bytes).expect("decode");
+    let mut actions = shielded_actions(&transition).to_vec();
+    // epk(32) || enc_ciphertext(104) || out_ciphertext(80)
+    for byte in &mut actions[0].encrypted_note[136..] {
+        *byte ^= 0xFF;
+    }
+    assert_eq!(
+        visible_output_cmxs(&actions, &payer),
+        vec![actions[1].cmx],
+        "only the change still opens"
+    );
+    store
+        .arm_redrive(
+            id,
+            PendingRedrive {
+                st_bytes: transfer_record(0, actions).st_bytes,
+                ..intact
+            },
+        )
+        .expect("arm");
+    assert!(matches!(
+        unresolved_transfer_recipients(&store, WALLET, &keys),
+        Err(PlatformWalletError::ShieldedRecoveryCorrupted {
+            account_index: Some(0),
+            ..
+        })
+    ));
+
     // The keys of another seed open nothing either.
     assert!(matches!(
         unresolved_transfer_recipients(&store, WALLET, &BTreeMap::from([(0, keys_of(3, 0))])),
@@ -443,7 +495,7 @@ fn should_fail_closed_when_a_saved_transfer_does_not_say_whom_it_pays() {
     store
         .arm_redrive(
             SubwalletId::new(WALLET, 5),
-            transfer_paying(1, &keys_of(1, 5), paid),
+            transfer_paying(&keys_of(1, 5), paid),
         )
         .expect("arm");
     assert!(matches!(
@@ -508,14 +560,35 @@ fn should_keep_confirmed_recipients_across_a_restart_and_a_clear_until_the_walle
     );
 }
 
-/// A tip requested while another is being sent is the same tip sent twice:
-/// it is refused at once, with nothing resolved or selected.
+/// A tip requested while another is admitted is the same tip sent twice: it
+/// is refused at once, before a seed is resolved. The admission of another
+/// wallet does not admit this wallet's tip.
 #[tokio::test]
-async fn should_refuse_a_second_tip_while_one_is_being_sent() {
-    let (wallet, seed, id, coordinator) = tip_race_fixture("tip_second_send").await;
-    let _first = wallet.tip_send_in_progress.lock().await;
+async fn should_admit_one_tip_at_a_time_and_only_on_its_own_wallet() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tip_admission").await;
+    let first = wallet.admit_shielded_tip().expect("admit the first tip");
+    assert!(matches!(
+        wallet.admit_shielded_tip(),
+        Err(PlatformWalletError::ShieldedTipPending)
+    ));
+    // A clone of the handle is the same wallet.
+    assert!(matches!(
+        wallet.clone().admit_shielded_tip(),
+        Err(PlatformWalletError::ShieldedTipPending)
+    ));
+    drop(first);
+    drop(
+        wallet
+            .admit_shielded_tip()
+            .expect("admitted once the first ended"),
+    );
+
+    let (other, _, _, _) = tip_race_fixture("tip_admission_other_wallet").await;
     let result = wallet
         .send_shielded_tip(
+            other
+                .admit_shielded_tip()
+                .expect("admit on the other wallet"),
             &coordinator,
             &seed[..],
             ShieldedTipSource::Identity(id),
@@ -527,8 +600,220 @@ async fn should_refuse_a_second_tip_while_one_is_being_sent() {
         )
         .await;
     assert!(
-        matches!(result, Err(PlatformWalletError::ShieldedTipPending)),
+        matches!(result, Err(PlatformWalletError::InvalidParameter(_))),
         "{result:?}"
+    );
+}
+
+/// A tip to an address of the account it is paid from is refused: its
+/// payment would be one more of the account's own outputs beside its
+/// change, and an unresolved one could not hold back a repeat.
+#[tokio::test]
+async fn should_refuse_a_tip_to_the_account_it_is_paid_from() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tip_to_own_account").await;
+    wallet
+        .prepare_shielded_identity_address(&seed[..], &id, &coordinator)
+        .await
+        .expect("prepare");
+    let identity_account = shielded_identity_account_index(2).unwrap();
+    let published = wallet
+        .shielded_default_address(identity_account)
+        .await
+        .expect("the identity account is bound");
+    let own = recipient(0x66, published);
+    let prover = CachedOrchardProver::new();
+
+    let result = wallet
+        .send_resolved_shielded_tip(
+            &coordinator,
+            &seed[..],
+            identity_account,
+            "me",
+            &own,
+            1,
+            [0; 36],
+            &prover,
+        )
+        .await;
+    assert!(
+        matches!(result, Err(PlatformWalletError::InvalidParameter(_))),
+        "{result:?}"
+    );
+    assert_eq!(
+        coordinator
+            .store()
+            .read()
+            .await
+            .confirmed_tip_recipient(wallet.wallet_id(), "me")
+            .unwrap(),
+        None,
+        "a refused tip confirms nothing"
+    );
+
+    // Paid from another account of the wallet it is a payment like any
+    // other: admitted, and the spend then finds no notes to pay with.
+    let result = wallet
+        .send_resolved_shielded_tip(&coordinator, &seed[..], 0, "me", &own, 1, [0; 36], &prover)
+        .await;
+    assert!(
+        !matches!(
+            result,
+            Ok(()) | Err(PlatformWalletError::InvalidParameter(_))
+        ),
+        "{result:?}"
+    );
+}
+
+/// A review and an identity's balance read the store of the coordinator
+/// the wallet is bound on. Another coordinator's store holds none of the
+/// wallet's history, and would show a changed recipient as new and an
+/// unresolved payment as none.
+#[tokio::test]
+async fn should_refuse_a_review_and_a_balance_on_a_coordinator_the_wallet_is_not_bound_on() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tip_other_coordinator").await;
+    wallet
+        .prepare_shielded_identity_address(&seed[..], &id, &coordinator)
+        .await
+        .expect("prepare");
+    let other = coordinator_at(&temp_dir("tip_other_coordinator_second"));
+    assert!(matches!(
+        wallet.review_shielded_tip(&other, "alice").await,
+        Err(PlatformWalletError::ShieldedNotBound)
+    ));
+    assert!(matches!(
+        wallet.shielded_identity_balance(&other, &id).await,
+        Err(PlatformWalletError::ShieldedNotBound)
+    ));
+    assert!(wallet
+        .shielded_identity_balance(&coordinator, &id)
+        .await
+        .is_ok());
+}
+
+/// A bind that would drop the account an unresolved spend was paid from is
+/// refused: dropping the account drops the spend's saved record, which is
+/// what holds back a second payment to the same recipient. Once the spend
+/// resolves the account can go.
+#[tokio::test]
+async fn should_refuse_a_bind_that_drops_the_account_of_an_unresolved_spend() {
+    let (wallet, seed, _id, coordinator) = tip_race_fixture("tip_bind_drops_payer").await;
+    wallet
+        .bind_shielded(&seed[..], &[0, 1], &coordinator)
+        .await
+        .expect("bind a second ordinary account");
+    let payer = wallet
+        .shielded_keys
+        .read()
+        .await
+        .as_ref()
+        .and_then(|keys| keys.get(&1).cloned())
+        .expect("account 1 is bound");
+    let paid = keys_of(2, 0).default_address;
+    let payer_id = SubwalletId::new(wallet.wallet_id(), 1);
+    let record = transfer_paying(&payer, paid);
+    let spent = record.nullifiers[0];
+    arm_spend(&mut *coordinator.store().write().await, payer_id, record);
+
+    let result = wallet.bind_shielded(&seed[..], &[0], &coordinator).await;
+    assert!(
+        matches!(
+            result,
+            Err(PlatformWalletError::ShieldedRecoveryKeysRequired {
+                account_index: 1,
+                ..
+            })
+        ),
+        "{result:?}"
+    );
+    let keys = wallet.shielded_keys.read().await.clone().expect("bound");
+    assert_eq!(
+        unresolved_transfer_recipients(
+            &*coordinator.store().read().await,
+            wallet.wallet_id(),
+            &keys
+        )
+        .unwrap(),
+        BTreeSet::from([paid.to_raw_address_bytes()]),
+        "the record, and the refusal it gives, are kept"
+    );
+
+    // Resolved (its anchor proven pruned, here): the account can go.
+    assert!(coordinator
+        .store()
+        .write()
+        .await
+        .clear_pending(payer_id, &spent)
+        .expect("release"));
+    wallet
+        .bind_shielded(&seed[..], &[0], &coordinator)
+        .await
+        .expect("bind without the account once its spend resolved");
+}
+
+/// The transfer builder keys the recipient's output and the change to the
+/// paying account's outgoing viewing key, and the record of the transfer is
+/// saved under the hash of the outputs the account reads. So the recipient
+/// of a transfer built and proved as a tip is, read back from its saved
+/// transition after a restart, the address it pays.
+#[tokio::test]
+async fn should_read_the_recipient_of_a_transfer_the_builder_proved() {
+    let keyset = OrchardKeySet::from_seed(&[1; 64], Network::Testnet, 0).expect("derive keys");
+    let payer = keyset.viewing_keys();
+    let keys = BTreeMap::from([(0, payer.clone())]);
+    let paid = keys_of(2, 0).default_address;
+    let orchard = |address: &PaymentAddress| {
+        OrchardAddress::from_raw_bytes(&address.to_raw_address_bytes()).expect("orchard address")
+    };
+
+    // A note of the paying account, with a witness whose root is the anchor.
+    let rho = Option::from(Rho::from_bytes(&[0u8; 32])).expect("zero is a valid rho");
+    let rseed = Option::from(RandomSeed::from_bytes([1u8; 32], &rho)).expect("valid rseed");
+    let note: Note = Option::from(Note::from_parts(
+        payer.default_address,
+        NoteValue::from_raw(12_000_000_000),
+        rho,
+        rseed,
+    ))
+    .expect("valid note");
+    let merkle_path = MerklePath::from_parts(
+        0,
+        [MerkleHashOrchard::empty_leaf(); NOTE_COMMITMENT_TREE_DEPTH],
+    );
+    let anchor = merkle_path.root(ExtractedNoteCommitment::from(note.commitment()));
+
+    let prover = CachedOrchardProver::new();
+    let (transition, _fee) = build_shielded_transfer_transition(
+        vec![SpendableNote { note, merkle_path }],
+        &orchard(&paid),
+        1_000,
+        &orchard(&payer.default_address),
+        &keyset.full_viewing_key,
+        &keyset.spend_auth_key,
+        anchor,
+        &&prover,
+        [0u8; 36],
+        PlatformVersion::latest(),
+    )
+    .expect("build the transfer");
+    let actions = shielded_actions(&transition).to_vec();
+    assert_eq!(
+        visible_output_cmxs(&actions, &payer).len(),
+        2,
+        "the account reads the payment and its change"
+    );
+
+    let (mut store, path) = store_at("tip_builder_transfer");
+    let id = SubwalletId::new(WALLET, 0);
+    let record = PendingRedrive {
+        activity_id: saved_id(&actions, &payer),
+        ..record_of(0, transition, &actions)
+    };
+    store.arm_redrive(id, record).expect("arm");
+    drop(store);
+    let store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen");
+    assert_eq!(
+        unresolved_transfer_recipients(&store, WALLET, &keys).unwrap(),
+        BTreeSet::from([paid.to_raw_address_bytes()])
     );
 }
 
@@ -632,7 +917,6 @@ async fn should_refuse_a_tip_while_an_earlier_payment_to_its_recipient_is_unreso
         .arm_redrive(
             SubwalletId::new(wallet.wallet_id(), 0),
             transfer_paying(
-                1,
                 &payer,
                 PaymentAddress::from_raw_address_bytes(&paid.address).unwrap(),
             ),
