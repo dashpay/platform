@@ -1802,26 +1802,32 @@ impl ShieldedStore for FileBackedShieldedStore {
         // wallet_id — SQL before memory, so an Err return means neither
         // store was touched (fail-atomic) rather than a memory purge
         // the caller can't distinguish from a no-op.
+        // The wallet's saved spends and the recipients it confirmed for its
+        // tips go in one transaction: a failure leaves both, never the
+        // recipients of a wallet whose spend records are gone.
         {
-            let conn = self.pending_conn.lock().expect("pending_conn mutex");
-            conn.execute(
+            let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
+            let tx = conn
+                .transaction()
+                .map_err(|e| FileShieldedStoreError::Storage(format!("begin wallet purge: {e}")))?;
+            tx.execute(
                 "DELETE FROM shielded_pending_spends WHERE wallet_id = ?1",
                 rusqlite::params![wallet_id.as_slice()],
             )
             .map_err(|e| {
                 FileShieldedStoreError::Storage(format!("purge pending spends for wallet: {e}"))
             })?;
+            tip_recipients::purge_wallet(&tx, wallet_id).map_err(|e| {
+                FileShieldedStoreError::Storage(format!("purge tip recipients for wallet: {e}"))
+            })?;
+            tx.commit().map_err(|e| {
+                FileShieldedStoreError::Storage(format!("commit wallet purge: {e}"))
+            })?;
         }
         {
             let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
             super::token_pool::purge_wallet(&mut conn, wallet_id).map_err(|e| {
                 FileShieldedStoreError::Storage(format!("purge token pools for wallet: {e}"))
-            })?;
-        }
-        {
-            let conn = self.pending_conn.lock().expect("pending_conn mutex");
-            tip_recipients::purge_wallet(&conn, wallet_id).map_err(|e| {
-                FileShieldedStoreError::Storage(format!("purge tip recipients for wallet: {e}"))
             })?;
         }
         // Per-subwallet note / watermark / checkpoint state is

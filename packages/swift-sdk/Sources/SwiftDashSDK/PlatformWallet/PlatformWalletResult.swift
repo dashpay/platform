@@ -337,9 +337,11 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorShieldedOperationInProgress = 84
     /// A shielded tip was refused before anything was selected, built or
     /// sent: another tip from this wallet is being sent, or an earlier
-    /// shielded payment to the same recipient may still execute. Nothing was
-    /// sent. A shielded sync resolves the earlier payment; then review and
-    /// send again. Not `errorShieldedSpendUnconfirmed` (18).
+    /// shielded payment to the same recipient may still execute. This call
+    /// sent nothing. A shielded sync resolves the earlier payment as executed
+    /// or as unable to execute, so the refusal ending is not a reason to send
+    /// again: reconcile the earlier payment first, and send again only once
+    /// it is known to have failed. Not `errorShieldedSpendUnconfirmed` (18).
     case errorShieldedTipPending = 85
     /// A shielded tip started from a saved contact was refused because the
     /// username now belongs to another identity than the contact's. Nothing

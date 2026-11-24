@@ -36,8 +36,8 @@ use super::prover::CachedOrchardProver;
 use super::store::{PendingRedrive, ShieldedNote, ShieldedStore, SubwalletId};
 use super::tip_payment::{
     ensure_expected_identity, parse_shielded_tip_amount, pays_unresolved, recipient_change,
-    tip_recipient_label, unresolved_transfer_recipients, ShieldedIdentityBalance,
-    ShieldedTipRecipient, ShieldedTipRecipientChange, ShieldedTipSource,
+    resolve_recipient, tip_recipient_label, unresolved_transfer_recipients,
+    ShieldedIdentityBalance, ShieldedTipRecipient, ShieldedTipRecipientChange, ShieldedTipSource,
 };
 use super::viewing_key_bind_tests::{
     add_identity_at_slot, coordinator_at, platform_wallet_with, seed_master_key, temp_dir,
@@ -486,6 +486,26 @@ fn should_fail_closed_when_a_saved_transfer_does_not_say_whom_it_pays() {
         })
     ));
 
+    // A transfer whose record lost its note list is not an identity-funded
+    // shield's record: it may still execute.
+    let (mut store, _) = store_at("tip_transfer_without_nullifiers");
+    store
+        .arm_redrive(
+            id,
+            PendingRedrive {
+                nullifiers: Vec::new(),
+                ..transfer_paying(&payer, paid)
+            },
+        )
+        .expect("arm");
+    assert!(matches!(
+        unresolved_transfer_recipients(&store, WALLET, &keys),
+        Err(PlatformWalletError::ShieldedRecoveryCorrupted {
+            account_index: Some(0),
+            ..
+        })
+    ));
+
     // The keys of another seed open nothing either.
     assert!(matches!(
         unresolved_transfer_recipients(&store, WALLET, &BTreeMap::from([(0, keys_of(3, 0))])),
@@ -669,6 +689,124 @@ async fn should_refuse_a_name_that_belongs_to_another_identity_than_expected() {
             Ok(()) | Err(PlatformWalletError::ShieldedTipRecipientMismatch { .. })
         ),
         "{result:?}"
+    );
+}
+
+/// The owner of a contact's name is checked as soon as the name is resolved,
+/// before its profile is read: a name that moved is reported as that, also
+/// when its new owner publishes no shielded address, and also when it moved
+/// between a review and the send.
+#[tokio::test]
+async fn should_report_a_moved_name_before_reading_its_new_owners_profile() {
+    let (contact, new_owner) = (Identifier::from([1; 32]), Identifier::from([2; 32]));
+    let address = keys_of(2, 0).default_address.to_raw_address_bytes();
+
+    // The new owner has no shielded address: the profile is never read.
+    let result = resolve_recipient(
+        "alice",
+        Some(&contact),
+        || async { Ok(Some(new_owner)) },
+        |_| async { panic!("the profile of another identity than expected was read") },
+    )
+    .await;
+    assert!(
+        matches!(
+            result,
+            Err(PlatformWalletError::ShieldedTipRecipientMismatch { expected, resolved })
+                if expected == contact && resolved == new_owner
+        ),
+        "{result:?}"
+    );
+    // The new owner has one: a mismatch all the same, not a changed recipient.
+    let result = resolve_recipient(
+        "alice",
+        Some(&contact),
+        || async { Ok(Some(new_owner)) },
+        |_| async move { Ok(Some(address)) },
+    )
+    .await;
+    assert!(
+        matches!(
+            result,
+            Err(PlatformWalletError::ShieldedTipRecipientMismatch { .. })
+        ),
+        "{result:?}"
+    );
+
+    // The name still belongs to the contact, or was typed: resolved as before.
+    for expected in [Some(&contact), None] {
+        let resolved = resolve_recipient(
+            "alice",
+            expected,
+            || async { Ok(Some(contact)) },
+            |_| async move { Ok(Some(address)) },
+        )
+        .await
+        .expect("resolve");
+        assert_eq!(
+            resolved,
+            ShieldedTipRecipient {
+                identity_id: contact,
+                address
+            }
+        );
+    }
+    // A typed name whose owner publishes no address, and a name not found.
+    for result in [
+        resolve_recipient(
+            "alice",
+            None,
+            || async { Ok(Some(new_owner)) },
+            |_| async { Ok(None) },
+        )
+        .await,
+        resolve_recipient(
+            "alice",
+            Some(&contact),
+            || async { Ok(None) },
+            |_| async { Ok(None) },
+        )
+        .await,
+    ] {
+        assert!(
+            matches!(result, Err(PlatformWalletError::InvalidIdentityData(_))),
+            "{result:?}"
+        );
+    }
+}
+
+/// A tip of zero credits is refused before its recipient is recorded as
+/// confirmed, so a later review does not report a recipient no payment was
+/// ever admitted to.
+#[tokio::test]
+async fn should_refuse_a_zero_tip_before_confirming_its_recipient() {
+    let (wallet, seed, _id, coordinator) = tip_race_fixture("tip_zero_amount").await;
+    let paid = recipient(2, keys_of(3, 0).default_address.to_raw_address_bytes());
+    let result = wallet
+        .send_resolved_shielded_tip(
+            &coordinator,
+            &seed[..],
+            ShieldedTipSource::Account(0),
+            0,
+            "b0b",
+            &paid,
+            0,
+            [0; 36],
+            &CachedOrchardProver::new(),
+        )
+        .await;
+    assert!(
+        matches!(result, Err(PlatformWalletError::InvalidParameter(_))),
+        "{result:?}"
+    );
+    assert_eq!(
+        coordinator
+            .store()
+            .read()
+            .await
+            .confirmed_tip_recipient(wallet.wallet_id(), "b0b")
+            .unwrap(),
+        None
     );
 }
 
@@ -856,7 +994,7 @@ async fn should_release_the_claimed_notes_when_the_tips_source_no_longer_stands(
         )
         .await;
     assert!(
-        !matches!(result, Err(PlatformWalletError::IdentityNotFound(_))),
+        matches!(result, Err(PlatformWalletError::ShieldedNoUnspentNotes)),
         "{result:?}"
     );
 
