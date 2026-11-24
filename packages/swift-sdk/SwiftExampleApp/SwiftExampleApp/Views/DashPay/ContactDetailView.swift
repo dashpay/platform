@@ -282,13 +282,13 @@ struct ContactDetailView: View {
                 Label("Send shielded tip", systemImage: "eye.slash.fill")
             }
             .disabled(dpnsHint == nil)
-            .accessibilityIdentifier("dashpay.detail.sendShieldedTip")
+            .accessibilityIdentifier("dashpay.tip.contactEntry")
 
             if dpnsHint == nil {
                 Text(ShieldedTipPresentation.noUsernameMessage)
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    .accessibilityIdentifier("dashpay.detail.sendShieldedTip.noUsername")
+                    .accessibilityIdentifier("dashpay.tip.contactNoUsername")
             }
         }
     }
