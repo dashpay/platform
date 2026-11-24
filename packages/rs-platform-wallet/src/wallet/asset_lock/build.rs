@@ -1290,6 +1290,41 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         in_broadcast_pin.settle_released();
     }
 
+    /// Hand back the funding key index of a lock that provably never reached
+    /// the network and can no longer be resumed: nothing was sent, and
+    /// nothing on chain would ever mark the index used, so kept it would use
+    /// up one of the account's few pre-generated addresses on every such exit,
+    /// until none is left to build on. Only on the generation the build ran
+    /// on, which a replacement wallet may since have built at this very
+    /// index. Not for an invitation: its funding key becomes a bearer
+    /// voucher, so an index once handed out is never reused.
+    ///
+    /// In memory only: an index already stored as used stays so (SQLite keeps
+    /// the highest mark), so a restart skips it; the session no longer runs
+    /// out of addresses.
+    async fn hand_back_unsent_funding_index(
+        &self,
+        in_broadcast_pin: &InBroadcastPin,
+        funding_type: AssetLockFundingType,
+        identity_index: u32,
+        path: &DerivationPath,
+    ) {
+        if funding_type == AssetLockFundingType::IdentityInvitation {
+            return;
+        }
+        let mut wm = self.wallet_manager.write().await;
+        if let Some((_, info)) = wm.get_wallet_mut_and_info_mut(&self.wallet_id) {
+            if in_broadcast_pin.is_on(&info.generation) {
+                Self::release_discarded_funding_index(
+                    &mut info.core_wallet,
+                    funding_type,
+                    identity_index,
+                    path,
+                );
+            }
+        }
+    }
+
     /// Stores the removal of an unsent lock's row and makes it durable, before
     /// the caller releases the lock's inputs: a removal that is lost would
     /// bring the `Built` row back after a restart, resumable to its
@@ -1554,27 +1589,19 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 let mut in_broadcast_pin = in_broadcast_pin;
                 if identity_recipient.is_some() {
                     // Except for an unbound top-up: its key never left the
-                    // device and nothing was sent, so the index is handed back,
-                    // as the drain-floor branch does. Kept, every failed store
-                    // would use up one of the pool's few pre-generated
-                    // addresses, and nothing on chain would ever mark them, so
-                    // repeated failures would leave no address to build the
-                    // next top-up on. The released verdict is recorded before
-                    // the manager lock's await, and the index goes back before
-                    // the build→persist gate is dropped (see the drain-floor
+                    // device and nothing was sent, so the index is handed back.
+                    // The released verdict is recorded before the manager
+                    // lock's await, and the index goes back before the
+                    // build→persist gate is dropped (see the drain-floor
                     // branch).
                     in_broadcast_pin.settle_released_on_drop();
-                    let mut wm = self.wallet_manager.write().await;
-                    if let Some((_, info)) = wm.get_wallet_mut_and_info_mut(&self.wallet_id) {
-                        if in_broadcast_pin.is_on(&info.generation) {
-                            Self::release_discarded_funding_index(
-                                &mut info.core_wallet,
-                                funding_type,
-                                identity_index,
-                                &path,
-                            );
-                        }
-                    }
+                    self.hand_back_unsent_funding_index(
+                        &in_broadcast_pin,
+                        funding_type,
+                        identity_index,
+                        &path,
+                    )
+                    .await;
                 }
                 // The pooled build reserved every selected input across its
                 // contributing accounts under `reservation_token`. Nothing
@@ -1707,12 +1734,24 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // while a restart re-broadcasts the abandoned lock and pays
                 // the recipient a second time. The reservation and the
                 // in-broadcast fence then stay held, as for an uncertain
-                // removal after a rejected broadcast. The funding index stays
-                // consumed, as for the pool gate above.
+                // removal after a rejected broadcast. Once the removal is
+                // durable nothing can send the lock, so its funding index is
+                // handed back, before the build→persist gate is dropped.
                 let removal = self.store_lock_removal_durably(AssetLockChangeSet {
                     removed: [out_point].into(),
                     ..Default::default()
                 });
+                let mut in_broadcast_pin = in_broadcast_pin;
+                if removal.is_ok() {
+                    in_broadcast_pin.settle_released_on_drop();
+                    self.hand_back_unsent_funding_index(
+                        &in_broadcast_pin,
+                        funding_type,
+                        identity_index,
+                        &path,
+                    )
+                    .await;
+                }
                 drop(build_persist_guard);
                 let kind = if identity_recipient.is_some() {
                     "identity"
@@ -1937,6 +1976,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         &funding_accounts,
                         &tx,
                         reservation_token,
+                    )
+                    .await;
+                    // Rejected, and its row durably gone: nothing can send the
+                    // lock, so its funding index goes back too.
+                    self.hand_back_unsent_funding_index(
+                        &in_broadcast_pin,
+                        funding_type,
+                        identity_index,
+                        &path,
                     )
                     .await;
                     in_broadcast_pin.settle_released();
@@ -4129,6 +4177,95 @@ mod tests {
                 ..
             }) if recorded == first && requested == second
         ));
+    }
+
+    /// Rejects the first `remaining` broadcasts before anything is sent, then
+    /// accepts.
+    struct RejectFirstBroadcaster {
+        remaining: std::sync::atomic::AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl TransactionBroadcaster for RejectFirstBroadcaster {
+        async fn broadcast(
+            &self,
+            transaction: &dashcore::Transaction,
+        ) -> Result<dashcore::Txid, crate::broadcaster::BroadcastError> {
+            let rejected = self
+                .remaining
+                .fetch_update(
+                    std::sync::atomic::Ordering::SeqCst,
+                    std::sync::atomic::Ordering::SeqCst,
+                    |n| n.checked_sub(1),
+                )
+                .is_ok();
+            if rejected {
+                return Err(crate::broadcaster::BroadcastError::Rejected {
+                    reason: "simulated pre-send rejection".to_string(),
+                });
+            }
+            Ok(transaction.txid())
+        }
+    }
+
+    /// A lock Core rejects before sending, whose row is then durably gone,
+    /// hands its funding index back, whatever its funding type: however many
+    /// are rejected, the next lock that goes out signs with the first funding
+    /// address, so rejections cannot use up the pool.
+    #[tokio::test]
+    async fn should_hand_back_the_funding_index_of_a_rejected_lock() {
+        use crate::changeset::AssetLockRecipient;
+        use key_wallet::bip32::ChildNumber;
+
+        let identity = dpp::prelude::Identifier::from([0x46; 32]);
+        for (funding_type, recipient) in [
+            (AssetLockFundingType::IdentityTopUp, None),
+            (
+                AssetLockFundingType::IdentityTopUpNotBound,
+                Some(AssetLockRecipient::Identity(identity)),
+            ),
+        ] {
+            let persistence = Arc::new(CapturingPersistence {
+                records_identity_recipients: true,
+                commits_inline: true,
+                ..Default::default()
+            });
+            let (manager, signer) = funded_asset_lock_manager_with_persistence(
+                Arc::new(RejectFirstBroadcaster {
+                    remaining: std::sync::atomic::AtomicUsize::new(8),
+                }),
+                Arc::clone(&persistence),
+            )
+            .await;
+            let fund = || {
+                manager.broadcast_funded_asset_lock_tracked(
+                    super::AssetLockBuildAmount::Exact(1_000_000),
+                    &ASSET_LOCK_FUNDING_SOURCES,
+                    0,
+                    funding_type,
+                    0,
+                    recipient,
+                    &signer,
+                    None,
+                    None,
+                )
+            };
+            for _ in 0..8 {
+                let result = fund().await;
+                assert!(
+                    matches!(result, Err(PlatformWalletError::TransactionBroadcast(_))),
+                    "{funding_type:?}: {result:?}"
+                );
+            }
+            let (path, _) = fund()
+                .await
+                .expect("the rejected locks left the pool's addresses unused");
+            assert_eq!(
+                path.into_iter().last(),
+                Some(&ChildNumber::Normal { index: 0 }),
+                "{funding_type:?}: the lock signs with the first funding address: {path}"
+            );
+        }
     }
 
     /// A store that fails transiently on a buffered backend may still commit
