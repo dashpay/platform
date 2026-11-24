@@ -4982,9 +4982,16 @@ fn select_recorded_spends<S: ShieldedStore>(
 /// spent row saved here is kept by the host whatever arrives later
 /// ([`ShieldedChangeSet::notes_saved`]). The saved copy is the store's,
 /// read under the same guard: a sync pass may have re-saved the note
-/// with newer metadata since `notes` were selected. The round is queued
-/// before that guard drops, so no pass can commit a newer copy in
-/// between and have its round reach the host ahead of this one.
+/// with newer metadata since `notes` were selected.
+///
+/// The round is queued after that guard drops: a persister round is host
+/// I/O behind the persister's blocking round lock, and holding the store
+/// across it would park every send and balance read behind a sync pass's
+/// delivery. A pass can then commit a newer copy and have its round reach
+/// the host before this one, so once this round is queued the store's
+/// copies are read again and any that changed are saved in a follow-up
+/// round. A pass committing after that read queues its round after this
+/// one, so the host ends on the store's copy either way.
 pub(super) async fn mark_notes_spent<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
@@ -4993,6 +5000,7 @@ pub(super) async fn mark_notes_spent<S: ShieldedStore>(
     notes: &[ShieldedNote],
 ) -> Result<(), PlatformWalletError> {
     let mut changeset = ShieldedChangeSet::default();
+    let mut saved = Vec::new();
     {
         let mut store = store.write().await;
         for note in notes {
@@ -5000,18 +5008,53 @@ pub(super) async fn mark_notes_spent<S: ShieldedStore>(
                 .mark_spent(id, &note.nullifier)
                 .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
             {
-                if let Some(stored) = store
-                    .get_note(id, &note.nullifier)
-                    .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
-                {
-                    changeset.record_note(id, stored);
+                if let Some(stored) = stored_note_to_save(&*store, id, &note.nullifier) {
+                    saved.push(stored);
                 }
                 changeset.record_nullifier_spent(id, note.nullifier);
             }
         }
-        queue_shielded_changeset(persister, wallet_id, changeset);
     }
+    for note in &saved {
+        changeset.record_note(id, note.clone());
+    }
+    queue_shielded_changeset(persister, wallet_id, changeset);
+    if persister.is_none() || saved.is_empty() {
+        return Ok(());
+    }
+    let mut follow_up = ShieldedChangeSet::default();
+    {
+        let store = store.read().await;
+        for sent in &saved {
+            if let Some(current) = stored_note_to_save(&*store, id, &sent.nullifier) {
+                if current != *sent {
+                    follow_up.record_note(id, current);
+                }
+            }
+        }
+    }
+    queue_shielded_changeset(persister, wallet_id, follow_up);
     Ok(())
+}
+
+/// `id`'s stored copy of the note with `nullifier`, for a spend's round to
+/// save. A failed read is logged and skipped rather than failing the spend:
+/// the note is already marked spent, and the round still carries its
+/// nullifier.
+fn stored_note_to_save<S: ShieldedStore>(
+    store: &S,
+    id: SubwalletId,
+    nullifier: &[u8; 32],
+) -> Option<ShieldedNote> {
+    store.get_note(id, nullifier).unwrap_or_else(|e| {
+        tracing::warn!(
+            wallet_id = %hex::encode(id.wallet_id),
+            account = id.account_index,
+            error = %e,
+            "Could not read a spent note to save it with its spend"
+        );
+        None
+    })
 }
 
 /// Select unspent notes and reserve them against an in-flight

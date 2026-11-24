@@ -6698,13 +6698,14 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// A spend's round reaches the host before any sync pass can commit a
-    /// newer copy of the note: it is queued while the guard that read the
-    /// copy is still held, so a pass's later round can't overtake it with
-    /// metadata the spend then rolls back.
+    /// A spend's host round runs without the store guard, so sends and
+    /// balance reads never wait out host I/O behind it. A pass that commits a
+    /// newer copy of the note during that round can have its own round reach
+    /// the host first; the spend then saves the store's copy again in a
+    /// follow-up round, so the host never ends on the older metadata.
     #[tokio::test]
-    async fn should_queue_a_spend_round_before_a_pass_can_commit_a_newer_copy() {
-        let dir = temp_dir("spend_round_under_guard");
+    async fn should_not_hold_the_store_guard_across_a_spend_round_nor_roll_back_a_newer_copy() {
+        let dir = temp_dir("spend_round_without_guard");
         let coordinator = coordinator_with_one_wallet(&dir).await;
         let wallet_id: WalletId = [0x11; 32];
         let id = SubwalletId::new(wallet_id, 0);
@@ -6717,14 +6718,23 @@ mod tests {
             .await
             .save_note(id, &note)
             .unwrap();
-        // A pass trying to commit a re-scanned copy while the host write is
-        // in progress.
+        let rescanned = ShieldedNote {
+            block_height: note.block_height + 50,
+            ..note.clone()
+        };
+        // A pass commits a re-scanned copy while the spend's round is being
+        // delivered.
         let store = Arc::clone(coordinator.store());
-        let pass_committed_during_delivery = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let committed = Arc::clone(&pass_committed_during_delivery);
+        let guard_free_during_delivery = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let guard_free = Arc::clone(&guard_free_during_delivery);
+        let mut pass_commit = Some(rescanned.clone());
         *recorder.1.lock().unwrap() = Some(Box::new(move || {
-            if store.try_write().is_ok() {
-                committed.store(true, std::sync::atomic::Ordering::SeqCst);
+            let Some(rescanned) = pass_commit.take() else {
+                return;
+            };
+            if let Ok(mut guard) = store.try_write() {
+                guard_free.store(true, std::sync::atomic::Ordering::SeqCst);
+                guard.save_note(id, &rescanned).unwrap();
             }
         }));
         super::super::operations::mark_notes_spent(
@@ -6738,10 +6748,26 @@ mod tests {
         .unwrap();
 
         assert!(
-            !pass_committed_during_delivery.load(std::sync::atomic::Ordering::SeqCst),
-            "the store guard must be held until the spend round is queued"
+            guard_free_during_delivery.load(std::sync::atomic::Ordering::SeqCst),
+            "the store guard must not be held across the spend's host round"
         );
-        assert_eq!(recorder.0.lock().unwrap().len(), 1);
+        let rounds = recorder.0.lock().unwrap();
+        assert_eq!(
+            rounds.len(),
+            2,
+            "the spend round, then a follow-up with the newer copy"
+        );
+        let last = rounds[1]
+            .notes_saved
+            .get(&id)
+            .expect("the follow-up saves the note");
+        assert_eq!(last.len(), 1);
+        assert!(last[0].is_spent, "the follow-up keeps the note spent");
+        assert_eq!(
+            last[0].block_height, rescanned.block_height,
+            "the host must end on the pass's newer copy"
+        );
+        drop(rounds);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
