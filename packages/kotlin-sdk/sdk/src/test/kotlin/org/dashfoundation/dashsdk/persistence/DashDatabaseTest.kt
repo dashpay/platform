@@ -144,6 +144,47 @@ class DashDatabaseTest {
     }
 
     @Test
+    fun updatePausedChangesOnlyThePausedFlag() = runTest {
+        val contractId = ByteArray(32) { 7 }
+        db.dataContractDao().upsert(
+            org.dashfoundation.dashsdk.persistence.entities.DataContractEntity(
+                id = contractId,
+                name = "test-contract",
+                serializedContract = ByteArray(8),
+                networkRaw = 1,
+            ),
+        )
+        val stored = TokenEntity(
+            id = ByteArray(32) { 3 },
+            contractId = contractId,
+            position = 0,
+            name = "token-0",
+            baseSupply = "1000000",
+            maxSupply = "2000000",
+            emergencyActionRules = "{\"rule\":1}",
+            hasEmergencyActions = true,
+        )
+        val dao = db.tokenDao()
+        dao.upsertToken(stored)
+
+        assertEquals(1, dao.updatePaused(stored.id, true))
+        val paused = dao.getTokenById(stored.id)!!
+        assertTrue(paused.isPaused)
+        assertEquals("2000000", paused.maxSupply)
+        assertEquals("{\"rule\":1}", paused.emergencyActionRules)
+        assertEquals(listOf(stored.id.toList()), dao.observePausedTokens().first().map { it.id.toList() })
+
+        // Already paused: nothing to write.
+        assertEquals(0, dao.updatePaused(stored.id, true))
+        // A row that is not stored is left absent.
+        assertEquals(0, dao.updatePaused(ByteArray(32) { 9 }, true))
+        assertNull(dao.getTokenById(ByteArray(32) { 9 }))
+
+        assertEquals(1, dao.updatePaused(stored.id, false))
+        assertEquals(false, dao.getTokenById(stored.id)!!.isPaused)
+    }
+
+    @Test
     fun tokenBalancesRoundTripAndSortAcrossFullUnsignedRange() = runTest {
         val values = listOf(ULong.MAX_VALUE, 0uL, 1uL shl 63, Long.MAX_VALUE.toULong())
         values.forEachIndexed { index, value ->

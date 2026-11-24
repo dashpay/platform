@@ -49,6 +49,7 @@ import org.dashfoundation.example.services.tokens.IdentityTokenSync
 import org.dashfoundation.example.services.tokens.TokenAmounts
 import org.dashfoundation.example.ui.components.AccessiblePicker
 import org.dashfoundation.example.ui.components.FormSection
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.toHex
 import org.dashfoundation.example.util.truncateMiddle
@@ -80,7 +81,9 @@ fun TokensScreen(navController: NavHostController) {
     val tokensFlow = remember(network) {
         container.database.tokenDao().observeTokensByNetwork(network.ffiValue)
     }
-    val tokens by tokensFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    // Every emission: a list of rows equal by id compares equal even when a
+    // row (the paused flag) was rewritten.
+    val tokens by tokensFlow.collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     var filter by rememberSaveable { mutableStateOf(TokenCapabilityFilter.ALL.name) }
     val selectedFilter = TokenCapabilityFilter.valueOf(filter)
