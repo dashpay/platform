@@ -116,8 +116,8 @@ pub enum AssetLockStatus {
     /// and never regressed. Unlike generic `Consumed`, this is a durable
     /// drain-completion receipt.
     DrainCompleted,
-    /// Funding lost a Core input conflict. The operation remains bound to this
-    /// outpoint, but cannot resume until authenticated finality restores it.
+    /// Funding lost a Core input conflict. The operation ID and recipient stay
+    /// bound to the outpoint. Resume requires authenticated finality.
     Conflicted,
 }
 
@@ -128,10 +128,28 @@ impl AssetLockStatus {
         matches!(self, Self::Consumed | Self::DrainCompleted)
     }
 
-    /// A removal without a revision can discard legacy locks and a known-unsent
-    /// operation build. Once dispatch or conflict is recorded, retain its UUID.
-    pub fn permits_removal(&self, operation_id: Option<[u8; 16]>, revision: u64) -> bool {
-        !self.is_consumed() && revision == 0 && (operation_id.is_none() || *self == Self::Built)
+    /// Delete only legacy locks and known-unsent builds. A dispatched lock's
+    /// operation ID and shielded recipient survive delayed removals.
+    pub fn permits_removal(
+        &self,
+        has_operation_id: bool,
+        has_shielded_recipient: bool,
+        revision: u64,
+    ) -> bool {
+        !self.is_consumed()
+            && *self != Self::Conflicted
+            && revision == 0
+            && (*self == Self::Built || !(has_operation_id || has_shielded_recipient))
+    }
+
+    /// A stored conflict needs a revision and an immutable recovery binding.
+    pub fn has_valid_operation_revision(&self, revision: u64, has_binding: bool) -> bool {
+        revision <= MAX_ASSET_LOCK_OPERATION_REVISION
+            && if revision == 0 {
+                *self != Self::Conflicted
+            } else {
+                has_binding
+            }
     }
 }
 

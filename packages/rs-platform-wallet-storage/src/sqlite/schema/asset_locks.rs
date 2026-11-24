@@ -172,18 +172,6 @@ pub fn apply(
             // The shielded recipient is immutable once stored. Reject the
             // whole snapshot before any lifecycle or sidecar write.
             let shielded_recipient = entry.shielded_recipient;
-            if let (Some(incoming), Some(stored)) = (
-                shielded_recipient.as_ref(),
-                existing
-                    .as_ref()
-                    .and_then(|row| row.shielded_recipient.as_deref()),
-            ) {
-                if incoming.as_slice() != stored {
-                    return Err(WalletStorageError::blob_decode(
-                        "asset lock shielded recipient cannot change",
-                    ));
-                }
-            }
             let previous = existing
                 .map(|stored| -> Result<_, WalletStorageError> {
                     let old: AssetLockEntryWire = blob::decode(&stored.lifecycle_blob)?;
@@ -243,12 +231,12 @@ pub fn apply(
         }
     }
     if !cs.removed.is_empty() {
-        // Only unbound locks and known-unsent Built operation rows may be
-        // removed. Delayed cleanup cannot erase a dispatched or revised UUID.
-        // This mirrors AssetLockStatus::permits_removal in the owner.
+        // AssetLockStatus::permits_removal limits cleanup to unbound locks or
+        // known-unsent builds. Both consumed statuses use 'consumed' on disk.
         let mut stmt = tx.prepare_cached(
             "DELETE FROM asset_locks \
-             WHERE wallet_id = ?1 AND outpoint = ?2 AND status != 'consumed' AND operation_revision = 0 AND (operation_id IS NULL OR status = 'built')",
+             WHERE wallet_id = ?1 AND outpoint = ?2 AND status NOT IN ('consumed', 'conflicted') \
+               AND operation_revision = 0 AND (status = 'built' OR (operation_id IS NULL AND shielded_recipient IS NULL))",
         )?;
         for op in &cs.removed {
             let op_bytes = blob::encode_outpoint(op)?;
@@ -365,11 +353,12 @@ fn decode_row(
     let operation_revision = u64::try_from(operation_revision)
         .map_err(|_| WalletStorageError::blob_decode("negative operation revision"))?;
     entry.operation_revision = operation_revision;
-    if (entry.status == AssetLockStatus::Conflicted || operation_revision > 0)
-        && (entry.operation_id.is_none() || operation_revision == 0)
-    {
+    if !entry.status.has_valid_operation_revision(
+        operation_revision,
+        entry.operation_id.is_some() || entry.shielded_recipient.is_some(),
+    ) {
         return Err(WalletStorageError::blob_decode(
-            "conflict evidence lacks an operation binding or revision",
+            "invalid asset lock conflict binding or revision",
         ));
     }
     let blob_status = status_str(&entry.status);

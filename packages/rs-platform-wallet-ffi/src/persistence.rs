@@ -39,12 +39,12 @@ use platform_wallet::changeset::{
     PERSISTENCE_CAPABILITIES_VERSION,
 };
 use platform_wallet::wallet::asset_lock::restored_record::held_output_details;
-use platform_wallet::wallet::asset_lock::tracked::MAX_ASSET_LOCK_OPERATION_REVISION;
 use platform_wallet::wallet::core::stored_coin::{reconcile_with_parent, StoredParentState};
 use platform_wallet::wallet::platform_wallet::WalletId;
 #[cfg(feature = "shielded")]
 use platform_wallet::wallet::shielded::ShieldedActivityStatus;
 use platform_wallet::wallet::{PerAccountPlatformAddressState, PerWalletPlatformAddressState};
+use platform_wallet::AssetLockStatus;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::ffi::CString;
@@ -3186,15 +3186,43 @@ impl PlatformWalletPersistence for FFIPersister {
             }
         }
 
-        // Send asset-lock changeset — tracked-lock upserts (one row
-        // per credit output, addressed by outpoint) and outpoint
-        // tombstones (consumed-by-registration removals). Maps onto
-        // Swift's `PersistentAssetLock` rows.
+        // Send the lock rows and removals in the same round as the Core sweep.
         if let Some(ref al_cs) = changeset.asset_locks {
-            if let Some(cb) = self
-                .tracked_masternodes_callbacks
-                .persist_asset_lock_operations
-            {
+            let extensions = &self.tracked_masternodes_callbacks;
+            let has_recipient_support = self
+                .declared_capabilities
+                .contains(PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS)
+                || extensions.persist_asset_lock_shielded_recipient.is_some()
+                || extensions.load_asset_lock_shielded_recipient.is_some();
+            let legacy_without_bindings = !has_recipient_support
+                && !self
+                    .declared_capabilities
+                    .contains(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS)
+                && extensions.persist_asset_lock_operation_id.is_none()
+                && extensions.load_asset_lock_operation_id.is_none()
+                && extensions.load_asset_lock_operation_revision.is_none();
+            let incompatible = al_cs.asset_locks.values().any(|entry| {
+                if !entry.requires_operation_revision() {
+                    return false;
+                }
+                if extensions.persist_asset_lock_operations.is_none() {
+                    return !(legacy_without_bindings && entry.allows_legacy_projection());
+                }
+                let missing_operation_id = entry.operation_id.is_some()
+                    && extensions.load_asset_lock_operation_id.is_none();
+                let needs_recipient = entry.operation_id.is_none()
+                    || (entry.shielded_recipient.is_some() && has_recipient_support);
+                let missing_recipient = needs_recipient
+                    && (extensions.load_asset_lock_shielded_recipient.is_none()
+                        || extensions.persist_asset_lock_shielded_recipient.is_none());
+                extensions.load_asset_lock_operation_revision.is_none()
+                    || missing_operation_id
+                    || missing_recipient
+            });
+            if incompatible {
+                tracing::warn!("asset-lock persistence callbacks cannot restore the written revision and binding");
+                outcome.record(1);
+            } else if let Some(cb) = extensions.persist_asset_lock_operations {
                 let entries: Vec<_> = al_cs.asset_locks.values().collect();
                 let (legacy, _storage) = build_asset_lock_entries(&entries);
                 let rows: Vec<_> = entries
@@ -3218,18 +3246,21 @@ impl PlatformWalletPersistence for FFIPersister {
                         outcome.record(rc);
                     }
                 }
-            } else if al_cs.asset_locks.values().any(|entry| {
-                entry.operation_revision != 0
-                    || entry.expected_operation_revision.is_some()
-                    || entry.status == platform_wallet::AssetLockStatus::Conflicted
-            }) {
-                // An old host must not acknowledge a lifecycle it cannot order.
-                outcome.record(1);
             } else if let Some(cb) = self.callbacks.on_persist_asset_locks_fn {
-                let upsert_refs: Vec<&platform_wallet::changeset::AssetLockEntry> =
-                    al_cs.asset_locks.values().collect();
+                let mut upsert_refs = Vec::with_capacity(al_cs.asset_locks.len());
+                let mut removed: Vec<_> = al_cs.removed.iter().map(outpoint_to_bytes).collect();
+                for entry in al_cs.asset_locks.values() {
+                    if entry.status == AssetLockStatus::Conflicted {
+                        // The old format has no conflict row. Its corresponding
+                        // projection is the ordinary swept-lock removal.
+                        if !al_cs.removed.contains(&entry.out_point) {
+                            removed.push(outpoint_to_bytes(&entry.out_point));
+                        }
+                    } else {
+                        upsert_refs.push(entry);
+                    }
+                }
                 let (upserts, _storage) = build_asset_lock_entries(&upsert_refs);
-                let removed: Vec<[u8; 36]> = al_cs.removed.iter().map(outpoint_to_bytes).collect();
                 if !upserts.is_empty() || !removed.is_empty() {
                     let result = unsafe {
                         cb(
@@ -3265,11 +3296,11 @@ impl PlatformWalletPersistence for FFIPersister {
             }
             // Preserve the legacy row stride. UUIDs are an additive sidecar,
             // written only after their base rows in the same atomic round.
-            for entry in al_cs.asset_locks.values().filter(|_| {
-                self.tracked_masternodes_callbacks
-                    .persist_asset_lock_operations
-                    .is_none()
-            }) {
+            let mut sidecar_entries = al_cs.asset_locks.values().filter(|_| !incompatible);
+            for entry in sidecar_entries
+                .clone()
+                .filter(|_| extensions.persist_asset_lock_operations.is_none())
+            {
                 if let Some(operation_id) = entry.operation_id {
                     let Some(cb) = self
                         .tracked_masternodes_callbacks
@@ -3300,7 +3331,7 @@ impl PlatformWalletPersistence for FFIPersister {
                 .tracked_masternodes_callbacks
                 .persist_asset_lock_shielded_recipient
             {
-                for entry in al_cs.asset_locks.values() {
+                for entry in sidecar_entries {
                     let Some(recipient) = entry.shielded_recipient else {
                         continue;
                     };
@@ -3317,11 +3348,7 @@ impl PlatformWalletPersistence for FFIPersister {
                         outcome.record(rc);
                     }
                 }
-            } else if al_cs
-                .asset_locks
-                .values()
-                .any(|entry| entry.shielded_recipient.is_some())
-            {
+            } else if sidecar_entries.any(|entry| entry.shielded_recipient.is_some()) {
                 tracing::debug!(
                     "host has no shielded-recipient persistence slot; the recipient of a \
                      shielded asset-lock funding is not persisted with its row"
@@ -6949,9 +6976,12 @@ fn load_asset_lock_operation_revisions(
                 "Loading asset-lock operation revision failed",
             ));
         }
-        if revision > MAX_ASSET_LOCK_OPERATION_REVISION {
+        if !lock.status.has_valid_operation_revision(
+            revision,
+            lock.operation_id.is_some() || lock.shielded_recipient.is_some(),
+        ) {
             return Err(PersistenceError::backend(
-                "asset-lock operation revision out of range",
+                "invalid asset-lock conflict binding or revision",
             ));
         }
         lock.operation_revision = revision;
@@ -11797,7 +11827,7 @@ mod tests {
                 *out = *(context as *const u64);
                 0
             }
-            let mut stored_revision = 9u64;
+            let mut stored_revision = if operation_id.is_some() { 9u64 } else { 0 };
             load_asset_lock_operation_revisions(
                 revision,
                 (&mut stored_revision as *mut u64).cast(),
@@ -11805,7 +11835,10 @@ mod tests {
                 &mut restored,
             )
             .unwrap();
-            assert_eq!(restored[&7][&entry.out_point].operation_revision, 9);
+            assert_eq!(
+                restored[&7][&entry.out_point].operation_revision,
+                stored_revision
+            );
             assert!(load_asset_lock_operation_revisions(
                 revision,
                 std::ptr::null_mut(),
@@ -11949,6 +11982,62 @@ mod tests {
             .expect("valid recipient sidecar");
             assert_eq!(restored[&2][&entry.out_point].shielded_recipient, stored);
         }
+
+        let conflict = platform_wallet::changeset::AssetLockEntry {
+            status: platform_wallet::AssetLockStatus::Conflicted,
+            operation_revision: 1,
+            ..entry.clone()
+        };
+        let (rows, _conflict_storage) = build_asset_lock_entries(&[&conflict]);
+        let restore = WalletRestoreEntryFFI {
+            tracked_asset_locks: rows.as_ptr(),
+            tracked_asset_locks_count: rows.len(),
+            ..Default::default()
+        };
+        let mut restored = build_unused_asset_locks(&restore).unwrap();
+        unsafe extern "C" fn load_revision(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            out: *mut u64,
+        ) -> i32 {
+            *out = 1;
+            0
+        }
+        let wallet_id = [42; 32];
+        assert!(
+            load_asset_lock_operation_revisions(
+                load_revision,
+                std::ptr::null_mut(),
+                &wallet_id,
+                &mut restored,
+            )
+            .is_err(),
+            "a conflict without either binding cannot be restored"
+        );
+        let recipient = Some(raw);
+        load_asset_lock_shielded_recipients(
+            load_recipient,
+            (&recipient as *const Option<[u8; 43]>).cast_mut().cast(),
+            &wallet_id,
+            &mut restored,
+        )
+        .unwrap();
+        load_asset_lock_operation_revisions(
+            load_revision,
+            std::ptr::null_mut(),
+            &wallet_id,
+            &mut restored,
+        )
+        .unwrap();
+        let restored = &restored[&2][&entry.out_point];
+        assert_eq!(
+            restored.status,
+            platform_wallet::AssetLockStatus::Conflicted
+        );
+        assert_eq!(restored.operation_revision, 1);
+        assert_eq!(restored.shielded_recipient, recipient);
+        assert_eq!(restored.operation_id, None);
 
         let changeset = PlatformWalletChangeSet {
             asset_locks: Some(platform_wallet::changeset::AssetLockChangeSet {

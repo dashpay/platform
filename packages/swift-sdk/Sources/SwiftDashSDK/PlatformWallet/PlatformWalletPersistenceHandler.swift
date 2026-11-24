@@ -672,25 +672,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     continue
                 }
                 if let existing = existingRecord {
-                    // Same terminal rule as the upsert guard above: a
-                    // Consumed (4) row is deliberately retained for
-                    // historical lookup, and neither removal producer can
-                    // legitimately name one — a Built row rejected at
-                    // broadcast (`untrack_asset_lock`) never got that far,
-                    // and a sweep of the funding transaction only
-                    // tombstones entries still tracked, which a consumed
-                    // lock no longer is. A removal reaching a consumed row
-                    // is by construction a stale write.
-                    // `AssetLockChangeSet::merge` guarantees one call never
-                    // carries an upsert and a removal for the same
-                    // outpoint, so the upserts-then-removals order above is
-                    // layout, not load-bearing sequencing.
                     guard let status = UInt8(exactly: existing.statusRaw),
                           let revision = UInt64(exactly: existing.operationRevision ?? 0) else {
                         allPersisted = false
                         continue
                     }
-                    if !asset_lock_operation_permits_removal(status, existing.operationId != nil, revision) {
+                    if !asset_lock_operation_permits_removal(
+                        status, existing.operationId != nil, existing.shieldedRecipientRaw43 != nil, revision
+                    ) {
                         continue
                     }
                     backgroundContext.delete(existing)
@@ -705,7 +694,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         guard let rawOutPoint = decodeOutPointHex(entry.outPointHex),
               let fundingType = UInt8(exactly: entry.fundingTypeRaw),
               let status = UInt8(exactly: entry.statusRaw),
-              entry.operationId == nil || entry.operationId?.count == 16 else {
+              entry.operationId == nil || entry.operationId?.count == 16,
+              entry.shieldedRecipientRaw43 == nil || entry.shieldedRecipientRaw43?.count == 43 else {
             throw AssetLockPersistenceError.malformedRecord
         }
         return try entry.transactionBytes.withUnsafeBytes { tx in
@@ -728,6 +718,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 ffi.operation_revision = entry.operationRevision
                 ffi.has_expected_revision = entry.expectedOperationRevision != nil
                 ffi.expected_revision = entry.expectedOperationRevision ?? 0
+                if let recipient = entry.shieldedRecipientRaw43 {
+                    ffi.has_shielded_recipient = true
+                    withUnsafeMutableBytes(of: &ffi.shielded_recipient) { $0.copyBytes(from: recipient) }
+                }
                 return try body(&ffi)
             }
         }
@@ -741,7 +735,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             fundingTypeRaw: row.fundingTypeRaw, identityIndexRaw: row.identityIndexRaw,
             accountIndexRaw: row.accountIndexRaw, amountDuffs: row.amountDuffs,
             statusRaw: row.statusRaw, proofBytes: row.proofBytes, operationId: row.operationId,
-            operationRevision: revision)
+            operationRevision: revision, shieldedRecipientRaw43: row.shieldedRecipientRaw43)
     }
 
     func loadAssetLockOperationRevision(walletId: Data, outPoint: Data) throws -> UInt64 {
@@ -12827,13 +12821,16 @@ private func persistAssetLockOperationsCallback(
         let proof = row.proof_bytes.map { Data(bytes: $0, count: Int(row.proof_bytes_len)) }
         let operationId = carrier.has_operation_id
             ? withUnsafeBytes(of: carrier.operation_id) { Data($0) } : nil
+        let shieldedRecipient = carrier.has_shielded_recipient
+            ? withUnsafeBytes(of: carrier.shielded_recipient) { Data($0) } : nil
         entries.append(.init(outPointHex: PersistentAssetLock.encodeOutPoint(rawBytes: outpoint),
             transactionBytes: Data(bytes: tx, count: Int(row.transaction_bytes_len)),
             fundingTypeRaw: Int(row.funding_type), identityIndexRaw: Int32(bitPattern: row.identity_index),
             accountIndexRaw: Int32(bitPattern: row.account_index), amountDuffs: Int64(bitPattern: row.amount_duffs),
             statusRaw: Int(row.status), proofBytes: proof, operationId: operationId,
             operationRevision: carrier.operation_revision,
-            expectedOperationRevision: carrier.has_expected_revision ? carrier.expected_revision : nil))
+            expectedOperationRevision: carrier.has_expected_revision ? carrier.expected_revision : nil,
+            shieldedRecipientRaw43: shieldedRecipient))
     }
     var removed: [Data] = []
     for index in 0..<Int(removedCount) {

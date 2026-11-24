@@ -384,8 +384,8 @@ pub(crate) async fn reconstruct_tracked_asset_locks(
 
 /// Apply conflict cleanup to tracked funding transactions.
 ///
-/// Untagged locks retain ordinary removal/reconstruction behavior. UUID-bound
-/// locks keep their transaction and outpoint as non-actionable conflict evidence.
+/// Locks with an operation ID or recorded recipient keep their transaction and
+/// outpoint as non-actionable conflict evidence. Other locks are removed.
 /// A later authenticated chain return may reactivate that exact binding with a
 /// new revision; a mempool observation or stale snapshot cannot do so.
 ///
@@ -426,7 +426,7 @@ pub(crate) async fn remove_tracked_asset_locks_for_swept(
         if entry.status.is_consumed() || entry.status == AssetLockStatus::Conflicted {
             continue;
         }
-        if entry.operation_id.is_some() {
+        if entry.operation_id.is_some() || entry.shielded_recipient.is_some() {
             entry.status = AssetLockStatus::Conflicted;
             entry.proof = None;
             let mut snapshot = AssetLockEntry::from(&*entry);
@@ -499,11 +499,9 @@ fn apply_record(
 /// `ChainAssetLockProof` height for anything the chainlock buries (the
 /// same fact the resume path's CL-from-metadata fallback relies on).
 ///
-/// The same upgrade guard as [`enrich_from_record`] applies: only
-/// proof-less entries at `Broadcast` / `InstantSendLocked` are touched
-/// — nothing live is completing an entry that is still proof-less when
-/// on-chain finality arrives, so `RecoveredFromChain` is the truthful
-/// terminal.
+/// The same upgrade guard as [`enrich_from_record`] applies. ChainLock
+/// evidence upgrades proof-less `Broadcast`, `InstantSendLocked` and
+/// `Conflicted` entries to `RecoveredFromChain`.
 ///
 /// The event keys promoted txids by owning account type;
 /// funding-family filtering happens on those keys, so the common case
@@ -1311,16 +1309,29 @@ mod tests {
         );
     }
     #[tokio::test]
-    async fn should_reactivate_only_the_bound_outpoint_after_authenticated_return() {
-        for from_record in [true, false] {
+    async fn should_preserve_recipient_across_funding_conflict() {
+        for (from_record, operation_id, recipient) in [
+            (true, Some([0x32; 16]), None),
+            (false, Some([0x32; 16]), None),
+            (true, None, Some([0x41; 43])),
+            (false, None, Some([0x41; 43])),
+            (true, Some([0x32; 16]), Some([0x41; 43])),
+        ] {
+            let (funding_type, account_type) = if recipient.is_some() {
+                (
+                    AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                    AccountType::AssetLockShieldedAddressTopUp,
+                )
+            } else {
+                (
+                    AssetLockFundingType::IdentityRegistration,
+                    AccountType::IdentityRegistration,
+                )
+            };
             let (wallet_manager, wallet_id, tx) =
-                wallet_with_built_asset_lock(AssetLockFundingType::IdentityRegistration, 0).await;
+                wallet_with_built_asset_lock(funding_type, 0).await;
             let outpoint = OutPoint::new(tx.txid(), 0);
-            let record = record_for(
-                &tx,
-                AccountType::IdentityRegistration,
-                TransactionContext::Mempool,
-            );
+            let record = record_for(&tx, account_type, TransactionContext::Mempool);
             reconstruct_tracked_asset_locks(&wallet_manager, &wallet_id, &[&record]).await;
             let original = {
                 let mut manager = wallet_manager.write().await;
@@ -1330,14 +1341,20 @@ mod tests {
                     .tracked_asset_locks
                     .get_mut(&outpoint)
                     .unwrap();
-                lock.operation_id = Some([0x32; 16]);
+                lock.operation_id = operation_id;
+                lock.shielded_recipient = recipient;
                 AssetLockEntry::from(&*lock)
             };
             let mut folded =
                 remove_tracked_asset_locks_for_swept(&wallet_manager, &wallet_id, &[tx.txid()])
                     .await;
-            let conflict = &folded.asset_locks[&outpoint];
+            let conflict = folded
+                .asset_locks
+                .get(&outpoint)
+                .expect("retained conflict");
             assert_eq!(conflict.status, AssetLockStatus::Conflicted);
+            assert_eq!(conflict.shielded_recipient, recipient);
+            assert!(conflict.proof.is_none());
             assert_eq!(conflict.operation_revision, 1);
             assert_eq!(conflict.expected_operation_revision, Some(0));
             assert!(folded.removed.is_empty());
@@ -1348,18 +1365,14 @@ mod tests {
                 "mempool return cannot clear conflict"
             );
             let returned = if from_record {
-                let record = record_for(
-                    &tx,
-                    AccountType::IdentityRegistration,
-                    chainlocked_context(88),
-                );
+                let record = record_for(&tx, account_type, chainlocked_context(88));
                 reconstruct_tracked_asset_locks(&wallet_manager, &wallet_id, &[&record]).await
             } else {
                 enrich_tracked_asset_locks_from_chain_lock(
                     &wallet_manager,
                     &wallet_id,
                     88,
-                    &BTreeMap::from([(AccountType::IdentityRegistration, vec![tx.txid()])]),
+                    &BTreeMap::from([(account_type, vec![tx.txid()])]),
                 )
                 .await
             };
@@ -1383,7 +1396,8 @@ mod tests {
                 ..Default::default()
             });
             let recovered = &folded.asset_locks[&outpoint];
-            assert_eq!(recovered.operation_id, Some([0x32; 16]));
+            assert_eq!(recovered.operation_id, operation_id);
+            assert_eq!(recovered.shielded_recipient, recipient);
             assert_eq!(recovered.status, AssetLockStatus::RecoveredFromChain);
             assert_eq!(
                 recovered.proof.as_ref().and_then(AssetLockProof::out_point),
@@ -1402,11 +1416,7 @@ mod tests {
                 lock.proof = None;
                 lock.operation_revision = MAX_ASSET_LOCK_OPERATION_REVISION;
             }
-            let final_record = record_for(
-                &tx,
-                AccountType::IdentityRegistration,
-                chainlocked_context(89),
-            );
+            let final_record = record_for(&tx, account_type, chainlocked_context(89));
             let exhausted =
                 reconstruct_tracked_asset_locks(&wallet_manager, &wallet_id, &[&final_record])
                     .await;

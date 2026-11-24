@@ -17,6 +17,8 @@ pub struct AssetLockOperationEntryFFI {
     pub operation_revision: u64,
     pub has_expected_revision: bool,
     pub expected_revision: u64,
+    pub has_shielded_recipient: bool,
+    pub shielded_recipient: [u8; 43],
 }
 
 impl AssetLockOperationEntryFFI {
@@ -28,6 +30,8 @@ impl AssetLockOperationEntryFFI {
             operation_revision: entry.operation_revision,
             has_expected_revision: entry.expected_operation_revision.is_some(),
             expected_revision: entry.expected_operation_revision.unwrap_or_default(),
+            has_shielded_recipient: entry.shielded_recipient.is_some(),
+            shielded_recipient: entry.shielded_recipient.unwrap_or([0; 43]),
         }
     }
 
@@ -59,6 +63,9 @@ impl AssetLockOperationEntryFFI {
         entry.operation_revision = self.operation_revision;
         entry.expected_operation_revision =
             self.has_expected_revision.then_some(self.expected_revision);
+        entry.shielded_recipient = self
+            .has_shielded_recipient
+            .then_some(self.shielded_recipient);
         Ok(entry)
     }
 }
@@ -68,12 +75,12 @@ impl AssetLockOperationEntryFFI {
 pub extern "C" fn asset_lock_operation_permits_removal(
     status: u8,
     has_operation_id: bool,
+    has_shielded_recipient: bool,
     revision: u64,
 ) -> bool {
-    revision <= MAX_ASSET_LOCK_OPERATION_REVISION
-        && status_from_u8(status)
-            .map(|status| status.permits_removal(has_operation_id.then_some([0; 16]), revision))
-            .unwrap_or(false)
+    status_from_u8(status).is_ok_and(|status| {
+        status.permits_removal(has_operation_id, has_shielded_recipient, revision)
+    })
 }
 
 /// Delegate lifecycle persistence to the wallet owner. Returns 1 to apply,
@@ -109,10 +116,17 @@ pub unsafe extern "C" fn asset_lock_operation_persistence_action(
 mod tests {
     use super::*;
     use crate::asset_lock_persistence::build_asset_lock_entries;
+    use crate::core_wallet_types::SweepBatchFFI;
+    use crate::persistence::{FFIPersister, PersistenceCallbacks, PersistenceExtensionCallbacks};
     use dashcore::{OutPoint, Transaction, Txid};
     use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
     use dpp::prelude::AssetLockProof;
     use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+    use platform_wallet::changeset::changeset::SweepBatch;
+    use platform_wallet::changeset::{
+        AssetLockChangeSet, CoreChangeSet, PersistenceCapabilities, PlatformWalletChangeSet,
+        PlatformWalletPersistence,
+    };
     use platform_wallet::AssetLockStatus;
     use std::ffi::c_void;
 
@@ -150,6 +164,7 @@ mod tests {
         let old = AssetLockOperationEntryFFI::new(&previous, rows[0]);
         let current = AssetLockOperationEntryFFI::new(&conflict, rows[1]);
         assert_eq!(current.entry.status, 7);
+        assert_eq!(unsafe { old.decode() }.unwrap(), previous);
         assert_eq!(unsafe { current.decode() }.unwrap(), conflict);
         assert_eq!(
             unsafe { asset_lock_operation_persistence_action(&current, &old) },
@@ -173,6 +188,44 @@ mod tests {
             unsafe { asset_lock_operation_persistence_action(&malformed, &current) },
             0
         );
+    }
+
+    #[test]
+    fn should_preserve_recipient_across_funding_conflict() {
+        let mut previous = entry();
+        previous.operation_id = None;
+        previous.shielded_recipient = Some([0x71; 43]);
+        let mut conflict = previous.clone();
+        conflict.status = AssetLockStatus::Conflicted;
+        conflict.advance_operation_revision();
+        let mut recovery = conflict.clone();
+        recovery.status = AssetLockStatus::RecoveredFromChain;
+        recovery.shielded_recipient = None;
+        recovery.proof = Some(AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 88,
+            out_point: recovery.out_point,
+        }));
+        recovery.advance_operation_revision();
+        let (rows, _storage) = build_asset_lock_entries(&[&previous, &conflict, &recovery]);
+        let old = AssetLockOperationEntryFFI::new(&previous, rows[0]);
+        let current = AssetLockOperationEntryFFI::new(&conflict, rows[1]);
+        let returned = AssetLockOperationEntryFFI::new(&recovery, rows[2]);
+        assert_eq!(unsafe { old.decode() }.unwrap(), previous);
+        assert_eq!(unsafe { current.decode() }.unwrap(), conflict);
+        let action =
+            |incoming, stored| unsafe { asset_lock_operation_persistence_action(incoming, stored) };
+        assert_eq!(action(&current, &old), 1);
+        assert_eq!(action(&old, &current), 0);
+
+        let mut redelivered = current;
+        redelivered.has_shielded_recipient = false;
+        assert_eq!(action(&redelivered, &old), 1);
+        assert_eq!(action(&redelivered, &current), 1);
+        assert_eq!(action(&returned, &current), 1);
+        let mut redirected = current;
+        redirected.shielded_recipient = [0x72; 43];
+        assert_eq!(action(&redirected, &old), 0);
+        assert_eq!(action(&redirected, &current), 0);
     }
 
     #[test]
@@ -213,23 +266,270 @@ mod tests {
     }
 
     #[test]
-    fn should_keep_dispatched_operation_bindings_through_removal() {
-        assert!(asset_lock_operation_permits_removal(0, true, 0));
-        assert!(!asset_lock_operation_permits_removal(1, true, 0));
-        assert!(!asset_lock_operation_permits_removal(7, true, 1));
-        assert!(!asset_lock_operation_permits_removal(5, true, 2));
-        assert!(!asset_lock_operation_permits_removal(255, false, 0));
-        assert!(asset_lock_operation_permits_removal(1, false, 0));
+    fn should_keep_dispatched_recovery_bindings_through_removal() {
+        for (operation, recipient) in [(true, false), (false, true), (true, true)] {
+            let allowed = |status, revision| {
+                asset_lock_operation_permits_removal(status, operation, recipient, revision)
+            };
+            assert!(allowed(0, 0));
+            assert!(!allowed(1, 0));
+            assert!(!allowed(7, 1));
+            assert!(!allowed(5, 2));
+        }
+        assert!(!asset_lock_operation_permits_removal(255, false, false, 0));
+        assert!(!asset_lock_operation_permits_removal(7, false, false, 0));
+        assert!(!asset_lock_operation_permits_removal(4, false, false, 0));
+        assert!(asset_lock_operation_permits_removal(1, false, false, 0));
     }
+
+    #[test]
+    fn should_project_funding_conflict_to_legacy_ffi_store() {
+        #[derive(Default)]
+        struct Round {
+            staged: Vec<&'static str>,
+            committed: Vec<&'static str>,
+            ordered_calls: usize,
+        }
+        unsafe extern "C" fn begin(context: *mut c_void, _: *const u8) -> i32 {
+            let round = &mut *context.cast::<Round>();
+            round.staged.clear();
+            0
+        }
+        unsafe extern "C" fn end(context: *mut c_void, _: *const u8, commit: bool) -> i32 {
+            let round = &mut *context.cast::<Round>();
+            if commit {
+                round.committed.append(&mut round.staged);
+            }
+            round.staged.clear();
+            0
+        }
+        unsafe extern "C" fn sweep(
+            context: *mut c_void,
+            _: *const u8,
+            rows: *const SweepBatchFFI,
+            count: usize,
+        ) -> i32 {
+            if count != 1 || (*rows).txids_count != 1 || *(*rows).txids != [7; 32] {
+                return 1;
+            }
+            (*context.cast::<Round>()).staged.push("core sweep");
+            0
+        }
+        unsafe extern "C" fn legacy(
+            context: *mut c_void,
+            _: *const u8,
+            rows: *const AssetLockEntryFFI,
+            row_count: usize,
+            removed: *const [u8; 36],
+            removed_count: usize,
+        ) -> i32 {
+            let event = match (row_count, removed_count) {
+                (0, 1) if (&*removed)[..32] == [7; 32] => "legacy remove",
+                (1, 0) if (*rows).status == 5 => "legacy recovery",
+                (1, 0) if (*rows).status == 4 => "legacy consumption",
+                _ => return 1,
+            };
+            (*context.cast::<Round>()).staged.push(event);
+            0
+        }
+        unsafe extern "C" fn ordered(
+            context: *mut c_void,
+            _: *const u8,
+            _: *const AssetLockOperationEntryFFI,
+            _: usize,
+            _: *const [u8; 36],
+            _: usize,
+        ) -> i32 {
+            (*context.cast::<Round>()).ordered_calls += 1;
+            0
+        }
+        unsafe extern "C" fn load_revision(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            _: *mut u64,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn load_binding(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            _: *mut bool,
+            _: *mut u8,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn persist_recipient(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            _: *const u8,
+        ) -> i32 {
+            0
+        }
+
+        let build_round = |entry: AssetLockEntry, with_sweep: bool| PlatformWalletChangeSet {
+            core: with_sweep.then(|| CoreChangeSet {
+                sweeps: vec![SweepBatch {
+                    txids: vec![entry.out_point.txid],
+                    superseded_by: Txid::from_byte_array([8; 32]),
+                    winner_mined_height: Some(5),
+                    released_outpoints: Vec::new(),
+                }],
+                ..Default::default()
+            }),
+            asset_locks: Some(AssetLockChangeSet {
+                asset_locks: [(entry.out_point, entry)].into_iter().collect(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let host = |round: &mut Round, extensions, declaration| {
+            FFIPersister::new_with_persistence_capabilities_and_extensions(
+                PersistenceCallbacks {
+                    context: (round as *mut Round).cast(),
+                    on_changeset_begin_fn: Some(begin),
+                    on_changeset_end_fn: Some(end),
+                    on_persist_asset_locks_fn: Some(legacy),
+                    ..Default::default()
+                },
+                declaration,
+                extensions,
+            )
+        };
+        let base = PersistenceExtensionCallbacks {
+            wallet_changeset_sweeps: Some(sweep),
+            ..Default::default()
+        };
+        let wallet_id = [42; 32];
+        let mut conflict = entry();
+        conflict.operation_id = None;
+        conflict.shielded_recipient = Some([0x71; 43]);
+        conflict.status = AssetLockStatus::Conflicted;
+        conflict.advance_operation_revision();
+        let mut round = Round::default();
+        let persister = host(&mut round, base, PersistenceCapabilities::NONE);
+        persister
+            .store(wallet_id, build_round(conflict.clone(), true))
+            .unwrap();
+        assert_eq!(round.committed, ["core sweep", "legacy remove"]);
+        let mut recovery = conflict.clone();
+        recovery.status = AssetLockStatus::RecoveredFromChain;
+        recovery.proof = Some(AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 88,
+            out_point: recovery.out_point,
+        }));
+        recovery.advance_operation_revision();
+        persister
+            .store(wallet_id, build_round(recovery.clone(), false))
+            .unwrap();
+        recovery.status = AssetLockStatus::Consumed;
+        recovery.expected_operation_revision = None;
+        persister
+            .store(wallet_id, build_round(recovery, false))
+            .unwrap();
+        assert_eq!(
+            round.committed,
+            [
+                "core sweep",
+                "legacy remove",
+                "legacy recovery",
+                "legacy consumption"
+            ]
+        );
+
+        let uuid_only = PersistenceExtensionCallbacks {
+            persist_asset_lock_operations: Some(ordered),
+            load_asset_lock_operation_revision: Some(load_revision),
+            load_asset_lock_operation_id: Some(load_binding),
+            ..base
+        };
+        for (extensions, declaration, operation_id) in [
+            (base, PersistenceCapabilities::NONE, Some([1; 16])),
+            (
+                base,
+                PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS,
+                None,
+            ),
+            (
+                PersistenceExtensionCallbacks {
+                    load_asset_lock_shielded_recipient: Some(load_binding),
+                    ..base
+                },
+                PersistenceCapabilities::NONE,
+                None,
+            ),
+            (
+                PersistenceExtensionCallbacks {
+                    persist_asset_lock_operations: Some(ordered),
+                    load_asset_lock_operation_revision: Some(load_revision),
+                    persist_asset_lock_shielded_recipient: Some(persist_recipient),
+                    ..base
+                },
+                PersistenceCapabilities::NONE,
+                None,
+            ),
+            (
+                PersistenceExtensionCallbacks {
+                    persist_asset_lock_operations: Some(ordered),
+                    load_asset_lock_shielded_recipient: Some(load_binding),
+                    persist_asset_lock_shielded_recipient: Some(persist_recipient),
+                    ..base
+                },
+                PersistenceCapabilities::NONE,
+                None,
+            ),
+            (
+                uuid_only,
+                PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS,
+                Some([1; 16]),
+            ),
+            (
+                PersistenceExtensionCallbacks {
+                    persist_asset_lock_shielded_recipient: Some(persist_recipient),
+                    ..uuid_only
+                },
+                PersistenceCapabilities::NONE,
+                Some([1; 16]),
+            ),
+        ] {
+            let mut round = Round::default();
+            let conflict = AssetLockEntry {
+                operation_id,
+                ..conflict.clone()
+            };
+            assert!(host(&mut round, extensions, declaration)
+                .store(wallet_id, build_round(conflict, true))
+                .is_err());
+            assert!(round.committed.is_empty());
+            assert_eq!(round.ordered_calls, 0);
+        }
+        let full = PersistenceExtensionCallbacks {
+            load_asset_lock_shielded_recipient: Some(load_binding),
+            persist_asset_lock_shielded_recipient: Some(persist_recipient),
+            ..uuid_only
+        };
+        for (extensions, operation_id) in [
+            (uuid_only, Some([1; 16])),
+            (full, None),
+            (full, Some([1; 16])),
+        ] {
+            let mut round = Round::default();
+            let conflict = AssetLockEntry {
+                operation_id,
+                ..conflict.clone()
+            };
+            host(&mut round, extensions, PersistenceCapabilities::NONE)
+                .store(wallet_id, build_round(conflict, true))
+                .unwrap();
+            assert_eq!(round.committed, ["core sweep"]);
+            assert_eq!(round.ordered_calls, 1);
+        }
+    }
+
     #[test]
     fn should_replace_legacy_callback_even_for_revision_zero() {
-        use crate::persistence::{
-            FFIPersister, PersistenceCallbacks, PersistenceExtensionCallbacks,
-        };
-        use platform_wallet::changeset::{
-            AssetLockChangeSet, PersistenceCapabilities, PlatformWalletChangeSet,
-            PlatformWalletPersistence,
-        };
         unsafe extern "C" fn legacy(
             _: *mut c_void,
             _: *const u8,

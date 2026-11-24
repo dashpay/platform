@@ -12,7 +12,7 @@ use dashcore::{Network, OutPoint, ScriptBuf, Transaction, TxOut};
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::prelude::AssetLockProof;
 use dpp::version::PlatformVersion;
-use key_wallet::account::StandardAccountType;
+use key_wallet::account::{AccountType, StandardAccountType};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet::Wallet;
@@ -27,6 +27,9 @@ use crate::error::PlatformWalletError;
 use crate::events::PlatformEventManager;
 use crate::spv::SpvRuntime;
 use crate::test_support::{funded_wallet_manager, WalletSigner};
+use crate::wallet::asset_lock::sync::reconstruction::{
+    enrich_tracked_asset_locks_from_chain_lock, remove_tracked_asset_locks_for_swept,
+};
 use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 use crate::wallet::asset_lock::{
     AssetLockFunding, AssetLockOperationContext, AssetLockOperationState,
@@ -1025,29 +1028,51 @@ async fn should_report_a_wallet_drain_lock_to_the_caller() {
     assert!(snapshot.out_point.is_none());
 }
 
-/// A generic outpoint resume that names a different recipient than the row
-/// recorded is refused before any funding resolution: no send, no staged
-/// write, the row unchanged.
+/// Generic resume stays blocked during a funding conflict, then honors the
+/// saved recipient even when the lock has no operation UUID.
 #[tokio::test]
-async fn should_refuse_a_generic_resume_to_a_recipient_other_than_the_recorded_one() {
+async fn should_preserve_recipient_across_funding_conflict() {
     let (mut lock, keys) = drain_lock_fixture();
     lock.operation_id = None;
+    lock.status = AssetLockStatus::Broadcast;
+    lock.proof = None;
     let recorded = crate::test_support::orchard_address_fixture(0x51);
     let other = crate::test_support::orchard_address_fixture(0x52);
     lock.shielded_recipient = Some(recorded.to_raw_bytes());
     let (wallet, persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
+    let wallet_id = wallet.wallet_id();
+    let conflict = remove_tracked_asset_locks_for_swept(
+        &wallet.wallet_manager,
+        &wallet_id,
+        &[lock.out_point.txid],
+    )
+    .await;
+    assert_eq!(
+        live_status(&wallet, &lock.out_point).await,
+        AssetLockStatus::Conflicted
+    );
+    persistence
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                asset_locks: Some(conflict),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let wallet = restart_wallet(wallet, Arc::clone(&persistence)).await;
     let coordinator = Arc::new(coordinator);
     let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
     let prover = super::prover::CachedOrchardProver::new();
 
-    let error = wallet
-        .shielded_fund_from_asset_lock(
+    let resume = |recipient| {
+        wallet.shielded_fund_from_asset_lock(
             &coordinator,
             AssetLockFunding::FromExistingAssetLock {
                 out_point: lock.out_point,
                 consume_invitation_voucher: false,
             },
-            vec![(other, None)],
+            vec![(recipient, None)],
             &signer,
             &prover,
             None,
@@ -1056,8 +1081,34 @@ async fn should_refuse_a_generic_resume_to_a_recipient_other_than_the_recorded_o
             None,
             None,
         )
-        .await
-        .unwrap_err();
+    };
+    assert!(matches!(
+        resume(recorded).await,
+        Err(PlatformWalletError::AssetLockConflicted(out_point)) if out_point == lock.out_point
+    ));
+    let recovered = enrich_tracked_asset_locks_from_chain_lock(
+        &wallet.wallet_manager,
+        &wallet_id,
+        88,
+        &BTreeMap::from([(
+            AccountType::AssetLockShieldedAddressTopUp,
+            vec![lock.out_point.txid],
+        )]),
+    )
+    .await;
+    persistence
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                asset_locks: Some(recovered),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let staged_before = persistence.staged.lock().unwrap().clone();
+    let committed_before = persistence.committed.lock().unwrap().clone();
+    let error = resume(other).await.unwrap_err();
     assert!(
         matches!(
             &error,
@@ -1069,7 +1120,8 @@ async fn should_refuse_a_generic_resume_to_a_recipient_other_than_the_recorded_o
         ),
         "{error}"
     );
-    assert!(persistence.staged.lock().unwrap().is_empty());
+    assert_eq!(*persistence.staged.lock().unwrap(), staged_before);
+    assert_eq!(*persistence.committed.lock().unwrap(), committed_before);
     assert_eq!(
         persistence.committed_status(&lock.out_point),
         AssetLockStatus::RecoveredFromChain
@@ -1078,6 +1130,12 @@ async fn should_refuse_a_generic_resume_to_a_recipient_other_than_the_recorded_o
         live_status(&wallet, &lock.out_point).await,
         AssetLockStatus::RecoveredFromChain
     );
+    // Recipient A passes preflight. This fixture's synthetic credit address
+    // stops funding resolution at local key lookup, before submission.
+    assert!(matches!(
+        resume(recorded).await,
+        Err(PlatformWalletError::AssetLockTransaction(_))
+    ));
 }
 
 /// A repeated-UUID drain that names a different recipient is refused the

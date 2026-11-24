@@ -1700,6 +1700,9 @@ pub enum AssetLockPersistenceError {
     /// An existing UUID association is immutable.
     #[error("asset lock operation ID cannot change")]
     OperationIdConflict,
+    /// An update attempted to change the recipient recorded for this outpoint.
+    #[error("asset lock shielded recipient cannot change")]
+    ShieldedRecipientConflict,
     /// The snapshot does not follow or exactly repeat the stored generation.
     #[error("stale asset lock operation revision")]
     OperationRevisionConflict,
@@ -1713,6 +1716,7 @@ impl AssetLockPersistenceError {
     pub const fn reason(self) -> &'static str {
         match self {
             Self::OperationIdConflict => "asset lock operation ID cannot change",
+            Self::ShieldedRecipientConflict => "asset lock shielded recipient cannot change",
             Self::OperationRevisionConflict => "stale asset lock operation revision",
             Self::MissingOperationPredecessor => "operation transition has no durable predecessor",
         }
@@ -1720,18 +1724,28 @@ impl AssetLockPersistenceError {
 }
 
 impl AssetLockEntry {
+    /// Whether this snapshot carries conflict or recovery ordering evidence.
+    pub fn requires_operation_revision(&self) -> bool {
+        self.operation_revision != 0
+            || self.expected_operation_revision.is_some()
+            || self.status == AssetLockStatus::Conflicted
+    }
+
+    /// A backend with no binding support can project a recipient-only lock
+    /// to its legacy format while the live wallet preserves the recipient.
+    pub fn allows_legacy_projection(&self) -> bool {
+        self.operation_id.is_none() && self.shielded_recipient.is_some()
+    }
+
     /// Decide a durable upsert before any backend mutation. The predecessor must
-    /// be the stored row for this wallet/outpoint. Apply retains a stored UUID
-    /// when the incoming snapshot omits it; Ignore preserves the entire row.
+    /// be the stored row for this wallet/outpoint. Apply retains any stored
+    /// UUID and recipient omitted by the snapshot; Ignore keeps the entire row.
     pub fn persistence_action(
         &self,
         previous: Option<&Self>,
     ) -> Result<AssetLockPersistenceAction, AssetLockPersistenceError> {
         let Some(previous) = previous else {
-            if self.operation_revision != 0
-                || self.expected_operation_revision.is_some()
-                || self.status == AssetLockStatus::Conflicted
-            {
+            if self.requires_operation_revision() {
                 return Err(AssetLockPersistenceError::MissingOperationPredecessor);
             }
             return Ok(AssetLockPersistenceAction::Apply);
@@ -1741,6 +1755,13 @@ impl AssetLockEntry {
             && previous.operation_id != self.operation_id
         {
             return Err(AssetLockPersistenceError::OperationIdConflict);
+        }
+        if previous
+            .shielded_recipient
+            .zip(self.shielded_recipient)
+            .is_some_and(|(stored, incoming)| stored != incoming)
+        {
+            return Err(AssetLockPersistenceError::ShieldedRecipientConflict);
         }
         if !self.accepts_operation_snapshot(previous) {
             return Err(AssetLockPersistenceError::OperationRevisionConflict);
@@ -1756,7 +1777,12 @@ impl AssetLockEntry {
 
     /// Whether this snapshot can replace the current operation generation.
     /// Lifecycle updates within a generation cannot enter or leave conflict.
-    pub fn follows_operation(&self, revision: u64, status: &AssetLockStatus) -> bool {
+    pub fn follows_operation(
+        &self,
+        revision: u64,
+        status: &AssetLockStatus,
+        has_stored_recipient: bool,
+    ) -> bool {
         if self.operation_revision > MAX_ASSET_LOCK_OPERATION_REVISION {
             return false;
         }
@@ -1764,7 +1790,9 @@ impl AssetLockEntry {
             Some(expected) => {
                 expected == revision
                     && self.operation_revision > revision
-                    && self.operation_id.is_some()
+                    && (self.operation_id.is_some()
+                        || self.shielded_recipient.is_some()
+                        || has_stored_recipient)
                     && (self.status == AssetLockStatus::Conflicted
                         || (*status == AssetLockStatus::Conflicted
                             || self.operation_revision.saturating_sub(revision) > 1)
@@ -1784,7 +1812,11 @@ impl AssetLockEntry {
     /// Accept an ordered snapshot or the exact re-delivery of a committed CAS.
     /// Hosts call this owner predicate rather than duplicating field equality.
     pub fn accepts_operation_snapshot(&self, previous: &Self) -> bool {
-        if self.follows_operation(previous.operation_revision, &previous.status) {
+        if self.follows_operation(
+            previous.operation_revision,
+            &previous.status,
+            previous.shielded_recipient.is_some(),
+        ) {
             return true;
         }
         if self.expected_operation_revision.is_some()
@@ -1792,6 +1824,8 @@ impl AssetLockEntry {
         {
             let mut incoming = self.clone();
             incoming.expected_operation_revision = None;
+            incoming.shielded_recipient =
+                incoming.shielded_recipient.or(previous.shielded_recipient);
             let mut stored = previous.clone();
             stored.expected_operation_revision = None;
             return incoming == stored;
@@ -1854,7 +1888,11 @@ impl Merge for AssetLockChangeSet {
             if let Some(existing) = self.asset_locks.get_mut(&out_point) {
                 if !entry
                     .preserve_recovery_metadata(existing.operation_id, existing.shielded_recipient)
-                    || !entry.follows_operation(existing.operation_revision, &existing.status)
+                    || !entry.follows_operation(
+                        existing.operation_revision,
+                        &existing.status,
+                        existing.shielded_recipient.is_some(),
+                    )
                 {
                     continue;
                 }
@@ -1887,15 +1925,16 @@ impl Merge for AssetLockChangeSet {
             self.removed.remove(&out_point);
             self.asset_locks.insert(out_point, entry);
         }
-        // Stale removals cannot erase consumed, dispatched, or revised operation
-        // evidence. Ordinary unbound locks and known-unsent builds still remove.
+        // Stale removals cannot erase terminal or dispatched recovery evidence.
         for out_point in other.removed {
-            let consumed = self.asset_locks.get(&out_point).is_some_and(|entry| {
-                !entry
-                    .status
-                    .permits_removal(entry.operation_id, entry.operation_revision)
+            let retained = self.asset_locks.get(&out_point).is_some_and(|entry| {
+                !entry.status.permits_removal(
+                    entry.operation_id.is_some(),
+                    entry.shielded_recipient.is_some(),
+                    entry.operation_revision,
+                )
             });
-            if !consumed {
+            if !retained {
                 self.asset_locks.remove(&out_point);
                 self.removed.insert(out_point);
             }
