@@ -196,8 +196,8 @@ where
 mod zero_amount_tests {
     use super::*;
     use crate::error::PlatformWalletError;
-    use dpp::address_funds::PlatformAddress;
     use crate::IdentityCreationKeyLayout;
+    use dpp::address_funds::PlatformAddress;
     use dpp::platform_value::BinaryData;
     use dpp::prelude::Identifier;
     use dpp::shielded::builder::OrchardProver;

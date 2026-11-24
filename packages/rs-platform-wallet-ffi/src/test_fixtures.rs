@@ -2,8 +2,8 @@
 
 use std::ffi::CStr;
 use std::os::raw::c_char;
-use std::ptr::NonNull;
 use std::ptr;
+use std::ptr::NonNull;
 use std::sync::Arc;
 
 use dpp::consensus::basic::identity::TooManyMasterPublicKeyError;
