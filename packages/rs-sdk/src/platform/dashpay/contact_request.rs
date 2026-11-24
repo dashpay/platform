@@ -173,8 +173,7 @@ pub struct SignedContactRequest {
 /// request **we are about to mint**. The sender always references its own
 /// ENCRYPTION key.
 ///
-/// Mint-side only — see [`sender_key_purpose_is_acceptable_on_receive`] for
-/// what we accept from documents already on chain.
+/// Mint-side only; received immutable documents are not judged by purpose.
 pub(crate) fn sender_key_purpose_is_valid(purpose: Purpose) -> bool {
     purpose == Purpose::ENCRYPTION
 }
