@@ -5841,6 +5841,218 @@ extension ManagedPlatformWallet {
             return newBalance
         }.value
     }
+
+    /// Outcome of `resumeTopUpToRecordedRecipient`: the identity the lock
+    /// paid (32 bytes; in this wallet or not) and its balance after the
+    /// top-up: the proved one, or for an identity this wallet manages a newer
+    /// verified balance the wallet already holds.
+    public struct IdentityTopUpResult: Equatable, Sendable {
+        public let identityId: Data
+        public let newBalance: UInt64
+    }
+
+    /// Top up someone else's identity — `identityId` (32 bytes), one this
+    /// wallet does not manage — from a new Core asset lock funded by the
+    /// wallet's balance. Wraps
+    /// `platform_wallet_top_up_external_identity_with_funding_signer`: Rust
+    /// fetches the identity from Platform, records it on the lock's row
+    /// before the broadcast and adds nothing to the wallet (an identity the
+    /// wallet already holds gets its local balance updated). Returns the
+    /// identity's proved post-transition balance. `accountIndex` has the same
+    /// meaning as in `topUpIdentityWithFunding`.
+    ///
+    /// Refused before anything is built: an amount below Platform's top-up
+    /// minimum (`invalidParameter`), an identity Platform does not know
+    /// (`identityNotFound`), and a store that does not keep identity
+    /// recipients (`PlatformWalletPersistenceCapabilities.assetLockIdentityRecipients`).
+    ///
+    /// `onAssetLockBuilt` receives the outpoint of the lock this call built,
+    /// once the native call has returned and before the balance is returned
+    /// or the error thrown. It is not called when nothing was built, so a
+    /// failure without it is safe to retry. After it is called, never retry
+    /// with a new lock, or the identity may be paid twice:
+    /// - `transactionBroadcastRejected`: Core rejected the lock and it was
+    ///   removed with its inputs released; a new call is safe.
+    /// - `transactionBroadcastUnconfirmed`: the lock may be on the network,
+    ///   or its row may come back after a restart while its inputs stay
+    ///   reserved. Never build a new lock; resume that outpoint with
+    ///   `resumeTopUpToRecordedRecipient`, after the next launch if it is not
+    ///   tracked now, whatever the resume answers.
+    /// - any other error: resume that outpoint the same way. Only after one
+    ///   of these errors does a resume answering `assetLockNotTracked` mean
+    ///   the lock was removed before it was sent, so a new call is safe.
+    ///
+    /// The native call runs to completion even if the calling task is
+    /// cancelled, and its outcome is still delivered.
+    public func topUpExternalIdentityWithFunding(
+        identityId: Data,
+        amountDuffs: UInt64,
+        accountIndex: UInt32,
+        onAssetLockBuilt: @Sendable (AssetLockBuiltOutPoint) -> Void
+    ) async throws -> UInt64 {
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "identityId must be 32 bytes, got \(identityId.count)"
+            )
+        }
+        let handle = self.handle
+        // Same `MnemonicResolver` rationale as `topUpIdentityWithFunding`.
+        let coreSigner = MnemonicResolver()
+        let (outcome, built) = await Task.detached(priority: .userInitiated) {
+            () -> (Result<UInt64, Error>, AssetLockBuiltOutPoint?) in
+            var idTuple = ManagedPlatformWallet.byteTuple32(identityId)
+            var newBalance: UInt64 = 0
+            var outPoint = OutPointFFI()
+            // `withExtendedLifetime` pins `coreSigner` across the synchronous
+            // FFI call; keep the call inline.
+            let result = withExtendedLifetime(coreSigner) {
+                platform_wallet_top_up_external_identity_with_funding_signer(
+                    handle,
+                    &idTuple,
+                    amountDuffs,
+                    accountIndex,
+                    coreSigner.handle,
+                    &newBalance,
+                    &outPoint
+                )
+            }
+            let built = AssetLockBuiltOutPoint(reported: outPoint)
+            do {
+                try result.check()
+                return (.success(newBalance), built)
+            } catch {
+                return (.failure(error), built)
+            }
+        }.value
+        if let built {
+            onAssetLockBuilt(built)
+        }
+        return try outcome.get()
+    }
+
+    /// Resume an interrupted identity top-up to the identity its lock pays.
+    /// The caller names no identity, so a recovery cannot pay someone else's
+    /// top-up into one of this wallet's identities. Wraps
+    /// `platform_wallet_resume_identity_top_up_to_recorded_recipient_signer`:
+    /// a bound top-up lock pays the wallet's identity at its registration
+    /// index, an unbound one the identity its row recorded
+    /// (`identityRecipient` on the tracked-lock lists), whether or not this
+    /// wallet holds it. Rust decides which locks it resumes; nothing is
+    /// filtered here.
+    ///
+    /// `outPointTxid` is the 32-byte raw txid (wire order, as in
+    /// `resumeTopUpWithAssetLock`). Errors: `assetLockNotTracked`,
+    /// `assetLockAlreadyConsumed`, `identityNotFound` for a bound lock whose
+    /// identity the wallet has not loaded yet (resume once identities are
+    /// synced), `assetLockRecipientUnknown` for an unbound lock recording no
+    /// identity (assign one with `assignTopUpRecipient` first, unless the
+    /// lock was rebuilt from the chain), and
+    /// `assetLockFundingMismatch` for a lock that is not an identity top-up.
+    /// The native call runs to completion even if the calling task is
+    /// cancelled, and its outcome is still delivered.
+    public func resumeTopUpToRecordedRecipient(
+        outPointTxid: Data,
+        outPointVout: UInt32
+    ) async throws -> IdentityTopUpResult {
+        guard outPointTxid.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "outPointTxid must be exactly 32 bytes (was \(outPointTxid.count))"
+            )
+        }
+        let handle = self.handle
+        // Same `MnemonicResolver` rationale as `topUpIdentityWithFunding`.
+        let coreSigner = MnemonicResolver()
+        return try await Task.detached(priority: .userInitiated) { () -> IdentityTopUpResult in
+            var outPoint = ManagedPlatformWallet.outPointFFI(txid: outPointTxid, vout: outPointVout)
+            var paidIdentity = ManagedPlatformWallet.byteTuple32(Data(count: 32))
+            var newBalance: UInt64 = 0
+            // `withExtendedLifetime` pins `coreSigner` across the synchronous
+            // FFI call; keep the call inline.
+            let result = withExtendedLifetime(coreSigner) {
+                platform_wallet_resume_identity_top_up_to_recorded_recipient_signer(
+                    handle,
+                    &outPoint,
+                    coreSigner.handle,
+                    &paidIdentity,
+                    &newBalance
+                )
+            }
+            try result.check()
+            return IdentityTopUpResult(
+                identityId: Swift.withUnsafeBytes(of: paidIdentity) { Data($0) },
+                newBalance: newBalance
+            )
+        }.value
+    }
+
+    /// Assign `identityId` (32 bytes) as the identity the unassigned unbound
+    /// top-up lock at the outpoint pays, as the user chose it, then resume it
+    /// with `resumeTopUpToRecordedRecipient`. Wraps
+    /// `platform_wallet_assign_identity_top_up_recipient`. Such a lock is
+    /// flagged `identityRecipientUnassigned` on the tracked-lock lists.
+    ///
+    /// The assignment is permanent. Rust looks the identity up on Platform
+    /// first: one Platform does not know is `identityNotFound` and nothing is
+    /// assigned. A lock already recording another identity is
+    /// `assetLockRecipientMismatch`; the same identity again is a no-op,
+    /// which also retries a failed store; a failed Platform lookup is
+    /// `identityLookupFailed`. On any error nothing was stored, and any
+    /// identity may be assigned again.
+    ///
+    /// A lock rebuilt from the chain (`RecoveredFromChain`, not flagged
+    /// `identityRecipientUnassigned`) may already have been used on Platform,
+    /// which the wallet cannot tell. It is assigned only with
+    /// `acknowledgeUnknownConsumption`, after telling the user so, and is
+    /// `assetLockConsumptionUnknown` otherwise. Platform uses an outpoint
+    /// once: if it already used this one, the resume is refused there with
+    /// `assetLockAlreadyConsumed`, and nothing is paid twice.
+    public func assignTopUpRecipient(
+        outPointTxid: Data,
+        outPointVout: UInt32,
+        identityId: Data,
+        acknowledgeUnknownConsumption: Bool = false
+    ) async throws {
+        guard outPointTxid.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "outPointTxid must be exactly 32 bytes (was \(outPointTxid.count))"
+            )
+        }
+        guard identityId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "identityId must be 32 bytes, got \(identityId.count)"
+            )
+        }
+        let handle = self.handle
+        try await Task.detached(priority: .userInitiated) {
+            var outPoint = ManagedPlatformWallet.outPointFFI(txid: outPointTxid, vout: outPointVout)
+            var idTuple = ManagedPlatformWallet.byteTuple32(identityId)
+            try platform_wallet_assign_identity_top_up_recipient(
+                handle,
+                &outPoint,
+                &idTuple,
+                acknowledgeUnknownConsumption
+            ).check()
+        }.value
+    }
+
+    /// `bytes` (exactly 32) as the tuple the FFI takes for a `[u8; 32]`.
+    private static func byteTuple32(_ bytes: Data) -> FFIByteTuple32 {
+        var tuple: FFIByteTuple32 = (
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        )
+        bytes.withUnsafeBytes { src in
+            Swift.withUnsafeMutableBytes(of: &tuple) { dst in
+                dst.copyMemory(from: src)
+            }
+        }
+        return tuple
+    }
+
+    /// The FFI outpoint for a 32-byte wire-order txid and an output index.
+    private static func outPointFFI(txid: Data, vout: UInt32) -> OutPointFFI {
+        OutPointFFI(txid: byteTuple32(txid), vout: vout)
+    }
 }
 
 // MARK: - Deferred (BIP70/BIP270) signed payments
