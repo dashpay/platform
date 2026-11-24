@@ -38,8 +38,11 @@
 //! every policy change, such as a quorum mode switch, before it is sent. The set is stored only if
 //! both are unchanged when it arrives, and returned only while they still
 //! match. A provider that reports no revision, which is the default, is
-//! never cached against, so a spend never reuses evidence that an earlier
-//! verification policy accepted.
+//! never cached against, so a spend never reuses evidence accepted under a
+//! quorum mode or a provider that has since been replaced. A provider's
+//! choice of source within one mode is not tracked: in Auto mode, a set
+//! verified with trusted keys before the SPV client became ready is still
+//! reused for up to the TTL.
 //!
 //! An anchor pruned after the cached fetch can still be selected, where a
 //! fresh fetch would already omit it. Platform then rejects the spend after
@@ -215,6 +218,12 @@ impl RecordedAnchorCache {
             None => Some(PolicyKey::Unbound),
             Some(sdk) => ProofPolicy::of(&*sdk.upgrade()?).map(PolicyKey::Bound),
         }
+    }
+
+    /// Whether a set could be reused now: the TTL is non-zero and the policy
+    /// in force can be read. When it cannot, a spend takes the uncached path.
+    pub(crate) fn can_reuse(&self) -> bool {
+        !self.ttl.is_zero() && self.current_policy().is_some()
     }
 
     /// Stamp a request about to be sent.
@@ -463,6 +472,34 @@ mod tests {
         let control = control.for_sdk(&plain).unwrap();
         control.insert(set(&[1]), control.stamp(), 10, 100);
         assert!(control.get(10).is_some());
+    }
+
+    #[test]
+    fn should_report_reuse_only_with_a_ttl_and_a_readable_policy() {
+        let provider = Arc::new(SwitchingProvider::default());
+        let sdk = sdk_with(Arc::clone(&provider));
+        let cache = RecordedAnchorCache::new();
+        let cache = cache.for_sdk(&sdk).unwrap();
+        assert!(cache.can_reuse());
+
+        provider.busy.store(true, Ordering::SeqCst);
+        assert!(!cache.can_reuse(), "the policy cannot be read");
+        provider.busy.store(false, Ordering::SeqCst);
+
+        let unreported = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_context_provider_arc(Arc::new(Mutex::new(SwitchingProvider::default())))
+                .build()
+                .unwrap(),
+        );
+        let never = RecordedAnchorCache::new();
+        assert!(
+            !never.for_sdk(&unreported).unwrap().can_reuse(),
+            "the provider reports no revision"
+        );
+
+        let zero_ttl = RecordedAnchorCache::with_ttl(Duration::ZERO);
+        assert!(!zero_ttl.for_sdk(&sdk).unwrap().can_reuse(), "a zero TTL");
     }
 
     #[test]

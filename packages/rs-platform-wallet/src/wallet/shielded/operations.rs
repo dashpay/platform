@@ -1646,8 +1646,11 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
     }
     .await;
     // The anchor may have been rejected: make the retry fetch a fresh set.
+    // A cache bound to another SDK was not consulted, so it is left alone.
     if result.is_err() {
-        anchor_cache.invalidate();
+        if let Some(anchor_cache) = anchor_cache.for_sdk(sdk) {
+            anchor_cache.invalidate();
+        }
     }
 
     match result {
@@ -2395,8 +2398,11 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     }
     .await;
     // The anchor may have been rejected: make the retry fetch a fresh set.
+    // A cache bound to another SDK was not consulted, so it is left alone.
     if result.is_err() {
-        anchor_cache.invalidate();
+        if let Some(anchor_cache) = anchor_cache.for_sdk(sdk) {
+            anchor_cache.invalidate();
+        }
     }
 
     match result {
@@ -2572,8 +2578,11 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     }
     .await;
     // The anchor may have been rejected: make the retry fetch a fresh set.
+    // A cache bound to another SDK was not consulted, so it is left alone.
     if result.is_err() {
-        anchor_cache.invalidate();
+        if let Some(anchor_cache) = anchor_cache.for_sdk(sdk) {
+            anchor_cache.invalidate();
+        }
     }
 
     match result {
@@ -2744,8 +2753,11 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     }
     .await;
     // The anchor may have been rejected: make the retry fetch a fresh set.
+    // A cache bound to another SDK was not consulted, so it is left alone.
     if result.is_err() {
-        anchor_cache.invalidate();
+        if let Some(anchor_cache) = anchor_cache.for_sdk(sdk) {
+            anchor_cache.invalidate();
+        }
     }
 
     match result {
@@ -2969,8 +2981,11 @@ where
     }
     .await;
     // The anchor may have been rejected: make the retry fetch a fresh set.
+    // A cache bound to another SDK was not consulted, so it is left alone.
     if result.is_err() {
-        anchor_cache.invalidate();
+        if let Some(anchor_cache) = anchor_cache.for_sdk(sdk) {
+            anchor_cache.invalidate();
+        }
     }
 
     match result {
@@ -3336,7 +3351,13 @@ async fn extract_spends_and_cached_anchor<S: ShieldedStore>(
         ));
     }
 
-    let Some(anchor_cache) = anchor_cache.for_sdk(sdk) else {
+    // A cache bound to another SDK, or one that cannot reuse a set now (a
+    // zero TTL, or a provider reporting no policy revision), is skipped
+    // without reading the tree size for it.
+    let Some(anchor_cache) = anchor_cache
+        .for_sdk(sdk)
+        .filter(|anchor_cache| anchor_cache.can_reuse())
+    else {
         return extract_spends_and_recorded_anchor(sdk, store, notes).await;
     };
     select_spends_with_anchor_cache(store, anchor_cache, notes, || async {
@@ -3419,6 +3440,8 @@ where
         .map(|(spends, anchor)| (spends, anchor, height))
 }
 
+/// [`extract_spends_and_cached_anchor`] without the cache: always fetches the
+/// recorded anchor set. Same selection and the same returned proved height.
 async fn extract_spends_and_recorded_anchor<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
@@ -8221,8 +8244,11 @@ mod select_recorded_spends_tests {
     use super::*;
     use crate::wallet::shielded::anchor_cache::FetchStamp;
     use crate::wallet::shielded::file_store::FileBackedShieldedStore;
+    use crate::wallet::shielded::CachedOrchardProver;
     use dashcore::Network;
     use grovedb_commitment_tree::{ExtractedNoteCommitment, Note, NoteValue, RandomSeed, Rho};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
 
     /// Unique temp path for a test tree (no `tempfile` dev-dep).
     fn temp_tree_path(tag: &str) -> std::path::PathBuf {
@@ -8465,10 +8491,6 @@ mod select_recorded_spends_tests {
     // ---------------------------------------------------------------------
     // Recorded-anchor cache on the spend path (`select_spends_with_anchor_cache`)
     // ---------------------------------------------------------------------
-
-    use crate::wallet::shielded::anchor_cache::RecordedAnchorCache;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::time::Duration;
 
     /// A wallet tree one block-boundary checkpoint deep, then left mid-block by
     /// an index-chunk sync: the spend must select the depth-1 root. Returns the
@@ -8827,7 +8849,7 @@ mod select_recorded_spends_tests {
         );
 
         let to = PlatformAddress::P2pkh([0x22; 20]);
-        let prover = crate::wallet::shielded::CachedOrchardProver::new();
+        let prover = CachedOrchardProver::new();
         let result = unshield(
             &sdk, &store, cache, None, wallet_id, &keys, 0, &to, 1_000, &&prover,
         )
@@ -8844,6 +8866,51 @@ mod select_recorded_spends_tests {
         assert!(
             cache.get(size).is_none(),
             "a failed spend must drop the cached anchor set"
+        );
+    }
+
+    /// A spend on one SDK never consults a cache bound to another, so its
+    /// failure must not drop that cache's set either.
+    #[tokio::test]
+    async fn should_keep_another_sdks_cached_set_when_a_spend_fails() {
+        let (path, store, _, recorded_root) = mid_block_store("cache_other_sdk_failed_spend");
+        let keys = OrchardKeySet::from_seed(&[0x42; 32], Network::Testnet, 0)
+            .expect("ZIP-32 derivation from a fixed seed");
+        let wallet_id: WalletId = [0x32; 32];
+        let mut note = real_note(50);
+        note.value = 1_000_000_000_000_000;
+        store
+            .write()
+            .await
+            .save_note(SubwalletId::new(wallet_id, 0), &note)
+            .expect("save note");
+
+        let size = tree_size(&store).await;
+        let owner = Arc::new(dash_sdk::Sdk::new_mock());
+        let cache = RecordedAnchorCache::new();
+        let cache = cache.for_sdk(&owner).expect("fresh cache binds");
+        cache.insert(
+            Arc::new([recorded_root].into_iter().collect()),
+            cache.stamp(),
+            size,
+            100,
+        );
+
+        // The other mock SDK has no recorded-anchor expectation, so its
+        // uncached fetch fails.
+        let other = Arc::new(dash_sdk::Sdk::new_mock());
+        let to = PlatformAddress::P2pkh([0x22; 20]);
+        let prover = CachedOrchardProver::new();
+        let result = unshield(
+            &other, &store, cache, None, wallet_id, &keys, 0, &to, 1_000, &&prover,
+        )
+        .await;
+
+        let _ = std::fs::remove_file(&path);
+        assert!(result.is_err(), "the other SDK's fetch fails");
+        assert!(
+            cache.get(size).is_some(),
+            "the owner SDK's cached set is kept"
         );
     }
 }
