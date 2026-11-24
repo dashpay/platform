@@ -402,6 +402,7 @@ fun CreateDecisionProposalScreen(
 ) {
     val appState = LocalAppState.current
     val container = LocalAppContainer.current
+    val sdk by appState.sdk.collectAsStateWithLifecycle()
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     // Identities on the active network held by a loaded wallet, so the
@@ -575,8 +576,9 @@ fun CreateDecisionProposalScreen(
                 FormSection(title = "Outcome Unknown") {
                     Text(
                         "The create may have gone through, with the decision proposal fund " +
-                            "paid. Do not create it again: go back and look for the proposal " +
-                            "under Mine before trying again.",
+                            "paid. Do not create it again. The proposal can take a while to " +
+                            "appear under Mine, and it not being listed there does not mean " +
+                            "the create failed, so it is no reason to try again.",
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.testTag("createDecisionProposal.unconfirmed"),
                     )
@@ -591,9 +593,11 @@ fun CreateDecisionProposalScreen(
             SubmitButton(
                 text = if (isSubmitting) "Broadcasting…" else "Create / Broadcast",
                 isLoading = isSubmitting,
-                enabled = manager != null && owner != null && unconfirmedMessage == null,
+                enabled = sdk != null && manager != null && owner != null &&
+                    unconfirmedMessage == null,
                 modifier = Modifier.fillMaxWidth().testTag("createDecisionProposal.submitButton"),
             ) {
+                val currentSdk = sdk ?: return@SubmitButton
                 val mgr = manager ?: return@SubmitButton
                 val proposer = owner ?: return@SubmitButton
                 // Form parsing only: the limits on these values are Platform's.
@@ -609,15 +613,18 @@ fun CreateDecisionProposalScreen(
                     submission.error = "The proposer's wallet is not loaded in the wallet manager."
                     return@SubmitButton
                 }
-                val params = DecisionProposalParams(
-                    title = title,
-                    description = description,
-                    url = url.trim().ifEmpty { null },
-                    passPercent = pass,
-                    minimumTurnoutPercent = turnout,
-                    endDateMs = System.currentTimeMillis() + days * MILLIS_PER_DAY,
-                )
+                val requestedEndDateMs = System.currentTimeMillis() + days * MILLIS_PER_DAY
                 submission.submit {
+                    // Rust moves an end of exactly 7 or 28 days inside the window Platform
+                    // measures from the block, which comes seconds after now.
+                    val params = DecisionProposalParams(
+                        title = title,
+                        description = description,
+                        url = url.trim().ifEmpty { null },
+                        passPercent = pass,
+                        minimumTurnoutPercent = turnout,
+                        endDateMs = currentSdk.decisionProposals.endDate(requestedEndDateMs),
+                    )
                     mgr.decisionProposals.create(
                         walletHandle = wallet.handle,
                         ownerId = proposer.identityId,

@@ -123,6 +123,34 @@ extension SDK {
         }
     }
 
+    // MARK: - End date
+
+    /// The end date to create a proposal with when the user asked for
+    /// `requested` now (`dash_sdk_decision_proposal_get_end_date`).
+    ///
+    /// Platform accepts an end date from a week to four weeks after the block
+    /// that creates the proposal, which comes seconds after now, so exactly a
+    /// week from now is always refused. rs-sdk moves an end date within an
+    /// hour of either edge of that window (as of this device's clock) to an
+    /// hour inside it, so by at most two hours, and returns any other
+    /// unchanged, for Platform to judge. A network below protocol version 15
+    /// has no decision proposals, which is an error.
+    ///
+    /// `ManagedPlatformWallet.createDecisionProposal` puts the end date it is
+    /// given as it is: give it this one.
+    ///
+    /// - Parameter requested: The end date the user picked.
+    public nonisolated func decisionProposalEndDate(requested: Date) async throws -> Date {
+        let requestedMs = requested.millisecondsSince1970
+        let endDateMs = try await performBlockingQuery { handle in
+            try DecisionProposalFFI.consumeMilliseconds(
+                dash_sdk_decision_proposal_get_end_date(handle, requestedMs),
+                function: "dash_sdk_decision_proposal_get_end_date"
+            )
+        }
+        return Date(millisecondsSince1970: endDateMs)
+    }
+
     /// The id (base58) of the yes/no poll a decision proposal opens, the id
     /// the end-date listing of vote polls names it by
     /// (`dash_sdk_decision_proposal_get_vote_poll_id`).
@@ -355,5 +383,25 @@ enum DecisionProposalFFI {
             throw SDKError.internalError("\(function) returned no data")
         }
         return try DecisionProposalJSON.decode([DecisionProposal].self, from: json)
+    }
+
+    /// A time in milliseconds since the Unix epoch, written by the FFI as a
+    /// decimal string (not JSON).
+    static func consumeMilliseconds(_ result: DashSDKResult, function: String) throws -> UInt64 {
+        guard let string = try consumeString(result) else {
+            throw SDKError.internalError("\(function) returned no data")
+        }
+        return try DecisionProposalJSON.milliseconds(from: string)
+    }
+}
+
+extension DecisionProposalJSON {
+    /// The milliseconds since the Unix epoch `string` writes as a decimal
+    /// number, the form the end date read returns.
+    static func milliseconds(from string: String) throws -> UInt64 {
+        guard let milliseconds = UInt64(string) else {
+            throw SDKError.serializationError("Not a time in milliseconds: \(string)")
+        }
+        return milliseconds
     }
 }

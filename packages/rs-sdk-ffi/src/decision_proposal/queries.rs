@@ -1,6 +1,8 @@
 //! Decision proposal reads: a proposal by id, the three listings, and the proposal's yes/no
 //! poll (its id, its state and a masternode's answer on it). Each returns JSON written by
-//! [`super::json`], or no data when what it reads is absent.
+//! [`super::json`], or no data when what it reads is absent. Also the end date a proposal
+//! asked to end "a week from now" or "four weeks from now" is created with
+//! ([`dash_sdk_decision_proposal_get_end_date`]).
 
 use super::json::{masternode_vote_json, proposal_json, proposals_json, vote_poll_state_json};
 use super::{json_result, optional_identifier, required_identifier, sdk_wrapper, string_result};
@@ -265,6 +267,50 @@ unsafe fn get_vote_poll_id_inner(
     Ok(Some(vote_poll_id.to_string(Encoding::Base58)))
 }
 
+/// The end date to create a decision proposal with when the user asked for
+/// `requested_end_date_ms` now, for example from "ends in N days" or a date picker.
+///
+/// Platform accepts an end date from a week to four weeks after the block that creates the
+/// proposal, which comes seconds after now, so an end date of exactly a week from now is always
+/// refused and one of exactly four weeks from now is refused when this device's clock is ahead
+/// of the block's. rs-sdk (`Sdk::decision_proposal_end_date`) moves an end date within an hour
+/// of either edge of that window, as of this device's clock, to an hour inside it (so by at
+/// most two hours), and returns any other end date as it is, for Platform to judge. Pass the
+/// result as `end_date_ms` to `platform_wallet_decision_proposal_create`, which puts the end
+/// date it is given as it is.
+///
+/// # Parameters
+/// * `sdk_handle` - Handle to the SDK instance.
+/// * `requested_end_date_ms` - The end date asked for, in milliseconds since the Unix epoch.
+///
+/// # Returns
+/// The end date in milliseconds since the Unix epoch as a decimal string (not JSON), for
+/// example `"1796130000000"`. Free it with `dash_sdk_string_free`. A network below protocol
+/// version 15 has no decision proposals, which is an error.
+///
+/// # Safety
+/// - `sdk_handle` must be a valid pointer to an initialized `SDKHandle`.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_decision_proposal_get_end_date(
+    sdk_handle: *const SDKHandle,
+    requested_end_date_ms: u64,
+) -> DashSDKResult {
+    string_result(get_end_date_inner(sdk_handle, requested_end_date_ms))
+}
+
+unsafe fn get_end_date_inner(
+    sdk_handle: *const SDKHandle,
+    requested_end_date_ms: u64,
+) -> Result<Option<String>, FFIError> {
+    let wrapper = sdk_wrapper(sdk_handle)?;
+    let end_date = wrapper.runtime.block_on(
+        wrapper
+            .sdk
+            .decision_proposal_end_date(requested_end_date_ms),
+    )?;
+    Ok(Some(end_date.to_string()))
+}
+
 /// The status and tallies of a decision proposal's yes/no poll.
 ///
 /// # Parameters
@@ -372,7 +418,9 @@ unsafe fn get_masternode_vote_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::test_utils::{create_mock_sdk_handle, destroy_mock_sdk_handle};
+    use crate::test_utils::test_utils::{
+        create_mock_sdk_handle, create_mock_sdk_handle_at_latest_version, destroy_mock_sdk_handle,
+    };
     use crate::{dash_sdk_error_free, DashSDKErrorCode};
     use dash_sdk::dpp::platform_value::Identifier;
     use std::ffi::CString;
@@ -440,6 +488,7 @@ mod tests {
             ));
 
             let no_sdk = std::ptr::null();
+            assert_invalid_parameter(dash_sdk_decision_proposal_get_end_date(no_sdk, 0));
             assert_invalid_parameter(dash_sdk_decision_proposal_fetch(no_sdk, id.as_ptr()));
             assert_invalid_parameter(dash_sdk_decision_proposal_list_by_end_date(
                 no_sdk,
@@ -472,6 +521,48 @@ mod tests {
                 pro_tx_hash.as_ptr(),
                 id.as_ptr(),
             ));
+            destroy_mock_sdk_handle(handle);
+        }
+    }
+
+    /// The end date as a decimal string, for an SDK whose protocol version has decision
+    /// proposals: an end date a week from now moves an hour later, one two weeks from now does
+    /// not move.
+    #[test]
+    fn should_return_the_end_date_rs_sdk_computes_as_a_decimal_string() {
+        let handle = create_mock_sdk_handle_at_latest_version();
+        let limits = &dash_sdk::dpp::version::PlatformVersion::latest().system_limits;
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("the clock is past the epoch")
+            .as_millis() as u64;
+        let a_week = now_ms + limits.min_yes_no_vote_poll_duration_ms;
+        let two_weeks = now_ms + 14 * 86_400_000;
+        unsafe {
+            let read = |requested: u64| {
+                let result = dash_sdk_decision_proposal_get_end_date(handle, requested);
+                if !result.error.is_null() {
+                    let message =
+                        std::ffi::CStr::from_ptr((*result.error).message).to_string_lossy();
+                    panic!("error: {message}");
+                }
+                let text = std::ffi::CStr::from_ptr(result.data as *const c_char)
+                    .to_str()
+                    .expect("UTF-8")
+                    .to_string();
+                crate::types::dash_sdk_string_free(result.data as *mut c_char);
+                text.parse::<u64>().expect("a decimal string")
+            };
+            let moved = read(a_week);
+            assert!(
+                moved > a_week + 59 * 60 * 1000,
+                "{moved} is about an hour later"
+            );
+            assert!(
+                moved <= a_week + 61 * 60 * 1000,
+                "{moved} is about an hour later"
+            );
+            assert_eq!(read(two_weeks), two_weeks);
             destroy_mock_sdk_handle(handle);
         }
     }

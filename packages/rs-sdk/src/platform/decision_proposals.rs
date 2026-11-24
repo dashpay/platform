@@ -6,8 +6,9 @@
 //! * [`Sdk::build_decision_proposal`] builds a proposal, put like any document create with
 //!   [`PutDocument`](crate::platform::transition::put_document::PutDocument). The create states
 //!   the fund itself. Consensus refuses a rule outside the contract's limits and an end date
-//!   less than a week or more than four weeks after the block that creates the proposal; the
-//!   build moves an end date at either edge inside it ([`decision_proposal_end_date`]).
+//!   less than a week or more than four weeks after the block that creates the proposal. The
+//!   build puts the end date it is given as it is; [`Sdk::decision_proposal_end_date`] turns an
+//!   end date asked for as "a week from now" or "four weeks from now" into one Platform accepts.
 //! * [`build_decision_proposal_edit`] gives a proposal new text, put as a replace. Only the
 //!   title, description and url change, and only for a day after the proposal is created.
 //! * [`Sdk::fetch_decision_proposal`] reads a proposal by id, and three listings read them a
@@ -46,7 +47,7 @@ use dpp::document::{DocumentV0, DocumentV0Getters, DocumentV0Setters, INITIAL_RE
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{Bytes32, Value};
-use dpp::prelude::TimestampMillis;
+use dpp::prelude::{TimestampMillis, TimestampMillisInterval};
 use dpp::secp256k1::rand::rngs::StdRng;
 use dpp::secp256k1::rand::{Rng, SeedableRng};
 use dpp::version::feature_initial_protocol_versions::DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION;
@@ -76,9 +77,9 @@ pub struct DecisionProposalInput {
     pub minimum_turnout_percent: u8,
     /// When voting closes, in milliseconds since the Unix epoch: from a week to four weeks
     /// after the block that creates the proposal, which is a little later than now.
-    /// [`Sdk::build_decision_proposal`] moves an end date at either edge of that window inside
-    /// it ([`decision_proposal_end_date`]), so "a week from now" and "four weeks from now" are
-    /// accepted.
+    /// The proposal is built with this end date as it is. An end date asked for as "a week from
+    /// now" or "four weeks from now" is refused as it is; pass it through
+    /// [`Sdk::decision_proposal_end_date`] first.
     pub end_date: TimestampMillis,
 }
 
@@ -173,14 +174,14 @@ impl DecisionProposal {
     }
 }
 
-/// How far inside the end date window [`decision_proposal_end_date`] puts an end date that was
-/// asked for at one of its edges: one hour.
+/// How close to an edge of the end date window [`decision_proposal_end_date`] takes an end date
+/// as meaning that edge, and how far inside the window it then puts it: one hour.
 ///
 /// The window is measured from the time of the block that creates the proposal, which is later
 /// than the moment the proposal is built by the signing, broadcast and inclusion delay (seconds,
 /// more when the broadcast is retried), and device clocks differ a little from block times. An
 /// hour covers both and changes a vote of one to four weeks by nothing a voter notices.
-pub const DECISION_PROPOSAL_END_DATE_MARGIN_MS: TimestampMillis = 60 * 60 * 1000;
+pub const DECISION_PROPOSAL_END_DATE_MARGIN_MS: TimestampMillisInterval = 60 * 60 * 1000;
 
 /// The end date to build a proposal with when `requested_end_date` was asked for at `now_ms`
 /// (this device's clock).
@@ -191,8 +192,13 @@ pub const DECISION_PROPOSAL_END_DATE_MARGIN_MS: TimestampMillis = 60 * 60 * 1000
 /// is refused when this device's clock is ahead of the block's. So an end date within
 /// [`DECISION_PROPOSAL_END_DATE_MARGIN_MS`] of either edge of the window measured from
 /// `now_ms`, inside or just outside it (the caller read its clock a moment before this), is
-/// moved to that margin inside the window. Any other end date is returned as it is: one well
-/// inside the window needs no change, and Platform refuses one further outside it.
+/// moved to that margin inside the window, so it moves by at most twice the margin (two hours,
+/// for one asked for an hour before the window opens). Any other end date is returned as it
+/// is: one well inside the window needs no change, and Platform refuses one further outside it.
+///
+/// Opt-in: [`Sdk::build_decision_proposal`] puts the end date it is given as it is, so a caller
+/// with an exact deadline keeps it. [`Sdk::decision_proposal_end_date`] calls this with this
+/// device's clock and the network's protocol version.
 ///
 /// # Errors
 /// [`Error::Protocol`] when `platform_version` has no yes/no vote polls (before protocol
@@ -439,23 +445,37 @@ impl Sdk {
     }
 
     /// Builds a proposal of `owner_id` asking what `input` says (see
-    /// [`build_decision_proposal_document`]), with an end date at either edge of the window
-    /// consensus allows moved inside it as of this device's clock
-    /// ([`decision_proposal_end_date`]). The result is put like any document create; the owner
-    /// pays the decision proposal fund on top of the fees.
+    /// [`build_decision_proposal_document`]), with its end date as given. The result is put like
+    /// any document create; the owner pays the decision proposal fund on top of the fees.
     pub async fn build_decision_proposal(
         &self,
         owner_id: Identifier,
         input: &DecisionProposalInput,
     ) -> Result<DecisionProposalDocument, Error> {
         let contract = self.fetch_decision_proposals_contract().await?;
-        let now_ms = chrono::Utc::now().timestamp_millis().max(0) as TimestampMillis;
-        let input = DecisionProposalInput {
-            end_date: decision_proposal_end_date(input.end_date, now_ms, self.version())?,
-            ..input.clone()
-        };
         let entropy = Bytes32::new(StdRng::from_os_rng().random());
-        build_decision_proposal_document(&contract, owner_id, &input, entropy)
+        build_decision_proposal_document(&contract, owner_id, input, entropy)
+    }
+
+    /// The end date to create a proposal with when `requested_end_date` was asked for now: an
+    /// end date within an hour of either edge of the window Platform allows (from a week to four
+    /// weeks after the block that creates the proposal) is moved an hour inside it, any other is
+    /// returned as it is ([`decision_proposal_end_date`], with this device's clock). For a form
+    /// that offers "ends in N days" or a date picker, so that a week and four weeks are
+    /// accepted; a caller with an exact deadline passes it to the build as it is.
+    ///
+    /// A network below protocol version 15 has no decision proposals, which is an error.
+    pub async fn decision_proposal_end_date(
+        &self,
+        requested_end_date: TimestampMillis,
+    ) -> Result<TimestampMillis, Error> {
+        self.require_protocol_version(
+            DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION,
+            "the decision proposal end date",
+        )
+        .await?;
+        let now_ms = chrono::Utc::now().timestamp_millis().max(0) as TimestampMillis;
+        decision_proposal_end_date(requested_end_date, now_ms, self.version())
     }
 
     /// The proposal with id `proposal_id`, `None` when there is none.
@@ -1059,6 +1079,32 @@ mod tests {
                 requested
             );
         }
+    }
+
+    #[test]
+    fn should_build_a_proposal_with_an_edge_end_date_as_given() {
+        // The build never moves an end date: only a caller that asks for it does.
+        let limits = &PlatformVersion::latest().system_limits;
+        let edge = NOW_MS + limits.max_yes_no_vote_poll_duration_ms - 30 * 60 * 1000;
+        let input = DecisionProposalInput {
+            end_date: edge,
+            ..input()
+        };
+
+        let built = build_decision_proposal_document(
+            &proposals_contract(),
+            Identifier::new([7; 32]),
+            &input,
+            Bytes32::new([3; 32]),
+        )
+        .expect("builds");
+
+        let end_date: u64 = built
+            .document
+            .properties()
+            .get_integer(properties::END_DATE)
+            .expect("has an end date");
+        assert_eq!(end_date, edge);
     }
 
     #[test]
