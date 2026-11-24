@@ -35,7 +35,7 @@ use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::{IdentityPublicKey, KeyType};
+use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Value;
 use dpp::prelude::{DataContract, Identifier};
@@ -45,16 +45,12 @@ use dash_sdk::drive::query::{OrderClause, SelectProjection, WhereClause, WhereOp
 use dash_sdk::platform::dpns_usernames::{convert_to_homograph_safe_chars, is_contested_username};
 use dash_sdk::platform::{DocumentQuery, FetchMany};
 
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-
 use crate::changeset::{
     DpnsNameSaleStatus, DpnsNameStateChangeSet, DpnsNameStateEntry, PersistenceError,
 };
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::types::key_storage::DpnsNameInfo;
 
-use super::document::allowed_signing_security_levels;
 use super::*;
 
 mod give_up;
@@ -951,9 +947,10 @@ impl IdentityWallet {
 
     /// Auto-select the signing key for a DPNS `domain` state transition
     /// on `identity_id`: the identity's first AUTHENTICATION-purpose
-    /// ECDSA_SECP256K1 key whose security level satisfies the document
+    /// ECDSA (or ECDSA_HASH160) key whose security level satisfies the document
     /// type's requirement (the same consensus rule
-    /// [`allowed_signing_security_levels`] encodes). Replaces the app
+    /// [`super::document::allowed_signing_security_levels`] encodes), with
+    /// contract bounds allowing the `domain` type. Replaces the app
     /// layer's hardcoded "key id 1".
     async fn select_dpns_signing_key(
         &self,
@@ -972,7 +969,10 @@ impl IdentityWallet {
 
     /// [`Self::select_dpns_signing_key`] for any document type of
     /// `contract`: the key must satisfy the security level
-    /// `document_type_name` requires.
+    /// `document_type_name` requires, and its contract bounds must allow
+    /// that type (a key bound elsewhere could sign, and the network would
+    /// refuse the transition). The same policy every generic document
+    /// write uses when it names no key.
     async fn select_signing_key_for_document_type(
         &self,
         identity_id: &Identifier,
@@ -980,42 +980,8 @@ impl IdentityWallet {
         document_type_name: &str,
         signer: &impl Signer<IdentityPublicKey>,
     ) -> Result<IdentityPublicKey, PlatformWalletError> {
-        let required_level = contract
-            .document_type_for_name(document_type_name)
-            .map_err(|e| {
-                PlatformWalletError::InvalidIdentityData(format!(
-                    "DPNS contract has no {document_type_name:?} document type: {e}"
-                ))
-            })?
-            .security_level_requirement();
-        let allowed_levels = allowed_signing_security_levels(required_level);
-        let wm = self.wallet_manager.read().await;
-        let info = self.current_wallet_info(&wm)?;
-        let identity = info
-            .identity_manager
-            .wallet_identity(&self.wallet_id, identity_id)
-            .map(|m| m.identity.clone())
-            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-        drop(wm);
-        // The key's contract bounds must allow this document type of this contract: a key
-        // bound elsewhere could sign, and the network would refuse the transition
-        usable_authentication_key(
-            &identity,
-            signer,
-            contract.id(),
-            document_type_name,
-            &allowed_levels,
-            // Both ECDSA representations sign a document batch, as for DashPay profiles
-            &[KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160],
-        )?
-        .cloned()
-        .ok_or_else(|| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "No ECDSA (or ECDSA_HASH160) authentication key at a security level satisfying \
-                 {required_level}, with contract bounds allowing the DPNS \
-                 {document_type_name} type, found on identity {identity_id}"
-            ))
-        })
+        self.document_operation_signing_key(identity_id, contract, document_type_name, None, signer)
+            .await
     }
 
     // -----------------------------------------------------------------
@@ -2333,9 +2299,11 @@ mod tests {
     use super::*;
     use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
     use crate::wallet::core::WalletGeneration;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::identity::accessors::IdentitySettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+    use dpp::identity::KeyType;
     use dpp::identity::Purpose;
     use dpp::identity::SecurityLevel;
 

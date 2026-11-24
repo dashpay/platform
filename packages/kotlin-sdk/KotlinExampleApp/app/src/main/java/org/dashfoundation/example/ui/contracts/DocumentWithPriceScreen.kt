@@ -70,8 +70,10 @@ import org.dashfoundation.example.util.truncateMiddle
  *
  * The submits resolve only the acting identity's wallet (like iOS
  * `DocumentActionRunner.resolveWallet`); the Rust wallet picks the signing
- * key through the signer, so identities restored from a mnemonic (whose
- * keys are derived on demand, not stored) sign too.
+ * key: the first AUTHENTICATION key the document type's security level and
+ * the key's contract bounds allow that the signer can sign with. On Android
+ * the signer holds an identity's keys once persistence has stored them
+ * (a mnemonic restore derives and stores them then).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -376,7 +378,8 @@ internal data class ResolvedWallet(
  * Resolve the wallet handle [identity]'s document submits go through — the
  * Kotlin counterpart of `DocumentActionRunner.resolveWallet`. No signing key
  * is picked here: the Rust wallet selects the AUTHENTICATION key the
- * document type's security level allows and the signer can sign with.
+ * document type's security level and the key's contract bounds allow and
+ * the signer can sign with.
  * Throws with user-facing copy when the identity has no loaded wallet.
  */
 internal fun resolveWallet(

@@ -27,6 +27,7 @@
 //!     post-broadcast GroveDB proof-verification recursion. The owner's
 //!     balance the proof carries (from protocol version 14) is kept.
 
+use super::key_selection::usable_authentication_key;
 use super::signing_key::{require_available, AvailableSigningKey};
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -517,11 +518,29 @@ impl IdentityWallet {
     }
 
     /// The key a `document_type_name` state transition of
-    /// `signing_identity_id` on `data_contract` is signed with:
-    /// `signing_key` when the caller names one (it must be available to
-    /// `signer`), otherwise the key [`Self::select_document_signing_key`]
-    /// picks for the document type's security requirement.
-    async fn document_operation_signing_key<S>(
+    /// `signing_identity_id` on `data_contract` is signed with, for the
+    /// replace / delete / transfer / set-price / purchase flows.
+    ///
+    /// `signing_identity_id` must be an identity this wallet holds and can
+    /// sign for. With `signing_key` given (the DPNS marketplace chooses
+    /// its own), that identity must hold exactly that key and `signer`
+    /// must be able to sign with it; it is never replaced by another key.
+    /// Without one, the key is the identity's first AUTHENTICATION key,
+    /// ECDSA_SECP256K1 or ECDSA_HASH160, at a security level the document
+    /// type's requirement admits (see [`allowed_signing_security_levels`]),
+    /// that can sign a `document_type_name` document of `data_contract`
+    /// now (see [`usable_authentication_key`]: a key bound to another
+    /// contract or document type, a group-bound key, whose group
+    /// membership is not wallet state, a disabled key and an expired key
+    /// are skipped, and a key without limits is preferred) and that
+    /// `signer` can sign with. An ineligible key with a lower id therefore
+    /// never shadows a usable later one.
+    ///
+    /// The wallet manager lock is released before `signer` is asked. An
+    /// eligible key the signer cannot use keeps the structured
+    /// key-unavailable failure; no eligible key at all is refused as
+    /// `InvalidIdentityData`.
+    pub(super) async fn document_operation_signing_key<S>(
         &self,
         signing_identity_id: &Identifier,
         data_contract: &DataContract,
@@ -532,19 +551,67 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey>,
     {
+        let identity = {
+            let wm = self.wallet_manager.read().await;
+            self.current_wallet_info(&wm)?
+                .identity_manager
+                .wallet_identity(&self.wallet_id, signing_identity_id)
+                .map(|managed| managed.identity.clone())
+                .ok_or(PlatformWalletError::IdentityNotFound(*signing_identity_id))?
+        };
         if let Some(key) = signing_key {
+            if identity.public_keys().get(&key.id()) != Some(key) {
+                return Err(PlatformWalletError::InvalidIdentityData(format!(
+                    "Signing key {} is not a key of identity {signing_identity_id}",
+                    key.id()
+                )));
+            }
             return Ok(require_available(key, signer)?.clone());
         }
-        let document_type = data_contract
-            .document_type_cloned_for_name(document_type_name)
+        let contract_id = data_contract.id();
+        let required_level = data_contract
+            .document_type_for_name(document_type_name)
             .map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
-                    "Document type {document_type_name:?} not found on contract {}: {e}",
-                    data_contract.id()
+                    "Document type {document_type_name:?} not found on contract {contract_id}: {e}"
                 ))
-            })?;
-        self.select_document_signing_key(signing_identity_id, &document_type, signer)
-            .await
+            })?
+            .security_level_requirement();
+        let allowed_levels = allowed_signing_security_levels(required_level);
+        usable_authentication_key(
+            &identity,
+            signer,
+            contract_id,
+            document_type_name,
+            &allowed_levels,
+            // Both ECDSA representations sign a document batch
+            &[KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160],
+        )?
+        .cloned()
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "No ECDSA (or ECDSA_HASH160) authentication key at a security level satisfying \
+                 {required_level}, with contract bounds allowing the {document_type_name} type \
+                 of contract {contract_id}, found on identity {signing_identity_id}"
+            ))
+        })
+    }
+
+    /// Refuse, before anything is signed, a document that `owner_identity_id`
+    /// does not own: Platform would refuse the transition.
+    fn require_document_owner(
+        document: &Document,
+        owner_identity_id: &Identifier,
+    ) -> Result<(), PlatformWalletError> {
+        if document.owner_id() == *owner_identity_id {
+            Ok(())
+        } else {
+            Err(PlatformWalletError::InvalidParameter(format!(
+                "Document {} is owned by {}, not by {owner_identity_id}",
+                document.id(),
+                document.owner_id()
+            )))
+        }
     }
 
     /// Replace an existing document's properties on
@@ -553,10 +620,12 @@ impl IdentityWallet {
     /// Fetches the current document, applies `properties_json` (parsed
     /// + schema-sanitized exactly like the create path), bumps the
     /// revision, signs with the owner's AUTHENTICATION key that the
-    /// document type's security level allows and `signer` can sign with
-    /// (see [`Self::select_document_signing_key`]), broadcasts via
+    /// document type's security level allows, the key's contract bounds
+    /// admit and `signer` can sign with (see
+    /// [`Self::document_operation_signing_key`]), broadcasts via
     /// `Sdk::document_replace` on the platform-wallet 8 MB worker stack,
-    /// and returns the confirmed `Document`.
+    /// and returns the confirmed `Document`. A document the owner does not
+    /// hold is refused before anything is signed.
     pub async fn replace_document_with_signer<S>(
         &self,
         owner_identity_id: &Identifier,
@@ -586,6 +655,7 @@ impl IdentityWallet {
         let mut document = self
             .fetch_current_document(&data_contract, document_type_name, document_id)
             .await?;
+        Self::require_document_owner(&document, owner_identity_id)?;
 
         // Parse + sanitize the new properties, then overwrite the
         // fetched document's property map. The system fields (id, owner,
@@ -602,7 +672,13 @@ impl IdentityWallet {
         })?;
 
         let signing_key = self
-            .select_document_signing_key(owner_identity_id, &document_type, signer)
+            .document_operation_signing_key(
+                owner_identity_id,
+                &data_contract,
+                document_type_name,
+                None,
+                signer,
+            )
             .await?;
 
         let builder = DocumentReplaceTransitionBuilder::new(
@@ -631,8 +707,9 @@ impl IdentityWallet {
     /// `document_type_name` and broadcast.
     ///
     /// Signs with the owner's AUTHENTICATION key that the document
-    /// type's security level allows and `signer` can sign with (see
-    /// [`Self::select_document_signing_key`]) and broadcasts via
+    /// type's security level allows, the key's contract bounds admit and
+    /// `signer` can sign with (see [`Self::document_operation_signing_key`])
+    /// and broadcasts via
     /// `Sdk::document_delete` on the platform-wallet 8 MB worker stack.
     /// Returns the deleted document's `Identifier` on confirmation.
     pub async fn delete_document_with_signer<S>(
@@ -704,8 +781,9 @@ impl IdentityWallet {
     /// match the stored entry and Platform rejects the delete.
     ///
     /// Signs with the owner's AUTHENTICATION key that the document
-    /// type's security level allows and `signer` can sign with (see
-    /// [`Self::select_document_signing_key`]) and broadcasts via
+    /// type's security level allows, the key's contract bounds admit and
+    /// `signer` can sign with (see [`Self::document_operation_signing_key`])
+    /// and broadcasts via
     /// `Sdk::document_delete` on the platform-wallet 8 MB worker stack.
     /// Returns the deleted document's `Identifier` on confirmation.
     pub async fn delete_document_by_values_with_signer<S>(
@@ -838,10 +916,11 @@ impl IdentityWallet {
     ///
     /// With `signing_key` `None` the transition is signed with the
     /// owner's AUTHENTICATION key that the document type's security level
-    /// allows and `signer` can sign with (see
-    /// [`Self::select_document_signing_key`]); a caller that has already
-    /// chosen a key under stricter rules (the DPNS marketplace checks
-    /// contract bounds) passes it, and it must be available to `signer`.
+    /// allows, the key's contract bounds admit and `signer` can sign with;
+    /// a caller that has already chosen a key (the DPNS marketplace)
+    /// passes it, and the owner must hold it and `signer` be able to use
+    /// it (see [`Self::document_operation_signing_key`]). A document the
+    /// owner does not hold is refused before anything is signed.
     #[allow(clippy::too_many_arguments)]
     pub async fn transfer_document_with_signer<S>(
         &self,
@@ -863,6 +942,7 @@ impl IdentityWallet {
         let mut document = self
             .fetch_current_document(&data_contract, document_type_name, document_id)
             .await?;
+        Self::require_document_owner(&document, owner_identity_id)?;
         document.increment_revision().map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!(
                 "Failed to increment document revision: {e}"
@@ -913,7 +993,8 @@ impl IdentityWallet {
     ///
     /// `signing_key` is chosen as in
     /// [`Self::transfer_document_with_signer`]: `None` selects the
-    /// owner's key for the document type and `signer`.
+    /// owner's key for the document type and `signer`. A document the
+    /// owner does not hold is refused before anything is signed.
     #[allow(clippy::too_many_arguments)]
     pub async fn set_document_price_with_signer<S>(
         &self,
@@ -935,6 +1016,7 @@ impl IdentityWallet {
         let mut document = self
             .fetch_current_document(&data_contract, document_type_name, document_id)
             .await?;
+        Self::require_document_owner(&document, owner_identity_id)?;
         document.increment_revision().map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!(
                 "Failed to increment document revision: {e}"
@@ -981,9 +1063,9 @@ impl IdentityWallet {
     /// owner) and signs the transition, so the signing key belongs to
     /// the purchaser, not the current owner: with `signing_key` `None` it
     /// is the purchaser's AUTHENTICATION key that the document type's
-    /// security level allows and `signer` can sign with (see
-    /// [`Self::select_document_signing_key`]); a caller that has already
-    /// chosen one passes it, as in [`Self::transfer_document_with_signer`].
+    /// security level allows, the key's contract bounds admit and `signer`
+    /// can sign with; a caller that has already chosen one passes it, as in
+    /// [`Self::transfer_document_with_signer`].
     /// Fetches the current document, bumps the revision, broadcasts via
     /// `Sdk::document_purchase` on the platform-wallet 8 MB worker stack,
     /// and returns the confirmed `Document` (now owned by the purchaser).
@@ -1119,13 +1201,22 @@ fn delete_preparation_error(error: dash_sdk::Error) -> PlatformWalletError {
 
 #[cfg(test)]
 mod tests {
+    use super::super::decision_proposal::tests::proposals_sdk;
     use super::super::signing_key::tests::{
-        available, lock_checking_signer, wallet_with_signing_keys,
+        available, lock_checking_signer, wallet_with_signing_keys, wallet_with_signing_keys_on,
+        KeyFilter,
     };
     use super::*;
     use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
+    use crate::wallet::persister::NoPlatformPersistence;
+    use crate::PlatformWallet;
+    use dash_sdk::query_types::IdentityContractNonceFetcher;
     use dpp::data_contract::factory::DataContractFactory;
+    use dpp::document::DocumentV0;
+    use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::v0::IdentityV0;
+    use dpp::identity::Identity;
     use dpp::platform_value::platform_value;
     use dpp::version::PlatformVersion;
 
@@ -1147,6 +1238,8 @@ mod tests {
                         "type": "object",
                         "documentsMutable": true,
                         "canBeDeleted": true,
+                        "transferable": 1,
+                        "tradeMode": 1,
                         "signatureSecurityLevelRequirement": requirement as u8,
                         "properties": {"message": {"type": "string", "maxLength": 64, "position": 0}},
                         "additionalProperties": false
@@ -1165,6 +1258,290 @@ mod tests {
                 if message.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX)),
             "{error:?}"
         );
+    }
+
+    /// An AUTHENTICATION key `id` at `level` of `key_type`, unbound and
+    /// without limits.
+    fn auth_key(id: u32, level: SecurityLevel, key_type: KeyType) -> IdentityPublicKey {
+        IdentityPublicKeyV0 {
+            id,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: level,
+            key_type,
+            data: vec![id as u8; key_type.default_size()].into(),
+            ..Default::default()
+        }
+        .into()
+    }
+
+    /// Add an identity `identity_id` holding `keys` to `wallet` at
+    /// registration index `index` (the owner sits at 0).
+    async fn hold_identity(
+        wallet: &PlatformWallet,
+        identity_id: Identifier,
+        index: u32,
+        keys: Vec<IdentityPublicKey>,
+    ) {
+        let identity: Identity = IdentityV0 {
+            id: identity_id,
+            public_keys: keys.into_iter().map(|key| (key.id(), key)).collect(),
+            balance: 0,
+            revision: 0,
+        }
+        .into();
+        let mut wm = wallet.identity().wallet_manager.write().await;
+        wm.get_wallet_info_mut(&wallet.wallet_id())
+            .unwrap()
+            .identity_manager
+            .add_identity(
+                identity,
+                index,
+                wallet.wallet_id(),
+                &wallet.identity().persister,
+            )
+            .unwrap();
+    }
+
+    /// The key [`IdentityWallet::document_operation_signing_key`] picks on
+    /// its own for `identity_id` and a `note` of a HIGH contract, with a
+    /// signer that holds every key.
+    async fn automatic_key(wallet: &PlatformWallet, identity_id: Identifier) -> u32 {
+        wallet
+            .identity()
+            .document_operation_signing_key(
+                &identity_id,
+                &contract_requiring(SecurityLevel::HIGH),
+                "note",
+                None,
+                &KeyFilter(|_| true),
+            )
+            .await
+            .unwrap()
+            .id()
+    }
+
+    /// A lower-id key that cannot sign this contract's `note` (bound to
+    /// another contract, or past its expiry) never shadows a usable later
+    /// key, even though the signer holds it: every retry would pick it
+    /// again and be refused.
+    #[tokio::test]
+    async fn should_skip_an_earlier_key_bound_elsewhere_or_expired() {
+        let wallet = wallet_with_signing_keys().await;
+        let identity_id = Identifier::from([0x31; 32]);
+        let mut bound_elsewhere = auth_key(1, SecurityLevel::CRITICAL, KeyType::ECDSA_SECP256K1);
+        if let IdentityPublicKey::V0(key) = &mut bound_elsewhere {
+            key.contract_bounds = Some(ContractBounds::SingleContract {
+                id: Identifier::from([0x0E; 32]),
+            });
+        }
+        hold_identity(
+            &wallet,
+            identity_id,
+            1,
+            vec![
+                bound_elsewhere,
+                auth_key(2, SecurityLevel::CRITICAL, KeyType::ECDSA_SECP256K1)
+                    .with_limits(None, Some(1)),
+                auth_key(3, SecurityLevel::HIGH, KeyType::ECDSA_SECP256K1),
+            ],
+        )
+        .await;
+        assert_eq!(automatic_key(&wallet, identity_id).await, 3);
+    }
+
+    /// An ECDSA_HASH160 AUTHENTICATION key signs a document batch as well
+    /// as an ECDSA_SECP256K1 one, so an identity whose only qualifying key
+    /// is a HASH160 key is not refused.
+    #[tokio::test]
+    async fn should_select_an_ecdsa_hash160_authentication_key() {
+        let wallet = wallet_with_signing_keys().await;
+        let identity_id = Identifier::from([0x32; 32]);
+        hold_identity(
+            &wallet,
+            identity_id,
+            1,
+            vec![
+                auth_key(0, SecurityLevel::MASTER, KeyType::ECDSA_SECP256K1),
+                auth_key(1, SecurityLevel::HIGH, KeyType::ECDSA_HASH160),
+            ],
+        )
+        .await;
+        assert_eq!(automatic_key(&wallet, identity_id).await, 1);
+    }
+
+    /// A key a caller names must be the named identity's own: a key of
+    /// another identity, under an id the owner also uses or not, is refused
+    /// even when the signer holds it.
+    #[tokio::test]
+    async fn should_refuse_an_explicit_key_of_another_identity() {
+        let wallet = wallet_with_signing_keys().await;
+        let contract = contract_requiring(SecurityLevel::HIGH);
+        let mut same_id_other_key = auth_key(1, SecurityLevel::CRITICAL, KeyType::ECDSA_SECP256K1);
+        if let IdentityPublicKey::V0(key) = &mut same_id_other_key {
+            key.data = vec![0xAB; 33].into();
+        }
+        let unknown_id = auth_key(9, SecurityLevel::CRITICAL, KeyType::ECDSA_SECP256K1);
+        for foreign in [same_id_other_key, unknown_id] {
+            let error = wallet
+                .identity()
+                .document_operation_signing_key(
+                    &owner(),
+                    &contract,
+                    "note",
+                    Some(&foreign),
+                    &KeyFilter(|_| true),
+                )
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(error, PlatformWalletError::InvalidIdentityData(ref message)
+                    if message.contains("is not a key of identity")),
+                "{error:?}"
+            );
+        }
+    }
+
+    /// Records the keys it is asked to sign with, signing with a fixed
+    /// signature.
+    #[derive(Debug, Default)]
+    struct RecordingSigner(std::sync::Mutex<Vec<IdentityPublicKey>>);
+
+    #[async_trait]
+    impl Signer<IdentityPublicKey> for RecordingSigner {
+        async fn sign(
+            &self,
+            key: &IdentityPublicKey,
+            _: &[u8],
+        ) -> Result<BinaryData, ProtocolError> {
+            self.0.lock().unwrap().push(key.clone());
+            Ok(BinaryData::new(vec![7; 65]))
+        }
+
+        async fn sign_create_witness(
+            &self,
+            _: &IdentityPublicKey,
+            _: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            Err(ProtocolError::Generic(
+                "a document transition has no witness".to_string(),
+            ))
+        }
+
+        fn can_sign_with(&self, _: &IdentityPublicKey) -> bool {
+            true
+        }
+    }
+
+    /// The seller [`listed_note`] belongs to; not an identity of the wallet.
+    const SELLER: [u8; 32] = [0x52; 32];
+    const NOTE_ID: [u8; 32] = [0x4E; 32];
+
+    /// A `note` of [`contract_requiring`] as Platform stores it, owned by
+    /// [`SELLER`].
+    fn listed_note() -> Document {
+        DocumentV0 {
+            id: Identifier::from(NOTE_ID),
+            owner_id: Identifier::from(SELLER),
+            properties: BTreeMap::from([("message".to_string(), Value::Text("hi".to_string()))]),
+            revision: Some(1),
+            ..Default::default()
+        }
+        .into()
+    }
+
+    /// A wallet on a mock SDK that answers the read of `contract` and of
+    /// [`listed_note`], and of `nonce_reader`'s contract nonce when given.
+    /// It answers no broadcast.
+    async fn trading_wallet(
+        contract: &DataContract,
+        nonce_reader: Option<Identifier>,
+    ) -> Arc<PlatformWallet> {
+        let mut sdk = proposals_sdk();
+        sdk.mock()
+            .expect_fetch(contract.id(), Some(contract.clone()))
+            .await
+            .expect("expects the contract read");
+        let query = DocumentQuery::new(Arc::new(contract.clone()), "note")
+            .expect("the note type")
+            .with_document_id(&Identifier::from(NOTE_ID));
+        sdk.mock()
+            .expect_fetch(query, Some(listed_note()))
+            .await
+            .expect("expects the document read");
+        if let Some(reader) = nonce_reader {
+            sdk.mock()
+                .expect_fetch(
+                    (reader, contract.id()),
+                    Some(IdentityContractNonceFetcher(3)),
+                )
+                .await
+                .expect("expects the nonce read");
+        }
+        wallet_with_signing_keys_on(sdk, Arc::new(NoPlatformPersistence)).await
+    }
+
+    /// A purchase is signed by the buyer, not by the document's owner: the
+    /// buyer's contract nonce is read and the buyer's own key signs. The
+    /// seller is not even an identity of the wallet. The mock answers no
+    /// broadcast, so the purchase fails after signing.
+    #[tokio::test]
+    async fn should_sign_a_purchase_with_the_buyers_key() {
+        let contract = contract_requiring(SecurityLevel::HIGH);
+        let wallet = trading_wallet(&contract, Some(owner())).await;
+        let signer = RecordingSigner::default();
+
+        let error = wallet
+            .identity()
+            .purchase_document_with_signer(
+                &owner(),
+                &contract.id(),
+                "note",
+                &Identifier::from(NOTE_ID),
+                1_000,
+                None,
+                &signer,
+            )
+            .await
+            .expect_err("the mock answers no broadcast");
+        assert!(
+            matches!(error, PlatformWalletError::InvalidIdentityData(ref message)
+                if message.starts_with("Failed to purchase document")
+                    && message.contains("BroadcastStateTransitionRequest")),
+            "{error:?}"
+        );
+
+        let buyer_key = auth_key(1, SecurityLevel::CRITICAL, KeyType::ECDSA_SECP256K1);
+        assert_eq!(*signer.0.lock().unwrap(), vec![buyer_key]);
+    }
+
+    /// A transfer of a document another identity owns is refused before
+    /// any nonce is read or anything is signed: sent, it would only be a
+    /// paid refusal.
+    #[tokio::test]
+    async fn should_refuse_to_transfer_a_document_another_identity_owns() {
+        let contract = contract_requiring(SecurityLevel::HIGH);
+        let wallet = trading_wallet(&contract, None).await;
+        let signer = RecordingSigner::default();
+
+        let error = wallet
+            .identity()
+            .transfer_document_with_signer(
+                &owner(),
+                &contract.id(),
+                "note",
+                &Identifier::from(NOTE_ID),
+                &Identifier::from([0x77; 32]),
+                None,
+                &signer,
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, PlatformWalletError::InvalidParameter(ref message)
+                if message.contains("is owned by")),
+            "{error:?}"
+        );
+        assert!(signer.0.lock().unwrap().is_empty());
     }
 
     /// The replace / delete / transfer / set-price / purchase flows name no
