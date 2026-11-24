@@ -10,7 +10,6 @@
 
 use std::ffi::CStr;
 use std::os::raw::c_char;
-use std::time::Duration;
 
 use dpp::prelude::Identifier;
 use platform_wallet::wallet::shielded::CachedOrchardProver;
@@ -30,10 +29,6 @@ use crate::shielded_send::{
 };
 use crate::shielded_sync::{catch_query_panic, map_shielded_error};
 use crate::types::read_identifier;
-
-/// How long the identity balance read waits for the coordinator's locks
-/// before it reports busy, as the local balance snapshot does.
-const IDENTITY_BALANCE_WAIT_BUDGET: Duration = Duration::from_millis(100);
 
 /// How a tip recipient compares with the one this wallet last confirmed for
 /// the same name (`ShieldedTipRecipientChange`).
@@ -577,7 +572,7 @@ fn map_tip_send_result(result: Result<(), PlatformWalletError>) -> PlatformWalle
 }
 
 /// Read the shielded balance of the wallet identity `identity_id_bytes`'s own
-/// account, with `PlatformWallet::shielded_identity_balance`. Reads local
+/// account, with `PlatformWallet::shielded_identity_balance_now`. Reads local
 /// state only. A host shows the state and does not add up stored notes.
 ///
 /// `out_balance` is zeroed (`Unverified`, account 0, credits 0) on entry and
@@ -641,21 +636,15 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_balance(
             Ok(value) => value,
             Err(result) => return result,
         };
-        let read = runtime().block_on(async {
-            tokio::time::timeout(
-                IDENTITY_BALANCE_WAIT_BUDGET,
-                wallet.shielded_identity_balance(&coordinator, &identity_id),
-            )
-            .await
-        });
+        // The wallet bounds the wait and says when the store was busy.
+        let read =
+            runtime().block_on(wallet.shielded_identity_balance_now(&coordinator, &identity_id));
         match read {
-            Err(_) => identity_balance_busy(),
-            Ok(Ok(value)) => {
+            Ok(value) => {
                 balance = value.into();
                 PlatformWalletFFIResult::ok()
             }
-            Ok(Err(e @ PlatformWalletError::IdentityNotFound(..))) => e.into(),
-            Ok(Err(e)) => map_shielded_error(e, "shielded identity balance"),
+            Err(e) => map_identity_balance_error(e),
         }
     });
     if result.code == PlatformWalletFFIResultCode::Success {
@@ -664,13 +653,15 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_balance(
     result
 }
 
-/// What the identity balance read reports when it did not get the shielded
-/// store within `IDENTITY_BALANCE_WAIT_BUDGET`.
-fn identity_balance_busy() -> PlatformWalletFFIResult {
-    PlatformWalletFFIResult::err(
-        PlatformWalletFFIResultCode::ErrorShieldedBalanceBusy,
-        "shielded identity balance busy; retry after sync releases its locks",
-    )
+/// Map a failed identity balance read: a busy store and an identity the
+/// wallet does not hold keep their own codes, everything else is mapped as
+/// the other shielded reads map it ([`map_shielded_error`]).
+fn map_identity_balance_error(error: PlatformWalletError) -> PlatformWalletFFIResult {
+    match error {
+        e @ (PlatformWalletError::ShieldedBalanceBusy
+        | PlatformWalletError::IdentityNotFound(..)) => e.into(),
+        other => map_shielded_error(other, "shielded identity balance"),
+    }
 }
 
 #[cfg(test)]
@@ -1071,18 +1062,29 @@ mod tests {
     /// the last state and read again", with its reason.
     #[test]
     fn should_report_a_busy_identity_balance_by_its_own_code() {
-        let result = identity_balance_busy();
+        let result = map_identity_balance_error(PlatformWalletError::ShieldedBalanceBusy);
         assert_eq!(
             result.code,
             PlatformWalletFFIResultCode::ErrorShieldedBalanceBusy
         );
         assert_eq!(result.code as u32, 87);
-        assert!(
-            message(&result).contains("shielded identity balance busy"),
-            "{}",
-            message(&result)
-        );
         free(result);
+
+        // Every other failure of the read is not the retry code.
+        let unknown = map_identity_balance_error(PlatformWalletError::IdentityNotFound(
+            Identifier::from([7; 32]),
+        ));
+        assert_eq!(
+            unknown.code,
+            PlatformWalletFFIResultCode::ErrorIdentityNotFound
+        );
+        free(unknown);
+        let unbound = map_identity_balance_error(PlatformWalletError::ShieldedNotBound);
+        assert_eq!(
+            unbound.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        free(unbound);
     }
 
     #[test]

@@ -1915,7 +1915,8 @@ class PlatformWalletManager(
      *
      * Does not wait for a shielded operation in flight (a bind, an added
      * account, a token pool transfer or unshield, a profile write, a tip
-     * address preparation): while one runs this throws
+     * address preparation, a shielded tip being sent): while one runs this
+     * throws
      * [DashSdkError.PlatformWallet.ShieldedOperationInProgress] at once,
      * with nothing changed and the sync loop still running. Keep the Room
      * rows and call it again once the operation has finished.
