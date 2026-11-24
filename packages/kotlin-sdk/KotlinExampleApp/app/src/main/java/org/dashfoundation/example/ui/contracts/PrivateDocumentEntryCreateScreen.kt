@@ -85,6 +85,8 @@ import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.formatCredits
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.toHex
+import java.util.Collections
+import java.util.IdentityHashMap
 
 /** The shielded account a create pays from, as on iOS. */
 internal const val PRIVATE_ENTRY_CREATE_ACCOUNT = 0
@@ -569,6 +571,11 @@ fun PrivateDocumentEntryCreateScreen(
  * scrolls to show it. Left there, a create that went through looks like a tap that did nothing,
  * with the same entry one tap away from being paid for again.
  *
+ * The form scrolls to what is under the button, not to the button: in a window too short for
+ * both, the answer is what has to be seen. It scrolls once per answer. An outcome it already
+ * scrolled to is shown again without moving the form when another wallet is chosen and then this
+ * one again.
+ *
  * [outcomeSinceOpened] says the outcome is of a create that finished while this screen was shown.
  * The outcome of an earlier one is shown but not scrolled to, so a reopened form starts at its
  * top. The hold notice is not scrolled to by itself either: it also appears while a field is
@@ -585,16 +592,20 @@ internal fun PrivateEntryCreateSubmitArea(
     onSubmit: () -> Unit,
     onReadEntries: () -> Unit,
 ) {
-    val area = remember { BringIntoViewRequester() }
+    val answer = remember { BringIntoViewRequester() }
     // Counted so a tap answered with the same words as the last one scrolls again
     var taps by remember { mutableIntStateOf(0) }
-    LaunchedEffect(taps, localRefusal, outcome) {
-        if (localRefusal != null || (outcome != null && outcomeSinceOpened)) area.bringIntoView()
+    LaunchedEffect(taps, localRefusal) {
+        if (localRefusal != null || (taps > 0 && outcome != null)) answer.bringIntoView()
     }
-    Column(
-        modifier = Modifier.bringIntoViewRequester(area),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
+    // By identity: two creates that may have gone through give equal outcomes
+    val scrolledTo = remember {
+        Collections.newSetFromMap(IdentityHashMap<PrivateEntryCreateOutcome, Boolean>())
+    }
+    LaunchedEffect(outcome) {
+        if (outcome != null && outcomeSinceOpened && scrolledTo.add(outcome)) answer.bringIntoView()
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         SubmitButton(
             text = if (isSubmitting) "Proving and broadcasting…" else "Create Entry",
             isLoading = isSubmitting,
@@ -606,27 +617,34 @@ internal fun PrivateEntryCreateSubmitArea(
             },
         )
 
-        if (isHeld) {
-            Text(
-                HELD_MESSAGE,
-                style = MaterialTheme.typography.bodySmall,
-                color = WarningOrange,
-                modifier = Modifier.testTag("privateEntryCreate.held"),
-            )
-        }
+        if (isHeld || localRefusal != null || outcome != null) {
+            Column(
+                modifier = Modifier.bringIntoViewRequester(answer),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                if (isHeld) {
+                    Text(
+                        HELD_MESSAGE,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = WarningOrange,
+                        modifier = Modifier.testTag("privateEntryCreate.held"),
+                    )
+                }
 
-        localRefusal?.let {
-            SelectionContainer {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.testTag("privateEntryCreate.refusal"),
-                )
+                localRefusal?.let {
+                    SelectionContainer {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.testTag("privateEntryCreate.refusal"),
+                        )
+                    }
+                }
+
+                outcome?.let { OutcomeSection(it, onReadEntries) }
             }
         }
-
-        outcome?.let { OutcomeSection(it, onReadEntries) }
     }
 }
 

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.verticalScroll
@@ -14,15 +15,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.runBlocking
 import org.dashfoundation.dashsdk.wallet.PrivateDocumentEntryCreated
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.ExternalResource
@@ -62,6 +67,7 @@ class PrivateEntryCreateSubmitAreaTest {
     private var localRefusal by mutableStateOf<String?>(null)
     private var outcome by mutableStateOf<PrivateEntryCreateOutcome?>(null)
     private var outcomeSinceOpened by mutableStateOf(true)
+    private var onSubmit: () -> Unit = {}
     private val scroll = ScrollState(0)
 
     /** The SDK builds this only from the bytes Rust returns; its constructor is internal. */
@@ -71,11 +77,15 @@ class PrivateEntryCreateSubmitAreaTest {
         return PrivateEntryCreateOutcome.Created(constructor.newInstance(ByteArray(32) { 7 }, 4L))
     }
 
-    /** The form as the screen lays it out: one scrolling column that ends with the area. */
-    private fun showForm() {
+    /**
+     * The form as the screen lays it out: one scrolling column that ends with the area. [height]
+     * makes the window a short one (landscape, split screen).
+     */
+    private fun showForm(height: Dp? = null) {
         compose.setContent {
+            val window = height?.let { Modifier.fillMaxWidth().height(it) } ?: Modifier.fillMaxSize()
             Column(
-                modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(16.dp),
+                modifier = window.testTag("form").verticalScroll(scroll).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Spacer(Modifier.height(1200.dp))
@@ -86,7 +96,7 @@ class PrivateEntryCreateSubmitAreaTest {
                     localRefusal = localRefusal,
                     outcome = outcome,
                     outcomeSinceOpened = outcomeSinceOpened,
-                    onSubmit = {},
+                    onSubmit = { onSubmit() },
                     onReadEntries = {},
                 )
             }
@@ -129,11 +139,12 @@ class PrivateEntryCreateSubmitAreaTest {
 
     @Test
     fun `should bring into view why a tap sent nothing, each time it is tapped`() {
+        onSubmit = { localRefusal = "The recipient changed: load its keys again." }
         showForm()
         scrollToTheButton()
         val buttonAtTheEdge = compose.runOnIdle { scroll.value }
 
-        localRefusal = "The recipient changed: load its keys again."
+        compose.onNodeWithTag("privateEntryCreate.createButton").performClick()
         compose.onNodeWithTag("privateEntryCreate.refusal").assertIsDisplayed()
 
         // Scrolled back so the button is at the bottom edge again, and tapped for the same answer
@@ -156,5 +167,45 @@ class PrivateEntryCreateSubmitAreaTest {
 
         assertEquals(0, scroll.value)
         compose.onNodeWithTag("privateEntryCreate.success").assertIsNotDisplayed()
+    }
+
+    @Test
+    fun `should not scroll again to an answer it already showed when another wallet is chosen and this one again`() {
+        onSubmit = { localRefusal = "Could not encode the properties: not a number" }
+        showForm()
+        scrollToTheButton()
+        val finished = created()
+        outcome = finished
+        compose.onNodeWithTag("privateEntryCreate.success").assertIsDisplayed()
+        compose.onNodeWithTag("privateEntryCreate.createButton").performClick()
+        compose.onNodeWithTag("privateEntryCreate.refusal").assertIsDisplayed()
+
+        // Back at the top of the form, at the wallet picker: the other wallet has no outcome here
+        compose.runOnIdle { runBlocking { scroll.scrollTo(0) } }
+        outcome = null
+        compose.waitForIdle()
+        outcome = finished
+        compose.waitForIdle()
+
+        assertEquals(0, scroll.value)
+    }
+
+    @Test
+    fun `should show the whole outcome in a window too short for the button and the outcome together`() {
+        showForm(height = 230.dp)
+        scrollToTheButton()
+
+        outcome = created()
+        compose.waitForIdle()
+
+        val form = compose.onNodeWithTag("form").getUnclippedBoundsInRoot()
+        val button = compose.onNodeWithTag("privateEntryCreate.createButton").getUnclippedBoundsInRoot()
+        val entryCreated = compose.onNodeWithTag("privateEntryCreate.success").getUnclippedBoundsInRoot()
+        val readEntries = compose.onNodeWithTag("privateEntryCreate.readEntriesLink").getUnclippedBoundsInRoot()
+        // The case under test: the outcome fits the window, the button with it does not
+        assertTrue(readEntries.bottom - entryCreated.top < form.bottom - form.top)
+        assertTrue(readEntries.bottom - button.top > form.bottom - form.top)
+        assertTrue("Entry created is cut off at the top", entryCreated.top >= form.top)
+        assertTrue("Read Entries is cut off at the bottom", readEntries.bottom <= form.bottom)
     }
 }
