@@ -584,7 +584,14 @@ public final class KeychainSigner: Signer, @unchecked Sendable {
             )
             if let row = try? context.fetch(descriptor).first {
                 // Stored scalar present (legacy / not-yet-backfilled key).
-                if row.privateKeyKeychainIdentifier != nil {
+                // The row's reference alone is not enough: the Keychain
+                // item can be gone (a reset Keychain, a restore onto
+                // another device), and reporting the key signable would
+                // make Rust pick it and fail at sign time while a later
+                // key would work. Existence only; the bytes are not read.
+                if let identifier = row.privateKeyKeychainIdentifier,
+                    self.keychain.hasKeyData(identifier: identifier)
+                {
                     found = true
                     return
                 }

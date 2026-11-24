@@ -599,6 +599,26 @@ public final class KeychainManager: Sendable {
         (try? readKeyData(identifier: identifier).get()) ?? nil
     }
 
+    /// Whether an item is stored under `identifier`, without reading its
+    /// bytes: the query asks for no data, so the secret is never copied
+    /// out. `nonisolated` for the same reason as
+    /// `retrieveKeyData(identifier:)`. Any status other than success,
+    /// including a Keychain that cannot be read right now, answers false.
+    public nonisolated func hasKeyData(identifier: String) -> Bool {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrAccount as String: identifier,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+
+        if let accessGroup = accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+
+        return SecItemCopyMatching(query as CFDictionary, nil) == errSecSuccess
+    }
+
     /// The one lookup behind `retrieveKeyData(identifier:)` and
     /// `readSpecialKey(identityId:keyType:)`, keeping the status:
     /// `errSecItemNotFound` is `.success(nil)`, any other failure is

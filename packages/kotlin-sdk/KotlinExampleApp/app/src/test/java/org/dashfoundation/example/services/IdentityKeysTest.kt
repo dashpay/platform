@@ -3,7 +3,6 @@ package org.dashfoundation.example.services
 import org.dashfoundation.dashsdk.identity.KeyPurpose
 import org.dashfoundation.dashsdk.identity.KeyType
 import org.dashfoundation.dashsdk.identity.SecurityLevel
-import org.dashfoundation.dashsdk.persistence.entities.PublicKeyEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -11,27 +10,12 @@ import org.junit.Test
 
 /**
  * Pure-logic coverage for the key-management helpers behind
- * `AddIdentityKeyScreen` / `KeyDetailScreen` / `DocumentWithPriceScreen`:
+ * `AddIdentityKeyScreen` / `KeyDetailScreen`:
  * DPP-name normalization for the two Room encodings (stringified rawValue
- * vs enum name), signing-key resolution, and the add-key slot / validation
- * rules of [IdentityKeyAdditionFlow].
+ * vs enum name) and the add-key slot / validation rules of
+ * [IdentityKeyAdditionFlow].
  */
 class IdentityKeysTest {
-
-    private fun key(
-        keyId: Int,
-        purpose: String,
-        securityLevel: String,
-        disabledAt: Long? = null,
-    ) = PublicKeyEntity(
-        keyId = keyId,
-        purpose = purpose,
-        securityLevel = securityLevel,
-        keyType = "0",
-        disabledAt = disabledAt,
-        publicKeyData = ByteArray(33) { keyId.toByte() },
-        identityId = "test-identity",
-    )
 
     @Test
     fun normalizesNumericAndNameEncodings() {
@@ -65,44 +49,6 @@ class IdentityKeysTest {
         assertEquals(0, IdentityKeys.securityLevelRank("MASTER"))
         assertEquals(1, IdentityKeys.securityLevelRank("1"))
         assertEquals(3, IdentityKeys.securityLevelRank("medium"))
-    }
-
-    @Test
-    fun signingKeyPrefersStrongestQualifyingNonMasterAuthKey() {
-        val keys = listOf(
-            key(0, purpose = "0", securityLevel = "0"), // MASTER — never signs documents
-            key(1, purpose = "0", securityLevel = "2"), // HIGH
-            key(2, purpose = "0", securityLevel = "1"), // CRITICAL — preferred
-            key(3, purpose = "3", securityLevel = "1"), // TRANSFER — wrong purpose
-            key(4, purpose = "0", securityLevel = "3"), // MEDIUM — below the bound
-        )
-        val chosen = IdentityKeys.findAuthenticationSigningKeyId(
-            keys = keys,
-            minimumSecurityLevel = 2,
-            hasPrivateKey = { true },
-        )
-        assertEquals(2, chosen)
-    }
-
-    @Test
-    fun signingKeySkipsDisabledAndKeylessRows() {
-        val keys = listOf(
-            key(1, purpose = "0", securityLevel = "1", disabledAt = 123L),
-            key(2, purpose = "0", securityLevel = "2"),
-        )
-        val chosen = IdentityKeys.findAuthenticationSigningKeyId(
-            keys = keys,
-            minimumSecurityLevel = 2,
-            hasPrivateKey = { it.keyId == 2 },
-        )
-        assertEquals(2, chosen)
-        assertNull(
-            IdentityKeys.findAuthenticationSigningKeyId(
-                keys = keys,
-                minimumSecurityLevel = 2,
-                hasPrivateKey = { false },
-            ),
-        )
     }
 
     @Test

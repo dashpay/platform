@@ -1,15 +1,14 @@
 package org.dashfoundation.example.services
 
-import org.dashfoundation.dashsdk.persistence.entities.PublicKeyEntity
-
 /**
  * Room `public_keys` rows store `purpose` / `securityLevel` / `keyType`
  * as the *stringified DPP rawValue* (the persister writes
  * `(purpose.toInt() and 0xFF).toString()`, mirroring Swift's
  * `String(purpose.rawValue)`), while hand-written code and the iOS UI
  * compare against the enum *names*. These helpers normalize either form
- * to the canonical DPP name so gates and signing-key resolution behave
- * identically for both encodings.
+ * to the canonical DPP name so gates and labels behave identically for
+ * both encodings. Document signing keys are not picked here: the Rust
+ * wallet selects them through the signer.
  */
 object IdentityKeys {
 
@@ -88,33 +87,4 @@ object IdentityKeys {
         val upper = trimmed.uppercase()
         return names.firstOrNull { it == upper } ?: upper
     }
-
-    /**
-     * Resolve the AUTHENTICATION key an identity should sign a
-     * document / contract transition with — port of the key-selection
-     * half of `DocumentActionRunner.resolveSigning` (DocumentsView.swift):
-     * an *enabled* AUTHENTICATION key at or above [minimumSecurityLevel]
-     * (numeric DPP rank, e.g. 2 = HIGH), preferring the strongest
-     * (lowest-rank, i.e. most critical) qualifying key, filtered to keys
-     * whose private half is available per [hasPrivateKey].
-     *
-     * Returns the chosen keyId, or null when no qualifying key exists.
-     */
-    fun findAuthenticationSigningKeyId(
-        keys: List<PublicKeyEntity>,
-        minimumSecurityLevel: Int,
-        hasPrivateKey: (PublicKeyEntity) -> Boolean,
-    ): Int? = keys
-        .asSequence()
-        .filter { it.disabledAt == null }
-        .filter { purposeName(it.purpose) == "AUTHENTICATION" }
-        .filter { securityLevelRank(it.securityLevel) <= minimumSecurityLevel }
-        // MASTER keys never sign document transitions (DPP forbids it) —
-        // exclude rank 0 unless nothing else qualifies is NOT done here;
-        // rs-dpp rejects master-signed document transitions outright.
-        .filter { securityLevelRank(it.securityLevel) >= 1 }
-        .filter(hasPrivateKey)
-        .sortedWith(compareBy({ securityLevelRank(it.securityLevel) }, { it.keyId }))
-        .firstOrNull()
-        ?.keyId
 }
