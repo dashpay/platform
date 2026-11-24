@@ -91,7 +91,9 @@ struct TransitionInputView: View {
     ]
 
     /// `text` inputs that can hold JSON (a price schedule map). They use
-    /// `PlainTextEditor` so a typed quote is not turned into a curly one.
+    /// `PlainTextField` so a typed quote is not turned into a curly one. It
+    /// stays single-line: a Return in a multi-line editor would put a
+    /// newline into a single price and make it unparseable.
     private static let jsonTextInputNames: Set<String> = ["priceData"]
 
     var body: some View {
@@ -110,12 +112,13 @@ struct TransitionInputView: View {
 
             switch input.type {
             case "text" where Self.jsonTextInputNames.contains(input.name):
-                PlainTextEditor(text: $value, textStyle: .caption1, placeholder: input.placeholder)
-                    .frame(minHeight: 60)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                    )
+                PlainTextField(
+                    placeholder: input.placeholder ?? "",
+                    text: $value,
+                    textStyle: .body,
+                    monospaced: false,
+                    borderStyle: .roundedRect
+                )
 
             case "text":
                 TextField(input.placeholder ?? "", text: $value)

@@ -4,6 +4,9 @@ import SwiftUI
 /// on the row's own read. The listings carry no poll state, and the device
 /// clock does not decide it either: only a read of the poll does.
 enum ProposalPollBadgeState: Equatable {
+    /// A multiple choice proposal no choice was entered for: its first
+    /// choice opens the vote, so nothing runs yet.
+    case awaitingFirstChoice
     /// Platform reports no result yet.
     case voting
     /// Platform reports a result; `detail` adds how it ended, when known.
@@ -12,6 +15,8 @@ enum ProposalPollBadgeState: Equatable {
 
 /// A small capsule showing ``ProposalPollBadgeState``; nothing while the
 /// state is unknown (loading, failed, or a poll that was never opened).
+/// It is the state at the row's last read: the rows read again when the
+/// list is refreshed, not on a timer.
 struct ProposalPollStateBadge: View {
     let state: ProposalPollBadgeState?
     let accessibilityIdentifier: String
@@ -32,6 +37,8 @@ struct ProposalPollStateBadge: View {
 
     private func text(for state: ProposalPollBadgeState) -> String {
         switch state {
+        case .awaitingFirstChoice:
+            return "No choices yet"
         case .voting:
             return "Voting"
         case .closed(let detail?):
@@ -43,6 +50,8 @@ struct ProposalPollStateBadge: View {
 
     private func icon(for state: ProposalPollBadgeState) -> String {
         switch state {
+        case .awaitingFirstChoice:
+            return "tray"
         case .voting:
             return "hourglass"
         case .closed:
@@ -54,7 +63,7 @@ struct ProposalPollStateBadge: View {
         switch state {
         case .voting:
             return .blue
-        case .closed:
+        case .awaitingFirstChoice, .closed:
             return .secondary
         }
     }

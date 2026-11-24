@@ -110,7 +110,7 @@ struct MultipleChoiceProposalsView: View {
                         NavigationLink(
                             destination: MultipleChoiceProposalDetailView(proposal: proposal)
                         ) {
-                            MultipleChoiceProposalRow(proposal: proposal)
+                            MultipleChoiceProposalRow(proposal: proposal, refreshToken: loadGeneration)
                         }
                         .accessibilityIdentifier("multipleChoiceProposals.row.\(proposal.id)")
                     }
@@ -224,6 +224,9 @@ struct MultipleChoiceProposalsView: View {
 /// One proposal in a listing.
 private struct MultipleChoiceProposalRow: View {
     let proposal: MultipleChoiceProposal
+    /// The list's load generation: a pull to refresh bumps it, so the row
+    /// reads its poll state again.
+    let refreshToken: Int
 
     @EnvironmentObject var appState: AppState
     /// The vote's state as Platform reports it; `nil` until read.
@@ -268,7 +271,7 @@ private struct MultipleChoiceProposalRow: View {
                 .truncationMode(.middle)
         }
         .padding(.vertical, 2)
-        .task(id: proposal.id) {
+        .task(id: "\(proposal.id)#\(refreshToken)") {
             await loadPollState()
         }
     }
@@ -280,7 +283,16 @@ private struct MultipleChoiceProposalRow: View {
         guard let sdk = appState.sdk else { return }
         do {
             let vote = try await sdk.multipleChoiceProposalVote(proposalId: proposal.id)
-            pollState = vote.result == nil ? .voting : .closed(detail: nil)
+            // The read can return after the row's task was cancelled (the
+            // row scrolled away or a refresh superseded it).
+            guard !Task.isCancelled else { return }
+            if vote.result != nil {
+                pollState = .closed(detail: nil)
+            } else if vote.choices.isEmpty {
+                pollState = .awaitingFirstChoice
+            } else {
+                pollState = .voting
+            }
         } catch {
             // Leave the badge out: an unknown state is not shown as either.
             pollState = nil

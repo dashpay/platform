@@ -85,6 +85,9 @@ struct PlainTextField: UIViewRepresentable {
     var monospaced: Bool = true
     var accessibilityIdentifier: String?
     var accessibilityLabel: String?
+    /// `.roundedRect` matches a `TextField` styled with
+    /// `RoundedBorderTextFieldStyle()`; `.none` suits a Form row.
+    var borderStyle: UITextField.BorderStyle = .none
 
     func makeCoordinator() -> Coordinator {
         Coordinator(text: $text)
@@ -94,6 +97,7 @@ struct PlainTextField: UIViewRepresentable {
         let field = UITextField()
         field.delegate = context.coordinator
         field.placeholder = placeholder
+        field.borderStyle = borderStyle
         field.font = PlainTextView.font(textStyle: textStyle, monospaced: monospaced)
         field.adjustsFontForContentSizeCategory = true
         field.smartQuotesType = .no

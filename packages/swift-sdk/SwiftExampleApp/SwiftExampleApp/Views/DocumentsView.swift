@@ -1048,11 +1048,13 @@ struct EraseDocumentView: View {
                     case .submitted(_, let after):
                         submissions += 1
                         lifecycle = after
-                        if after?.state == .absent {
-                            persistWarning = DocumentPersistence.applyDelete(
-                                document: document, modelContext: modelContext
-                            )
-                        }
+                    }
+                    // ABSENT after this submission, or already ABSENT on
+                    // the preflight: either way nothing is left to show.
+                    if lifecycle?.state == .absent {
+                        persistWarning = DocumentPersistence.applyDelete(
+                            document: document, modelContext: modelContext
+                        )
                     }
                     isSubmitting = false
                 }
@@ -1632,6 +1634,39 @@ enum DocumentPersistence {
         modelContext: ModelContext
     ) -> String? {
         modelContext.delete(document)
+        return save(modelContext)
+    }
+
+    /// Erase: once Rust observed the document ABSENT, remove the local row
+    /// for it on the erasing identity's network. Matches network, contract,
+    /// type and id, so a row saved from another network with the same ids
+    /// is kept. Returns a warning if the read or save failed, nil otherwise
+    /// (including when no local row exists).
+    static func removeErasedLocalCopy(
+        networkRaw: UInt32,
+        contractId: String,
+        documentType: String,
+        documentId: String,
+        modelContext: ModelContext
+    ) -> String? {
+        let descriptor = FetchDescriptor<PersistentDocument>(
+            predicate: #Predicate {
+                $0.networkRaw == networkRaw
+                    && $0.contractId == contractId
+                    && $0.documentType == documentType
+                    && $0.documentId == documentId
+            }
+        )
+        let matches: [PersistentDocument]
+        do {
+            matches = try modelContext.fetch(descriptor)
+        } catch {
+            return "The document is erased, but reading the local copy failed: \(error.localizedDescription). The erase is on-chain."
+        }
+        guard !matches.isEmpty else { return nil }
+        for document in matches {
+            modelContext.delete(document)
+        }
         return save(modelContext)
     }
 

@@ -53,6 +53,7 @@ extension Data {
 struct Identity {
     let identityIdBase58 = "signer"
     let identityId = Data(repeating: 1, count: 32)
+    let networkRaw: UInt32 = 1
     var wallet: WalletLink? = WalletLink()
 }
 struct WalletLink { let walletId = Data() }
@@ -67,6 +68,14 @@ struct SDK {}
         documentType: String, documentId: Data, signer: KeychainSigner) async throws -> DocumentEraseOutcome {
         calls += 1
         return outcome
+    }
+}
+@MainActor enum DocumentPersistence {
+    static var removed: [String] = []
+    static func removeErasedLocalCopy(networkRaw: UInt32, contractId: String,
+        documentType: String, documentId: String, modelContext: ModelContext) -> String? {
+        removed.append("\(networkRaw)/\(contractId)/\(documentType)/\(documentId)")
+        return nil
     }
 }
 @MainActor struct WalletManager {
@@ -89,6 +98,7 @@ struct SDK {}
     @MainActor static func main() async throws {
         let erasing = DocumentHistoryLifecycle(state: .erasing, remainingRevisions: 50)
         let deleted = DocumentHistoryLifecycle(state: .deleted, remainingRevisions: 50)
+        let absent = DocumentHistoryLifecycle(state: .absent, remainingRevisions: 0)
         let outcomes: [DocumentEraseOutcome] = [
             .notSubmitted(reason: .active, before: nil),
             .notSubmitted(reason: .absent, before: nil),
@@ -96,13 +106,28 @@ struct SDK {}
             .notSubmitted(reason: .notNewestOwner(Data()), before: erasing),
             .submitted(before: deleted, after: nil),
             .submitted(before: erasing, after: .init(state: .absent, remainingRevisions: 0)),
+            .notSubmitted(reason: .absent, before: absent),
         ]
         for outcome in outcomes {
+            DocumentPersistence.removed = []
             let wallet = Wallet(outcome)
             let route = SettingsRoute(identities: [Identity()], walletManager: .init(loaded: wallet))
             let result = try await route.run()
             precondition(wallet.calls == 1, "host must call the single Rust operation")
             let message = result["message"] as! String
+            // The local copy goes only once Rust's observation says ABSENT.
+            let observed: DocumentHistoryLifecycle?
+            switch outcome {
+            case .notSubmitted(_, let before): observed = before
+            case .submitted(_, let after): observed = after
+            }
+            if observed?.state == .absent {
+                precondition(DocumentPersistence.removed == ["1/owner/note/owner"],
+                    "an ABSENT observation must drop the local copy on the erasing identity's network")
+            } else {
+                precondition(DocumentPersistence.removed.isEmpty,
+                    "the local copy stays unless Rust observed the document ABSENT")
+            }
             switch outcome {
             case .notSubmitted(let reason, let before):
                 precondition(message.hasPrefix("Erase not submitted"))
@@ -134,7 +159,7 @@ struct SDK {}
             precondition(message == "Identity has no wallet linkage; cannot erase document history")
         }
         precondition(wallet.calls == 0)
-        print("Six typed outcomes and wallet-linkage control passed")
+        print("Seven typed outcomes, local-copy cleanup and wallet-linkage control passed")
     }
 }
 '''

@@ -112,7 +112,7 @@ struct DecisionProposalsView: View {
                         NavigationLink(
                             destination: DecisionProposalDetailView(proposal: proposal)
                         ) {
-                            DecisionProposalRow(proposal: proposal)
+                            DecisionProposalRow(proposal: proposal, refreshToken: loadGeneration)
                         }
                         .accessibilityIdentifier("decisionProposals.row.\(proposal.id)")
                     }
@@ -232,6 +232,9 @@ struct DecisionProposalsView: View {
 /// One proposal in a listing.
 private struct DecisionProposalRow: View {
     let proposal: DecisionProposal
+    /// The list's load generation: a pull to refresh bumps it, so the row
+    /// reads its poll state again.
+    let refreshToken: Int
 
     @EnvironmentObject var appState: AppState
     /// The poll's state as Platform reports it; `nil` until read, and for a
@@ -268,7 +271,7 @@ private struct DecisionProposalRow: View {
                 .truncationMode(.middle)
         }
         .padding(.vertical, 2)
-        .task(id: proposal.id) {
+        .task(id: "\(proposal.id)#\(refreshToken)") {
             await loadPollState()
         }
     }
@@ -279,9 +282,10 @@ private struct DecisionProposalRow: View {
         pollState = nil
         guard let sdk = appState.sdk else { return }
         do {
-            guard let state = try await sdk.decisionProposalVotePollState(proposalId: proposal.id) else {
-                return
-            }
+            let read = try await sdk.decisionProposalVotePollState(proposalId: proposal.id)
+            // The read can return after the row's task was cancelled (the
+            // row scrolled away or a refresh superseded it).
+            guard !Task.isCancelled, let state = read else { return }
             if let result = state.result {
                 pollState = .closed(detail: result.passed ? "passed" : "did not pass")
             } else {

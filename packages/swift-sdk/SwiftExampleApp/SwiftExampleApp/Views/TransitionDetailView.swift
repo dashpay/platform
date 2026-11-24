@@ -1272,34 +1272,19 @@ struct TransitionDetailView: View {
       result["lifecycle"] = observation.state.rawValue
       result["remainingRevisions"] = observation.remainingRevisions
     }
-    // Same rule as the Documents tab's Erase sheet: once Rust observes the
-    // document ABSENT after a submission, drop the local copy so the
-    // Documents list stops showing it. A failed local save is reported, not
-    // thrown: the erase is on chain either way.
-    if case .submitted(_, let after) = outcome, after?.state == .absent {
-      let documentBase58 = documentId.toBase58String()
-      let contractBase58 = contractId.toBase58String()
-      let warning: String? = await MainActor.run {
-        let descriptor = FetchDescriptor<PersistentDocument>(
-          predicate: #Predicate {
-            $0.documentId == documentBase58 && $0.contractId == contractBase58
-          }
-        )
-        do {
-          var warning: String?
-          for document in try modelContext.fetch(descriptor) {
-            if let failure = DocumentPersistence.applyDelete(document: document, modelContext: modelContext) {
-              warning = failure
-            }
-          }
-          return warning
-        } catch {
-          return "Erase confirmed, but reading the local copy failed: \(error.localizedDescription). The erase is on-chain."
-        }
-      }
-      if let warning {
-        result["localCopyWarning"] = warning
-      }
+    // Once Rust observes the document ABSENT (after this submission, or on
+    // a preflight that found nothing left to erase), drop the local copy so
+    // the Documents list stops showing it. A failed local save is reported,
+    // not thrown: the erase is on chain either way.
+    if observation?.state == .absent,
+       let warning = DocumentPersistence.removeErasedLocalCopy(
+         networkRaw: signingIdentity.networkRaw,
+         contractId: contractId.toBase58String(),
+         documentType: documentType,
+         documentId: documentId.toBase58String(),
+         modelContext: modelContext
+       ) {
+      result["localCopyWarning"] = warning
     }
     return result
   }
