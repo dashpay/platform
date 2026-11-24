@@ -82,6 +82,7 @@ use crate::wallet_restore_types::{
     ProviderSpecialTxRestoreEntryFFI, StandardAccountTypeTagFFI, UnconfirmedOutgoingTxRecordFFI,
     UnresolvedAssetLockTxRecordFFI, UtxoRestoreEntryFFI, WalletRestoreEntryFFI,
 };
+use dashcore::OutPoint;
 use dpp::address_funds::PlatformAddress;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::v0::IdentityV0;
@@ -511,10 +512,15 @@ pub type FreeWalletLockedOutpointsFn =
     unsafe extern "C" fn(context: *mut c_void, outpoints: *const OutPointFFI, count: usize);
 
 /// Associate the immutable 32-byte identity id an unbound identity top-up pays
-/// with a 36-byte raw outpoint. Runs after the legacy asset-lock upsert (and the
-/// other sidecars), inside the same atomic changeset. All three byte pointers
-/// are readable for the duration of the callback. A host must refuse (non-zero)
-/// a different identity for an outpoint that already records one.
+/// with a 36-byte raw outpoint. In a store round it runs after the legacy
+/// asset-lock upsert (and the other sidecars), inside the same atomic
+/// changeset. An assignment sends it in a round of its own, with no upsert of
+/// the outpoint's row: the host applies it to the row it already stores and
+/// must refuse it (non-zero, or by failing the round's commit) when it stores
+/// no row for the outpoint, and must not change anything else on the row. All
+/// three byte pointers are readable for the duration of the callback. A host
+/// must refuse (non-zero) a different identity for an outpoint that already
+/// records one.
 pub type PersistAssetLockIdentityRecipientFn = unsafe extern "C" fn(
     context: *mut c_void,
     wallet_id: *const u8,
@@ -2467,6 +2473,86 @@ impl PlatformWalletPersistence for FFIPersister {
         // record that clears coverage it holds.
         self.wallet_dashpay_backfill_callback.is_some()
             && self.callbacks.on_persist_wallet_changeset_fn.is_some()
+    }
+
+    /// A round of its own that carries the recipient alone: the begin
+    /// callback, `on_persist_asset_lock_identity_recipient_fn` for the
+    /// outpoint (with no upsert of its row before it), and the end callback,
+    /// which commits it or rolls it back. The host applies the recipient to
+    /// the row it stores and refuses (non-zero) when it stores none or the
+    /// row records another identity. The round writes nothing else, so a
+    /// failed one applied nothing. Needs the round brackets
+    /// (`ATOMIC_CHANGESETS`) and the recipient slot.
+    fn assign_asset_lock_identity_recipient(
+        &self,
+        wallet_id: WalletId,
+        out_point: OutPoint,
+        identity: Identifier,
+    ) -> Result<(), PersistenceError> {
+        let (Some(begin), Some(end), Some(persist_recipient)) = (
+            self.callbacks.on_changeset_begin_fn,
+            self.callbacks.on_changeset_end_fn,
+            self.tracked_masternodes_callbacks
+                .persist_asset_lock_identity_recipient,
+        ) else {
+            return Err(PersistenceError::backend_with_kind(
+                PersistenceErrorKind::Fatal,
+                "assigning an asset-lock identity recipient needs the changeset round \
+                 callbacks and the identity-recipient slot",
+            ));
+        };
+        let mut round = self.round_lock.lock();
+        round.begin_round()?;
+        let result = unsafe { begin(self.callbacks.context, wallet_id.as_ptr()) };
+        if result != 0 {
+            let _ = round.end_round();
+            return Err(persist_callback_error(
+                result,
+                format!(
+                    "changeset-begin callback returned error code {result}; the identity \
+                     recipient was not assigned"
+                ),
+            ));
+        }
+        let mut outcome = RoundOutcome::default();
+        let out_point_bytes = outpoint_to_bytes(&out_point);
+        let identity_bytes = identity.to_buffer();
+        let result = unsafe {
+            persist_recipient(
+                self.callbacks.context,
+                wallet_id.as_ptr(),
+                out_point_bytes.as_ptr(),
+                identity_bytes.as_ptr(),
+            )
+        };
+        if result != 0 {
+            outcome.record(result);
+        }
+        let result = unsafe {
+            end(
+                self.callbacks.context,
+                wallet_id.as_ptr(),
+                outcome.is_success(),
+            )
+        };
+        if result != 0 {
+            // A failed commit applied nothing; a failed rollback of a round
+            // whose only write was refused has nothing to undo, but its state
+            // is the host's to report, so it is never retryable.
+            if outcome.is_success() {
+                outcome.record(result);
+            } else {
+                outcome.record_fatal();
+            }
+        }
+        round.end_round()?;
+        match outcome.failure_kind() {
+            Some(kind) => Err(PersistenceError::backend_with_kind(
+                kind,
+                format!("the identity recipient at {out_point} was not assigned"),
+            )),
+            None => Ok(()),
+        }
     }
 
     fn store_commits_inline(&self) -> bool {
@@ -12015,6 +12101,118 @@ mod tests {
     /// it back on load, and attests the bit only with both slots. A host
     /// without the persist slot fails the round instead of dropping the
     /// recipient, since the wallet records one only for an attesting host.
+    /// An assignment is a round of its own carrying the recipient alone: the
+    /// begin callback, the recipient callback for the outpoint with no row
+    /// upsert before it, and the end callback committing it. A host refusing
+    /// it (no row, or another identity) gets the end callback rolling back,
+    /// and the assignment fails. A host without the round brackets or the
+    /// recipient slot is refused before any callback.
+    #[test]
+    fn should_assign_an_identity_recipient_in_a_round_of_its_own() {
+        #[derive(Default)]
+        struct Host {
+            refuse: bool,
+            upserts: usize,
+            recipients: Vec<([u8; 36], [u8; 32])>,
+            ends: Vec<bool>,
+        }
+        unsafe extern "C" fn end(ctx: *mut c_void, _: *const u8, success: bool) -> i32 {
+            (*(ctx as *mut Host)).ends.push(success);
+            0
+        }
+        unsafe extern "C" fn upsert(
+            ctx: *mut c_void,
+            _: *const u8,
+            _: *const AssetLockEntryFFI,
+            _: usize,
+            _: *const [u8; 36],
+            _: usize,
+        ) -> i32 {
+            (*(ctx as *mut Host)).upserts += 1;
+            0
+        }
+        unsafe extern "C" fn persist_recipient(
+            ctx: *mut c_void,
+            _: *const u8,
+            out_point: *const u8,
+            recipient: *const u8,
+        ) -> i32 {
+            let host = &mut *(ctx as *mut Host);
+            if host.refuse {
+                return PLATFORM_WALLET_PERSIST_RC_CONSTRAINT;
+            }
+            host.recipients.push((
+                slice::from_raw_parts(out_point, 36).try_into().unwrap(),
+                slice::from_raw_parts(recipient, 32).try_into().unwrap(),
+            ));
+            0
+        }
+        unsafe extern "C" fn load_recipient(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            found: *mut bool,
+            _: *mut u8,
+        ) -> i32 {
+            *found = false;
+            0
+        }
+        let out_point = dashcore::OutPoint {
+            txid: dashcore::Txid::from_byte_array([6; 32]),
+            vout: 1,
+        };
+        let identity = Identifier::from([0x45u8; 32]);
+        let extensions = PersistenceExtensionCallbacks {
+            persist_asset_lock_identity_recipient: Some(persist_recipient),
+            load_asset_lock_identity_recipient: Some(load_recipient),
+            ..Default::default()
+        };
+        let mut host = Host::default();
+        let persister = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks {
+                context: std::ptr::addr_of_mut!(host).cast(),
+                on_changeset_begin_fn: Some(noop_begin),
+                on_changeset_end_fn: Some(end),
+                on_persist_asset_locks_fn: Some(upsert),
+                on_load_wallet_list_fn: Some(noop_load_wallets),
+                on_load_wallet_list_free_fn: Some(noop_free_wallets),
+                ..Default::default()
+            },
+            PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS,
+            extensions,
+        );
+
+        persister
+            .assign_asset_lock_identity_recipient([42; 32], out_point, identity)
+            .expect("the host takes the recipient");
+        host.refuse = true;
+        let refused = persister
+            .assign_asset_lock_identity_recipient([42; 32], out_point, identity)
+            .expect_err("the host refuses the recipient");
+        assert_eq!(refused.kind(), Some(PersistenceErrorKind::Constraint));
+        assert_eq!(
+            host.recipients,
+            vec![(outpoint_to_bytes(&out_point), identity.to_buffer())]
+        );
+        assert_eq!(host.upserts, 0, "no row upsert rides the assignment");
+        assert_eq!(host.ends, vec![true, false], "committed, then rolled back");
+
+        let mut bare = Host::default();
+        let without_brackets = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks {
+                context: std::ptr::addr_of_mut!(bare).cast(),
+                on_persist_asset_locks_fn: Some(upsert),
+                ..Default::default()
+            },
+            PersistenceCapabilities::NONE,
+            extensions,
+        );
+        assert!(without_brackets
+            .assign_asset_lock_identity_recipient([42; 32], out_point, identity)
+            .is_err());
+        assert!(bare.recipients.is_empty() && bare.ends.is_empty());
+    }
+
     #[test]
     fn should_roundtrip_identity_recipients_and_fail_a_round_without_the_slot() {
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;

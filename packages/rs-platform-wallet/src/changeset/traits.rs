@@ -9,7 +9,7 @@ use crate::changeset::changeset::{DpnsNameStateEntry, PlatformWalletChangeSet};
 use crate::changeset::client_start_state::ClientStartState;
 use crate::changeset::persistence_capabilities::PersistenceCapabilities;
 use crate::wallet::platform_wallet::WalletId;
-use dashcore::Txid;
+use dashcore::{OutPoint, Txid};
 use dpp::prelude::Identifier;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 
@@ -264,6 +264,38 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// after a later, post-commit flush-notification failure.
     fn store_commits_inline(&self) -> bool {
         false
+    }
+
+    /// Record `identity` as the recipient of `wallet_id`'s unbound identity
+    /// top-up lock at `out_point`, by itself and at once.
+    ///
+    /// Only the recipient is written, never the row around it: a lock that
+    /// sync advanced (a proof attached, a status moved) or removed (a sweep)
+    /// since the wallet read it keeps what the backend holds. It applies only
+    /// to a stored row that records no recipient, or already records this
+    /// one (`Ok`, nothing changed). A missing row, one recording another
+    /// identity, or a consumed one is refused with
+    /// [`PersistenceErrorKind::Constraint`].
+    ///
+    /// `Ok` means the recipient is committed. Any `Err` means it was not
+    /// applied and nothing of it is kept to be applied later: no buffer holds
+    /// it, so the caller may assign any identity afterwards. Writes buffered
+    /// before it are committed first, so a removal already stored is not
+    /// overtaken by it.
+    ///
+    /// Required of a backend that attests
+    /// [`PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS`]; the default
+    /// refuses.
+    fn assign_asset_lock_identity_recipient(
+        &self,
+        wallet_id: WalletId,
+        out_point: OutPoint,
+        identity: Identifier,
+    ) -> Result<(), PersistenceError> {
+        let _ = (wallet_id, out_point, identity);
+        Err(PersistenceError::backend(
+            "this backend cannot assign an asset-lock identity recipient",
+        ))
     }
 
     /// Whether [`commit_durably`](Self::commit_durably) is implemented.

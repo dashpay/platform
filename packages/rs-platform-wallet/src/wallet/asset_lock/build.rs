@@ -2337,6 +2337,8 @@ mod tests {
         /// what it buffered) rather than fatal.
         flush_failure_is_transient: std::sync::atomic::AtomicBool,
         failed_lock_stores: Mutex<Vec<PlatformWalletChangeSet>>,
+        /// Recipients committed through `assign_asset_lock_identity_recipient`.
+        assigned: Mutex<Vec<(OutPoint, dpp::prelude::Identifier)>>,
         records_identity_recipients: bool,
         /// Declare exactly these capabilities instead of the fixture's.
         capabilities_override: Option<crate::changeset::PersistenceCapabilities>,
@@ -2382,9 +2384,107 @@ mod tests {
         }
     }
 
+    impl CapturingPersistence {
+        /// Forget the recipient the stored rows record at `out_point`, as a
+        /// row rebuilt from the chain records none.
+        fn forget_recipient(&self, out_point: &OutPoint) {
+            for cs in self.stored.lock().unwrap().iter_mut() {
+                if let Some(entry) = cs
+                    .asset_locks
+                    .as_mut()
+                    .and_then(|locks| locks.asset_locks.get_mut(out_point))
+                {
+                    entry.identity_recipient = None;
+                }
+            }
+        }
+
+        /// The recipient the stored rows and assignments record at
+        /// `out_point`, and whether a row is stored there at all (stored and
+        /// not removed since).
+        fn stored_recipient(
+            &self,
+            out_point: &OutPoint,
+        ) -> (bool, Option<dpp::prelude::Identifier>) {
+            let mut row = false;
+            let mut recipient = None;
+            for cs in self.stored.lock().unwrap().iter() {
+                let Some(locks) = cs.asset_locks.as_ref() else {
+                    continue;
+                };
+                if let Some(entry) = locks.asset_locks.get(out_point) {
+                    row = true;
+                    recipient = recipient.or(entry.identity_recipient);
+                }
+                if locks.removed.contains(out_point) {
+                    row = false;
+                    recipient = None;
+                }
+            }
+            let assigned = self
+                .assigned
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|(op, _)| op == out_point)
+                .map(|(_, identity)| *identity);
+            (row, recipient.or(assigned))
+        }
+    }
+
     impl PlatformWalletPersistence for CapturingPersistence {
         fn store_commits_inline(&self) -> bool {
             self.commits_inline
+        }
+
+        /// The recipient alone, at once: refused like a lock store under
+        /// `fail_lock_store` and like a flush under `fail_flushes` (the
+        /// backend writes what it buffered first), and refused as a
+        /// constraint for a row it does not store or one recording another
+        /// identity. Nothing of a refused one is kept.
+        fn assign_asset_lock_identity_recipient(
+            &self,
+            _wallet_id: WalletId,
+            out_point: OutPoint,
+            identity: dpp::prelude::Identifier,
+        ) -> Result<(), PersistenceError> {
+            if self
+                .fail_lock_store
+                .load(std::sync::atomic::Ordering::SeqCst)
+            {
+                if self
+                    .lock_store_failure_is_transient
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                {
+                    return Err(PersistenceError::backend_with_kind(
+                        crate::changeset::PersistenceErrorKind::Transient,
+                        "simulated busy recipient assignment",
+                    ));
+                }
+                return Err(PersistenceError::backend(
+                    "simulated recipient assignment rollback",
+                ));
+            }
+            if !self.commits_inline && self.fail_flushes.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(PersistenceError::backend("simulated flush failure"));
+            }
+            match self.stored_recipient(&out_point) {
+                (false, _) => Err(PersistenceError::backend_with_kind(
+                    crate::changeset::PersistenceErrorKind::Constraint,
+                    "no asset lock row at the outpoint",
+                )),
+                (true, Some(recorded)) if recorded != identity => {
+                    Err(PersistenceError::backend_with_kind(
+                        crate::changeset::PersistenceErrorKind::Constraint,
+                        "the row records another identity",
+                    ))
+                }
+                (true, Some(_)) => Ok(()),
+                (true, None) => {
+                    self.assigned.lock().unwrap().push((out_point, identity));
+                    Ok(())
+                }
+            }
         }
 
         fn persistence_capabilities(&self) -> crate::changeset::PersistenceCapabilities {
@@ -3740,15 +3840,15 @@ mod tests {
                 .generation,
         );
         manager
-            .assign_identity_top_up_recipient(out_point, identity, &generation)
+            .assign_identity_top_up_recipient(out_point, identity, false, &generation)
             .await
     }
 
     /// An unbound top-up lock that records no recipient (as one rebuilt from
-    /// the chain does) is unassigned; assigning it an identity records it and
-    /// stores it. Assigning the same identity again stores it again, another
-    /// identity is refused, and so is any assignment on a backend that cannot
-    /// keep it.
+    /// the chain does) is unassigned; assigning it an identity has the backend
+    /// record the recipient alone, with no snapshot of the row, and then
+    /// publishes it. Assigning the same identity again succeeds, another
+    /// identity is refused, and so is an untracked outpoint.
     #[tokio::test]
     async fn should_assign_an_unassigned_unbound_top_up_lock_once() {
         use crate::changeset::AssetLockRecipient;
@@ -3785,6 +3885,7 @@ mod tests {
             lock.identity_recipient = None;
             assert!(lock.is_unassigned_identity_top_up());
         }
+        persistence.forget_recipient(&out_point);
         let stores_before = persistence.stored.lock().unwrap().len();
 
         assign_on_current_generation(&manager, &out_point, assigned)
@@ -3794,21 +3895,20 @@ mod tests {
         let tracked = manager.list_tracked_locks().await;
         assert_eq!(tracked[0].identity_recipient, Some(assigned));
         assert!(!tracked[0].is_unassigned_identity_top_up());
-        {
-            let stored = persistence.stored.lock().unwrap();
-            assert_eq!(stored.len(), stores_before + 1);
-            let row = &stored[stores_before]
-                .asset_locks
-                .as_ref()
-                .unwrap()
-                .asset_locks[&out_point];
-            assert_eq!(row.identity_recipient, Some(assigned));
-        }
+        assert_eq!(
+            *persistence.assigned.lock().unwrap(),
+            vec![(out_point, assigned)],
+            "the backend recorded the recipient"
+        );
+        assert_eq!(
+            persistence.stored.lock().unwrap().len(),
+            stores_before,
+            "the recipient alone is written, never a snapshot of the row"
+        );
 
         assign_on_current_generation(&manager, &out_point, assigned)
             .await
             .expect("assigning the recorded identity again succeeds");
-        assert_eq!(persistence.stored.lock().unwrap().len(), stores_before + 2);
         assert!(matches!(
             assign_on_current_generation(&manager, &out_point, built_for)
                 .await,
@@ -3865,7 +3965,7 @@ mod tests {
         let stores_before = persistence.stored.lock().unwrap().len();
 
         let result = manager
-            .assign_identity_top_up_recipient(&out_point, assigned, &stale)
+            .assign_identity_top_up_recipient(&out_point, assigned, false, &stale)
             .await;
 
         assert!(
@@ -4099,92 +4199,51 @@ mod tests {
         );
     }
 
-    /// An assignment is published to memory, where a resume reads it, only
-    /// once it is durable: one whose store fails (here transiently) leaves the
-    /// lock unassigned, so no resume can pay a recipient the store has not
-    /// committed. Assigning the same identity again retries the store, makes
-    /// it durable and publishes it.
+    /// An assignment the backend did not commit is not published, and leaves
+    /// nothing behind: a failed one (here transiently, on an inline backend
+    /// and on a buffered one) does not pin the identity it tried, so the user
+    /// can assign another, which is then committed and published.
     #[tokio::test]
-    async fn should_not_publish_an_assignment_that_was_not_made_durable() {
-        use crate::changeset::AssetLockRecipient;
+    async fn should_leave_nothing_behind_after_a_failed_assignment() {
+        let tried = dpp::prelude::Identifier::from([0x54; 32]);
+        let chosen = dpp::prelude::Identifier::from([0x55; 32]);
+        for commits_inline in [true, false] {
+            let persistence = Arc::new(CapturingPersistence {
+                records_identity_recipients: true,
+                commits_inline,
+                ..Default::default()
+            });
+            let (manager, out_point) =
+                unassigned_top_up_lock(Arc::clone(&persistence), AssetLockStatus::Broadcast).await;
+            persistence
+                .fail_lock_store
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            persistence
+                .lock_store_failure_is_transient
+                .store(true, std::sync::atomic::Ordering::SeqCst);
 
-        let first = dpp::prelude::Identifier::from([0x54; 32]);
-        let second = dpp::prelude::Identifier::from([0x55; 32]);
-        let broadcaster = Arc::new(CountingOkBroadcaster::default());
-        let persistence = Arc::new(CapturingPersistence {
-            records_identity_recipients: true,
-            commits_inline: true,
-            ..Default::default()
-        });
-        let (manager, signer) = funded_asset_lock_manager_with_persistence(
-            Arc::clone(&broadcaster),
-            Arc::clone(&persistence),
-        )
-        .await;
-        let (_, out_point) =
-            fund_unbound_top_up(&manager, &signer, Some(AssetLockRecipient::Identity(first)))
+            let result = assign_on_current_generation(&manager, &out_point, tried).await;
+
+            assert!(
+                matches!(result, Err(PlatformWalletError::Persistence(_))),
+                "{result:?}"
+            );
+            let tracked = manager.list_tracked_locks().await;
+            assert_eq!(tracked[0].identity_recipient, None, "not published");
+            assert!(tracked[0].is_unassigned_identity_top_up());
+            assert!(persistence.assigned.lock().unwrap().is_empty());
+
+            persistence
+                .fail_lock_store
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+            assign_on_current_generation(&manager, &out_point, chosen)
                 .await
-                .expect("an unbound top-up lock builds and broadcasts");
-        {
-            let mut wm = manager.wallet_manager.write().await;
-            wm.get_wallet_info_mut(&manager.wallet_id)
-                .unwrap()
-                .tracked_asset_locks
-                .get_mut(&out_point)
-                .unwrap()
-                .identity_recipient = None;
-        }
-
-        persistence
-            .fail_lock_store
-            .store(true, std::sync::atomic::Ordering::SeqCst);
-        persistence
-            .lock_store_failure_is_transient
-            .store(true, std::sync::atomic::Ordering::SeqCst);
-        assert!(matches!(
-            assign_on_current_generation(&manager, &out_point, first).await,
-            Err(PlatformWalletError::Persistence(_))
-        ));
-        let tracked = manager.list_tracked_locks().await;
-        assert_eq!(
-            tracked[0].identity_recipient, None,
-            "an assignment that was not made durable is not published"
-        );
-        assert!(tracked[0].is_unassigned_identity_top_up());
-
-        persistence
-            .fail_lock_store
-            .store(false, std::sync::atomic::Ordering::SeqCst);
-        let stores_before = persistence.stored.lock().unwrap().len();
-        assign_on_current_generation(&manager, &out_point, first)
-            .await
-            .expect("assigning the same identity again retries the store");
-        {
-            let stored = persistence.stored.lock().unwrap();
-            assert_eq!(stored.len(), stores_before + 1);
+                .expect("the failed identity pinned nothing");
             assert_eq!(
-                stored[stores_before]
-                    .asset_locks
-                    .as_ref()
-                    .unwrap()
-                    .asset_locks[&out_point]
-                    .identity_recipient,
-                Some(first)
+                manager.list_tracked_locks().await[0].identity_recipient,
+                Some(chosen)
             );
         }
-        assert_eq!(
-            manager.list_tracked_locks().await[0].identity_recipient,
-            Some(first),
-            "published once durable"
-        );
-        assert!(matches!(
-            assign_on_current_generation(&manager, &out_point, second).await,
-            Err(PlatformWalletError::AssetLockIdentityRecipientMismatch {
-                recorded,
-                requested,
-                ..
-            }) if recorded == first && requested == second
-        ));
     }
 
     /// Rejects the first `remaining` broadcasts before anything is sent, then
@@ -4276,70 +4335,6 @@ mod tests {
         }
     }
 
-    /// A store that fails transiently on a buffered backend may still commit
-    /// the recipient from the buffer, and the buffered row keeps the first
-    /// recipient it was given: a different identity is refused until the
-    /// failed one is stored durably, so memory can never publish an identity
-    /// the backend did not commit. Retrying the same identity succeeds and
-    /// publishes it.
-    #[tokio::test]
-    async fn should_refuse_another_identity_while_a_failed_assignment_may_still_commit() {
-        let first = dpp::prelude::Identifier::from([0x56; 32]);
-        let second = dpp::prelude::Identifier::from([0x57; 32]);
-        let persistence = Arc::new(CapturingPersistence {
-            records_identity_recipients: true,
-            commits_inline: false,
-            ..Default::default()
-        });
-        let (manager, out_point) =
-            unassigned_top_up_lock(Arc::clone(&persistence), AssetLockStatus::Broadcast).await;
-        persistence
-            .flush_failure_is_transient
-            .store(true, std::sync::atomic::Ordering::SeqCst);
-        persistence
-            .fail_flushes
-            .store(true, std::sync::atomic::Ordering::SeqCst);
-
-        let result = assign_on_current_generation(&manager, &out_point, first).await;
-        assert!(
-            matches!(result, Err(PlatformWalletError::Persistence(_))),
-            "{result:?}"
-        );
-        assert_eq!(
-            manager.list_tracked_locks().await[0].identity_recipient,
-            None
-        );
-
-        persistence
-            .fail_flushes
-            .store(false, std::sync::atomic::Ordering::SeqCst);
-        let result = assign_on_current_generation(&manager, &out_point, second).await;
-        assert!(
-            matches!(
-                result,
-                Err(PlatformWalletError::AssetLockIdentityRecipientMismatch {
-                    recorded,
-                    requested,
-                    ..
-                }) if recorded == first && requested == second
-            ),
-            "{result:?}"
-        );
-        assert_eq!(
-            manager.list_tracked_locks().await[0].identity_recipient,
-            None,
-            "the refused identity is not published"
-        );
-
-        assign_on_current_generation(&manager, &out_point, first)
-            .await
-            .expect("the failed identity is stored again and made durable");
-        assert_eq!(
-            manager.list_tracked_locks().await[0].identity_recipient,
-            Some(first)
-        );
-    }
-
     /// Builds an unbound top-up lock for `built_for` on a backend that records
     /// identity recipients, then forgets the recipient, as a lock rebuilt from
     /// the chain has none, and sets its status to `status`.
@@ -4351,7 +4346,7 @@ mod tests {
 
         let (manager, signer) = funded_asset_lock_manager_with_persistence(
             Arc::new(CountingOkBroadcaster::default()),
-            persistence,
+            Arc::clone(&persistence),
         )
         .await;
         let (_, out_point) = fund_unbound_top_up(
@@ -4374,6 +4369,7 @@ mod tests {
             lock.identity_recipient = None;
             lock.status = status;
         }
+        persistence.forget_recipient(&out_point);
         (manager, out_point)
     }
 
@@ -4430,11 +4426,102 @@ mod tests {
         }
     }
 
-    /// On a backend whose store commits inline the store alone makes the
-    /// assignment durable, so it is not flushed: a backend whose flushes would
+    /// A lock the backend no longer stores (sync swept it, or its row was
+    /// removed) is not written back by an assignment: the backend refuses it,
+    /// so nothing is recorded or published, even while memory still tracks
+    /// the lock.
+    #[tokio::test]
+    async fn should_refuse_an_assignment_for_a_lock_the_backend_no_longer_stores() {
+        let identity = dpp::prelude::Identifier::from([0x5c; 32]);
+        let persistence = Arc::new(CapturingPersistence {
+            records_identity_recipients: true,
+            commits_inline: true,
+            ..Default::default()
+        });
+        let (manager, out_point) =
+            unassigned_top_up_lock(Arc::clone(&persistence), AssetLockStatus::Broadcast).await;
+        persistence
+            .stored
+            .lock()
+            .unwrap()
+            .push(PlatformWalletChangeSet {
+                asset_locks: Some(crate::changeset::AssetLockChangeSet {
+                    removed: [out_point].into(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            });
+
+        let result = assign_on_current_generation(&manager, &out_point, identity).await;
+
+        assert!(
+            matches!(&result, Err(PlatformWalletError::Persistence(message))
+                if message.contains("no asset lock row")),
+            "{result:?}"
+        );
+        assert!(persistence.assigned.lock().unwrap().is_empty());
+        assert_eq!(
+            manager.list_tracked_locks().await[0].identity_recipient,
+            None
+        );
+    }
+
+    /// A lock rebuilt from the chain may already have been used on Platform,
+    /// which the wallet cannot tell: it is assigned only when the caller
+    /// acknowledges that, and refused as of unknown consumption otherwise.
+    /// Platform uses an outpoint once, so the acknowledgement cannot pay
+    /// twice; it lets the user recover a lock that is genuinely unused.
+    #[tokio::test]
+    async fn should_assign_a_lock_rebuilt_from_the_chain_only_when_acknowledged() {
+        let identity = dpp::prelude::Identifier::from([0x5f; 32]);
+        let persistence = Arc::new(CapturingPersistence {
+            records_identity_recipients: true,
+            commits_inline: true,
+            ..Default::default()
+        });
+        let (manager, out_point) = unassigned_top_up_lock(
+            Arc::clone(&persistence),
+            AssetLockStatus::RecoveredFromChain,
+        )
+        .await;
+        let generation = Arc::clone(
+            &manager
+                .wallet_manager
+                .read()
+                .await
+                .get_wallet_info(&manager.wallet_id)
+                .expect("wallet info")
+                .generation,
+        );
+
+        let refused = manager
+            .assign_identity_top_up_recipient(&out_point, identity, false, &generation)
+            .await;
+        assert!(
+            matches!(refused, Err(PlatformWalletError::AssetLockConsumptionUnknown(op)) if op == out_point),
+            "{refused:?}"
+        );
+        assert!(persistence.assigned.lock().unwrap().is_empty());
+
+        manager
+            .assign_identity_top_up_recipient(&out_point, identity, true, &generation)
+            .await
+            .expect("an acknowledged assignment of a recovered lock is recorded");
+        assert_eq!(
+            *persistence.assigned.lock().unwrap(),
+            vec![(out_point, identity)]
+        );
+        assert_eq!(
+            manager.list_tracked_locks().await[0].identity_recipient,
+            Some(identity)
+        );
+    }
+
+    /// On a backend that commits inline the assignment is a committed round
+    /// of its own, so nothing is flushed for it: a backend whose flushes would
     /// all fail still assigns, and the assignment is published.
     #[tokio::test]
-    async fn should_keep_an_assignment_an_inline_store_committed_before_its_flush_failed() {
+    async fn should_assign_without_a_flush_on_an_inline_backend() {
         let identity = dpp::prelude::Identifier::from([0x5d; 32]);
         let persistence = Arc::new(CapturingPersistence {
             records_identity_recipients: true,

@@ -515,16 +515,20 @@ impl IdentityWallet {
     /// Also refused on a backend that cannot keep the assignment
     /// (`PersistenceCapabilities::IDENTITY_RECIPIENT_TOP_UP`), for a lock
     /// that is not an unbound top-up, for a consumed lock
-    /// ([`PlatformWalletError::AssetLockAlreadyConsumed`]), for a
-    /// recipient-less lock whose Platform consumption is unknown
-    /// ([`PlatformWalletError::AssetLockConsumptionUnknown`]), and for a lock
+    /// ([`PlatformWalletError::AssetLockAlreadyConsumed`]), and for a lock
     /// recording another identity
-    /// ([`PlatformWalletError::AssetLockIdentityRecipientMismatch`]). If the
-    /// store fails transiently, or its flush fails after an inline commit,
-    /// the error is returned and the assignment holds for this session;
-    /// assigning the same identity again retries the store. Any other store
-    /// failure rolls the assignment back, leaving the lock unassigned. A wallet
-    /// removed or re-created under its id while the identity was looked up is
+    /// ([`PlatformWalletError::AssetLockIdentityRecipientMismatch`]). A lock
+    /// rebuilt from the chain, which Platform may already have used, is
+    /// assigned only with `acknowledge_unknown_consumption`, and is
+    /// [`PlatformWalletError::AssetLockConsumptionUnknown`] otherwise: Platform
+    /// uses an outpoint once, so if it already used this one the resume is
+    /// refused there and reports the lock consumed, and nothing is paid twice.
+    ///
+    /// The backend records the recipient alone, and only once that is
+    /// committed does a resume see it. A failure stores nothing, so any
+    /// identity may be assigned afterwards. A lock the backend no longer
+    /// stores, or one swept meanwhile, is refused. A wallet removed or
+    /// re-created under its id while the identity was looked up is
     /// [`PlatformWalletError::WalletRemovedBeforeSend`], with nothing
     /// assigned.
     ///
@@ -533,10 +537,16 @@ impl IdentityWallet {
         &self,
         out_point: &dashcore::OutPoint,
         identity_id: &Identifier,
+        acknowledge_unknown_consumption: bool,
     ) -> Result<(), PlatformWalletError> {
         self.fetch_identity_to_pay(identity_id).await?;
         self.asset_locks
-            .assign_identity_top_up_recipient(out_point, *identity_id, &self.generation)
+            .assign_identity_top_up_recipient(
+                out_point,
+                *identity_id,
+                acknowledge_unknown_consumption,
+                &self.generation,
+            )
             .await
     }
 
@@ -993,7 +1003,7 @@ mod tests {
             .await;
         let assign = wallet
             .identity()
-            .assign_identity_top_up_recipient(&out_point, &target)
+            .assign_identity_top_up_recipient(&out_point, &target, false)
             .await;
 
         assert!(
@@ -1275,7 +1285,7 @@ mod tests {
 
         let result = wallet
             .identity()
-            .assign_identity_top_up_recipient(&out_point, &unknown)
+            .assign_identity_top_up_recipient(&out_point, &unknown, false)
             .await;
 
         assert!(

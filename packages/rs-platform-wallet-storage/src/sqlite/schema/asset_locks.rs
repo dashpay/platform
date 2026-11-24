@@ -486,6 +486,66 @@ pub fn load_state(
     Ok(out)
 }
 
+/// What [`assign_identity_recipient`] found at the outpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IdentityRecipientAssignment {
+    /// The row recorded no recipient and now records this one.
+    Assigned,
+    /// The row already records this very recipient; nothing changed.
+    AlreadyRecorded,
+    /// The wallet has no row at the outpoint: the lock was never stored, or
+    /// was removed (a sweep, an abandoned build).
+    NoRow,
+    /// The row records another recipient, which never changes.
+    RecordsAnother,
+    /// The row is consumed and records none: nothing pays from it again.
+    Consumed,
+}
+
+/// Record `identity` as the recipient of `wallet_id`'s asset lock at
+/// `outpoint`, in a transaction of its own, setting the recipient column and
+/// nothing else: the row's status, proof and lifecycle stay as stored, so a
+/// lock that sync advanced meanwhile keeps what it learned. It never inserts
+/// a row and never changes a recorded recipient; what it found instead is
+/// the answer.
+pub fn assign_identity_recipient(
+    conn: &mut Connection,
+    wallet_id: &WalletId,
+    outpoint: &OutPoint,
+    identity: &Identifier,
+) -> Result<IdentityRecipientAssignment, WalletStorageError> {
+    let op_bytes = blob::encode_outpoint(outpoint)?;
+    let identity = identity.to_buffer();
+    let tx = conn.transaction()?;
+    let changed = tx.execute(
+        "UPDATE asset_locks SET identity_recipient = ?3 \
+         WHERE wallet_id = ?1 AND outpoint = ?2 AND identity_recipient IS NULL \
+           AND status != 'consumed'",
+        params![wallet_id.as_slice(), &op_bytes[..], &identity[..]],
+    )?;
+    let outcome = if changed == 1 {
+        IdentityRecipientAssignment::Assigned
+    } else {
+        let stored: Option<Option<Vec<u8>>> = tx
+            .query_row(
+                "SELECT identity_recipient FROM asset_locks WHERE wallet_id = ?1 AND outpoint = ?2",
+                params![wallet_id.as_slice(), &op_bytes[..]],
+                |row| row.get(0),
+            )
+            .optional()?;
+        match stored {
+            None => IdentityRecipientAssignment::NoRow,
+            Some(Some(recorded)) if recorded.as_slice() == identity.as_slice() => {
+                IdentityRecipientAssignment::AlreadyRecorded
+            }
+            Some(Some(_)) => IdentityRecipientAssignment::RecordsAnother,
+            Some(None) => IdentityRecipientAssignment::Consumed,
+        }
+    };
+    tx.commit()?;
+    Ok(outcome)
+}
+
 /// One asset lock's status by outpoint, **including** a terminal `Consumed`
 /// row, or `None` when `wallet_id` has no row for it. The point lookup a
 /// host uses to tell a lock this wallet spent from one it never stored:

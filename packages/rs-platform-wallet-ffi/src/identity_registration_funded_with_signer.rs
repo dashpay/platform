@@ -474,24 +474,31 @@ unsafe fn resume_identity_top_up_to_recorded_recipient_signer_inner(
 /// (7) and nothing is assigned; a failed lookup is
 /// `ErrorIdentityLookupFailed` (80).
 ///
-/// Errors: `ErrorAssetLockNotTracked` (23) for an unknown outpoint,
-/// `ErrorAssetLockAlreadyConsumed` (24) for a consumed lock,
-/// `ErrorAssetLockConsumptionUnknown` (82) for a recipient-less lock whose
-/// Platform consumption is unknown (status
-/// `RecoveredFromChain`, not flagged `identity_recipient_unassigned`),
+/// A lock rebuilt from the chain (status `RecoveredFromChain`, not flagged
+/// `identity_recipient_unassigned`) may already have been used on Platform,
+/// which the wallet cannot tell. It is assigned only when
+/// `acknowledge_unknown_consumption` is `true`, after the user has been told
+/// so; with `false` it is `ErrorAssetLockConsumptionUnknown` (82). Platform
+/// uses an outpoint once: if it already used this one, the resume is refused
+/// there and reports `ErrorAssetLockAlreadyConsumed` (24), and nothing is paid
+/// twice.
+///
+/// The persister records the recipient alone, in a round of its own, and
+/// only once that commits can a resume pay it. On success the identity is
+/// assigned; on any error nothing was stored, and any identity may be
+/// assigned again.
+///
+/// Errors: `ErrorAssetLockNotTracked` (23) for an unknown outpoint or one the
+/// wallet stopped tracking meanwhile, `ErrorAssetLockAlreadyConsumed` (24) for
+/// a consumed lock, `ErrorAssetLockConsumptionUnknown` (82) as above,
 /// `ErrorAssetLockRecipientMismatch` (61) when the lock already records a
 /// different identity (assigning the recorded one again is a no-op), and a
 /// persistence error when the host's persister does not keep identity
 /// recipients (`ASSET_LOCK_IDENTITY_RECIPIENTS` with `ATOMIC_CHANGESETS` and
-/// `ASSET_LOCK_FUNDING_INDICES`) or the store fails. After a
-/// transient store failure (or a failed flush on a persister that commits
-/// each store inline) the assignment still holds for this session and
-/// another identity is refused (61); calling again with the same identity
-/// retries the store. After any other store failure the assignment is rolled
-/// back and the lock is unassigned again. A lock
-/// that is not an unbound identity top-up is refused. A wallet removed or
-/// re-created under its id during the lookup is `NotFound`, with nothing
-/// assigned.
+/// `ASSET_LOCK_FUNDING_INDICES`) or refuses the assignment (it stores no row
+/// at the outpoint, or the row records another identity). A lock that is not
+/// an unbound identity top-up is refused. A wallet removed or re-created
+/// under its id during the lookup is `NotFound`, with nothing assigned.
 ///
 /// # Safety
 /// - `out_point` must be a valid, non-null `*const OutPointFFI`.
@@ -501,11 +508,17 @@ pub unsafe extern "C" fn platform_wallet_assign_identity_top_up_recipient(
     wallet_handle: Handle,
     out_point: *const OutPointFFI,
     identity_id: *const [u8; 32],
+    acknowledge_unknown_consumption: bool,
 ) -> PlatformWalletFFIResult {
     // A panic must not reach this `extern "C"` frame. An assignment pays
     // nothing, so a plain wallet-operation error is enough.
     catch_assignment_panic("identity top-up recipient assignment", || {
-        assign_identity_top_up_recipient_inner(wallet_handle, out_point, identity_id)
+        assign_identity_top_up_recipient_inner(
+            wallet_handle,
+            out_point,
+            identity_id,
+            acknowledge_unknown_consumption,
+        )
     })
 }
 
@@ -534,6 +547,7 @@ unsafe fn assign_identity_top_up_recipient_inner(
     wallet_handle: Handle,
     out_point: *const OutPointFFI,
     identity_id: *const [u8; 32],
+    acknowledge_unknown_consumption: bool,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_point);
     check_ptr!(identity_id);
@@ -547,7 +561,11 @@ unsafe fn assign_identity_top_up_recipient_inner(
     );
     let result = block_on_worker(async move {
         identity_wallet
-            .assign_identity_top_up_recipient(&out_point, &identity_id)
+            .assign_identity_top_up_recipient(
+                &out_point,
+                &identity_id,
+                acknowledge_unknown_consumption,
+            )
             .await
     });
     unwrap_result_or_return!(result);
@@ -666,20 +684,22 @@ mod topup_existing_lock_guard_tests {
     fn should_refuse_an_assignment_with_a_null_pointer_or_an_unknown_wallet() {
         let op = zero_out_point();
         let id = [7u8; 32];
-        let null_out_point =
-            unsafe { platform_wallet_assign_identity_top_up_recipient(0, std::ptr::null(), &id) };
+        let null_out_point = unsafe {
+            platform_wallet_assign_identity_top_up_recipient(0, std::ptr::null(), &id, false)
+        };
         assert_eq!(
             null_out_point.code,
             PlatformWalletFFIResultCode::ErrorNullPointer
         );
-        let null_identity =
-            unsafe { platform_wallet_assign_identity_top_up_recipient(0, &op, std::ptr::null()) };
+        let null_identity = unsafe {
+            platform_wallet_assign_identity_top_up_recipient(0, &op, std::ptr::null(), false)
+        };
         assert_eq!(
             null_identity.code,
             PlatformWalletFFIResultCode::ErrorNullPointer
         );
         let unknown_wallet =
-            unsafe { platform_wallet_assign_identity_top_up_recipient(u64::MAX, &op, &id) };
+            unsafe { platform_wallet_assign_identity_top_up_recipient(u64::MAX, &op, &id, false) };
         assert_eq!(unknown_wallet.code, PlatformWalletFFIResultCode::NotFound);
     }
 

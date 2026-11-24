@@ -6,10 +6,11 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use rusqlite::{Connection, OptionalExtension};
 
+use dashcore::OutPoint;
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{
     ClientStartState, IdentityChangeSet, PersistenceCapabilities, PersistenceError,
-    PlatformWalletChangeSet, PlatformWalletPersistence,
+    PersistenceErrorKind, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::wallet::identity::ManagedIdentity;
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -25,6 +26,7 @@ use crate::sqlite::rehydrate::{
 };
 use crate::sqlite::reports::{CommitReport, DeleteWalletReport};
 use crate::sqlite::schema;
+use crate::sqlite::schema::asset_locks::IdentityRecipientAssignment;
 use crate::sqlite::util::permissions::{
     apply_secure_permissions, create_owner_only_dirs, precreate_secure,
 };
@@ -1471,6 +1473,40 @@ impl PlatformWalletPersistence for SqlitePersister {
 
     fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError> {
         self.flush_inner(&wallet_id)
+    }
+
+    /// The wallet's buffered writes are committed first, under the same
+    /// connection guard, so a removal stored before the assignment lands
+    /// before it; then the recipient alone is set in a transaction of its
+    /// own ([`schema::asset_locks::assign_identity_recipient`]). Nothing of it
+    /// is buffered, so a failure leaves nothing to commit later.
+    fn assign_asset_lock_identity_recipient(
+        &self,
+        wallet_id: WalletId,
+        out_point: OutPoint,
+        identity: Identifier,
+    ) -> Result<(), PersistenceError> {
+        self.ensure_writable("assign_asset_lock_identity_recipient")
+            .map_err(PersistenceError::from)?;
+        let mut conn = self.conn().map_err(PersistenceError::from)?;
+        self.flush_locked(&mut conn, &wallet_id)?;
+        let refusal = match schema::asset_locks::assign_identity_recipient(
+            &mut conn, &wallet_id, &out_point, &identity,
+        )
+        .map_err(PersistenceError::from)?
+        {
+            IdentityRecipientAssignment::Assigned
+            | IdentityRecipientAssignment::AlreadyRecorded => return Ok(()),
+            IdentityRecipientAssignment::NoRow => "the wallet stores no asset lock at it",
+            IdentityRecipientAssignment::RecordsAnother => {
+                "its asset lock already records another identity recipient"
+            }
+            IdentityRecipientAssignment::Consumed => "its asset lock is consumed",
+        };
+        Err(PersistenceError::backend_with_kind(
+            PersistenceErrorKind::Constraint,
+            format!("identity recipient not assigned at {out_point}: {refusal}"),
+        ))
     }
 
     /// [`commit_writes`](SqlitePersister::commit_writes) drains the buffer

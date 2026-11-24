@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
-use dashcore::Txid;
+use dashcore::{OutPoint, Txid};
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 
 use crate::changeset::flush_ledger::FlushLedgers;
@@ -735,6 +735,19 @@ impl WalletPersister {
     /// ([`FlushLedger::flush`]).
     pub(crate) fn flush(&self) -> Result<(), PersistenceError> {
         self.flush_ledger.flush(self.inner.as_ref(), self.wallet_id)
+    }
+
+    /// Record `identity` as the recipient of this wallet's asset lock at
+    /// `out_point`, the recipient alone and at once
+    /// ([`PlatformWalletPersistence::assign_asset_lock_identity_recipient`]):
+    /// `Ok` once committed, and any `Err` leaves nothing to commit later.
+    pub(crate) fn assign_asset_lock_identity_recipient(
+        &self,
+        out_point: OutPoint,
+        identity: Identifier,
+    ) -> Result<(), PersistenceError> {
+        self.inner
+            .assign_asset_lock_identity_recipient(self.wallet_id, out_point, identity)
     }
 
     /// Store `changeset` and answer `Ok` only once it is durable: at once for
