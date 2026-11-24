@@ -243,16 +243,11 @@ private struct DecisionProposalRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(proposal.title)
-                    .font(.headline)
-                    .lineLimit(2)
-                Spacer(minLength: 8)
-                ProposalPollStateBadge(
-                    state: pollState,
-                    accessibilityIdentifier: "decisionProposals.row.pollState"
-                )
-            }
+            ProposalRowHeader(
+                title: proposal.title,
+                pollState: pollState,
+                badgeIdentifier: "decisionProposals.row.pollState"
+            )
             HStack(spacing: 12) {
                 Label {
                     Text(proposal.endDate, style: proposal.endDate > Date() ? .relative : .date)
