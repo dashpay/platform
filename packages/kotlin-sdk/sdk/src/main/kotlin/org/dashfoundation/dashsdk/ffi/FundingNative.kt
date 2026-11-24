@@ -312,7 +312,8 @@ internal object FundingNative {
      *
      * Code 1087 (`ErrorShieldedBalanceBusy`) means the read did not finish
      * within its wait budget (the wallet's state or its shielded store was
-     * held): the only code of this read that means read again later.
+     * held), or a shielded Clear was running: the only code of this read
+     * that means read again later.
      */
     external fun shieldedIdentityBalance(
         managerHandle: Long,

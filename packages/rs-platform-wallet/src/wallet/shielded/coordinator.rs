@@ -53,6 +53,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::Arc;
 
 use sha2::{Digest, Sha256};
@@ -269,6 +270,13 @@ pub struct NetworkShieldedCoordinator {
     /// Lock order: `operation_admission` → `lifecycle` → `store`.
     operation_admission: RwLock<()>,
 
+    /// Whether a Clear holds the exclusive side of `operation_admission`
+    /// ([`ShieldedClearAdmission`] sets and resets it). Read by
+    /// [`clear_in_progress`](Self::clear_in_progress), which must not take
+    /// the admission to ask: a shared permit held for an instant would
+    /// refuse a Clear requested in that instant.
+    clear_admission_held: AtomicBool,
+
     /// Wallets whose per-subwallet store state has been successfully
     /// hydrated from the host's persisted snapshot this session
     /// (`restore_for_wallet` completed without error after the
@@ -434,7 +442,27 @@ fn scan_binds_token_fee_bundles(orphan: &super::token_pool::OrphanedReservation)
 /// run there: an admission of one coordinator cannot be spent on another.
 pub(crate) struct ShieldedClearAdmission<'a> {
     coordinator: &'a NetworkShieldedCoordinator,
+    // Declared before the guard, so the mark is reset before the admission
+    // is released: nothing reads a Clear as admitted once it is not.
+    _held: ClearAdmissionMark<'a>,
     _operations: tokio::sync::RwLockWriteGuard<'a, ()>,
+}
+
+/// Marks a Clear as admitted for as long as it lives
+/// ([`NetworkShieldedCoordinator::clear_in_progress`]).
+struct ClearAdmissionMark<'a>(&'a AtomicBool);
+
+impl<'a> ClearAdmissionMark<'a> {
+    fn set(held: &'a AtomicBool) -> Self {
+        held.store(true, AtomicOrdering::Release);
+        Self(held)
+    }
+}
+
+impl Drop for ClearAdmissionMark<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, AtomicOrdering::Release);
+    }
 }
 
 impl ShieldedClearAdmission<'_> {
@@ -583,6 +611,7 @@ impl NetworkShieldedCoordinator {
             tree_progress_handler: std::sync::Mutex::new(None),
             lifecycle: tokio::sync::Mutex::new(()),
             operation_admission: RwLock::new(()),
+            clear_admission_held: AtomicBool::new(false),
             hydrated: RwLock::new(std::collections::BTreeSet::new()),
             clear_generation: std::sync::atomic::AtomicU64::new(0),
             balance_change,
@@ -909,15 +938,6 @@ impl NetworkShieldedCoordinator {
     /// here before starting it. The admission is spent by
     /// [`ShieldedClearAdmission::clear`]; while it is held, every new
     /// operation waits.
-    /// Whether a Clear is admitted right now ([`Self::try_admit_clear`]).
-    /// Asks without holding the admission, so asking never refuses a Clear:
-    /// a local read that must not use rows a Clear is purging checks this
-    /// after it read them, instead of taking
-    /// [`operation_guard`](Self::operation_guard) for the read.
-    pub(crate) fn clear_in_progress(&self) -> bool {
-        self.operation_admission.try_read().is_err()
-    }
-
     pub(crate) fn try_admit_clear(
         &self,
     ) -> Result<ShieldedClearAdmission<'_>, PlatformWalletError> {
@@ -925,9 +945,22 @@ impl NetworkShieldedCoordinator {
             .try_write()
             .map(|operations| ShieldedClearAdmission {
                 coordinator: self,
+                _held: ClearAdmissionMark::set(&self.clear_admission_held),
                 _operations: operations,
             })
             .map_err(|_| PlatformWalletError::ShieldedOperationInProgress)
+    }
+
+    /// Whether a Clear is admitted right now ([`Self::try_admit_clear`]):
+    /// from before it stops the sync loop until it has wiped the state and
+    /// advanced the generation, or gave up without wiping anything.
+    ///
+    /// Asks without touching the admission, so asking never refuses a
+    /// Clear: a local read that must not use rows a Clear is purging checks
+    /// this after it read them, instead of taking
+    /// [`operation_guard`](Self::operation_guard) for the read.
+    pub(crate) fn clear_in_progress(&self) -> bool {
+        self.clear_admission_held.load(AtomicOrdering::Acquire)
     }
 
     /// [`register_wallet`](Self::register_wallet)'s body, with the
@@ -1070,6 +1103,13 @@ impl NetworkShieldedCoordinator {
         // reached the host). Registering the persister before the
         // accounts makes "accounts visible ⇒ persister visible"
         // hold at every interleaving.
+        // The stale accounts the registration keeps under another key, as
+        // opposed to the ones it drops.
+        let rekeyed: BTreeSet<u32> = stale
+            .iter()
+            .map(|(id, _)| id.account_index)
+            .filter(|account_index| account_views.contains_key(account_index))
+            .collect();
         self.persisters.write().await.insert(wallet_id, persister);
         {
             let mut accounts = self.accounts.write().await;
@@ -1106,13 +1146,19 @@ impl NetworkShieldedCoordinator {
                 // account-set lock (a credit pool transfer, unshield or
                 // withdrawal) can have saved its record since. Purging the
                 // account now would delete that record while the spend may
-                // still execute, so the account's state stays: it is no
-                // longer registered, and what reads the record fails closed
-                // asking for the account until it is bound again.
-                let holds_a_spend = store
-                    .pending_redrives(id)
-                    .map(|records| records.iter().any(|record| !record.nullifiers.is_empty()))
-                    .unwrap_or(true);
+                // still execute, so a dropped account's state stays: it is
+                // no longer registered, and what reads the record fails
+                // closed asking for the account until it is bound again.
+                //
+                // Not for a re-keyed account, which stays registered under
+                // the replacement key: the old key's notes and scan
+                // watermark would then be read as the new key's. It is
+                // purged as it always was.
+                let holds_a_spend = !rekeyed.contains(&id.account_index)
+                    && store
+                        .pending_redrives(id)
+                        .map(|records| records.iter().any(|record| !record.nullifiers.is_empty()))
+                        .unwrap_or(true);
                 if holds_a_spend {
                     tracing::warn!(
                         wallet_id = %hex::encode(id.wallet_id),

@@ -1874,14 +1874,18 @@ impl PlatformWallet {
     /// `shielded_add_account` hold the generation's lifecycle gate from
     /// this check through their host write, and the removal sets the flag
     /// under the gate's exclusive side, so it cannot complete in between.
+    ///
+    /// A tip review asks too, after it read the wallet's confirmed
+    /// recipients under the store guard: the removal sets the flag before
+    /// it purges them, so a review that read purged rows sees it.
     #[cfg(feature = "shielded")]
-    fn ensure_shielded_attached(&self) -> Result<(), PlatformWalletError> {
+    pub(crate) fn ensure_shielded_attached(&self) -> Result<(), PlatformWalletError> {
         if self
             .shielded_detached
             .load(std::sync::atomic::Ordering::Acquire)
         {
             return Err(PlatformWalletError::WalletNotFound(format!(
-                "{} was removed from the manager; shielded bind refused",
+                "{} was removed from the manager; the shielded call was refused",
                 hex::encode(self.wallet_id)
             )));
         }
@@ -2123,9 +2127,10 @@ impl PlatformWallet {
         // Held until the transfer has settled: a removal of the wallet waits
         // for it and a Clear does not purge the store under it.
         let _admission = self.admit_shielded_spend(coordinator).await?;
+        let keyset = self.derive_spend_keyset(seed, account).await?;
         self.shielded_transfer_once_claimed(
             coordinator,
-            seed,
+            &keyset,
             account,
             recipient_raw_43,
             amount,
@@ -2139,16 +2144,18 @@ impl PlatformWallet {
     /// The transfer behind [`Self::shielded_transfer_to`], for a caller that
     /// is admitted already (a tip holds the lifecycle gate, the
     /// coordinator's operation admission and the account-set lock through
-    /// its spend, and none of them is reentrant). `once_claimed` runs right
-    /// after the transfer's notes are reserved and before anything is built
-    /// or sent (`operations::transfer_once_claimed`): an `Err` from it
-    /// releases the notes and is returned, with nothing sent.
+    /// its spend, and none of them is reentrant). `keyset` is `account`'s,
+    /// from [`Self::derive_spend_keyset`]: the caller derives it once, a tip
+    /// before it records anything. `once_claimed` runs right after the
+    /// transfer's notes are reserved and before anything is built or sent
+    /// (`operations::transfer_once_claimed`): an `Err` from it releases the
+    /// notes and is returned, with nothing sent.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn shielded_transfer_once_claimed<P, C, CFut>(
         &self,
         coordinator: &Arc<NetworkShieldedCoordinator>,
-        seed: &[u8],
+        keyset: &OrchardKeySet,
         account: u32,
         recipient_raw_43: &[u8; 43],
         amount: u64,
@@ -2161,7 +2168,6 @@ impl PlatformWallet {
         C: FnOnce() -> CFut,
         CFut: Future<Output = Result<(), PlatformWalletError>>,
     {
-        let keyset = self.derive_spend_keyset(seed, account).await?;
         let recipient = Option::<grovedb_commitment_tree::PaymentAddress>::from(
             grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(recipient_raw_43),
         )
@@ -2175,7 +2181,7 @@ impl PlatformWallet {
             coordinator.store(),
             Some(&self.persister),
             self.wallet_id,
-            &keyset,
+            keyset,
             account,
             &recipient,
             amount,
