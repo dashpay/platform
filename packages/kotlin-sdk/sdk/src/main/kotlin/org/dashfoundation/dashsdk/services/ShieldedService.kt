@@ -457,18 +457,34 @@ class ShieldedService(private val database: DashDatabase) {
         dbPath: String,
         accounts: List<Int> = listOf(0),
     ): Boolean {
-        if (!isAvailable) return false
         val sortedAccounts = accounts.distinct().sorted()
+        return engineBind(manager, walletId, dbPath) { sortedAccounts }
+    }
+
+    /**
+     * [bindEngine] with the accounts read inside the ledger lifecycle step
+     * that binds them: [accountsFor] runs there, right before the native
+     * bind. [clearLocalState] uses it to ask Rust which accounts a wallet
+     * holds, so that no bind of this service can change them between the
+     * read and the bind.
+     */
+    private suspend fun engineBind(
+        manager: PlatformWalletManager,
+        walletId: ByteArray,
+        dbPath: String,
+        accountsFor: suspend () -> List<Int>,
+    ): Boolean {
+        if (!isAvailable) return false
         val walletIdHex4 = walletId.take(4).joinToString("") { "%02x".format(it) }
         return try {
-            withLedgerLifecycle {
+            val accounts = withLedgerLifecycle {
                 pendingHostWipe.commit()
                 manager.configureShielded(dbPath)
-                manager.bindShielded(walletId, sortedAccounts)
+                accountsFor().also { manager.bindShielded(walletId, it) }
             }
             android.util.Log.i(
                 TAG,
-                "Shielded engine-bound: walletId=$walletIdHex4… accounts=$sortedAccounts",
+                "Shielded engine-bound: walletId=$walletIdHex4… accounts=$accounts",
             )
             true
         } catch (e: Exception) {
@@ -593,12 +609,16 @@ class ShieldedService(private val database: DashDatabase) {
      *    would resync until the next app relaunch otherwise. Re-run [bind]
      *    for the mirror wallet (re-registers the viewing keys on the
      *    now-empty coordinator, its `restore_for_wallet` finding no
-     *    watermark → starts at index 0), then [bindEngine] every OTHER
-     *    loaded wallet — mirror-bind failure does NOT skip the others
-     *    ([bind] swallows its errors; the fleet pass runs regardless, the
-     *    iOS best-effort lesson) — and restart the background loop, so the
-     *    button alone triggers an in-session cold rebuild 0→N for the
-     *    whole fleet.
+     *    watermark → starts at index 0), then engine-bind every OTHER
+     *    loaded wallet with the accounts Rust holds for it
+     *    ([PlatformWalletManager.shieldedOrdinaryAccounts]: the reset drops
+     *    a wallet's registration, not its keys), so each comes back with
+     *    the accounts it had and not with a default. A mirror-bind failure
+     *    does NOT skip the others ([bind] swallows its errors; the fleet
+     *    pass runs regardless, the iOS best-effort lesson). Then restart
+     *    the background loop, so the button alone triggers an in-session
+     *    cold rebuild 0→N for the whole fleet. Swift's Clear registers
+     *    nothing again; its next Sync Now does.
      *
      * Fail-closed: if the Rust reset throws, the exception propagates and the
      * Room rows are left intact — the FFI's contract is that the host must
@@ -694,13 +714,47 @@ class ShieldedService(private val database: DashDatabase) {
         // relaunch), and restart the sync loop the reset stopped. This does
         // not depend on who bound the mirror: a bind that overtook the
         // re-bind above registers one wallet and restarts nothing, so the
-        // rest is still this Clear's to do. [bindEngine] writes nothing to
-        // the service. Skipped only when the service left this manager.
-        val mirrorNow = bindingTurns.read { boundWalletId.takeIf { manager === mgr } }.second
-        if (bindingTurns.read { manager !== mgr }.second) {
+        // rest is still this Clear's to do. An engine bind writes nothing
+        // to the service. Skipped only when the service left this manager.
+        //
+        // Each wallet is registered with the accounts Rust holds for it,
+        // which outlive the reset, and with the default only when Rust
+        // holds none (a wallet never bound). Rust is asked inside the step
+        // that binds, so a bind of this service that went through since
+        // the reset (a wallet that became the mirror meanwhile, with its
+        // own accounts) is read back and registered with the same accounts
+        // again, not replaced. A bind made directly on the manager in that
+        // gap is outside this service's lock and can still be replaced by
+        // the accounts read just before it.
+        if (!registerOtherWalletsAgain(mgr, dbPath)) {
             android.util.Log.i(TAG, "Shielded clear: the service left this manager; no fleet recovery")
             return
         }
+        val stillOnManager = bindingTurns.read { manager === mgr }.second
+        val notRunning = runCatching { !mgr.isShieldedSyncRunning() }.getOrDefault(false)
+        if (isAvailable && notRunning && stillOnManager) {
+            runCatching { mgr.startShieldedSync() }.onFailure {
+                android.util.Log.w(TAG, "restart shielded sync after clear failed: ${it.message}", it)
+            }
+        }
+    }
+
+    /**
+     * [clearLocalState]'s fleet pass: register again, on [mgr]'s
+     * coordinator, every loaded wallet other than the mirror, each with the
+     * accounts Rust holds for it. Its own function so that the on-device
+     * test can run it after a reset without the sync restart that follows
+     * it in a Clear.
+     *
+     * @return false when the service has left [mgr] (an unbind, another
+     *   network) and nothing was registered.
+     */
+    internal suspend fun registerOtherWalletsAgain(
+        mgr: PlatformWalletManager,
+        dbPath: String,
+    ): Boolean {
+        val mirrorNow = bindingTurns.read { boundWalletId.takeIf { manager === mgr } }.second
+        if (bindingTurns.read { manager !== mgr }.second) return false
         engineBindOtherWallets(
             allWalletIds = mgr.wallets.value.keys,
             mirrorWalletId = mirrorNow?.joinToString("") { "%02x".format(it) }.orEmpty(),
@@ -710,17 +764,14 @@ class ShieldedService(private val database: DashDatabase) {
             // is no longer this Clear's to register.
             if (bindingTurns.read { manager === mgr }.second) {
                 mgr.wallets.value[otherKey]?.let { other ->
-                    bindEngine(mgr, other.walletId, dbPath)
+                    engineBind(mgr, other.walletId, dbPath) {
+                        mgr.shieldedOrdinaryAccounts(other.walletId)
+                            .ifEmpty { NEVER_BOUND_ACCOUNTS }
+                    }
                 }
             }
         }
-        val stillOnManager = bindingTurns.read { manager === mgr }.second
-        val notRunning = runCatching { !mgr.isShieldedSyncRunning() }.getOrDefault(false)
-        if (isAvailable && notRunning && stillOnManager) {
-            runCatching { mgr.startShieldedSync() }.onFailure {
-                android.util.Log.w(TAG, "restart shielded sync after clear failed: ${it.message}", it)
-            }
-        }
+        return true
     }
 
     /**
@@ -775,6 +826,12 @@ class ShieldedService(private val database: DashDatabase) {
 
         /** Times a Clear re-reads the binding when a bind slips in before its re-bind. */
         const val CLEAR_REBIND_ATTEMPTS = 3
+
+        /**
+         * The accounts a Clear registers a wallet with when Rust holds none
+         * for it, because it was never bound: [bindEngine]'s default.
+         */
+        val NEVER_BOUND_ACCOUNTS = listOf(0)
     }
 }
 

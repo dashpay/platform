@@ -5,11 +5,13 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.config.SdkConfig
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.security.WalletStorage
+import org.dashfoundation.dashsdk.services.ShieldedService
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -40,6 +42,13 @@ class WalletManagerRoundTripTest {
     private val testMnemonic =
         "abandon abandon abandon abandon abandon abandon abandon abandon " +
             "abandon abandon abandon about"
+
+    // BIP39 English test vector (entropy 0x7f repeated).
+    private val otherTestMnemonic =
+        "legal winner thank year wave sausage worth useful legal winner thank yellow"
+
+    /** How long a test waits for Rust to announce a balance state. */
+    private val stateWaitMs = 30_000L
 
     private lateinit var db: DashDatabase
     private lateinit var walletStorage: WalletStorage
@@ -315,6 +324,135 @@ class WalletManagerRoundTripTest {
                 reloaded.bindShielded(walletId, listOf(0))
             }
         } finally {
+            storeDir.deleteRecursively()
+        }
+    }
+
+    /**
+     * The ordinary shielded accounts of a wallet are read from Rust through
+     * JNI, and outlive a Clear: the Clear drops the wallet's registration on
+     * the coordinator, not the keys Rust holds for it. Bound again with the
+     * list read back, the wallet has the accounts it had before.
+     *
+     * Starts no shielded sync. It uses this class's SDK fixture like the
+     * tests around it.
+     */
+    @Test
+    fun shieldedOrdinaryAccountsOutliveAClearAndBindAgain() = runBlocking {
+        assumeTrue("the native library has no shielded support", Sdk.hasShielded())
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val storeDir = File(context.cacheDir, "shielded-accounts-${System.nanoTime()}")
+        assertTrue(storeDir.mkdirs())
+        try {
+            PlatformWalletManager(sdk, Network.TESTNET, db, walletStorage).use { manager ->
+                manager.configureShielded(File(storeDir, "shielded.sqlite").absolutePath)
+                val walletId = manager.createWallet(
+                    mnemonic = testMnemonic,
+                    name = "shielded-accounts",
+                    createDefaultAccounts = true,
+                ).walletId
+                assertEquals(
+                    "a wallet never bound holds no shielded accounts",
+                    emptyList<Int>(),
+                    manager.shieldedOrdinaryAccounts(walletId),
+                )
+
+                manager.bindShielded(walletId, listOf(2, 1))
+                assertEquals(listOf(1, 2), manager.shieldedOrdinaryAccounts(walletId))
+
+                manager.clearShieldedStorage()
+                val held = manager.shieldedOrdinaryAccounts(walletId)
+                assertEquals("the accounts outlive the Clear", listOf(1, 2), held)
+
+                manager.bindShielded(walletId, held)
+                assertEquals(listOf(1, 2), manager.shieldedOrdinaryAccounts(walletId))
+            }
+        } finally {
+            storeDir.deleteRecursively()
+        }
+    }
+
+    /**
+     * After a Clear's reset, [ShieldedService] registers every loaded wallet
+     * other than the displayed one again, each with the accounts Rust holds
+     * for it. A wallet bound with other accounts used to come back with the
+     * default account 0 only (dashpay/platform#5989).
+     *
+     * Two things are checked for the other wallet: that it is registered
+     * again with its ledger restored (Rust announces its balance state as
+     * ready; the keys alone would not show that, since they outlive the
+     * reset), and that the accounts of that registration are the ones it
+     * had.
+     *
+     * The reset is run directly and then the service's fleet pass, which is
+     * what a Clear runs between its Room wipe and its sync restart, so no
+     * shielded sync loop is started. It uses this class's SDK fixture like
+     * the tests around it.
+     */
+    @Test
+    fun shieldedClearRegistersAnotherWalletAgainWithItsOwnAccounts() = runBlocking {
+        assumeTrue("the native library has no shielded support", Sdk.hasShielded())
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val storeDir = File(context.cacheDir, "shielded-clear-accounts-${System.nanoTime()}")
+        assertTrue(storeDir.mkdirs())
+        val storePath = File(storeDir, "shielded.sqlite").absolutePath
+        val service = ShieldedService(db)
+        try {
+            PlatformWalletManager(sdk, Network.TESTNET, db, walletStorage).use { manager ->
+                manager.configureShielded(storePath)
+                val displayed = manager.createWallet(
+                    mnemonic = testMnemonic,
+                    name = "shielded-clear-displayed",
+                    createDefaultAccounts = true,
+                ).walletId
+                val other = manager.createWallet(
+                    mnemonic = otherTestMnemonic,
+                    name = "shielded-clear-other",
+                    createDefaultAccounts = true,
+                ).walletId
+                val otherKey = shieldedBalanceKey(other)
+
+                service.bind(manager, displayed, storePath)
+                assertTrue("the displayed wallet is bound", service.isBound.value)
+                assertTrue(service.bindEngine(manager, other, storePath, listOf(2, 1)))
+                assertEquals(listOf(1, 2), manager.shieldedOrdinaryAccounts(other))
+                // Announced as registered first, so that each change below
+                // is one Rust reports on its own.
+                withTimeout(stateWaitMs) {
+                    manager.shieldedBalances.first {
+                        val state = it[otherKey]?.state
+                        state != null && state != ShieldedLocalBalanceState.Unbound
+                    }
+                }
+
+                // The reset drops the registration: Rust announces the
+                // wallet as unbound, while its keys still name its accounts.
+                manager.clearShieldedStorage()
+                withTimeout(stateWaitMs) {
+                    manager.shieldedBalances.first {
+                        it[otherKey]?.state == ShieldedLocalBalanceState.Unbound
+                    }
+                }
+                assertEquals(listOf(1, 2), manager.shieldedOrdinaryAccounts(other))
+
+                assertTrue(service.registerOtherWalletsAgain(manager, storePath))
+
+                // Ready, not just no longer unbound: a registration whose
+                // ledger failed to restore reads as incomplete.
+                val rebound = withTimeout(stateWaitMs) {
+                    manager.shieldedBalances.first {
+                        it[otherKey]?.state is ShieldedLocalBalanceState.Ready
+                    }
+                }.getValue(otherKey).state as ShieldedLocalBalanceState.Ready
+                assertEquals(
+                    "the coordinator registers the other wallet with the accounts it had",
+                    setOf(1, 2),
+                    rebound.snapshot.accounts.keys,
+                )
+                assertEquals(listOf(1, 2), manager.shieldedOrdinaryAccounts(other))
+            }
+        } finally {
+            service.close()
             storeDir.deleteRecursively()
         }
     }

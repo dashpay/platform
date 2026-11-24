@@ -1917,6 +1917,33 @@ class PlatformWalletManager(
         mapNativeErrors { WalletManagerNative.shieldedClear(managerHandle) }
     }
 
+    /**
+     * The ordinary ZIP-32 shielded accounts Rust holds for [walletId], in
+     * ascending order: the accounts of its last [bindShielded], without the
+     * identity accounts Rust adds to a bind by itself. Empty for a wallet
+     * that was never bound on this manager.
+     *
+     * The list survives [clearShieldedStorage], which drops the wallet's
+     * registration on the coordinator but not the keys Rust holds for it. So
+     * it is what to pass to [bindShielded] to register the wallet again
+     * with the accounts it had. Rust is the source: the host keeps no copy
+     * of its own.
+     *
+     * Swift has no counterpart: its Clear registers nothing again, and its
+     * next Sync Now registers the other wallets with the default account.
+     * Only meaningful on a shielded build ([Sdk.hasShielded]); the native
+     * entry point is absent otherwise and this throws.
+     */
+    suspend fun shieldedOrdinaryAccounts(walletId: ByteArray): List<Int> =
+        withContext(Dispatchers.IO) {
+            require(walletId.size == 32) {
+                "walletId must be exactly 32 bytes, got ${walletId.size}"
+            }
+            mapNativeErrors {
+                WalletManagerNative.shieldedOrdinaryAccounts(managerHandle, walletId)
+            }.toList()
+        }
+
     // ── Shielded funding submits ──────────────────────────────────────
     //
     // These are manager-handle FFI calls (they resolve the wallet + its
