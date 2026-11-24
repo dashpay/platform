@@ -906,10 +906,12 @@ pub enum PlatformWalletError {
     #[error("Invalid parameter: {0}")]
     InvalidParameter(String),
 
-    /// The SPV masternode list has not been synced yet, so a
-    /// masternode-list-dependent action (locating an entry, re-asserting its
-    /// service values) cannot proceed. FFI maps it to the same
-    /// masternode-list-unavailable code the locator already returns.
+    /// The SPV masternode list is not available or does not currently
+    /// follow the chain (still syncing, a stale header tip, or a list behind
+    /// the tip), so a masternode-list-dependent action (locating an entry,
+    /// re-asserting its service values) cannot proceed. It clears once sync
+    /// catches up. FFI maps it to the same masternode-list-unavailable code
+    /// the locator already returns.
     #[error("the masternode list is not available yet")]
     MasternodeListUnavailable,
 

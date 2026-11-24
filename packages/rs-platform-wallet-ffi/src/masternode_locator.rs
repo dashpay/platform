@@ -239,8 +239,9 @@ pub unsafe extern "C" fn platform_wallet_manager_free_masternode_matches(
 /// haven't been fetched). Unverifiable is NOT a pass.
 ///
 /// The reference comes from the DML entry (voting / operator / platform
-/// node) merged with the owning wallet's record (owner / payout) when the
-/// node is one of a loaded wallet's masternodes.
+/// node), while the list follows the chain, merged with the owning wallet's
+/// record (owner / payout) when the node is one of a loaded wallet's
+/// masternodes.
 ///
 /// Errors: `ErrorInvalidParameter` when `key_text` isn't a key of the
 /// role's curve (or is a WIF for the other network), or `role` is out of
