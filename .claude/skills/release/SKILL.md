@@ -71,21 +71,28 @@ GitHub marks a stable release "Latest" by default, and the install docs download
 
 ### 4. Wait for `release.yml` and check the assets
 
-The run takes hours: the Kotlin native build alone can run about 3 h. Wait in the background rather than blocking, for example:
+The run takes hours: the Kotlin native build alone can run about 3 h. Find the run, then follow the `Release Dashmate checksums` job first: signing ([step 5](#5-sign-sha256sums)) can start once it is green, while the SDK builds still run. Wait in the background rather than blocking, reading the job's status and conclusion until it has finished:
 
 ```sh
 gh run list --repo dashpay/platform --workflow release.yml --event release --branch v<version> \
   --json databaseId,status,conclusion,url
-gh run watch <run-id> --repo dashpay/platform --exit-status --interval 60
+gh run view <run-id> --repo dashpay/platform --json jobs \
+  --jq '.jobs[] | select(.name == "Release Dashmate checksums") | [.status, .conclusion] | @tsv'
 ```
 
-When it has finished, check that the release carries the dashmate packages and `SHA256SUMS`, and that the `Release Dashmate checksums` job is green:
+Once that job is green, check that the release carries the dashmate packages and `SHA256SUMS`:
 
 ```sh
 gh release view v<version> --repo dashpay/platform --json assets --jq '.assets[].name'
 ```
 
 Expect two debs, `dashmate_5.1.0-1_amd64.deb` and `_arm64.deb` (for a prerelease the `-` before its id becomes `.`: `dashmate_5.1.0.beta.1-1_amd64.deb`), `dashmate-v<version>-<sha>-linux-x64.tar.gz` and `-linux-arm64.tar.gz`, `-x64.exe`, `-x64.pkg` and `-arm64.pkg`, and `SHA256SUMS`. For a stable release, check which release is now Latest: `gh api repos/dashpay/platform/releases/latest --jq .tag_name`. A failed job is re-run only with the user's go.
+
+Follow the rest of the run, the SDK builds, in the background too:
+
+```sh
+gh run watch <run-id> --repo dashpay/platform --exit-status --interval 60
+```
 
 The Kotlin and Swift SDK jobs fill the release page in as they finish. The Maven Central deploy runs automatically after the Kotlin build (no approval gate); note that PR CI does **not** exercise the release-profile arm64 SDK builds, so an SDK build break surfaces here first — for a stable release, confirm the SDK jobs were green on the preceding rc. To re-run just one SDK release: `gh workflow run release-kotlin-sdk.yml --ref v<version> -f tag=v<version>` (same for `release-swift-sdk.yml`) — must be dispatched **at the tag ref**, with the **plain tag name** as input (no `refs/tags/` prefix). **Confirm with the release owner immediately before dispatching**: the re-run attaches public release assets and the Kotlin one can publish an irrevocable Maven Central version (no approval gate). Works only for tags that already contain these workflow files (post-consolidation); for older tags, dispatch at the dev branch — assets attach, Maven deploy skips — and use the manual runbook in `packages/kotlin-sdk/PUBLISHING.md` for Maven.
 
@@ -98,7 +105,7 @@ The Kotlin and Swift SDK jobs fill the release page in as they finish. The Maven
 
 One signature per release is enough. The keys that may sign are listed, by primary key fingerprint, in `ALLOWED_SIGNERS` at the top of `scripts/release/sign_dashmate_checksums.sh`, and the script refuses any other: today Ivan Shumkov's, with QuantumExplorer's added once his key exists. The apt publisher accepts signatures from these keys only.
 
-Before signing, run the tag check from step 3 once more: `v<version>` must still name the merge commit; if not, stop and ask the user. `scripts/release/sign_dashmate_checksums.sh` runs where the maintainer's key is, and gpg asks the maintainer for the passphrase. Run it there, or hand the maintainer the command. It refuses until every `release.yml` run of the tag has finished, so sign after step 4, and unless the tag and the newest run both name the commit given as `--commit`, the merge commit from step 2. Don't re-run any job of that run until the signature is attached: a release job checks for a signature before it uploads, so one that is already running can still replace packages. It checks that `SHA256SUMS` is the asset the run's `Release Dashmate checksums` job attached, by the record that job writes into its own log (so sign while GitHub keeps the run's logs; a job can be re-run only within 30 days of its run). It downloads the file into a new empty directory, checks that it lists exactly the dashmate packages the release serves, downloads those, checks every line, signs the downloaded file and verifies the signature. Without `--upload` it stops there and prints the upload command:
+Before signing, run the tag check from step 3 once more: `v<version>` must still name the merge commit; if not, stop and ask the user. `scripts/release/sign_dashmate_checksums.sh` runs where the maintainer's key is, and gpg asks the maintainer for the passphrase. Run it there, or hand the maintainer the command. It can start once the dashmate packages and `SHA256SUMS` are attached and the `Release Dashmate checksums` job is green; the SDK builds may still be running. It refuses unless that job succeeded in the newest attempt of the newest `release.yml` run of the tag, while any dashmate build, release or checksums job of the tag's runs is queued, running or waiting, including one being re-run, and unless the tag and the newest run both name the commit given as `--commit`, the merge commit from step 2. Don't re-run any job of the tag's `release.yml` runs until the signature is attached: a re-run is the only way the packages can change, and a release job checks for a signature before it uploads, so one that is already running can still replace them. It checks that `SHA256SUMS` is the asset the run's `Release Dashmate checksums` job attached, by the record that job writes into its own log (so sign while GitHub keeps the run's logs; a job can be re-run only within 30 days of its run). It downloads the file into a new empty directory, checks that it lists exactly the dashmate packages the release serves, downloads those, checks every line, signs the downloaded file and verifies the signature. Without `--upload` it stops there and prints the upload command:
 
 ```sh
 scripts/release/sign_dashmate_checksums.sh --tag=v<version> --key=<full fingerprint, quoted if it has spaces> --commit=<merge commit>

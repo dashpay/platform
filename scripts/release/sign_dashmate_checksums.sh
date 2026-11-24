@@ -5,9 +5,9 @@ set -euo pipefail
 cmd_usage="Usage: scripts/release/sign_dashmate_checksums.sh --tag=<tag> --key=<fingerprint> --commit=<sha> [--upload]
 
 Signs the SHA256SUMS of a published release with a maintainer's OpenPGP key. It first checks
-that the release workflow made the file from the given commit, that its runs are over, and that
-the file is exactly the list of the dashmate packages the release serves, downloaded into a new
-empty directory.
+that the release workflow made the file from the given commit, that the dashmate jobs of its runs
+are done (the SDK builds may still run), and that the file is exactly the list of the dashmate
+packages the release serves, downloaded into a new empty directory.
 
 Without --upload the signature is made and verified, then discarded, and the command that
 attaches it is printed. With --upload every check runs again, the release is checked once
@@ -144,27 +144,119 @@ sums_asset() {
   echo "$1" | awk -F'\t' '$1 == "SHA256SUMS" {print $2 "\t" $3 "\t" $4 "\t" $5}'
 }
 
-# Every release.yml run of the tag must be over: a running attempt can still replace packages
-# or SHA256SUMS. Prints the newest run's id and the commit it built. Reports a refusal through
-# the function named by $1, `fail` by default.
-finished_run() {
-  local on_fail="${1:-fail}" runs unfinished
+# The dashmate package jobs of one attempt of a release.yml run (run id, attempt): name, id,
+# status and conclusion. The other jobs of the run, the SDK builds, do not touch the packages.
+dashmate_jobs() {
+  gh api --paginate "repos/${REPO}/actions/runs/$1/attempts/$2/jobs?per_page=100" --jq '.jobs[]
+    | select((.name | startswith("Build Dashmate packages")) or (.name | startswith("Release Dashmate packages"))
+        or .name == "Release Dashmate checksums")
+    | [.name, .id, .status, (.conclusion // "none")] | @tsv' < /dev/null
+}
+
+# The dashmate side of the release must be done, though the rest of the run may still go: in the
+# newest attempt of the newest release.yml run of the tag the Release Dashmate checksums job
+# succeeded, and no dashmate job of that attempt, or of the newest attempt of any other unfinished
+# run of the tag, is still to finish. A re-run makes a new attempt, so a success of an earlier
+# attempt never counts. Prints the newest run's id, the commit it built, its attempt and the id
+# of that attempt's Release Dashmate checksums job. Reports a refusal through the function named
+# by $1, `fail` by default.
+dashmate_done() {
+  local on_fail="${1:-fail}" runs again newest newest_id id status attempt state jobs last pending="" checksums=""
   runs="$(gh api --paginate "repos/${REPO}/actions/workflows/release.yml/runs?event=release&branch=${TAG}&per_page=100" \
-    --jq '.workflow_runs[] | [.id, .status, .head_sha] | @tsv')" || "${on_fail}" "could not list the release.yml runs of ${TAG}"
+    --jq '.workflow_runs[] | [.id, .status, .head_sha, .run_attempt] | @tsv')" || "${on_fail}" "could not list the release.yml runs of ${TAG}"
   [ -n "${runs}" ] || "${on_fail}" "found no release.yml run for ${TAG}"
-  unfinished="$(echo "${runs}" | awk -F'\t' '$2 != "completed" {print $1 " (" $2 ")"}' | paste -sd ' ' -)"
-  [ -z "${unfinished}" ] || "${on_fail}" "release.yml for ${TAG} is still running: ${unfinished}; sign once no attempt is in progress"
-  echo "${runs}" | head -n 1 | cut -f1,3
+  newest="$(echo "${runs}" | head -n 1)"
+  newest_id="$(echo "${newest}" | cut -f1)"
+  while IFS=$'\t' read -r id status _ attempt; do
+    [ "${id}" = "${newest_id}" ] || [ "${status}" != completed ] || continue
+    # A requested re-run shows as a queued run before its attempt number moves on, so an
+    # unfinished run counts only while it is running the attempt it names. Waiting is running too:
+    # an SDK job can wait on its environment.
+    if [ "${status}" != completed ]; then
+      state="$(gh api "repos/${REPO}/actions/runs/${id}/attempts/${attempt}" --jq '.status' < /dev/null)" \
+        || "${on_fail}" "could not read attempt ${attempt} of release.yml run ${id}"
+      case "${status}:${state}" in
+        in_progress:in_progress | in_progress:waiting | waiting:in_progress | waiting:waiting) ;;
+        in_progress:completed | waiting:completed)
+          # Finished between the two reads, as when the SDK builds end, if the run says so too.
+          if [ "$(gh api "repos/${REPO}/actions/runs/${id}" --jq '[.status, .run_attempt] | @tsv' < /dev/null)" \
+            != "$(printf 'completed\t%s' "${attempt}")" ]; then
+            pending="${pending} run ${id} (${status}; attempt ${attempt}: ${state})"
+            continue
+          fi
+          [ "${id}" = "${newest_id}" ] || continue
+          ;;
+        *)
+          pending="${pending} run ${id} (${status}; attempt ${attempt}: ${state})"
+          continue
+          ;;
+      esac
+    fi
+    jobs="$(dashmate_jobs "${id}" "${attempt}")" || "${on_fail}" "could not list the jobs of release.yml run ${id} attempt ${attempt}"
+    pending="${pending}$(echo "${jobs}" | awk -F'\t' -v run="${id}" -v attempt="${attempt}" \
+      'NF && $3 != "completed" {printf " %s (run %s attempt %s, %s)", $1, run, attempt, $3}')"
+    # The checksums job is the last dashmate stage: once it has finished, no dashmate job of the
+    # attempt runs any more. An active run creates it only after the jobs it needs.
+    last="$(echo "${jobs}" | awk -F'\t' '$1 == "Release Dashmate checksums"')"
+    if [ "${id}" = "${newest_id}" ]; then
+      checksums="${last}"
+    elif [ -z "${last}" ]; then
+      pending="${pending} Release Dashmate checksums (run ${id} attempt ${attempt}, not created yet)"
+    fi
+  done < <(echo "${runs}")
+  [ -z "${pending}" ] || "${on_fail}" "dashmate jobs of ${TAG} are not finished:${pending}; sign once they are, and re-run none of them"
+  attempt="$(echo "${newest}" | cut -f4)"
+  case "${checksums}" in
+    '') "${on_fail}" "the Release Dashmate checksums job of run ${newest_id} attempt ${attempt} did not succeed (not found)" ;;
+    *$'\n'*) "${on_fail}" "run ${newest_id} attempt ${attempt} has more than one Release Dashmate checksums job" ;;
+  esac
+  [ "$(echo "${checksums}" | cut -f4)" = success ] \
+    || "${on_fail}" "the Release Dashmate checksums job of run ${newest_id} attempt ${attempt} did not succeed ($(echo "${checksums}" | cut -f4))"
+  # Listed again: a run or re-run that started while the jobs were read is not in the answer above.
+  # The same runs, commits and attempts, and a run that was running may only have gone on running
+  # or finished, as when the SDK builds end.
+  again="$(gh api --paginate "repos/${REPO}/actions/workflows/release.yml/runs?event=release&branch=${TAG}&per_page=100" \
+    --jq '.workflow_runs[] | [.id, .status, .head_sha, .run_attempt] | @tsv')" || "${on_fail}" "could not list the release.yml runs of ${TAG} again"
+  if [ "$(echo "${again}" | cut -f1,3,4)" != "$(echo "${runs}" | cut -f1,3,4)" ] \
+    || paste <(echo "${runs}" | cut -f2) <(echo "${again}" | cut -f2) | awk -F'\t' '$1 != $2 \
+      && !(($1 == "in_progress" || $1 == "waiting") && ($2 == "in_progress" || $2 == "waiting" || $2 == "completed")) \
+      {changed = 1} END {exit !changed}'; then
+    "${on_fail}" "the release.yml runs of ${TAG} changed while they were checked; run this again"
+  fi
+  printf '%s\t%s\t%s\t%s\n' "${newest_id}" "$(echo "${newest}" | cut -f3)" "${attempt}" "$(echo "${checksums}" | cut -f2)"
+}
+
+# The tag must name the commit the release was approved at. Reports a refusal through the
+# function named by $1, `fail` by default.
+check_tag() {
+  local on_fail="${1:-fail}" tagged
+  tagged="$(gh api "repos/${REPO}/commits/refs/tags/${TAG}" --jq '.sha')" || "${on_fail}" "could not resolve ${TAG} to a commit"
+  [ "${tagged}" = "${COMMIT}" ] || "${on_fail}" "${TAG} names ${tagged}, not ${COMMIT}"
+}
+
+# The newest run (id, commit) must have built that commit. Reports a refusal through the function
+# named by $2, `fail` by default.
+check_run_commit() {
+  [ "$(echo "$1" | cut -f2)" = "${COMMIT}" ] \
+    || "${2:-fail}" "release.yml run $(echo "$1" | cut -f1) built $(echo "$1" | cut -f2), not ${COMMIT}"
 }
 
 # The newest run (id, commit) and the tag must both name the commit the release was approved at.
-# Reports a refusal through the function named by $2, `fail` by default.
 check_commit() {
-  local on_fail="${2:-fail}" tagged
-  [ "$(echo "$1" | cut -f2)" = "${COMMIT}" ] \
-    || "${on_fail}" "release.yml run $(echo "$1" | cut -f1) built $(echo "$1" | cut -f2), not ${COMMIT}"
-  tagged="$(gh api "repos/${REPO}/commits/refs/tags/${TAG}" --jq '.sha')" || "${on_fail}" "could not resolve ${TAG} to a commit"
-  [ "${tagged}" = "${COMMIT}" ] || "${on_fail}" "${TAG} names ${tagged}, not ${COMMIT}"
+  check_run_commit "$1" "${2:-fail}"
+  check_tag "${2:-fail}"
+}
+
+# The tag still names --commit, and the dashmate side is still done in the run, attempt and
+# checksums job checked first. The runs are read last, so that a re-run requested during the other
+# reads is seen. Reports a refusal through the function named by $1 and a changed run with the
+# message $2.
+check_same_run() {
+  local latest
+  check_tag "$1"
+  latest="$(dashmate_done "$1")" || exit 1
+  check_run_commit "${latest}" "$1"
+  [ "${latest}" = "${RUN}" ] || "$1" "$2"
 }
 
 # A job's log as GitHub stores it. The runner colours the commands it echoes there, and newer gh
@@ -179,12 +271,6 @@ job_log() {
     *--allow-escape-sequences*) gh api --allow-escape-sequences "repos/${REPO}/actions/jobs/$1/logs" ;;
     *) gh api "repos/${REPO}/actions/jobs/$1/logs" ;;
   esac
-}
-
-# The id and conclusion of the Release Dashmate checksums job of a run, in its latest attempt.
-checksums_job() {
-  gh api --paginate "repos/${REPO}/actions/runs/$1/jobs?per_page=100" \
-    --jq '.jobs[] | select(.name == "Release Dashmate checksums") | [.id, (.conclusion // "none")] | @tsv'
 }
 
 # The digests GitHub reports for the release's dashmate assets must be exactly SHA256SUMS, byte
@@ -243,13 +329,10 @@ SUMS_ID="$(echo "${SUMS}" | cut -f4)"
 [ "${SUMS_STATE}" = uploaded ] || fail "SHA256SUMS on ${TAG} is not fully uploaded (state ${SUMS_STATE})"
 [ "${SUMS_UPLOADER}" = 'github-actions[bot]' ] || fail "SHA256SUMS on ${TAG} was uploaded by ${SUMS_UPLOADER}, not by the release workflow"
 
-RUN="$(finished_run)" || exit 1
+RUN="$(dashmate_done)" || exit 1
 RUN_ID="$(echo "${RUN}" | cut -f1)"
+JOB_ID="$(echo "${RUN}" | cut -f4)"
 check_commit "${RUN}"
-JOB="$(checksums_job "${RUN_ID}")" || fail "could not list the jobs of release.yml run ${RUN_ID}"
-JOB_ID="$(echo "${JOB}" | cut -f1)"
-[ "$(echo "${JOB}" | cut -f2)" = success ] \
-  || fail "the Release Dashmate checksums job of run ${RUN_ID} did not succeed ($(echo "${JOB}" | cut -f2 | grep . || echo 'not found'))"
 
 WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dashmate-sign.XXXXXX")"
 trap 'rm -rf "${WORK_DIR}"' EXIT
@@ -295,6 +378,9 @@ gh release download "${TAG}" --repo "${REPO}" "${patterns[@]}" --dir "${DIR}" \
 # Every line, strictly, against the bytes downloaded: a missing package or other bytes fail.
 ( cd "${DIR}" && "${sha256[@]}" --check --strict SHA256SUMS ) || fail "the packages of ${TAG} do not match its SHA256SUMS"
 
+# Checked again before signing, since the downloads can take a while.
+check_same_run fail "the release.yml run or its Release Dashmate checksums job changed while SHA256SUMS was being signed; run this again"
+
 echo "Signing SHA256SUMS with ${KEY}"
 gpg --armor --detach-sign --local-user "${KEY}" --output "${DIR}/SHA256SUMS.asc" "${DIR}/SHA256SUMS" \
   || fail "gpg could not sign SHA256SUMS with ${KEY}"
@@ -310,14 +396,9 @@ if [ "${UPLOAD}" != true ]; then
   exit 0
 fi
 
-# Checked again right before the upload, since the passphrase prompt can take a while: the same
-# run and checksums job, nobody signed, and SHA256SUMS and the packages are still the signed ones.
-LATEST_RUN="$(finished_run)" || exit 1
-check_commit "${LATEST_RUN}"
-LATEST_JOB="$(checksums_job "${RUN_ID}")" || fail "could not list the jobs of release.yml run ${RUN_ID}"
-if [ "${LATEST_RUN}" != "${RUN}" ] || [ "${LATEST_JOB}" != "${JOB}" ]; then
-  fail "the release.yml run or its Release Dashmate checksums job changed while SHA256SUMS was being signed; run this again"
-fi
+# Checked again right before the upload, since the passphrase prompt can take a while: nobody
+# signed, SHA256SUMS and the packages are still the signed ones, and, read last, the same run,
+# attempt and checksums job with the dashmate side done.
 ASSETS="$(release_assets)" || fail "could not list the assets of ${TAG}"
 refuse_if_signed "${ASSETS}"
 SUMS="$(sums_asset "${ASSETS}")"
@@ -326,6 +407,7 @@ if [ "$(echo "${SUMS}" | cut -f3)" != "${SIGNED_DIGEST}" ] || [ "$(echo "${SUMS}
 fi
 check_published_packages "${ASSETS}" "${DIR}/SHA256SUMS" \
   || fail "the dashmate packages ${TAG} serves are not the ones its SHA256SUMS lists (< served, > listed)"
+check_same_run fail "the release.yml run or its Release Dashmate checksums job changed while SHA256SUMS was being signed; run this again"
 
 READ_BACK="${WORK_DIR}/read-back"
 mkdir "${READ_BACK}"
@@ -358,13 +440,9 @@ done
 ASSETS="$(release_assets)" || fail_attached "could not list its assets"
 check_published_packages "${ASSETS}" "${DIR}/SHA256SUMS" \
   || fail_attached "the dashmate packages it serves are not the ones its SHA256SUMS lists (< served, > listed)"
-# The tag, the newest run or its checksums job can have changed while the signature was uploaded:
-# success only for the same run and job, still approved at --commit.
-FINAL_RUN="$(finished_run fail_attached)" || exit 1
-check_commit "${FINAL_RUN}" fail_attached
-FINAL_JOB="$(checksums_job "${RUN_ID}")" || fail_attached "the jobs of release.yml run ${RUN_ID} could not be listed"
-if [ "${FINAL_RUN}" != "${RUN}" ] || [ "${FINAL_JOB}" != "${JOB}" ]; then
-  fail_attached "the release.yml run or its Release Dashmate checksums job changed while SHA256SUMS.asc was uploaded"
-fi
+# The tag, the newest run, its attempt or its checksums job can have changed while the signature
+# was uploaded: success only with the dashmate side still done in the same run, attempt and job,
+# still approved at --commit.
+check_same_run fail_attached "the release.yml run or its Release Dashmate checksums job changed while SHA256SUMS.asc was uploaded"
 
 echo "Attached SHA256SUMS.asc to ${TAG}; the release serves the signed SHA256SUMS and the packages it lists."

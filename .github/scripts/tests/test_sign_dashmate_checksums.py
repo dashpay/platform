@@ -24,6 +24,20 @@ COMMIT = f'--commit={HEAD_SHA}'
 CHECKSUMS_JOB = 501
 
 
+# The dashmate package jobs of a release.yml attempt, all finished and green.
+DASHMATE_JOBS = [
+    {'id': CHECKSUMS_JOB - 2, 'name': 'Build Dashmate packages (deb, ubuntu-24.04)', 'status': 'completed',
+     'conclusion': 'success'},
+    {'id': CHECKSUMS_JOB - 1, 'name': 'Release Dashmate packages (deb, ubuntu-24.04)', 'status': 'completed',
+     'conclusion': 'success'},
+    {'id': CHECKSUMS_JOB, 'name': 'Release Dashmate checksums', 'status': 'completed', 'conclusion': 'success'}]
+
+
+def dashmate_jobs(offset=0, **changes):
+    """DASHMATE_JOBS with ids moved by `offset` and some jobs changed, by name."""
+    return [dict(job, id=job['id'] + offset, **changes.get(job['name'], {})) for job in DASHMATE_JOBS]
+
+
 def checksums_log(*records):
     """The log of a Release Dashmate checksums job: its script, as GitHub shows it, then the records."""
     lines = ['\ufeff2026-11-23T10:00:00.0000000Z ##[group]Run set -euo pipefail',
@@ -42,7 +56,7 @@ PACKAGES = ['dashmate-v5.1.0-3a5da22021-arm64.pkg', 'dashmate-v5.1.0-3a5da22021-
 # as gh's own filter would. An API path containing GH_PARTIAL is answered and then fails, as a
 # paginated listing does when a later page cannot be read. GH_AFTER_UPLOAD changes the release
 # right after the upload (a package replaced, the tag moved, the run restarted, the checksums job
-# re-run or a newer run of another commit); GH_READ_BACK_FAILS fails downloading the signature back, and
+# re-run and failed or passed, or a newer run of another or the same commit); GH_READ_BACK_FAILS fails downloading the signature back, and
 # GH_UPLOAD_FAILS the upload itself. GH_AFTER_DOWNLOAD changes the release once the packages are
 # downloaded, as a re-run or another maintainer could while this one signs. GH_UPLOAD_FAILS fails
 # the upload: with 1 nothing is attached, with `created` or `partial` the asset is created with
@@ -93,6 +107,57 @@ def asset(name, data, uploader):
     with open(os.path.join(files, name), 'wb') as handle:
         handle.write(data)
 
+def new_attempt(status):
+    """Re-run the newest run: a new attempt whose jobs are copies under new ids, as GitHub makes
+    them, the dashmate ones `status` (None: finished, carried over)."""
+    run = state['runs'][0]
+    old = '%d/%d' % (run['id'], run['run_attempt'])
+    run['run_attempt'] += 1
+    run['status'] = 'completed' if status is None else 'queued'
+    run.pop('attempt_status', None)
+    jobs = []
+    for job in state['jobs'][old]:
+        copy = dict(job, id=job['id'] + 100)
+        if str(job['id']) in state['logs']:
+            state['logs'][str(copy['id'])] = state['logs'][str(job['id'])]
+        if status is not None and 'Dashmate' in job['name']:
+            copy.update(status=status, conclusion=None)
+        jobs.append(copy)
+    state['jobs']['%d/%d' % (run['id'], run['run_attempt'])] = jobs
+
+def apply(change):
+    """A change to the release or its runs, as a re-run or another maintainer could make it."""
+    if change == 'signed':
+        asset('SHA256SUMS.asc', b'another signature', 'maintainer')
+    if change == 'sums-replaced':
+        asset('SHA256SUMS', b'0' * 64 + b'  dashmate_5.1.0-2_amd64.deb\\n', 'github-actions[bot]')
+    if change == 'package-replaced':
+        asset('dashmate_5.1.0-1_amd64.deb', b'rebuilt', 'github-actions[bot]')
+    if change == 'sums-reuploaded':
+        with open(os.path.join(files, 'SHA256SUMS'), 'rb') as handle:
+            asset('SHA256SUMS', handle.read(), 'github-actions[bot]')
+    if change == 'job-rerun':
+        new_attempt(None)
+    if change == 'run-restarted':
+        new_attempt('queued')
+    if change == 'sdk-finished':
+        state['runs'][0]['status'] = 'completed'
+    if change == 'tag-moved':
+        state['tag_commit'] = '3d8365918935a2cad03b04fa70d8bb9d07f9a849'
+
+def rerun_after(**counters):
+    """Request a re-run of the newest run after the n-th call of a kind, n given by the named variable."""
+    for counter, variable in counters.items():
+        state[counter] = state.get(counter, 0) + 1
+        if os.environ.get(variable) and state[counter] == int(os.environ[variable]):
+            new_attempt('queued')
+        save()
+
+# A change the gpg stub left to happen while the maintainer signed (GPG_AFTER_SIGN).
+if state.get('after_sign'):
+    apply(state.pop('after_sign'))
+    save()
+
 if args[0] == 'api':
     # GH_ESCAPE_GUARD: a gh that refuses a response with terminal escape sequences unless
     # --allow-escape-sequences is given; any other gh does not know that option.
@@ -117,20 +182,66 @@ if args[0] == 'api':
         if state.get('unlisted'):
             print('gh: Server Error (HTTP 502)', file=sys.stderr)
             sys.exit(1)
-        respond(release['assets'], jq)
+        assets = list(release['assets'])
+        rerun_after(assets_listing='GH_RERUN_AFTER_ASSET_LISTING')
+        respond(assets, jq)
     if path == repo + 'commits/refs/tags/' + release['tag_name']:
         if state['tag_commit'] is None:
             print('gh: No commit found for SHA: refs/tags/%s (HTTP 422)' % release['tag_name'], file=sys.stderr)
             sys.exit(1)
-        respond({'sha': state['tag_commit']}, jq)
+        tagged = state['tag_commit']
+        rerun_after(tag_lookup='GH_RERUN_AFTER_TAG_LOOKUP')
+        respond({'sha': tagged}, jq)
     if path.startswith(repo + 'actions/workflows/release.yml/runs?'):
         query = dict(part.split('=', 1) for part in path.split('?', 1)[1].split('&'))
-        runs = [run for run in state['runs'] if query.get('event', run['event']) == run['event']
+        runs = [dict(run) for run in state['runs'] if query.get('event', run['event']) == run['event']
                 and query.get('branch', run['head_branch']) == run['head_branch']]
+        # GH_RERUN_WHILE_LISTED: right after the first listing a re-run of the newest run is queued
+        # (1), has already finished (finished), or is queued or running before the attempt number
+        # moves on (stale, stale-running)
+        rerun = os.environ.get('GH_RERUN_WHILE_LISTED')
+        if rerun and not state.get('rerun_requested'):
+            state['rerun_requested'] = True
+            if rerun.startswith('stale'):
+                state['runs'][0].update(status='in_progress' if rerun == 'stale-running' else 'queued',
+                                        attempt_status='completed')
+            else:
+                new_attempt(None if rerun == 'finished' else 'queued')
+            save()
+        # GH_FINISH_WHILE_LISTED: the newest run finishes, its SDK builds done, right after the first listing
+        if os.environ.get('GH_FINISH_WHILE_LISTED') and not state.get('finished'):
+            state['finished'] = True
+            state['runs'][0]['status'] = 'completed'
+            save()
+        # GH_RELIST_FAILS: every second listing, the one that checks nothing changed, answers and then fails
+        state['listings'] = state.get('listings', 0) + 1
+        save()
+        if os.environ.get('GH_RELIST_FAILS') and state['listings'] % 2 == 0:
+            text = json.dumps({'workflow_runs': runs})
+            sys.stdout.write(subprocess.run(['jq', '-r', jq], input=text, capture_output=True, text=True).stdout)
+            print('gh: Server Error (HTTP 502)', file=sys.stderr)
+            sys.exit(1)
         respond({'workflow_runs': runs[:int(query.get('per_page', 30))]}, jq)
-    match = re.fullmatch(repo + r'actions/runs/(\\d+)/jobs\\?per_page=100', path)
-    if match and match.group(1) in state['jobs']:
-        respond({'jobs': state['jobs'][match.group(1)]}, jq)
+    match = re.fullmatch(repo + r'actions/runs/(\\d+)', path)
+    if match:
+        run = next(run for run in state['runs'] if run['id'] == int(match.group(1)))
+        respond({'id': run['id'], 'status': run['status'], 'run_attempt': run['run_attempt']}, jq)
+    match = re.fullmatch(repo + r'actions/runs/(\\d+)/attempts/(\\d+)', path)
+    if match:
+        # the newest attempt reports the run's status unless `attempt_status` says otherwise, as
+        # when a re-run is queued before the run's attempt number moves on
+        run = next(run for run in state['runs'] if run['id'] == int(match.group(1)))
+        # GH_FINISH_BEFORE_ATTEMPT_READ: the run finishes, its SDK builds done, before its attempt is read
+        if os.environ.get('GH_FINISH_BEFORE_ATTEMPT_READ') and not state.get('finished'):
+            state['finished'] = True
+            run['status'] = 'completed'
+            save()
+        newest = int(match.group(2)) == run['run_attempt']
+        respond({'run_attempt': int(match.group(2)),
+                 'status': run.get('attempt_status', run['status']) if newest else 'completed'}, jq)
+    match = re.fullmatch(repo + r'actions/runs/(\\d+)/attempts/(\\d+)/jobs\\?per_page=100', path)
+    if match:
+        respond({'jobs': state['jobs'].get(match.group(1) + '/' + match.group(2), [])}, jq)
     match = re.fullmatch(repo + r'actions/jobs/(\\d+)/logs', path)
     if match and match.group(1) in state['logs'] and not os.environ.get('GH_NO_LOG'):
         if guard and not allow and '\x1b' in state['logs'][match.group(1)]:
@@ -157,24 +268,7 @@ if args[:2] == ['release', 'download']:
     change = os.environ.get('GH_AFTER_DOWNLOAD')
     if change and not state.get('changed') and any(p.startswith('dashmate') for p in patterns):
         state['changed'] = True
-        if change == 'signed':
-            asset('SHA256SUMS.asc', b'another signature', 'maintainer')
-        if change == 'sums-replaced':
-            asset('SHA256SUMS', b'0' * 64 + b'  dashmate_5.1.0-2_amd64.deb\\n', 'github-actions[bot]')
-        if change == 'package-replaced':
-            asset('dashmate_5.1.0-1_amd64.deb', b'rebuilt', 'github-actions[bot]')
-        if change == 'sums-reuploaded':
-            with open(os.path.join(files, 'SHA256SUMS'), 'rb') as handle:
-                asset('SHA256SUMS', handle.read(), 'github-actions[bot]')
-        if change == 'job-rerun':
-            checksums = next(job for job in state['jobs'][str(state['runs'][0]['id'])]
-                             if job['name'] == 'Release Dashmate checksums')
-            state['logs'][str(checksums['id'] + 100)] = state['logs'][str(checksums['id'])]
-            checksums['id'] += 100
-        if change == 'run-restarted':
-            state['runs'][0]['status'] = 'in_progress'
-        if change == 'tag-moved':
-            state['tag_commit'] = '3d8365918935a2cad03b04fa70d8bb9d07f9a849'
+        apply(change)
         save()
     sys.exit(0)
 
@@ -208,17 +302,24 @@ if args[:2] == ['release', 'upload']:
     if after == 'tag-moved':
         state['tag_commit'] = '3d8365918935a2cad03b04fa70d8bb9d07f9a849'
     if after == 'run-restarted':
-        state['runs'][0]['status'] = 'in_progress'
-    if after == 'checksums-job-rerun':
-        # a re-run of the checksums job alone keeps the run and its commit; it sees the
-        # signature and fails without touching an asset
-        checksums = next(job for job in state['jobs'][str(state['runs'][0]['id'])]
-                         if job['name'] == 'Release Dashmate checksums')
-        state['logs'][str(checksums['id'] + 100)] = state['logs'][str(checksums['id'])]
-        checksums.update(id=checksums['id'] + 100, conclusion='failure')
-    if after == 'run-of-another-commit':
-        state['runs'].insert(0, dict(state['runs'][0], id=state['runs'][0]['id'] + 1,
-                                     head_sha='3d8365918935a2cad03b04fa70d8bb9d07f9a849'))
+        new_attempt('queued')
+    if after in ('checksums-job-rerun', 'checksums-job-rerun-green'):
+        # a re-run of the checksums job alone makes a new attempt of the run; the job sees the
+        # signature and fails, or passes
+        new_attempt(None)
+        run = state['runs'][0]
+        if after == 'checksums-job-rerun':
+            next(job for job in state['jobs']['%d/%d' % (run['id'], run['run_attempt'])]
+                 if job['name'] == 'Release Dashmate checksums')['conclusion'] = 'failure'
+    if after in ('run-of-another-commit', 'newer-run'):
+        # a newer run whose dashmate jobs are done
+        run = state['runs'][0]
+        newer = dict(run, id=run['id'] + 1, run_attempt=1)
+        if after == 'run-of-another-commit':
+            newer['head_sha'] = '3d8365918935a2cad03b04fa70d8bb9d07f9a849'
+        state['runs'].insert(0, newer)
+        state['jobs']['%d/1' % newer['id']] = [
+            dict(job, id=job['id'] + 1000) for job in state['jobs']['%d/%d' % (run['id'], run['run_attempt'])]]
     save()
     sys.exit(0)
 
@@ -226,13 +327,14 @@ print('gh stub: unexpected call', file=sys.stderr)
 sys.exit(2)
 '''
 
-# A signature records who signed and the sha256 of what was signed. GPG_SIGNER makes gpg sign
+# A signature records who signed and the sha256 of what was signed. GPG_AFTER_SIGN leaves a change
+# to the release for the gh stub to make on its next call, as while the passphrase is entered. GPG_SIGNER makes gpg sign
 # with another key than the one asked for; GPG_SUBKEY reports a signing subkey of the primary;
 # GPG_EXPIRED, GPG_TWO_SIGNATURES and GPG_EXTRA_FIELD shape the status lines as gpg would for
 # an expired key, a gpg.conf that adds a second signer, and a later gpg version; GPG_BAD_SIGNATURE
 # signs other bytes, so the verification fails.
 GPG_STUB = '''#!/usr/bin/env python3
-import hashlib, os, sys
+import hashlib, json, os, sys
 args = sys.argv[1:]
 with open(os.environ['CALLS'], 'a') as log:
     log.write('gpg ' + ' '.join(args) + '\\n')
@@ -245,6 +347,12 @@ if len(args) == 7 and args[:3] == ['--armor', '--detach-sign', '--local-user'] a
     if os.environ.get('GPG_SIGN_FAILS'):
         print('gpg: signing failed: No secret key', file=sys.stderr)
         sys.exit(2)
+    if os.environ.get('GPG_AFTER_SIGN'):
+        with open(os.environ['STATE']) as handle:
+            state = json.load(handle)
+        state['after_sign'] = os.environ['GPG_AFTER_SIGN']
+        with open(os.environ['STATE'], 'w') as handle:
+            json.dump(state, handle)
     with open(args[5], 'w') as handle:
         handle.write('-----BEGIN PGP SIGNATURE-----\\n%s\\n%s\\n-----END PGP SIGNATURE-----\\n'
                      % (os.environ.get('GPG_SIGNER', args[3]),
@@ -345,12 +453,14 @@ class ReleaseFixture(unittest.TestCase):
         self.release({name: data for name, data in self.packages.items()})
 
     def release(self, files, sums=None, sums_uploader='github-actions[bot]', extra_assets=(), runs=None, jobs=None,
-                receipt=None, tag_commit=HEAD_SHA):
+                receipt=None, tag_commit=HEAD_SHA, logged=(CHECKSUMS_JOB,)):
         """A published release: its files, a SHA256SUMS of `sums` (default: the files), the run behind it.
 
         `receipt` is what the checksums job's log records it attached, as `(asset id, sha256)`: by
-        default this release's SHA256SUMS; False for no record, a list for several. The record of
-        tool calls starts afresh, so each subtest sees only its own.
+        default this release's SHA256SUMS; False for no record, a list for several, in the log of
+        each job in `logged`. `jobs` is keyed by `<run id>/<attempt>`; a run's newest attempt is
+        its `run_attempt`, 1 unless given. The record of tool calls starts afresh, so each subtest
+        sees only its own.
         """
         (self.tmp / 'calls').unlink(missing_ok=True)
         for name, data in files.items():
@@ -374,17 +484,14 @@ class ReleaseFixture(unittest.TestCase):
         records = [] if receipt is False else receipt if isinstance(receipt, list) else [receipt]
         state = {
             'release': {'id': 123, 'tag_name': TAG, 'assets': assets},
-            'runs': runs if runs is not None else [
-                {'id': RUN_ID, 'head_branch': TAG, 'head_sha': HEAD_SHA, 'event': 'release', 'status': 'completed'}],
-            'jobs': jobs if jobs is not None else {str(RUN_ID): [
-                {'id': CHECKSUMS_JOB - 1, 'name': 'Release Dashmate packages (deb, ubuntu-24.04)',
-                 'status': 'completed', 'conclusion': 'success'},
-                {'id': CHECKSUMS_JOB, 'name': 'Release Dashmate checksums', 'status': 'completed',
-                 'conclusion': 'success'}]},
-            'logs': {str(CHECKSUMS_JOB): checksums_log(*records)},
+            'runs': [dict({'run_attempt': 1}, **run) for run in (runs if runs is not None else [
+                {'id': RUN_ID, 'head_branch': TAG, 'head_sha': HEAD_SHA, 'event': 'release', 'status': 'completed'}])],
+            'jobs': jobs if jobs is not None else {f'{RUN_ID}/1': DASHMATE_JOBS},
+            'logs': {str(job): checksums_log(*records) for job in logged},
             # the commit the tag names, None for a tag GitHub cannot resolve
             'tag_commit': tag_commit,
         }
+        assert all('/' in key for key in state['jobs']), state['jobs']
         (self.tmp / 'state.json').write_text(json.dumps(state))
 
     def state(self):
@@ -585,31 +692,113 @@ class SignDashmateChecksumsTests(ReleaseFixture):
                 self.assertRefused(result, message)
                 self.assertEqual(self.signings(), [])
 
-    def test_should_refuse_until_the_release_run_has_finished_green(self):
-        jobs = {str(RUN_ID): [{'name': 'Release Dashmate checksums', 'status': 'completed', 'conclusion': 'failure'}]}
+    def test_should_sign_once_the_dashmate_jobs_are_done_while_the_sdk_builds_run(self):
+        newest = {'id': RUN_ID, 'head_branch': TAG, 'head_sha': HEAD_SHA, 'event': 'release', 'status': 'in_progress'}
+        sdk = [{'id': 600, 'name': 'Release Kotlin SDK / Build Android SDK', 'status': 'in_progress', 'conclusion': None},
+               {'id': 601, 'name': 'Release Swift SDK / Build XCFramework', 'status': 'queued', 'conclusion': None},
+               # the Docker image is not one of the packages SHA256SUMS lists
+               {'id': 602, 'name': 'Release Dashmate Helper image / Build linux/arm64 image', 'status': 'in_progress',
+                'conclusion': None}]
+        cases = {
+            'the run still building the SDKs': ({'runs': [newest], 'jobs': {f'{RUN_ID}/1': DASHMATE_JOBS + sdk}}, {}),
+            # the dashmate jobs carried over into the new attempt, under new ids
+            'a re-run of an SDK build only': ({
+                'runs': [dict(newest, run_attempt=2)],
+                'jobs': {f'{RUN_ID}/1': DASHMATE_JOBS, f'{RUN_ID}/2': dashmate_jobs(100) + sdk[:1]},
+                'logged': (CHECKSUMS_JOB + 100,)}, {}),
+            'an older run of the tag still building its SDKs': ({
+                'runs': [dict(newest, status='completed'), dict(newest, id=RUN_ID - 1)],
+                'jobs': {f'{RUN_ID}/1': DASHMATE_JOBS, f'{RUN_ID - 1}/1': dashmate_jobs(-100) + sdk}}, {}),
+            'the SDK builds finishing while it signs': (
+                {'runs': [newest], 'jobs': {f'{RUN_ID}/1': DASHMATE_JOBS + sdk}}, {'GH_AFTER_DOWNLOAD': 'sdk-finished'}),
+            'the SDK builds finishing between two listings of the runs': (
+                {'runs': [newest], 'jobs': {f'{RUN_ID}/1': DASHMATE_JOBS + sdk}}, {'GH_FINISH_WHILE_LISTED': '1'}),
+            'the SDK builds finishing before the attempt is read': (
+                {'runs': [newest], 'jobs': {f'{RUN_ID}/1': DASHMATE_JOBS + sdk}}, {'GH_FINISH_BEFORE_ATTEMPT_READ': '1'}),
+            # an SDK job waiting on its environment makes the run wait; the dashmate jobs are done
+            'a run waiting on an SDK deployment': ({'runs': [dict(newest, status='waiting')], 'jobs': {
+                f'{RUN_ID}/1': DASHMATE_JOBS + [{'id': 603, 'name': 'Release Kotlin SDK / Deploy to Maven Central',
+                                                 'status': 'waiting', 'conclusion': None}]}}, {}),
+        }
+        for case, (fields, env) in cases.items():
+            with self.subTest(case):
+                self.release(self.packages, **fields)
+
+                result = self.sign(f'--tag={TAG}', f'--key={KEY}', COMMIT, '--upload', **env)
+
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(len(self.uploads()), 1)
+
+    def test_should_refuse_until_the_dashmate_jobs_of_the_newest_attempt_succeeded(self):
+        newest = {'id': RUN_ID, 'head_branch': TAG, 'head_sha': HEAD_SHA, 'event': 'release', 'status': 'in_progress'}
+        unfinished = {'status': 'in_progress', 'conclusion': None}
+        win = {'id': CHECKSUMS_JOB - 3, 'name': 'Build Dashmate packages (win, ubuntu-24.04)'}
         cases = {
             'no run for the tag': ({'runs': []}, f'found no release.yml run for {TAG}'),
-            # a re-run attempt in progress can still replace packages or SHA256SUMS
-            'an attempt in progress': ({'runs': [{'id': RUN_ID, 'head_branch': TAG, 'head_sha': HEAD_SHA, 'event': 'release',
-                                                  'status': 'in_progress'}]}, f'{RUN_ID} (in_progress)'),
+            'the checksums job failed': ({'jobs': {f'{RUN_ID}/1': dashmate_jobs(**{
+                'Release Dashmate checksums': {'conclusion': 'failure'}})}}, f'run {RUN_ID} attempt 1 did not succeed (failure)'),
+            'no checksums job': ({'jobs': {f'{RUN_ID}/1': DASHMATE_JOBS[:2]}}, 'did not succeed (not found)'),
+            'two checksums jobs': ({'jobs': {f'{RUN_ID}/1': DASHMATE_JOBS + dashmate_jobs(10)[2:]}},
+                                   'has more than one Release Dashmate checksums job'),
+            'the checksums job still running': ({'runs': [newest], 'jobs': {f'{RUN_ID}/1': dashmate_jobs(**{
+                'Release Dashmate checksums': unfinished})}}, f'Release Dashmate checksums (run {RUN_ID} attempt 1, in_progress)'),
+            # an earlier attempt's success does not count while a newer attempt is pending
+            'a dashmate job re-run in a newer attempt': ({'runs': [dict(newest, run_attempt=2)], 'jobs': {
+                f'{RUN_ID}/1': DASHMATE_JOBS, f'{RUN_ID}/2': dashmate_jobs(100, **{
+                    'Release Dashmate packages (deb, ubuntu-24.04)': unfinished,
+                    'Release Dashmate checksums': {'status': 'pending', 'conclusion': None}})}},
+                f'Release Dashmate packages (deb, ubuntu-24.04) (run {RUN_ID} attempt 2, in_progress)'),
+            'a newer attempt whose jobs are not listed yet': ({'runs': [dict(newest, run_attempt=2)],
+                                                               'jobs': {f'{RUN_ID}/1': DASHMATE_JOBS}},
+                                                              f'run {RUN_ID} attempt 2 did not succeed (not found)'),
+            # GitHub shows a requested re-run as a queued run before its attempt number moves on
+            'a re-run queued before its attempt number moves on': (
+                {'runs': [dict(newest, status='queued', attempt_status='completed')]},
+                f'run {RUN_ID} (queued; attempt 1: completed)'),
+            # an unfinished run counts only while both it and the attempt it names are in progress
+            'a queued run whose attempt reports in progress': (
+                {'runs': [dict(newest, status='queued', attempt_status='in_progress')]},
+                f'run {RUN_ID} (queued; attempt 1: in_progress)'),
+            'a run in progress on an attempt that has finished': (
+                {'runs': [dict(newest, attempt_status='completed')]}, f'run {RUN_ID} (in_progress; attempt 1: completed)'),
+            # an active run creates its dashmate jobs only once the jobs they need have finished
+            'an older active run whose dashmate jobs are not created yet': ({
+                'runs': [dict(newest, status='completed'), dict(newest, id=RUN_ID - 1)],
+                'jobs': {f'{RUN_ID}/1': DASHMATE_JOBS, f'{RUN_ID - 1}/1': [
+                    {'id': 500, 'name': 'Build NPM packages / Build NPM packages', 'status': 'in_progress',
+                     'conclusion': None}]}},
+                f'Release Dashmate checksums (run {RUN_ID - 1} attempt 1, not created yet)'),
+            'a newer attempt whose checksums job failed': ({'runs': [dict(newest, status='completed', run_attempt=2)], 'jobs': {
+                f'{RUN_ID}/1': DASHMATE_JOBS, f'{RUN_ID}/2': dashmate_jobs(100, **{
+                    'Release Dashmate checksums': {'conclusion': 'failure'}})}},
+                f'run {RUN_ID} attempt 2 did not succeed (failure)'),
             # a re-published release starts another run, whose legs upload by tag
-            'an older run still going': ({'runs': [
-                {'id': RUN_ID, 'head_branch': TAG, 'head_sha': HEAD_SHA, 'event': 'release', 'status': 'completed'},
-                {'id': RUN_ID - 1, 'head_branch': TAG, 'head_sha': HEAD_SHA, 'event': 'release', 'status': 'queued'}]},
-                f'{RUN_ID - 1} (queued)'),
-            'the checksums job failed': ({'jobs': jobs}, 'did not succeed (failure)'),
+            'a dashmate job of an older run still going': ({
+                'runs': [dict(newest, status='completed'), dict(newest, id=RUN_ID - 1)],
+                'jobs': {f'{RUN_ID}/1': DASHMATE_JOBS, f'{RUN_ID - 1}/1': dashmate_jobs(-100, **{
+                    'Release Dashmate packages (deb, ubuntu-24.04)': unfinished,
+                    'Release Dashmate checksums': {'status': 'queued', 'conclusion': None}})}},
+                f'Release Dashmate packages (deb, ubuntu-24.04) (run {RUN_ID - 1} attempt 1, in_progress)'),
+            'an older run re-running a dashmate job': ({
+                'runs': [dict(newest, status='completed'), dict(newest, id=RUN_ID - 1, run_attempt=2)],
+                'jobs': {f'{RUN_ID}/1': DASHMATE_JOBS, f'{RUN_ID - 1}/1': dashmate_jobs(-100),
+                         f'{RUN_ID - 1}/2': dashmate_jobs(-200, **{
+                             'Release Dashmate packages (deb, ubuntu-24.04)': {'status': 'queued', 'conclusion': None}})}},
+                f'Release Dashmate packages (deb, ubuntu-24.04) (run {RUN_ID - 1} attempt 2, queued)'),
             # runs of other tags are not this release's; of this tag's runs the newest counts
             'the newest run of the tag failed its checksums': ({
                 'runs': [{'id': 90, 'head_branch': 'v5.0.9', 'head_sha': HEAD_SHA, 'event': 'release', 'status': 'completed'},
                          {'id': 78, 'head_branch': TAG, 'head_sha': HEAD_SHA, 'event': 'release', 'status': 'completed'},
                          {'id': RUN_ID, 'head_branch': TAG, 'head_sha': HEAD_SHA, 'event': 'release', 'status': 'completed'}],
-                'jobs': {'90': [{'name': 'Release Dashmate checksums', 'status': 'completed', 'conclusion': 'success'}],
-                         '78': [{'name': 'Release Dashmate checksums', 'status': 'completed', 'conclusion': 'failure'}],
-                         str(RUN_ID): [{'name': 'Release Dashmate checksums', 'status': 'completed',
-                                        'conclusion': 'success'}]}},
-                'job of run 78 did not succeed (failure)'),
-            'no checksums job': ({'jobs': {str(RUN_ID): []}}, 'did not succeed (not found)'),
+                'jobs': {'90/1': DASHMATE_JOBS, f'{RUN_ID}/1': DASHMATE_JOBS,
+                         '78/1': dashmate_jobs(-50, **{'Release Dashmate checksums': {'conclusion': 'failure'}})}},
+                'job of run 78 attempt 1 did not succeed (failure)'),
         }
+        # however far the checksums job got, a dashmate job of the attempt that is not finished
+        for status in ['queued', 'in_progress', 'waiting', 'pending', 'requested']:
+            cases[f'a dashmate build leg {status}'] = (
+                {'runs': [newest], 'jobs': {f'{RUN_ID}/1': DASHMATE_JOBS + [dict(win, status=status, conclusion=None)]}},
+                f'Build Dashmate packages (win, ubuntu-24.04) (run {RUN_ID} attempt 1, {status})')
         for case, (fields, message) in cases.items():
             with self.subTest(case):
                 self.release(self.packages, **fields)
@@ -618,6 +807,43 @@ class SignDashmateChecksumsTests(ReleaseFixture):
 
                 self.assertRefused(result, message)
                 self.assertEqual(self.signings(), [])
+        for rerun in ['1', 'finished', 'stale', 'stale-running']:
+            with self.subTest('a re-run requested while the runs are read', rerun=rerun):
+                self.release(self.packages)
+
+                result = self.sign(GH_RERUN_WHILE_LISTED=rerun)
+
+                self.assertRefused(result, f'the release.yml runs of {TAG} changed while they were checked')
+                self.assertEqual(self.signings(), [])
+        with self.subTest('a second listing of the runs that fails'):
+            self.release(self.packages)
+
+            result = self.sign(GH_RELIST_FAILS='1')
+
+            self.assertRefused(result, f'could not list the release.yml runs of {TAG} again')
+            self.assertEqual(self.signings(), [])
+
+    def test_should_check_the_run_again_right_before_signing(self):
+        # The packages take a while to download; without --upload, too, nothing is signed for a
+        # release whose run or tag changed meanwhile.
+        for change, message in [('run-restarted', f'run {RUN_ID} (queued; attempt 2: queued)'),
+                                ('job-rerun', 'checksums job changed while SHA256SUMS was being signed'),
+                                ('tag-moved', f'{TAG} names {OTHER_SHA}, not {HEAD_SHA}')]:
+            with self.subTest(change):
+                self.release(self.packages)
+
+                result = self.sign(GH_AFTER_DOWNLOAD=change)
+
+                self.assertRefused(result, message)
+                self.assertEqual(self.signings(), [])
+        # the run is the last thing read: a re-run requested while the tag is looked up is seen
+        with self.subTest('a re-run requested while the tag is looked up'):
+            self.release(self.packages)
+
+            result = self.sign(GH_RERUN_AFTER_TAG_LOOKUP='2')
+
+            self.assertRefused(result, f'run {RUN_ID} (queued; attempt 2: queued)')
+            self.assertEqual(self.signings(), [])
 
     def test_should_refuse_a_release_not_built_from_the_commit_given(self):
         newest = {'id': RUN_ID, 'head_branch': TAG, 'event': 'release', 'status': 'completed'}
@@ -757,7 +983,7 @@ class SignDashmateChecksumsTests(ReleaseFixture):
             'a re-run replaced a package': ('package-replaced', 'are not the ones its SHA256SUMS lists'),
             'SHA256SUMS uploaded again': ('sums-reuploaded', 'changed while it was being signed'),
             'the checksums job ran again': ('job-rerun', 'checksums job changed while SHA256SUMS was being signed'),
-            'a re-run started': ('run-restarted', f'{RUN_ID} (in_progress)'),
+            'a re-run started': ('run-restarted', f'run {RUN_ID} (queued; attempt 2: queued)'),
             'the tag was moved': ('tag-moved', f'{TAG} names {OTHER_SHA}, not {HEAD_SHA}'),
         }
         for case, (change, message) in cases.items():
@@ -767,6 +993,24 @@ class SignDashmateChecksumsTests(ReleaseFixture):
                 result = self.sign(f'--tag={TAG}', f'--key={KEY}', COMMIT, '--upload', GH_AFTER_DOWNLOAD=change)
 
                 self.assertRefused(result, message)
+        # the run is the last thing read before the upload, after the release's assets
+        with self.subTest('a re-run requested while the assets are listed before the upload'):
+            self.release(self.packages)
+
+            result = self.sign(f'--tag={TAG}', f'--key={KEY}', COMMIT, '--upload', GH_RERUN_AFTER_ASSET_LISTING='2')
+
+            self.assertRefused(result, f'run {RUN_ID} (queued; attempt 2: queued)')
+        # while the passphrase is entered: after the signature, before the upload
+        for change, message in [('run-restarted', f'run {RUN_ID} (queued; attempt 2: queued)'),
+                                ('job-rerun', 'checksums job changed while SHA256SUMS was being signed'),
+                                ('tag-moved', f'{TAG} names {OTHER_SHA}, not {HEAD_SHA}')]:
+            with self.subTest(f'{change} while signing'):
+                self.release(self.packages)
+
+                result = self.sign(f'--tag={TAG}', f'--key={KEY}', COMMIT, '--upload', GPG_AFTER_SIGN=change)
+
+                self.assertRefused(result, message)
+                self.assertEqual(len(self.signings()), 1)
 
     def test_should_name_the_attached_signature_when_a_check_after_the_upload_fails(self):
         # The signature stays attached; the message says so and how to remove it before a retry.
@@ -781,13 +1025,18 @@ class SignDashmateChecksumsTests(ReleaseFixture):
             'the tag was moved during the upload': (
                 {'GH_AFTER_UPLOAD': 'tag-moved'}, f'{TAG} names {OTHER_SHA}, not {HEAD_SHA}'),
             'a re-run started during the upload': (
-                {'GH_AFTER_UPLOAD': 'run-restarted'}, f'{RUN_ID} (in_progress)'),
-            'the checksums job re-run during the upload': (
-                {'GH_AFTER_UPLOAD': 'checksums-job-rerun'},
+                {'GH_AFTER_UPLOAD': 'run-restarted'}, f'run {RUN_ID} (queued; attempt 2: queued)'),
+            'the checksums job re-run and failing during the upload': (
+                {'GH_AFTER_UPLOAD': 'checksums-job-rerun'}, f'run {RUN_ID} attempt 2 did not succeed (failure)'),
+            'the checksums job re-run and passing during the upload': (
+                {'GH_AFTER_UPLOAD': 'checksums-job-rerun-green'},
                 'the release.yml run or its Release Dashmate checksums job changed while SHA256SUMS.asc was uploaded'),
             'a run of another commit during the upload': (
                 {'GH_AFTER_UPLOAD': 'run-of-another-commit'},
                 f'release.yml run {RUN_ID + 1} built {OTHER_SHA}, not {HEAD_SHA}'),
+            'a newer run of the same commit during the upload': (
+                {'GH_AFTER_UPLOAD': 'newer-run'},
+                'the release.yml run or its Release Dashmate checksums job changed while SHA256SUMS.asc was uploaded'),
         }
         for case, (env, reason) in cases.items():
             with self.subTest(case):
