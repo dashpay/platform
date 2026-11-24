@@ -344,6 +344,132 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(1uL shl 63, stored!!.balance.value)
     }
 
+    // ── Identity-token sync rows (all-zero wallet id, canonical token id) ──
+
+    /** The identity-token sync's identity-scoped sentinel wallet id. */
+    private val identitySyncSentinel = ByteArray(32)
+    private val devnetContractId = ByteArray(32) { 0x61 }
+    private val canonicalTokenId = ByteArray(32) { 0x62 }
+
+    /** A Devnet handler whose canonical-id lookup knows one token: devnetContractId / position 0. */
+    private fun devnetSyncHandler() = PlatformWalletPersistenceHandler(
+        database = db,
+        dispatcher = Dispatchers.Unconfined,
+        network = Network.DEVNET,
+        canonicalTokenIds = { contractId, position ->
+            if (contractId.contentEquals(devnetContractId) && position == 0) {
+                canonicalTokenId.toBase58String()
+            } else {
+                null
+            }
+        },
+    )
+
+    /** Saves a Devnet contract with one token, keyed `contractId || position` as the app does. */
+    private suspend fun saveDevnetToken(): ByteArray {
+        db.dataContractDao().upsert(
+            org.dashfoundation.dashsdk.persistence.entities.DataContractEntity(
+                id = devnetContractId,
+                name = "qa-tok-basic",
+                serializedContract = ByteArray(0),
+                networkRaw = Network.DEVNET.ffiValue,
+            ),
+        )
+        val localKey = devnetContractId + byteArrayOf(0, 0, 0, 0)
+        db.tokenDao().upsertToken(
+            org.dashfoundation.dashsdk.persistence.entities.TokenEntity(
+                id = localKey,
+                contractId = devnetContractId,
+                position = 0,
+                name = "qabasic",
+                baseSupply = "1000000",
+            ),
+        )
+        return localKey
+    }
+
+    @Test
+    fun shouldLinkASyncedBalanceToTheSavedTokenByItsCanonicalId() = runTest {
+        val localKey = saveDevnetToken()
+        val identityId = ByteArray(32) { 0x63 }
+        db.identityDao().upsert(
+            IdentityEntity(identityId = identityId, networkRaw = Network.DEVNET.ffiValue),
+        )
+
+        assertEquals(
+            0,
+            devnetSyncHandler().onPersistTokenBalanceUpsert(
+                identitySyncSentinel, identityId, canonicalTokenId, 1_000_000L,
+            ),
+        )
+
+        val stored = db.tokenDao().getBalance(canonicalTokenId.toBase58String(), identityId)!!
+        assertTrue("the row links to the saved token", localKey.contentEquals(stored.tokenRef))
+        assertTrue(identityId.contentEquals(stored.identityRef))
+        assertEquals(1_000_000uL, stored.balance.value)
+        // What the Transfer form reads: the identity's balance matched on the token key.
+        val held = db.tokenDao().observeBalancesByIdentity(identityId).first()
+            .single { it.tokenRef?.contentEquals(localKey) == true }
+        assertEquals(1_000_000uL, held.balance.value)
+    }
+
+    @Test
+    fun shouldLabelAnIdentityScopedRowWithTheManagersNetwork() = runTest {
+        val identityId = ByteArray(32) { 0x64 }
+
+        devnetSyncHandler().onPersistTokenBalanceUpsert(
+            identitySyncSentinel, identityId, canonicalTokenId, 7L,
+        )
+
+        val stored = db.tokenDao().getBalance(canonicalTokenId.toBase58String(), identityId)!!
+        assertEquals(Network.DEVNET.ffiValue, stored.networkRaw)
+    }
+
+    @Test
+    fun shouldKeepAnotherNetworksRowForTheSameIdentityAndToken() = runTest {
+        val identityId = ByteArray(32) { 0x67 }
+        val tokenBase58 = canonicalTokenId.toBase58String()
+        // The same identity and token ids synced on Testnet into a shared database.
+        db.tokenDao().insertBalance(
+            TokenBalanceEntity(
+                tokenId = tokenBase58,
+                identityId = identityId,
+                balance = org.dashfoundation.dashsdk.persistence.UInt64Value(5uL),
+                networkRaw = testnet,
+            ),
+        )
+        val handler = devnetSyncHandler()
+
+        handler.onPersistTokenBalanceUpsert(identitySyncSentinel, identityId, canonicalTokenId, 7L)
+
+        assertEquals(5uL, db.tokenDao().getBalanceOnNetwork(tokenBase58, identityId, testnet)!!.balance.value)
+        assertEquals(
+            7uL,
+            db.tokenDao().getBalanceOnNetwork(tokenBase58, identityId, Network.DEVNET.ffiValue)!!.balance.value,
+        )
+
+        handler.onPersistTokenBalanceRemoval(identitySyncSentinel, identityId, canonicalTokenId)
+
+        assertNull(db.tokenDao().getBalanceOnNetwork(tokenBase58, identityId, Network.DEVNET.ffiValue))
+        assertNotNull("the Testnet row is untouched", db.tokenDao().getBalanceOnNetwork(tokenBase58, identityId, testnet))
+    }
+
+    @Test
+    fun shouldStoreASyncedBalanceForAnIdentityNotSavedLocally() = runTest {
+        val identityId = ByteArray(32) { 0x66 }
+
+        assertEquals(
+            0,
+            devnetSyncHandler().onPersistTokenBalanceUpsert(
+                identitySyncSentinel, identityId, canonicalTokenId, 42L,
+            ),
+        )
+
+        val stored = db.tokenDao().getBalance(canonicalTokenId.toBase58String(), identityId)!!
+        assertEquals(42uL, stored.balance.value)
+        assertNull("no identity row to reference", stored.identityRef)
+    }
+
     @Test
     fun orchardViewingKeyCallbackUpsertsAndLoadRestoresExactBytes() = runTest {
         val fvk1 = ByteArray(96) { 0x31 }

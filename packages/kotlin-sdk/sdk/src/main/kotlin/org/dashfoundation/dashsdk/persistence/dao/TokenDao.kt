@@ -47,6 +47,14 @@ interface TokenDao {
     )
     fun observeTokensByNetwork(networkRaw: Int): Flow<List<TokenEntity>>
 
+    /** One-shot form of [observeTokensByNetwork], for persistence callbacks. */
+    @Query(
+        "SELECT tokens.* FROM tokens INNER JOIN data_contracts " +
+            "ON tokens.contractId = data_contracts.id " +
+            "WHERE data_contracts.networkRaw = :networkRaw"
+    )
+    suspend fun getTokensByNetwork(networkRaw: Int): List<TokenEntity>
+
     /** Mirror of `mintableTokensPredicate()` (`manualMintingRules != nil`). */
     @Query("SELECT * FROM tokens WHERE canManuallyMint = 1")
     fun observeMintableTokens(): Flow<List<TokenEntity>>
@@ -118,6 +126,21 @@ interface TokenDao {
     @Query("SELECT * FROM token_balances WHERE tokenId = :tokenId AND identityId = :identityId")
     suspend fun getBalance(tokenId: String, identityId: ByteArray): TokenBalanceEntity?
 
+    /**
+     * [getBalance] on one network: the persister's upsert key when the
+     * network is known, so the same identity and token ids on two networks
+     * (a shared database) keep separate rows.
+     */
+    @Query(
+        "SELECT * FROM token_balances WHERE tokenId = :tokenId AND identityId = :identityId " +
+            "AND networkRaw = :networkRaw"
+    )
+    suspend fun getBalanceOnNetwork(
+        tokenId: String,
+        identityId: ByteArray,
+        networkRaw: Int,
+    ): TokenBalanceEntity?
+
     @Query("SELECT * FROM token_balances WHERE tokenId = :tokenId AND identityId = :identityId")
     fun observeBalance(tokenId: String, identityId: ByteArray): Flow<TokenBalanceEntity?>
 
@@ -160,6 +183,13 @@ interface TokenDao {
     /** Mirror of the persister's balance-removal pass. */
     @Query("DELETE FROM token_balances WHERE tokenId = :tokenId AND identityId = :identityId")
     suspend fun deleteBalance(tokenId: String, identityId: ByteArray)
+
+    /** [deleteBalance] on one network (see [getBalanceOnNetwork]). */
+    @Query(
+        "DELETE FROM token_balances WHERE tokenId = :tokenId AND identityId = :identityId " +
+            "AND networkRaw = :networkRaw"
+    )
+    suspend fun deleteBalanceOnNetwork(tokenId: String, identityId: ByteArray, networkRaw: Int)
 
     /**
      * Wallet teardown: drop every balance owned by an identity. The

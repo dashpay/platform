@@ -162,6 +162,15 @@ class PlatformWalletPersistenceHandler(
      * settle; it never fails the round.
      */
     private val settlePendingKeyDeletesAfterRound: (suspend (inFlight: Set<String>) -> Unit)? = null,
+    /**
+     * Where a token balance callback gets the canonical token id of a saved
+     * token, to link the balance row to its `tokens` row (keyed by
+     * `contractId || position`, while the callback carries the canonical
+     * id). The production default calls the native `calculateTokenId`;
+     * tests inject a fake, since the native library is not loadable under
+     * Robolectric.
+     */
+    private val canonicalTokenIds: CanonicalTokenIds = NativeCanonicalTokenIds,
 ) : NativePersistenceBridge(), AutoCloseable {
 
     override fun persistenceCapabilitiesVersion(): Int = PERSISTENCE_CAPABILITIES_VERSION
@@ -2253,18 +2262,28 @@ class PlatformWalletPersistenceHandler(
         balance: Long,
     ): Int = guarded {
         stage(walletId) { db ->
-            val networkRaw = db.walletDao().getByWalletId(walletId)?.networkRaw ?: NETWORK_TESTNET
             val tokenBase58 = tokenId.toBase58String()
-            val existing = db.tokenDao().getBalance(tokenBase58, identityId)
+            val knownNetwork = balanceNetwork(db, walletId)
+            // Scoped to the network when it is known, so the same identity
+            // and token ids on another network keep their own row.
+            val existing = if (knownNetwork != null) {
+                db.tokenDao().getBalanceOnNetwork(tokenBase58, identityId, knownNetwork)
+            } else {
+                db.tokenDao().getBalance(tokenBase58, identityId)
+            }
+            val networkRaw = knownNetwork ?: existing?.networkRaw ?: NETWORK_TESTNET
             val row = TokenBalanceEntity(
                 id = existing?.id ?: 0,
                 tokenId = tokenBase58,
                 identityId = identityId,
                 balance = UInt64Value.fromRawLongBits(balance),
                 frozen = existing?.frozen ?: false,
-                networkRaw = existing?.networkRaw ?: networkRaw,
-                identityRef = identityId,
-                tokenRef = if (db.tokenDao().getTokenById(tokenId) != null) tokenId else existing?.tokenRef,
+                networkRaw = networkRaw,
+                // `identityRef` is a foreign key: set it only when the
+                // identity is stored here (an identity watched before it is
+                // saved still gets its balance, keyed by `identityId`).
+                identityRef = identityId.takeIf { db.identityDao().getByIdentityId(it) != null },
+                tokenRef = linkedTokenKey(db, tokenId, tokenBase58, networkRaw, existing?.tokenRef),
                 createdAt = existing?.createdAt ?: java.util.Date(),
                 lastUpdated = now(),
                 lastSyncedAt = now(),
@@ -2274,13 +2293,55 @@ class PlatformWalletPersistenceHandler(
         0
     }
 
+    /**
+     * Network a token balance callback writes to: the wallet's, else this
+     * handler's manager network. The identity-token sync sends its rows under
+     * the all-zero wallet id, which names no wallet. Null only for an
+     * unscoped handler (tests) on an unknown wallet.
+     */
+    private suspend fun balanceNetwork(db: DashDatabase, walletId: ByteArray): Int? =
+        db.walletDao().getByWalletId(walletId)?.networkRaw ?: network?.ffiValue
+
+    /** Canonical base58 token id per saved token key; a pure function, so cached. */
+    private val canonicalTokenIdCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /**
+     * The `tokens` row key a balance for [tokenId] links to: the row keyed by
+     * [tokenId] itself, else the link the balance row already has, else the
+     * saved token on [networkRaw] whose canonical id is [tokenBase58]. Null
+     * when no saved token matches; a later upsert links it once the
+     * contract is saved.
+     */
+    private suspend fun linkedTokenKey(
+        db: DashDatabase,
+        tokenId: ByteArray,
+        tokenBase58: String,
+        networkRaw: Int,
+        existingRef: ByteArray?,
+    ): ByteArray? {
+        db.tokenDao().getTokenById(tokenId)?.let { return it.id }
+        if (existingRef != null) return existingRef
+        return db.tokenDao().getTokensByNetwork(networkRaw).firstOrNull { token ->
+            val canonical = canonicalTokenIdCache[token.id.toHex()]
+                ?: runCatching { canonicalTokenIds.canonicalTokenId(token.contractId, token.position) }
+                    .getOrNull()
+                    ?.also { canonicalTokenIdCache[token.id.toHex()] = it }
+            canonical == tokenBase58
+        }?.id
+    }
+
     override fun onPersistTokenBalanceRemoval(
         walletId: ByteArray,
         identityId: ByteArray,
         tokenId: ByteArray,
     ): Int = guarded {
         stage(walletId) { db ->
-            db.tokenDao().deleteBalance(tokenId.toBase58String(), identityId)
+            val knownNetwork = balanceNetwork(db, walletId)
+            if (knownNetwork != null) {
+                db.tokenDao().deleteBalanceOnNetwork(tokenId.toBase58String(), identityId, knownNetwork)
+            } else {
+                db.tokenDao().deleteBalance(tokenId.toBase58String(), identityId)
+            }
         }
         0
     }
@@ -4699,6 +4760,28 @@ data class DerivedKeyStoreResult(val identifier: String, val wasNewlyCreated: Bo
  * back (fail closed, as the SQLite store's `apply_sweep` does on a bad
  * blob) rather than sweeping a loser whose inputs are unknown.
  */
+/**
+ * Canonical base58 token id of a saved token (its contract id and
+ * position), or null when it cannot be computed. See
+ * [PlatformWalletPersistenceHandler]'s `canonicalTokenIds`.
+ */
+fun interface CanonicalTokenIds {
+    fun canonicalTokenId(contractId: ByteArray, position: Int): String?
+}
+
+/**
+ * Production [CanonicalTokenIds]: the native `calculateTokenId`, a pure
+ * computation that takes no wallet-manager lock, so calling it from inside a
+ * persistence callback cannot deadlock (as for [NativeStoredTransactionInputs]).
+ */
+object NativeCanonicalTokenIds : CanonicalTokenIds {
+    override fun canonicalTokenId(contractId: ByteArray, position: Int): String? =
+        org.dashfoundation.dashsdk.ffi.QueriesNative.calculateTokenId(
+            contractId.toBase58String(),
+            position,
+        )
+}
+
 fun interface StoredTransactionInputs {
     /** 36-byte outpoints ([makeOutpoint] layout) of every input of [txid], in vin order. */
     fun inputOutpoints(txid: ByteArray, txData: ByteArray): List<ByteArray>

@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **52**
+Capabilities tracked: **53**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 32 | 18 | 1 | 1 |
-| Swift | Example app | 6 | 36 | 1 | 9 |
-| Kotlin | SDK | 27 | 22 | 2 | 1 |
-| Kotlin | Example app | 7 | 33 | 2 | 10 |
+| Swift | SDK | 33 | 18 | 1 | 1 |
+| Swift | Example app | 6 | 37 | 1 | 9 |
+| Kotlin | SDK | 28 | 22 | 2 | 1 |
+| Kotlin | Example app | 7 | 34 | 2 | 10 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 2 | 20 | 30 |
-| Kotlin | 9 | 18 | 25 |
+| Swift | 2 | 20 | 31 |
+| Kotlin | 9 | 18 | 26 |
 
 ## Capability status
 
@@ -45,6 +45,7 @@ Capabilities tracked: **52**
 | `identity.platform_address_auto_funding` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `tokens.authorization_decisions` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `tokens.direct_purchase_quote` | partial / partial / not_applicable | partial / partial / not_applicable |
+| `tokens.identity_balance_sync` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `protocol.address_validation` | supported / supported / not_applicable | partial / partial / not_applicable |
 | `documents.create_catalog` | supported / supported / not_applicable | supported / supported / not_applicable |
 | `contracts.update_preview` | supported / partial / not_applicable | supported / partial / not_applicable |

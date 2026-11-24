@@ -30,6 +30,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -39,6 +41,7 @@ import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.PendingGroupActions
 import org.dashfoundation.example.navigation.TokenAction
 import org.dashfoundation.example.services.tokens.GroupActionRuleEvaluator
+import org.dashfoundation.example.services.tokens.IdentityTokenSync
 import org.dashfoundation.example.services.tokens.TokenActionResolver
 import org.dashfoundation.example.services.tokens.TokenAmounts
 import org.dashfoundation.example.ui.components.AccessiblePicker
@@ -100,6 +103,65 @@ fun TokenActionPermissionsScreen(
     var pickedIdentityHex by rememberSaveable { mutableStateOf(pinnedIdentityIdHex) }
     val resolvedIdentity = identities.firstOrNull { it.identityId.toHex() == pickedIdentityHex }
         ?: identities.firstOrNull()
+
+    // Watch the displayed token for the acting identity in the Rust
+    // identity-token sync, so Transfer and Burn (which read
+    // `token_balances`) see its balance even when this screen was reached
+    // without the Tokens screen (Contracts > Token Search). Only this token
+    // is watched, so the request carries no more than the live read below;
+    // the other wallet identities are registered with none. The job is
+    // launched as soon as the token is known and resolves everything else
+    // from Room itself, so leaving the screen early (opening Transfer) does
+    // not skip it: it reads the token's contract, takes the picked identity
+    // (never a fallback) or else the first wallet identity on the contract's
+    // network, and runs only when the contract, that identity and the active
+    // manager are on the same network.
+    val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
+    // Also re-run when the sender the screen resolves appears or changes
+    // (identity discovery can land after the first Room read below).
+    LaunchedEffect(
+        manager,
+        sdk,
+        pickedIdentityHex,
+        token?.id?.toHex(),
+        resolvedIdentity?.identityId?.toHex(),
+        identities.joinToString(",") { it.identityId.toHex() },
+    ) {
+        val activeManager = manager ?: return@LaunchedEffect
+        val activeSdk = sdk ?: return@LaunchedEffect
+        // During a network switch the new SDK is published before its
+        // manager: never pair them across networks.
+        if (activeManager.network != activeSdk.network) return@LaunchedEffect
+        val displayed = token ?: return@LaunchedEffect
+        val picked = pickedIdentityHex
+        val database = container.database
+        // Application scope: leaving the screen must not cancel the pass.
+        container.applicationScope.launch {
+            val contractNetwork = database.dataContractDao().getById(displayed.contractId)
+                ?.networkRaw ?: return@launch
+            if (activeManager.network.ffiValue != contractNetwork) return@launch
+            val candidates = database.identityDao()
+                .observeWalletOwnedByNetwork(contractNetwork).first()
+            val identity = if (picked != null) {
+                candidates.firstOrNull { it.identityId.toHex() == picked }
+            } else {
+                candidates.firstOrNull()
+            } ?: return@launch
+            if (identity.networkRaw != contractNetwork) return@launch
+            IdentityTokenSync.refresh(
+                identityId = identity.identityId,
+                otherIdentityIds = candidates.map { it.identityId },
+                tokens = listOf(displayed),
+                calculateTokenId = activeSdk.tokenQueries::calculateTokenId,
+                register = activeManager::registerIdentityForTokenSync,
+                syncNow = activeManager::syncIdentityTokensNow,
+                isStillStored = {
+                    database.identityDao().getByIdentityId(identity.identityId) != null
+                },
+                isTokenStillSaved = { database.tokenDao().getTokenById(it.id) != null },
+            )
+        }
+    }
 
     // Live balance + on-chain pause reconciliation for the acting identity.
     // null balance = not yet fetched / unavailable; livePaused overrides the

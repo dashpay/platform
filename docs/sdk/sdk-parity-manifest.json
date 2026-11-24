@@ -152,7 +152,9 @@
     "platform_wallet_parse_shielded_tip_amount": "packages/rs-platform-wallet-ffi/src/shielded_tip.rs",
     "platform_wallet_manager_review_shielded_tip": "packages/rs-platform-wallet-ffi/src/shielded_tip.rs",
     "platform_wallet_manager_send_shielded_tip": "packages/rs-platform-wallet-ffi/src/shielded_tip.rs",
-    "platform_wallet_manager_shielded_identity_balance": "packages/rs-platform-wallet-ffi/src/shielded_tip.rs"
+    "platform_wallet_manager_shielded_identity_balance": "packages/rs-platform-wallet-ffi/src/shielded_tip.rs",
+    "platform_wallet_manager_identity_sync_register_identity": "packages/rs-platform-wallet-ffi/src/identity_sync.rs",
+    "platform_wallet_manager_identity_sync_sync_now": "packages/rs-platform-wallet-ffi/src/identity_sync.rs"
   },
   "capabilities": [
     {
@@ -1759,6 +1761,63 @@
           "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/services/tokens/TokenDirectPurchasePricingTest.kt",
           "id": "set prices picks highest tier at or below amount",
           "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "tokens.identity_balance_sync",
+      "title": "Identity token balances fill the local token balance store",
+      "area": "persistence",
+      "shared_apis": [
+        "platform_wallet_manager_identity_sync_register_identity",
+        "platform_wallet_manager_identity_sync_sync_now"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "PlatformWalletManager.registerIdentityForTokenSync and syncIdentityTokensNow wrap the FFI entry points; IdentityDetailView.reloadTokenBalances registers the identity with every locally saved token on the active network (ids from calculateTokenId) and runs one sync pass, and the Rust persister writes PersistentTokenBalance rows that TokensView and the token action forms read. Partial because no automated test covers the app wiring; the watched set is registered again each time the screen loads, and the stored rows survive a restart."
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "PlatformWalletManager.registerIdentityForTokenSync and syncIdentityTokensNow wrap the FFI entry points through JNI (rs-unified-sdk-jni wallet_manager.rs). KotlinExampleApp's Tokens screen registers the selected identity with every locally saved token on the network (ids from calculateTokenId), and a token's action screen registers the acting identity with the displayed token; both register the wallet's other identities with none and run one sync pass, so onPersistTokenBalanceUpsert fills token_balances for the TOKEN BALANCES list and the token action forms (TEST_PLAN TOK-01, TOK-02). Deleting a saved contract clears the watches first. The persistence handler links each row to its saved token through the canonical token id and scopes it to the manager's network. Swift does this from the identity detail screen, which has no Tokens section on Android. Partial because no emulator or network run has been recorded; the stored rows survive a restart."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleApp/Views/IdentityDetailView.swift",
+          "id": "registerIdentityForTokenSync",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/IdentityTokenSyncMarshalTest.kt",
+          "id": "shouldLayTokenIdsBackToBackInOrder",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*IdentityTokenSyncMarshalTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/wallet/IdentityTokenSyncBindingTest.kt",
+          "id": "wellFormedRegistrationReachesTheFfiInvalidHandlePath",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=org.dashfoundation.dashsdk.wallet.IdentityTokenSyncBindingTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/services/tokens/IdentityTokenSyncTest.kt",
+          "id": "shouldWatchEveryLocalTokenForTheIdentityOnScreenThenSyncOnce",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*IdentityTokenSyncTest'",
           "covers_restart": false
         }
       ]
