@@ -1204,8 +1204,7 @@ export interface DocumentSetPriceOptions {
   /**
    * The price in credits.
    * A price of 0 does not take the document off sale: it stays listed, and
-   * anyone may buy it for 0 credits. Platform removes the price only when the
-   * document is purchased or transferred.
+   * anyone may buy it for 0 credits.
    */
   price: bigint;
 
