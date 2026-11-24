@@ -20,10 +20,12 @@ use rs_dapi_client::{CanRetry, DapiClientError, ExecutionError};
 use std::fmt::Debug;
 use std::time::Duration;
 
-/// The advice that ends the [`Error::Config`] message of a request every node answered below
-/// the SDK's protocol version, before any verified answer showed the network running it. It
-/// names the Rust builder method; a binding whose callers set the version under another name
-/// replaces this suffix with advice that names theirs.
+/// The advice that ends the [`Error::Config`] message of a request that ran out of attempts
+/// on answers below the SDK's protocol version, before any verified answer showed the network
+/// running it. The message reports the answers the request received before its retries
+/// ended, not every node: the retries can end with nodes left unasked. It names the Rust
+/// builder method; a binding whose callers set the version under another name replaces this
+/// suffix with advice that names theirs.
 pub const SDK_AHEAD_OF_NETWORK_ADVICE: &str = "if the SDK was set ahead of its network, let it \
      follow the network's protocol version instead, or seed it with the network's version \
      (with_initial_version)";
