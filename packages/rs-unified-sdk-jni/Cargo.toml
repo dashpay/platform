@@ -26,19 +26,20 @@ log = "0.4"
 serde = { version = "1", features = ["derive"] }
 hex = "0.4"
 zeroize = "1"
-# The test-only credit-verdict round hook (`verdict_round_test_hook.rs`,
-# `test-hooks` feature) builds a `CoreChangeSet` and drives it through
-# `FFIPersister::store`; the unit tests in `persistence.rs` and
-# `tx_decode.rs` also use `dashcore`. All three are already in the graph
-# through platform-wallet-ffi.
-dashcore = { workspace = true }
-key-wallet = { workspace = true }
-platform-wallet = { path = "../rs-platform-wallet" }
+# Only the test-only credit-verdict round hook (`verdict_round_test_hook.rs`,
+# `test-hooks` feature) uses these: it builds a `CoreChangeSet` and drives it
+# through `FFIPersister::store`. Optional, so a published build does not
+# declare them; they are in its graph through platform-wallet-ffi either way.
+dashcore = { workspace = true, optional = true }
+key-wallet = { workspace = true, optional = true }
+platform-wallet = { path = "../rs-platform-wallet", optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.14"
 
 [dev-dependencies]
+# The unit tests in `persistence.rs` and `tx_decode.rs`.
+dashcore = { workspace = true }
 # Anchors the cross-language golden-fixture test to the canonical DashPay
 # contract id, so the mirrored Kotlin constant can't drift undetected.
 dashpay-contract = { path = "../dashpay-contract" }
@@ -50,7 +51,7 @@ default = ["shielded"]
 shielded = ["platform-wallet-ffi/shielded"]
 # Test-only JNI entry points for the instrumented Android suite
 # (`./build_android.sh --test-hooks`). Never enable for a published build.
-test-hooks = []
+test-hooks = ["dep:dashcore", "dep:key-wallet", "dep:platform-wallet"]
 tokio-metrics = [
     "platform-wallet-ffi/tokio-metrics",
     "rs-sdk-ffi/tokio-metrics",
