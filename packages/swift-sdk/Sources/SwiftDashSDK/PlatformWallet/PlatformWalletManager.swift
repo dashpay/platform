@@ -995,7 +995,9 @@ public class PlatformWalletManager: ObservableObject {
     /// Native calls run off-main. A stop that reports an incomplete drain
     /// is recorded in the metrics; shutdown still waits for admitted work
     /// to finish before destroying its handle, so completion is not bounded
-    /// if that work never returns.
+    /// if that work never returns. One such case: an admitted shield-class
+    /// payment queued behind an asset-lock funding that gets no ChainLock
+    /// because SPV was stopped first keeps shutdown waiting (#6003).
     ///
     /// Idempotent: the first caller starts the teardown, every later caller
     /// awaits the same task and receives the same metrics. Cancellation of

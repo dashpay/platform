@@ -1213,6 +1213,10 @@ extension PlatformWalletManager {
     /// shielded scan sees its note; nothing is reserved wallet-side.
     ///
     /// Admitted until its result is delivered, as [`shieldedTransfer`] is.
+    /// It queues behind a Core asset-lock funding in flight on the same
+    /// wallet, which can wait for a ChainLock with no deadline, so
+    /// `shutdown()` then waits as long and `deleteWallet` stays refused; do
+    /// not stop SPV while a funding is in flight (#6003).
     public func shieldedShield(
         walletId: Data,
         shieldedAccount: UInt32 = 0,
@@ -1292,6 +1296,8 @@ extension PlatformWalletManager {
     /// requires acknowledging that another payment may be an additional debit.
     ///
     /// Admitted until its balance is returned, as [`shieldedTransfer`] is.
+    /// It queues behind an asset-lock funding on the same wallet, with the
+    /// shutdown caveat of [`shieldedShield`] (#6003).
     @discardableResult
     public func shieldedShieldFromIdentity(
         walletId: Data,
@@ -1382,6 +1388,8 @@ extension PlatformWalletManager {
     /// shielded scan sees its note; nothing is reserved wallet-side.
     ///
     /// Admitted until its result is delivered, as [`shieldedTransfer`] is.
+    /// It queues behind an asset-lock funding on the same wallet, with the
+    /// shutdown caveat of [`shieldedShield`] (#6003).
     public func shieldedShieldToRecipient(
         walletId: Data,
         shieldedAccount: UInt32 = 0,
@@ -1542,6 +1550,8 @@ extension PlatformWalletManager {
     /// until a later shielded sync resolves them).
     ///
     /// Admitted until its result is delivered, as [`shieldedTransfer`] is.
+    /// It queues behind an asset-lock funding on the same wallet, with the
+    /// shutdown caveat of [`shieldedShield`] (#6003).
     public func shieldedIdentityTopUpFromPool(
         walletId: Data,
         resolver: MnemonicResolver,

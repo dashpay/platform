@@ -134,8 +134,9 @@ extension PlatformWalletManager {
     ///     `AssetLockBuiltHandler`.
     ///
     /// Deliberately not admitted as a native operation: it can wait for a
-    /// ChainLock with no deadline, and `shutdown()` cannot cancel a native
-    /// call, so admitting it would let shutdown hang (#6003).
+    /// ChainLock with no deadline and `shutdown()` cannot cancel a native
+    /// call, so this keeps shutdown from waiting on the funding itself. A
+    /// shield-class payment queued behind it still holds shutdown (#6003).
     public func shieldedFundFromAssetLock(
         walletId: Data,
         fundingAccountIndex: UInt32,
@@ -228,7 +229,8 @@ extension PlatformWalletManager {
     ///
     /// Deliberately not admitted, for the same reason as
     /// [`shieldedFundFromAssetLock`]: its ChainLock wait has no deadline and
-    /// `shutdown()` cannot cancel it (#6003).
+    /// `shutdown()` cannot cancel it. A shield-class payment queued behind it
+    /// still holds shutdown (#6003).
     public func shieldedFundFromCoinJoinDrain(
         walletId: Data,
         coinJoinAccountIndex: UInt32 = 0,

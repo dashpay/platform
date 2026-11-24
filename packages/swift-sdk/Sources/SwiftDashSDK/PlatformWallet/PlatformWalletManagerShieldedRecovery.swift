@@ -77,7 +77,9 @@ extension PlatformWalletManager {
     ///
     /// Admitted as an async native operation until it returns: `shutdown()`
     /// waits for it, `deleteWallet` throws `invalidHandle` while it runs, and
-    /// a call made once a shutdown has begun throws `invalidHandle`.
+    /// a call made once a shutdown has begun throws `invalidHandle`. It
+    /// queues behind an asset-lock funding on the same wallet, with the
+    /// shutdown caveat of `shieldedShield` (#6003).
     public func abandonShieldedIdentityDebit(
         walletId: Data,
         accountIndex: UInt32,
