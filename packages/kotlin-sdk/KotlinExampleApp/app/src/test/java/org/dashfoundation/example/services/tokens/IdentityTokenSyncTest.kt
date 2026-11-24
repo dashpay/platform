@@ -1,5 +1,7 @@
 package org.dashfoundation.example.services.tokens
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.dashfoundation.dashsdk.persistence.entities.TokenEntity
 import org.dashfoundation.example.util.Base58
@@ -153,6 +155,46 @@ class IdentityTokenSyncTest {
 
         assertTrue(ok)
         assertTrue(deleted)
+    }
+
+    @Test
+    fun shouldHoldARefreshQueuedDuringADeleteUntilTheContractIsGone() = runTest {
+        val token = token(1, 0)
+        var tokenSaved = true
+        val deleteStarted = CompletableDeferred<Unit>()
+        val releaseDelete = CompletableDeferred<Unit>()
+        val recorder = Recorder()
+        var refreshCheckedWhileDeleting = false
+
+        val deletion = launch {
+            IdentityTokenSync.clear(listOf(identityId), recorder.register) {
+                deleteStarted.complete(Unit)
+                releaseDelete.await()
+                tokenSaved = false
+            }
+        }
+        deleteStarted.await()
+        // A refresh with the old token snapshot, started while the delete is paused.
+        val refresh = launch {
+            IdentityTokenSync.refresh(
+                identityId, listOf(identityId), listOf(token), calculate,
+                recorder.register, recorder.syncNow,
+                isTokenStillSaved = {
+                    if (!releaseDelete.isCompleted) refreshCheckedWhileDeleting = true
+                    tokenSaved
+                },
+            )
+        }
+        testScheduler.advanceUntilIdle()
+        assertEquals("the refresh waits behind the delete", listOf("register"), recorder.calls)
+
+        releaseDelete.complete(Unit)
+        deletion.join()
+        refresh.join()
+
+        assertFalse("never checked while the delete held the lock", refreshCheckedWhileDeleting)
+        assertTrue("the queued refresh leaves the deleted token out", recorder.tokensFor(identityId).isEmpty())
+        assertEquals("no pass for an empty watch set", listOf("register", "register"), recorder.calls)
     }
 
     @Test

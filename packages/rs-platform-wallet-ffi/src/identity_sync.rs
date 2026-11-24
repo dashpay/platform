@@ -451,11 +451,19 @@ mod tests {
         assert!(shut_down.is_some());
 
         let result = unsafe { platform_wallet_manager_identity_sync_sync_now(handle) };
+        PLATFORM_WALLET_MANAGER_STORAGE.remove(handle);
 
         assert_eq!(
             result.code,
             PlatformWalletFFIResultCode::ErrorWalletOperation
         );
-        PLATFORM_WALLET_MANAGER_STORAGE.remove(handle);
+        // The no-pass branch, not a caught panic (which shares the code).
+        assert!(!result.message.is_null());
+        // SAFETY: the result owns this non-null C string until it is dropped.
+        let message = unsafe { std::ffi::CStr::from_ptr(result.message) };
+        assert!(
+            message.to_bytes().starts_with(b"no token sync pass ran:"),
+            "unexpected sync error: {message:?}"
+        );
     }
 }
