@@ -84,8 +84,16 @@ class RecipientTopUpTest {
             outpointTxid: ByteArray,
             outpointVout: Int,
             identityId: ByteArray,
+            acknowledgeUnknownConsumption: Boolean,
         ) {
-            calls += listOf("assign", walletHandle, outpointTxid, outpointVout, identityId)
+            calls += listOf(
+                "assign",
+                walletHandle,
+                outpointTxid,
+                outpointVout,
+                identityId,
+                acknowledgeUnknownConsumption,
+            )
             failure?.let { throw it }
         }
     }
@@ -196,12 +204,20 @@ class RecipientTopUpTest {
         val unassigned = lock(TrackedAssetLock.FundingType.IDENTITY_TOP_UP_NOT_BOUND, unassigned = true)
 
         IdentityCredits(native = native).assignTopUpRecipient(1L, unassigned, identity)
+        IdentityCredits(native = native).assignTopUpRecipient(
+            1L,
+            unassigned,
+            identity,
+            acknowledgeUnknownConsumption = true,
+        )
 
-        val call = native.calls.single()
+        val (call, acknowledged) = native.calls
         assertEquals(listOf("assign", 1L), call.take(2))
         assertArrayEquals(lockTxid, call[2] as ByteArray)
         assertEquals(9, call[3])
         assertArrayEquals(identity, call[4] as ByteArray)
+        assertEquals(false, call[5])
+        assertEquals(true, acknowledged[5])
 
         val mismatch = FakeNative(
             failure = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 61, "cannot be resumed to"),
@@ -271,6 +287,7 @@ class RecipientTopUpTest {
             outpointTxid: ByteArray,
             outpointVout: Int,
             identityId: ByteArray,
+            acknowledgeUnknownConsumption: Boolean,
         ) = Unit
     }
 

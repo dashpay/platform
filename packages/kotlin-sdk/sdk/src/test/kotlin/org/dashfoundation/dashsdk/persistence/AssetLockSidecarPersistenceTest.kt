@@ -153,6 +153,30 @@ class AssetLockSidecarPersistenceTest {
         assertArrayEquals(identityRecipient, stored.identityRecipientId)
     }
 
+    /**
+     * An assignment arrives as a round of its own carrying the identity
+     * recipient alone, with no upsert of the row: it records the recipient on
+     * the stored row and leaves everything else as stored, including a status
+     * the row reached after the wallet read it.
+     */
+    @Test
+    fun shouldRecordAnAssignmentRoundOnTheStoredRowAlone() = runTest {
+        val op = outpoint(13)
+        round { upsert(op, status = 1) }
+        round { upsert(op, status = 4) }
+
+        assertEquals(
+            0,
+            round {
+                assertEquals(0, handler.onPersistAssetLockIdentityRecipient(walletId, op, identityRecipient))
+            },
+        )
+
+        val stored = requireNotNull(row(op))
+        assertEquals(4, stored.statusRaw)
+        assertArrayEquals(identityRecipient, stored.identityRecipientId)
+    }
+
     @Test
     fun shouldAcceptTheSameValueAgainAndRefuseADifferentOne() = runTest {
         val op = outpoint(6)

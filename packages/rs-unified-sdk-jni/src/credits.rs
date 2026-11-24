@@ -611,7 +611,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_resumeT
 /// the user chose it. Wraps `platform_wallet_assign_identity_top_up_recipient`:
 /// `ErrorIdentityNotFound` (7) for an identity Platform does not know (nothing
 /// assigned), `ErrorAssetLockRecipientMismatch` (61) when the lock already
-/// records another identity (the same one again is a no-op).
+/// records another identity (the same one again is a no-op), and
+/// `ErrorAssetLockConsumptionUnknown` (82) for a lock rebuilt from the chain
+/// unless `acknowledge_unknown_consumption` is set.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_assignTopUpRecipient(
     mut env: JNIEnv,
@@ -620,6 +622,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_assignT
     outpoint_txid: JByteArray,
     outpoint_vout: jint,
     identity_id: JByteArray,
+    acknowledge_unknown_consumption: jboolean,
 ) {
     guard(&mut env, (), |env| {
         let Some(outpoint) = read_outpoint(env, &outpoint_txid, outpoint_vout) else {
@@ -633,6 +636,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_assignT
                 wallet_handle as Handle,
                 &outpoint,
                 &id,
+                acknowledge_unknown_consumption != 0,
             )
         };
         take_pwffi_error(env, result);

@@ -181,7 +181,7 @@ internal object CreditsNative {
 
     /**
      * Assign [identityId] (32 bytes) as the identity the unassigned unbound
-     * top-up lock at the outpoint pays. Descriptor `(J[BI[B)V`.
+     * top-up lock at the outpoint pays. Descriptor `(J[BI[BZ)V`.
      *
      * Thinly marshals `platform_wallet_assign_identity_top_up_recipient`.
      */
@@ -190,5 +190,6 @@ internal object CreditsNative {
         outpointTxid: ByteArray,
         outpointVout: Int,
         identityId: ByteArray,
+        acknowledgeUnknownConsumption: Boolean,
     )
 }

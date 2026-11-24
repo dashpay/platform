@@ -50,6 +50,7 @@ internal interface TopUpNative {
         outpointTxid: ByteArray,
         outpointVout: Int,
         identityId: ByteArray,
+        acknowledgeUnknownConsumption: Boolean,
     )
 
     /** [CreditsNative]'s exports. */
@@ -103,7 +104,14 @@ internal interface TopUpNative {
             outpointTxid: ByteArray,
             outpointVout: Int,
             identityId: ByteArray,
-        ) = CreditsNative.assignTopUpRecipient(walletHandle, outpointTxid, outpointVout, identityId)
+            acknowledgeUnknownConsumption: Boolean,
+        ) = CreditsNative.assignTopUpRecipient(
+            walletHandle,
+            outpointTxid,
+            outpointVout,
+            identityId,
+            acknowledgeUnknownConsumption,
+        )
     }
 }
 
@@ -568,12 +576,25 @@ class IdentityCredits internal constructor(
      * [IdentityLookupFailed][org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.IdentityLookupFailed],
      * and nothing is assigned. A lock already recording another identity is
      * [AssetLockRecipientMismatch][org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.AssetLockRecipientMismatch];
-     * the same identity again is a no-op, which also retries a failed store.
+     * the same identity again is a no-op. The persister records the identity
+     * alone, and only once that commits can a resume pay it: on any failure
+     * nothing was stored, and any identity may be assigned again.
+     *
+     * A lock rebuilt from the chain (status `RECOVERED_FROM_CHAIN`, not
+     * flagged [TrackedAssetLock.identityRecipientUnassigned]) may already have
+     * been used on Platform, which the wallet cannot tell. It is assigned only
+     * with [acknowledgeUnknownConsumption], after telling the user so, and is
+     * [AssetLockConsumptionUnknown][org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.AssetLockConsumptionUnknown]
+     * otherwise. Platform uses an outpoint once: if it already used this one,
+     * the resume is refused there with
+     * [AssetLockAlreadyConsumed][org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.AssetLockAlreadyConsumed],
+     * and nothing is paid twice.
      */
     suspend fun assignTopUpRecipient(
         walletHandle: Long,
         lock: TrackedAssetLock,
         identityId: ByteArray,
+        acknowledgeUnknownConsumption: Boolean = false,
     ): Unit = gate.op {
         require(identityId.size == 32) {
             "identityId must be exactly 32 bytes, got ${identityId.size}"
@@ -584,6 +605,7 @@ class IdentityCredits internal constructor(
                 lock.outpointTxid,
                 lock.outpointVout,
                 identityId,
+                acknowledgeUnknownConsumption,
             )
         }
     }

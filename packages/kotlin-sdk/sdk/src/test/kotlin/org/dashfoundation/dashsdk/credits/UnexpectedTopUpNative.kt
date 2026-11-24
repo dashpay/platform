@@ -37,5 +37,6 @@ internal open class UnexpectedTopUpNative : TopUpNative {
         outpointTxid: ByteArray,
         outpointVout: Int,
         identityId: ByteArray,
+        acknowledgeUnknownConsumption: Boolean,
     ): Unit = throw AssertionError("unexpected assignTopUpRecipient")
 }
