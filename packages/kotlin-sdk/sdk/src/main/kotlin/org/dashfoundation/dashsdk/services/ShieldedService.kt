@@ -24,6 +24,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.Sdk
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 import org.dashfoundation.dashsdk.wallet.ShieldedBalanceUpdate
@@ -143,6 +144,29 @@ class ShieldedService(private val database: DashDatabase) {
      */
     internal suspend fun <T> withLedgerLifecycle(step: suspend () -> T): T =
         ledgerLifecycle.withLock { step() }
+
+    /**
+     * [withLedgerLifecycle] for a Clear, which does not wait for a step in
+     * flight: when a bind's native calls (or another Clear) hold the ledger,
+     * [step] is not run and
+     * [DashSdkError.PlatformWallet.ShieldedOperationInProgress] is thrown at
+     * once. That is the refusal Rust gives a Clear while a bind is admitted;
+     * this lock is taken before Rust is asked, so without it a Clear tapped
+     * during a bind would wait here and then go through with no second tap.
+     * A bind that arrives while the Clear holds the ledger still waits.
+     */
+    internal suspend fun <T> withLedgerLifecycleForClear(step: suspend () -> T): T {
+        if (!ledgerLifecycle.tryLock()) {
+            throw DashSdkError.PlatformWallet.ShieldedOperationInProgress(
+                "A shielded bind is in progress; clear the shielded state once it has finished",
+            )
+        }
+        try {
+            return step()
+        } finally {
+            ledgerLifecycle.unlock()
+        }
+    }
     private var pollJob: Job? = null
 
     private val _boundAccounts = MutableStateFlow<List<Int>>(emptyList())
@@ -603,6 +627,11 @@ class ShieldedService(private val database: DashDatabase) {
      * Fail-closed: if the Rust reset throws, the exception propagates and the
      * Room rows are left intact — the FFI's contract is that the host must
      * not drop its persistence while the shared tree may still be populated.
+     * That includes a Clear refused because a shielded operation is in flight
+     * ([DashSdkError.PlatformWallet.ShieldedOperationInProgress], from Rust,
+     * or from this service for one of its own binds): nothing was reset,
+     * wiped or bound again, and the caller offers the Clear again once the
+     * operation has finished.
      * No-op when unbound.
      */
     suspend fun clearLocalState(db: DashDatabase = database) {
@@ -636,10 +665,12 @@ class ShieldedService(private val database: DashDatabase) {
         //
         // The reset and the Room wipe run as one ledger lifecycle step: no
         // bind can restore the still-present rows into the emptied store in
-        // between (see [withLedgerLifecycle]).
+        // between (see [withLedgerLifecycle]). A bind in flight refuses the
+        // Clear here, as Rust refuses it for every other shielded operation
+        // (see [withLedgerLifecycleForClear]); nothing was reset or wiped.
         val walletIdHex = walletId.joinToString("") { "%02x".format(it) }
         android.util.Log.i(TAG, "Shielded clear: resetting Rust store for $walletIdHex")
-        withLedgerLifecycle {
+        withLedgerLifecycleForClear {
             // Once the reset has started, the wipe must follow even if the
             // caller (a screen that was left) is cancelled: a reset whose
             // wipe never ran would let the next bind restore the old

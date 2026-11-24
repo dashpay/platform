@@ -36,6 +36,25 @@ final class ShieldedServiceClearTests: XCTestCase {
         )
     }
 
+    /// A refusal notice from an earlier Clear must not outlive a later
+    /// attempt, whatever that attempt's outcome, or the alert would repeat
+    /// an instruction that no longer applies.
+    func testClearLocalState_laterAttempt_dropsAnEarlierRefusalNotice() async throws {
+        let container = try DashModelContainer.createInMemory()
+        let context = try contextWithSyncState(in: container)
+        let service = ShieldedService()
+        service.clearRefusalNotice = ShieldedService.clearRefusedDuringShieldedOperationMessage
+
+        await service.clearLocalState(modelContext: context)
+
+        XCTAssertNil(service.clearRefusalNotice)
+        XCTAssertEqual(
+            service.lastError,
+            "Failed to reset shielded state: no wallet manager is bound.",
+            "The later attempt's own failure is reported through lastError"
+        )
+    }
+
     /// A throwing `clearShielded()` equivalent is also load-bearing: surface
     /// the error and leave every host row intact for a safe retry.
     func testClearSequence_whenRustResetThrows_preservesRows() throws {

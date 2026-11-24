@@ -71,6 +71,12 @@ class ShieldedService: ObservableObject {
     /// Last error from a shielded operation. Cleared on a successful
     /// pass.
     @Published var lastError: String?
+    /// Set when Rust refused a Clear because a shielded operation is in
+    /// flight. Kept apart from `lastError` because a refused Clear leaves
+    /// sync running, and a sync pass that completes clears `lastError`,
+    /// which would hide the retry instruction before the user reads it.
+    /// Cleared only when the user dismisses it or starts another Clear.
+    @Published var clearRefusalNotice: String?
     /// Bumped by `clearLocalState` once it has reached the shielded reset.
     /// Views showing wallet-owned shielded state re-read on a change.
     @Published private(set) var localStateClearCount: UInt64 = 0
@@ -800,6 +806,8 @@ class ShieldedService: ObservableObject {
         // per-network SQLite delete; that step is gone — see
         // doc above for why.)
         let managerForStop = walletManager
+        // A new attempt supersedes an earlier refusal, whatever its outcome.
+        clearRefusalNotice = nil
         SDKLogger.event(
             "shielded_reset_started",
             category: .shielded,
@@ -914,7 +922,9 @@ class ShieldedService: ObservableObject {
             case .refusedDuringShieldedOperation:
                 // Expected while a payment or wallet setup runs; Rust kept
                 // everything, so this is a refusal to report, not a failure.
-                lastError = Self.clearRefusedDuringShieldedOperationMessage
+                // `lastError` keeps whatever sync status it had: the Clear
+                // changed nothing.
+                clearRefusalNotice = Self.clearRefusedDuringShieldedOperationMessage
                 SDKLogger.event(
                     "shielded_reset_refused",
                     category: .shielded,

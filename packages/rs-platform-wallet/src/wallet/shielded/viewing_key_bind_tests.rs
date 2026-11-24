@@ -1068,9 +1068,15 @@ where
     let operation = tokio::spawn(operation);
     persister.gated_load_entered().await;
 
-    // Not polled to see whether it waits: it returns while the operation is
-    // still parked, which a Clear that waited could not do.
-    let refused = coordinator.clear().await;
+    // Polled once while the operation is still parked: a refusal is decided
+    // without waiting, so a Clear that parks here waits for the operation.
+    let refused = match futures::poll!(std::pin::pin!(coordinator.clear())) {
+        std::task::Poll::Ready(refused) => refused,
+        std::task::Poll::Pending => {
+            release.send(()).expect("release the parked load");
+            panic!("the Clear waited for the operation in flight");
+        }
+    };
     assert!(
         matches!(
             refused,
@@ -2819,7 +2825,13 @@ async fn should_refuse_a_clear_while_a_profile_write_publishes_a_prepared_addres
         .await
         .expect("the write passed its publication check");
 
-    let refused = coordinator.clear().await;
+    let refused = match futures::poll!(std::pin::pin!(coordinator.clear())) {
+        std::task::Poll::Ready(refused) => refused,
+        std::task::Poll::Pending => {
+            resume.send(()).expect("release the parked write");
+            panic!("the Clear waited for the profile write in flight");
+        }
+    };
     assert!(
         matches!(
             refused,
@@ -2916,7 +2928,13 @@ async fn should_refuse_a_profile_write_that_raced_the_first_preparation_of_its_a
     reached
         .await
         .expect("the write passed its publication check");
-    let refused = coordinator.clear().await;
+    let refused = match futures::poll!(std::pin::pin!(coordinator.clear())) {
+        std::task::Poll::Ready(refused) => refused,
+        std::task::Poll::Pending => {
+            resume.send(()).expect("release the parked write");
+            panic!("the Clear waited for the profile write in flight");
+        }
+    };
     assert!(
         matches!(
             refused,

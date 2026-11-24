@@ -379,13 +379,25 @@ fn scan_binds_token_fee_bundles(orphan: &super::token_pool::OrphanedReservation)
         .is_some_and(|version| version.dpp.methods.token_pool_paid_fee_binding.is_some())
 }
 
-/// A Clear's exclusive hold on the coordinator's operation admission, returned
-/// by [`try_admit_clear`](NetworkShieldedCoordinator::try_admit_clear) and
-/// spent by [`clear_admitted`](NetworkShieldedCoordinator::clear_admitted).
-/// No shielded operation is admitted while it lives; one that arrives waits
-/// for it to drop.
+/// A Clear's exclusive hold on one coordinator's operation admission,
+/// returned by [`try_admit_clear`](NetworkShieldedCoordinator::try_admit_clear)
+/// and spent by [`clear`](Self::clear). No shielded operation is admitted on
+/// that coordinator while it lives; one that arrives waits for it to drop.
+///
+/// It keeps the coordinator it was given by, so the Clear it allows can only
+/// run there: an admission of one coordinator cannot be spent on another.
 pub(crate) struct ShieldedClearAdmission<'a> {
+    coordinator: &'a NetworkShieldedCoordinator,
     _operations: tokio::sync::RwLockWriteGuard<'a, ()>,
+}
+
+impl ShieldedClearAdmission<'_> {
+    /// Run the Clear, on the coordinator that gave this admission, and
+    /// release the admission when it returns. See
+    /// [`NetworkShieldedCoordinator::clear`] for what it resets and returns.
+    pub(crate) async fn clear(self) -> Result<(), PlatformWalletError> {
+        self.coordinator.clear_admitted().await
+    }
 }
 
 /// Exclusive handle on one wallet's shielded install transaction,
@@ -843,7 +855,7 @@ impl NetworkShieldedCoordinator {
     /// Clear is admitted). Never waits and changes nothing, so a caller with
     /// work to do before the wipe (the manager stops the sync loop first) asks
     /// here before starting it. The admission is spent by
-    /// [`clear_admitted`](Self::clear_admitted); while it is held, every new
+    /// [`ShieldedClearAdmission::clear`]; while it is held, every new
     /// operation waits.
     pub(crate) fn try_admit_clear(
         &self,
@@ -851,6 +863,7 @@ impl NetworkShieldedCoordinator {
         self.operation_admission
             .try_write()
             .map(|operations| ShieldedClearAdmission {
+                coordinator: self,
                 _operations: operations,
             })
             .map_err(|_| PlatformWalletError::ShieldedOperationInProgress)
@@ -1646,16 +1659,13 @@ impl NetworkShieldedCoordinator {
     /// that waited would hold up every operation behind it for as long as
     /// the payment it waited for, proof and broadcast included.
     pub async fn clear(&self) -> Result<(), crate::error::PlatformWalletError> {
-        let admission = self.try_admit_clear()?;
-        self.clear_admitted(admission).await
+        self.try_admit_clear()?.clear().await
     }
 
-    /// [`clear`](Self::clear) for a caller that already holds the admission
-    /// from [`try_admit_clear`](Self::try_admit_clear).
-    pub(crate) async fn clear_admitted(
-        &self,
-        _admission: ShieldedClearAdmission<'_>,
-    ) -> Result<(), crate::error::PlatformWalletError> {
+    /// [`clear`](Self::clear)'s body. Private: it runs only through
+    /// [`ShieldedClearAdmission::clear`], whose admission is this
+    /// coordinator's and is held until this returns.
+    async fn clear_admitted(&self) -> Result<(), crate::error::PlatformWalletError> {
         // Held across the whole Clear, store reset included, so no bind
         // install can be halfway through its transaction here: one that
         // already registered would otherwise restore its pre-Clear
@@ -5143,13 +5153,14 @@ mod tests {
         let generation = coordinator.clear_generation();
 
         let operation = coordinator.operation_guard().await;
-        // Awaited with the operation still admitted: a Clear that waited for
-        // it would never return here.
-        let refused = coordinator.clear().await;
+        // Polled once with the operation still admitted: a refusal is
+        // decided without waiting, so a Clear that parks here has gone back
+        // to waiting for the operation.
+        let refused = futures::poll!(std::pin::pin!(coordinator.clear()));
         assert!(
             matches!(
                 refused,
-                Err(PlatformWalletError::ShieldedOperationInProgress)
+                std::task::Poll::Ready(Err(PlatformWalletError::ShieldedOperationInProgress))
             ),
             "{refused:?}"
         );
@@ -5205,10 +5216,7 @@ mod tests {
             "a second Clear is refused while the first is admitted"
         );
 
-        coordinator
-            .clear_admitted(admission)
-            .await
-            .expect("clear succeeds");
+        admission.clear().await.expect("clear succeeds");
         let _operation = operation.await;
 
         let _ = std::fs::remove_dir_all(&dir);

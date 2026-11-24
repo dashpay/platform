@@ -1263,6 +1263,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// finished. A sync pass is not such an operation: Clear still cancels a
     /// running pass and waits for it to drain, as described above.
     ///
+    /// The admission is held while that pass drains, so an operation that
+    /// arrives meanwhile waits for the Clear. A sync completion handler must
+    /// therefore not wait for a shielded operation of its own: the pass would
+    /// wait for the handler, the handler for the Clear, and the Clear for
+    /// the pass, until the drain budget ends it with `ShutdownIncomplete`.
+    ///
     /// [`PlatformWalletError::ShieldedOperationInProgress`]:
     ///     crate::error::PlatformWalletError::ShieldedOperationInProgress
     #[cfg(feature = "shielded")]
@@ -1299,7 +1305,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     .to_string(),
             ));
         };
-        let Some((coord, admission)) = coordinator.as_deref().zip(admission) else {
+        let Some(admission) = admission else {
             tracing::error!(
                 "clear_shielded: no shielded coordinator installed on this manager — the \
                  on-disk commitment tree cannot be reset. configure_shielded never ran on \
@@ -1311,7 +1317,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     .to_string(),
             ));
         };
-        coord.clear_admitted(admission).await
+        admission.clear().await
     }
 
     /// Reset the platform-address (BLAST/DIP-17) incremental-sync
@@ -2401,6 +2407,11 @@ mod tests {
         writer.join().expect("writer thread completes");
     }
 
+    /// How long a test gives a Clear to be refused. A refusal takes no wait
+    /// at all; the bound only turns a Clear that waits into a failure.
+    #[cfg(feature = "shielded")]
+    const REFUSAL_WAIT: Duration = Duration::from_secs(10);
+
     /// A Clear requested while a shielded operation is admitted is refused
     /// before the manager does anything: the sync loop it would have stopped
     /// keeps running and the commitment tree keeps its leaves. Once the
@@ -2428,7 +2439,11 @@ mod tests {
         assert!(manager.shielded_sync().is_running());
 
         let operation = coordinator.operation_guard().await;
-        let refused = manager.clear_shielded().await;
+        // Bounded: a Clear that went back to waiting for the operation would
+        // otherwise hang here instead of failing.
+        let refused = tokio::time::timeout(REFUSAL_WAIT, manager.clear_shielded())
+            .await
+            .expect("a refused Clear returns without waiting for the operation");
         assert!(
             matches!(
                 refused,
