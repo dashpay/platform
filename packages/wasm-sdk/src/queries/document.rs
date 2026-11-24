@@ -214,7 +214,8 @@ export interface DocumentHistoryQuery {
   documentId: IdentifierLike
 
   /**
-   * Inclusive lower time bound. Supply exactly one selector.
+   * Inclusive lower time bound. Supply at most one selector. A query without one reads a
+   * page from the first retained revision, as `startAtMs: 0` does, up to `limit` entries.
    *
    * Every selector is an exact u64: a `number` is accepted only up to
    * `Number.MAX_SAFE_INTEGER`, and anything larger must be a `bigint`, since
@@ -321,9 +322,9 @@ fn parse_document_history_query(
         input.start_at_revision.is_some(),
         input.revision.is_some(),
     ];
-    if filters.into_iter().filter(|present| *present).count() != 1 {
+    if filters.into_iter().filter(|present| *present).count() > 1 {
         return Err(WasmSdkError::invalid_argument(
-            "exactly one history filter is required",
+            "at most one history filter may be given",
         ));
     }
     let filter = if let Some(time) = input.start_at_ms {
@@ -335,8 +336,11 @@ fn parse_document_history_query(
         }
     } else if let Some(revision) = input.start_at_revision {
         DocumentHistoryFilter::StartAtRevision(revision)
+    } else if let Some(revision) = input.revision {
+        DocumentHistoryFilter::Revision(revision)
     } else {
-        DocumentHistoryFilter::Revision(input.revision.expect("one filter was checked"))
+        // No selector: the first page, as the Rust query API defines it.
+        DocumentHistoryQuery::FIRST_PAGE_FILTER
     };
     Ok(DocumentHistoryQuery {
         data_contract_id: input.data_contract_id.into(),
@@ -1869,6 +1873,21 @@ mod history_wasm_tests {
         query.unchecked_into()
     }
 
+    /// A query that names no selector reads a page from the document's first retained
+    /// revision, as `startAtMs: 0` does.
+    #[wasm_bindgen_test]
+    fn should_start_at_the_first_retained_revision_when_no_selector_is_given() {
+        let input = js_sys::JSON::parse(
+            r#"{"dataContractId":"GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec","documentTypeName":"note","documentId":"4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah"}"#,
+        )
+        .unwrap();
+
+        let query = parse_document_history_query(input.unchecked_into())
+            .expect("a history query needs no selector");
+
+        assert_eq!(query.filter, DocumentHistoryFilter::StartAtTime(0));
+    }
+
     #[wasm_bindgen_test]
     fn should_accept_a_returned_history_entry_as_the_next_page_cursor() {
         let time_ms = (1u64 << 53) + 1;
@@ -2185,7 +2204,6 @@ mod history_wasm_tests {
     fn should_reject_conflicting_selectors_and_public_offsets() {
         let base = r#"{"dataContractId":"GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec","documentTypeName":"note","documentId":"4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah""#;
         for fields in [
-            "",
             ",\"startAtMs\":0,\"revision\":1",
             ",\"startAtMs\":0,\"offset\":1",
         ] {

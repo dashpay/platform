@@ -26,6 +26,16 @@ pub struct DocumentHistoryQuery {
     pub limit: Option<u32>,
 }
 
+impl DocumentHistoryQuery {
+    /// The filter of a history read that names no starting point: the first page, from the
+    /// first retained revision. It is a start time, the one filter every protocol version
+    /// serves ([`history_request_below_protocol_15`]).
+    ///
+    /// A binding whose input may leave the filter out uses this instead of choosing a
+    /// starting point of its own.
+    pub const FIRST_PAGE_FILTER: DocumentHistoryFilter = DocumentHistoryFilter::StartAtTime(0);
+}
+
 /// A history request Drive refuses as written, as Drive's own query validation reports it.
 fn malformed(message: &str) -> Error {
     Error::Drive(DriveError::Query(QuerySyntaxError::InvalidParameter(
