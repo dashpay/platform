@@ -464,20 +464,28 @@ impl Sdk {
     /// that offers "ends in N days" or a date picker, so that a week and four weeks are
     /// accepted; a caller with an exact deadline passes it to the build as it is.
     ///
-    /// Computed at the SDK's protocol version ([`Sdk::version`]), the same gate the other
-    /// decision proposal calls use: an SDK below protocol version 15 first asks the network for
-    /// its version and is an error when it is still below 15 (or when it cannot learn it), and
-    /// an SDK already at 15 or later (or pinned there) computes without asking. It does not
-    /// confirm that the network can create proposals; the create does.
+    /// Computed at the SDK's protocol version ([`Sdk::version`]): an SDK below protocol version
+    /// 15 first asks the network for its version, and is an error when it is still below 15:
+    /// the failure of that request when it failed (so a network that could not be reached is
+    /// not reported as one without decision proposals), [`Error::Generic`] otherwise. An SDK
+    /// already at 15 or later (or pinned there) computes without asking. It does not confirm
+    /// that the network can create proposals; the create does.
     pub async fn decision_proposal_end_date(
         &self,
         requested_end_date: TimestampMillis,
     ) -> Result<TimestampMillis, Error> {
-        self.require_protocol_version(
-            DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION,
-            "the decision proposal end date",
-        )
-        .await?;
+        if self.protocol_version_number() < DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION {
+            let (version, failure) = self.refresh_protocol_version_or_failure(None).await;
+            if version < DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION {
+                return Err(failure.unwrap_or_else(|| {
+                    Error::Generic(format!(
+                        "the decision proposal end date exists from protocol version \
+                         {DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION}; the SDK runs \
+                         protocol version {version}"
+                    ))
+                }));
+            }
+        }
         let now_ms = chrono::Utc::now().timestamp_millis().max(0) as TimestampMillis;
         decision_proposal_end_date(requested_end_date, now_ms, self.version())
     }
@@ -1158,6 +1166,45 @@ mod tests {
                 .expect("computes"),
             edge,
             "the opt-in call moves the same end date"
+        );
+    }
+
+    /// An SDK pinned below protocol version 15 learns nothing new, and the call says why.
+    #[tokio::test]
+    async fn should_refuse_the_end_date_on_an_sdk_pinned_below_protocol_version_15() {
+        let sdk = crate::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::get(14).expect("protocol version 14 exists"))
+            .build()
+            .expect("a mock sdk");
+
+        let error = sdk
+            .decision_proposal_end_date(NOW_MS + 14 * DAY_MS)
+            .await
+            .expect_err("below protocol version 15");
+
+        assert!(
+            matches!(&error, Error::Generic(message) if message.contains("protocol version 15")),
+            "{error:?}"
+        );
+    }
+
+    /// An SDK below protocol version 15 whose request for the network's version fails returns
+    /// that failure, not a claim that the network has no decision proposals.
+    #[tokio::test]
+    async fn should_return_why_the_network_version_could_not_be_learned() {
+        let sdk = crate::SdkBuilder::new_mock()
+            .with_initial_version(PlatformVersion::get(14).expect("protocol version 14 exists"))
+            .build()
+            .expect("a mock sdk");
+
+        let error = sdk
+            .decision_proposal_end_date(NOW_MS + 14 * DAY_MS)
+            .await
+            .expect_err("below protocol version 15");
+
+        assert!(
+            !matches!(&error, Error::Generic(message) if message.contains("protocol version 15")),
+            "the request's own failure, got {error:?}"
         );
     }
 
