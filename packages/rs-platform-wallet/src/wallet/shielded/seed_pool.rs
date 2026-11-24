@@ -357,6 +357,12 @@ impl PlatformWallet {
 /// of the very unconfirmed-ancestor depth that caused the stall. A failure of
 /// that retry follows this batch's own broadcast, so it is classed as
 /// dispatched even in the run's first batch.
+///
+/// Only a timeout that names its lock as held is retried: that class proves
+/// no Platform submission of the batch happened, so the retry is the batch's
+/// first. A timeout that names no held lock (the ChainLock upgrade after an
+/// InstantSend submission that may have reached a node) ends the run, since
+/// the retry would sign and submit a new shield transition for the batch.
 async fn fund_seed_batch<F, Fut>(
     batches_submitted: u64,
     mut funding: AssetLockFunding,
@@ -369,12 +375,12 @@ where
     let mut attempt = 0u32;
     loop {
         attempt += 1;
-        // The timeout is read through the class wrapper: a funding that
-        // names no held lock still timed out on this batch's lock.
-        match fund(funding)
-            .await
-            .map_err(|e| (e.instant_lock_timeout(), e))
-        {
+        match fund(funding).await.map_err(|e| {
+            let held_timeout = e
+                .held_asset_lock()
+                .filter(|held| e.instant_lock_timeout() == Some(*held));
+            (held_timeout, e)
+        }) {
             Ok(()) => return Ok(()),
             Err((Some(out_point), _)) if attempt < SEED_BATCH_FINALITY_RETRIES => {
                 tracing::warn!(
@@ -523,11 +529,10 @@ mod tests {
         assert_eq!(first.payment_delivery(), PaymentDelivery::NotSent);
     }
 
-    /// A timeout the funding wrapped in its payment class (no held lock) is
-    /// still a timeout of this batch's lock: the batch resumes that lock.
-    #[tokio::test(start_paused = true)]
-    async fn should_resume_a_batch_whose_timeout_names_no_held_lock() {
-        let out_point = dashcore::OutPoint::new(dashcore::Txid::from_byte_array([7; 32]), 0);
+    /// Run one batch whose first funding fails with `first` and whose next
+    /// one succeeds; the fundings it was called with.
+    async fn seed_batch_calls(first: PlatformWalletError) -> Vec<AssetLockFunding> {
+        let mut first = Some(first);
         let mut calls = Vec::new();
         let _ = fund_seed_batch(
             0,
@@ -537,24 +542,47 @@ mod tests {
             },
             |funding| {
                 calls.push(funding);
-                let result = if calls.len() == 1 {
-                    Err(PlatformWalletError::PaymentAlreadyDispatched {
-                        held_lock: None,
-                        source: Box::new(PlatformWalletError::FinalityTimeout(out_point)),
-                    })
-                } else {
-                    Ok(())
-                };
+                let result = first.take().map_or(Ok(()), Err);
                 async move { result }
             },
         )
         .await;
+        calls
+    }
+
+    fn timed_out(held_lock: Option<dashcore::OutPoint>) -> PlatformWalletError {
+        PlatformWalletError::PaymentAlreadyDispatched {
+            held_lock,
+            source: Box::new(PlatformWalletError::FinalityTimeout(seed_out_point())),
+        }
+    }
+
+    fn seed_out_point() -> dashcore::OutPoint {
+        dashcore::OutPoint::new(dashcore::Txid::from_byte_array([7; 32]), 0)
+    }
+
+    /// A timeout that names its lock as held, the proof that no Platform
+    /// submission of the batch happened, resumes that lock.
+    #[tokio::test(start_paused = true)]
+    async fn should_resume_a_batch_whose_timeout_holds_its_lock() {
+        let calls = seed_batch_calls(timed_out(Some(seed_out_point()))).await;
         assert!(matches!(
             calls.as_slice(),
             [
                 AssetLockFunding::FromWalletBalance { .. },
                 AssetLockFunding::FromExistingAssetLock { out_point: resumed, .. }
-            ] if *resumed == out_point
+            ] if *resumed == seed_out_point()
+        ));
+    }
+
+    /// A timeout that names no held lock may follow a submission of the
+    /// batch, so the run ends with it instead of signing the batch again.
+    #[tokio::test(start_paused = true)]
+    async fn should_not_retry_a_batch_whose_timeout_names_no_held_lock() {
+        let calls = seed_batch_calls(timed_out(None)).await;
+        assert!(matches!(
+            calls.as_slice(),
+            [AssetLockFunding::FromWalletBalance { .. }]
         ));
     }
 
