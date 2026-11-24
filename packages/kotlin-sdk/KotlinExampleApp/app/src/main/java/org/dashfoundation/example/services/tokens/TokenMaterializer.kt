@@ -1,8 +1,10 @@
 package org.dashfoundation.example.services.tokens
 
+import androidx.room.withTransaction
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.dao.TokenDao
 import org.dashfoundation.dashsdk.persistence.entities.DataContractEntity
 import org.dashfoundation.dashsdk.persistence.entities.TokenEntity
@@ -31,19 +33,27 @@ object TokenMaterializer {
         ByteBuffer.allocate(36).put(contractId).putInt(position).array()
 
     /**
-     * Parse every token on [contract] and upsert the rows through [dao].
+     * Parse every token on [contract] and upsert the rows into [database].
      * Safe to re-run (upsert by the synthetic id); parse failures on one
      * token skip that token rather than failing the batch.
      *
      * `isPaused` comes from the contract's `startAsPaused` only for a new
      * row. A stored row keeps its flag, which holds the last paused status
      * read from Platform or set by a pause or resume ([TokenDao.updatePaused]);
-     * re-importing or refreshing the contract says nothing about it.
+     * re-importing or refreshing the contract says nothing about it. The
+     * read and the upsert share one transaction, so a status write cannot
+     * land between them and be overwritten.
      */
-    suspend fun materialize(contract: DataContractEntity, dao: TokenDao) {
-        for (token in parse(contract)) {
-            val stored = dao.getTokenById(token.id)
-            dao.upsertToken(if (stored != null) token.copy(isPaused = stored.isPaused) else token)
+    suspend fun materialize(contract: DataContractEntity, database: DashDatabase) {
+        val tokens = parse(contract)
+        val dao = database.tokenDao()
+        database.withTransaction {
+            for (token in tokens) {
+                val stored = dao.getTokenById(token.id)
+                dao.upsertToken(
+                    if (stored != null) token.copy(isPaused = stored.isPaused) else token,
+                )
+            }
         }
     }
 

@@ -103,17 +103,17 @@ class TokenRulesRepairTest {
             val id = TokenMaterializer.tokenId(contractId, 0)
 
             // A new row takes the contract's startAsPaused (absent: false).
-            TokenMaterializer.materialize(contract, db.tokenDao())
+            TokenMaterializer.materialize(contract, db)
             assertFalse(db.tokenDao().getTokenById(id)!!.isPaused)
 
             // Paused on Platform, then the contract is re-imported or refreshed.
             db.tokenDao().updatePaused(id, true)
-            TokenMaterializer.materialize(contract, db.tokenDao())
+            TokenMaterializer.materialize(contract, db)
             assertTrue(db.tokenDao().getTokenById(id)!!.isPaused)
 
             // Resumed, then refreshed again.
             db.tokenDao().updatePaused(id, false)
-            TokenMaterializer.materialize(contract, db.tokenDao())
+            TokenMaterializer.materialize(contract, db)
             assertFalse(db.tokenDao().getTokenById(id)!!.isPaused)
         }
 }

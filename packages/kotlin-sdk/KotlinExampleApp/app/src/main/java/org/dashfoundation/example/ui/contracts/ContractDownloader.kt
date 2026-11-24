@@ -101,7 +101,7 @@ object ContractDownloader {
             // Re-runs are how rows stored before the token materializer
             // landed pick up their token children.
             org.dashfoundation.example.services.tokens.TokenMaterializer
-                .materialize(preExisting, database.tokenDao())
+                .materialize(preExisting, database)
             return Result(contract = preExisting, alreadyExisted = true)
         }
 
@@ -117,7 +117,7 @@ object ContractDownloader {
         // Materialize token child rows (← DataContractParser's
         // PersistentToken pass) so the tokens UI has rows to serve.
         org.dashfoundation.example.services.tokens.TokenMaterializer
-            .materialize(entity, database.tokenDao())
+            .materialize(entity, database)
         return Result(contract = entity, alreadyExisted = false)
     }
 
@@ -169,7 +169,7 @@ object ContractDownloader {
         }
         dao.upsert(entity)
         org.dashfoundation.example.services.tokens.TokenMaterializer
-            .materialize(entity, database.tokenDao())
+            .materialize(entity, database)
     }
 
     /** The stored row for a fetched contract's JSON [root] (the shape [downloadAndPersistContract] stores). */
