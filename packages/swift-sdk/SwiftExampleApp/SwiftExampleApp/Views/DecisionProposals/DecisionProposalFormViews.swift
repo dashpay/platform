@@ -32,6 +32,16 @@ struct CreateDecisionProposalView: View {
     @State private var isSubmitting = false
     @State private var submitError: String?
     @State private var createdProposalId: String?
+    /// The wallet's message after a create whose outcome is unknown. Once
+    /// set, the form stays held for the rest of this sheet's life, so a
+    /// second paid create is not offered.
+    @State private var unconfirmedMessage: String?
+
+    /// Inputs and the submit button are locked while a create is in flight
+    /// and after one ended unconfirmed.
+    private var isLocked: Bool {
+        isSubmitting || unconfirmedMessage != nil
+    }
 
     /// Identities on the active network held by a loaded wallet, so a
     /// `KeychainSigner` can sign for them.
@@ -54,6 +64,9 @@ struct CreateDecisionProposalView: View {
                 if let createdProposalId {
                     successSection(proposalId: createdProposalId)
                 } else {
+                    if let unconfirmedMessage {
+                        unconfirmedSection(message: unconfirmedMessage)
+                    }
                     ownerSection
                     questionSection
                     ruleSection
@@ -101,7 +114,7 @@ struct CreateDecisionProposalView: View {
                 }
             }
             .accessibleFormPicker("createDecisionProposal.ownerPicker")
-            .disabled(isSubmitting)
+            .disabled(isLocked)
         } header: {
             Text("Proposer")
         } footer: {
@@ -126,7 +139,7 @@ struct CreateDecisionProposalView: View {
         } footer: {
             Text("The title, description and url can be edited for a day after the proposal is created.")
         }
-        .disabled(isSubmitting)
+        .disabled(isLocked)
     }
 
     private var ruleSection: some View {
@@ -146,7 +159,7 @@ struct CreateDecisionProposalView: View {
         } footer: {
             Text("Yes must be more than the pass percent of yes plus no, and yes plus no must reach the turnout percent of the masternodes' total voting power. Platform accepts a pass percent of 50 to 80, a turnout of 0 to 50, and an end date one to four weeks after the block that creates the proposal. The rule never changes.")
         }
-        .disabled(isSubmitting)
+        .disabled(isLocked)
     }
 
     private var submitSection: some View {
@@ -167,8 +180,19 @@ struct CreateDecisionProposalView: View {
             }
             .buttonStyle(.borderedProminent)
             .accessibilityIdentifier("createDecisionProposal.submitButton")
-            .disabled(isSubmitting || managedWallet == nil)
+            .disabled(isLocked || managedWallet == nil)
         }
+    }
+
+    private func unconfirmedSection(message: String) -> some View {
+        Section("Sent, not confirmed") {
+            Text("The create may have gone through. Do not create it again: close this form and look for the proposal under Mine before trying again.")
+            Text(message)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .textSelection(.enabled)
+        }
+        .accessibilityIdentifier("createDecisionProposal.unconfirmed")
     }
 
     private func successSection(proposalId: String) -> some View {
@@ -230,6 +254,10 @@ struct CreateDecisionProposalView: View {
                 let proposalIdBase58 = proposalId.toBase58String()
                 createdProposalId = proposalIdBase58
                 onCreated(proposalIdBase58)
+            } catch PlatformWalletError.transactionBroadcastUnconfirmed(let detail) {
+                // The create may have landed; the wallet does not retry it.
+                // Hold the form so the fund is not paid a second time.
+                unconfirmedMessage = detail
             } catch {
                 submitError = error.localizedDescription
             }

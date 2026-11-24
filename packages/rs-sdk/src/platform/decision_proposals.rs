@@ -6,7 +6,8 @@
 //! * [`Sdk::build_decision_proposal`] builds a proposal, put like any document create with
 //!   [`PutDocument`](crate::platform::transition::put_document::PutDocument). The create states
 //!   the fund itself. Consensus refuses a rule outside the contract's limits and an end date
-//!   less than a week or more than four weeks after the block that creates the proposal.
+//!   less than a week or more than four weeks after the block that creates the proposal; the
+//!   build moves an end date at either edge inside it ([`decision_proposal_end_date`]).
 //! * [`build_decision_proposal_edit`] gives a proposal new text, put as a replace. Only the
 //!   title, description and url change, and only for a day after the proposal is created.
 //! * [`Sdk::fetch_decision_proposal`] reads a proposal by id, and three listings read them a
@@ -49,8 +50,9 @@ use dpp::prelude::TimestampMillis;
 use dpp::secp256k1::rand::rngs::StdRng;
 use dpp::secp256k1::rand::{Rng, SeedableRng};
 use dpp::version::feature_initial_protocol_versions::DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION;
+use dpp::version::PlatformVersion;
 use dpp::voting::vote_choices::yes_no_abstain_vote_choice::YesNoAbstainVoteChoice;
-use dpp::voting::vote_polls::yes_no_vote_poll::YesNoVotePollPurpose;
+use dpp::voting::vote_polls::yes_no_vote_poll::{YesNoVotePoll, YesNoVotePollPurpose};
 use dpp::voting::votes::Vote;
 use drive::query::{OrderClause, WhereClause, WhereOperator};
 use drive_proof_verifier::types::Documents;
@@ -74,6 +76,9 @@ pub struct DecisionProposalInput {
     pub minimum_turnout_percent: u8,
     /// When voting closes, in milliseconds since the Unix epoch: from a week to four weeks
     /// after the block that creates the proposal, which is a little later than now.
+    /// [`Sdk::build_decision_proposal`] moves an end date at either edge of that window inside
+    /// it ([`decision_proposal_end_date`]), so "a week from now" and "four weeks from now" are
+    /// accepted.
     pub end_date: TimestampMillis,
 }
 
@@ -166,6 +171,46 @@ impl DecisionProposal {
             document_id: self.id(),
         }
     }
+}
+
+/// How far inside the end date window [`decision_proposal_end_date`] puts an end date that was
+/// asked for at one of its edges: one hour.
+///
+/// The window is measured from the time of the block that creates the proposal, which is later
+/// than the moment the proposal is built by the signing, broadcast and inclusion delay (seconds,
+/// more when the broadcast is retried), and device clocks differ a little from block times. An
+/// hour covers both and changes a vote of one to four weeks by nothing a voter notices.
+pub const DECISION_PROPOSAL_END_DATE_MARGIN_MS: TimestampMillis = 60 * 60 * 1000;
+
+/// The end date to build a proposal with when `requested_end_date` was asked for at `now_ms`
+/// (this device's clock).
+///
+/// Consensus accepts an end date from a week to four weeks after the block that creates the
+/// proposal ([`YesNoVotePoll::end_date_window`]), which is later than `now_ms`. An end date of
+/// exactly a week from now is therefore always refused, and one of exactly four weeks from now
+/// is refused when this device's clock is ahead of the block's. So an end date within
+/// [`DECISION_PROPOSAL_END_DATE_MARGIN_MS`] of either edge of the window measured from
+/// `now_ms`, inside or just outside it (the caller read its clock a moment before this), is
+/// moved to that margin inside the window. Any other end date is returned as it is: one well
+/// inside the window needs no change, and Platform refuses one further outside it.
+///
+/// # Errors
+/// [`Error::Protocol`] when `platform_version` has no yes/no vote polls (before protocol
+/// version 15).
+pub fn decision_proposal_end_date(
+    requested_end_date: TimestampMillis,
+    now_ms: TimestampMillis,
+    platform_version: &PlatformVersion,
+) -> Result<TimestampMillis, Error> {
+    let window = YesNoVotePoll::end_date_window(now_ms, platform_version)?;
+    let margin = DECISION_PROPOSAL_END_DATE_MARGIN_MS;
+    let near_window = window.start().saturating_sub(margin)..=window.end().saturating_add(margin);
+    let earliest = window.start().saturating_add(margin);
+    let latest = window.end().saturating_sub(margin);
+    if !near_window.contains(&requested_end_date) || earliest > latest {
+        return Ok(requested_end_date);
+    }
+    Ok(requested_end_date.clamp(earliest, latest))
 }
 
 /// The end dates a listing by end date covers: from `from` (included) to `to` (left out). An
@@ -394,16 +439,23 @@ impl Sdk {
     }
 
     /// Builds a proposal of `owner_id` asking what `input` says (see
-    /// [`build_decision_proposal_document`]). The result is put like any document create; the
-    /// owner pays the decision proposal fund on top of the fees.
+    /// [`build_decision_proposal_document`]), with an end date at either edge of the window
+    /// consensus allows moved inside it as of this device's clock
+    /// ([`decision_proposal_end_date`]). The result is put like any document create; the owner
+    /// pays the decision proposal fund on top of the fees.
     pub async fn build_decision_proposal(
         &self,
         owner_id: Identifier,
         input: &DecisionProposalInput,
     ) -> Result<DecisionProposalDocument, Error> {
         let contract = self.fetch_decision_proposals_contract().await?;
+        let now_ms = chrono::Utc::now().timestamp_millis().max(0) as TimestampMillis;
+        let input = DecisionProposalInput {
+            end_date: decision_proposal_end_date(input.end_date, now_ms, self.version())?,
+            ..input.clone()
+        };
         let entropy = Bytes32::new(StdRng::from_os_rng().random());
-        build_decision_proposal_document(&contract, owner_id, input, entropy)
+        build_decision_proposal_document(&contract, owner_id, &input, entropy)
     }
 
     /// The proposal with id `proposal_id`, `None` when there is none.
@@ -900,5 +952,122 @@ mod tests {
                 vote_choice: YesNoAbstainVoteChoice::No,
             }))
         );
+    }
+
+    /// The window consensus checks an end date against for a proposal created in a block at
+    /// `block_time_ms`.
+    fn window_of_block(
+        block_time_ms: TimestampMillis,
+    ) -> std::ops::RangeInclusive<TimestampMillis> {
+        YesNoVotePoll::end_date_window(block_time_ms, PlatformVersion::latest())
+            .expect("yes/no vote polls exist at the latest version")
+    }
+
+    const NOW_MS: TimestampMillis = 1_700_000_000_000;
+
+    /// Delays between building a proposal and the block that includes it: the 7.8 s a devnet
+    /// run took, a slow retried broadcast, and a device clock a little behind the block's.
+    const INCLUSION_DELAYS_MS: [TimestampMillis; 4] = [1, 7_800, 120_000, 30 * 60 * 1000];
+
+    #[test]
+    fn should_move_an_end_date_a_week_from_now_inside_the_window_of_a_later_block() {
+        let limits = &PlatformVersion::latest().system_limits;
+        let requested = NOW_MS + limits.min_yes_no_vote_poll_duration_ms;
+        // A week from now is refused by any block after now: the bug this fixes.
+        assert!(!window_of_block(NOW_MS + 7_800).contains(&requested));
+
+        let end_date = decision_proposal_end_date(requested, NOW_MS, PlatformVersion::latest())
+            .expect("computes");
+
+        assert_eq!(end_date, requested + DECISION_PROPOSAL_END_DATE_MARGIN_MS);
+        for delay in INCLUSION_DELAYS_MS {
+            assert!(
+                window_of_block(NOW_MS + delay).contains(&end_date),
+                "a block {delay} ms later accepts it"
+            );
+        }
+    }
+
+    #[test]
+    fn should_move_an_end_date_four_weeks_from_now_inside_the_window_of_a_nearby_block() {
+        let limits = &PlatformVersion::latest().system_limits;
+        let requested = NOW_MS + limits.max_yes_no_vote_poll_duration_ms;
+        // Four weeks from now is refused when this device's clock is ahead of the block's.
+        assert!(!window_of_block(NOW_MS - 1_000).contains(&requested));
+
+        let end_date = decision_proposal_end_date(requested, NOW_MS, PlatformVersion::latest())
+            .expect("computes");
+
+        assert_eq!(end_date, requested - DECISION_PROPOSAL_END_DATE_MARGIN_MS);
+        for delay in INCLUSION_DELAYS_MS {
+            assert!(
+                window_of_block(NOW_MS + delay).contains(&end_date),
+                "a block {delay} ms later accepts it"
+            );
+            assert!(
+                window_of_block(NOW_MS - delay).contains(&end_date),
+                "a block {delay} ms earlier (a clock ahead of the block's) accepts it"
+            );
+        }
+    }
+
+    #[test]
+    fn should_treat_an_edge_computed_a_moment_before_now_as_the_edge() {
+        // The app reads its clock, adds a week, and the SDK reads its clock a moment later:
+        // the end date is then just outside the window measured from the SDK's now.
+        let limits = &PlatformVersion::latest().system_limits;
+        let app_now = NOW_MS - 250;
+        let a_week = app_now + limits.min_yes_no_vote_poll_duration_ms;
+        let four_weeks = app_now + limits.max_yes_no_vote_poll_duration_ms;
+
+        for requested in [a_week, four_weeks] {
+            let end_date = decision_proposal_end_date(requested, NOW_MS, PlatformVersion::latest())
+                .expect("computes");
+            for delay in INCLUSION_DELAYS_MS {
+                assert!(
+                    window_of_block(NOW_MS + delay).contains(&end_date),
+                    "{requested}: a block {delay} ms later accepts {end_date}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn should_keep_an_end_date_well_inside_the_window() {
+        let end_date =
+            decision_proposal_end_date(NOW_MS + 14 * DAY_MS, NOW_MS, PlatformVersion::latest())
+                .expect("computes");
+
+        assert_eq!(end_date, NOW_MS + 14 * DAY_MS);
+    }
+
+    #[test]
+    fn should_leave_an_end_date_far_outside_the_window_for_platform_to_refuse() {
+        let limits = &PlatformVersion::latest().system_limits;
+        let too_soon = NOW_MS + limits.min_yes_no_vote_poll_duration_ms
+            - DECISION_PROPOSAL_END_DATE_MARGIN_MS
+            - 1;
+        let too_late = NOW_MS
+            + limits.max_yes_no_vote_poll_duration_ms
+            + DECISION_PROPOSAL_END_DATE_MARGIN_MS
+            + 1;
+
+        for requested in [0, NOW_MS, too_soon, too_late, TimestampMillis::MAX] {
+            assert_eq!(
+                decision_proposal_end_date(requested, NOW_MS, PlatformVersion::latest())
+                    .expect("computes"),
+                requested
+            );
+        }
+    }
+
+    #[test]
+    fn should_refuse_to_compute_an_end_date_before_yes_no_vote_polls_exist() {
+        let platform_version = PlatformVersion::get(14).expect("protocol version 14 exists");
+
+        assert!(matches!(
+            decision_proposal_end_date(NOW_MS + 14 * DAY_MS, NOW_MS, platform_version),
+            Err(Error::Protocol(_))
+        ));
     }
 }
