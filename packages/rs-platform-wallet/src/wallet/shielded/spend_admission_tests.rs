@@ -1,8 +1,8 @@
 //! What a spend from the shielded credit pool holds while it runs
 //! (`PlatformWallet::admit_shielded_spend`): the wallet generation's
-//! lifecycle gate, the coordinator's operation admission and the wallet's
-//! shielded configuration lock, taken at every entry point before anything
-//! is read, signed or sent.
+//! lifecycle gate and the coordinator's operation admission, taken at every
+//! entry point, with the binding checked, before anything is read, signed
+//! or sent.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -336,6 +336,13 @@ async fn should_hold_removal_and_clear_admission_until_a_credit_pool_spend_retur
             "{spend:?}: a removal waits for the spend in flight"
         );
         assert!(!running.is_finished(), "{spend:?}: held at a wallet lock");
+        // The configuration lock is taken for the binding check only: a
+        // bind of this wallet, and another of its spends, do not wait for
+        // the proof and the result of this one.
+        assert!(
+            wallet.shielded_config_lock.try_lock().is_ok(),
+            "{spend:?}: the configuration lock is free while the spend runs"
+        );
 
         drop(keys);
         drop(single_flight);
