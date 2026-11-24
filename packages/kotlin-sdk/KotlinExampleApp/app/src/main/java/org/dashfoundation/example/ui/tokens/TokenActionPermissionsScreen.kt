@@ -108,19 +108,33 @@ fun TokenActionPermissionsScreen(
     // `token_balances`) see its balance even when this screen was reached
     // without the Tokens screen (Contracts > Token Search). Only this token
     // is watched, so the request carries no more than the live read below;
-    // the other wallet identities are registered with none.
+    // the other wallet identities are registered with none. It waits for the
+    // contract (so the identity list is the contract's network), for a pinned
+    // identity to resolve (never its fallback), and needs the contract, the
+    // acting identity and the active manager on the same network.
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     LaunchedEffect(
         manager,
         sdk,
+        networkRaw,
+        pickedIdentityHex,
         resolvedIdentity?.identityId?.toHex(),
         identities.joinToString(",") { it.identityId.toHex() },
         token?.id?.toHex(),
     ) {
         val activeManager = manager ?: return@LaunchedEffect
         val activeSdk = sdk ?: return@LaunchedEffect
+        val contractNetwork = networkRaw ?: return@LaunchedEffect
         val identity = resolvedIdentity ?: return@LaunchedEffect
         val displayed = token ?: return@LaunchedEffect
+        if (pickedIdentityHex != null && identity.identityId.toHex() != pickedIdentityHex) {
+            return@LaunchedEffect
+        }
+        if (activeManager.network.ffiValue != contractNetwork ||
+            identity.networkRaw != contractNetwork
+        ) {
+            return@LaunchedEffect
+        }
         val otherIds = identities.map { it.identityId }
         val identityDao = container.database.identityDao()
         // Application scope: leaving the screen must not cancel the pass.

@@ -660,20 +660,22 @@ where
     /// returns: it runs a pass of its own, waiting out any pass in flight
     /// (which may have read the watch list before the registration, and
     /// whose results may not be stored yet) and retrying when another caller
-    /// takes the slot first. Returns without a pass when the quiesce gate
-    /// closes, or when other passes keep the slot past
-    /// [`COORDINATOR_DRAIN_BUDGET`] (a wedged pass must not hold the caller,
-    /// and through the FFI the manager registry, indefinitely). Timer ticks
+    /// takes the slot first. Returns `true` once its own pass ran, and
+    /// `false` without a pass when the quiesce gate closes or when other
+    /// passes keep the slot past [`COORDINATOR_DRAIN_BUDGET`] (a wedged pass
+    /// must not hold the caller, and through the FFI the manager registry,
+    /// indefinitely); the caller then reports that no pass ran. Timer ticks
     /// keep using `sync_now`, so they never wait.
-    pub async fn sync_now_after_in_flight(&self) {
+    pub async fn sync_now_after_in_flight(&self) -> bool {
         let deadline = tokio::time::Instant::now() + COORDINATOR_DRAIN_BUDGET;
         loop {
             match self.try_sync_pass().await {
-                SyncAttempt::Ran | SyncAttempt::Closed => return,
+                SyncAttempt::Ran => return true,
+                SyncAttempt::Closed => return false,
                 SyncAttempt::Busy => {
                     while self.is_syncing.load(Ordering::Acquire) {
                         if self.quiescing.is_closed() || tokio::time::Instant::now() >= deadline {
-                            return;
+                            return false;
                         }
                         tokio::time::sleep(Duration::from_millis(20)).await;
                     }
@@ -1346,11 +1348,25 @@ mod tests {
             })
         };
 
-        mgr.sync_now_after_in_flight().await;
+        assert!(mgr.sync_now_after_in_flight().await);
 
         releaser.await.unwrap();
         assert!(mgr.last_sync_unix_seconds().is_some(), "its own pass ran");
         assert!(!mgr.is_syncing());
+    }
+
+    /// When the gate closes while it waits, the manual sync reports that no
+    /// pass ran instead of returning as if it had.
+    #[tokio::test]
+    async fn should_report_no_pass_when_the_gate_closes_while_waiting() {
+        let mgr = make_manager();
+        mgr.is_syncing.store(true, Ordering::Release);
+        let gate_hold = mgr.quiescing.hold();
+
+        assert!(!mgr.sync_now_after_in_flight().await);
+
+        drop(gate_hold);
+        mgr.is_syncing.store(false, Ordering::Release);
     }
 
     /// When another caller takes the slot the moment it frees, the manual
@@ -1374,15 +1390,16 @@ mod tests {
         };
 
         assert_eq!(mgr.try_sync_pass().await, SyncAttempt::Busy);
-        mgr.sync_now_after_in_flight().await;
+        assert!(mgr.sync_now_after_in_flight().await);
 
         other.await.unwrap();
         assert!(mgr.last_sync_unix_seconds().is_some(), "its own pass ran");
     }
 
     /// A store stalled inside the persister holds both the slot and the
-    /// registry lock; the quiesce still reports within one budget.
-    #[tokio::test]
+    /// registry lock; the quiesce still reports within one budget. Time is
+    /// paused, so the bound measures the deadline, not the runner.
+    #[tokio::test(start_paused = true)]
     async fn should_report_within_one_budget_while_a_store_holds_slot_and_lock() {
         let mgr = make_manager();
         mgr.is_syncing.store(true, Ordering::Release);

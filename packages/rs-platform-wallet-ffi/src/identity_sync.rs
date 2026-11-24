@@ -165,6 +165,8 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_set_interval(
 /// flight (e.g. fired by the background loop), it first waits for that
 /// pass to finish, since it may have read the watch list before the
 /// caller's latest registration, and then runs a pass that covers it.
+/// Returns `ErrorWalletOperation` when no pass ran: the manager is shutting
+/// down, or other passes held the slot past the wait budget.
 ///
 /// The pass runs under the manager registry's read guard, as every other
 /// sync-now export does, so the manager cannot be destroyed (and its store
@@ -187,9 +189,16 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_sync_now(
                 // stack of the host's dispatch/concurrency calling thread
                 // (same SIGBUS as the shielded/dashpay Sync Now buttons).
                 let mgr = manager.identity_sync_arc();
-                block_on_worker(async move { mgr.sync_now_after_in_flight().await });
+                block_on_worker(async move { mgr.sync_now_after_in_flight().await })
             });
-            unwrap_option_or_return!(option);
+            let ran = unwrap_option_or_return!(option);
+            if !ran {
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorWalletOperation,
+                    "no token sync pass ran: the manager is shutting down, or other passes \
+                     held the sync slot past the wait budget; run the sync again",
+                );
+            }
             PlatformWalletFFIResult::ok()
         },
     )

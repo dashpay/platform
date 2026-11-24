@@ -107,6 +107,8 @@ extension PlatformWalletManager {
     /// identity. Synchronous from the FFI side — runs on a worker
     /// detached `Task`. If a pass is already in flight, waits for it
     /// to finish and then runs a pass covering the latest registrations.
+    /// Throws when no pass ran (the manager is shutting down, or other
+    /// passes held the slot past the wait budget).
     public func syncIdentityTokensNow() async throws {
         guard isConfigured, handle != NULL_HANDLE else {
             throw PlatformWalletError.invalidHandle("PlatformWalletManager not configured")
