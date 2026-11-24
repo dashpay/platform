@@ -114,6 +114,31 @@ final class PaymentFailureTests: XCTestCase {
         }
     }
 
+    /// Only a hold without a lock to resume (`.maybeSent`, no class) is
+    /// released after the user reconciled it; a held lock is resumed and a
+    /// `.notSent` failure never held its slot.
+    func testShouldReleaseAfterReconciliationOnlyAHoldWithoutALock() {
+        let table: [(PlatformPaymentClass?, Bool)] = [
+            (Self.retryable, false),
+            (Self.blocked, false),
+            (Self.lockHeld, false),
+            (.maybeSent, true),
+            (nil, true),
+        ]
+        for (payment, releasable) in table {
+            XCTAssertEqual(
+                PaymentFailure(payment: payment, detail: "").releasableAfterReconciliation,
+                releasable,
+                "\(String(describing: payment))"
+            )
+            XCTAssertEqual(
+                PaymentFailure(payment: payment, detail: "", invitationVoucher: true)
+                    .releasableAfterReconciliation,
+                releasable
+            )
+        }
+    }
+
     func testShouldRestartOnlyAsTheClassAllows() {
         // Nothing left the wallet: any new request, retryable or not.
         for payment in [Self.retryable, Self.blocked] {
@@ -324,6 +349,103 @@ final class PaymentFailureTests: XCTestCase {
             } else {
                 try await Task.sleep(nanoseconds: 50_000_000)
                 XCTAssertFalse(ranAgain.value, "no fresh lock after a held failure")
+            }
+        }
+    }
+
+    /// Each coordinator's `release` drops a failure that holds its slot
+    /// without a lock (after which a fresh payment runs) and refuses any
+    /// other, keeping its controller: a held lock is resumed instead.
+    @MainActor
+    func testCoordinatorsReleaseOnlyAHoldWithoutALock() async throws {
+        let cases: [(UInt8, PlatformPaymentClass?, Bool)] = [
+            (1, Self.retryable, false),
+            (2, Self.lockHeld, false),
+            (3, .maybeSent, true),
+            (4, nil, true),
+        ]
+
+        let registrations = RegistrationCoordinator()
+        let walletId = Data(repeating: 0xC1, count: 32)
+        for (tag, payment, releasable) in cases {
+            let index = UInt32(tag)
+            let controller = registrations.startRegistration(walletId: walletId, identityIndex: index) {
+                throw Self.failure(payment)
+            }
+            try await Self.waitUntil { if case .failed = controller.phase { return true }; return false }
+            XCTAssertEqual(
+                registrations.release(walletId: walletId, identityIndex: index),
+                releasable,
+                "\(String(describing: payment))"
+            )
+            XCTAssertEqual(registrations.controller(walletId: walletId, identityIndex: index) == nil, releasable)
+            if releasable {
+                let ran = Flag()
+                _ = registrations.startRegistration(walletId: walletId, identityIndex: index) {
+                    ran.value = true
+                    return Data()
+                }
+                try await Self.waitUntil { ran.value }
+            }
+        }
+
+        let addresses = AddressFundFromAssetLockCoordinator()
+        for (tag, payment, releasable) in cases {
+            let recipient = Data(repeating: tag, count: 20)
+            let controller = addresses.startFunding(
+                walletId: walletId, platformAccountIndex: 0, recipientHash: recipient, recipientType: 0
+            ) {
+                throw Self.failure(payment)
+            }
+            try await Self.waitUntil { if case .failed = controller.phase { return true }; return false }
+            XCTAssertEqual(
+                addresses.release(walletId: walletId, platformAccountIndex: 0, recipientHash: recipient),
+                releasable,
+                "\(String(describing: payment))"
+            )
+            XCTAssertEqual(
+                addresses.controller(walletId: walletId, platformAccountIndex: 0, recipientHash: recipient) == nil,
+                releasable
+            )
+            if releasable {
+                let ran = Flag()
+                _ = addresses.startFunding(
+                    walletId: walletId, platformAccountIndex: 0, recipientHash: recipient, recipientType: 0
+                ) {
+                    ran.value = true
+                    return 1
+                }
+                try await Self.waitUntil { ran.value }
+            }
+        }
+
+        let shielded = ShieldedFundFromAssetLockCoordinator()
+        for (tag, payment, releasable) in cases {
+            let recipient = Data(repeating: tag, count: 43)
+            let started = shielded.startFunding(
+                walletId: walletId, recipientRaw43: recipient, operationId: "release:\(tag)"
+            ) {
+                throw Self.failure(payment)
+            }
+            guard case .started(let controller) = started else { return XCTFail("funding did not start") }
+            try await Self.waitUntil { if case .failed = controller.phase { return true }; return false }
+            XCTAssertEqual(
+                shielded.release(walletId: walletId, recipientRaw43: recipient),
+                releasable,
+                "\(String(describing: payment))"
+            )
+            XCTAssertEqual(
+                shielded.controller(walletId: walletId, recipientRaw43: recipient) == nil,
+                releasable
+            )
+            if releasable {
+                let ran = Flag()
+                _ = shielded.startFunding(
+                    walletId: walletId, recipientRaw43: recipient, operationId: "release:\(tag):2"
+                ) {
+                    ran.value = true
+                }
+                try await Self.waitUntil { ran.value }
             }
         }
     }

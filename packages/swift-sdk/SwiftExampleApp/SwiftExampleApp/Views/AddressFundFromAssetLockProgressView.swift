@@ -327,6 +327,7 @@ struct AddressFundFromAssetLockProgressView: View {
     @ObservedObject var controller: AddressFundFromAssetLockController
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @State private var confirmingRelease = false
 
     init(controller: AddressFundFromAssetLockController) {
         self.controller = controller
@@ -410,6 +411,34 @@ struct AddressFundFromAssetLockProgressView: View {
                         }
                         .buttonStyle(.bordered)
                         .padding(.top, 4)
+                    }
+                    // A hold without a lock to resume
+                    // (`PaymentFailure.releasableAfterReconciliation`) is
+                    // released only once the user confirmed the original
+                    // payment in the history.
+                    if failure.releasableAfterReconciliation {
+                        Button {
+                            confirmingRelease = true
+                        } label: {
+                            Text("Payment checked in history — release")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .padding(.top, 4)
+                        .confirmationDialog(
+                            "Release only after the transaction history shows this payment as completed or failed. A new payment for this slot may otherwise pay twice.",
+                            isPresented: $confirmingRelease,
+                            titleVisibility: .visible
+                        ) {
+                            Button("Release", role: .destructive) {
+                                walletManager.addressFundFromAssetLockCoordinator.release(
+                                    walletId: controller.walletId,
+                                    platformAccountIndex: controller.platformAccountIndex,
+                                    recipientHash: controller.recipientHash
+                                )
+                                dismiss()
+                            }
+                        }
                     }
                 }
             }

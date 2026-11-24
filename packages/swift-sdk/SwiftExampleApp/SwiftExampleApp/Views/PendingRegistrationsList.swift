@@ -51,6 +51,7 @@ private extension IdentityRegistrationController {
 struct PendingRegistrationRow: View {
     @ObservedObject var controller: IdentityRegistrationController
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @State private var confirmingRelease = false
 
     /// Persisted identity rows for this slot, queried live so the
     /// `.unconfirmed` dismiss gate becomes enabled the moment the
@@ -115,6 +116,29 @@ struct PendingRegistrationRow: View {
                     Label("Dismiss", systemImage: "xmark")
                 }
                 .tint(.gray)
+            }
+            // A hold without a lock to resume
+            // (`PaymentFailure.releasableAfterReconciliation`) is released
+            // only once the user confirmed the original payment in the history.
+            if case .failed(let failure) = controller.phase, failure.releasableAfterReconciliation {
+                Button {
+                    confirmingRelease = true
+                } label: {
+                    Label("Payment checked in history — release", systemImage: "checkmark.circle")
+                }
+                .tint(.orange)
+            }
+        }
+        .confirmationDialog(
+            "Release only after the transaction history shows this payment as completed or failed. A new payment for this slot may otherwise pay twice.",
+            isPresented: $confirmingRelease,
+            titleVisibility: .visible
+        ) {
+            Button("Release", role: .destructive) {
+                walletManager.registrationCoordinator.release(
+                    walletId: controller.walletId,
+                    identityIndex: controller.identityIndex
+                )
             }
         }
     }

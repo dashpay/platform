@@ -160,8 +160,9 @@ final class AddressFundFromAssetLockCoordinator: ObservableObject {
     /// restart only on a slot it still holds, so dropping a failure that may
     /// have left, holds a lock, or has no class would let a fresh lock be
     /// funded for the same recipient. Such a slot stays until its lock is
-    /// resumed or the app restarts. Returns whether the controller was
-    /// dropped (← `RegistrationCoordinator.dismiss`).
+    /// resumed, the user releases it after reconciling (`release`), or the
+    /// app restarts. Returns whether the controller was dropped
+    /// (← `RegistrationCoordinator.dismiss`).
     @discardableResult
     func dismiss(
         walletId: Data,
@@ -175,6 +176,31 @@ final class AddressFundFromAssetLockCoordinator: ObservableObject {
         )
         if let controller = controllers[key], case .failed(let failure) = controller.phase,
            failure.holdsSlot {
+            return false
+        }
+        controllers.removeValue(forKey: key)
+        phaseObservers.removeValue(forKey: key)
+        return true
+    }
+
+    /// The exit of a hold `dismiss` refuses, once the user reconciled the
+    /// original payment from the history: drops a `.failed` controller only
+    /// when its failure holds the slot without a held lock
+    /// (`PaymentFailure.releasableAfterReconciliation`). A held lock is
+    /// resumed instead. Returns whether the controller was dropped.
+    @discardableResult
+    func release(
+        walletId: Data,
+        platformAccountIndex: UInt32,
+        recipientHash: Data
+    ) -> Bool {
+        let key = SlotKey(
+            walletId: walletId,
+            platformAccountIndex: platformAccountIndex,
+            recipientHash: recipientHash
+        )
+        guard let controller = controllers[key], case .failed(let failure) = controller.phase,
+              failure.releasableAfterReconciliation else {
             return false
         }
         controllers.removeValue(forKey: key)

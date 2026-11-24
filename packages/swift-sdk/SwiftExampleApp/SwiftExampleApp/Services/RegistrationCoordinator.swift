@@ -165,13 +165,29 @@ final class RegistrationCoordinator: ObservableObject {
     /// gates a restart only on a slot it still holds, so dropping a failure
     /// that may have left, holds a lock, or has no class would let a fresh
     /// registration pay again on the same index. Such a slot stays until its
-    /// lock is resumed or the app restarts. Returns whether the controller
-    /// was dropped.
+    /// lock is resumed, the user releases it after reconciling (`release`),
+    /// or the app restarts. Returns whether the controller was dropped.
     @discardableResult
     func dismiss(walletId: Data, identityIndex: UInt32) -> Bool {
         let key = SlotKey(walletId: walletId, identityIndex: identityIndex)
         if let controller = controllers[key], case .failed(let failure) = controller.phase,
            failure.holdsSlot {
+            return false
+        }
+        controllers.removeValue(forKey: key)
+        return true
+    }
+
+    /// The exit of a hold `dismiss` refuses, once the user reconciled the
+    /// original payment from the history: drops a `.failed` controller only
+    /// when its failure holds the slot without a held lock
+    /// (`PaymentFailure.releasableAfterReconciliation`). A held lock is
+    /// resumed instead. Returns whether the controller was dropped.
+    @discardableResult
+    func release(walletId: Data, identityIndex: UInt32) -> Bool {
+        let key = SlotKey(walletId: walletId, identityIndex: identityIndex)
+        guard let controller = controllers[key], case .failed(let failure) = controller.phase,
+              failure.releasableAfterReconciliation else {
             return false
         }
         controllers.removeValue(forKey: key)

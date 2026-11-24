@@ -72,6 +72,7 @@ struct FundFromAssetLockPlatformAddressView: View {
     /// Lifetime-owned by `walletManager.addressFundFromAssetLockCoordinator`
     /// so view dismissal mid-flight doesn't lose the work.
     @State private var activeController: AddressFundFromAssetLockController? = nil
+    @State private var confirmingRelease = false
 
     /// 1 DASH = 1e8 duffs (Core side). The asset-lock builder takes
     /// duffs; we convert here for display ergonomics only.
@@ -387,6 +388,29 @@ struct FundFromAssetLockPlatformAddressView: View {
                                 recipientHash: controller.recipientHash
                             )
                             dismiss()
+                        }
+                    }
+                    // A hold without a lock to resume
+                    // (`PaymentFailure.releasableAfterReconciliation`) is
+                    // released only once the user confirmed the original
+                    // payment in the history.
+                    if failure.releasableAfterReconciliation {
+                        Button("Payment checked in history — release") {
+                            confirmingRelease = true
+                        }
+                        .confirmationDialog(
+                            "Release only after the transaction history shows this payment as completed or failed. A new payment for this slot may otherwise pay twice.",
+                            isPresented: $confirmingRelease,
+                            titleVisibility: .visible
+                        ) {
+                            Button("Release", role: .destructive) {
+                                walletManager.addressFundFromAssetLockCoordinator.release(
+                                    walletId: controller.walletId,
+                                    platformAccountIndex: controller.platformAccountIndex,
+                                    recipientHash: controller.recipientHash
+                                )
+                                dismiss()
+                            }
                         }
                     }
                 }

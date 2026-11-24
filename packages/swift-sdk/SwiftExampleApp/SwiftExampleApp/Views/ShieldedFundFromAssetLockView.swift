@@ -119,6 +119,7 @@ struct ShieldedFundFromAssetLockView: View {
 
     @State private var submitError: SubmitError? = nil
     @State private var activeController: ShieldedFundFromAssetLockController? = nil
+    @State private var confirmingRelease = false
 
     /// Platform-branch submit lifecycle. The Platform path does NOT
     /// go through the asset-lock controller/coordinator — it's a
@@ -619,6 +620,33 @@ struct ShieldedFundFromAssetLockView: View {
                         }
                         .buttonStyle(.bordered)
                         .padding(.top, 4)
+                    }
+                    // A hold without a lock to resume
+                    // (`PaymentFailure.releasableAfterReconciliation`) is
+                    // released only once the user confirmed the original
+                    // payment in the history.
+                    if failure.releasableAfterReconciliation {
+                        Button {
+                            confirmingRelease = true
+                        } label: {
+                            Text("Payment checked in history — release")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
+                        .padding(.top, 4)
+                        .confirmationDialog(
+                            "Release only after the transaction history shows this payment as completed or failed. A new payment for this slot may otherwise pay twice.",
+                            isPresented: $confirmingRelease,
+                            titleVisibility: .visible
+                        ) {
+                            Button("Release", role: .destructive) {
+                                walletManager.shieldedFundFromAssetLockCoordinator.release(
+                                    walletId: controller.walletId,
+                                    recipientRaw43: controller.recipientRaw43
+                                )
+                                dismiss()
+                            }
+                        }
                     }
                 }
             }

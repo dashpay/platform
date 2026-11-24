@@ -143,6 +143,12 @@ struct PaymentFailure: Equatable {
         guard holdsSlot else { return true }
         return heldLock.map { resuming == $0 } ?? false
     }
+
+    /// Whether the failure may have left the wallet with no lock to resume
+    /// (`holdsSlot` without `heldLock`), so the user releases its slot once
+    /// they confirmed the original payment in the history. Never released
+    /// automatically: only the history shows whether the payment went through.
+    var releasableAfterReconciliation: Bool { holdsSlot && heldLock == nil }
 }
 
 extension AssetLockBuiltOutPoint {
