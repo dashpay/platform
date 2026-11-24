@@ -1202,9 +1202,9 @@ mod tests {
         assert!(
             matches!(
                 result,
-                Err(dash_sdk::Error::Protocol(
+                Err(PlatformWalletError::Sdk(dash_sdk::Error::Protocol(
                     ProtocolError::LastAuthenticationKey(_)
-                ))
+                )))
             ),
             "{result:?}"
         );
