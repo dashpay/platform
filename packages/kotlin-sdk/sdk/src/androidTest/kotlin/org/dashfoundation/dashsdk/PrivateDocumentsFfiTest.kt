@@ -7,6 +7,7 @@ import org.dashfoundation.dashsdk.ffi.PrivateDocumentCreateNative
 import org.dashfoundation.dashsdk.ffi.PrivateDocumentsNative
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
@@ -90,6 +91,20 @@ class PrivateDocumentsFfiTest {
         assertCode(1) { PrivateDocumentCreateNative.createFee(1L, ByteArray(31), "note", 1) }
         assertCode(1) { PrivateDocumentCreateNative.createFee(1L, contractId, "no\u0000te", 1) }
         assertCode(1) { PrivateDocumentCreateNative.createFee(1L, contractId, "no\uD800te", 1) }
+    }
+
+    /**
+     * A valid supplementary character crosses the VM boundary intact: beside a NUL the refusal
+     * names the NUL, not the surrogate pair, and alone it reaches platform-wallet-ffi, which
+     * refuses the unknown manager (1001) before the network.
+     */
+    @Test
+    fun shouldReadASupplementaryCharacterAsOneAndNameARealNul() {
+        val nul = assertCode(1) {
+            PrivateDocumentCreateNative.createFee(1L, contractId, "\uD83D\uDE00\u0000note", 1)
+        }
+        assertTrue(nul.message, nul.message.orEmpty().contains("holds a NUL character"))
+        assertCode(1001) { PrivateDocumentCreateNative.createFee(-1L, contractId, "\uD83D\uDE00", 1) }
     }
 
     /**

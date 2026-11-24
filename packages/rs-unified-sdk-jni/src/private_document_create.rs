@@ -54,12 +54,15 @@ fn c_string_from_utf16(units: &[u16]) -> Result<CString, &'static str> {
 fn java_string_units(env: &mut JNIEnv, string: &JString) -> Option<Vec<u16>> {
     let raw = env.get_raw();
     // SAFETY: `raw` is this thread's live JNIEnv and `string` a valid, non-null local
-    // reference; the region read stays within the length the VM reported.
+    // reference. The function table stays a raw pointer and only its two slots are read: no
+    // reference to the whole table is made, as Android's table is shorter than `jni-sys`'s
+    // struct (the same reason `jni`'s own dispatch reads slots through the pointer). The region
+    // read stays within the length the VM reported.
     let units = unsafe {
-        let functions = &**raw;
-        let length = (functions.GetStringLength?)(raw, string.as_raw());
+        let functions = *raw;
+        let length = ((*functions).GetStringLength?)(raw, string.as_raw());
         let mut units = vec![0u16; usize::try_from(length).ok()?];
-        (functions.GetStringRegion?)(raw, string.as_raw(), 0, length, units.as_mut_ptr());
+        ((*functions).GetStringRegion?)(raw, string.as_raw(), 0, length, units.as_mut_ptr());
         units
     };
     if env.exception_check().unwrap_or(true) {
