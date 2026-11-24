@@ -1,9 +1,12 @@
 package org.dashfoundation.example.ui.shielded
 
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
+import java.util.Locale
 
 /**
  * The Shielded Activity row of a private document entry or a DashPay private
@@ -11,6 +14,24 @@ import org.junit.Test
  * Rust records, with Rust's amount, which is the fee.
  */
 class ShieldedActivityKindsTest {
+    private lateinit var defaultLocale: Locale
+
+    /**
+     * The row's amount is formatted in the device's locale, so the expected
+     * text below is pinned to one: under a decimal-comma locale the same
+     * amount reads "−0,0015 DASH".
+     */
+    @Before
+    fun pinTheFormattingLocale() {
+        defaultLocale = Locale.getDefault()
+        Locale.setDefault(Locale.US)
+    }
+
+    @After
+    fun restoreTheFormattingLocale() {
+        Locale.setDefault(defaultLocale)
+    }
+
     @Test
     fun `should name a private document entry and a private contact request`() {
         assertEquals(13, KIND_PRIVATE_DOCUMENT_CREATE)

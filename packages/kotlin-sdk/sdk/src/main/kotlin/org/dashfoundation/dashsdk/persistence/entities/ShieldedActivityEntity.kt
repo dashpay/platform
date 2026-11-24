@@ -32,7 +32,14 @@ data class ShieldedActivityEntity(
      * 7 ShieldedSpend, 8 ShieldFromIdentity, 9 IdentityTopUpFromPool,
      * 10 TokenPurchase, 11 TokenShieldedTransfer, 12 TokenUnshield,
      * 13 PrivateDocumentCreate, 14 PrivateContactRequest. Stored as Rust
-     * sends it: a tag this build does not know is kept and shown as 7.
+     * sends it, and a tag the app does not know is shown as 7. A native
+     * library that predates a tag reads its rows back as 7 and, when it next
+     * emits such a row (a status change), sends 7: the row is then stored as
+     * 7, and a later build does not recover the kind.
+     *
+     * A row is written before its spend is broadcast, so a row of kind 14
+     * stands for an attempt: a refused one stays, as Failed, with the
+     * recipient's id in [counterparty], although no contact request was sent.
      */
     val kindTag: Int,
     /** 0 In, 1 Out, 2 Self. */

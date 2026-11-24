@@ -132,8 +132,15 @@ pub struct ShieldedActivityFFI {
     /// carries the credited identity in `identity_id`),
     /// 13 PrivateDocumentCreate (the counterparty is the data contract id),
     /// 14 PrivateContactRequest (the counterparty is the recipient identity's
-    /// id). A host stores the tag as is and shows any tag it does not know
-    /// as 7.
+    /// id). A row is recorded before its spend is broadcast, so a row of
+    /// kind 14 stands for an attempt: one that was refused stays, as Failed,
+    /// with the recipient's id, although no contact request was sent.
+    ///
+    /// A host stores the tag as is and shows any tag it does not know as 7.
+    /// A build that predates a tag loads its rows as 7
+    /// (`ShieldedActivityKind::from_tag`) and, the next time it emits such a
+    /// row (a status change), sends 7 for it: the host then stores 7 over the
+    /// original tag, and the kind is not recovered by a later build.
     pub kind_tag: u8,
     /// Direction: 0 In, 1 Out, 2 Self.
     pub direction: u8,

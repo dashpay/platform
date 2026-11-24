@@ -3513,7 +3513,7 @@ mod tests {
     use crate::wallet::shielded::note_selection::compute_token_purchase_from_pool_fee;
     use crate::wallet::shielded::operations::{
         record_pending_private_document_create, record_pending_token_purchase,
-        settle_affected_state_spend, shielded_actions,
+        settle_affected_state_spend, shielded_actions, PrivateDocumentPurpose,
     };
     use crate::wallet::shielded::prover::CachedOrchardProver;
     use crate::wallet::shielded::store::{
@@ -4620,7 +4620,7 @@ mod tests {
             id,
             &views,
             data_contract_id,
-            None,
+            PrivateDocumentPurpose::Entry,
             fee_used,
             &transition,
             std::slice::from_ref(&input_row),
@@ -4661,7 +4661,11 @@ mod tests {
             id,
             &views,
             data_contract_id,
-            Some(recipient),
+            PrivateDocumentPurpose::ContactRequest {
+                sender: Identifier::from([0x66; 32]),
+                recipient,
+                account_reference: Some(3),
+            },
             fee_used,
             &transition,
             std::slice::from_ref(&input_row),
