@@ -96,6 +96,7 @@ public struct PlatformSpvSyncProgress: Sendable, Equatable {
 public struct PlatformSpvProgressObservation: Sendable, Equatable {
     public let progress: PlatformSpvSyncProgress
     /// `ProcessInfo.processInfo.systemUptime` immediately before the native read.
+    /// Use for on-device elapsed-time comparisons; never send the raw uptime off-device.
     public let readStartedAtSystemUptime: TimeInterval
 }
 
