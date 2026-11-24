@@ -36,6 +36,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.dashfoundation.example.di.LocalAppContainer
+import org.dashfoundation.example.services.IdentityKeys
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.util.Base58
 
@@ -261,7 +262,9 @@ private fun KeyRow(key: KeyHealthRow, onRepair: (() -> Unit)? = null) {
                 tint = if (key.isRecoverable) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error,
             )
             Text(
-                "Key #${key.keyId} — purpose ${key.purpose}, level ${key.securityLevel}",
+                // ← WalletKeyHealthSheet.swift: "Key #N — Purpose, Level" by name.
+                "Key #${key.keyId} — ${IdentityKeys.purposeLabel(key.purpose)}, " +
+                    IdentityKeys.securityLevelLabel(key.securityLevel),
                 style = MaterialTheme.typography.bodyMedium,
             )
         }

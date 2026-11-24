@@ -37,6 +37,7 @@ import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.CoreAddressDetail
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.util.formatCredits
 import org.dashfoundation.example.util.formatDuffs
 import org.dashfoundation.example.util.truncateMiddle
 
@@ -72,6 +73,13 @@ fun AccountDetailScreen(
     val txos by remember(walletIdHex, accountId) {
         container.database.txoDao().observeByWallet(walletId)
             .map { rows -> rows.filter { it.accountId == accountId } }
+    }.collectAsStateWithLifecycle(initialValue = emptyList())
+
+    // ← AccountDetailView.balanceCard: Rust's per-account read for a Core
+    // account, the account's Platform address credits for PlatformPayment.
+    val coreBalances = rememberCoreAccountBalances(walletId)
+    val platformAddresses by remember(walletIdHex) {
+        container.database.platformAddressDao().observeByWallet(walletId)
     }.collectAsStateWithLifecycle(initialValue = emptyList())
 
     Scaffold(
@@ -112,17 +120,18 @@ fun AccountDetailScreen(
                 LabeledContent("Network", network.displayName)
             }
 
-            if (current.accountType in intArrayOf(0, 1, 14)) {
-                FormSection(title = "Balance") {
-                    LabeledContent("Confirmed", formatDuffs(current.balanceConfirmed))
-                    if (current.balanceUnconfirmed > 0) {
-                        LabeledContent("Pending", formatDuffs(current.balanceUnconfirmed))
+            when (val balance = accountRowBalance(current, coreBalances, platformAddresses)) {
+                is AccountRowBalance.Core -> FormSection(title = "Balance") {
+                    LabeledContent("Confirmed", formatDuffs(balance.confirmed))
+                    if (balance.unconfirmed > 0) {
+                        LabeledContent("Pending", formatDuffs(balance.unconfirmed))
                     }
-                    LabeledContent(
-                        "Total",
-                        formatDuffs(current.balanceConfirmed + current.balanceUnconfirmed),
-                    )
+                    LabeledContent("Total", formatDuffs(balance.confirmed + balance.unconfirmed))
                 }
+                is AccountRowBalance.Platform -> FormSection(title = "Balance") {
+                    LabeledContent("Balance", formatCredits(balance.credits))
+                }
+                AccountRowBalance.None -> Unit
             }
 
             // Pool summary (← poolSummaryCard).

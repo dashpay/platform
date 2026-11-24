@@ -167,7 +167,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | ID | Action | Layer | Tier | Status | Tags | Entry point & test notes |
 |---|---|---|---|---|---|---|
 | DPNS-01 | Register username (normal) | Platform | Essential | ✅ | | `RegisterNameScreen` → `platform_wallet_register_dpns_name_with_signer`. Name resolves to the identity afterward. |
-| DPNS-02 | Check availability / validate / normalize | Platform | Essential | ✅ | | `RegisterNameScreen` / `DpnsTestScreen`. |
+| DPNS-02 | Check availability / validate / normalize | Platform | Essential | ✅ | | `RegisterNameScreen` / `DpnsTestScreen`. Register (`registerName.submit`) is enabled only while the availability check (`dash_sdk_dpns_check_availability`, shown in `registerName.availability`) reports the label available, as Swift's `RegisterNameView` does: a taken, tombstoned or invalid label, a pending or failed check keep it disabled, so no preorder is paid for a name Platform will refuse. After a registration, typing another label on the same screen checks it and enables Register again. *`RegisterNameAvailabilityTest`.* |
 | DPNS-03 | Resolve name → identity | Platform | Essential | ✅ | | `QueriesListScreen` (dpnsResolve) / `DpnsTestScreen`. |
 | DPNS-04 | Get usernames for an identity | Platform | Essential | ✅ | | `IdentityDetailScreen` DPNS section. |
 | DPNS-05 | Register username (contested / premium) | Platform | Common | ✅ | contested | `RegisterNameScreen` (auto-detects contested via `dash_sdk_dpns_is_contested_username`). Creates a live vote poll. |
