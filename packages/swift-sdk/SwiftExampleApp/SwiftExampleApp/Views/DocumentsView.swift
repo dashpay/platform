@@ -914,6 +914,12 @@ struct EraseDocumentView: View {
     @State private var progress: String?
     @State private var persistWarning: String?
     @State private var actionError: DocumentActionErrorBox?
+    /// Network of the opening lifecycle read, when it observed ABSENT. The
+    /// local copy is then removed only on an explicit tap: the network code
+    /// alone does not tell two devnets apart, so the row may belong to
+    /// another chain than the one just read.
+    @State private var openingAbsentNetworkRaw: UInt32?
+    @State private var localCopyRemoved = false
 
     // This hides a button for presentation; Rust re-decides eligibility on every call.
     private var canSubmitAnother: Bool {
@@ -947,12 +953,29 @@ struct EraseDocumentView: View {
                                     .font(.caption)
                                     .accessibilityIdentifier("documentErase.progress")
                             }
-                            if let warning = persistWarning {
-                                Label(warning, systemImage: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.orange)
-                                    .font(.caption)
-                            }
                         }
+                    }
+                }
+                if let warning = persistWarning {
+                    // Shown on every path, including the opening read, which
+                    // changes neither `submissions` nor `progress`.
+                    Section {
+                        Label(warning, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                            .font(.caption)
+                            .accessibilityIdentifier("documentErase.localCopyWarning")
+                    }
+                }
+                if let networkRaw = openingAbsentNetworkRaw, submissions == 0, !localCopyRemoved {
+                    Section {
+                        Button("Remove Local Copy") {
+                            persistWarning = removeLocalCopy(networkRaw: networkRaw)
+                            localCopyRemoved = persistWarning == nil
+                        }
+                        .frame(maxWidth: .infinity)
+                        .accessibilityIdentifier("documentErase.removeLocalCopy")
+                    } footer: {
+                        Text("Platform reports no retained revisions of this document on the network the app is connected to. If this copy was saved from that network, it is stale and can be removed from this device. Nothing is broadcast.")
                     }
                 }
                 Section {
@@ -1002,9 +1025,9 @@ struct EraseDocumentView: View {
                 guard !isSubmitting, submissions == 0, progress == nil else { return }
                 lifecycle = observed
                 // Already ABSENT (an earlier erase whose closing read failed):
-                // the button is hidden, so reconcile the local copy here.
+                // the submit button is hidden, so offer the local cleanup.
                 if observed?.state == .absent {
-                    persistWarning = removeLocalCopy(networkRaw: readNetworkRaw)
+                    openingAbsentNetworkRaw = readNetworkRaw
                 }
             }
             .alert(item: $actionError) { err in
@@ -1680,13 +1703,18 @@ enum DocumentPersistence {
         do {
             matches = try modelContext.fetch(descriptor)
         } catch {
-            return "The document is erased, but reading the local copy failed: \(error.localizedDescription). The erase is on-chain."
+            return "Platform reports the document absent, but reading the copy saved on this device failed: \(error.localizedDescription)."
         }
         guard !matches.isEmpty else { return nil }
         for document in matches {
             modelContext.delete(document)
         }
-        return save(modelContext)
+        do {
+            try modelContext.save()
+            return nil
+        } catch {
+            return "Platform reports the document absent, but removing the copy saved on this device failed: \(error.localizedDescription)."
+        }
     }
 
     /// Extract `$revision` from the canonical JSON, falling back to the
