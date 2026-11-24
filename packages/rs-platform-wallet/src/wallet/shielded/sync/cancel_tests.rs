@@ -410,3 +410,129 @@ async fn should_report_the_height_a_completed_scan_covers() {
         let _ = std::fs::remove_file(&path);
     }
 }
+
+/// A pass that appended leaves and then failed before its checkpoint (a
+/// batch error here; a process killed at the same point leaves the same
+/// tree) must not leave those leaves past the latest checkpoint for good.
+/// The next pass, after a relaunch, gate-skips them and appends nothing;
+/// it still checkpoints, so a note saved at one of them can be witnessed
+/// at depth 0 instead of failing the spend with
+/// `ShieldedMerkleWitnessUnavailable`.
+#[tokio::test]
+async fn should_checkpoint_leaves_a_failed_pass_appended_on_the_next_pass() {
+    let path = temp_tree_path("failed_then_resume");
+    let store = Arc::new(RwLock::new(
+        FileBackedShieldedStore::open_path(&path, 100).expect("open store"),
+    ));
+    let subwallets = one_subwallet();
+
+    // Pass 1: a fully checkpointed first batch, then a pass that appends a
+    // second batch and fails on the next one, before its checkpoint.
+    let cancel = CancellationToken::new();
+    run(
+        &store,
+        &subwallets,
+        &cancel,
+        futures::stream::iter(vec![batch(0, 4, 4)].into_iter().map(Ok)),
+    )
+    .await;
+    let failed = sync_notes_from_stream(&store, &subwallets, None, &cancel, |_, _| {
+        futures::stream::iter(vec![
+            Ok(batch(0, 4, 12)),
+            Ok(batch(4, 4, 12)),
+            Err(dash_sdk::Error::Generic("transport failed".to_string())),
+        ])
+    })
+    .await;
+    assert!(failed.is_err(), "the batch error fails the pass");
+    {
+        let store = store.read().await;
+        assert_eq!(store.tree_size().unwrap(), 8, "the appends are persisted");
+        assert!(
+            store.witness(7).is_err(),
+            "no checkpoint covers the leaves the failed pass appended"
+        );
+    }
+
+    // Relaunch: reopen the same file, then run a pass that re-delivers only
+    // positions the tree already holds.
+    drop(store);
+    let store = Arc::new(RwLock::new(
+        FileBackedShieldedStore::open_path(&path, 100).expect("reopen store"),
+    ));
+    run(
+        &store,
+        &subwallets,
+        &cancel,
+        futures::stream::iter(vec![batch(0, 4, 8), batch(4, 4, 8)].into_iter().map(Ok)),
+    )
+    .await;
+
+    let store = store.read().await;
+    assert_eq!(store.tree_size().unwrap(), 8, "nothing is re-appended");
+    assert!(
+        matches!(store.witness(7), Ok(Some(_))),
+        "a pass that appended nothing still checkpoints the tree's leaves"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}
+
+/// A pass over a tree whose latest checkpoint already sits at its size
+/// keeps that checkpoint: the witnesses at depth 0 and depth 1 are the ones
+/// before the pass.
+#[tokio::test]
+async fn should_keep_the_checkpoints_when_nothing_is_past_the_latest() {
+    let path = temp_tree_path("no_new_leaves");
+    let store = Arc::new(RwLock::new(
+        FileBackedShieldedStore::open_path(&path, 100).expect("open store"),
+    ));
+    let subwallets = one_subwallet();
+    let cancel = CancellationToken::new();
+    for stream in [vec![batch(0, 4, 4)], vec![batch(0, 4, 8), batch(4, 4, 8)]] {
+        run(
+            &store,
+            &subwallets,
+            &cancel,
+            futures::stream::iter(stream.into_iter().map(Ok)),
+        )
+        .await;
+    }
+    let before = {
+        let store = store.read().await;
+        (
+            store
+                .witness_at_depth(3, 0)
+                .unwrap()
+                .map(|p| format!("{p:?}")),
+            store
+                .witness_at_depth(3, 1)
+                .unwrap()
+                .map(|p| format!("{p:?}")),
+        )
+    };
+
+    run(
+        &store,
+        &subwallets,
+        &cancel,
+        futures::stream::iter(vec![batch(4, 4, 8)].into_iter().map(Ok)),
+    )
+    .await;
+
+    let store = store.read().await;
+    let after = (
+        store
+            .witness_at_depth(3, 0)
+            .unwrap()
+            .map(|p| format!("{p:?}")),
+        store
+            .witness_at_depth(3, 1)
+            .unwrap()
+            .map(|p| format!("{p:?}")),
+    );
+    assert!(before.0.is_some() && before.1.is_some());
+    assert_eq!(before, after, "no checkpoint is added or moved");
+
+    let _ = std::fs::remove_file(&path);
+}
