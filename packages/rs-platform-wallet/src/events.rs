@@ -57,6 +57,14 @@ pub trait PlatformEventHandler: EventHandler {
     /// including passes that produced no updates or skipped every
     /// wallet because none had a bound shielded sub-wallet yet.
     ///
+    /// Called from inside the pass, before it counts as finished, so a
+    /// stop or a Clear that drains the pass waits for this to return:
+    /// hand the event on and return. Do not wait here for a shielded
+    /// operation (a bind, an added account, a transfer): during a Clear it
+    /// waits for the Clear while the Clear waits for this handler, until
+    /// `PlatformWalletManager::clear_shielded` returns `ShutdownIncomplete`
+    /// with the sync loop stopped.
+    ///
     /// Default impl is a no-op so existing handlers don't have to
     /// care.
     ///
@@ -79,6 +87,11 @@ pub trait PlatformEventHandler: EventHandler {
     /// during long initial syncs (a cold sync of a 1M-note pool can
     /// take 20+ min in a single `sync_shielded_notes` call; without
     /// this event there's no signal between start and end).
+    ///
+    /// Called from inside the pass, like
+    /// [`on_shielded_sync_completed`](Self::on_shielded_sync_completed):
+    /// hand the event on and return, and do not wait here for a shielded
+    /// operation, for the reason given there.
     ///
     /// Default impl is a no-op.
     #[cfg(feature = "shielded")]
@@ -106,6 +119,11 @@ pub trait PlatformEventHandler: EventHandler {
     /// Pairs with `on_shielded_sync_progress` to drive a dual
     /// ProgressView ("downloaded" vs "checked") during long cold
     /// syncs.
+    ///
+    /// Called from inside the pass, like
+    /// [`on_shielded_sync_completed`](Self::on_shielded_sync_completed):
+    /// hand the event on and return, and do not wait here for a shielded
+    /// operation, for the reason given there.
     ///
     /// Default impl is a no-op.
     #[cfg(feature = "shielded")]

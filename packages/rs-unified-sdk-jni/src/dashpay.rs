@@ -28,7 +28,7 @@ use jni::sys::{
 };
 use jni::JNIEnv;
 use platform_wallet_ffi::core_wallet_types::OutPointFFI;
-use platform_wallet_ffi::dashpay_profile::DashPayProfileFFI;
+use platform_wallet_ffi::dashpay_profile::{DashPayProfileFFI, PaymentAddressUpdateFFI};
 use platform_wallet_ffi::error::{platform_wallet_ffi_result_free, PlatformWalletFFIResultCode};
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_registration_with_signer::IdentityPubkeyFFI;
@@ -648,9 +648,21 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_drainPe
 /// image — Rust computes the SHA-256 hash + perceptual fingerprint.
 /// Broadcasts a real document state transition (blocking, network).
 /// Returns the resulting profile as JSON (same shape as the readers).
+///
+/// Each payment address (`core`, `platform`, `shielded`) rides as an
+/// action and its bytes, marshalled into a `PaymentAddressUpdateFFI` for
+/// `platform_wallet_create_or_update_dashpay_profile_with_addresses_with_signer`:
+/// 0 keeps the published value, 1 sets it to the bytes, 2 removes it. The
+/// wallet checks the action and the bytes of every set; this only copies
+/// them.
+///
+/// Exported under its own name rather than the earlier
+/// `createOrUpdateProfile`: JNI resolves a short name without its signature,
+/// so a stale native library paired with this Kotlin fails to link instead
+/// of reading the wrong arguments.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createOrUpdateProfile(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createOrUpdateProfileWithAddresses(
     mut env: JNIEnv,
     _class: JClass,
     wallet_handle: jlong,
@@ -659,6 +671,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createO
     public_message: JString,
     avatar_url: JString,
     avatar_bytes: JByteArray,
+    core_address_action: jint,
+    core_address_bytes: JByteArray,
+    platform_address_action: jint,
+    platform_address_bytes: JByteArray,
+    shielded_address_action: jint,
+    shielded_address_bytes: JByteArray,
     do_create: jboolean,
     signer_handle: jlong,
 ) -> jstring {
@@ -666,6 +684,22 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createO
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return ptr::null_mut();
         };
+        let Ok(core_bytes) = read_opt_bytes(env, &core_address_bytes, "coreAddressBytes") else {
+            return ptr::null_mut();
+        };
+        let Ok(platform_bytes) =
+            read_opt_bytes(env, &platform_address_bytes, "platformAddressBytes")
+        else {
+            return ptr::null_mut();
+        };
+        let Ok(shielded_bytes) =
+            read_opt_bytes(env, &shielded_address_bytes, "shieldedAddressBytes")
+        else {
+            return ptr::null_mut();
+        };
+        let core_update = address_update(core_address_action, core_bytes.as_deref());
+        let platform_update = address_update(platform_address_action, platform_bytes.as_deref());
+        let shielded_update = address_update(shielded_address_action, shielded_bytes.as_deref());
         let Ok(display) = opt_jstring_to_cstring(env, "displayName", &display_name) else {
             return ptr::null_mut();
         };
@@ -693,7 +727,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createO
 
         let mut profile = DashPayProfileFFI::empty();
         let result = unsafe {
-            platform_wallet_ffi::platform_wallet_create_or_update_dashpay_profile_with_signer(
+            platform_wallet_ffi::platform_wallet_create_or_update_dashpay_profile_with_addresses_with_signer(
                 wallet_handle as Handle,
                 id.as_ptr(),
                 display.as_ref().map_or(ptr::null(), |c| c.as_ptr()),
@@ -701,6 +735,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createO
                 url.as_ref().map_or(ptr::null(), |c| c.as_ptr()),
                 avatar.as_ref().map_or(ptr::null(), |v| v.as_ptr()),
                 avatar.as_ref().map_or(0, |v| v.len()),
+                &core_update,
+                &platform_update,
+                &shielded_update,
                 do_create != 0,
                 signer_handle as *mut SignerHandle,
                 &mut profile as *mut DashPayProfileFFI,
@@ -717,6 +754,18 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DashpayNative_createO
         };
         new_jstring(env, json)
     })
+}
+
+/// One payment address update for the profile write. `bytes` borrows the
+/// copied Java array, which outlives the FFI call. A null `bytes` is passed
+/// as a null pointer, so a set without bytes reaches the wallet's own
+/// refusal rather than being decided here.
+fn address_update(action: jint, bytes: Option<&[u8]>) -> PaymentAddressUpdateFFI {
+    PaymentAddressUpdateFFI {
+        action: action as u32,
+        bytes: bytes.map_or(ptr::null(), <[u8]>::as_ptr),
+        len: bytes.map_or(0, <[u8]>::len),
+    }
 }
 
 /// Set the owner-private contactInfo (alias / note / displayHidden) for
@@ -1558,9 +1607,7 @@ fn readiness_flags(readiness: &PrivateContactReadinessFFI) -> [jboolean; 4] {
 }
 
 /// Copy an optional Java `byte[]`; JVM null is `None`. Throws and returns
-/// `Err` on a JNI error. `field` names the argument in the message. Only the
-/// private send reads one, so it is built with that export.
-#[cfg(feature = "shielded")]
+/// `Err` on a JNI error. `field` names the argument in the message.
 fn read_opt_bytes(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Result<Option<Vec<u8>>, ()> {
     if arr.is_null() {
         return Ok(None);

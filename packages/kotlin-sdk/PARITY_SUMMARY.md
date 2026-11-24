@@ -10,15 +10,15 @@ Capabilities tracked: **51**
 | --- | --- | ---: | ---: | ---: | ---: |
 | Swift | SDK | 31 | 18 | 1 | 1 |
 | Swift | Example app | 6 | 35 | 1 | 9 |
-| Kotlin | SDK | 26 | 17 | 7 | 1 |
-| Kotlin | Example app | 7 | 27 | 7 | 10 |
+| Kotlin | SDK | 26 | 22 | 2 | 1 |
+| Kotlin | Example app | 7 | 32 | 2 | 10 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
 | Swift | 2 | 19 | 30 |
-| Kotlin | 8 | 13 | 30 |
+| Kotlin | 9 | 17 | 25 |
 
 ## Capability status
 
@@ -49,7 +49,7 @@ Capabilities tracked: **51**
 | `documents.create_catalog` | supported / supported / not_applicable | supported / supported / not_applicable |
 | `contracts.update_preview` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `documents.private_document_entries_read` | partial / partial / not_applicable | supported / partial / not_applicable |
-| `documents.private_document_entry_create` | partial / partial / required | unsupported / unsupported / not_applicable |
+| `documents.private_document_entry_create` | partial / partial / required | partial / partial / required |
 | `tokens.max_supply_proposal_discovery` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `core.immature_balance_display` | supported / supported / not_applicable | supported / supported / not_applicable |
 | `security.key_security_policy_alias_split` | not-applicable / not-applicable / not_applicable | supported / supported / tested |
@@ -71,10 +71,10 @@ Capabilities tracked: **51**
 | `shielded.token_purchase_from_pool` | partial / partial / required | partial / partial / required |
 | `identity.withdrawal_status` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `identity.key_limits_update` | supported / partial / required | supported / partial / required |
-| `shielded.token_pool_balances` | partial / partial / required | unsupported / unsupported / not_applicable |
-| `shielded.token_shielded_transfer` | partial / partial / required | unsupported / unsupported / not_applicable |
-| `shielded.token_unshield` | partial / partial / required | unsupported / unsupported / not_applicable |
-| `dashpay.profile_payment_addresses` | partial / partial / not_applicable | unsupported / unsupported / not_applicable |
+| `shielded.token_pool_balances` | partial / partial / required | partial / partial / required |
+| `shielded.token_shielded_transfer` | partial / partial / required | partial / partial / required |
+| `shielded.token_unshield` | partial / partial / required | partial / partial / required |
+| `dashpay.profile_payment_addresses` | partial / partial / not_applicable | partial / partial / tested |
 
 Source: [`docs/sdk/sdk-parity-manifest.json`](../../docs/sdk/sdk-parity-manifest.json).
 Detailed legacy view mapping remains in [`PARITY.md`](PARITY.md), but its manual totals are not authoritative.

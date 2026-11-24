@@ -627,6 +627,17 @@ internal object WalletManagerNative {
     external fun shieldedClear(managerHandle: Long)
 
     /**
+     * The ordinary (non-identity) shielded account indices bound on
+     * [walletId] (32 bytes), ascending: the list to pass back to
+     * [shieldedBind] after [shieldedClear], which drops the registration
+     * but not the keys the wallet holds. Identity accounts are left out
+     * because a bind adds them itself. Empty for a wallet never bound;
+     * throws for an unknown wallet. Only present when the native library
+     * is built with shielded.
+     */
+    external fun shieldedOrdinaryAccounts(managerHandle: Long, walletId: ByteArray): IntArray
+
+    /**
      * Start the Core SPV client — flattened form of
      * `platform_wallet_manager_spv_start` (11 discrete params, no config
      * struct). [userAgent] / [devnetName] pass JVM null → FFI null;

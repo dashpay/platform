@@ -1245,6 +1245,26 @@ pub enum PlatformWalletError {
         reason: String,
     },
 
+    /// A shielded spend (`operation` names it: an identity top-up, a private document create)
+    /// did not execute and never can, on proof the wallet already held when the spend's result
+    /// arrived: the note scan read another transition's action spending one of its notes (a
+    /// second device restored from the same seed), or its anchor was proven pruned. These spends
+    /// get their result as a snapshot of the state they affect, which shows their nullifiers
+    /// spent and not which transition spent them, so such a result does not say the spend
+    /// executed. Nothing was paid and the spend's activity row reads failed. The notes it
+    /// selected are marked spent, as the snapshot proves each of them spent on chain.
+    ///
+    /// Unlike [`Self::ShieldedSpendUnconfirmed`], this spend cannot execute later, so a new
+    /// attempt cannot pay twice. Whether a new attempt is admitted is a separate matter: a
+    /// private contact request keeps its pair held after this error, as for any payment that
+    /// left the wallet, and a new request to the same contact is refused with
+    /// [`Self::PrivateContactRequestPending`] until the hold is released.
+    #[error(
+        "Shielded {operation} did not execute: another transaction spent one of its notes \
+         first, or it expired before it was included. Nothing was paid"
+    )]
+    ShieldedSpendNotExecuted { operation: &'static str },
+
     /// A masternode (evonode) identity credit withdrawal was broadcast and
     /// accepted, or may have been delivered, but its execution result could
     /// not be confirmed (a broadcast attempt that failed in transport, an
@@ -1378,6 +1398,18 @@ pub enum PlatformWalletError {
          it once the spend settles"
     )]
     TokenShieldedPoolSpendPending { token_id: Identifier },
+
+    /// A shielded Clear was refused because a shielded operation is admitted
+    /// on the coordinator: a bind, an account being added, a token pool
+    /// transfer or unshield, a DashPay profile write or a tip address
+    /// preparation, from its first step to its result, or another Clear.
+    /// Clear does not wait for it. It returned at once and changed nothing:
+    /// the sync loop keeps running, and no registration, note, watermark or
+    /// tree leaf was touched, so the host must not wipe its own rows.
+    /// Retryable: Clear goes through once the operation has finished.
+    /// FFI mirror: `PlatformWalletFFIResultCode::ErrorShieldedOperationInProgress`.
+    #[error("A shielded operation is in progress; clear the shielded state once it has finished")]
+    ShieldedOperationInProgress,
 }
 
 /// The SDK's invitation errors map onto the variants the wallet used before

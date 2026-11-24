@@ -100,7 +100,8 @@ private val UNREADABLE_NOTE = ShieldedUnavailableNote(
 internal const val SHIELDED_PURCHASE_SUBMITTED =
     "Purchase submitted. Platform accepted it; a shielded sync confirms it once it lands, " +
         "and it shows as pending in Shielded Activity until then. Do not retry. The tokens " +
-        "go to this wallet's shielded token pool, which the app does not show yet."
+        "go to this wallet's shielded token pool; Wallet > Shielded Tokens shows them after a " +
+        "shielded sync."
 
 /**
  * Shown when the purchase may already be on chain and Rust keeps its notes
@@ -242,9 +243,8 @@ internal fun ShieldedPoolSection(shieldedBalance: Long?, feeEstimate: Long?, tot
             )
         }
         Text(
-            "The purchased tokens go to this wallet's shielded token pool. The app does not " +
-                "show shielded token balances yet, so they will not appear here or in the " +
-                "token list.",
+            "The purchased tokens go to this wallet's shielded token pool. They appear in " +
+                "Wallet > Shielded Tokens after a shielded sync, not in the token list.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.testTag("tokenPurchase.shieldedTokensNote"),

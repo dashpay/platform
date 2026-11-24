@@ -233,7 +233,7 @@ pub unsafe extern "C" fn platform_wallet_parse_shielded_tip_amount(
 ///
 /// Result codes:
 /// - `ErrorUtf8Conversion`: `username` is not valid UTF-8.
-/// - `ErrorShieldedTipRecipientMismatch` (85): `contact_identity_id` is
+/// - `ErrorShieldedTipRecipientMismatch` (86): `contact_identity_id` is
 ///   non-null and the name resolves to another identity; nothing changed.
 /// - `ErrorShieldedRecoveryCorrupted` / `ErrorShieldedRecoveryKeysRequired`:
 ///   the wallet cannot tell whom a saved shielded spend pays.
@@ -368,7 +368,7 @@ unsafe fn read_optional_identifier(
 ///   unwinds. `ErrorTransactionBroadcastUnconfirmed` (20), which the shielded
 ///   spend contract keeps for an SDK outcome it reports unconfirmed, means
 ///   the same.
-/// - `ErrorShieldedTipPending` (84): refused, nothing sent. Another tip from
+/// - `ErrorShieldedTipPending` (85): refused, nothing sent. Another tip from
 ///   this wallet is being sent (whoever it pays; the review does not report
 ///   this), or an earlier shielded transfer to the recipient may still
 ///   execute. This call sent nothing, but the earlier payment may be this
@@ -379,7 +379,7 @@ unsafe fn read_optional_identifier(
 ///   activity entry reads failed, not confirmed). The wallet admits the tip
 ///   before the mnemonic is resolved, so a second call made while the first
 ///   runs is refused however long its resolver takes.
-/// - `ErrorShieldedTipRecipientMismatch` (85): `contact_identity_id` is
+/// - `ErrorShieldedTipRecipientMismatch` (86): `contact_identity_id` is
 ///   non-null and the reviewed recipient is another identity: the name moved
 ///   since the contact was saved. Nothing sent; the user picks the recipient
 ///   again.
@@ -1182,7 +1182,7 @@ mod tests {
             mismatch.code,
             PlatformWalletFFIResultCode::ErrorShieldedTipRecipientMismatch
         );
-        assert_eq!(mismatch.code as u32, 85);
+        assert_eq!(mismatch.code as u32, 86);
         free(mismatch);
 
         let other = map_tip_review_error(PlatformWalletError::ShieldedNotBound);
@@ -1204,7 +1204,7 @@ mod tests {
             pending.code,
             PlatformWalletFFIResultCode::ErrorShieldedTipPending
         );
-        assert_eq!(pending.code as u32, 84);
+        assert_eq!(pending.code as u32, 85);
         free(pending);
 
         let mismatch = map_tip_send_result(Err(recipient_mismatch()));
@@ -1212,7 +1212,7 @@ mod tests {
             mismatch.code,
             PlatformWalletFFIResultCode::ErrorShieldedTipRecipientMismatch
         );
-        assert_eq!(mismatch.code as u32, 85);
+        assert_eq!(mismatch.code as u32, 86);
         free(mismatch);
 
         let unknown =

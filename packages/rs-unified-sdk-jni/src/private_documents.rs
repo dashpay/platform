@@ -65,8 +65,9 @@ fn cursor_from_parts(
     }))
 }
 
-/// A required 32-byte array; throws `InvalidParameter` and returns `None` otherwise.
-fn read_32(env: &mut JNIEnv, array: &JByteArray, field: &str) -> Option<[u8; 32]> {
+/// A required 32-byte array; throws `InvalidParameter` and returns `None` otherwise. Shared
+/// with `private_document_create`.
+pub(crate) fn read_32(env: &mut JNIEnv, array: &JByteArray, field: &str) -> Option<[u8; 32]> {
     if array.is_null() {
         throw_sdk_exception(env, 1, &format!("{field} was null"));
         return None;
