@@ -98,6 +98,7 @@ async fn run(
     .await
     .expect("a cancelled pass must return promptly")
     .expect("pass must succeed")
+    .finished()
 }
 
 #[tokio::test]
@@ -160,7 +161,8 @@ async fn should_return_empty_without_touching_store_when_cancelled_before_scan()
         },
     )
     .await
-    .expect("pass must succeed");
+    .expect("pass must succeed")
+    .finished();
 
     assert_eq!(result.total_scanned, 0);
     assert!(result.per_subwallet_new_notes.is_empty());
@@ -341,7 +343,8 @@ async fn should_return_while_waiting_for_the_store_lock_when_cancelled() {
     let result = tokio::time::timeout(std::time::Duration::from_secs(2), pass.as_mut())
         .await
         .expect("a cancelled pass returns without the guard")
-        .expect("pass must succeed");
+        .expect("pass must succeed")
+        .finished();
     assert_eq!(result.total_scanned, 0);
     assert!(crate::changeset::merge::Merge::is_empty(&result.changeset));
 

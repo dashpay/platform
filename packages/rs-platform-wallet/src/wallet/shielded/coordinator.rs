@@ -96,6 +96,7 @@ use super::store::{
     IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, PrivatePaymentRecord, ShieldedStore,
     StalePendingSpend, SubwalletId,
 };
+use super::sync::NoteScan;
 use super::token_pool::{ShieldedTokenPoolBalance, ShieldedTokenPoolWatch, TokenPoolConnection};
 use super::CAUGHT_UP_COOLDOWN;
 use crate::error::PlatformWalletError;
@@ -1828,6 +1829,11 @@ impl NetworkShieldedCoordinator {
     /// the empty summary is returned and the caught-up cooldown is cleared,
     /// so the next pass reads the pool again at once.
     ///
+    /// A pass cut short either way returns the default summary: no wallet
+    /// results and a `sync_unix_seconds` of 0, which means no pass ran.
+    /// Every pass that completed, a skipped or failed one included, sets the
+    /// timestamp.
+    ///
     /// [`sync_notes_across`]: super::sync::sync_notes_across
     /// [`PlatformEventManager::on_shielded_sync_completed`]:
     ///     crate::events::PlatformEventManager::on_shielded_sync_completed
@@ -1925,7 +1931,21 @@ impl NetworkShieldedCoordinator {
         )
         .await
         {
-            Ok(r) => r,
+            Ok(NoteScan::Finished(notes)) => notes,
+            // A scan that stopped at a gap between two fetched ranges
+            // published nothing, and knows the pool holds notes it did not
+            // read: hand back the empty summary, with no timestamp, so no
+            // wallet reads as synced from it and the manager reports no
+            // completion. The scan appended leaves before it stopped, so the
+            // caught-up stamp goes too and the next pass walks Platform at
+            // once instead of taking the cooldown skip.
+            Ok(NoteScan::StoppedAtGap) => {
+                if let Ok(mut guard) = self.last_caught_up_at.lock() {
+                    *guard = None;
+                }
+                tracing::debug!("Coordinator sync stopped at a gap; the scan published nothing");
+                return summary;
+            }
             Err(e) => return self.fail_all_wallets(&subwallets, &e),
         };
         // Everything below that talks to the network is skipped once the
@@ -1942,14 +1962,7 @@ impl NetworkShieldedCoordinator {
         // so the manager treats it as "no pass ran" — `build_per_wallet_summary`
         // would otherwise mint an all-zero `Ok` for every registered
         // wallet, and the host would see a completion event for no work.
-        //
-        // A scan that stopped at a gap between two fetched ranges published
-        // nothing either, and knows the pool holds notes it did not read
-        // (`MultiSyncNotesResult::stopped_at_gap`): the same summary, so no
-        // wallet reads as synced from it.
-        if notes.stopped_at_gap
-            || (cancelled && notes.total_scanned == 0 && Merge::is_empty(&notes.changeset))
-        {
+        if cancelled && notes.total_scanned == 0 && Merge::is_empty(&notes.changeset) {
             // The scan may have appended new leaves before the stop, so the
             // chain has moved past whatever the last completed pass saw:
             // drop the caught-up stamp so the next pass walks Platform at
@@ -1957,10 +1970,7 @@ impl NetworkShieldedCoordinator {
             if let Ok(mut guard) = self.last_caught_up_at.lock() {
                 *guard = None;
             }
-            tracing::debug!(
-                stopped_at_gap = notes.stopped_at_gap,
-                "Coordinator sync cut short; the scan published nothing"
-            );
+            tracing::debug!("Coordinator sync cancelled; the scan published nothing");
             return summary;
         }
         // Scan-based spend detection now happens INSIDE

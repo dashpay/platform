@@ -17,8 +17,7 @@ use drive_proof_verifier::types::ShieldedEncryptedNote;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
-use super::{sync_notes_from_stream, MultiSyncNotesResult};
-use crate::changeset::merge::Merge;
+use super::{sync_notes_from_stream, NoteScan};
 use crate::wallet::shielded::cancelled_scan_tests::{note_to, opaque_note};
 use crate::wallet::shielded::file_store::FileBackedShieldedStore;
 use crate::wallet::shielded::keys::{AccountViewingKeys, OrchardKeySet};
@@ -98,7 +97,7 @@ async fn scan(
     store: &Store,
     subwallets: &[(SubwalletId, AccountViewingKeys)],
     batches: Vec<ShieldedChunkBatch>,
-) -> MultiSyncNotesResult {
+) -> NoteScan {
     sync_notes_from_stream(
         store,
         subwallets,
@@ -175,14 +174,10 @@ fn whole(views: &AccountViewingKeys, pool: &[ShieldedEncryptedNote]) -> Vec<Shie
     ]
 }
 
-/// What a pass that stopped at a gap hands back: nothing but the flag.
-fn assert_published_nothing(result: &MultiSyncNotesResult, case: &str) {
-    assert!(result.stopped_at_gap, "{case}");
-    assert_eq!(result.total_scanned, 0, "{case}");
-    assert_eq!(result.covered_height, None, "{case}");
-    assert!(result.per_subwallet_new_notes.is_empty(), "{case}");
-    assert!(result.per_subwallet_newly_spent.is_empty(), "{case}");
-    assert!(Merge::is_empty(&result.changeset), "{case}");
+/// A pass that stopped at a gap says so, and hands back no result: no note,
+/// spent mark, watermark or covered height leaves it.
+fn assert_stopped_at_gap(scan: &NoteScan, case: &str) {
+    assert!(matches!(scan, NoteScan::StoppedAtGap), "{case}: {scan:?}");
 }
 
 /// A pass that meets the gap keeps the two commitments it read and publishes
@@ -202,7 +197,7 @@ async fn should_publish_nothing_at_a_gap_between_ranges_and_find_every_note_next
 
         let first = scan(&store, &subwallets, gapped(views, &pool, count_seen_first)).await;
 
-        assert_published_nothing(&first, case);
+        assert_stopped_at_gap(&first, case);
         {
             let store = store.read().await;
             assert_eq!(
@@ -221,9 +216,10 @@ async fn should_publish_nothing_at_a_gap_between_ranges_and_find_every_note_next
             );
         }
 
-        let second = scan(&store, &subwallets, whole(views, &pool)).await;
+        let second = scan(&store, &subwallets, whole(views, &pool))
+            .await
+            .finished();
 
-        assert!(!second.stopped_at_gap, "{case}");
         assert_eq!(
             second.per_subwallet_new_notes.get(id),
             Some(&2),
@@ -289,7 +285,7 @@ async fn should_show_a_late_bound_account_nothing_from_a_pass_that_stops_at_a_ga
     let both = [first_bound.clone(), late_bound];
     let stopped = scan(&store, &both, gapped(&both[0].1, &pool, 6)).await;
 
-    assert_published_nothing(&stopped, "late bound");
+    assert_stopped_at_gap(&stopped, "late bound");
     {
         let store = store.read().await;
         assert!(
@@ -305,7 +301,9 @@ async fn should_show_a_late_bound_account_nothing_from_a_pass_that_stops_at_a_ga
         assert_eq!(store.tree_size().unwrap(), 6);
     }
 
-    let completed = scan(&store, &both, whole(&both[0].1, &pool)).await;
+    let completed = scan(&store, &both, whole(&both[0].1, &pool))
+        .await
+        .finished();
 
     assert_eq!(completed.per_subwallet_new_notes.get(&late_id), Some(&2));
     assert_eq!(completed.per_subwallet_newly_spent.get(&late_id), Some(&1));
@@ -341,7 +339,7 @@ async fn should_use_nothing_past_an_empty_range_a_later_range_follows() {
     )
     .await;
 
-    assert_published_nothing(&result, "empty range");
+    assert_stopped_at_gap(&result, "empty range");
     let store = store.read().await;
     assert_eq!(store.tree_size().unwrap(), 0);
     assert_eq!(store.last_synced_note_index(*id).unwrap(), 0);

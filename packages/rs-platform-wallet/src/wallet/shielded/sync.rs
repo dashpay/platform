@@ -192,12 +192,31 @@ pub struct MultiSyncNotesResult {
     /// `total_count` is the highest seen). `None` when no batch shows that:
     /// a proof of a longer tree than the run reached.
     pub covered_height: Option<u64>,
-    /// The pass met a gap between two fetched ranges and published nothing:
-    /// every other field is empty, as for a pass cut short. The commitments
-    /// it read up to the gap stay appended to the local tree. The pool holds
-    /// notes this pass did not read, so the next pass must not be skipped as
-    /// caught up. See the gap note on [`sync_notes_across`].
-    pub stopped_at_gap: bool,
+}
+
+/// How a pass of the note scan ended ([`sync_notes_across`]).
+#[derive(Debug)]
+pub(super) enum NoteScan {
+    /// It read the pool to its end, or was cancelled, in which case the
+    /// result is empty.
+    Finished(MultiSyncNotesResult),
+    /// It met a gap between two fetched ranges and published nothing. The
+    /// commitments it read up to the gap stay appended to the local tree.
+    /// The pool holds notes this pass did not read, so the pass is not a
+    /// completed one and the next must not be skipped as caught up. See the
+    /// gap note on [`sync_notes_across`].
+    StoppedAtGap,
+}
+
+impl NoteScan {
+    /// The result of a pass that did not stop at a gap.
+    #[cfg(test)]
+    pub(super) fn finished(self) -> MultiSyncNotesResult {
+        match self {
+            NoteScan::Finished(result) => result,
+            NoteScan::StoppedAtGap => panic!("the pass stopped at a gap"),
+        }
+    }
 }
 
 impl MultiSyncNotesResult {
@@ -259,8 +278,8 @@ impl MultiSyncNotesResult {
 /// next one's start while the next holds notes. The positions between them
 /// were never read. The pass stops there and ends as a cancelled one does:
 /// the commitments it read up to the gap stay appended and checkpointed,
-/// and nothing else is published, with
-/// [`MultiSyncNotesResult::stopped_at_gap`] set. It knows the pool holds
+/// and nothing else is published: it returns [`NoteScan::StoppedAtGap`].
+/// It knows the pool holds
 /// more than it read, so what it read is not a complete scan either: a
 /// receipt in it may be spent by an action past the gap, and the activity
 /// derived from it would be frozen short of a note the next pass finds at
@@ -273,9 +292,9 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     on_progress: Option<&super::coordinator::ShieldedProgressCallback>,
     on_tree_progress: Option<&super::coordinator::ShieldedTreeProgressCallback>,
     cancel: &CancellationToken,
-) -> Result<MultiSyncNotesResult, PlatformWalletError> {
+) -> Result<NoteScan, PlatformWalletError> {
     if subwallets.is_empty() {
-        return Ok(MultiSyncNotesResult::default());
+        return Ok(NoteScan::Finished(MultiSyncNotesResult::default()));
     }
 
     // Drive the FIRST subwallet's IVK as the streaming driver. Its hits
@@ -339,21 +358,21 @@ pub(super) async fn sync_notes_from_stream<S, St, F>(
     on_tree_progress: Option<&super::coordinator::ShieldedTreeProgressCallback>,
     cancel: &CancellationToken,
     make_stream: F,
-) -> Result<MultiSyncNotesResult, PlatformWalletError>
+) -> Result<NoteScan, PlatformWalletError>
 where
     S: ShieldedStore,
     St: Stream<Item = Result<ShieldedChunkBatch, dash_sdk::Error>>,
     F: FnOnce(u64, u64) -> St,
 {
     if subwallets.is_empty() {
-        return Ok(MultiSyncNotesResult::default());
+        return Ok(NoteScan::Finished(MultiSyncNotesResult::default()));
     }
 
     // Nothing has been touched yet, so a stop that landed before the scan
     // costs nothing: skip the lock and the fetch entirely.
     if cancel.is_cancelled() {
         debug!("Shielded note sync cancelled before the scan started");
-        return Ok(MultiSyncNotesResult::default());
+        return Ok(NoteScan::Finished(MultiSyncNotesResult::default()));
     }
 
     // Keep the snapshot and streamed consume under one write guard so another
@@ -371,7 +390,7 @@ where
     // of after the unrelated holder is done.
     let Some(mut store) = cancel.run_until_cancelled(store.write()).await else {
         debug!("Shielded note sync cancelled while waiting for the store lock");
-        return Ok(MultiSyncNotesResult::default());
+        return Ok(NoteScan::Finished(MultiSyncNotesResult::default()));
     };
 
     // Snapshot each subwallet's watermark and the shared tree's
@@ -806,9 +825,10 @@ where
             stopped_at_gap,
             "Shielded note sync stopped; tree progress kept, nothing published"
         );
-        return Ok(MultiSyncNotesResult {
-            stopped_at_gap,
-            ..Default::default()
+        return Ok(if stopped_at_gap {
+            NoteScan::StoppedAtGap
+        } else {
+            NoteScan::Finished(MultiSyncNotesResult::default())
         });
     }
 
@@ -985,14 +1005,13 @@ where
     // rewind), and the host counter is documented as scan throughput,
     // not tree growth.
     let scanned_volume = (aligned_start + total_notes_scanned).saturating_sub(already_have);
-    Ok(MultiSyncNotesResult {
+    Ok(NoteScan::Finished(MultiSyncNotesResult {
         per_subwallet_new_notes,
         per_subwallet_newly_spent: newly_spent_per_subwallet,
         total_scanned: scanned_volume,
         changeset,
         covered_height,
-        stopped_at_gap: false,
-    })
+    }))
 }
 
 /// Scan-based spend detection: replay the set of nullifiers seen on
