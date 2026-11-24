@@ -1942,11 +1942,16 @@ mod tests {
             let service = tenderdash.service(Duration::from_secs(30));
             let hash = [7u8; 32];
 
-            // The event comes once the lookup has failed twice
+            // The event comes once Tenderdash has received the repeated lookup. A wait that
+            // never repeats it fails the test here, instead of leaving it to wait for good
             let deliver_event = async {
-                while tenderdash.lookups() < 2 {
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                }
+                tokio::time::timeout(Duration::from_secs(10), async {
+                    while tenderdash.lookups() < 2 {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                })
+                .await
+                .expect("expected Tenderdash to receive a second transaction lookup");
                 service
                     .subscriber_manager
                     .notify(StreamingEvent::PlatformTx {
