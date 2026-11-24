@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import org.dashfoundation.dashsdk.persistence.entities.AccountEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
@@ -105,18 +106,26 @@ private fun accountSortKey(account: AccountEntity): String {
 /**
  * Rust's per-account Core balances for [walletId], read again every two
  * seconds while shown (the wallet detail's Core balance has the same
- * cadence). Empty until the first read and without an active manager.
+ * cadence). Empty until the first read and without an active manager; a
+ * new manager starts empty again, and a failed read keeps the same
+ * manager's last snapshot.
  */
 @Composable
 internal fun rememberCoreAccountBalances(walletId: ByteArray): List<AccountBalance> {
     val container = LocalAppContainer.current
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
-    var balances by remember(walletId) { mutableStateOf(emptyList<AccountBalance>()) }
+    var balances by remember(walletId, manager) { mutableStateOf(emptyList<AccountBalance>()) }
     LaunchedEffect(manager, walletId) {
         val m = manager ?: return@LaunchedEffect
         while (true) {
-            balances = runCatching { parseAccountBalances(m.accountBalances(walletId)) }
-                .getOrDefault(balances)
+            try {
+                balances = parseAccountBalances(m.accountBalances(walletId))
+            } catch (e: CancellationException) {
+                // The manager or wallet changed: write nothing for the old one.
+                throw e
+            } catch (_: Exception) {
+                // Keep the last snapshot; the next read tries again.
+            }
             delay(2_000)
         }
     }

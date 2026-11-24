@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -82,9 +83,15 @@ fun RegisterNameScreen(identityIdHex: String, navController: NavHostController) 
         if (label.isBlank()) return@LaunchedEffect
         delay(300)
         val activeSdk = sdk ?: return@LaunchedEffect
-        val checked = runCatching {
+        val checked = try {
             parseNameAvailability(activeSdk.dpns.checkAvailability(label.trim()))
-        }.getOrElse { NameAvailability("Check failed: ${it.message}", available = false) }
+        } catch (e: CancellationException) {
+            // The label changed while the check ran: publish nothing for
+            // the old label.
+            throw e
+        } catch (e: Exception) {
+            NameAvailability("Check failed: ${e.message}", available = false)
+        }
         isContested = checked.isContested
         availability = checked
     }
@@ -196,36 +203,41 @@ fun RegisterNameScreen(identityIdHex: String, navController: NavHostController) 
                 modifier = Modifier.fillMaxWidth().testTag("registerName.submit"),
             ) {
                 val mgr = manager ?: run { error = "No active wallet manager"; return@SubmitButton }
+                // The label and contested-ness the availability check
+                // covered, taken at the tap: the field is locked from here
+                // (isSubmitting), so nothing typed later can be submitted.
+                val checkedLabel = label.trim()
+                val checkedContested = isContested
+                isSubmitting = true
                 // The owning wallet drives the signer; resolve it from the
                 // identity's stored walletId.
                 scope.launch {
-                    val identity = container.database.identityDao().getByIdentityId(idBytes)
-                    val walletId = identity?.walletId
-                    val wallet = walletId?.let { mgr.wallet(it) }
-                    if (wallet == null) {
-                        error = "This identity has no wallet on this device — DPNS registration " +
-                            "needs the owning wallet's signer."
-                        return@launch
-                    }
-                    isSubmitting = true
                     try {
+                        val identity = container.database.identityDao().getByIdentityId(idBytes)
+                        val walletId = identity?.walletId
+                        val wallet = walletId?.let { mgr.wallet(it) }
+                        if (wallet == null) {
+                            error = "This identity has no wallet on this device — DPNS registration " +
+                                "needs the owning wallet's signer."
+                            return@launch
+                        }
                         val full = mgr.identityRegistration.registerDpnsName(
                             walletHandle = wallet.handle,
                             identityId = idBytes,
-                            label = label.trim(),
+                            label = checkedLabel,
                             signerHandle = mgr.signerHandle,
                         )
                         // ← RegisterNameView.registerName's contested vs.
                         // direct success wording. A contested name only
                         // *starts* a masternode-vote contest here; it isn't
                         // owned until the vote resolves.
-                        success = if (isContested) {
+                        success = if (checkedContested) {
                             val window = if (network == org.dashfoundation.dashsdk.Network.MAINNET) {
                                 "14 days"
                             } else {
                                 "90 minutes"
                             }
-                            "Started contest for ${label.trim()}. Awaiting masternode " +
+                            "Started contest for $checkedLabel. Awaiting masternode " +
                                 "vote — resolution in ~$window. View Contest Details to track."
                         } else {
                             "Registered $full"
