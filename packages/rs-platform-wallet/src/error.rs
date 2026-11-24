@@ -115,9 +115,9 @@ pub enum PlatformWalletError {
 
     /// No key of the identity can sign `transition`: none has `purpose`, one of
     /// `security_levels` and a type Platform verifies an identity signature by while also being
-    /// enabled, unexpired and inside its contract bounds.
-    /// It stays so until an identity update adds such a key. A key that qualifies but that the
-    /// signer cannot use is the signer-unavailable error instead.
+    /// enabled, provably unexpired and inside known contract bounds (group-bound keys excluded).
+    /// Contract create/update also excludes keys with a budget or expiry from protocol
+    /// version 15. A qualifying key that the signer cannot use gives the signer-unavailable error.
     #[error(
         "identity {identity_id} has no usable {purpose} key at security level \
          {security_levels:?} to sign {transition}"
