@@ -1181,13 +1181,32 @@ pub enum PlatformWalletError {
     /// it either way: seen executed, or proven unable to execute. The
     /// refusal ending is therefore not a reason to send the tip again. Send
     /// it again only once the earlier payment is known to have failed (its
-    /// shielded activity entry reads failed, not confirmed).
+    /// shielded activity entry reads failed, not confirmed). A send returns
+    /// no id for that entry, and look-alike entries can have other outcomes:
+    /// when the exact attempt cannot be identified, its outcome is unknown
+    /// and the tip is not sent again.
     #[error(
         "A shielded payment to this recipient is still being sent or is unresolved; this tip \
          was not sent. Wait for shielded sync, then check whether the earlier payment was made \
          before sending again"
     )]
     ShieldedTipPending,
+
+    /// A shielded tip was reviewed or sent for a username the caller expects
+    /// to belong to `expected` (a saved contact's identity), and the name
+    /// resolves to `resolved` instead: the name moved to another identity.
+    /// Nothing was sent. The user picks the recipient again; a tip to the
+    /// name's new owner is started from the name, not from the contact.
+    #[error(
+        "This username now belongs to identity {resolved}, not to the expected identity \
+         {expected}; this tip was not sent"
+    )]
+    ShieldedTipRecipientMismatch {
+        /// The identity the caller expected the name to belong to.
+        expected: Identifier,
+        /// The identity the name resolves to.
+        resolved: Identifier,
+    },
 
     /// Durable recovery data cannot safely identify or reconstruct a payment.
     #[error("shielded recovery record is damaged (account {account_index:?}): {reason}; restore a known-good backup or inspect recovery records before explicitly accepting an unknown payment outcome")]

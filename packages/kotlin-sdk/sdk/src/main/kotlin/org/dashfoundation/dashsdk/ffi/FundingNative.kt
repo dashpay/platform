@@ -249,11 +249,17 @@ internal object FundingNative {
      * u8[43] previousAddress` (both zero unless changed), `u8 unresolved`
      * (0 or 1). Decoded by
      * [org.dashfoundation.dashsdk.wallet.decodeShieldedTipReview].
+     *
+     * A non-null [contactIdentityId] (32 bytes) is the identity the caller
+     * expects the name to belong to; Rust refuses another one with code 1085
+     * (`ErrorShieldedTipRecipientMismatch`). Null when the user typed the
+     * name.
      */
     external fun reviewShieldedTip(
         managerHandle: Long,
         walletId: ByteArray,
         username: String,
+        contactIdentityId: ByteArray?,
     ): ByteArray
 
     /**
@@ -274,6 +280,9 @@ internal object FundingNative {
      * (`ErrorShieldedSpendUnconfirmed`) means the tip may have left the
      * wallet and must never be sent again. Code 1084
      * (`ErrorShieldedTipPending`) means it was refused and nothing was sent.
+     * A non-null [contactIdentityId] is the identity the caller expects the
+     * name to belong to, as for [reviewShieldedTip]; code 1085 refuses
+     * another one, with nothing sent.
      */
     @Suppress("LongParameterList")
     external fun sendShieldedTip(
@@ -285,6 +294,7 @@ internal object FundingNative {
         username: String,
         expectedIdentityId: ByteArray,
         expectedAddress: ByteArray,
+        contactIdentityId: ByteArray?,
         amount: Long,
         memoText: String?,
     )

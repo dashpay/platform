@@ -34,9 +34,9 @@ use super::operations::shielded_actions;
 use super::prover::CachedOrchardProver;
 use super::store::{PendingRedrive, ShieldedNote, ShieldedStore, SubwalletId};
 use super::tip_payment::{
-    parse_shielded_tip_amount, pays_unresolved, recipient_change, tip_recipient_label,
-    unresolved_transfer_recipients, ShieldedIdentityBalance, ShieldedTipRecipient,
-    ShieldedTipRecipientChange, ShieldedTipSource,
+    ensure_expected_identity, parse_shielded_tip_amount, pays_unresolved, recipient_change,
+    tip_recipient_label, unresolved_transfer_recipients, ShieldedIdentityBalance,
+    ShieldedTipRecipient, ShieldedTipRecipientChange, ShieldedTipSource,
 };
 use super::viewing_key_bind_tests::{
     add_identity_at_slot, coordinator_at, seed_master_key, temp_dir, tip_race_fixture,
@@ -594,6 +594,7 @@ async fn should_admit_one_tip_at_a_time_and_only_on_its_own_wallet() {
             ShieldedTipSource::Identity(id),
             "alice",
             &recipient(1, [4; 43]),
+            None,
             1_000,
             [0; 36],
             &CachedOrchardProver::new(),
@@ -601,6 +602,70 @@ async fn should_admit_one_tip_at_a_time_and_only_on_its_own_wallet() {
         .await;
     assert!(
         matches!(result, Err(PlatformWalletError::InvalidParameter(_))),
+        "{result:?}"
+    );
+}
+
+/// A tip started from a saved contact names the identity the name is
+/// expected to belong to. A name that resolves to another identity is
+/// refused, at the review and, before any wait or lookup, at the send. A
+/// typed name expects nothing.
+#[tokio::test]
+async fn should_refuse_a_name_that_belongs_to_another_identity_than_expected() {
+    let (contact, moved_to) = (Identifier::from([1; 32]), Identifier::from([2; 32]));
+    assert!(ensure_expected_identity(None, &moved_to).is_ok());
+    assert!(ensure_expected_identity(Some(&contact), &contact).is_ok());
+    assert!(matches!(
+        ensure_expected_identity(Some(&contact), &moved_to),
+        Err(PlatformWalletError::ShieldedTipRecipientMismatch { expected, resolved })
+            if expected == contact && resolved == moved_to
+    ));
+
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tip_expected_identity").await;
+    let reviewed = recipient(2, [4; 43]);
+    let prover = CachedOrchardProver::new();
+    let result = wallet
+        .send_shielded_tip(
+            wallet.admit_shielded_tip().expect("admit"),
+            &coordinator,
+            &seed[..],
+            ShieldedTipSource::Identity(id),
+            "alice",
+            &reviewed,
+            Some(&contact),
+            1_000,
+            [0; 36],
+            &prover,
+        )
+        .await;
+    assert!(
+        matches!(
+            result,
+            Err(PlatformWalletError::ShieldedTipRecipientMismatch { .. })
+        ),
+        "{result:?}"
+    );
+    // The expected identity is the reviewed one: the send goes on to its
+    // lookups, which the test's SDK does not answer.
+    let result = wallet
+        .send_shielded_tip(
+            wallet.admit_shielded_tip().expect("admitted again"),
+            &coordinator,
+            &seed[..],
+            ShieldedTipSource::Identity(id),
+            "alice",
+            &reviewed,
+            Some(&moved_to),
+            1_000,
+            [0; 36],
+            &prover,
+        )
+        .await;
+    assert!(
+        !matches!(
+            result,
+            Ok(()) | Err(PlatformWalletError::ShieldedTipRecipientMismatch { .. })
+        ),
         "{result:?}"
     );
 }
@@ -677,7 +742,7 @@ async fn should_refuse_a_review_and_a_balance_on_a_coordinator_the_wallet_is_not
         .expect("prepare");
     let other = coordinator_at(&temp_dir("tip_other_coordinator_second"));
     assert!(matches!(
-        wallet.review_shielded_tip(&other, "alice").await,
+        wallet.review_shielded_tip(&other, "alice", None).await,
         Err(PlatformWalletError::ShieldedNotBound)
     ));
     assert!(matches!(

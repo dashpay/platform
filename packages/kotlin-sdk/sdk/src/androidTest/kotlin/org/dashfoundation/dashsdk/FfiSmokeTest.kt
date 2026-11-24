@@ -609,36 +609,41 @@ class FfiSmokeTest {
         assertEquals(1000 + 2, refusal.code)
         assertTrue(refusal.message?.contains(emoji) == true)
 
-        assertEquals(1, code { FundingNative.reviewShieldedTip(1L, shortId, "alice") })
-        assertEquals(1, code { FundingNative.reviewShieldedTip(1L, id, "ali\u0000ce") })
+        assertEquals(1, code { FundingNative.reviewShieldedTip(1L, shortId, "alice", null) })
+        assertEquals(1, code { FundingNative.reviewShieldedTip(1L, id, "ali\u0000ce", null) })
         assertEquals(1, code { FundingNative.shieldedIdentityBalance(1L, id, shortId) })
+        // A contact identity of the wrong size is refused at the boundary too.
+        assertEquals(1, code { FundingNative.reviewShieldedTip(1L, id, "alice", shortId) })
         assertEquals(1, code {
-            FundingNative.sendShieldedTip(1L, id, 1L, null, 0, "alice", id, ByteArray(42), 1L, null)
+            FundingNative.sendShieldedTip(1L, id, 1L, null, 0, "alice", id, address, shortId, 1L, null)
         })
         assertEquals(1, code {
-            FundingNative.sendShieldedTip(1L, id, 1L, shortId, 0, "alice", id, address, 1L, null)
+            FundingNative.sendShieldedTip(1L, id, 1L, null, 0, "alice", id, ByteArray(42), null, 1L, null)
         })
         assertEquals(1, code {
-            FundingNative.sendShieldedTip(1L, id, 1L, null, 0, "alice", id, address, -1L, null)
+            FundingNative.sendShieldedTip(1L, id, 1L, shortId, 0, "alice", id, address, null, 1L, null)
         })
         assertEquals(1, code {
-            FundingNative.sendShieldedTip(1L, id, 1L, null, -1, "alice", id, address, 1L, null)
+            FundingNative.sendShieldedTip(1L, id, 1L, null, 0, "alice", id, address, null, -1L, null)
+        })
+        assertEquals(1, code {
+            FundingNative.sendShieldedTip(1L, id, 1L, null, -1, "alice", id, address, null, 1L, null)
         })
         // A memo that cannot cross intact is refused, not sent rewritten or dropped.
         assertEquals(1, code {
             FundingNative.sendShieldedTip(
-                1L, id, 1L, null, 0, "alice", id, address, 1L, "\uD83D\uDE00\u0000",
+                1L, id, 1L, null, 0, "alice", id, address, null, 1L, "\uD83D\uDE00\u0000",
             )
         })
 
         // Valid arguments on an unknown manager reach Rust, which refuses
         // them before any lookup, proof or resolver call. The send is given
         // a null resolver, which Rust refuses first.
-        assertTrue(code { FundingNative.reviewShieldedTip(unknownManager, id, "alice") } >= 1000)
+        assertTrue(code { FundingNative.reviewShieldedTip(unknownManager, id, "alice", id) } >= 1000)
         assertTrue(code { FundingNative.shieldedIdentityBalance(unknownManager, id, id) } >= 1000)
         assertTrue(code {
             FundingNative.sendShieldedTip(
-                unknownManager, id, 0L, id, 0, "alice", id, address, 1L, "thanks",
+                unknownManager, id, 0L, id, 0, "alice", id, address, id, 1L, "thanks",
             )
         } >= 1000)
     }

@@ -1455,6 +1455,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_parseSh
 /// `platform_wallet_manager_review_shielded_tip`; changes nothing and moves
 /// no funds. Returns the review as the BLOB [`tip_review_blob`] documents.
 /// Throws on failure and returns null.
+///
+/// `contactIdentityId` is the saved contact's identity id (32 bytes) when the
+/// tip starts from a contact: a name that now resolves to another identity is
+/// refused with the recipient-mismatch code (85). JVM null when the user
+/// typed the name; a non-null array of the wrong length throws code 1.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_reviewShieldedTip(
     mut env: JNIEnv,
@@ -1462,6 +1467,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_reviewS
     manager_handle: jlong,
     wallet_id: JByteArray,
     username: JString,
+    contact_identity_id: JByteArray,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
         let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
@@ -1470,12 +1476,25 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_reviewS
         let Some(name) = read_cstring_exact(env, &username, "username") else {
             return ptr::null_mut();
         };
+        // JVM null: the user typed the name, no identity is expected.
+        let contact_identity = if contact_identity_id.is_null() {
+            None
+        } else {
+            let Some(id) = read_id32(env, &contact_identity_id, "contactIdentityId") else {
+                return ptr::null_mut();
+            };
+            Some(id)
+        };
+        let contact_identity_ptr = contact_identity
+            .as_ref()
+            .map_or(ptr::null(), |id| id.as_ptr());
         let mut review = ShieldedTipReviewFFI::default();
         let result = unsafe {
             platform_wallet_manager_review_shielded_tip(
                 manager_handle as Handle,
                 wid.as_ptr(),
                 name.as_ptr(),
+                contact_identity_ptr,
                 &mut review,
             )
         };
@@ -1495,14 +1514,18 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_reviewS
 /// recipient a review returned, passed back unchanged. A non-null
 /// `sourceIdentityId` pays from that wallet identity's own shielded account
 /// and `sourceAccount` is ignored; a null one pays from account
-/// `sourceAccount`. `resolverHandle` is passed as
+/// `sourceAccount`. `contactIdentityId` is not the reviewed recipient: it is
+/// the saved contact's identity id (32 bytes) when the tip starts from a
+/// contact, and a reviewed recipient of another identity is refused with the
+/// recipient-mismatch code (85); JVM null when the user typed the name, and a
+/// non-null array of the wrong length throws code 1. `resolverHandle` is passed as
 /// [`Java_..._shieldedTransfer`] passes it. A null `memoText` is no memo; a
 /// supplied one crosses exactly ([`read_cstring_exact`]) or is refused.
 ///
 /// Errors are thrown as the other note-spending exports throw them: the
 /// spend-unconfirmed code (18) means the tip may have left the wallet and
-/// must never be sent again, and the tip-pending code (84) means it was
-/// refused and nothing was sent.
+/// must never be sent again, and the tip-pending code (84) and the
+/// recipient-mismatch code (85) mean it was refused and nothing was sent.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_sendShieldedTip(
@@ -1516,6 +1539,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_sendShi
     username: JString,
     expected_identity_id: JByteArray,
     expected_address: JByteArray,
+    contact_identity_id: JByteArray,
     amount: jlong,
     memo_text: JString,
 ) {
@@ -1554,6 +1578,18 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_sendShi
         else {
             return;
         };
+        // JVM null: the user typed the name, no identity is expected.
+        let contact_identity = if contact_identity_id.is_null() {
+            None
+        } else {
+            let Some(id) = read_id32(env, &contact_identity_id, "contactIdentityId") else {
+                return;
+            };
+            Some(id)
+        };
+        let contact_identity_ptr = contact_identity
+            .as_ref()
+            .map_or(ptr::null(), |id| id.as_ptr());
         // Only JVM null is no memo here. A memo that was supplied crosses
         // as it is, the empty string included (Rust reads that as no memo),
         // or is refused: never dropped because it did not read. The CString
@@ -1577,6 +1613,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_sendShi
                 name.as_ptr(),
                 expected_id.as_ptr(),
                 expected_addr.as_ptr(),
+                contact_identity_ptr,
                 amount as u64,
                 memo_ptr,
             )

@@ -637,6 +637,23 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(message, detail)
     }
 
+    /// A shielded tip refused because the name belongs to another identity
+    /// than the contact it was started from keeps its own code and typed
+    /// case, not the unknown error.
+    func testShouldReportAShieldedTipRecipientMismatchByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_TIP_RECIPIENT_MISMATCH
+        )
+        XCTAssertEqual(code, .errorShieldedTipRecipientMismatch)
+        XCTAssertEqual(code.rawValue, 85)
+        let detail = "This username now belongs to identity"
+        guard case .shieldedTipRecipientMismatch(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed shielded tip recipient mismatch error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
     func testShouldReadEveryFieldOfThePrivateContactReadiness() {
         var ffi = PrivateContactReadinessFFI()
         ffi.private_payments_restored = false

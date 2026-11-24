@@ -115,6 +115,14 @@ pub struct ShieldedTipReview {
     /// resolves that transfer. `false` does not promise a send is admitted:
     /// a send is also refused while another tip from the wallet is being
     /// sent, whoever that one pays.
+    ///
+    /// The transfers counted are those to the recipient's current address
+    /// and to the address this wallet last confirmed for the name. A
+    /// transfer to an address the profile published earlier, which this
+    /// wallet never confirmed for the name (one sent to the raw address,
+    /// not as a tip), is not counted: nothing ties that address to the
+    /// name. So `false`, and a hold that ended, say nothing about such a
+    /// payment.
     pub unresolved: bool,
 }
 
@@ -318,6 +326,24 @@ pub(super) fn unresolved_transfer_recipients(
     Ok(recipients)
 }
 
+/// Refuse a name that resolves to another identity than the one the caller
+/// expects it to belong to ([`PlatformWalletError::ShieldedTipRecipientMismatch`]).
+/// `None` expects nothing: the user typed the name.
+pub(super) fn ensure_expected_identity(
+    expected: Option<&Identifier>,
+    resolved: &Identifier,
+) -> Result<(), PlatformWalletError> {
+    match expected {
+        Some(expected) if expected != resolved => {
+            Err(PlatformWalletError::ShieldedTipRecipientMismatch {
+                expected: *expected,
+                resolved: *resolved,
+            })
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Whether an unresolved payment may still reach the recipient of a tip:
 /// one to its current address, or one to the address last confirmed for the
 /// name, which the recipient may have replaced since that payment.
@@ -381,9 +407,18 @@ impl PlatformWallet {
     /// the name's normalized label. A send records the recipient it pays, a
     /// shielded Clear keeps the record, and removing the wallet drops it.
     ///
-    /// `unresolved` counts shielded transfers paid from the wallet's notes.
-    /// A shield funded by an identity or by Platform addresses is not
-    /// counted, whomever it pays.
+    /// `expected_identity` is the identity the caller expects the name to
+    /// belong to, when the tip starts from one: a saved contact. A name that
+    /// resolves to another identity is refused with
+    /// [`PlatformWalletError::ShieldedTipRecipientMismatch`], so a name that
+    /// moved is not shown as a first tip to that contact. `None` when the
+    /// user typed the name.
+    ///
+    /// `unresolved` counts shielded transfers paid from the wallet's notes,
+    /// to the recipient's current address or to the address last confirmed
+    /// for the name ([`ShieldedTipReview::unresolved`]). A shield funded by
+    /// an identity or by Platform addresses is not counted, whomever it
+    /// pays.
     ///
     /// Requires the wallet's shielded accounts to be bound on `coordinator`,
     /// with no Clear since ([`PlatformWalletError::ShieldedNotBound`]
@@ -392,12 +427,14 @@ impl PlatformWallet {
         &self,
         coordinator: &Arc<NetworkShieldedCoordinator>,
         username: &str,
+        expected_identity: Option<&Identifier>,
     ) -> Result<ShieldedTipReview, PlatformWalletError> {
         // Refused before the lookups, and checked again under the store
         // lock below.
         self.ensure_shielded_bound_on(coordinator)?;
         let keys = self.bound_shielded_keys().await?;
         let recipient = self.resolve_shielded_tip(username).await?;
+        ensure_expected_identity(expected_identity, &recipient.identity_id)?;
         let store = coordinator.store().read().await;
         // The keys this handle holds outlive a Clear, and a caller may pass
         // another coordinator: its store would hold neither the recipients
@@ -426,6 +463,12 @@ impl PlatformWallet {
     /// profile are resolved again, and a recipient that differs is refused
     /// with [`PlatformWalletError::InvalidIdentityData`], for the user to
     /// review again. There is no fallback to a transparent address.
+    ///
+    /// `expected_identity` is the identity the caller expects the name to
+    /// belong to, as for [`Self::review_shielded_tip`]: a reviewed recipient
+    /// of another identity is refused with
+    /// [`PlatformWalletError::ShieldedTipRecipientMismatch`], also when the
+    /// review that returned it was not given the expectation.
     ///
     /// `admission` is this tip's admission ([`Self::admit_shielded_tip`]),
     /// taken before the seed is resolved: while it lives no other tip from
@@ -471,10 +514,15 @@ impl PlatformWallet {
         source: ShieldedTipSource,
         username: &str,
         expected_recipient: &ShieldedTipRecipient,
+        expected_identity: Option<&Identifier>,
         amount: u64,
         memo: [u8; 36],
         prover: P,
     ) -> Result<(), PlatformWalletError> {
+        // The tip pays `expected_recipient` or nothing, so a recipient of
+        // another identity than the caller expects is refused before any
+        // wait or lookup.
+        ensure_expected_identity(expected_identity, &expected_recipient.identity_id)?;
         // Held until this returns. An admission of another wallet would
         // leave this wallet's tips unguarded.
         if !Arc::ptr_eq(
