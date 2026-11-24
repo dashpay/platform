@@ -43,10 +43,14 @@
 * **swift-sdk:** admit shielded spend wrappers as native operations ([#6179](https://github.com/dashpay/platform/issues/6179))
 
 
+### Tests
+
+* **swift-example-app:** line up the shielded tip rows and ids with KotlinExampleApp ([#6205](https://github.com/dashpay/platform/issues/6205))
+
+
 ### Miscellaneous Chores
 
 * **platform:** update `rust-dashcore` to `v0.46.1` ([#6153](https://github.com/dashpay/platform/issues/6153))
-* **release:** update changelog and version to 5.1.0-dev.4
 
 ## [5.1.0-dev.3](https://github.com/dashpay/platform/compare/v5.1.0-dev.2...v5.1.0-dev.3) (2026-11-23)
 
