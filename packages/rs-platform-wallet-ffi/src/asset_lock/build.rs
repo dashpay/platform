@@ -13,6 +13,7 @@ use crate::error::*;
 use crate::handle::*;
 use crate::runtime::runtime;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
+use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use rs_sdk_ffi::MnemonicResolverCoreSigner;
 use rs_sdk_ffi::MnemonicResolverHandle;
 use std::ffi::CString;
@@ -78,13 +79,24 @@ pub unsafe extern "C" fn asset_lock_manager_build_transaction(
                 network,
             )
         };
-        runtime().block_on(manager.build_asset_lock_transaction(
-            amount_duffs,
-            account_index,
-            funding,
-            identity_index,
-            &signer,
-        ))
+        runtime().block_on(async {
+            // A registration lock outside a registration's lease only at an
+            // index the slot allocator would hand out.
+            if funding == AssetLockFundingType::IdentityRegistration {
+                manager
+                    .ensure_registration_index_unallocated(identity_index)
+                    .await?;
+            }
+            manager
+                .build_asset_lock_transaction(
+                    amount_duffs,
+                    account_index,
+                    funding,
+                    identity_index,
+                    &signer,
+                )
+                .await
+        })
     });
     let result = unwrap_option_or_return!(option);
     let (tx, path) = unwrap_result_or_return!(result);
@@ -151,13 +163,24 @@ pub unsafe extern "C" fn asset_lock_manager_create_funded_proof(
                 network,
             )
         };
-        runtime().block_on(manager.create_funded_asset_lock_proof(
-            amount_duffs,
-            account_index,
-            funding,
-            identity_index,
-            &signer,
-        ))
+        runtime().block_on(async {
+            // A registration lock outside a registration's lease only at an
+            // index the slot allocator would hand out.
+            if funding == AssetLockFundingType::IdentityRegistration {
+                manager
+                    .ensure_registration_index_unallocated(identity_index)
+                    .await?;
+            }
+            manager
+                .create_funded_asset_lock_proof(
+                    amount_duffs,
+                    account_index,
+                    funding,
+                    identity_index,
+                    &signer,
+                )
+                .await
+        })
     });
     let result = unwrap_option_or_return!(option);
     let (proof, path, out_point) = unwrap_result_or_return!(result);

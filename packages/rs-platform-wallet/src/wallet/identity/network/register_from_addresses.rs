@@ -101,7 +101,45 @@ impl IdentityWallet {
                 "At least one input address is required".to_string(),
             ));
         }
+        if !matches!(holder, SlotHolder::Registration { .. }) {
+            return Err(PlatformWalletError::IdentitySlotNotHeld { identity_index });
+        }
+        // One operation at a time on the registration's lease.
+        self.begin_registration(identity_index, &holder).await?;
+        let result = self
+            .register_from_addresses_leased(
+                identity,
+                inputs,
+                output,
+                identity_index,
+                holder,
+                identity_signer,
+                input_address_signer,
+                settings,
+            )
+            .await;
+        self.end_registration(identity_index, &holder, &result)
+            .await;
+        result
+    }
 
+    /// [`Self::register_from_addresses`] once the registration's lease is
+    /// taken for it.
+    #[allow(clippy::too_many_arguments)]
+    async fn register_from_addresses_leased<
+        IS: Signer<IdentityPublicKey>,
+        AS: Signer<PlatformAddress> + Send + Sync,
+    >(
+        &self,
+        identity: &Identity,
+        inputs: BTreeMap<PlatformAddress, Credits>,
+        output: Option<(PlatformAddress, Credits)>,
+        identity_index: u32,
+        holder: SlotHolder,
+        identity_signer: &IS,
+        input_address_signer: &AS,
+        settings: Option<PutSettings>,
+    ) -> Result<(Identity, dash_sdk::query_types::AddressInfos, u64), PlatformWalletError> {
         // The slot: only the registration leasing `identity_index` spends
         // anything at it, and an identity already registered with these keys
         // would make Platform refuse this one after its inputs are spent.

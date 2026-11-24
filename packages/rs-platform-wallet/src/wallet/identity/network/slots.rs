@@ -164,8 +164,9 @@ impl IdentityWallet {
     /// Give up `holder`'s slot: the operation was abandoned before anything
     /// was sent. Returns the index it held, or `None` when it held none.
     ///
-    /// A claim whose lease is `Submitted` is refused: its claim may have
-    /// reached Platform, and only its outcome frees the slot. A claim's
+    /// A lease that is `Submitted` is refused: a claim's may have reached
+    /// Platform, and only its outcome frees the slot; a registration's has an
+    /// operation in flight ([`Self::begin_registration`]). A claim's
     /// release is stored durably; on a failed store the lease stays, unless a
     /// later flush may still write the release
     /// ([`NotDurable::may_still_be_written`](crate::wallet::persister::NotDurable::may_still_be_written)): then the slot stays free and
@@ -180,14 +181,14 @@ impl IdentityWallet {
         let Some(leased) = manager.leased_slot(&self.wallet_id, &holder) else {
             return Ok(None);
         };
-        let SlotHolder::InvitationClaim { invitation } = holder else {
-            return Ok(manager.release_identity_slot(&self.wallet_id, &holder));
-        };
         if leased.phase == SlotLeasePhase::Submitted {
             return Err(PlatformWalletError::IdentitySlotClaimSubmitted {
                 identity_index: leased.identity_index,
             });
         }
+        let SlotHolder::InvitationClaim { invitation } = holder else {
+            return Ok(manager.release_identity_slot(&self.wallet_id, &holder));
+        };
         manager.release_identity_slot(&self.wallet_id, &holder);
         let changeset = PlatformWalletChangeSet {
             identity_slot_leases: Some(manager.claim_lease_changeset(&self.wallet_id, invitation)),
@@ -225,6 +226,63 @@ impl IdentityWallet {
             SlotState::Leased(lease) if lease.holder == *holder => Ok(()),
             SlotState::Leased(_) | SlotState::Occupied(_) | SlotState::Free => {
                 Err(PlatformWalletError::IdentitySlotNotHeld { identity_index })
+            }
+        }
+    }
+
+    /// Take `holder`'s registration lease on slot `identity_index` for one
+    /// in-flight operation: `Reserved` becomes `Submitted` (in memory; a
+    /// registration's lease is not stored). Refused with
+    /// [`PlatformWalletError::IdentitySlotNotHeld`] unless `holder` leases that
+    /// slot and no other operation runs on the lease, so one lease funds at
+    /// most one registration at a time; while it runs, its release is refused
+    /// ([`Self::release_identity_slot`]). End it with
+    /// [`Self::end_registration`].
+    pub(crate) async fn begin_registration(
+        &self,
+        identity_index: RegistrationIndex,
+        holder: &SlotHolder,
+    ) -> Result<(), PlatformWalletError> {
+        let mut wm = self.wallet_manager.write().await;
+        let info = self.current_wallet_info_mut(&mut wm)?;
+        let manager = &mut info.identity_manager;
+        match manager.slot_state(&self.wallet_id, identity_index) {
+            SlotState::Leased(SlotLease {
+                holder: leased,
+                phase: SlotLeasePhase::Reserved,
+            }) if leased == *holder && matches!(holder, SlotHolder::Registration { .. }) => {
+                manager.set_slot_lease_phase(&self.wallet_id, holder, SlotLeasePhase::Submitted);
+                Ok(())
+            }
+            SlotState::Leased(_) | SlotState::Occupied(_) | SlotState::Free => {
+                Err(PlatformWalletError::IdentitySlotNotHeld { identity_index })
+            }
+        }
+    }
+
+    /// End the operation [`Self::begin_registration`] started, by its
+    /// `result`. A lease the operation still holds goes back to `Reserved`,
+    /// for the host to retry or release, unless the operation may have
+    /// reached Platform without its outcome being known: then it stays
+    /// `Submitted`, unreleasable for the life of this process. A landed
+    /// registration's placement has ended the lease already.
+    pub(crate) async fn end_registration<T>(
+        &self,
+        identity_index: RegistrationIndex,
+        holder: &SlotHolder,
+        result: &Result<T, PlatformWalletError>,
+    ) {
+        if result.as_ref().is_err_and(outcome_unknown) {
+            return;
+        }
+        let mut wm = self.wallet_manager.write().await;
+        let Ok(info) = self.current_wallet_info_mut(&mut wm) else {
+            return;
+        };
+        let manager = &mut info.identity_manager;
+        if let SlotState::Leased(lease) = manager.slot_state(&self.wallet_id, identity_index) {
+            if lease.holder == *holder {
+                manager.set_slot_lease_phase(&self.wallet_id, holder, SlotLeasePhase::Reserved);
             }
         }
     }
@@ -742,10 +800,22 @@ fn funded_registration_indices(info: &PlatformWalletInfo) -> BTreeSet<Registrati
         .values()
         .filter(|lock| {
             lock.funding_type == AssetLockFundingType::IdentityRegistration
-                && lock.status != AssetLockStatus::Consumed
+                && !lock.status.is_consumed()
         })
         .map(|lock| lock.identity_index)
         .collect()
+}
+
+/// Whether `error` leaves a registration's outcome unknown: it may have
+/// reached Platform and may still execute.
+fn outcome_unknown(error: &PlatformWalletError) -> bool {
+    match error {
+        PlatformWalletError::Sdk(error) => error.is_state_transition_result_unconfirmed(),
+        PlatformWalletError::TransactionBroadcastUnconfirmed(_)
+        | PlatformWalletError::ShieldedBroadcastUnconfirmed { .. }
+        | PlatformWalletError::ShieldedSpendUnconfirmed { .. } => true,
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -1226,6 +1296,112 @@ mod tests {
             .unwrap()
             .tracked_asset_locks
             .len()
+    }
+
+    /// A registration lease runs one operation at a time: a second use of
+    /// the same lease, and its release, are refused while one runs; a
+    /// definite failure gives it back, an unknown outcome keeps it.
+    #[tokio::test]
+    async fn should_run_one_operation_at_a_time_on_a_registration_lease() {
+        let wallet = wallet(Backend::new(full())).await;
+        let identity = wallet.identity();
+        let slot = identity
+            .acquire_identity_slot(SlotRequest::Registration)
+            .await
+            .unwrap();
+        let index = slot.identity_index;
+
+        identity
+            .begin_registration(index, &slot.holder)
+            .await
+            .unwrap();
+        assert!(matches!(
+            identity.begin_registration(index, &slot.holder).await,
+            Err(PlatformWalletError::IdentitySlotNotHeld { .. })
+        ));
+        assert!(matches!(
+            identity.release_identity_slot(slot.holder).await,
+            Err(PlatformWalletError::IdentitySlotClaimSubmitted { .. })
+        ));
+
+        let refused: Result<(), _> = Err(PlatformWalletError::InvalidIdentityData("no".into()));
+        identity
+            .end_registration(index, &slot.holder, &refused)
+            .await;
+        identity
+            .begin_registration(index, &slot.holder)
+            .await
+            .unwrap();
+        let unknown: Result<(), _> = Err(PlatformWalletError::TransactionBroadcastUnconfirmed(
+            "lost".into(),
+        ));
+        identity
+            .end_registration(index, &slot.holder, &unknown)
+            .await;
+        assert!(identity.release_identity_slot(slot.holder).await.is_err());
+    }
+
+    /// A registration lock funded outside a lease (the generic asset-lock
+    /// exports) goes only to an index the allocator would hand out.
+    #[tokio::test]
+    async fn should_fund_a_registration_lock_outside_a_lease_only_at_a_free_index() {
+        let wallet = wallet(Backend::new(full())).await;
+        let leased = wallet
+            .identity()
+            .acquire_identity_slot(SlotRequest::Registration)
+            .await
+            .unwrap();
+        track_registration_lock_at(&wallet, OutPoint::new(Txid::from_byte_array([4; 32]), 0), 1)
+            .await;
+        let asset_locks = &wallet.identity().asset_locks;
+
+        for taken in [leased.identity_index, 1] {
+            assert!(matches!(
+                asset_locks.ensure_registration_index_unallocated(taken).await,
+                Err(PlatformWalletError::IdentitySlotNotHeld { identity_index }) if identity_index == taken
+            ));
+        }
+        asset_locks
+            .ensure_registration_index_unallocated(2)
+            .await
+            .unwrap();
+        assert_ne!(
+            leased.holder,
+            SlotHolder::Registration { token: 0 },
+            "a zero token never names a live lease"
+        );
+    }
+
+    /// Two registrations with one lease: the second is refused before
+    /// funding while the first runs, so one lease never funds two creates.
+    #[tokio::test]
+    async fn should_refuse_a_registration_whose_lease_is_in_flight() {
+        let wallet = wallet(Backend::new(full())).await;
+        let slot = wallet
+            .identity()
+            .acquire_identity_slot(SlotRequest::Registration)
+            .await
+            .unwrap();
+        wallet
+            .identity()
+            .begin_registration(slot.identity_index, &slot.holder)
+            .await
+            .unwrap();
+
+        let refused = register_at(&wallet, slot.identity_index, Some(slot.holder)).await;
+        let from_addresses =
+            register_from_addresses_at(&wallet, slot.identity_index, slot.holder).await;
+
+        for refused in [refused.map(|_| ()), from_addresses.map(|_| ())] {
+            assert!(
+                matches!(
+                    refused,
+                    Err(PlatformWalletError::IdentitySlotNotHeld { .. })
+                ),
+                "{refused:?}"
+            );
+        }
+        assert_eq!(tracked_locks(&wallet).await, 0);
     }
 
     #[tokio::test]

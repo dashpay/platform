@@ -2436,6 +2436,57 @@ impl PlatformWallet {
     {
         // Input first, before the network is asked anything.
         ensure_allowed_denomination(denomination, self.sdk.version())?;
+        if !matches!(holder, SlotHolder::Registration { .. }) {
+            return Err(PlatformWalletError::IdentitySlotNotHeld { identity_index });
+        }
+        // One operation at a time on the registration's lease.
+        self.identity
+            .begin_registration(identity_index, &holder)
+            .await?;
+        let result = self
+            .shielded_identity_create_from_pool_leased(
+                coordinator,
+                seed,
+                account,
+                identity_index,
+                holder,
+                public_keys,
+                denomination,
+                send_to_address_on_creation_failure,
+                identity_signer,
+                prover,
+            )
+            .await;
+        self.identity
+            .end_registration(identity_index, &holder, &result)
+            .await;
+        result
+    }
+
+    /// [`Self::shielded_identity_create_from_pool`] once the registration's
+    /// lease is taken for it.
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    async fn shielded_identity_create_from_pool_leased<P, IS>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        seed: &[u8],
+        account: u32,
+        identity_index: u32,
+        holder: SlotHolder,
+        public_keys: Vec<(
+            dpp::identity::IdentityPublicKey,
+            dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation,
+        )>,
+        denomination: u64,
+        send_to_address_on_creation_failure: dpp::address_funds::PlatformAddress,
+        identity_signer: &IS,
+        prover: P,
+    ) -> Result<dpp::prelude::Identifier, PlatformWalletError>
+    where
+        P: dpp::shielded::builder::OrchardProver,
+        IS: dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> + Send + Sync,
+    {
         // The slot: only the registration leasing `identity_index` spends notes for keys derived
         // there, and an identity already registered with these keys would make Platform refuse
         // this one after its notes are spent.

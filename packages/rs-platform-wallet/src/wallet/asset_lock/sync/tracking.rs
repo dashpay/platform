@@ -8,6 +8,7 @@ use crate::changeset::changeset::AssetLockChangeSet;
 use crate::changeset::changeset::PlatformWalletChangeSet;
 use crate::changeset::PersistenceCapabilities;
 use crate::error::PlatformWalletError;
+use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
 use super::super::manager::AssetLockManager;
 use super::super::tracked::{AssetLockStatus, TrackedAssetLock};
@@ -119,6 +120,35 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         wm.get_wallet_info(&self.wallet_id)
             .and_then(|info| info.tracked_asset_locks.get(out_point))
             .map(|lock| (lock.funding_type, lock.identity_index, lock.status.clone()))
+    }
+
+    /// Refuse an identity-registration lock at `identity_index` with
+    /// [`PlatformWalletError::IdentitySlotNotHeld`] unless the slot allocator
+    /// would hand that index out: no identity, lease, unconsumed registration
+    /// lock or pending shielded create holds it. For a funding outside a
+    /// registration's lease (the generic asset-lock exports): the lock it
+    /// tracks then holds the index from the allocator in turn.
+    pub async fn ensure_registration_index_unallocated(
+        &self,
+        identity_index: u32,
+    ) -> Result<(), PlatformWalletError> {
+        let wm = self.wallet_manager.read().await;
+        let info = wm
+            .get_wallet_info(&self.wallet_id)
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+        let funded = info.tracked_asset_locks.values().any(|lock| {
+            lock.funding_type == AssetLockFundingType::IdentityRegistration
+                && !lock.status.is_consumed()
+                && lock.identity_index == identity_index
+        });
+        if funded
+            || !info
+                .identity_manager
+                .slot_allocatable(&self.wallet_id, identity_index)
+        {
+            return Err(PlatformWalletError::IdentitySlotNotHeld { identity_index });
+        }
+        Ok(())
     }
 
     /// The wallet-drain operation a tracked lock belongs to, if any.

@@ -165,12 +165,9 @@ impl IdentityManager {
             self.forget_restored_claim(&wallet_id, &holder);
             return Ok(existing);
         }
-        let shielded_creates = self.shielded_create_holds.get(&wallet_id);
         let identity_index = (0..=RegistrationIndex::MAX)
             .find(|index| {
-                !funded_registrations.contains(index)
-                    && !shielded_creates.is_some_and(|held| held.contains(index))
-                    && self.slot_state(&wallet_id, *index) == SlotState::Free
+                !funded_registrations.contains(index) && self.slot_allocatable(&wallet_id, *index)
             })
             .ok_or_else(|| {
                 PlatformWalletError::InvalidIdentityData(
@@ -189,6 +186,21 @@ impl IdentityManager {
             reentered: false,
             phase: SlotLeasePhase::Reserved,
         })
+    }
+
+    /// Whether `wallet_id`'s slot `identity_index` holds no identity, no
+    /// lease and no pending shielded identity create: what an acquisition
+    /// needs, besides no unconsumed registration asset lock there.
+    pub fn slot_allocatable(
+        &self,
+        wallet_id: &WalletId,
+        identity_index: RegistrationIndex,
+    ) -> bool {
+        !self
+            .shielded_create_holds
+            .get(wallet_id)
+            .is_some_and(|held| held.contains(&identity_index))
+            && self.slot_state(wallet_id, identity_index) == SlotState::Free
     }
 
     /// Hold `wallet_id`'s slot `identity_index` for an identity create from
@@ -228,11 +240,12 @@ impl IdentityManager {
         wallet_id: WalletId,
         funded_registrations: &BTreeSet<RegistrationIndex>,
     ) -> Result<(SlotHolder, SlotAcquisition), PlatformWalletError> {
-        let holder = SlotHolder::Registration {
-            token: self.next_registration_token,
-        };
+        // Tokens start at 1: a host's zero or default token never names a
+        // live lease.
+        let token = self.next_registration_token.wrapping_add(1).max(1);
+        let holder = SlotHolder::Registration { token };
         let acquisition = self.acquire_identity_slot(wallet_id, holder, funded_registrations)?;
-        self.next_registration_token = self.next_registration_token.wrapping_add(1);
+        self.next_registration_token = token;
         Ok((holder, acquisition))
     }
 

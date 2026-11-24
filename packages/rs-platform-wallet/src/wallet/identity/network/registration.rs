@@ -168,6 +168,57 @@ impl IdentityWallet {
         S: Signer<IdentityPublicKey> + Send + Sync,
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
+        // A new funding runs on its registration's lease, one operation at
+        // a time; a resumed lock holds its index through the lock.
+        let resume = matches!(
+            funding,
+            AssetLockFunding::FromExistingAssetLock {
+                consume_invitation_voucher: false,
+                ..
+            }
+        );
+        let in_flight = match holder {
+            Some(holder @ SlotHolder::Registration { .. }) if !resume => {
+                self.begin_registration(identity_index, &holder).await?;
+                Some(holder)
+            }
+            _ => None,
+        };
+        let result = self
+            .register_identity_with_funding_leased(
+                funding,
+                identity_index,
+                holder,
+                keys_map,
+                identity_signer,
+                asset_lock_signer,
+                settings,
+            )
+            .await;
+        if let Some(holder) = in_flight {
+            self.end_registration(identity_index, &holder, &result)
+                .await;
+        }
+        result
+    }
+
+    /// [`Self::register_identity_with_funding`] once a new funding's lease
+    /// is taken for it.
+    #[allow(clippy::too_many_arguments)]
+    async fn register_identity_with_funding_leased<S, AS>(
+        &self,
+        funding: AssetLockFunding,
+        identity_index: u32,
+        holder: Option<SlotHolder>,
+        keys_map: BTreeMap<u32, IdentityPublicKey>,
+        identity_signer: &S,
+        asset_lock_signer: &AS,
+        settings: Option<PutSettings>,
+    ) -> Result<Identity, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
+    {
         // Step 1: pre-flight on the caller-supplied keys map.
         if keys_map.is_empty() {
             return Err(PlatformWalletError::InvalidIdentityData(
