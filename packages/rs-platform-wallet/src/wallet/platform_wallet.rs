@@ -1821,9 +1821,12 @@ impl PlatformWallet {
     /// in flight. Without it, as before these payments were admitted:
     ///
     /// - a payment that starts while a bind which drops its account waits
-    ///   its turn runs, and that bind can then purge the payment's saved
-    ///   transition, as it can for any spend that started a moment before
-    ///   the bind;
+    ///   its turn runs beside it, as any spend that started a moment before
+    ///   the bind does. Once the payment has saved its record, the install
+    ///   refuses to drop the account, or keeps its store state if the record
+    ///   was saved since it checked (`register_locked`); a payment that has
+    ///   reserved its notes and not saved its record yet can have them
+    ///   purged under it;
     /// - a payment that starts while a wallet's first bind restores its
     ///   notes can find none yet, and fail before anything is sent.
     ///
