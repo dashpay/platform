@@ -722,11 +722,10 @@ mod tests {
     mod create {
         use super::*;
         use crate::wallet::identity::network::private_documents::tests::wallet_keeping;
-        use crate::wallet::shielded::viewing_key_bind_tests::{
-            coordinator_at as bindable_coordinator_at, CapturingPersistence,
-        };
+        use crate::wallet::shielded::viewing_key_bind_tests::CapturingPersistence;
         use crate::wallet::shielded::{
-            FileBackedShieldedStore, NetworkShieldedCoordinator, ShieldedStore,
+            FileBackedShieldedStore, NetworkShieldedCoordinator, ShieldedNote, ShieldedStore,
+            SubwalletId,
         };
         use crate::PlatformWalletManager;
         use dpp::shielded::builder::OrchardProver;
@@ -886,13 +885,16 @@ mod tests {
             assert!(records_nothing(&coordinator, &wallet).await);
         }
 
-        /// Alice's wallet, on a backend a bind accepts, with her shielded
-        /// account 0 bound on `coordinator` and Bob served by its mock.
+        /// Alice's wallet, on a backend a bind accepts, its manager's shielded
+        /// store configured under `dir`, with her shielded account 0 bound on
+        /// the manager's coordinator, which is returned, and Bob served by its
+        /// mock.
         async fn bound_alice(
-            coordinator: &Arc<NetworkShieldedCoordinator>,
+            dir: &std::path::Path,
         ) -> (
             PlatformWalletManager<CapturingPersistence>,
             Arc<PlatformWallet>,
+            Arc<NetworkShieldedCoordinator>,
         ) {
             let alice = identity(ALICE_PHRASE, ALICE, true);
             let (manager, wallet) = wallet_keeping(
@@ -902,11 +904,16 @@ mod tests {
             )
             .await;
             serve_bob(&wallet, identity(BOB_PHRASE, BOB, true)).await;
+            manager
+                .configure_shielded(dir.join("tree.sqlite"))
+                .await
+                .expect("configured");
+            let coordinator = manager.shielded_coordinator().await.expect("coordinator");
             wallet
-                .bind_shielded(&seed(ALICE_PHRASE), &[0], coordinator)
+                .bind_shielded(&seed(ALICE_PHRASE), &[0], &coordinator)
                 .await
                 .expect("bound");
-            (manager, wallet)
+            (manager, wallet, coordinator)
         }
 
         /// A create that was sealed and admitted holds the wallet
@@ -918,8 +925,7 @@ mod tests {
         #[tokio::test]
         async fn should_hold_removal_and_refuse_a_clear_until_a_create_returns() {
             let dir = tempfile::tempdir().expect("temporary shielded store");
-            let coordinator = bindable_coordinator_at(dir.path());
-            let (_manager, wallet) = bound_alice(&coordinator).await;
+            let (_manager, wallet, coordinator) = bound_alice(dir.path()).await;
 
             let keys = wallet.shielded_keys.write().await;
             let running = {
@@ -966,8 +972,8 @@ mod tests {
                 "{refused:?}"
             );
             assert!(!running.is_finished(), "held at the key slot");
-            // Taken for the binding check only: a bind of this wallet does
-            // not wait for the proof and the result of the create.
+            // Not taken: a bind of this wallet does not wait for the proof
+            // and the result of the create.
             assert!(wallet.shielded_config_lock.try_lock().is_ok());
 
             drop(keys);
@@ -995,14 +1001,175 @@ mod tests {
                 .expect("a Clear goes through once the create has returned");
         }
 
+        /// The admission outlives the create's first locks, through the
+        /// interval a Clear would damage: a create that has reserved a funded
+        /// note still refuses a Clear, and the note is still there for its
+        /// rollback to release. The create is handed the shielded store one
+        /// acquisition at a time until the note is seen reserved; the mock
+        /// then refuses its network read, so it waits for the store again to
+        /// roll back.
+        #[tokio::test]
+        async fn should_refuse_a_clear_while_a_create_holds_a_reserved_note() {
+            let dir = tempfile::tempdir().expect("temporary shielded store");
+            let (_manager, wallet, coordinator) = bound_alice(dir.path()).await;
+            let id = SubwalletId::new(wallet.wallet_id(), 0);
+            let note = ShieldedNote {
+                position: 0,
+                cmx: [1; 32],
+                nullifier: [0x5E; 32],
+                block_height: 1,
+                is_spent: false,
+                value: 1_000_000_000_000,
+                note_data: vec![],
+            };
+            coordinator
+                .store()
+                .write()
+                .await
+                .save_note(id, &note)
+                .expect("a funded note");
+            let crypto = alice_crypto();
+            let new = new_entry(PrivateDocumentSenderAuth::DeniableMac, "hello Bob");
+
+            let mut held = coordinator.store().write().await;
+            let mut creating = Box::pin(create(&wallet, &coordinator, &crypto, &new));
+            let mut steps = 0;
+            while !held.get_unspent_notes(id).expect("notes").is_empty() {
+                steps += 1;
+                assert!(steps <= 16, "the create never reserved its note");
+                // Driven to its next wait for the store: the seal first, which
+                // takes no lock of the store.
+                if let std::task::Poll::Ready(created) = futures::poll!(&mut creating) {
+                    panic!("the create returned before its note was seen reserved: {created:?}");
+                }
+                // Queued behind the create, so the store comes back to this
+                // task right after the create's next step.
+                let mut next = Box::pin(coordinator.store().write());
+                assert!(futures::poll!(&mut next).is_pending());
+                drop(held);
+                if let std::task::Poll::Ready(created) = futures::poll!(&mut creating) {
+                    panic!("the create returned before its note was seen reserved: {created:?}");
+                }
+                held = tokio::time::timeout(REACHED, next)
+                    .await
+                    .expect("the store passes on after the create's step");
+            }
+
+            assert!(
+                coordinator.has_admitted_operation(),
+                "still admitted with its note reserved"
+            );
+            let refused = tokio::time::timeout(REACHED, coordinator.clear())
+                .await
+                .expect("a Clear does not wait for the create");
+            assert!(
+                matches!(
+                    refused,
+                    Err(PlatformWalletError::ShieldedOperationInProgress)
+                ),
+                "{refused:?}"
+            );
+            assert!(
+                held.get_unspent_notes(id).expect("notes").is_empty(),
+                "the refused Clear left the reservation alone"
+            );
+
+            drop(held);
+            let created = tokio::time::timeout(REACHED, creating)
+                .await
+                .expect("the create returns");
+            assert!(
+                created.is_err(),
+                "the mock serves no network read: {created:?}"
+            );
+            assert_eq!(
+                coordinator
+                    .store()
+                    .read()
+                    .await
+                    .get_unspent_notes(id)
+                    .expect("notes")
+                    .iter()
+                    .map(|note| note.nullifier)
+                    .collect::<Vec<_>>(),
+                vec![note.nullifier],
+                "the create released the note it reserved, in the store it reserved it in"
+            );
+            assert!(!coordinator.has_admitted_operation());
+            coordinator
+                .clear()
+                .await
+                .expect("a Clear goes through once the create has returned");
+        }
+
+        /// A create does not wait for a bind of its wallet, nor for what that
+        /// bind waits for: an asset-lock funding holds `shield_guard` across
+        /// a ChainLock wait with no deadline, and a bind that arrives then
+        /// waits for the guard holding the configuration lock. The create
+        /// returns all the same, with the guard still held.
+        #[tokio::test]
+        async fn should_not_hold_a_create_behind_a_bind_queued_on_a_funding() {
+            let dir = tempfile::tempdir().expect("temporary shielded store");
+            let (_manager, wallet, coordinator) = bound_alice(dir.path()).await;
+
+            // As an asset-lock funding waiting for its ChainLock.
+            let funding = wallet.shield_guard.lock().await;
+            let bind = {
+                let wallet = Arc::clone(&wallet);
+                let coordinator = Arc::clone(&coordinator);
+                tokio::spawn(async move {
+                    wallet
+                        .bind_shielded(&seed(ALICE_PHRASE), &[0], &coordinator)
+                        .await
+                })
+            };
+            // The bind has the configuration lock, and waits for the guard.
+            let deadline = tokio::time::Instant::now() + REACHED;
+            while wallet.shielded_config_lock.try_lock().is_ok() {
+                assert!(
+                    tokio::time::Instant::now() < deadline,
+                    "the bind never took the configuration lock"
+                );
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+
+            let returned = tokio::time::timeout(
+                REACHED,
+                create(
+                    &wallet,
+                    &coordinator,
+                    &alice_crypto(),
+                    &new_entry(PrivateDocumentSenderAuth::DeniableMac, "hello Bob"),
+                ),
+            )
+            .await
+            .expect("the create does not wait for the bind, nor for the funding it waits for");
+            assert!(
+                !matches!(
+                    returned,
+                    Err(PlatformWalletError::WalletRemovedBeforeSend(_)
+                        | PlatformWalletError::ShieldedNotBound)
+                ),
+                "the wallet was current and bound: {returned:?}"
+            );
+            assert!(!bind.is_finished(), "the bind still waits");
+
+            drop(funding);
+            tokio::time::timeout(REACHED, bind)
+                .await
+                .expect("the bind returns")
+                .expect("bind task")
+                .expect("bound");
+            assert!(!coordinator.has_admitted_operation());
+        }
+
         /// A Clear drops the wallet's registration but not the keys its
         /// handle holds. A create admitted after a Clear is refused before it
         /// reads a key or a note, until the wallet is bound again.
         #[tokio::test]
         async fn should_refuse_a_create_after_a_clear_until_the_wallet_is_bound_again() {
             let dir = tempfile::tempdir().expect("temporary shielded store");
-            let coordinator = bindable_coordinator_at(dir.path());
-            let (_manager, wallet) = bound_alice(&coordinator).await;
+            let (_manager, wallet, coordinator) = bound_alice(dir.path()).await;
             let new = new_entry(PrivateDocumentSenderAuth::DeniableMac, "hello Bob");
 
             coordinator.clear().await.expect("cleared");

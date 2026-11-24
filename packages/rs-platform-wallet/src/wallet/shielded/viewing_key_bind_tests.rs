@@ -168,7 +168,7 @@ pub(super) fn temp_dir(tag: &str) -> PathBuf {
     std::env::temp_dir().join(format!("viewing_key_bind_test_{tag}_{nanos}"))
 }
 
-pub(crate) fn coordinator_at(dir: &std::path::Path) -> Arc<NetworkShieldedCoordinator> {
+pub(super) fn coordinator_at(dir: &std::path::Path) -> Arc<NetworkShieldedCoordinator> {
     coordinator_for(dir, Network::Testnet)
 }
 

@@ -1771,14 +1771,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         //
         // Nothing is held across this call, and nothing may be: a payment
         // from the shielded pool (`PlatformWallet::pay_private_contact_request`)
-        // takes the wallet generation's lifecycle gate, the shielded
-        // coordinator's operation admission and the wallet's shielded
-        // configuration lock itself, in the order a shielded bind takes
-        // them, before the shielded store and the wallet manager lock. The
-        // gate is write-preferring and not reentrant, so holding it here
-        // would deadlock with a removal queued between the two acquisitions;
-        // holding the wallet manager lock here would reverse a bind's order.
-        // The sections of this send that take either have ended above.
+        // takes the wallet generation's lifecycle gate and the shielded
+        // coordinator's operation admission itself, in the order a shielded
+        // bind takes them, before the shielded store and the wallet manager
+        // lock. The gate is write-preferring and not reentrant, so holding
+        // it here would deadlock with a removal queued between the two
+        // acquisitions; holding the wallet manager lock here would reverse a
+        // bind's order. The sections of this send that take either have
+        // ended above.
         let paid = pay(
             entry,
             reservation
@@ -9318,6 +9318,11 @@ mod tests {
     /// payment, the removal queues on the gate behind both, and all three
     /// return once the store is released. A second acquisition of the gate
     /// by the send or its payment would hang here, behind the queued removal.
+    /// Each is polled to the point it waits at, so the order does not depend
+    /// on elapsed time.
+    ///
+    /// The store is the manager's own, so the removal also unregisters the
+    /// wallet from the coordinator the payment ran on.
     #[cfg(feature = "shielded")]
     #[tokio::test]
     async fn should_refuse_a_clear_while_a_private_contact_request_is_paid_for_from_the_pool() {
@@ -9342,24 +9347,22 @@ mod tests {
         );
         let (manager, alice_wallet) =
             wallet_on(persistence, ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
-        let manager = Arc::new(manager);
         let wallet_id = alice_wallet.wallet_id();
         let dir = tempfile::tempdir().expect("temporary shielded store");
-        let db_path = dir.path().join("tree.sqlite");
-        let coordinator = Arc::new(NetworkShieldedCoordinator::new(
-            Arc::clone(&alice_wallet.identity().sdk),
-            Network::Testnet,
-            db_path.clone(),
-            FileBackedShieldedStore::open_path(&db_path, 100).expect("the store"),
-        ));
+        manager
+            .configure_shielded(dir.path().join("tree.sqlite"))
+            .await
+            .expect("the shielded store is configured");
+        let coordinator = manager.shielded_coordinator().await.expect("coordinator");
+        let alice_seed = seed(ALICE_PHRASE);
         alice_wallet
-            .bind_shielded(&seed(ALICE_PHRASE), &[0], &coordinator)
+            .bind_shielded(&alice_seed, &[0], &coordinator)
             .await
             .expect("bound");
+        assert!(coordinator.registered_wallets().await.contains(&wallet_id));
         let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
         let alice_signer = signer(ALICE_PHRASE, &alice);
         let (alice_id, bob_id) = (alice.id(), bob.id());
-        let alice_seed = seed(ALICE_PHRASE);
 
         let store = coordinator.store().write().await;
         let mut send = Box::pin(alice_wallet.send_private_contact_request(
@@ -9410,36 +9413,35 @@ mod tests {
             "{refused:?}"
         );
 
-        // A bind beside the payment, then a removal queued behind both.
-        let bind = {
-            let wallet = Arc::clone(&alice_wallet);
-            let coordinator = Arc::clone(&coordinator);
-            tokio::spawn(async move {
-                wallet
-                    .bind_shielded(&seed(ALICE_PHRASE), &[0], &coordinator)
-                    .await
-            })
-        };
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        let removal = {
-            let manager = Arc::clone(&manager);
-            tokio::spawn(async move { manager.remove_wallet(&wallet_id).await.map(|_| ()) })
-        };
+        // A bind beside the payment: polled once, it has the gate and the
+        // admission, as no removal is queued yet, and either returned (an
+        // unchanged registration) or waits for something the payment or this
+        // test holds.
+        let mut bind = Box::pin(futures::future::maybe_done(alice_wallet.bind_shielded(
+            &alice_seed,
+            &[0],
+            &coordinator,
+        )));
+        let _ = futures::poll!(&mut bind);
+        // Then a removal, polled until it waits: on the gate, behind the
+        // payment, with nothing else in this fixture to wait for.
+        let mut removal = Box::pin(manager.remove_wallet(&wallet_id));
         assert!(
-            tokio::time::timeout(Duration::from_millis(200), &mut send)
-                .await
-                .is_err(),
-            "the payment waits at the store"
-        );
-        assert!(
-            !removal.is_finished(),
+            futures::poll!(&mut removal).is_pending(),
             "the removal waits for the payment in flight"
         );
+        assert!(
+            futures::poll!(&mut send).is_pending(),
+            "the payment waits at the store"
+        );
+        assert!(alice_wallet.core().is_current_generation().await);
 
         drop(store);
-        let sent = tokio::time::timeout(REACHED, &mut send)
-            .await
-            .expect("the send returns: nothing it holds is waited for by the bind or the removal");
+        let (sent, (), removed) = tokio::time::timeout(REACHED, async {
+            tokio::join!(&mut send, &mut bind, &mut removal)
+        })
+        .await
+        .expect("the send, the bind and the removal all return: none waits for another for ever");
         // The store holds no note, so nothing is paid; the wallet was current
         // and bound when the payment was admitted, and the refused Clear
         // changed neither.
@@ -9452,17 +9454,15 @@ mod tests {
             ),
             "{sent:?}"
         );
-        drop(send);
-        tokio::time::timeout(REACHED, bind)
-            .await
-            .expect("the bind returns")
-            .expect("bind task")
+        bind.as_mut()
+            .take_output()
+            .expect("the bind returned")
             .expect("the wallet was current when the bind was admitted");
-        tokio::time::timeout(REACHED, removal)
-            .await
-            .expect("the removal returns")
-            .expect("removal task")
-            .expect("the removal completes");
+        removed.expect("the removal completes");
+        assert!(
+            !coordinator.registered_wallets().await.contains(&wallet_id),
+            "the removal unregistered the wallet from the coordinator the payment ran on"
+        );
         assert!(!coordinator.has_admitted_operation());
         coordinator
             .clear()
