@@ -858,7 +858,10 @@ fn map_asset_lock_funding_result(
         Err(e) => e,
     };
     match e.dispatched_source() {
-        PlatformWalletError::AssetLockAlreadyConsumed(_) => e.into(),
+        // A caller argument refused below the boundary (an amount below the
+        // pool-fee floor) crosses as the boundary's own invalid-parameter code.
+        PlatformWalletError::InvalidParameter(_)
+        | PlatformWalletError::AssetLockAlreadyConsumed(_) => e.into(),
         PlatformWalletError::AssetLockNotTracked(_)
         | PlatformWalletError::AssetLockFundingMismatch { .. }
         | PlatformWalletError::AssetLockRecipientMismatch { .. } => e.into(),
@@ -4254,6 +4257,23 @@ mod tests {
         assert_eq!(
             resume_unconfirmed.code,
             PlatformWalletFFIResultCode::ErrorTransactionBroadcastUnconfirmed
+        );
+
+        let below_floor = map_asset_lock_funding_result(
+            Err(PlatformWalletError::RefusedBeforeDispatch {
+                source: Box::new(PlatformWalletError::InvalidParameter(
+                    "below the pool fee".to_owned(),
+                )),
+            }),
+            "shielded fund-from-asset-lock",
+        );
+        assert_eq!(
+            below_floor.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert_eq!(
+            below_floor.payment_delivery,
+            PlatformWalletFFIPaymentDelivery::NotSent
         );
 
         let unrelated = map_asset_lock_funding_result(
