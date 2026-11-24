@@ -1790,8 +1790,8 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
         let (outcome, metadata, proof) = verify_state_transition_proof_outcome(
             &state_transition,
             &response,
-            platform_version,
             provider,
+            platform_version,
         )?;
         Ok((Some(outcome), metadata.clone(), proof.clone()))
     }
@@ -1803,8 +1803,8 @@ impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionPro
 fn verify_state_transition_proof_outcome<'r>(
     state_transition: &StateTransition,
     response: &'r platform::WaitForStateTransitionResultResponse,
-    platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
+    platform_version: &PlatformVersion,
 ) -> Result<(StateTransitionProofOutcome, &'r ResponseMetadata, &'r Proof), Error> {
     let proof = response.proof().or(Err(Error::NoProofInResult))?;
     let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;

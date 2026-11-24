@@ -63,7 +63,10 @@ message UnregisterStateTransitionExecutionProofRequest {
   bytes state_transition_hash = 1;
   // The lease the registration was taken with. Releasing it ends only that
   // registration. A release that arrives before its registration makes Drive
-  // refuse that registration, and releasing again is allowed.
+  // refuse that registration. Releasing a lease Drive does not hold is
+  // allowed, and Drive remembers it as a release that came first, within the
+  // bounds given for registerStateTransitionExecutionProof: so does a second
+  // release of a lease, which a caller therefore does not send.
   bytes lease = 2;
 }
 

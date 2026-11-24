@@ -15,6 +15,14 @@
 //! None of this is consensus. It reads committed state, writes nothing to it, and a failure
 //! to prove never fails a block. The bounds below are this node's own limits: what it keeps in
 //! memory, and how much proving it adds to finalizing a block.
+//!
+//! The bounds are the node's, not a client's. A registration names a hash and nothing ties it
+//! to whoever sent the transition, so the registrations a node holds and the transitions it
+//! proves in a block are shared by everyone who asks, and a client can use them up with
+//! transitions others sent, or with hashes of no transition at all. A client whose transition
+//! is left out gets no pair, and its wait answers with a proof of current state, as a wait that
+//! never asked does. The pair is an extra a node gives when it can, and nothing may depend on
+//! getting it.
 
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
@@ -61,7 +69,9 @@ pub const MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK: usize = 32;
 /// How many registered transitions of one block are decoded to find the ones to prove, of any
 /// kind. A block can hold registered transitions of kinds that are not proved, and each costs a
 /// full decode before its kind is known; the registered transitions past this are not proved,
-/// in block order.
+/// in block order. A transition counts whoever registered it, so registered transitions of
+/// other kinds earlier in a block can leave a later one of a proved kind without its pair: see
+/// the module documentation.
 pub const MAX_DECODED_STATE_TRANSITIONS_PER_BLOCK: usize =
     2 * MAX_PROVED_STATE_TRANSITIONS_PER_BLOCK;
 
@@ -69,9 +79,11 @@ pub const MAX_DECODED_STATE_TRANSITIONS_PER_BLOCK: usize =
 /// its client gets a proof of current state instead.
 pub const MAX_RETAINED_PROOF_BYTES: usize = 16 * 1024 * 1024;
 
-/// How many releases that arrived before their own registration are remembered at once, so that
-/// the registration is not taken when it arrives. Only such out-of-order releases are
-/// remembered: a release of a held registration needs no memory. When the table is full, the
+/// How many releases that found no registration of their lease are remembered at once, so that
+/// the registration is not taken if it arrives after. A release of a held registration needs no
+/// memory. One that comes before its registration does, and so does one of a lease that was
+/// released already or has expired: the node keeps nothing of a lease it no longer holds, so
+/// it cannot tell the three apart. When the table is full, the
 /// release with the lowest sequence number is forgotten and its issuer's low-water mark raised
 /// to it, so it and every earlier lease of that issuer are still never taken, while the issuer's
 /// later leases are.
@@ -87,8 +99,10 @@ pub type StateTransitionHash = [u8; 32];
 
 /// What one waiting client's registration is known by: 8 bytes naming its issuer (one rs-dapi
 /// process) and an 8-byte big-endian sequence number the issuer increases for every lease. Each
-/// lease is registered once, so taking and releasing it are idempotent, and a release only ever
-/// ends its own registration. A caller does not register a lease again, even when it did not
+/// lease is registered once and released once. Taking a lease that is held changes nothing,
+/// and a release only ever ends its own registration. A release of a lease that is not held is
+/// not free: it is remembered as one that came before its registration, within
+/// [`MAX_REMEMBERED_RELEASES`]. A caller does not register a lease again, even when it did not
 /// learn whether the first attempt arrived: a lease registered again after its release is taken.
 pub type RegistrationLease = [u8; 16];
 
@@ -180,8 +194,8 @@ struct Inner {
     registered: HashMap<StateTransitionHash, HashMap<RegistrationLease, Taken>>,
     /// How many registrations `registered` holds.
     registrations: usize,
-    /// Releases that arrived before their registration, with the height of the last committed
-    /// block then.
+    /// Releases that found no registration of their lease, with the height of the last
+    /// committed block then.
     released: HashMap<RegistrationLease, u64>,
     /// For each issuer whose early releases did not all fit in `released`: the highest sequence
     /// number forgotten, at or below which none of its leases is taken, with the height of the
@@ -196,9 +210,9 @@ struct Inner {
 }
 
 impl Inner {
-    /// Remembers a release that arrived before its registration. When the table is full, the
-    /// release with the lowest sequence number of all is forgotten instead, and its issuer's
-    /// low-water mark raised to it.
+    /// Remembers a release that found no registration of its lease. When the table is full,
+    /// the release with the lowest sequence number of all is forgotten instead, and its
+    /// issuer's low-water mark raised to it.
     fn remember_early_release(&mut self, lease: RegistrationLease) {
         if self.released.contains_key(&lease) || self.below_low_water_mark(&lease) {
             return;
@@ -357,8 +371,14 @@ impl StateTransitionExecutionProofs {
 
     /// Releases the registration `lease` of the state transition with this hash, when the
     /// client that took it stops waiting. The transition stays registered while another
-    /// registration of it is held. Releasing a lease again changes nothing, and a proof already
-    /// made is kept.
+    /// registration of it is held, and a proof already made is kept.
+    ///
+    /// A release that finds no registration of the lease ends nothing. It is remembered within
+    /// [`MAX_REMEMBERED_RELEASES`], so that a registration of the lease arriving after it is
+    /// refused. That is meant for a release that overtook its registration, and it is also what
+    /// happens to a second release of a lease and to the release of one that has expired, which
+    /// look the same from here: each takes a place in that table until it is forgotten. A
+    /// caller therefore releases a lease once.
     pub fn unregister(&self, hash: &StateTransitionHash, lease: &RegistrationLease) {
         let mut inner = self.inner();
         let removed = match inner.registered.get_mut(hash) {
@@ -374,8 +394,9 @@ impl StateTransitionExecutionProofs {
         if removed {
             inner.registrations -= 1;
         } else {
-            // The release came first, or the lease expired already: its registration may still
-            // be on its way, and must not be taken when it arrives
+            // The release came first, or the lease was released or expired already. Only in
+            // the first case is a registration still on its way, but nothing here tells them
+            // apart, and it must not be taken when it arrives
             inner.remember_early_release(*lease);
         }
     }
@@ -994,6 +1015,24 @@ mod tests {
         proofs.unregister(&[1; 32], &A);
 
         assert!(proofs.is_registered(&[1; 32]));
+    }
+
+    #[test]
+    fn should_remember_a_repeated_release_as_one_that_came_before_its_registration() {
+        let proofs = StateTransitionExecutionProofs::default();
+
+        proofs.register([1; 32], A).expect("expected to register");
+        proofs.unregister(&[1; 32], &A);
+        assert!(proofs.inner().released.is_empty());
+
+        // The lease is no longer held, so its second release looks like one that came first
+        proofs.unregister(&[1; 32], &A);
+
+        assert!(proofs.inner().released.contains_key(&A));
+        assert_eq!(
+            proofs.register([1; 32], A),
+            Err(RegistrationRefused::LeaseReleased)
+        );
     }
 
     #[test]

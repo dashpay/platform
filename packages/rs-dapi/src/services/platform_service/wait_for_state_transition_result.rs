@@ -2,6 +2,7 @@ use crate::clients::drive_client::DriveChannel;
 use crate::error::DapiError;
 use crate::server::grpc::IngressDeadline;
 use crate::services::platform_service::error_mapping::decode_consensus_error;
+use crate::services::platform_service::get_recent_state_transition_status::is_missing_from_index;
 use crate::services::platform_service::{PlatformServiceImpl, TenderdashStatus};
 use crate::services::streaming_service::FilterType;
 use base64::Engine;
@@ -38,6 +39,14 @@ use tokio::time::{Instant, timeout, timeout_at};
 use tracing::{Instrument, debug, trace};
 
 const STATE_TRANSITION_HASH_SIZE: usize = 32;
+
+/// How long a wait leaves before it repeats a transaction lookup that Tenderdash failed, the
+/// first time. The delay doubles after each lookup that fails again, up to
+/// [`TX_LOOKUP_MAX_RETRY_DELAY`].
+const TX_LOOKUP_RETRY_DELAY: Duration = Duration::from_millis(500);
+
+/// The longest a wait leaves between two transaction lookups that Tenderdash failed.
+const TX_LOOKUP_MAX_RETRY_DELAY: Duration = Duration::from_secs(8);
 
 impl PlatformServiceImpl {
     /// Wait for a state transition result by subscribing to platform events and returning proofs when requested.
@@ -131,7 +140,7 @@ impl PlatformServiceImpl {
                     None
                 }
             });
-            let mut lookup = Box::pin(self.tenderdash_client.tx(hash_base64));
+            let mut lookup = Box::pin(self.tenderdash_client.tx(hash_base64.clone()));
             let mut registered = None;
             let lookup = loop {
                 tokio::select! {
@@ -141,7 +150,7 @@ impl PlatformServiceImpl {
                     }
                 }
             };
-            match lookup {
+            let lookup_answered = match lookup {
                 Ok(tx) => {
                     // Its block is finalized already, so the registration has nothing left to
                     // do: it ends here, whether it is held or its call is still on its way
@@ -154,8 +163,16 @@ impl PlatformServiceImpl {
                         .build_response_from_existing_tx(tx, options, work_deadline)
                         .await;
                 }
-                Err(error) => {
+                Err(error) if is_missing_from_index(&error) => {
                     debug!(?error, "Transaction not found, will wait for future events");
+                    true
+                }
+                Err(error) => {
+                    debug!(
+                        ?error,
+                        "Transaction lookup failed, will repeat it while waiting for events"
+                    );
+                    false
                 }
             };
 
@@ -175,10 +192,51 @@ impl PlatformServiceImpl {
                 timeout_duration
             );
 
+            // Only an answer that the index does not hold the hash says the transaction is in
+            // no block yet. A lookup that failed any other way says nothing: the transaction
+            // can be in a block already, and then its event came before this wait subscribed
+            // and does not come again. Such a lookup is repeated while the wait goes on, until
+            // Tenderdash answers one.
+            let lookup_again = async {
+                let mut delay = TX_LOOKUP_RETRY_DELAY;
+                loop {
+                    tokio::time::sleep(delay).await;
+                    match self.tenderdash_client.tx(hash_base64.clone()).await {
+                        Ok(tx) => break Some(tx),
+                        Err(error) if is_missing_from_index(&error) => break None,
+                        Err(error) => {
+                            debug!(?error, "Transaction lookup failed again");
+                            delay = (delay * 2).min(TX_LOOKUP_MAX_RETRY_DELAY);
+                        }
+                    }
+                }
+            };
+            tokio::pin!(lookup_again);
+            let mut lookup_open = !lookup_answered;
+
             // Filter events to find our specific transaction
             timeout_at(deadline, async {
                 loop {
-                    let result = sub_handle.recv().await;
+                    let result = tokio::select! {
+                        result = sub_handle.recv() => result,
+                        found = &mut lookup_again, if lookup_open => {
+                            lookup_open = false;
+                            match found {
+                                Some(tx) => {
+                                    debug!(
+                                        tx = hash_hex,
+                                        "Transaction found by a repeated lookup, returning it"
+                                    );
+                                    return self
+                                        .build_response_from_existing_tx(tx, options, work_deadline)
+                                        .await;
+                                }
+                                // In no block yet, and this wait has been subscribed since
+                                // before the lookup: its event is still to come
+                                None => continue,
+                            }
+                        }
+                    };
                     match result {
                         Some(crate::services::streaming_service::StreamingEvent::PlatformTx { event }) => {
                             debug!(tx = hash_hex, "Received matching transaction event");
@@ -1575,7 +1633,9 @@ mod tests {
     }
 
     mod event_wait {
+        use super::super::TX_LOOKUP_RETRY_DELAY;
         use crate::clients::{TenderdashClient, TransactionEvent, TransactionResult};
+        use crate::error::DapiError;
         use crate::server::grpc::TimeoutLayer;
         use crate::services::platform_service::PlatformServiceImpl;
         use crate::services::platform_service::protobuf_request_errors::channel;
@@ -1588,10 +1648,13 @@ mod tests {
         use dapi_grpc::platform::v0::wait_for_state_transition_result_request::{
             Version, WaitForStateTransitionResultRequestV0,
         };
+        use dapi_grpc::platform::v0::wait_for_state_transition_result_response::Version as ResponseVersion;
+        use dapi_grpc::platform::v0::wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result as WaitResult;
         use dapi_grpc::tonic::transport::Server;
         use dapi_grpc::tonic::{Code, Request};
         use serde_json::{Value, json};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
         use std::time::Duration;
         use tokio::net::TcpListener;
         use tokio::sync::Notify;
@@ -1601,11 +1664,23 @@ mod tests {
         /// The wait's own timeout.
         const WAIT_TIMEOUT: Duration = Duration::from_millis(1_000);
 
+        /// What the Tenderdash stand-in answers one transaction lookup with.
+        #[derive(Clone)]
+        pub(super) enum Lookup {
+            /// Its index does not hold the hash, in Tenderdash's own words
+            Missing,
+            /// It could not read its index, so the hash may be there
+            Failed,
+            /// This `tx` result
+            Found(Value),
+        }
+
         /// A Tenderdash stand-in that answers every transaction lookup after a while: that it
-        /// holds no such transaction, or with a transaction it holds.
+        /// holds no such transaction, that the lookup failed, or with a transaction it holds.
         pub(super) struct LookupTenderdash {
             url: String,
             server: JoinHandle<()>,
+            lookups: Arc<AtomicUsize>,
         }
 
         impl Drop for LookupTenderdash {
@@ -1616,25 +1691,37 @@ mod tests {
 
         impl LookupTenderdash {
             pub(super) async fn start(lookup_time: Duration) -> Self {
-                Self::answering(lookup_time, None, None).await
+                Self::answering(lookup_time, vec![Lookup::Missing], None).await
             }
 
             /// Answers no lookup until `gate` is notified, then that it holds no such
             /// transaction.
             pub(super) async fn holding_back(gate: Arc<Notify>) -> Self {
-                Self::answering(Duration::ZERO, None, Some(gate)).await
+                Self::answering(Duration::ZERO, vec![Lookup::Missing], Some(gate)).await
             }
 
             /// Answers every lookup with this `tx` result, once `gate` is notified.
             pub(super) async fn holding_once(gate: Arc<Notify>, tx: Value) -> Self {
-                Self::answering(Duration::ZERO, Some(tx), Some(gate)).await
+                Self::answering(Duration::ZERO, vec![Lookup::Found(tx)], Some(gate)).await
+            }
+
+            /// Answers the lookups with `answers` in turn, and every later one with the last.
+            pub(super) async fn answering_in_turn(answers: Vec<Lookup>) -> Self {
+                Self::answering(Duration::ZERO, answers, None).await
+            }
+
+            /// How many lookups it has received.
+            pub(super) fn lookups(&self) -> usize {
+                self.lookups.load(Ordering::SeqCst)
             }
 
             async fn answering(
                 lookup_time: Duration,
-                tx: Option<Value>,
+                answers: Vec<Lookup>,
                 gate: Option<Arc<Notify>>,
             ) -> Self {
+                let lookups = Arc::new(AtomicUsize::new(0));
+                let received = Arc::clone(&lookups);
                 let listener = TcpListener::bind("127.0.0.1:0")
                     .await
                     .expect("slow lookup Tenderdash listener");
@@ -1644,17 +1731,35 @@ mod tests {
                 let router = Router::new().route(
                     "/",
                     post(move |Json(call): Json<Value>| async move {
+                        let turn = received.fetch_add(1, Ordering::SeqCst);
                         if let Some(gate) = gate {
                             gate.notified().await;
                         }
                         tokio::time::sleep(lookup_time).await;
-                        Json(match tx {
-                            Some(tx) => json!({ "jsonrpc": "2.0", "id": call["id"], "result": tx }),
-                            None => json!({
+                        // As Tenderdash words them: every error of its `tx` method starts the
+                        // same way, and only a hash its index does not hold has no cause
+                        let error = |cause: &str| {
+                            json!({
                                 "jsonrpc": "2.0",
                                 "id": call["id"],
-                                "error": { "code": -32603, "message": "Internal error", "data": "tx not found" },
-                            }),
+                                "error": {
+                                    "code": -32603,
+                                    "message": "Internal error",
+                                    "data": format!("tx (0C) not found, err: {cause}"),
+                                },
+                            })
+                        };
+                        let answer = answers
+                            .get(turn)
+                            .or(answers.last())
+                            .cloned()
+                            .unwrap_or(Lookup::Missing);
+                        Json(match answer {
+                            Lookup::Found(tx) => {
+                                json!({ "jsonrpc": "2.0", "id": call["id"], "result": tx })
+                            }
+                            Lookup::Missing => error("%!w(<nil>)"),
+                            Lookup::Failed => error("database unavailable"),
                         })
                     }),
                 );
@@ -1666,6 +1771,7 @@ mod tests {
                 Self {
                     url: format!("http://{address}"),
                     server,
+                    lookups,
                 }
             }
 
@@ -1763,6 +1869,98 @@ mod tests {
             };
             let (answer, ()) = tokio::join!(
                 service.wait_for_state_transition_result_impl(request),
+                deliver_event
+            );
+
+            answer.expect("expected the event to end the wait");
+        }
+
+        /// A transaction Tenderdash holds, executed with an error, so that answering with it
+        /// needs no call to Drive.
+        fn failed_transaction() -> Value {
+            json!({
+                "hash": "0C",
+                "height": "7",
+                "index": 0,
+                "tx_result": { "code": 1, "data": "", "info": "", "log": "" },
+                "tx": "",
+            })
+        }
+
+        #[tokio::test]
+        async fn should_answer_with_a_transaction_a_repeated_lookup_finds_after_a_failed_one() {
+            // The transaction is in a block already, so no event comes for it, and Tenderdash
+            // fails the first lookup of it
+            let tenderdash = LookupTenderdash::answering_in_turn(vec![
+                Lookup::Failed,
+                Lookup::Found(failed_transaction()),
+            ])
+            .await;
+            let service = tenderdash.service(Duration::from_secs(30));
+
+            let answer = service
+                .wait_for_state_transition_result_impl(Request::new(unflagged_wait([5; 32])))
+                .await;
+
+            // Without the second lookup the wait would end with its timeout
+            let response = answer.expect("expected the repeated lookup to end the wait");
+            let Some(ResponseVersion::V0(v0)) = response.into_inner().version else {
+                panic!("expected a v0 response");
+            };
+            assert!(
+                matches!(v0.result, Some(WaitResult::Error(ref error)) if error.code == 1),
+                "{:?}",
+                v0.result
+            );
+            assert_eq!(tenderdash.lookups(), 2);
+        }
+
+        #[tokio::test]
+        async fn should_stop_repeating_the_lookup_once_tenderdash_says_it_holds_no_such_hash() {
+            let tenderdash =
+                LookupTenderdash::answering_in_turn(vec![Lookup::Failed, Lookup::Missing]).await;
+            // The third lookup would come after three of the first delay, half of this wait
+            let wait_timeout = 6 * TX_LOOKUP_RETRY_DELAY;
+            let service = tenderdash.service(wait_timeout);
+
+            let answer = service
+                .wait_for_state_transition_result_impl(Request::new(unflagged_wait([6; 32])))
+                .await;
+
+            // The second lookup said the transaction is in no block yet, so only its event can
+            // end the wait from then on: a third lookup would have come within the wait
+            assert!(
+                matches!(answer, Err(DapiError::Timeout(_))),
+                "expected the event timeout, got {answer:?}"
+            );
+            assert_eq!(tenderdash.lookups(), 2);
+        }
+
+        #[tokio::test]
+        async fn should_still_answer_with_the_event_while_the_lookup_keeps_failing() {
+            let tenderdash = LookupTenderdash::answering_in_turn(vec![Lookup::Failed]).await;
+            let service = tenderdash.service(Duration::from_secs(30));
+            let hash = [7u8; 32];
+
+            // The event comes once the lookup has failed twice
+            let deliver_event = async {
+                while tenderdash.lookups() < 2 {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                service
+                    .subscriber_manager
+                    .notify(StreamingEvent::PlatformTx {
+                        event: TransactionEvent {
+                            hash: hex::encode_upper(hash),
+                            height: 5,
+                            result: TransactionResult::Success,
+                            tx: None,
+                        },
+                    })
+                    .await;
+            };
+            let (answer, ()) = tokio::join!(
+                service.wait_for_state_transition_result_impl(Request::new(unflagged_wait(hash))),
                 deliver_event
             );
 
