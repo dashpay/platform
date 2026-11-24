@@ -2558,10 +2558,12 @@ class PlatformWalletManager(
      * [prepareShieldedIdentityAddress] has proved the identity's account in
      * this session.
      *
-     * Throws [DashSdkError.NotFound] when the wallet holds no identity
-     * [identityId], and [DashSdkError.PlatformWallet.WalletOperation] when
-     * the read was busy (a scan holds the store: keep the last state and
-     * read again later) or failed otherwise, with the reason in the message.
+     * Throws [DashSdkError.PlatformWallet.ShieldedBalanceBusy] while a scan
+     * or a spend holds the shielded store: the only error of this call that
+     * means keep the last state and read again later. Any other error is a
+     * failure to show: [DashSdkError.NotFound] when the wallet holds no
+     * identity [identityId], [DashSdkError.PlatformWallet.WalletOperation]
+     * with the reason in the message otherwise.
      */
     suspend fun shieldedIdentityBalance(
         walletId: ByteArray,

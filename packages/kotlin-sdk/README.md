@@ -108,8 +108,9 @@ To show what an identity can tip from, call
 instead of summing notes: `Unverified` until `prepareShieldedIdentityAddress`
 proves the identity's account in this session, `Unavailable(account)` while the
 account's ledger is not established (not known, which is not zero), and
-`Available(account, credits)`. The read is local and waits at most 100 ms; a
-busy `WalletOperation` means keep the last state and read again later.
+`Available(account, credits)`. The read is local and waits at most 100 ms for
+the shielded store. `ShieldedBalanceBusy` is the only error that means keep the
+last state and read again later; any other error is a failure to show.
 
 ## Identity-funded shield recovery
 

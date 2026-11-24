@@ -715,8 +715,9 @@ state instead of summing notes: `.unverified` until
 `prepareShieldedIdentityAddress` proves the identity's account in this session,
 `.unavailable(account:)` while the account's ledger is not established (not
 known, which is not zero), and `.available(account:credits:)`. The read is
-local and waits at most 100 ms; a busy `walletOperation` means keep the last
-state and read again later.
+local and waits at most 100 ms for the shielded store. `shieldedBalanceBusy` is
+the only error that means keep the last state and read again later; any other
+error is a failure to show.
 
 ## Identity-funded shield recovery
 
