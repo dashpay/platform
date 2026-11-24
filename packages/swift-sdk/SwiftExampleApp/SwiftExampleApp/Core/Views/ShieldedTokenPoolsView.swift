@@ -384,6 +384,8 @@ struct ShieldedTokenSpendTarget: Identifiable {
 /// address, or this account's own one) and the amount, and shows Rust's fee
 /// preview and answer. Send stays off until Rust has quoted the typed amount
 /// (`ShieldedTokenSpendFeeLine`), and stays off on Rust's refusal there.
+/// The recipient and amount are read-only while it proves and after the
+/// result.
 ///
 /// The amount is typed in the token's smallest unit, as a whole number, and
 /// passed to Rust unchanged. The app's cached token decimals can be stale or
@@ -458,6 +460,10 @@ struct ShieldedTokenSendSheet: View {
             && feeState.allowsSubmit(amount: amount)
     }
 
+    /// A spend is in flight or was sent: the inputs are read-only and the
+    /// fee line asks nothing.
+    private var isLocked: Bool { isSubmitting || resultMessage != nil }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -468,6 +474,7 @@ struct ShieldedTokenSendSheet: View {
                         .font(.caption.monospaced())
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                        .disabled(isLocked)
                         .accessibilityIdentifier("shieldedTokenSend.recipient")
                     HStack {
                         Button {
@@ -478,6 +485,7 @@ struct ShieldedTokenSendSheet: View {
                             Label("Paste", systemImage: "doc.on.clipboard")
                         }
                         .buttonStyle(.borderless)
+                        .disabled(isLocked)
                         .accessibilityIdentifier("shieldedTokenSend.pasteButton")
                         Spacer()
                         if let ownAddress {
@@ -487,6 +495,7 @@ struct ShieldedTokenSendSheet: View {
                                 Label("My Address", systemImage: "person.crop.circle")
                             }
                             .buttonStyle(.borderless)
+                            .disabled(isLocked)
                             .accessibilityIdentifier("shieldedTokenSend.ownAddressButton")
                         }
                     }
@@ -505,6 +514,7 @@ struct ShieldedTokenSendSheet: View {
                     TextField("0", text: $amountText)
                         .keyboardType(.numberPad)
                         .font(.body.monospacedDigit())
+                        .disabled(isLocked)
                         .accessibilityIdentifier("shieldedTokenSend.amount")
                     ShieldedTokenAmountFeedback(
                         refused: amountRefused,
@@ -517,7 +527,7 @@ struct ShieldedTokenSendSheet: View {
                         balance: balance,
                         kind: .shieldedTransfer,
                         amount: amount,
-                        isPaused: isSubmitting || resultMessage != nil,
+                        isPaused: isLocked,
                         accessibilityId: "shieldedTokenSend.fee",
                         state: $feeState
                     )
@@ -577,7 +587,7 @@ struct ShieldedTokenSendSheet: View {
     }
 
     private func submit() async {
-        guard let recipient = recipientRaw, let amount else { return }
+        guard canSubmit, let recipient = recipientRaw, let amount else { return }
         isSubmitting = true
         errorMessage = nil
         defer { isSubmitting = false }
@@ -822,6 +832,8 @@ struct ShieldedTokenSpendSourceSection: View {
 /// preview and answer. The amount is a whole number of the token's smallest
 /// unit, passed to Rust unchanged, exactly as in `ShieldedTokenSendSheet`.
 /// Unshield stays off until Rust has quoted the typed amount, as Send does.
+/// The recipient and amount are read-only while it proves and after the
+/// result.
 struct ShieldedTokenUnshieldSheet: View {
     let walletId: Data
     let target: ShieldedTokenSpendTarget
@@ -895,6 +907,10 @@ struct ShieldedTokenUnshieldSheet: View {
             && feeState.allowsSubmit(amount: amount)
     }
 
+    /// A spend is in flight or was sent: the inputs are read-only and the
+    /// fee line asks nothing.
+    private var isLocked: Bool { isSubmitting || resultMessage != nil }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -905,6 +921,7 @@ struct ShieldedTokenUnshieldSheet: View {
                         .font(.caption.monospaced())
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                        .disabled(isLocked)
                         .accessibilityIdentifier("shieldedTokenUnshield.recipient")
                     HStack {
                         Button {
@@ -915,6 +932,7 @@ struct ShieldedTokenUnshieldSheet: View {
                             Label("Paste", systemImage: "doc.on.clipboard")
                         }
                         .buttonStyle(.borderless)
+                        .disabled(isLocked)
                         .accessibilityIdentifier("shieldedTokenUnshield.pasteButton")
                         Spacer()
                         if !identities.isEmpty {
@@ -927,6 +945,7 @@ struct ShieldedTokenUnshieldSheet: View {
                             } label: {
                                 Label("My Identities", systemImage: "person.crop.circle")
                             }
+                            .disabled(isLocked)
                             .accessibilityIdentifier("shieldedTokenUnshield.identityPicker")
                         }
                     }
@@ -950,6 +969,7 @@ struct ShieldedTokenUnshieldSheet: View {
                     TextField("0", text: $amountText)
                         .keyboardType(.numberPad)
                         .font(.body.monospacedDigit())
+                        .disabled(isLocked)
                         .accessibilityIdentifier("shieldedTokenUnshield.amount")
                     ShieldedTokenAmountFeedback(
                         refused: amountRefused,
@@ -962,7 +982,7 @@ struct ShieldedTokenUnshieldSheet: View {
                         balance: balance,
                         kind: .unshield,
                         amount: amount,
-                        isPaused: isSubmitting || resultMessage != nil,
+                        isPaused: isLocked,
                         accessibilityId: "shieldedTokenUnshield.fee",
                         state: $feeState
                     )
@@ -1020,7 +1040,7 @@ struct ShieldedTokenUnshieldSheet: View {
     }
 
     private func submit() async {
-        guard let recipient = recipientId, let amount else { return }
+        guard canSubmit, let recipient = recipientId, let amount else { return }
         isSubmitting = true
         errorMessage = nil
         defer { isSubmitting = false }
