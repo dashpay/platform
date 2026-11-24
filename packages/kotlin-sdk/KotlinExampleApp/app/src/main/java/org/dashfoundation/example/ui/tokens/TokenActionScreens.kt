@@ -959,7 +959,8 @@ private fun PurchaseForm(
 
 /**
  * Run an identity-funded [purchase] and say what happened. Success means
- * the SDK returned no error; the proof may show only the buyer's balance (a
+ * the SDK call returned normally, which can follow a node error on an earlier
+ * send attempt; the proof may show only the buyer's balance (a
  * token without purchase history), so it is worded as submitted, not as a
  * receipt. An unconfirmed broadcast may still execute: the buyer is told not
  * to submit again until its outcome is known (a balance snapshot cannot
@@ -975,8 +976,7 @@ internal suspend fun identityPurchaseNotice(
     TokenActionNotice(
         title = "Purchase submitted",
         message = "The purchase of $amountText for $totalCost credits from this identity's " +
-            "balance was submitted and Platform returned no error. Do not buy again unless you " +
-            "want more.",
+            "balance was submitted. Do not buy again unless you want more.",
         testTag = "tokenPurchase.outcome",
     )
 } catch (e: CancellationException) {

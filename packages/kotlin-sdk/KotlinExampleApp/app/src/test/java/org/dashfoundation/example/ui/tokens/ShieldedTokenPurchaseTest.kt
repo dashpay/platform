@@ -154,7 +154,8 @@ class ShieldedTokenPurchaseTest {
         assertEquals("Purchase submitted", notice.title)
         assertEquals("tokenPurchase.outcome", notice.testTag)
         assertTrue(notice.message.startsWith("The purchase of 2.5 for 1500000 credits"))
-        assertTrue(notice.message.contains("submitted and Platform returned no error"))
+        assertTrue(notice.message.contains("was submitted. Do not buy again"))
+        assertFalse(notice.message.contains("Platform"))
         assertTrue(notice.message.contains("Do not buy again"))
     }
 
