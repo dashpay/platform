@@ -1915,7 +1915,8 @@ class PlatformWalletManager(
      *
      * Does not wait for a shielded operation in flight (a bind, an added
      * account, a token pool transfer or unshield, a profile write, a tip
-     * address preparation): while one runs this throws
+     * address preparation, a shielded tip being sent): while one runs this
+     * throws
      * [DashSdkError.PlatformWallet.ShieldedOperationInProgress] at once,
      * with nothing changed and the sync loop still running. Keep the Room
      * rows and call it again once the operation has finished.
@@ -2558,9 +2559,11 @@ class PlatformWalletManager(
      * [prepareShieldedIdentityAddress] has proved the identity's account in
      * this session.
      *
-     * Throws [DashSdkError.PlatformWallet.ShieldedBalanceBusy] while a scan
-     * or a spend holds the shielded store: the only error of this call that
-     * means keep the last state and read again later. Any other error is a
+     * Throws [DashSdkError.PlatformWallet.ShieldedBalanceBusy] when the read
+     * did not finish within its wait budget, because the wallet's state or
+     * its shielded store was held, and while a shielded Clear is running:
+     * the only error of this call that means keep the last state and read
+     * again later. Any other error is a
      * failure to show: [DashSdkError.NotFound] when the wallet holds no
      * identity [identityId], [DashSdkError.PlatformWallet.WalletOperation]
      * with the reason in the message otherwise.

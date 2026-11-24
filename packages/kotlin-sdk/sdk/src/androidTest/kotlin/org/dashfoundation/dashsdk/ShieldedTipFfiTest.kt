@@ -28,8 +28,10 @@ import org.junit.runner.RunWith
  * A tip started from a saved contact passes the contact's identity id. Rust
  * refuses a reviewed recipient of another identity before any wait, lookup
  * or proof, so the refusal is reached with no network: it shows the id JNI
- * read is the id the wallet compared. `FfiSmokeTest` covers the argument
- * refusals and an unknown manager.
+ * read is the id the wallet compared. The wallet is left unbound on purpose:
+ * were the contact's id dropped on the way, the send would stop at the
+ * binding check with another error, before any name lookup. `FfiSmokeTest`
+ * covers the argument refusals and an unknown manager.
  *
  * Not covered here: a review or a send that resolves a name, which needs a
  * network read (TEST_PLAN, shielded tips).
@@ -63,7 +65,6 @@ class ShieldedTipFfiTest {
                     name = "shielded-tips",
                     createDefaultAccounts = true,
                 ).walletId
-                manager.bindShielded(id, listOf(0))
 
                 val contact = ByteArray(32) { 3 }
                 val reviewed = ShieldedTipRecipient(
@@ -89,11 +90,7 @@ class ShieldedTipFfiTest {
                 try {
                     manager.shieldedIdentityBalance(id, ByteArray(32) { 6 })
                     fail("a balance was read for an identity the wallet does not hold")
-                } catch (e: DashSdkError) {
-                    assertFalse(
-                        "an unknown identity is a failure to show, not a busy store: $e",
-                        e is DashSdkError.PlatformWallet.ShieldedBalanceBusy,
-                    )
+                } catch (e: DashSdkError.NotFound) {
                     assertFalse(e.isRetryable)
                 }
             }

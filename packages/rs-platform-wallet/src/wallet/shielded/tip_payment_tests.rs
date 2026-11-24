@@ -10,10 +10,12 @@ use dashcore::Network;
 use dpp::address_funds::OrchardAddress;
 use dpp::address_funds::PlatformAddress;
 use dpp::identity::{Identity, IdentityV0};
+use dpp::platform_value::BinaryData;
 use dpp::prelude::Identifier;
 use dpp::serialization::{PlatformDeserializableTrusted, PlatformSerializable};
 use dpp::shielded::builder::{build_shielded_transfer_transition, SpendableNote};
 use dpp::shielded::SerializedAction;
+use dpp::state_transition::shield_from_identity_transition::v0::ShieldFromIdentityTransitionV0;
 use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
 use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
 use dpp::state_transition::unshield_transition::v0::UnshieldTransitionV0;
@@ -25,8 +27,8 @@ use grovedb_commitment_tree::{
     NoteValue, Nullifier, OrchardDomain, OutgoingViewingKey, PaymentAddress, RandomSeed, Rho,
     ValueCommitTrapdoor, ValueCommitment, NOTE_COMMITMENT_TREE_DEPTH,
 };
-use rand::rngs::OsRng;
-use rand::RngCore;
+use rand::rngs::StdRng;
+use rand::{RngCore, SeedableRng};
 
 use super::activity::compute_activity_id;
 use super::activity_recorder::visible_output_cmxs;
@@ -57,20 +59,30 @@ fn keys_of(seed_byte: u8, account: u32) -> AccountViewingKeys {
         .viewing_keys()
 }
 
-fn random_bytes() -> [u8; 32] {
+fn random_bytes(rng: &mut StdRng) -> [u8; 32] {
     let mut bytes = [0u8; 32];
-    OsRng.fill_bytes(&mut bytes);
+    rng.fill_bytes(&mut bytes);
     bytes
+}
+
+/// The randomness of one output, seeded from what the output is (whom it
+/// pays, and whether the paying account's key opens it), so a failing test
+/// builds the same bytes when it is run again.
+fn output_rng(recipient: &PaymentAddress, keyed: bool) -> StdRng {
+    let raw = recipient.to_raw_address_bytes();
+    let mut seed = [0u8; 8];
+    seed.copy_from_slice(&raw[..8]);
+    StdRng::seed_from_u64(u64::from_le_bytes(seed) ^ u64::from(keyed))
 }
 
 /// One action of a transfer as the builder emits it: an output note to
 /// `recipient`, whose outgoing ciphertext is keyed to `ovk`. `None` is a
 /// padding output, keyed to a random key that nothing opens.
 fn output_to(recipient: PaymentAddress, ovk: Option<OutgoingViewingKey>) -> SerializedAction {
-    let mut rng = OsRng;
+    let mut rng = output_rng(&recipient, ovk.is_some());
     // The output note's rho is the nullifier of the note the action spends.
     let (nullifier, rho) = loop {
-        let bytes = random_bytes();
+        let bytes = random_bytes(&mut rng);
         if let (Some(nullifier), Some(rho)) = (
             Nullifier::from_bytes(&bytes).into_option(),
             Rho::from_bytes(&bytes).into_option(),
@@ -79,7 +91,7 @@ fn output_to(recipient: PaymentAddress, ovk: Option<OutgoingViewingKey>) -> Seri
         }
     };
     let rseed = loop {
-        if let Some(rseed) = RandomSeed::from_bytes(random_bytes(), &rho).into_option() {
+        if let Some(rseed) = RandomSeed::from_bytes(random_bytes(&mut rng), &rho).into_option() {
             break rseed;
         }
     };
@@ -89,7 +101,7 @@ fn output_to(recipient: PaymentAddress, ovk: Option<OutgoingViewingKey>) -> Seri
         .expect("valid note parts");
     let cmx = ExtractedNoteCommitment::from(note.commitment());
     let rcv = loop {
-        if let Some(rcv) = ValueCommitTrapdoor::from_bytes(random_bytes()).into_option() {
+        if let Some(rcv) = ValueCommitTrapdoor::from_bytes(random_bytes(&mut rng)).into_option() {
             break rcv;
         }
     };
@@ -224,6 +236,8 @@ fn should_parse_exact_tip_amounts_and_refuse_ambiguous_input() {
         (".5", 50_000_000_000),
         (" 1 ", 100_000_000_000),
         ("184467440", 18_446_744_000_000_000_000),
+        // The last credit a u64 holds.
+        ("184467440.73709551615", u64::MAX),
     ] {
         assert_eq!(
             parse_shielded_tip_amount(text).unwrap(),
@@ -246,8 +260,9 @@ fn should_parse_exact_tip_amounts_and_refuse_ambiguous_input() {
         "1.000,5",
         // Finer than one credit.
         "0.000000000001",
-        // Past u64 credits.
+        // Past u64 credits, by the whole part and by the fraction.
         "184467441",
+        "184467440.73709551616",
         "1.2.3",
         // Arabic-Indic three: a digit, but not an ASCII one.
         "\u{663}",
@@ -395,16 +410,22 @@ fn should_not_count_spends_that_pay_no_shielded_address() {
     store
         .arm_redrive(id, record_of(1, unshield, &actions))
         .expect("arm unshield");
-    // An identity-funded shield consumes no note; its bytes are not read.
+    // An identity-funded shield consumes no note, and pays this wallet.
+    let identity_shield: StateTransition = ShieldFromIdentityTransitionV0 {
+        identity_id: [0xB1; 32].into(),
+        amount: 1_000,
+        actions: Vec::new(),
+        anchor: [0; 32],
+        proof: Vec::new(),
+        binding_signature: [0; 64],
+        nonce: 7,
+        user_fee_increase: 0,
+        signature_public_key_id: 1,
+        signature: BinaryData::new(Vec::new()),
+    }
+    .into();
     store
-        .arm_redrive(
-            id,
-            PendingRedrive {
-                nullifiers: Vec::new(),
-                st_bytes: vec![0xAB; 96],
-                ..transfer_record(2, Vec::new())
-            },
-        )
+        .arm_redrive(id, record_of(2, identity_shield, &[]))
         .expect("arm identity shield");
 
     assert!(unresolved_transfer_recipients(&store, WALLET, &keys)
@@ -506,10 +527,45 @@ fn should_fail_closed_when_a_saved_transfer_does_not_say_whom_it_pays() {
         })
     ));
 
-    // The keys of another seed open nothing either.
+    // The keys of another seed open nothing of an intact transfer either.
+    let (mut store, _) = store_at("tip_keys_of_another_seed");
+    store
+        .arm_redrive(id, transfer_paying(&payer, paid))
+        .expect("arm");
+    assert_eq!(
+        unresolved_transfer_recipients(&store, WALLET, &keys)
+            .unwrap()
+            .len(),
+        1,
+        "the record reads with its own account's keys"
+    );
     assert!(matches!(
         unresolved_transfer_recipients(&store, WALLET, &BTreeMap::from([(0, keys_of(3, 0))])),
-        Err(PlatformWalletError::ShieldedRecoveryCorrupted { .. })
+        Err(PlatformWalletError::ShieldedRecoveryCorrupted {
+            account_index: Some(0),
+            ..
+        })
+    ));
+
+    // A record that lists no notes and does not decode: it may be a
+    // transfer as well as an identity-funded shield.
+    let (mut store, _) = store_at("tip_undecodable_without_nullifiers");
+    store
+        .arm_redrive(
+            id,
+            PendingRedrive {
+                st_bytes: vec![0xAB; 96],
+                nullifiers: Vec::new(),
+                ..transfer_paying(&payer, paid)
+            },
+        )
+        .expect("arm");
+    assert!(matches!(
+        unresolved_transfer_recipients(&store, WALLET, &keys),
+        Err(PlatformWalletError::ShieldedRecoveryCorrupted {
+            account_index: Some(0),
+            ..
+        })
     ));
 
     // A transfer paid from an account whose keys are not bound.
@@ -524,6 +580,53 @@ fn should_fail_closed_when_a_saved_transfer_does_not_say_whom_it_pays() {
         unresolved_transfer_recipients(&store, WALLET, &keys),
         Err(PlatformWalletError::ShieldedRecoveryKeysRequired {
             account_index: 5,
+            ..
+        })
+    ));
+}
+
+/// A saved transfer whose row lost its note list is not loaded as a record
+/// with no notes, which is what an identity-funded debit's record is: the
+/// row is kept, no debit is listed for it, and tips fail closed.
+#[test]
+fn should_keep_unloaded_a_transfer_whose_row_lost_its_note_list() {
+    let (mut store, path) = store_at("tip_row_without_nullifiers");
+    let id = SubwalletId::new(WALLET, 0);
+    let payer = keys_of(1, 0);
+    let keys = BTreeMap::from([(0, payer.clone())]);
+    arm_spend(
+        &mut store,
+        id,
+        transfer_paying(&payer, keys_of(2, 0).default_address),
+    );
+    drop(store);
+    let connection = rusqlite::Connection::open(&path).expect("open the store file");
+    connection
+        .execute("UPDATE shielded_pending_spends SET nullifiers = x''", [])
+        .expect("empty the note list");
+
+    let store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen");
+    assert!(store.has_unloaded_note_spends(WALLET));
+    assert!(
+        store
+            .pending_redrives_for_wallet(WALLET)
+            .expect("records")
+            .is_empty(),
+        "not loaded, so not listed as an identity-funded debit"
+    );
+    assert_eq!(
+        connection
+            .query_row("SELECT COUNT(*) FROM shielded_pending_spends", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("count"),
+        1,
+        "the row is kept"
+    );
+    assert!(matches!(
+        unresolved_transfer_recipients(&store, WALLET, &keys),
+        Err(PlatformWalletError::ShieldedRecoveryCorrupted {
+            account_index: None,
             ..
         })
     ));
@@ -668,7 +771,7 @@ async fn should_refuse_a_name_that_belongs_to_another_identity_than_expected() {
         "{result:?}"
     );
     // The expected identity is the reviewed one: the send goes on to its
-    // lookups, which the test's SDK does not answer.
+    // name lookup, which the test's SDK does not answer.
     let result = wallet
         .send_shielded_tip(
             wallet.admit_shielded_tip().expect("admitted again"),
@@ -684,10 +787,7 @@ async fn should_refuse_a_name_that_belongs_to_another_identity_than_expected() {
         )
         .await;
     assert!(
-        !matches!(
-            result,
-            Ok(()) | Err(PlatformWalletError::ShieldedTipRecipientMismatch { .. })
-        ),
+        matches!(result, Err(PlatformWalletError::Sdk(_))),
         "{result:?}"
     );
 }
@@ -799,6 +899,25 @@ async fn should_refuse_a_zero_tip_before_confirming_its_recipient() {
         matches!(result, Err(PlatformWalletError::InvalidParameter(_))),
         "{result:?}"
     );
+    // Nor does a tip from an account that is not bound: it could never be
+    // paid, so it confirms nothing either.
+    let result = wallet
+        .send_resolved_shielded_tip(
+            &coordinator,
+            &seed[..],
+            ShieldedTipSource::Account(5),
+            5,
+            "b0b",
+            &paid,
+            1_000,
+            [0; 36],
+            &CachedOrchardProver::new(),
+        )
+        .await;
+    assert!(
+        matches!(result, Err(PlatformWalletError::ShieldedKeyDerivation(_))),
+        "{result:?}"
+    );
     assert_eq!(
         coordinator
             .store()
@@ -808,6 +927,89 @@ async fn should_refuse_a_zero_tip_before_confirming_its_recipient() {
             .unwrap(),
         None
     );
+}
+
+/// A balance read that waits for the shielded store does not hold the
+/// coordinator's operation admission, so a Clear requested meanwhile is
+/// admitted. While that Clear is admitted the read reports nothing: the
+/// ledger it read may be the one being purged, and the Clear may also give
+/// up with the preparation still standing. The bounded read reports a held
+/// store as busy too, by the same error.
+#[tokio::test]
+async fn should_not_refuse_a_clear_while_a_balance_read_waits_for_the_store() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tip_balance_read_and_clear").await;
+    wallet
+        .prepare_shielded_identity_address(&seed[..], &id, &coordinator)
+        .await
+        .expect("prepare");
+    let account = shielded_identity_account_index(2).unwrap();
+    assert!(!coordinator.clear_in_progress());
+
+    // A scan holds the store.
+    let scan = coordinator.store().write().await;
+    let busy = wallet
+        .shielded_identity_balance_now(&coordinator, &id)
+        .await;
+    assert!(
+        matches!(busy, Err(PlatformWalletError::ShieldedBalanceBusy)),
+        "{busy:?}"
+    );
+    let mut waiting = Box::pin(wallet.shielded_identity_balance(&coordinator, &id));
+    assert!(
+        futures::poll!(&mut waiting).is_pending(),
+        "the read waits for the store"
+    );
+    let admission = coordinator
+        .try_admit_clear()
+        .expect("a Clear is admitted while the read waits");
+    assert!(coordinator.clear_in_progress());
+    // The scan ends with the Clear still admitted.
+    drop(scan);
+    let during = waiting.await;
+    assert!(
+        matches!(during, Err(PlatformWalletError::ShieldedBalanceBusy)),
+        "{during:?}"
+    );
+
+    // The Clear gave up without wiping anything: the preparation stands.
+    drop(admission);
+    assert!(!coordinator.clear_in_progress());
+    assert_eq!(
+        wallet
+            .shielded_identity_balance(&coordinator, &id)
+            .await
+            .expect("read"),
+        ShieldedIdentityBalance::Unavailable { account }
+    );
+    // Asking whether a Clear is admitted takes nothing a Clear needs.
+    drop(
+        coordinator
+            .try_admit_clear()
+            .expect("a Clear is admitted after the reads"),
+    );
+
+    // A Clear that ran ends the preparation.
+    coordinator
+        .try_admit_clear()
+        .expect("admit")
+        .clear()
+        .await
+        .expect("clear");
+    assert!(!coordinator.clear_in_progress());
+    assert_eq!(
+        wallet
+            .shielded_identity_balance(&coordinator, &id)
+            .await
+            .expect("read"),
+        ShieldedIdentityBalance::Unverified
+    );
+    // An identity the wallet does not hold is not a busy store.
+    assert!(matches!(
+        wallet
+            .shielded_identity_balance_now(&coordinator, &Identifier::from([0x01; 32]))
+            .await,
+        Err(PlatformWalletError::IdentityNotFound(_))
+    ));
 }
 
 /// A tip to an address of the account it is paid from is refused: its
@@ -966,10 +1168,10 @@ async fn should_refuse_a_bind_that_drops_the_account_of_an_unresolved_spend() {
         .expect("bind without the account once its spend resolved");
 }
 
-/// An identity's tip is paid only if the identity still holds its slot once
-/// the tip's notes are claimed: claiming them can wait for a scan, and the
-/// identity can be removed meanwhile. The notes are then released and
-/// nothing is built or sent.
+/// A tip is paid only if its source still stands once the tip's notes are
+/// claimed: claiming them can wait for a scan, and meanwhile the identity
+/// can be removed, or the slot of a numbered account can be given to an
+/// identity. The notes are then released and nothing is built or sent.
 #[tokio::test]
 async fn should_release_the_claimed_notes_when_the_tips_source_no_longer_stands() {
     let (wallet, seed, _id, coordinator) = tip_race_fixture("tip_source_after_claim").await;
@@ -1010,33 +1212,44 @@ async fn should_release_the_claimed_notes_when_the_tips_source_no_longer_stands(
             },
         )
         .expect("save a note");
-    let result = wallet
-        .send_resolved_shielded_tip(
-            &coordinator,
-            &seed[..],
-            gone,
-            identity_account,
-            "b0b",
-            &paid,
-            1_000,
-            [0; 36],
-            &prover,
-        )
-        .await;
-    assert!(
-        matches!(result, Err(PlatformWalletError::IdentityNotFound(_))),
-        "{result:?}"
-    );
-    let store = coordinator.store().read().await;
-    assert_eq!(
-        store.get_unspent_notes(payer).expect("unspent").len(),
-        1,
-        "the claimed note is released"
-    );
-    assert!(
-        store.pending_redrives(payer).expect("records").is_empty(),
-        "nothing was built or saved"
-    );
+    // An identity that is gone, then the account by its number while the
+    // fixture's identity holds its slot.
+    let held_by_number = ShieldedTipSource::Account(identity_account);
+    for source in [gone, held_by_number] {
+        let result = wallet
+            .send_resolved_shielded_tip(
+                &coordinator,
+                &seed[..],
+                source,
+                identity_account,
+                "b0b",
+                &paid,
+                1_000,
+                [0; 36],
+                &prover,
+            )
+            .await;
+        match source {
+            ShieldedTipSource::Identity(_) => assert!(
+                matches!(result, Err(PlatformWalletError::IdentityNotFound(_))),
+                "{result:?}"
+            ),
+            ShieldedTipSource::Account(_) => assert!(
+                matches!(result, Err(PlatformWalletError::InvalidIdentityData(_))),
+                "{result:?}"
+            ),
+        }
+        let store = coordinator.store().read().await;
+        assert_eq!(
+            store.get_unspent_notes(payer).expect("unspent").len(),
+            1,
+            "the claimed note is released: {source:?}"
+        );
+        assert!(
+            store.pending_redrives(payer).expect("records").is_empty(),
+            "nothing was built or saved: {source:?}"
+        );
+    }
 }
 
 /// The store of an earlier process holds a spend paid from account 1 that

@@ -250,6 +250,7 @@ async fn scan(store: &Store, stream: impl Stream<Item = BatchItem>) -> MultiSync
     .await
     .expect("the pass returns")
     .expect("the pass succeeds")
+    .finished()
 }
 
 async fn scan_pool(store: &Store, notes: Vec<ShieldedEncryptedNote>) -> MultiSyncNotesResult {

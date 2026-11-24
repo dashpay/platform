@@ -1258,7 +1258,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// Clear does not wait for a shielded operation (a bind, an added
     /// account, a token pool transfer or unshield, a profile write, a tip
-    /// address preparation). While one is admitted this returns
+    /// address preparation, a shielded tip being sent). While one is admitted this returns
     /// [`PlatformWalletError::ShieldedOperationInProgress`] before anything
     /// else: the sync loop is not stopped and nothing is reset, so the host
     /// keeps its rows and offers the Clear again once the operation has

@@ -872,9 +872,10 @@ sealed class DashSdkError(
 
         /**
          * `ErrorShieldedBalanceBusy` (native code 87). A local shielded
-         * balance read did not get the shielded store within its wait
-         * budget, because a scan or a spend holds it. Nothing failed and
-         * nothing changed: keep the last state shown and read again later.
+         * balance read did not finish within its wait budget (the wallet's
+         * state or its shielded store was held, by a scan for instance), or
+         * a shielded Clear was running. Nothing failed and nothing changed:
+         * keep the last state shown and read again later.
          * The only error of `shieldedIdentityBalance` that means retry.
          * ← Swift `PlatformWalletError.shieldedBalanceBusy`.
          */

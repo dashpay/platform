@@ -1192,6 +1192,18 @@ pub enum PlatformWalletError {
     )]
     ShieldedTipPending,
 
+    /// A shielded balance could not be read now. Either a bounded read did
+    /// not finish within its wait (the wallet's state or its shielded store
+    /// was held, by a scan for instance), or a shielded Clear was admitted
+    /// and had not finished, so the ledger read may be the one it wipes.
+    /// Which is not told. Nothing failed and nothing changed: the caller
+    /// keeps the state it last read and reads again later.
+    #[error(
+        "The shielded balance could not be read now: the wallet was busy; nothing was read. \
+         Read it again later"
+    )]
+    ShieldedBalanceBusy,
+
     /// A shielded tip was reviewed or sent for a username the caller expects
     /// to belong to `expected` (a saved contact's identity), and the name
     /// resolves to `resolved` instead: the name moved to another identity.
