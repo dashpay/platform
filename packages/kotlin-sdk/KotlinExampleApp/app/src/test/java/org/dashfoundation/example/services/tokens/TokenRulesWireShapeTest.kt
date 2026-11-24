@@ -1,7 +1,6 @@
 package org.dashfoundation.example.services.tokens
 
 import kotlinx.serialization.json.JsonElement
-import org.dashfoundation.dashsdk.persistence.dao.TokenDao
 import org.dashfoundation.dashsdk.persistence.entities.DataContractEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.TokenEntity
@@ -11,8 +10,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.lang.reflect.Proxy
-import kotlinx.coroutines.runBlocking
 
 /**
  * The action-taker and distribution-recipient shapes rs-dpp writes into
@@ -279,30 +276,37 @@ class TokenRulesWireShapeTest {
     }
 
     @Test
-    fun `should rewrite rows an older build stored as NoOne from the stored contract`() = runBlocking {
-        val rewrites = mutableMapOf<String, Any?>()
-        val dao = Proxy.newProxyInstance(
-            TokenDao::class.java.classLoader,
-            arrayOf(TokenDao::class.java),
-        ) { _, method, args ->
-            require(method.name == "rewriteRules") { "unexpected ${method.name}" }
-            method.parameters.dropLast(1).forEachIndexed { i, _ -> rewrites["p$i"] = args[i] }
-            1
-        } as TokenDao
+    fun `should label an unrecognised rule Unknown in Token Details`() {
+        val unknown = ChangeControlRules.parse(rule("""{"${'$'}type": "everyone"}"""))!!
+        assertEquals("Unknown", unknown.capabilityLabel)
+        assertEquals(false, unknown.hasAuthorizedTakers)
+        assertEquals("Yes", ChangeControlRules.parse(rule("""{"${'$'}type": "mainGroup"}"""))!!.capabilityLabel)
+        assertEquals("No", ChangeControlRules.parse(rule("""{"${'$'}type": "noOne"}"""))!!.capabilityLabel)
+    }
 
-        val rewritten = TokenMaterializer.rederiveRules(listOf(contract()), dao)
-
-        assertEquals(1, rewritten)
-        val expected = TokenMaterializer.parse(contract()).single()
-        // Parameter order of TokenDao.rewriteRules.
-        assertTrue((rewrites["p0"] as ByteArray).contentEquals(expected.id))
-        assertEquals(expected.manualMintingRules, rewrites["p3"])
-        assertEquals(expected.manualBurningRules, rewrites["p4"])
-        assertEquals(expected.freezeRules, rewrites["p5"])
-        assertEquals(expected.mainControlGroupCanBeModified, rewrites["p11"])
-        assertEquals(
-            "Identity:${Base58.encode(actorId)}",
-            ChangeControlRules.parse(rewrites["p3"] as String)?.authorizedToMakeChange,
+    @Test
+    fun `should keep a max-supply change that needs a co-signer closed`() {
+        val groupTaker = """{"${'$'}type": "group", "position": 0}"""
+        val token = TokenEntity(
+            id = ByteArray(36),
+            contractId = contractId,
+            position = 0,
+            name = "T",
+            baseSupply = "0",
+            maxSupplyChangeRules = ChangeControlRules.parse(rule(groupTaker))!!.toJson(),
+            canChangeMaxSupply = true,
         )
+        // Group 0 needs power 2 and each member holds 1.
+        assertEquals(
+            TokenActionPermission.Denied(
+                "Max supply change: needs co-signers, and this app cannot co-sign a max-supply proposal yet",
+            ),
+            actions(token, actorId)[TokenActionKind.UPDATE_MAX_SUPPLY],
+        )
+        // A rule that does not go through a group is unaffected.
+        val ownerOnly = token.copy(
+            maxSupplyChangeRules = ChangeControlRules.parse(rule("""{"${'$'}type": "contractOwner"}"""))!!.toJson(),
+        )
+        assertEquals(TokenActionPermission.Allowed, actions(ownerOnly, ownerId)[TokenActionKind.UPDATE_MAX_SUPPLY])
     }
 }

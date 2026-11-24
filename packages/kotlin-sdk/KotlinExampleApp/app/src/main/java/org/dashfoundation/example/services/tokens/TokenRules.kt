@@ -36,7 +36,19 @@ data class ChangeControlRules(
      * as "not available").
      */
     val hasAuthorizedTakers: Boolean
-        get() = authorizedToMakeChange != AuthorizedActionTakers.NO_ONE
+        get() = authorizedToMakeChange != AuthorizedActionTakers.NO_ONE && !isUnknown
+
+    /** `true` when this build could not read who is authorized. */
+    val isUnknown: Boolean
+        get() = authorizedToMakeChange.startsWith(AuthorizedActionTakers.UNKNOWN_PREFIX)
+
+    /** "Yes" / "No" / "Unknown" for the Token Details capability rows. */
+    val capabilityLabel: String
+        get() = when {
+            isUnknown -> "Unknown"
+            hasAuthorizedTakers -> "Yes"
+            else -> "No"
+        }
 
     /** Canonical camelCase JSON for the Room rules columns. */
     fun toJson(): String = buildJsonObject {

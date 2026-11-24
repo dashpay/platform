@@ -65,36 +65,50 @@ object TokenMaterializer {
     }
 
     /**
-     * Rewrite the rule columns of every stored token from its stored
+     * Bring the rule columns of every stored token in line with its stored
      * contract. Builds before this one read the `$type` action-taker maps
      * rs-dpp writes as "NoOne", so their rows show every rule-gated action
-     * as locked; the contract JSON stored beside them is intact. Like
-     * [backfillOncePerIdentityDistributions] it leaves the rest of the row
-     * alone, so live columns such as `isPaused` keep their value. Returns the
-     * rows rewritten.
+     * as locked; the contract JSON stored beside them is intact. Only rows
+     * whose rule columns differ are written, and only those columns change:
+     * live columns such as `isPaused` keep their value. Cheap and idempotent,
+     * so it runs on every launch, which also repairs rows an older build
+     * wrote again after a downgrade. Returns the rows rewritten.
      */
     suspend fun rederiveRules(contracts: List<DataContractEntity>, dao: TokenDao): Int {
         var rewritten = 0
         for (contract in contracts) {
-            for (token in parse(contract)) {
-                rewritten += dao.rewriteRules(
-                    id = token.id,
-                    conventionsChangeRules = token.conventionsChangeRules,
-                    maxSupplyChangeRules = token.maxSupplyChangeRules,
-                    manualMintingRules = token.manualMintingRules,
-                    manualBurningRules = token.manualBurningRules,
-                    freezeRules = token.freezeRules,
-                    unfreezeRules = token.unfreezeRules,
-                    destroyFrozenFundsRules = token.destroyFrozenFundsRules,
-                    emergencyActionRules = token.emergencyActionRules,
-                    distributionChangeRules = token.distributionChangeRules,
-                    tradeModeChangeRules = token.tradeModeChangeRules,
-                    mainControlGroupCanBeModified = token.mainControlGroupCanBeModified,
-                )
+            for (derived in parse(contract)) {
+                val stored = dao.getTokenById(derived.id) ?: continue
+                if (stored.ruleColumns() != derived.ruleColumns()) {
+                    dao.upsertToken(stored.withRulesOf(derived))
+                    rewritten++
+                }
             }
         }
         return rewritten
     }
+
+    // TokenEntity.equals compares the id only, so compare the columns themselves.
+    private fun TokenEntity.ruleColumns(): List<String?> = listOf(
+        conventionsChangeRules, maxSupplyChangeRules, manualMintingRules, manualBurningRules,
+        freezeRules, unfreezeRules, destroyFrozenFundsRules, emergencyActionRules,
+        distributionChangeRules, tradeModeChangeRules, mainControlGroupCanBeModified,
+    )
+
+    /** [this] row with every rule column taken from [derived]. */
+    private fun TokenEntity.withRulesOf(derived: TokenEntity): TokenEntity = copy(
+        conventionsChangeRules = derived.conventionsChangeRules,
+        maxSupplyChangeRules = derived.maxSupplyChangeRules,
+        manualMintingRules = derived.manualMintingRules,
+        manualBurningRules = derived.manualBurningRules,
+        freezeRules = derived.freezeRules,
+        unfreezeRules = derived.unfreezeRules,
+        destroyFrozenFundsRules = derived.destroyFrozenFundsRules,
+        emergencyActionRules = derived.emergencyActionRules,
+        distributionChangeRules = derived.distributionChangeRules,
+        tradeModeChangeRules = derived.tradeModeChangeRules,
+        mainControlGroupCanBeModified = derived.mainControlGroupCanBeModified,
+    )
 
     /** Pure parse of [contract]'s tokens map into entity rows. */
     fun parse(contract: DataContractEntity): List<TokenEntity> {

@@ -403,8 +403,11 @@ object TokenActionResolver {
         )
         rows += ResolvedTokenAction(
             TokenActionKind.UPDATE_MAX_SUPPLY,
-            TokenActionEvaluator.evaluate(
-                token.maxSupplyChangeRules, "Max supply change", identity, contract, token,
+            maxSupplyCoSignGuard(
+                TokenActionEvaluator.evaluate(
+                    token.maxSupplyChangeRules, "Max supply change", identity, contract, token,
+                ),
+                token, identity, contract,
             ),
         )
 
@@ -425,6 +428,38 @@ object TokenActionResolver {
         )
 
         return rows
+    }
+
+    private const val EVONODE_IDENTITY_TYPE = "Evonode"
+    private const val VOTER_ROLE = "voter"
+
+    /**
+     * A group-gated max-supply change that the proposer cannot complete
+     * alone needs a second signature, and the co-sign screen cannot replay a
+     * config-update proposal yet ([GroupActionProposal.isCoSignSupported]).
+     * Keep the row closed rather than let a member pay for a proposal no one
+     * can finish in this app.
+     */
+    private fun maxSupplyCoSignGuard(
+        permission: TokenActionPermission,
+        token: TokenEntity,
+        identity: IdentityEntity,
+        contract: DataContractEntity?,
+    ): TokenActionPermission {
+        if (!permission.isAllowed) return permission
+        val position = GroupActionRuleEvaluator.inferredGroupPosition(
+            token.maxSupplyChangeRules, token.mainControlGroupPosition,
+        ) ?: return permission
+        val groups = ContractGroups.from(contract) ?: return permission
+        val power = groups.members(position)[Base58.encode(identity.identityId)] ?: 0
+        return if (power >= groups.requiredPower(position)) {
+            permission
+        } else {
+            TokenActionPermission.Denied(
+                "Max supply change: needs co-signers, and this app cannot co-sign " +
+                    "a max-supply proposal yet",
+            )
+        }
     }
 
     private fun pausedGuard(
@@ -511,9 +546,19 @@ object TokenActionResolver {
                     else -> TokenActionPermission.Denied("Not the designated distribution recipient")
                 }
             }
-            TokenDistributionRecipient.EvonodesByParticipation -> TokenActionPermission.Denied(
-                "Distribution pays evonodes by participation; eligibility not evaluated by this app",
-            )
+            // Drive works out an evonode's share from chain state at submit
+            // time; the app can only tell whether this identity is an evonode
+            // identity (a voter identity holds no claim).
+            TokenDistributionRecipient.EvonodesByParticipation ->
+                if (identity.identityType == EVONODE_IDENTITY_TYPE &&
+                    identity.masternodeRoleRaw != VOTER_ROLE
+                ) {
+                    TokenActionPermission.Allowed
+                } else {
+                    TokenActionPermission.Denied(
+                        "Distribution pays evonodes by participation; this identity is not an evonode",
+                    )
+                }
             is TokenDistributionRecipient.Unknown -> TokenActionPermission.Denied(
                 "Distribution recipient '${recipient.what}' not recognised by this app",
             )

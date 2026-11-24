@@ -141,15 +141,29 @@ class TokenActionResolverClaimTest {
     }
 
     @Test
-    fun `perpetual recipients the app cannot evaluate say so`() {
+    fun `perpetual distribution paid to evonodes is claimable by an evonode identity`() {
+        val evonodePaid = token(perpetual = perpetualJson("""{"${'$'}type":"evonodesByParticipation"}"""))
+        val evonode = identity().copy(identityType = "Evonode", masternodeRoleRaw = "owner")
+        // Drive works out the participation share at submit time.
+        assertTrue(claim(evonodePaid, evonode).isAllowed)
+        assertEquals(listOf(TokenDistributionType.PERPETUAL), claimable(evonodePaid, evonode))
+        // A voter identity of the same masternode holds no claim.
         assertEquals(
             TokenActionPermission.Denied(
-                "Distribution pays evonodes by participation; eligibility not evaluated by this app",
+                "Distribution pays evonodes by participation; this identity is not an evonode",
             ),
-            claim(
-                token(perpetual = perpetualJson("""{"${'$'}type":"evonodesByParticipation"}""")),
-                identity(),
+            claim(evonodePaid, evonode.copy(masternodeRoleRaw = "voter")),
+        )
+    }
+
+    @Test
+    fun `perpetual recipients the app cannot evaluate say so`() {
+        val evonodePaid = token(perpetual = perpetualJson("""{"${'$'}type":"evonodesByParticipation"}"""))
+        assertEquals(
+            TokenActionPermission.Denied(
+                "Distribution pays evonodes by participation; this identity is not an evonode",
             ),
+            claim(evonodePaid, identity()),
         )
         assertEquals(
             TokenActionPermission.Denied("Distribution recipient 'someoneNew' not recognised by this app"),
