@@ -785,3 +785,57 @@ fn atom_006_commit_writes_continues_past_per_wallet_failures() {
     assert_eq!(read_synced_height(&path, &b), Some(2));
     assert_eq!(read_synced_height(&path, &c), Some(3));
 }
+
+// ---------------------------------------------------------------------------
+// commit_durably — a durable write the backend answers for itself
+// ---------------------------------------------------------------------------
+
+/// In `Manual` mode a durable commit writes the changeset with what was
+/// buffered before it, in one transaction, and answers `Ok` only once that
+/// commit is done: the wallet does not have to infer it from flushes it saw.
+#[test]
+fn should_commit_a_durable_write_with_the_buffer_in_manual_mode() {
+    use std::sync::atomic::Ordering;
+    let (persister, _tmp, path) = fresh_persister_with_mode(FlushMode::Manual);
+    assert!(persister.commits_durably());
+    let w = wid(0xD1);
+    ensure_wallet_meta(&persister, &w);
+    persister
+        .store(w, changeset(core_with_height(5, 5)))
+        .unwrap();
+    let commits = install_commit_counter(&persister);
+
+    persister
+        .commit_durably(w, changeset(core_with_height(7, 7)))
+        .expect("the durable write commits");
+
+    assert_eq!(commits.load(Ordering::SeqCst), 1, "one transaction");
+    assert_eq!(read_synced_height(&path, &w), Some(7));
+    assert!(!persister.buffer_has_changeset_for_test(&w));
+}
+
+/// A durable commit that fails transiently keeps the buffer, the new write
+/// included, for a later flush; one that fails for good drops it. Neither
+/// answers `Ok`, so the caller never takes the write for durable.
+#[test]
+fn should_classify_a_failed_durable_commit_like_a_flush() {
+    for (transient, error) in [(true, make_busy_error()), (false, make_fatal_error())] {
+        let (persister, _tmp, path) = fresh_persister_with_mode(FlushMode::Manual);
+        let w = wid(0xD2);
+        ensure_wallet_meta(&persister, &w);
+        persister.force_next_flush_to_fail(error);
+
+        let result = persister.commit_durably(w, changeset(core_with_height(9, 9)));
+
+        let error = result.expect_err("an injected failure is not durable");
+        assert_eq!(error.is_transient(), transient, "{error:?}");
+        assert_eq!(read_synced_height(&path, &w), None);
+        assert_eq!(persister.buffer_has_changeset_for_test(&w), transient);
+        if transient {
+            persister
+                .flush(w)
+                .expect("the retry writes the kept buffer");
+            assert_eq!(read_synced_height(&path, &w), Some(9));
+        }
+    }
+}

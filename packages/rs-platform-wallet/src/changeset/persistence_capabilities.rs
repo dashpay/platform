@@ -165,7 +165,10 @@ impl PersistenceCapabilities {
     /// [`Self::ASSET_LOCK_SHIELDED_RECIPIENTS`]: the recipient is not on chain
     /// and an unbound lock without one cannot be resumed until a recipient is
     /// assigned, so the wallet does not build an unbound top-up lock for a
-    /// backend that would lose it on restart.
+    /// backend that would lose it on restart. A backend attesting it also
+    /// implements
+    /// [`assign_asset_lock_identity_recipient`](crate::changeset::PlatformWalletPersistence::assign_asset_lock_identity_recipient),
+    /// which records an assigned recipient alone on the stored row.
     pub const ASSET_LOCK_IDENTITY_RECIPIENTS: Self = Self(1 << 17);
 
     /// Index of the highest bit declared above. It lives here, beside the

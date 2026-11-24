@@ -6,11 +6,10 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::changeset::changeset::AssetLockChangeSet;
-use crate::changeset::changeset::{AssetLockEntry, PlatformWalletChangeSet};
+use crate::changeset::changeset::PlatformWalletChangeSet;
 use crate::changeset::PersistenceCapabilities;
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
-use crate::wallet::persister::NotDurable;
 use dpp::prelude::Identifier;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
@@ -159,25 +158,25 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Refused on a backend that cannot keep the assignment
     /// ([`PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS`]). Only an
     /// unbound top-up lock that is not consumed can be assigned
-    /// ([`PlatformWalletError::AssetLockAlreadyConsumed`] otherwise), and one
-    /// that records no recipient only while its Platform consumption is known
-    /// ([`PlatformWalletError::AssetLockConsumptionUnknown`] for a
-    /// [`RecoveredFromChain`](AssetLockStatus::RecoveredFromChain) lock).
+    /// ([`PlatformWalletError::AssetLockAlreadyConsumed`] otherwise). One
+    /// rebuilt from the chain ([`RecoveredFromChain`](AssetLockStatus::RecoveredFromChain)),
+    /// which Platform may already have used, is assigned only when the caller
+    /// acknowledges that (`acknowledge_unknown_consumption`), and is
+    /// [`PlatformWalletError::AssetLockConsumptionUnknown`] otherwise. Platform
+    /// uses an outpoint once, so a lock it already used is refused there and
+    /// the resume reports it consumed: the acknowledgement risks no second
+    /// payment, only the user's choice of identity.
     ///
-    /// The assignment is made durable first
-    /// ([`WalletPersister::store_durably`](crate::wallet::persister::WalletPersister::store_durably))
-    /// and only then recorded in memory, where a resume reads it: a resume
-    /// never pays a recipient the store has not committed. Assignments are
-    /// serialized, so two of the same lock cannot interleave. A failure
-    /// leaves the lock unassigned in memory, whatever it left in the backend:
-    /// a retry with the same identity stores it again (the backend accepts the
-    /// identity it already records). Until that retry succeeds, another
-    /// identity is refused with
-    /// [`PlatformWalletError::AssetLockIdentityRecipientMismatch`] naming the
-    /// failed one: the backend may still commit it from its buffer, which
-    /// keeps the first recipient it was given, so a different identity could
-    /// be published here while the store holds the first. Either way nothing
-    /// pays a recipient that is not durable.
+    /// The recipient alone is written, by the backend at once
+    /// ([`PlatformWalletPersistence::assign_asset_lock_identity_recipient`](crate::changeset::PlatformWalletPersistence::assign_asset_lock_identity_recipient)),
+    /// never a snapshot of the row: a proof or status sync recorded meanwhile
+    /// stays, and a lock the backend no longer stores (a sweep) is refused
+    /// rather than written back. Only once it is committed is it recorded in
+    /// memory, where a resume reads it, and only on a lock that is still
+    /// tracked and assignable: a lock swept meanwhile is
+    /// [`PlatformWalletError::AssetLockNotTracked`]. A failed assignment left
+    /// nothing behind, in memory or in the backend, so any identity may be
+    /// assigned afterwards.
     ///
     /// `generation` is the caller's handle's wallet generation. A wallet
     /// removed, or re-created under its id, since the handle was taken is
@@ -187,6 +186,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         &self,
         out_point: &OutPoint,
         identity: Identifier,
+        acknowledge_unknown_consumption: bool,
         generation: &Arc<WalletGeneration>,
     ) -> Result<(), PlatformWalletError> {
         self.require_identity_recipient_persistence()?;
@@ -198,20 +198,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // the publication, taken before the manager lock as teardown takes
         // them, so a removal cannot land between them.
         let _lifecycle = generation.payment_guard().await;
-        let mut unsettled = self.recipient_assignment_serial.lock().await;
-        // A recipient whose store failed may still be committed from the
-        // backend's buffer, and the buffered row keeps it over any later
-        // recipient: only that one may be assigned until it is stored durably.
-        if let Some(&attempted) = unsettled.get(out_point) {
-            if attempted != identity {
-                return Err(PlatformWalletError::AssetLockIdentityRecipientMismatch {
-                    out_point: *out_point,
-                    recorded: attempted,
-                    requested: identity,
-                });
-            }
-        }
-        let entry = {
+        let _serial = self.recipient_assignment_serial.lock().await;
+        {
             let wm = self.wallet_manager.read().await;
             let lock = wm
                 .get_wallet_info(&self.wallet_id)
@@ -222,40 +210,31 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 .tracked_asset_locks
                 .get(out_point)
                 .ok_or(PlatformWalletError::AssetLockNotTracked(*out_point))?;
-            check_identity_recipient_assignable(lock, identity)?;
-            let mut entry = AssetLockEntry::from(lock);
-            entry.identity_recipient = Some(identity);
-            entry
-        };
-        if let Err(error) = self.persister.store_durably(PlatformWalletChangeSet {
-            asset_locks: Some(AssetLockChangeSet {
-                asset_locks: [(*out_point, entry)].into(),
-                ..Default::default()
-            }),
-            ..Default::default()
-        }) {
-            if may_still_commit(&error) {
-                unsettled.insert(*out_point, identity);
-            } else {
-                unsettled.remove(out_point);
-            }
-            return Err(PlatformWalletError::Persistence(format!(
-                "asset-lock identity recipient was not made durable, so it is not \
-                 assigned; assigning the same identity again retries: {error}"
-            )));
+            check_identity_recipient_assignable(lock, identity, acknowledge_unknown_consumption)?;
         }
-        unsettled.remove(out_point);
+        self.persister
+            .assign_asset_lock_identity_recipient(*out_point, identity)
+            .map_err(|error| {
+                PlatformWalletError::Persistence(format!(
+                    "asset-lock identity recipient was not assigned, and nothing of it was \
+                     stored: {error}"
+                ))
+            })?;
         // Still under the lifecycle gate, so the generation checked above is
         // still the wallet's; the serial gate keeps any other assignment out,
-        // and nothing else sets a recipient on a tracked lock.
+        // and nothing else sets a recipient on a tracked lock. Sync may have
+        // moved the lock meanwhile: it is published only where it still
+        // applies.
         let mut wm = self.wallet_manager.write().await;
-        if let Some(lock) = wm
+        let lock = wm
             .get_wallet_info_mut(&self.wallet_id)
             .filter(|info| Arc::ptr_eq(&info.generation, generation))
             .and_then(|info| info.tracked_asset_locks.get_mut(out_point))
-        {
-            lock.identity_recipient = Some(identity);
+            .ok_or(PlatformWalletError::AssetLockNotTracked(*out_point))?;
+        if lock.status.is_consumed() {
+            return Err(PlatformWalletError::AssetLockAlreadyConsumed(*out_point));
         }
+        lock.identity_recipient = Some(identity);
         Ok(())
     }
 
@@ -847,21 +826,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
 /// Whether `lock` may be assigned `identity` as its recipient: an unconsumed
 /// unbound top-up lock recording no identity, or this one already.
-/// Whether records a failed durable store left behind may still be
-/// committed by a later flush: a transient store or flush failure keeps what
-/// the backend buffered, as does another flush that has not settled. A failure
-/// for good drops it, and nothing of the store remains to commit.
-fn may_still_commit(error: &NotDurable) -> bool {
-    match error {
-        NotDurable::Store(error) | NotDurable::Flush(error) => error.is_transient(),
-        NotDurable::OtherFlushUnsettled => true,
-        NotDurable::Lost => false,
-    }
-}
-
 fn check_identity_recipient_assignable(
     lock: &TrackedAssetLock,
     identity: Identifier,
+    acknowledge_unknown_consumption: bool,
 ) -> Result<(), PlatformWalletError> {
     if lock.funding_type != AssetLockFundingType::IdentityTopUpNotBound {
         return Err(not_an_unbound_top_up(
@@ -875,10 +843,13 @@ fn check_identity_recipient_assignable(
             lock.out_point,
         ));
     }
-    // A lock that already records this identity may be assigned it again (a
-    // retry of a failed store); a recipient-less one only while the wallet
-    // knows Platform has not consumed it.
-    if lock.identity_recipient.is_none() && lock.status == AssetLockStatus::RecoveredFromChain {
+    // A lock that already records this identity may be assigned it again; a
+    // recipient-less one rebuilt from the chain only when the caller
+    // acknowledges that Platform may already have used it.
+    if lock.identity_recipient.is_none()
+        && lock.status == AssetLockStatus::RecoveredFromChain
+        && !acknowledge_unknown_consumption
+    {
         return Err(PlatformWalletError::AssetLockConsumptionUnknown(
             lock.out_point,
         ));

@@ -196,7 +196,9 @@ pub enum PlatformWalletFFIResultCode {
     /// asset-lock funding) failed with an AMBIGUOUS outcome — the transaction
     /// may already be on the network (transport timeout after delivery,
     /// partial peer send, or an internal multi-node retry whose earlier
-    /// attempt may have delivered). The wallet intentionally KEEPS the spent
+    /// attempt may have delivered), or an asset lock Core rejected whose
+    /// tracked row could not be removed durably, so the row may come back
+    /// after a restart and be resumed. The wallet intentionally KEEPS the spent
     /// inputs' UTXO reservation, so an immediate retry fails at input
     /// selection instead of double-spending; observing the spend reconciles
     /// the outcome. Also covers Platform state transitions whose result
@@ -234,7 +236,9 @@ pub enum PlatformWalletFFIResultCode {
     ErrorAssetLockFundingMismatch = 25,
     /// Maps `PlatformWalletError::TransactionBroadcast`. Core definitively
     /// rejected the transaction, so its UTXO reservation was released and the
-    /// host may safely retry after addressing the rejection reason.
+    /// host may safely retry after addressing the rejection reason. For an
+    /// asset lock, only once its tracked row's removal is durable; otherwise
+    /// the outcome is [`Self::ErrorTransactionBroadcastUnconfirmed`] (20).
     ErrorTransactionBroadcastRejected = 26,
     /// A quiesce/drain barrier did not complete within its budget: an
     /// in-flight sync pass was still running when a Clear / reset /
