@@ -440,6 +440,20 @@ class DashSdkErrorTest {
         assertFalse("a shielded sync lifts it, not a retry", mapped.isRetryable)
     }
 
+    /**
+     * A tip refused because the contact's name moved to another identity has
+     * its own code (85): nothing was sent, and sending again does not help.
+     */
+    @Test
+    fun shouldReportATipToAMovedContactNameByItsOwnCode() {
+        val detail = "This username now belongs to identity B, not to the expected identity A"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 85, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedTipRecipientMismatch)
+        assertEquals(detail, mapped.message)
+        assertFalse("the recipient is picked again, not retried", mapped.isRetryable)
+    }
+
     @Test
     fun platformShieldCapacityCode41MapsTyped() {
         val message =

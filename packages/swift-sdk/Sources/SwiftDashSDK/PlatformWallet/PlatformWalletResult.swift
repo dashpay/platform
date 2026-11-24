@@ -335,6 +335,10 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// sent. A shielded sync resolves the earlier payment; then review and
     /// send again. Not `errorShieldedSpendUnconfirmed` (18).
     case errorShieldedTipPending = 84
+    /// A shielded tip started from a saved contact was refused because the
+    /// username now belongs to another identity than the contact's. Nothing
+    /// was sent; the user picks the recipient again.
+    case errorShieldedTipRecipientMismatch = 85
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -490,6 +494,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorBalanceHistoryInconsistentHeights
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_TIP_PENDING:
             self = .errorShieldedTipPending
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_TIP_RECIPIENT_MISMATCH:
+            self = .errorShieldedTipRecipientMismatch
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -779,6 +785,12 @@ public enum PlatformWalletError: LocalizedError {
     /// as unable to execute, so do not send again because the refusal
     /// ended, only once that payment is known to have failed.
     case shieldedTipPending(String)
+    /// A shielded tip started from a saved contact was refused because the
+    /// username now belongs to another identity than the contact's: the name
+    /// moved since the contact was saved. Nothing was sent. The user picks
+    /// the recipient again; a tip to the name's new owner starts from the
+    /// name, not from the contact.
+    case shieldedTipRecipientMismatch(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition never
     /// left the wallet (refused before anything was sent), so it cannot
@@ -1014,7 +1026,7 @@ public enum PlatformWalletError: LocalizedError {
              .privateContactStoreNotRead(let m), .sdkPinnedBelowProtocolVersion(let m),
              .publicContactRequestUnconfirmed(let m),
              .balanceHistoryInconsistentHeights(let m),
-             .shieldedTipPending(let m),
+             .shieldedTipPending(let m), .shieldedTipRecipientMismatch(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
@@ -1156,6 +1168,8 @@ public enum PlatformWalletError: LocalizedError {
             self = .balanceHistoryInconsistentHeights(detail)
         case .errorShieldedTipPending:
             self = .shieldedTipPending(detail)
+        case .errorShieldedTipRecipientMismatch:
+            self = .shieldedTipRecipientMismatch(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)

@@ -792,6 +792,14 @@ pub enum PlatformWalletFFIResultCode {
     /// the wallet" code ([`Self::ErrorShieldedSpendUnconfirmed`], 18).
     ErrorShieldedTipPending = 84,
 
+    /// Maps `PlatformWalletError::ShieldedTipRecipientMismatch`: a shielded
+    /// tip started from a saved contact names the identity the username is
+    /// expected to belong to, and the name resolves to another identity: it
+    /// moved since the contact was saved. Nothing was sent. The user picks
+    /// the recipient again; a tip to the name's new owner starts from the
+    /// name, with no expected identity.
+    ErrorShieldedTipRecipientMismatch = 85,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1285,6 +1293,11 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // not unconfirmed.
             PlatformWalletError::ShieldedTipPending => {
                 PlatformWalletFFIResultCode::ErrorShieldedTipPending
+            }
+            // A shielded tip refused, nothing sent, because the name belongs
+            // to another identity than the contact it was started from.
+            PlatformWalletError::ShieldedTipRecipientMismatch { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedTipRecipientMismatch
             }
             // The wallet's private payments from an earlier process are not
             // restored yet: wallet readiness, not one contact's pending request.
@@ -3092,6 +3105,7 @@ mod private_contact_request_error_tests {
     use super::*;
     #[cfg(feature = "shielded")]
     use crate::shielded_send::map_spend_result;
+    use dpp::prelude::Identifier;
 
     /// A store the network does not serve yet (DashPay's private contact
     /// requests before protocol version 15) is told apart from a failure, so
@@ -3260,6 +3274,24 @@ mod private_contact_request_error_tests {
                 84
             );
         }
+    }
+
+    /// A shielded tip refused because the name belongs to another identity
+    /// than the contact it was started from reaches the host by its own
+    /// code, naming both identities.
+    #[test]
+    fn should_report_a_shielded_tip_recipient_mismatch_by_its_own_code() {
+        let mut result =
+            PlatformWalletFFIResult::from(PlatformWalletError::ShieldedTipRecipientMismatch {
+                expected: Identifier::from([1; 32]),
+                resolved: Identifier::from([2; 32]),
+            });
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedTipRecipientMismatch
+        );
+        assert_eq!(result.code as u32, 85);
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
     }
 
     /// A public contact request a loaded wallet refuses until its private
