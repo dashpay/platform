@@ -756,10 +756,27 @@ impl WalletPersister {
     /// It answers for `changeset` alone, which [`Self::flush_durably`] does
     /// not: a flush that failed for good before the store dropped nothing of
     /// it, and does not refuse it.
+    ///
+    /// A buffered backend that implements
+    /// [`commit_durably`](crate::changeset::PlatformWalletPersistence::commit_durably)
+    /// answers for the write itself instead, so a drain the ledger never sees
+    /// (one the backend makes through its own API) cannot make a flush here
+    /// succeed over a buffer that no longer holds the changeset. Its failure
+    /// is reported as [`NotDurable::Flush`].
     pub(crate) fn store_durably(
         &self,
         changeset: PlatformWalletChangeSet,
     ) -> Result<(), NotDurable> {
+        if !self.store_commits_inline() && self.inner.commits_durably() {
+            // The backend answers for this write itself, whoever else drains
+            // its buffer: the ledger, which sees only the flushes made here,
+            // need not vouch for it. Counted as a flush all the same, so a
+            // commit that fails for good shows as a loss to the others.
+            return self
+                .flush_ledger
+                .commit(self.inner.as_ref(), self.wallet_id, changeset)
+                .map_err(NotDurable::Flush);
+        }
         let (lost_before, failed_before) = (self.flush_ledger.lost(), self.flush_ledger.failed());
         self.store(changeset).map_err(NotDurable::Store)?;
         if self.store_commits_inline() {
@@ -1020,6 +1037,73 @@ mod tests {
         }
         assert!(!BareMinimum.persists_durably());
         assert!(!NoPlatformPersistence.persists_durably());
+    }
+
+    /// A buffered backend that commits a durable write itself answers for it:
+    /// the wallet neither stores nor flushes, so a drain it never sees (one
+    /// the backend makes through its own API) cannot vouch for the write. A
+    /// commit that fails for good is counted as a lost flush, so the others
+    /// waiting on the ledger learn their buffered records went with it.
+    #[test]
+    fn should_let_a_backend_that_commits_durably_answer_for_the_write() {
+        struct CommitsItself {
+            commits: AtomicU64,
+            stores_and_flushes: AtomicU64,
+            fail_for_good: AtomicBool,
+        }
+        impl PlatformWalletPersistence for CommitsItself {
+            fn commits_durably(&self) -> bool {
+                true
+            }
+            fn commit_durably(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                self.commits.fetch_add(1, Ordering::SeqCst);
+                if self.fail_for_good.load(Ordering::SeqCst) {
+                    return Err(PersistenceError::backend("the database is corrupt"));
+                }
+                Ok(())
+            }
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                self.stores_and_flushes.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                self.stores_and_flushes.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        let backend = Arc::new(CommitsItself {
+            commits: AtomicU64::new(0),
+            stores_and_flushes: AtomicU64::new(0),
+            fail_for_good: AtomicBool::new(false),
+        });
+        let persister = WalletPersister::new([0; 32], Arc::clone(&backend) as _);
+
+        assert!(persister
+            .store_durably(PlatformWalletChangeSet::default())
+            .is_ok());
+        assert_eq!(backend.commits.load(Ordering::SeqCst), 1);
+        assert_eq!(backend.stores_and_flushes.load(Ordering::SeqCst), 0);
+
+        backend.fail_for_good.store(true, Ordering::SeqCst);
+        let lost_before = persister.flush_ledger.lost();
+        let failed = persister.store_durably(PlatformWalletChangeSet::default());
+        assert!(
+            matches!(&failed, Err(NotDurable::Flush(error)) if !error.is_transient()),
+            "{failed:?}"
+        );
+        assert_eq!(persister.flush_ledger.lost(), lost_before + 1);
     }
 
     /// A store is not answered for on the strength of a flush that succeeded

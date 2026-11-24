@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, Weak};
 
 use crate::changeset::traits::{PersistenceError, PlatformWalletPersistence};
+use crate::changeset::PlatformWalletChangeSet;
 use crate::wallet::platform_wallet::WalletId;
 
 /// What this process knows of the flushes of one wallet's records.
@@ -102,6 +103,22 @@ impl FlushLedger {
         flushed
     }
 
+    /// Commit `changeset` with `wallet_id`'s buffered records on `backend`
+    /// ([`PlatformWalletPersistence::commit_durably`]), counted as a flush:
+    /// it drains the buffer as one does, so one that fails for good drops
+    /// what others stored, and their callers must learn of it.
+    pub(crate) fn commit(
+        &self,
+        backend: &dyn PlatformWalletPersistence,
+        wallet_id: WalletId,
+        changeset: PlatformWalletChangeSet,
+    ) -> Result<(), PersistenceError> {
+        let mut in_flight = InFlight::enter(self, !backend.store_commits_inline());
+        let committed = backend.commit_durably(wallet_id, changeset);
+        in_flight.record(&committed);
+        committed
+    }
+
     /// Count one flush that failed, `for_good` when the backend dropped what
     /// it had taken.
     fn record_failure(&self, for_good: bool) {
@@ -197,7 +214,7 @@ mod tests {
     use std::panic::{catch_unwind, AssertUnwindSafe};
 
     use super::*;
-    use crate::changeset::{ClientStartState, PlatformWalletChangeSet};
+    use crate::changeset::ClientStartState;
 
     /// A backend whose flush panics.
     struct Panicking;

@@ -266,6 +266,40 @@ pub trait PlatformWalletPersistence: Send + Sync {
         false
     }
 
+    /// Whether [`commit_durably`](Self::commit_durably) is implemented.
+    ///
+    /// **Fail-closed:** the default is `false`, and the wallet then makes a
+    /// changeset durable with a [`store`](Self::store) and a
+    /// [`flush`](Self::flush), which it can vouch for only while it sees every
+    /// flush of the wallet's records. A backend that also drains its buffer
+    /// some other way (on a timer, or through its own API) implements
+    /// [`commit_durably`](Self::commit_durably) instead.
+    fn commits_durably(&self) -> bool {
+        false
+    }
+
+    /// Store `changeset` and commit it together with everything buffered for
+    /// `wallet_id` before it, answering for that one write: `Ok` only once it
+    /// is committed, whoever else drains the buffer meanwhile.
+    ///
+    /// An `Err` follows [`flush`](Self::flush)'s classification: a transient
+    /// failure keeps the buffer, `changeset` included, for a later flush to
+    /// write; any other drops it. Either way the changeset is not known to be
+    /// durable, and a caller must treat it as possibly still committing.
+    ///
+    /// Called only when [`commits_durably`](Self::commits_durably) answers
+    /// `true`; the default refuses.
+    fn commit_durably(
+        &self,
+        wallet_id: WalletId,
+        changeset: PlatformWalletChangeSet,
+    ) -> Result<(), PersistenceError> {
+        let _ = (wallet_id, changeset);
+        Err(PersistenceError::backend(
+            "this backend does not implement commit_durably",
+        ))
+    }
+
     /// Feature-specific contracts this backend can persist and, where the
     /// capability requires it, restore after process restart.
     ///

@@ -1104,6 +1104,21 @@ impl SqlitePersister {
         }
     }
 
+    /// Merge `changeset` and write the wallet's buffer with it, holding the
+    /// connection across both: the `Immediate`-mode store, and a durable
+    /// commit in either mode.
+    fn merge_and_flush(
+        &self,
+        wallet_id: WalletId,
+        changeset: PlatformWalletChangeSet,
+    ) -> Result<(), PersistenceError> {
+        let mut conn = self.conn().map_err(PersistenceError::from)?;
+        self.merge_checked(Some(&conn), wallet_id, changeset)?;
+        #[cfg(any(test, feature = "__test-helpers"))]
+        self.run_store_flush_seam();
+        self.flush_locked(&mut conn, &wallet_id)
+    }
+
     /// Merge `cs` into `wallet_id`'s buffer, refusing it if its
     /// identities would contradict the slots already taken.
     ///
@@ -1436,13 +1451,7 @@ impl PlatformWalletPersistence for SqlitePersister {
             // merged just above: the flush below reports the fate of
             // exactly what this call staged, which is what the
             // durability contract above promises.
-            FlushMode::Immediate => {
-                let mut conn = self.conn().map_err(PersistenceError::from)?;
-                self.merge_checked(Some(&conn), wallet_id, changeset)?;
-                #[cfg(any(test, feature = "__test-helpers"))]
-                self.run_store_flush_seam();
-                self.flush_locked(&mut conn, &wallet_id)
-            }
+            FlushMode::Immediate => self.merge_and_flush(wallet_id, changeset),
             // Nothing reaches disk here, so the connection is worth
             // taking only for the identity-slot probe.
             FlushMode::Manual => {
@@ -1462,6 +1471,29 @@ impl PlatformWalletPersistence for SqlitePersister {
 
     fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError> {
         self.flush_inner(&wallet_id)
+    }
+
+    /// [`commit_writes`](SqlitePersister::commit_writes) drains the buffer
+    /// outside the wallet's view, so a durable write is answered here.
+    fn commits_durably(&self) -> bool {
+        true
+    }
+
+    /// Merge `changeset` and flush the wallet's buffer under ONE connection
+    /// guard, whatever the flush mode: every path that drains the buffer
+    /// takes the same lock, so no other flush can own, and drop, what this
+    /// call merged, and the flush reports the fate of exactly that write.
+    /// Failures are classified as [`flush`](Self::flush)'s.
+    fn commit_durably(
+        &self,
+        wallet_id: WalletId,
+        changeset: PlatformWalletChangeSet,
+    ) -> Result<(), PersistenceError> {
+        self.ensure_writable("commit_durably")
+            .map_err(PersistenceError::from)?;
+        self.ensure_connection_usable()
+            .map_err(PersistenceError::from)?;
+        self.merge_and_flush(wallet_id, changeset)
     }
 
     /// Load every wallet's start-state from disk.
