@@ -335,6 +335,27 @@ final class TokenClaimResolverTests: XCTestCase {
         )
     }
 
+    /// With only a pre-programmed distribution and no once-per-identity one,
+    /// an identity the schedule does not name has nothing to claim: the row
+    /// says so, the form offers nothing and starts on no kind.
+    func testUnlistedIdentityOnPreProgrammedOnlyTokenIsDenied() throws {
+        let context = try makeContext()
+        let recipient = makeIdentity(byte: 0x2A, in: context)
+        let stranger = makeIdentity(byte: 0x2B, in: context)
+        let token = try makeToken(
+            preProgrammedRecipients: [recipient],
+            in: context
+        )
+
+        assertClaim(
+            token: token,
+            identity: stranger,
+            claims: StubClaimStore(),
+            resolves: .denied(reason: "Not a recipient of any pre-programmed release"),
+            offers: []
+        )
+    }
+
     // MARK: - Already claimed
 
     func testAlreadyClaimedOncePerIdentityAloneIsDenied() throws {
@@ -661,7 +682,10 @@ final class TokenClaimResolverTests: XCTestCase {
         let identity = makeIdentity(byte: 0x28, in: context)
         let cases: [(recipient: String, reason: String)] = [
             ("futureVariant", "Distribution recipient 'futureVariant' not recognised by this app"),
-            ("AllEqualShare", "Distribution recipient not recorded; reload the contract"),
+            (
+                "AllEqualShare",
+                "Distribution recipient not recorded; delete the contract and load it again"
+            ),
             (TokenDistributionRecipient.identity(""), "Not the designated distribution recipient")
         ]
 

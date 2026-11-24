@@ -605,8 +605,12 @@ enum TokenActionResolver {
         case legacyUnrecordedRecipient:
             // Rows parsed before the parser read the `$type` map kept the
             // `TokenPerpetualDistribution` init default, which never named
-            // a real recipient. Reloading the contract re-parses it.
-            return .denied(reason: "Distribution recipient not recorded; reload the contract")
+            // a real recipient. Loading a contract that is already saved
+            // keeps its rows as they are, so only deleting the contract and
+            // loading it again re-parses the token.
+            return .denied(
+                reason: "Distribution recipient not recorded; delete the contract and load it again"
+            )
         default:
             return .denied(reason: "Distribution recipient '\(recipient)' not recognised by this app")
         }
