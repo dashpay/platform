@@ -6,6 +6,7 @@ import java.io.File
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import org.dashfoundation.dashsdk.config.SdkConfig
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.persistence.DashDatabase
@@ -27,7 +28,7 @@ import org.junit.runner.RunWith
  * refused at once and does not run later either. JVM tests cannot reach
  * this, because a service is bound only through the native library.
  *
- * Offline: the Clear is refused before it asks Rust, and nothing starts the
+ * The Clear is refused before it asks Rust, and nothing starts the shielded
  * sync loop.
  */
 @RunWith(AndroidJUnit4::class)
@@ -38,6 +39,9 @@ class ShieldedClearRefusalFfiTest {
         "abandon abandon abandon abandon abandon abandon abandon abandon " +
             "abandon abandon abandon about"
 
+    /** A refusal takes no wait; the bound only ends a Clear that waits. */
+    private val refusalWaitMs = 10_000L
+
     private lateinit var db: DashDatabase
     private lateinit var walletStorage: WalletStorage
     private lateinit var sdk: Sdk
@@ -47,7 +51,7 @@ class ShieldedClearRefusalFfiTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         db = DashDatabase.createInMemory(context)
         walletStorage = WalletStorage(context)
-        // Testnet, no overrides: an offline client build (no connection made).
+        // Testnet with no overrides, as in WalletManagerRoundTripTest.
         sdk = Sdk.create(SdkConfig(network = Network.TESTNET))
     }
 
@@ -104,16 +108,29 @@ class ShieldedClearRefusalFfiTest {
 
                 // The Clear button's call returns the typed refusal while
                 // the bind is still running. A Clear that queued behind the
-                // bind would not return here at all.
-                val refused = runCatching { service.clearLocalState() }.exceptionOrNull()
+                // bind would park here, so the wait is bounded: it then ends
+                // with no refusal and the assertion below fails. The bind is
+                // released either way.
+                val refused = try {
+                    withTimeoutOrNull(refusalWaitMs) {
+                        try {
+                            service.clearLocalState()
+                            null
+                        } catch (e: DashSdkError) {
+                            e
+                        }
+                    }
+                } finally {
+                    bindMayFinish.complete(Unit)
+                }
                 assertTrue(
-                    "expected the typed refusal, got $refused",
+                    "expected the typed refusal while the bind runs, got $refused " +
+                        "(null: the Clear went through, or waited for the bind)",
                     refused is DashSdkError.PlatformWallet.ShieldedOperationInProgress,
                 )
 
                 // The bind finishing does not run the refused Clear: the row
                 // is still there and the service is still bound.
-                bindMayFinish.complete(Unit)
                 bind.join()
                 assertEquals(1, db.shieldedDao().getAllNotes().size)
                 assertTrue("nothing was reset", service.isBound.value)
