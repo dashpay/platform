@@ -914,7 +914,8 @@ struct EraseDocumentView: View {
     @State private var progress: String?
     @State private var persistWarning: String?
     @State private var actionError: DocumentActionErrorBox?
-    /// Network of the opening lifecycle read, when it observed ABSENT. The
+    /// Network of a read that observed ABSENT without an erase being
+    /// submitted (the opening read, or a skipped erase's preflight). The
     /// local copy is then removed only on an explicit tap: the network code
     /// alone does not tell two devnets apart, so the row may belong to
     /// another chain than the one just read.
@@ -1088,15 +1089,22 @@ struct EraseDocumentView: View {
                 await MainActor.run {
                     progress = describeDocumentEraseOutcome(outcome)
                     switch outcome {
-                    case .notSubmitted(_, let before): lifecycle = before
+                    case .notSubmitted(_, let before):
+                        lifecycle = before
+                        // Nothing was submitted: offer the removal on a tap,
+                        // as for the opening read (the row may belong to
+                        // another devnet with the same network code).
+                        if before?.state == .absent {
+                            openingAbsentNetworkRaw = eraseNetworkRaw
+                        }
                     case .submitted(_, let after):
                         submissions += 1
                         lifecycle = after
-                    }
-                    // ABSENT after this submission, or already ABSENT on
-                    // the preflight: either way nothing is left to show.
-                    if lifecycle?.state == .absent {
-                        persistWarning = removeLocalCopy(networkRaw: eraseNetworkRaw)
+                        // ABSENT after this submission: nothing is left to
+                        // show, so drop the local copy at once.
+                        if after?.state == .absent {
+                            persistWarning = removeLocalCopy(networkRaw: eraseNetworkRaw)
+                        }
                     }
                     isSubmitting = false
                 }

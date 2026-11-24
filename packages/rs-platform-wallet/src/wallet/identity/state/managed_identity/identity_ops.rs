@@ -8,7 +8,7 @@ use crate::changeset::{
 };
 use crate::wallet::persister::WalletPersister;
 use crate::BlockTime;
-use dash_sdk::platform::dpns_usernames::is_contested_username;
+use dash_sdk::platform::dpns_usernames::{convert_to_homograph_safe_chars, is_contested_username};
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
@@ -359,10 +359,13 @@ impl ManagedIdentity {
     /// Record a label this identity just registered.
     ///
     /// A contested label goes to a masternode vote and is not owned until
-    /// the contest is awarded, so it is recorded in `contested_dpns_names`;
-    /// any other label is owned at once and goes to `dpns_names`. A label
-    /// already in the list it belongs to is skipped. The next contested or
-    /// owned-name sync reconciles both lists with Platform.
+    /// the contest is awarded, so it is recorded in `contested_dpns_names`
+    /// under its normalized form, the key Platform stores the contest
+    /// under and the one [`Self::apply_synced_contested_dpns_names`]
+    /// writes. Any other label is owned at once and goes to `dpns_names`
+    /// with its display spelling. A label already in the list it belongs to
+    /// is skipped. The next contested or owned-name sync reconciles both
+    /// lists with Platform.
     pub fn record_registered_dpns_name(
         &mut self,
         label: String,
@@ -370,7 +373,7 @@ impl ManagedIdentity {
         persister: &WalletPersister,
     ) {
         if is_contested_username(&label) {
-            self.add_contested_dpns_name(label, persister);
+            self.add_contested_dpns_name(convert_to_homograph_safe_chars(&label), persister);
         } else if !self
             .dpns_names
             .iter()
@@ -398,6 +401,28 @@ impl ManagedIdentity {
         if let Err(e) = persister.store(cs.into()) {
             tracing::error!("Failed to persist changeset: {}", e);
         }
+    }
+
+    /// Apply a complete contested-name read from Platform.
+    ///
+    /// `seen_before_read` is the list as it was when the read started. A
+    /// label recorded since then (a registration that landed while the
+    /// read ran) is kept even if the read missed it, because the read may
+    /// predate the contest; every other label is replaced by `fetched`.
+    /// Returns the list now held.
+    pub fn apply_synced_contested_dpns_names(
+        &mut self,
+        mut fetched: Vec<String>,
+        seen_before_read: &[String],
+        persister: &WalletPersister,
+    ) -> Vec<String> {
+        for label in &self.contested_dpns_names {
+            if !seen_before_read.contains(label) && !fetched.contains(label) {
+                fetched.push(label.clone());
+            }
+        }
+        self.set_contested_dpns_names(fetched.clone(), persister);
+        fetched
     }
 
     /// Replace the contested-name list wholesale.
@@ -1198,18 +1223,58 @@ mod tests {
         let persister = std::sync::Arc::new(CapturingPersister::default());
         let p = WalletPersister::new([0xAB; 32], std::sync::Arc::clone(&persister) as _);
 
-        managed.record_registered_dpns_name("swqa-award".to_string(), Some(1), &p);
-        managed.record_registered_dpns_name("w3qa-ta1e".to_string(), Some(2), &p);
-        managed.record_registered_dpns_name("swqa-award".to_string(), Some(3), &p);
-        managed.record_registered_dpns_name("w3qa-ta1e".to_string(), Some(4), &p);
+        managed.record_registered_dpns_name("Alice-qa".to_string(), Some(1), &p);
+        managed.record_registered_dpns_name("W3qa-ta1e".to_string(), Some(2), &p);
+        managed.record_registered_dpns_name("alice-QA".to_string(), Some(3), &p);
+        managed.record_registered_dpns_name("W3qa-ta1e".to_string(), Some(4), &p);
 
-        assert_eq!(managed.contested_dpns_names, ["swqa-award"]);
+        // Contested under the normalized key Platform stores the contest
+        // under; owned under the display spelling.
+        assert_eq!(managed.contested_dpns_names, ["a11ce-qa"]);
         let owned: Vec<_> = managed
             .dpns_names
             .iter()
             .map(|n| n.label.as_str())
             .collect();
-        assert_eq!(owned, ["w3qa-ta1e"]);
+        assert_eq!(owned, ["W3qa-ta1e"]);
+    }
+
+    /// A contest registered while a contested-name read ran survives that
+    /// read even when it missed the new contest; labels the read no longer
+    /// reports and that were held before it started are dropped.
+    #[test]
+    fn should_keep_a_contest_registered_during_a_contested_name_read() {
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let mut managed = ManagedIdentity::new(identity, 0);
+        let persister = std::sync::Arc::new(CapturingPersister::default());
+        let p = WalletPersister::new([0xAB; 32], std::sync::Arc::clone(&persister) as _);
+
+        managed.set_contested_dpns_names(vec!["resolved".to_string(), "bob".to_string()], &p);
+        let seen_before_read = managed.contested_dpns_names.clone();
+        managed.record_registered_dpns_name("Alice-qa".to_string(), None, &p);
+
+        let held = managed.apply_synced_contested_dpns_names(
+            vec!["bob".to_string()],
+            &seen_before_read,
+            &p,
+        );
+
+        assert_eq!(held, ["bob", "a11ce-qa"]);
+        assert_eq!(managed.contested_dpns_names, held);
+
+        // A later read that started after the registration is authoritative.
+        let seen_before_read = managed.contested_dpns_names.clone();
+        let held = managed.apply_synced_contested_dpns_names(
+            vec!["bob".to_string()],
+            &seen_before_read,
+            &p,
+        );
+        assert_eq!(held, ["bob"]);
     }
 
     #[test]
