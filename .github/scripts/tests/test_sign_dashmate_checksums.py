@@ -41,7 +41,8 @@ PACKAGES = ['dashmate-v5.1.0-3a5da22021-arm64.pkg', 'dashmate-v5.1.0-3a5da22021-
 # The release lives in STATE (JSON) and its files in RELEASE_FILES. --jq goes through real jq,
 # as gh's own filter would. An API path containing GH_PARTIAL is answered and then fails, as a
 # paginated listing does when a later page cannot be read. GH_AFTER_UPLOAD changes the release
-# right after the upload; GH_READ_BACK_FAILS fails downloading the signature back, and
+# right after the upload (a package replaced, the tag moved, the run restarted or a newer run of
+# another commit); GH_READ_BACK_FAILS fails downloading the signature back, and
 # GH_UPLOAD_FAILS the upload itself. GH_AFTER_DOWNLOAD changes the release once the packages are
 # downloaded, as a re-run or another maintainer could while this one signs. GH_UPLOAD_FAILS fails
 # the upload: with 1 nothing is attached, with `created` or `partial` the asset is created with
@@ -201,8 +202,16 @@ if args[:2] == ['release', 'upload']:
     with open(args[3], 'rb') as handle:
         data = handle.read()
     asset(name, b'tampered' if os.environ.get('GH_UPLOAD_TAMPERED') else data, 'maintainer')
-    if os.environ.get('GH_AFTER_UPLOAD') == 'package-replaced':
+    after = os.environ.get('GH_AFTER_UPLOAD')
+    if after == 'package-replaced':
         asset('dashmate_5.1.0-1_amd64.deb', b'rebuilt', 'github-actions[bot]')
+    if after == 'tag-moved':
+        state['tag_commit'] = '3d8365918935a2cad03b04fa70d8bb9d07f9a849'
+    if after == 'run-restarted':
+        state['runs'][0]['status'] = 'in_progress'
+    if after == 'run-of-another-commit':
+        state['runs'].insert(0, dict(state['runs'][0], id=state['runs'][0]['id'] + 1,
+                                     head_sha='3d8365918935a2cad03b04fa70d8bb9d07f9a849'))
     save()
     sys.exit(0)
 
@@ -420,6 +429,8 @@ class ReleaseFixture(unittest.TestCase):
         self.assertIn('Error: ', result.stderr)
         self.assertIn(message, result.stderr)
         self.assertEqual(self.uploads(), [])
+        # nothing was uploaded, so the message must not send the maintainer to delete a signature
+        self.assertNotIn('SHA256SUMS.asc is attached', result.stderr)
 
 
 
@@ -759,6 +770,14 @@ class SignDashmateChecksumsTests(ReleaseFixture):
                 {'GH_UPLOAD_TAMPERED': '1'}, 'serves another SHA256SUMS.asc than the one signed here'),
             'the signature cannot be read back': (
                 {'GH_READ_BACK_FAILS': '1'}, 'could not download SHA256SUMS and SHA256SUMS.asc back'),
+            # the release must still be the one approved at --commit when it reports success
+            'the tag was moved during the upload': (
+                {'GH_AFTER_UPLOAD': 'tag-moved'}, f'{TAG} names {OTHER_SHA}, not {HEAD_SHA}'),
+            'a re-run started during the upload': (
+                {'GH_AFTER_UPLOAD': 'run-restarted'}, f'{RUN_ID} (in_progress)'),
+            'a run of another commit during the upload': (
+                {'GH_AFTER_UPLOAD': 'run-of-another-commit'},
+                f'release.yml run {RUN_ID + 1} built {OTHER_SHA}, not {HEAD_SHA}'),
         }
         for case, (env, reason) in cases.items():
             with self.subTest(case):

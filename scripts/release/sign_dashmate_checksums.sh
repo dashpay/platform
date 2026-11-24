@@ -145,24 +145,26 @@ sums_asset() {
 }
 
 # Every release.yml run of the tag must be over: a running attempt can still replace packages
-# or SHA256SUMS. Prints the newest run's id and the commit it built.
+# or SHA256SUMS. Prints the newest run's id and the commit it built. Reports a refusal through
+# the function named by $1, `fail` by default.
 finished_run() {
-  local runs unfinished
+  local on_fail="${1:-fail}" runs unfinished
   runs="$(gh api --paginate "repos/${REPO}/actions/workflows/release.yml/runs?event=release&branch=${TAG}&per_page=100" \
-    --jq '.workflow_runs[] | [.id, .status, .head_sha] | @tsv')" || fail "could not list the release.yml runs of ${TAG}"
-  [ -n "${runs}" ] || fail "found no release.yml run for ${TAG}"
+    --jq '.workflow_runs[] | [.id, .status, .head_sha] | @tsv')" || "${on_fail}" "could not list the release.yml runs of ${TAG}"
+  [ -n "${runs}" ] || "${on_fail}" "found no release.yml run for ${TAG}"
   unfinished="$(echo "${runs}" | awk -F'\t' '$2 != "completed" {print $1 " (" $2 ")"}' | paste -sd ' ' -)"
-  [ -z "${unfinished}" ] || fail "release.yml for ${TAG} is still running: ${unfinished}; sign once no attempt is in progress"
+  [ -z "${unfinished}" ] || "${on_fail}" "release.yml for ${TAG} is still running: ${unfinished}; sign once no attempt is in progress"
   echo "${runs}" | head -n 1 | cut -f1,3
 }
 
 # The newest run (id, commit) and the tag must both name the commit the release was approved at.
+# Reports a refusal through the function named by $2, `fail` by default.
 check_commit() {
-  local tagged
+  local on_fail="${2:-fail}" tagged
   [ "$(echo "$1" | cut -f2)" = "${COMMIT}" ] \
-    || fail "release.yml run $(echo "$1" | cut -f1) built $(echo "$1" | cut -f2), not ${COMMIT}"
-  tagged="$(gh api "repos/${REPO}/commits/refs/tags/${TAG}" --jq '.sha')" || fail "could not resolve ${TAG} to a commit"
-  [ "${tagged}" = "${COMMIT}" ] || fail "${TAG} names ${tagged}, not ${COMMIT}"
+    || "${on_fail}" "release.yml run $(echo "$1" | cut -f1) built $(echo "$1" | cut -f2), not ${COMMIT}"
+  tagged="$(gh api "repos/${REPO}/commits/refs/tags/${TAG}" --jq '.sha')" || "${on_fail}" "could not resolve ${TAG} to a commit"
+  [ "${tagged}" = "${COMMIT}" ] || "${on_fail}" "${TAG} names ${tagged}, not ${COMMIT}"
 }
 
 # A job's log as GitHub stores it. The runner colours the commands it echoes there, and newer gh
@@ -356,5 +358,9 @@ done
 ASSETS="$(release_assets)" || fail_attached "could not list its assets"
 check_published_packages "${ASSETS}" "${DIR}/SHA256SUMS" \
   || fail_attached "the dashmate packages it serves are not the ones its SHA256SUMS lists (< served, > listed)"
+# The tag or the newest run can have moved while the signature was uploaded: success only for a
+# release still approved at --commit.
+FINAL_RUN="$(finished_run fail_attached)" || exit 1
+check_commit "${FINAL_RUN}" fail_attached
 
 echo "Attached SHA256SUMS.asc to ${TAG}; the release serves the signed SHA256SUMS and the packages it lists."
