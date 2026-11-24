@@ -791,8 +791,9 @@ pub enum PlatformWalletFFIResultCode {
     /// show: every note it spends is spent, and the identity is absent at or
     /// above the height they were spent by. The wallet keeps the notes
     /// reserved and the recovery record, as for an unconfirmed create, until a
-    /// scan sees the notes spent; the activity row reads failed at that
-    /// height. Nothing is to be re-submitted. The reads do not show what
+    /// scan sees the notes spent. The result describes what the reads proved,
+    /// not what history shows: the activity row stays as for an unconfirmed
+    /// create. Nothing is to be re-submitted. The reads do not show what
     /// spent the notes: Platform's paid failure path for this transition (a
     /// key-state check failing in the block, which credits the denomination
     /// minus a penalty to `send_to_address_on_creation_failure`) is one

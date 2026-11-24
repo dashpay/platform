@@ -1139,8 +1139,9 @@ pub enum PlatformWalletError {
     /// as proven reads show: every nullifier it spends is spent at or before
     /// `consumed_by_height`, and the identity `identity_id` is absent at a height at or above it.
     /// The notes stay reserved and the create's recovery record is kept, as for an unconfirmed
-    /// create, until a scan sees the notes spent; its activity row reads failed at
-    /// `consumed_by_height`, and a scan does not confirm it. Nothing is to be re-submitted.
+    /// create, until a scan sees the notes spent. The error describes what the reads proved, not
+    /// what history shows: the activity row stays as for an unconfirmed create, and a scan may
+    /// confirm it from the outputs the paid failure path appends. Nothing is to be re-submitted.
     ///
     /// The reads show that the inputs are taken, not what took them. One possible cause is
     /// Platform's paid failure path for this transition (a key-state check failing in the block),

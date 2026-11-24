@@ -363,13 +363,7 @@ async fn record_pending_activity<S: ShieldedStore>(
 /// height between broadcast and the result-wait, and rewriting the stale
 /// capture would erase that scan-learned height. A row the scan already
 /// confirmed WITH a height is chain truth and is left untouched
-/// entirely — nothing the result-wait knows can improve on it — except by a
-/// proven failure (`Failed` with the height proven reads put it at): the scan
-/// confirms a row from a sighting of its outputs, and the paid failure path
-/// of an identity create appends them too, so the proof wins.
-///
-/// The changeset is queued under the same lock as the save, so writers reach
-/// the persister in the order they wrote the store.
+/// entirely — nothing the result-wait knows can improve on it.
 async fn record_activity_status<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
@@ -382,8 +376,7 @@ async fn record_activity_status<S: ShieldedStore>(
     let Some(entry) = entry else {
         return;
     };
-    let proven_failure = status == ShieldedActivityStatus::Failed && block_height.is_some();
-    {
+    let next = {
         let mut store = store.write().await;
         // A read FAILURE is not "no row": falling back to the captured
         // entry on Err would queue exactly the stale overwrite this
@@ -403,10 +396,7 @@ async fn record_activity_status<S: ShieldedStore>(
             }
         };
         let base = stored.as_ref().unwrap_or(entry);
-        if base.status == ShieldedActivityStatus::Confirmed
-            && base.block_height.is_some()
-            && !proven_failure
-        {
+        if base.status == ShieldedActivityStatus::Confirmed && base.block_height.is_some() {
             return;
         }
         // `with_status` keeps `base.block_height` when `block_height` is
@@ -419,8 +409,9 @@ async fn record_activity_status<S: ShieldedStore>(
                 "live activity status flip: in-memory save_activity failed; persister still queued"
             );
         }
-        queue_shielded_changeset(persister, wallet_id, changeset_for_entry(id, next));
-    }
+        next
+    };
+    queue_shielded_changeset(persister, wallet_id, changeset_for_entry(id, next));
 }
 
 /// Flip the activity row identified by `entry_id` (if present) to
@@ -3089,10 +3080,11 @@ const IDENTITY_CREATE_OPERATION: &str = "identity create from shielded pool";
 ///     ([`probe_identity_create`]): its nullifiers all spent and its identity absent at or above
 ///     the height they were spent by is
 ///     [`PlatformWalletError::ShieldedIdentityCreateInputsConsumed`]: it can never execute and
-///     did not create its identity. Its notes and record are kept as for an unconfirmed create
-///     (the scan marks the notes spent), and its row reads failed ([`settle_failed_spend`]). Its
-///     paid failure path and this wallet's notes spent by
-///     another transition (another device with the same keys) read the same.
+///     did not create its identity. Its notes, record and pending row are kept as for an
+///     unconfirmed create ([`settle_failed_spend`]): the report describes what the reads proved,
+///     not what history shows, and the scan may still confirm the row from the outputs the paid
+///     failure path appends. Its paid failure path and this wallet's notes spent by another
+///     transition (another device with the same keys) read the same.
 ///
 /// Every read after the broadcast names the transition (its hash, its nullifiers, its identity
 /// id), so with a node known to hold it each goes only to that node, through an SDK scoped to it.
@@ -4117,8 +4109,8 @@ where
 ///   pending. It reads as unconfirmed, whatever error ended it, except an
 ///   identity create proven unable to execute
 ///   ([`PlatformWalletError::ShieldedIdentityCreateInputsConsumed`]): it is
-///   reported as such, its notes and record are kept the same way, and its
-///   activity row reads failed at the height its notes were spent by.
+///   reported as such, and its notes, record and pending row are kept the
+///   same way.
 /// - It failed before its record was saved: nothing was broadcast. The notes
 ///   are released and the activity row reads failed.
 #[allow(clippy::too_many_arguments)]
@@ -4167,30 +4159,12 @@ async fn settle_failed_spend<S: ShieldedStore>(
     }
     if reservation.handed_over {
         return match error {
-            unconfirmed @ (PlatformWalletError::ShieldedSpendUnconfirmed { .. }
-            | PlatformWalletError::ShieldedBroadcastUnconfirmed { .. }) => unconfirmed,
-            // Proven unable to execute: its notes and record are kept for
-            // the scan, which marks the notes spent, and its row reads
-            // failed at a height by which they were spent. A row failed
-            // with a height is final: a later scan sighting of the create's
-            // outputs (the paid failure path appends them) does not confirm
-            // it.
-            consumed @ PlatformWalletError::ShieldedIdentityCreateInputsConsumed {
-                consumed_by_height,
-                ..
-            } => {
-                record_activity_status(
-                    store,
-                    persister,
-                    wallet_id,
-                    id,
-                    pending_entry,
-                    ShieldedActivityStatus::Failed,
-                    Some(consumed_by_height),
-                )
-                .await;
-                consumed
-            }
+            // An identity create proven unable to execute is kept the same
+            // way: the report describes what its reads proved, not the row,
+            // which the scan resolves.
+            kept @ (PlatformWalletError::ShieldedSpendUnconfirmed { .. }
+            | PlatformWalletError::ShieldedBroadcastUnconfirmed { .. }
+            | PlatformWalletError::ShieldedIdentityCreateInputsConsumed { .. }) => kept,
             other => {
                 // The reported error keeps the cause's text alone: its type
                 // goes to the log.
@@ -8088,9 +8062,8 @@ mod redrive_tests {
     }
 
     /// A delivered identity create reported as inputs consumed keeps its notes
-    /// reserved and its record for the scan, as an unconfirmed one does, and
-    /// its row reads failed at the height its notes were spent by. The report
-    /// keeps its type.
+    /// reserved, its record and its pending row for the scan, as an
+    /// unconfirmed one does. The report keeps its type.
     #[tokio::test(start_paused = true)]
     async fn should_keep_an_identity_create_reported_inputs_consumed_for_the_scan() {
         let wallet_id = [0x74; 32];
@@ -8145,11 +8118,10 @@ mod redrive_tests {
             .get_activity_by_entry_id(id, &activity_id)
             .expect("the row reads")
             .expect("the row");
-        assert_eq!(row.status, ShieldedActivityStatus::Failed);
         assert_eq!(
-            row.block_height,
-            Some(0),
-            "failed at the height its notes were spent by"
+            row.status,
+            ShieldedActivityStatus::Pending,
+            "the report does not write the row"
         );
         drop(store);
         let records = FileBackedShieldedStore::open_path(&path, 100)
@@ -8560,80 +8532,6 @@ mod record_activity_status_tests {
             .expect("row must still exist");
         assert_eq!(stored.status, ShieldedActivityStatus::Confirmed);
         assert_eq!(stored.block_height, Some(777));
-    }
-
-    /// Records every changeset the wallet queues for the host.
-    #[derive(Default)]
-    struct RecordingPersister {
-        stores: std::sync::Mutex<Vec<crate::changeset::PlatformWalletChangeSet>>,
-    }
-
-    impl crate::changeset::PlatformWalletPersistence for RecordingPersister {
-        fn store(
-            &self,
-            _wallet_id: WalletId,
-            changeset: crate::changeset::PlatformWalletChangeSet,
-        ) -> Result<(), crate::changeset::PersistenceError> {
-            self.stores.lock().unwrap().push(changeset);
-            Ok(())
-        }
-
-        fn flush(&self, _wallet_id: WalletId) -> Result<(), crate::changeset::PersistenceError> {
-            Ok(())
-        }
-
-        fn load(
-            &self,
-        ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError>
-        {
-            Ok(crate::changeset::ClientStartState::default())
-        }
-    }
-
-    /// A failure proven by reads (`Failed` with the height they put it at)
-    /// replaces a row the scan confirmed from a sighting of its outputs (an
-    /// identity create's paid failure path appends them), in the store and
-    /// in what the host is handed.
-    #[tokio::test]
-    async fn should_let_a_proven_failure_replace_a_scan_confirmed_row() {
-        let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
-        let id = sub();
-        let pending = captured_pending();
-        let scan_confirmed = with_status(&pending, ShieldedActivityStatus::Confirmed, Some(777));
-        store
-            .write()
-            .await
-            .save_activity(id, &scan_confirmed)
-            .unwrap();
-        let backend = Arc::new(RecordingPersister::default());
-        let persister = WalletPersister::new(id.wallet_id, Arc::clone(&backend) as _);
-
-        record_activity_status(
-            &store,
-            Some(&persister),
-            id.wallet_id,
-            id,
-            &Some(pending),
-            ShieldedActivityStatus::Failed,
-            Some(5),
-        )
-        .await;
-
-        let stored = store
-            .read()
-            .await
-            .get_activity_by_entry_id(id, &[0xAA; 32])
-            .unwrap()
-            .expect("row must still exist");
-        assert_eq!(stored.status, ShieldedActivityStatus::Failed);
-        assert_eq!(stored.block_height, Some(5));
-        let stores = backend.stores.lock().unwrap();
-        let handed = stores
-            .last()
-            .and_then(|cs| cs.shielded.as_ref())
-            .map(|cs| cs.activity_entries[&id].clone())
-            .expect("the failed row is queued for the host");
-        assert_eq!(handed, vec![stored]);
     }
 
     /// No concurrent scan: the flip applies to the stored Pending row
