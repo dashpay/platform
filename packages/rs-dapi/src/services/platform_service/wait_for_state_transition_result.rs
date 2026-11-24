@@ -1,8 +1,8 @@
 use crate::clients::drive_client::DriveChannel;
+use crate::clients::tenderdash_client::is_missing_from_index;
 use crate::error::DapiError;
 use crate::server::grpc::IngressDeadline;
 use crate::services::platform_service::error_mapping::decode_consensus_error;
-use crate::services::platform_service::get_recent_state_transition_status::is_missing_from_index;
 use crate::services::platform_service::{PlatformServiceImpl, TenderdashStatus};
 use crate::services::streaming_service::FilterType;
 use base64::Engine;
