@@ -1,23 +1,24 @@
 package org.dashfoundation.example.services
 
+import kotlinx.coroutines.CancellationException
+import org.dashfoundation.dashsdk.identity.IdentityUpdates
+import org.dashfoundation.dashsdk.identity.KeyDisableRefusal
 import org.dashfoundation.dashsdk.persistence.entities.PublicKeyEntity
 
 /**
  * Client-side safety gate for the Disable Key action — 1:1 port of
  * `KeyDisableGate.swift`.
  *
- * A pre-flight UI guard, not protocol logic. It mixes two kinds of refusal:
- * - **Master key (consensus):** disabling a lone master key is rejected by
- *   consensus (`validate_master_key_uniqueness_v0`); refusing locally just
- *   avoids spending fees on a transition drive-abci will reject.
- * - **Last auth / last transfer (client-side self-brick guards):** not
- *   protocol invariants — drive-abci would accept them — but disabling the
- *   last enabled authentication or transfer key would strand the identity,
- *   so we refuse locally.
+ * A pre-flight UI guard that decides nothing itself. Which keys may be
+ * disabled is the wallet's call (`IdentityUpdates.checkKeysCanBeDisabled`:
+ * the last valid authentication key of a security level under DIP-11, and
+ * the last enabled transfer key), judged in Rust and handed in as a
+ * [RuleVerdict]. The wallet's identity-update entry points
+ * refuse the same updates, so the gate only spares the user a doomed attempt
+ * and turns the structured refusal into copy.
  *
- * Operates on Room [PublicKeyEntity] rows (the string-valued `purpose` /
- * `securityLevel` and nullable `disabledAt` the persister writes), so the
- * comparisons match the DPP enum names verbatim.
+ * Operates on Room [PublicKeyEntity] rows (the nullable `disabledAt` the
+ * persister writes).
  */
 object KeyDisableGate {
 
@@ -33,42 +34,77 @@ object KeyDisableGate {
         data class Forbidden(val reason: String) : Evaluation
     }
 
-    /**
-     * Evaluate the disable gate for [target] within [allKeys] (the
-     * identity's current public keys). [target] must be one of them.
-     */
-    fun evaluate(target: PublicKeyEntity, allKeys: List<PublicKeyEntity>): Evaluation {
-        if (target.disabledAt != null) return Evaluation.AlreadyDisabled
+    /** Rust's verdict for disabling the target key alone. ← Swift `RuleVerdict`. */
+    sealed interface RuleVerdict {
+        /** The wallet allows disabling the key. */
+        data object Allowed : RuleVerdict
 
-        if (target.securityLevel.equals("MASTER", ignoreCase = true)) {
-            return Evaluation.Forbidden(
-                "Master keys can't be disabled here — a master-key disable is rejected by " +
-                    "consensus. Master-key rotation is out of scope.",
-            )
-        }
+        /** The wallet refuses it, for the reason [refusal] names. */
+        data class Refused(val refusal: KeyDisableRefusal) : RuleVerdict
 
-        if (target.purpose.equals("AUTHENTICATION", ignoreCase = true) &&
-            enabledCount("AUTHENTICATION", allKeys) <= 1
-        ) {
-            return Evaluation.Forbidden(
-                "This is the only enabled authentication key. Disabling it would leave the " +
-                    "identity unable to sign — add another authentication key first (Add Key).",
-            )
-        }
-
-        if (target.purpose.equals("TRANSFER", ignoreCase = true) &&
-            enabledCount("TRANSFER", allKeys) <= 1
-        ) {
-            return Evaluation.Forbidden(
-                "This is the only enabled transfer key. Disabling it would break credit " +
-                    "withdrawals — add another transfer key first (Add Key).",
-            )
-        }
-
-        return Evaluation.Allowed
+        /**
+         * No verdict: the wallet is not loaded, or the check failed or is
+         * still running. [reason] is user-facing copy.
+         */
+        data class Unavailable(val reason: String) : RuleVerdict
     }
 
-    /** Count of enabled (non-disabled) keys with the given [purpose]. */
-    private fun enabledCount(purpose: String, keys: List<PublicKeyEntity>): Int =
-        keys.count { it.purpose.equals(purpose, ignoreCase = true) && it.disabledAt == null }
+    /**
+     * Ask Rust whether the wallet lets [keyId] of [identityId] be disabled.
+     * Without a loaded wallet, or when the check fails, there is no verdict
+     * and the gate forbids the action. ← Swift
+     * `ruleVerdict(wallet:identityId:keyId:)`.
+     */
+    suspend fun ruleVerdict(
+        identityUpdates: IdentityUpdates?,
+        walletHandle: Long?,
+        identityId: ByteArray,
+        keyId: Int,
+    ): RuleVerdict {
+        if (identityUpdates == null || walletHandle == null) {
+            return RuleVerdict.Unavailable(
+                "Identity not attached to a loaded wallet — cannot check or sign the disable " +
+                    "transition.",
+            )
+        }
+        return try {
+            identityUpdates.checkKeysCanBeDisabled(walletHandle, identityId, listOf(keyId))
+                ?.let { RuleVerdict.Refused(it) }
+                ?: RuleVerdict.Allowed
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            RuleVerdict.Unavailable(
+                e.message ?: "Could not check whether this key may be disabled.",
+            )
+        }
+    }
+
+    /**
+     * Evaluate the disable gate for [target], given Rust's [ruleVerdict] for
+     * disabling it alone.
+     */
+    fun evaluate(target: PublicKeyEntity, ruleVerdict: RuleVerdict): Evaluation {
+        if (target.disabledAt != null) return Evaluation.AlreadyDisabled
+
+        return when (ruleVerdict) {
+            RuleVerdict.Allowed -> Evaluation.Allowed
+            is RuleVerdict.Unavailable -> Evaluation.Forbidden(ruleVerdict.reason)
+            is RuleVerdict.Refused -> Evaluation.Forbidden(reason(ruleVerdict.refusal))
+        }
+    }
+
+    /** User-facing copy for a [refusal]. */
+    private fun reason(refusal: KeyDisableRefusal): String = when (refusal) {
+        is KeyDisableRefusal.LastAuthenticationKey ->
+            "No other valid authentication key at the ${refusal.securityLevel.name} level " +
+                "would remain. Disabling this key would leave the identity unable to sign " +
+                "what needs that level — add another key first (Add Key)."
+        is KeyDisableRefusal.LastEnabledKey -> {
+            val purpose = refusal.purpose.name.lowercase()
+            "No other enabled $purpose key able to sign would remain. Disabling this key " +
+                "would break credit withdrawals and transfers — add another $purpose key " +
+                "first (Add Key)."
+        }
+    }
 }
