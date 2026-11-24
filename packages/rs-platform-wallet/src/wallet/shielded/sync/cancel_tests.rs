@@ -20,7 +20,7 @@ use super::{sync_notes_from_stream, MultiSyncNotesResult};
 use crate::wallet::shielded::balance::ShieldedBalanceSource;
 use crate::wallet::shielded::file_store::FileBackedShieldedStore;
 use crate::wallet::shielded::keys::{AccountViewingKeys, OrchardKeySet};
-use crate::wallet::shielded::store::{ShieldedStore, SubwalletId};
+use crate::wallet::shielded::store::{InMemoryShieldedStore, ShieldedStore, SubwalletId};
 
 type BatchItem = Result<ShieldedChunkBatch, dash_sdk::Error>;
 
@@ -535,4 +535,33 @@ async fn should_keep_the_checkpoints_when_nothing_is_past_the_latest() {
     assert_eq!(before, after, "no checkpoint is added or moved");
 
     let _ = std::fs::remove_file(&path);
+}
+
+/// The in-memory store honours the same `checkpoint_tree` contract as the
+/// file-backed one: a pass that appends nothing re-uses the tree size as its
+/// checkpoint identifier, and that adds no checkpoint.
+#[tokio::test]
+async fn should_add_no_checkpoint_on_an_idle_pass_over_the_in_memory_store() {
+    let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+    let subwallets = one_subwallet();
+    let cancel = CancellationToken::new();
+    for _ in 0..2 {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            sync_notes_from_stream(&store, &subwallets, None, &cancel, |_, _| {
+                futures::stream::iter(vec![batch(0, 4, 4)].into_iter().map(Ok))
+            }),
+        )
+        .await
+        .expect("the pass returns")
+        .expect("pass must succeed");
+    }
+
+    let store = store.read().await;
+    assert_eq!(store.tree_size().unwrap(), 4);
+    assert_eq!(
+        store.checkpoint_ids(),
+        &[4],
+        "the idle second pass adds no checkpoint"
+    );
 }

@@ -816,6 +816,12 @@ pub trait ShieldedStore: Send + Sync + 'static {
     fn append_commitment(&mut self, cmx: &[u8; 32], marked: bool) -> Result<(), Self::Error>;
 
     /// Create a tree checkpoint at the given identifier.
+    ///
+    /// An identifier not above the current maximum is a no-op that returns
+    /// `Ok(())`: the latest checkpoint stays where it is. Sync calls this on
+    /// every pass with the tree size as the identifier, including passes
+    /// that appended nothing, so a store must not fail or add a checkpoint
+    /// for a repeated identifier.
     fn checkpoint_tree(&mut self, checkpoint_id: u32) -> Result<(), Self::Error>;
 
     /// Return the current tree root (Sinsemilla anchor, 32 bytes).
@@ -1357,6 +1363,12 @@ impl InMemoryShieldedStore {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// The checkpoint identifiers taken so far, oldest first.
+    #[cfg(test)]
+    pub(crate) fn checkpoint_ids(&self) -> &[u32] {
+        &self.checkpoints
+    }
 }
 
 impl ShieldedStore for InMemoryShieldedStore {
@@ -1734,6 +1746,14 @@ impl ShieldedStore for InMemoryShieldedStore {
     }
 
     fn checkpoint_tree(&mut self, checkpoint_id: u32) -> Result<(), Self::Error> {
+        // An identifier not above the latest is a no-op (the trait contract).
+        if self
+            .checkpoints
+            .last()
+            .is_some_and(|&last| checkpoint_id <= last)
+        {
+            return Ok(());
+        }
         self.checkpoints.push(checkpoint_id);
         Ok(())
     }
