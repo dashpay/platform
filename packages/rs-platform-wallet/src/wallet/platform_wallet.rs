@@ -1,6 +1,8 @@
 //! The main PlatformWallet struct combining core, identity (+DashPay), and platform sub-wallets.
 
 use std::collections::BTreeMap;
+#[cfg(feature = "shielded")]
+use std::future::Future;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
@@ -1972,6 +1974,41 @@ impl PlatformWallet {
         memo: [u8; 36],
         prover: P,
     ) -> Result<(), PlatformWalletError> {
+        self.shielded_transfer_once_claimed(
+            coordinator,
+            seed,
+            account,
+            recipient_raw_43,
+            amount,
+            memo,
+            prover,
+            || async { Ok(()) },
+        )
+        .await
+    }
+
+    /// [`Self::shielded_transfer_to`], with `once_claimed` run right after
+    /// the transfer's notes are reserved and before anything is built or
+    /// sent (`operations::transfer_once_claimed`): an `Err` from it releases
+    /// the notes and is returned, with nothing sent.
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn shielded_transfer_once_claimed<P, C, CFut>(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+        seed: &[u8],
+        account: u32,
+        recipient_raw_43: &[u8; 43],
+        amount: u64,
+        memo: [u8; 36],
+        prover: P,
+        once_claimed: C,
+    ) -> Result<(), PlatformWalletError>
+    where
+        P: OrchardProver,
+        C: FnOnce() -> CFut,
+        CFut: Future<Output = Result<(), PlatformWalletError>>,
+    {
         let keyset = self.derive_spend_keyset(seed, account).await?;
         let recipient = Option::<grovedb_commitment_tree::PaymentAddress>::from(
             grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(recipient_raw_43),
@@ -1981,7 +2018,7 @@ impl PlatformWallet {
                 "invalid Orchard payment address bytes".to_string(),
             )
         })?;
-        super::shielded::operations::transfer(
+        super::shielded::operations::transfer_once_claimed(
             &self.sdk,
             coordinator.store(),
             Some(&self.persister),
@@ -1992,6 +2029,7 @@ impl PlatformWallet {
             amount,
             memo,
             &prover,
+            once_claimed,
         )
         .await
     }

@@ -964,6 +964,19 @@ impl NetworkShieldedCoordinator {
         // displace an owner, so they keep their store-lock-free fast path.
         if !stale.is_empty() || registered_count == 0 {
             let store = self.store.read().await;
+            // A damaged note-spend record of the wallet was retained without
+            // being loaded: which account paid it is not known here, and the
+            // purge of a dropped or re-keyed account would delete it with
+            // the account. Its transition may still execute, and the record
+            // is what makes a second payment to its recipient fail closed.
+            if !stale.is_empty() && store.has_unloaded_note_spends(wallet_id) {
+                return Err(PlatformWalletError::ShieldedRecoveryCorrupted {
+                    account_index: None,
+                    reason: "a damaged record of an unresolved shielded spend is kept, and \
+                             dropping or re-keying an account could drop it"
+                        .to_owned(),
+                });
+            }
             let guards = store
                 .pending_redrives_for_wallet(wallet_id)
                 .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
@@ -984,6 +997,21 @@ impl NetworkShieldedCoordinator {
                             reason: "an unresolved shielded spend was paid from it, and dropping \
                                      or re-keying the account would drop the spend's record; a \
                                      shielded sync resolves the spend"
+                                .to_owned(),
+                        });
+                    }
+                    // The first registration after a restart: the record was
+                    // restored from the store, and only a scan of the account
+                    // that paid resolves it (seen executed, or its anchor
+                    // proven pruned). Without that account the spend stays
+                    // unresolved, and what reads the record (a tip review)
+                    // fails for want of its keys, with the bind having
+                    // reported nothing.
+                    if registered_count == 0 && !account_views.contains_key(&id.account_index) {
+                        return Err(PlatformWalletError::ShieldedRecoveryKeysRequired {
+                            account_index: id.account_index,
+                            reason: "an unresolved shielded spend was paid from it; bind the \
+                                     account so a shielded sync can resolve the spend"
                                 .to_owned(),
                         });
                     }

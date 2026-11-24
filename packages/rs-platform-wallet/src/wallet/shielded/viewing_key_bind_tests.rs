@@ -194,9 +194,9 @@ fn coordinator_for(dir: &std::path::Path, network: Network) -> Arc<NetworkShield
 /// given persister. Each call mimics one app process: a fresh handle
 /// whose shielded slot starts unbound.
 /// The seed of the wallet [`platform_wallet_with`] builds, the one the tests bind.
-const BIND_SEED: [u8; 64] = [0x42; 64];
+pub(super) const BIND_SEED: [u8; 64] = [0x42; 64];
 
-async fn platform_wallet_with<P>(persister: Arc<P>) -> PlatformWallet
+pub(super) async fn platform_wallet_with<P>(persister: Arc<P>) -> PlatformWallet
 where
     P: PlatformWalletPersistence + 'static,
 {

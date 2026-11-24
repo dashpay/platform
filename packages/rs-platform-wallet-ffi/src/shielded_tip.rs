@@ -558,14 +558,16 @@ unsafe fn send_shielded_tip_inner(
 }
 
 /// Map the outcome of a tip send as the shielded spends map theirs
-/// ([`map_spend_result`]), keeping two more codes typed: an identity the
-/// wallet does not hold, named as the paying identity, and a reviewed
-/// recipient of another identity than the contact the tip was started from.
-/// Nothing was sent in either case.
+/// ([`map_spend_result`]), keeping three more codes typed: an identity the
+/// wallet does not hold, named as the paying identity; a reviewed recipient
+/// of another identity than the contact the tip was started from; and an
+/// argument the wallet refuses, a tip to the account it is paid from among
+/// them. Nothing was sent in any of these.
 fn map_tip_send_result(result: Result<(), PlatformWalletError>) -> PlatformWalletFFIResult {
     match result {
         Err(e @ PlatformWalletError::IdentityNotFound(..))
-        | Err(e @ PlatformWalletError::ShieldedTipRecipientMismatch { .. }) => e.into(),
+        | Err(e @ PlatformWalletError::ShieldedTipRecipientMismatch { .. })
+        | Err(e @ PlatformWalletError::InvalidParameter(..)) => e.into(),
         other => map_spend_result(other, SEND_TIP_OPERATION),
     }
 }
@@ -1233,6 +1235,16 @@ mod tests {
             PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
         );
         free(unconfirmed);
+
+        // A tip to the account it is paid from: the documented code 2.
+        let refused = map_tip_send_result(Err(PlatformWalletError::InvalidParameter(
+            "A tip cannot pay the shielded account it is paid from".to_string(),
+        )));
+        assert_eq!(
+            refused.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        free(refused);
 
         let sent = map_tip_send_result(Ok(()));
         assert_eq!(sent.code, PlatformWalletFFIResultCode::Success);
