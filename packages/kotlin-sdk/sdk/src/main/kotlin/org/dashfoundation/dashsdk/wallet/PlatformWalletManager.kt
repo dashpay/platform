@@ -1820,8 +1820,9 @@ class PlatformWalletManager(
      * returning when it completes. When a pass is already running it first
      * waits for that pass to finish, since it may have read the watch list
      * before the latest [registerIdentityForTokenSync], and then runs a pass
-     * that covers it. Throws when no pass ran (the manager is shutting down,
-     * or other passes held the slot past the wait budget).
+     * that covers it. Throws [org.dashfoundation.dashsdk.errors.DashSdkError.PlatformWallet.WalletOperation]
+     * when no pass ran (the manager is shutting down, or other passes held
+     * the slot past the wait budget).
      *
      * Port of Swift's `PlatformWalletManager.syncIdentityTokensNow()`
      * (`PlatformWalletManagerIdentitySync.swift`).

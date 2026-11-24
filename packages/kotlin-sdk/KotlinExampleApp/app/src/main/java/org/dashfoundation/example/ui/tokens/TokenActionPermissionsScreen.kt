@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonObject
@@ -108,45 +109,43 @@ fun TokenActionPermissionsScreen(
     // `token_balances`) see its balance even when this screen was reached
     // without the Tokens screen (Contracts > Token Search). Only this token
     // is watched, so the request carries no more than the live read below;
-    // the other wallet identities are registered with none. It waits for the
-    // contract (so the identity list is the contract's network), for a pinned
-    // identity to resolve (never its fallback), and needs the contract, the
-    // acting identity and the active manager on the same network.
+    // the other wallet identities are registered with none. The job is
+    // launched as soon as the token is known and resolves everything else
+    // from Room itself, so leaving the screen early (opening Transfer) does
+    // not skip it: it reads the token's contract, takes the picked identity
+    // (never a fallback) or else the first wallet identity on the contract's
+    // network, and runs only when the contract, that identity and the active
+    // manager are on the same network.
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
-    LaunchedEffect(
-        manager,
-        sdk,
-        networkRaw,
-        pickedIdentityHex,
-        resolvedIdentity?.identityId?.toHex(),
-        identities.joinToString(",") { it.identityId.toHex() },
-        token?.id?.toHex(),
-    ) {
+    LaunchedEffect(manager, sdk, pickedIdentityHex, token?.id?.toHex()) {
         val activeManager = manager ?: return@LaunchedEffect
         val activeSdk = sdk ?: return@LaunchedEffect
-        val contractNetwork = networkRaw ?: return@LaunchedEffect
-        val identity = resolvedIdentity ?: return@LaunchedEffect
         val displayed = token ?: return@LaunchedEffect
-        if (pickedIdentityHex != null && identity.identityId.toHex() != pickedIdentityHex) {
-            return@LaunchedEffect
-        }
-        if (activeManager.network.ffiValue != contractNetwork ||
-            identity.networkRaw != contractNetwork
-        ) {
-            return@LaunchedEffect
-        }
-        val otherIds = identities.map { it.identityId }
-        val identityDao = container.database.identityDao()
+        val picked = pickedIdentityHex
+        val database = container.database
         // Application scope: leaving the screen must not cancel the pass.
         container.applicationScope.launch {
+            val contractNetwork = database.dataContractDao().getById(displayed.contractId)
+                ?.networkRaw ?: return@launch
+            if (activeManager.network.ffiValue != contractNetwork) return@launch
+            val candidates = database.identityDao()
+                .observeWalletOwnedByNetwork(contractNetwork).first()
+            val identity = if (picked != null) {
+                candidates.firstOrNull { it.identityId.toHex() == picked }
+            } else {
+                candidates.firstOrNull()
+            } ?: return@launch
+            if (identity.networkRaw != contractNetwork) return@launch
             IdentityTokenSync.refresh(
                 identityId = identity.identityId,
-                otherIdentityIds = otherIds,
+                otherIdentityIds = candidates.map { it.identityId },
                 tokens = listOf(displayed),
                 calculateTokenId = activeSdk.tokenQueries::calculateTokenId,
                 register = activeManager::registerIdentityForTokenSync,
                 syncNow = activeManager::syncIdentityTokensNow,
-                isStillStored = { identityDao.getByIdentityId(identity.identityId) != null },
+                isStillStored = {
+                    database.identityDao().getByIdentityId(identity.identityId) != null
+                },
             )
         }
     }

@@ -679,6 +679,11 @@ where
                         }
                         tokio::time::sleep(Duration::from_millis(20)).await;
                     }
+                    // The slot may have freed only after the deadline passed
+                    // (between two polls): do not start a pass past it.
+                    if tokio::time::Instant::now() >= deadline {
+                        return false;
+                    }
                 }
             }
         }
@@ -1355,18 +1360,53 @@ mod tests {
         assert!(!mgr.is_syncing());
     }
 
-    /// When the gate closes while it waits, the manual sync reports that no
-    /// pass ran instead of returning as if it had.
-    #[tokio::test]
+    /// A manual sync already waiting returns `false` as soon as the gate
+    /// closes, well before its wait budget runs out.
+    #[tokio::test(start_paused = true)]
     async fn should_report_no_pass_when_the_gate_closes_while_waiting() {
         let mgr = make_manager();
         mgr.is_syncing.store(true, Ordering::Release);
-        let gate_hold = mgr.quiescing.hold();
+        let started = tokio::time::Instant::now();
+        let closer = {
+            let mgr = Arc::clone(&mgr);
+            tokio::spawn(async move {
+                // Close the gate while the manual sync is already waiting.
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                mgr.quiescing.seal();
+            })
+        };
 
         assert!(!mgr.sync_now_after_in_flight().await);
 
-        drop(gate_hold);
+        closer.await.unwrap();
+        assert!(
+            started.elapsed() < COORDINATOR_DRAIN_BUDGET / 2,
+            "returned on the gate, not the deadline"
+        );
         mgr.is_syncing.store(false, Ordering::Release);
+    }
+
+    /// A slot the waiter first sees free only once the wait budget has run
+    /// out does not start a pass.
+    #[tokio::test(start_paused = true)]
+    async fn should_not_start_a_pass_after_the_wait_budget() {
+        let mgr = make_manager();
+        mgr.is_syncing.store(true, Ordering::Release);
+        let releaser = {
+            let mgr = Arc::clone(&mgr);
+            tokio::spawn(async move {
+                // Released between the waiter's last poll before the
+                // deadline and its first poll at it, so the waiter first sees
+                // the slot free once the budget has run out.
+                tokio::time::sleep(COORDINATOR_DRAIN_BUDGET - Duration::from_millis(10)).await;
+                mgr.is_syncing.store(false, Ordering::Release);
+            })
+        };
+
+        assert!(!mgr.sync_now_after_in_flight().await);
+
+        releaser.await.unwrap();
+        assert!(mgr.last_sync_unix_seconds().is_none(), "no pass ran");
     }
 
     /// When another caller takes the slot the moment it frees, the manual
