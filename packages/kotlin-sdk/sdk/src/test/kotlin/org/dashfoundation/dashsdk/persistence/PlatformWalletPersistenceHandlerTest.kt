@@ -9777,6 +9777,106 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue("the spend attribution is kept", spender.contentEquals(recovered.spendingTxid))
     }
 
+    /**
+     * A 32-byte txid whose bytes all differ, so a lookup that forgets the
+     * display-order reversal the asset-lock table is keyed by misses.
+     */
+    private fun asymmetricTxid(seed: Int): ByteArray = ByteArray(32) { (seed + it).toByte() }
+
+    /**
+     * A coin held spent and linked to a mempool-context [spender] that
+     * funds an asset lock at [lockStatus]; returns the coin's outpoint.
+     */
+    private suspend fun seedCoinSpentByAnAssetLock(
+        fundingTxid: ByteArray,
+        spender: ByteArray,
+        lockStatus: Int,
+    ): ByteArray {
+        val coin = seedLinkedCoinMarkedSpentByAVerdict(fundingTxid, spender, spenderContext = 0)
+        seedAssetLockFundedBy(spender, statusRaw = lockStatus)
+        return coin
+    }
+
+    @Test
+    fun shouldRefuseAReleaseOfACoinWhoseMempoolSpenderFundsALockedAssetLock() = runTest {
+        // The sweep-release veto reads "settled" the way the re-delivery
+        // clear does: a spender whose asset lock the network has locked is
+        // final whatever its own row's context says, so a release naming
+        // its coin is refused.
+        val fundingTxid = asymmetricTxid(0x10)
+        val spender = asymmetricTxid(0x40)
+        val coin = seedCoinSpentByAnAssetLock(fundingTxid, spender, lockStatus = 2)
+
+        sweepRound(walletId, losers = listOf(asymmetricTxid(0x60)), winner = asymmetricTxid(0x80), released = listOf(coin))
+
+        val kept = db.txoDao().getByOutpoint(coin)!!
+        assertTrue("an InstantSend-locked asset lock vetoes the release", kept.isSpent)
+        assertTrue(spender.contentEquals(kept.spendingTxid))
+        assertTrue(handler.onLoadWalletList().single().utxos.none { it.prevTxid.contentEquals(fundingTxid) })
+    }
+
+    @Test
+    fun shouldFreeAReleasedCoinWhoseMempoolSpenderFundsABroadcastOnlyAssetLock() = runTest {
+        // The control: a lock that has only been broadcast is not final,
+        // and a bare mempool claimant never vetoes a release.
+        val fundingTxid = asymmetricTxid(0x11)
+        val spender = asymmetricTxid(0x41)
+        val coin = seedCoinSpentByAnAssetLock(fundingTxid, spender, lockStatus = 1)
+
+        sweepRound(walletId, losers = listOf(asymmetricTxid(0x61)), winner = asymmetricTxid(0x81), released = listOf(coin))
+
+        assertFalse("a broadcast-only lock does not veto", db.txoDao().getByOutpoint(coin)!!.isSpent)
+    }
+
+    @Test
+    fun shouldKeepALockedAssetLockSpendersLinkAgainstAnInBlockConflict() = runTest {
+        // The link guard: an in-block arrival claiming the same coin does
+        // not take the link from a spender whose asset lock is locked.
+        val fundingTxid = asymmetricTxid(0x12)
+        val spender = asymmetricTxid(0x42)
+        val coin = seedCoinSpentByAnAssetLock(fundingTxid, spender, lockStatus = 2)
+
+        recordMempoolSpend(asymmetricTxid(0x62), coin, context = 2)
+
+        assertTrue(
+            "an in-block conflict does not take a locked asset lock's link",
+            spender.contentEquals(db.txoDao().getByOutpoint(coin)!!.spendingTxid),
+        )
+    }
+
+    @Test
+    fun shouldLetAChainLockedArrivalTakeTheLinkFromAnAssetLockThatIsOnlyInstantSendLocked() = runTest {
+        // DIP-10 precedence, as for a stored IS-locked spender row: a
+        // chainlocked conflict outranks a lock that is only IS-locked.
+        val fundingTxid = asymmetricTxid(0x13)
+        val spender = asymmetricTxid(0x43)
+        val chainlocked = asymmetricTxid(0x63)
+        val coin = seedCoinSpentByAnAssetLock(fundingTxid, spender, lockStatus = 2)
+
+        recordMempoolSpend(chainlocked, coin, context = 3)
+
+        assertTrue(
+            "a chainlocked arrival takes the link from an IS-locked asset lock",
+            chainlocked.contentEquals(db.txoDao().getByOutpoint(coin)!!.spendingTxid),
+        )
+    }
+
+    @Test
+    fun shouldKeepAChainLockedAssetLockSpendersLinkAgainstAChainLockedArrival() = runTest {
+        // A lock past InstantSendLocked (here ChainLocked) is settled at
+        // chainlock level, so no takeover applies.
+        val fundingTxid = asymmetricTxid(0x14)
+        val spender = asymmetricTxid(0x44)
+        val coin = seedCoinSpentByAnAssetLock(fundingTxid, spender, lockStatus = 3)
+
+        recordMempoolSpend(asymmetricTxid(0x64), coin, context = 3)
+
+        assertTrue(
+            "a chainlocked asset lock keeps its link",
+            spender.contentEquals(db.txoDao().getByOutpoint(coin)!!.spendingTxid),
+        )
+    }
+
     @Test
     fun aSpentRowLinkedToAMempoolSpenderIsClearedByACreditedRedelivery() = runTest {
         // No verdict involved: a spent row whose link names a mempool
