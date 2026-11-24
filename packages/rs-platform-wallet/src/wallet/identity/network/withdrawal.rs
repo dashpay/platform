@@ -102,7 +102,8 @@ impl IdentityWallet {
                 Some(to_address.clone()),
                 amount,
                 None, // core_fee_per_byte
-                Some(credit_signing_key(&identity, None, signer, true)?),
+                // Platform refuses an OWNER key for a withdrawal to a chosen address.
+                Some(credit_signing_key(&identity, None, signer, false)?),
                 SignerRef(signer),
                 settings,
             )
@@ -159,8 +160,14 @@ impl IdentityWallet {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<u64, dash_sdk::Error> {
-        let signing_key =
-            credit_signing_key(identity, signing_withdrawal_key_to_use, &signer, true)?;
+        // Platform takes an OWNER key only for a withdrawal to the identity's payout address
+        // (no `to_address`).
+        let signing_key = credit_signing_key(
+            identity,
+            signing_withdrawal_key_to_use,
+            &signer,
+            to_address.is_none(),
+        )?;
         identity
             .withdraw(
                 &self.sdk,

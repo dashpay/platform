@@ -783,6 +783,108 @@ mod batch_transition_tests {
         assert_eq!(purposes, vec![Purpose::AUTHENTICATION]);
     }
 
+    /// Every token action, alone in a batch: only a transfer or a claim may also be signed by a
+    /// TRANSFER key. Any other batch, `None`, takes AUTHENTICATION only.
+    #[test]
+    fn v1_signing_key_purposes_pin_every_lone_token_action_and_any_other_batch() {
+        use crate::identity::Purpose;
+        use TokenTransitionActionType::*;
+
+        let authentication_or_transfer = [Purpose::AUTHENTICATION, Purpose::TRANSFER];
+        let authentication = [Purpose::AUTHENTICATION];
+        let expected: [(TokenTransitionActionType, &[Purpose]); 18] = [
+            (Burn, &authentication),
+            (Mint, &authentication),
+            (Transfer, &authentication_or_transfer),
+            (Freeze, &authentication),
+            (Unfreeze, &authentication),
+            (DestroyFrozenFunds, &authentication),
+            (Claim, &authentication_or_transfer),
+            (EmergencyAction, &authentication),
+            (ConfigUpdate, &authentication),
+            (DirectPurchase, &authentication),
+            (SetPriceForDirectPurchase, &authentication),
+            (Shield, &authentication),
+            (MintToPool, &authentication),
+            (BurnFromPool, &authentication),
+            (ClaimToPool, &authentication),
+            (DirectPurchaseToPool, &authentication),
+            (Unshield, &authentication),
+            (ShieldedTransfer, &authentication),
+        ];
+        for (action, purposes) in expected {
+            assert_eq!(
+                BatchTransitionV1::signing_key_purposes(Some(action)),
+                purposes,
+                "a batch holding only a {action} transition"
+            );
+        }
+        assert_eq!(
+            BatchTransitionV1::signing_key_purposes(None),
+            authentication
+        );
+    }
+
+    /// `purpose_requirement` answers through `signing_key_purposes`, with the action of the
+    /// batch's only transition when that is a token transition: a lone burn and an empty batch
+    /// keep AUTHENTICATION only, as before the rule moved.
+    #[test]
+    fn v1_purpose_requirement_answers_through_signing_key_purposes() {
+        use crate::identity::Purpose;
+        use crate::state_transition::StateTransitionIdentitySigned;
+
+        let cases = [
+            (
+                make_batch_v1(vec![BatchedTransition::Token(
+                    make_token_transfer_transition(1),
+                )]),
+                Some(TokenTransitionActionType::Transfer),
+            ),
+            (
+                make_batch_v1(vec![BatchedTransition::Token(make_token_claim_transition(
+                    1,
+                ))]),
+                Some(TokenTransitionActionType::Claim),
+            ),
+            (
+                make_batch_v1(vec![BatchedTransition::Token(make_token_burn_transition(
+                    1, 100,
+                ))]),
+                Some(TokenTransitionActionType::Burn),
+            ),
+            (
+                make_batch_v1(vec![BatchedTransition::Document(make_delete_transition(1))]),
+                None,
+            ),
+            (
+                make_batch_v1(vec![
+                    BatchedTransition::Token(make_token_transfer_transition(1)),
+                    BatchedTransition::Token(make_token_claim_transition(2)),
+                ]),
+                None,
+            ),
+            (make_batch_v1(vec![]), None),
+        ];
+        for (batch, lone_token_action) in cases {
+            assert_eq!(
+                batch.purpose_requirement(),
+                BatchTransitionV1::signing_key_purposes(lone_token_action).to_vec(),
+                "{lone_token_action:?}"
+            );
+        }
+        let lone_burn = make_batch_v1(vec![BatchedTransition::Token(make_token_burn_transition(
+            1, 100,
+        ))]);
+        assert_eq!(
+            lone_burn.purpose_requirement(),
+            vec![Purpose::AUTHENTICATION]
+        );
+        assert_eq!(
+            make_batch_v1(vec![]).purpose_requirement(),
+            vec![Purpose::AUTHENTICATION]
+        );
+    }
+
     #[tokio::test]
     async fn signing_single_token_transfer_accepts_critical_authentication_key() {
         let platform_version = PlatformVersion::latest();

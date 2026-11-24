@@ -9,12 +9,13 @@ use crate::platform::Document;
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use dpp::document::DocumentV0;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::Purpose;
 use dpp::identity::signer::Signer;
-use dpp::identity::{Identity, IdentityPublicKey};
+use dpp::identity::{Identity, IdentityPublicKey, SecurityLevel};
 use dpp::platform_value::{Bytes32, Value};
 use dpp::prelude::Identifier;
 use dpp::secp256k1::rand::rngs::StdRng;
@@ -25,6 +26,42 @@ use platform_encryption::{
     derive_shared_key_ecdh, encrypt_account_label, encrypt_extended_public_key, COMPACT_XPUB_LEN,
 };
 use std::collections::BTreeMap;
+
+/// The DashPay document type a contact request writes.
+const CONTACT_REQUEST_DOCUMENT_TYPE: &str = "contactRequest";
+
+/// A contact request prepared by [`Sdk::prepare_contact_request`]: the `contactRequest`
+/// document type of the DashPay contract the SDK resolves for its protocol version, which the
+/// request document is built as and whose rules the key that signs it must meet. A caller
+/// choosing the key reads them here, then sends through [`Sdk::submit_contact_request`], so the
+/// key is judged by the contract the document is built against and never by another snapshot
+/// of it.
+#[derive(Debug, Clone)]
+pub struct PreparedContactRequest {
+    contact_request_document_type: DocumentType,
+}
+
+impl PreparedContactRequest {
+    /// The security level the key signing the `contactRequest` document must meet.
+    pub fn signing_security_level_requirement(&self) -> SecurityLevel {
+        self.contact_request_document_type
+            .as_ref()
+            .security_level_requirement()
+    }
+
+    /// The `contactRequest` document type the request is built as, which the signing key's
+    /// contract bounds must cover.
+    pub fn contact_request_document_type(&self) -> DocumentTypeRef<'_> {
+        self.contact_request_document_type.as_ref()
+    }
+
+    /// The id of the DashPay contract the request writes to.
+    pub fn dashpay_contract_id(&self) -> Identifier {
+        self.contact_request_document_type
+            .as_ref()
+            .data_contract_id()
+    }
+}
 
 /// ECDH provider for contact request encryption
 ///
@@ -283,6 +320,45 @@ impl Sdk {
         H: FnOnce(u32) -> Hut,
         Hut: std::future::Future<Output = Result<Vec<u8>, Error>>,
     {
+        let prepared = self.prepare_contact_request().await?;
+        self.build_contact_request(&prepared, input, ecdh_provider, get_extended_public_key)
+            .await
+    }
+
+    /// Prepare a contact request: resolve the DashPay contract for the SDK's protocol version
+    /// (the context provider's, fetched and proved when it holds none) and its
+    /// `contactRequest` document type. Nothing is built, signed or submitted. The returned
+    /// [`PreparedContactRequest`] tells what that contract requires of the signing key; send
+    /// it with [`Sdk::submit_contact_request`].
+    pub async fn prepare_contact_request(&self) -> Result<PreparedContactRequest, Error> {
+        let dashpay_contract = self.fetch_dashpay_contract().await?;
+        let contact_request_document_type = dashpay_contract
+            .document_type_cloned_for_name(CONTACT_REQUEST_DOCUMENT_TYPE)
+            .map_err(|_| {
+                Error::Generic("DashPay contactRequest document type not found".to_string())
+            })?;
+        Ok(PreparedContactRequest {
+            contact_request_document_type,
+        })
+    }
+
+    /// The contact request document [`Sdk::create_contact_request`] describes, built as
+    /// `prepared`'s `contactRequest` document type.
+    async fn build_contact_request<F, Fut, G, Gut, H, Hut>(
+        &self,
+        prepared: &PreparedContactRequest,
+        input: ContactRequestInput,
+        ecdh_provider: EcdhProvider<F, Fut, G, Gut>,
+        get_extended_public_key: H,
+    ) -> Result<ContactRequestResult, Error>
+    where
+        F: FnOnce(&IdentityPublicKey, u32) -> Fut,
+        Fut: std::future::Future<Output = Result<SecretKey, Error>>,
+        G: FnOnce(&PublicKey) -> Gut,
+        Gut: std::future::Future<Output = Result<[u8; 32], Error>>,
+        H: FnOnce(u32) -> Hut,
+        Hut: std::future::Future<Output = Result<Vec<u8>, Error>>,
+    {
         // Validate auto accept proof size if provided
         if let Some(ref proof) = input.auto_accept_proof {
             if proof.len() < 38 || proof.len() > 102 {
@@ -416,15 +492,7 @@ impl Sdk {
             None
         };
 
-        // Fetch DashPay contract
-        let dashpay_contract = self.fetch_dashpay_contract().await?;
-
-        // Get contactRequest document type
-        let contact_request_document_type = dashpay_contract
-            .document_type_for_name("contactRequest")
-            .map_err(|_| {
-                Error::Generic("DashPay contactRequest document type not found".to_string())
-            })?;
+        let contact_request_document_type = prepared.contact_request_document_type();
 
         // Generate entropy for document ID
         let mut rng = StdRng::from_os_rng();
@@ -433,7 +501,7 @@ impl Sdk {
         // Generate document ID
         let sender_id = input.sender_identity.id().to_owned();
         let document_id = Document::generate_document_id_v0(
-            &dashpay_contract.id(),
+            &prepared.dashpay_contract_id(),
             &sender_id,
             contact_request_document_type.name(),
             entropy.as_slice(),
@@ -519,12 +587,35 @@ impl Sdk {
         H: FnOnce(u32) -> Hut,
         Hut: std::future::Future<Output = Result<Vec<u8>, Error>>,
     {
+        let prepared = self.prepare_contact_request().await?;
+        self.submit_contact_request(prepared, input, ecdh_provider, get_extended_public_key)
+            .await
+    }
+
+    /// Send a contact request like [`Sdk::send_contact_request`], building and submitting
+    /// the document as the `contactRequest` type of `prepared`, the snapshot the caller
+    /// chose `input`'s signing key by.
+    pub async fn submit_contact_request<S: Signer<IdentityPublicKey>, F, Fut, G, Gut, H, Hut>(
+        &self,
+        prepared: PreparedContactRequest,
+        input: SendContactRequestInput<S>,
+        ecdh_provider: EcdhProvider<F, Fut, G, Gut>,
+        get_extended_public_key: H,
+    ) -> Result<SendContactRequestResult, Error>
+    where
+        F: FnOnce(&IdentityPublicKey, u32) -> Fut,
+        Fut: std::future::Future<Output = Result<SecretKey, Error>>,
+        G: FnOnce(&PublicKey) -> Gut,
+        Gut: std::future::Future<Output = Result<[u8; 32], Error>>,
+        H: FnOnce(u32) -> Hut,
+        Hut: std::future::Future<Output = Result<Vec<u8>, Error>>,
+    {
         let SignedContactRequest {
             state_transition,
             recipient_id,
             account_reference,
         } = self
-            .sign_contact_request(input, ecdh_provider, get_extended_public_key)
+            .sign_prepared_contact_request(prepared, input, ecdh_provider, get_extended_public_key)
             .await?;
 
         // Submit the document to the platform, and wait for the proof of the
@@ -565,26 +656,50 @@ impl Sdk {
         H: FnOnce(u32) -> Hut,
         Hut: std::future::Future<Output = Result<Vec<u8>, Error>>,
     {
+        let prepared = self.prepare_contact_request().await?;
+        self.sign_prepared_contact_request(prepared, input, ecdh_provider, get_extended_public_key)
+            .await
+    }
+
+    /// Sign a contact request like [`Sdk::sign_contact_request`], building the document as
+    /// the `contactRequest` type of `prepared`, the snapshot the caller chose `input`'s
+    /// signing key by.
+    pub async fn sign_prepared_contact_request<
+        S: Signer<IdentityPublicKey>,
+        F,
+        Fut,
+        G,
+        Gut,
+        H,
+        Hut,
+    >(
+        &self,
+        prepared: PreparedContactRequest,
+        input: SendContactRequestInput<S>,
+        ecdh_provider: EcdhProvider<F, Fut, G, Gut>,
+        get_extended_public_key: H,
+    ) -> Result<SignedContactRequest, Error>
+    where
+        F: FnOnce(&IdentityPublicKey, u32) -> Fut,
+        Fut: std::future::Future<Output = Result<SecretKey, Error>>,
+        G: FnOnce(&PublicKey) -> Gut,
+        Gut: std::future::Future<Output = Result<[u8; 32], Error>>,
+        H: FnOnce(u32) -> Hut,
+        Hut: std::future::Future<Output = Result<Vec<u8>, Error>>,
+    {
         // Save values we need before moving contact_request
         let recipient_id = input.contact_request.recipient.id();
         let account_reference = input.contact_request.account_reference;
 
         // Create the contact request document (handles ECDH encryption internally)
         let result = self
-            .create_contact_request(
+            .build_contact_request(
+                &prepared,
                 input.contact_request,
                 ecdh_provider,
                 get_extended_public_key,
             )
             .await?;
-
-        // Get the DashPay contract for the document type
-        let dashpay_contract = self.fetch_dashpay_contract().await?;
-        let contact_request_document_type = dashpay_contract
-            .document_type_for_name("contactRequest")
-            .map_err(|_| {
-                Error::Generic("DashPay contactRequest document type not found".to_string())
-            })?;
 
         // Reuse the entropy that derived result.id during creation. Platform
         // consensus recomputes the document id from this entropy and rejects the
@@ -616,7 +731,7 @@ impl Sdk {
         let state_transition = prepare_document_state_transition(
             &document,
             self,
-            contact_request_document_type.to_owned_document_type(),
+            prepared.contact_request_document_type,
             Some(entropy.0),
             input.identity_public_key,
             None, // token payment info
@@ -636,8 +751,10 @@ impl Sdk {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::data_contract::DataContract;
     use dpp::secp256k1;
     use dpp::secp256k1::rand::{self, RngCore};
+    use std::sync::Arc;
 
     #[test]
     fn test_ecdh_encryption_produces_correct_size() {
@@ -845,6 +962,219 @@ mod tests {
         assert_eq!(
             shared_alice, shared_bob,
             "Both parties should derive the same shared secret"
+        );
+    }
+
+    /// A context provider holding `contract`, if any, for every id and protocol version, and
+    /// otherwise the contract last registered with it.
+    #[derive(Default)]
+    struct DashPayProvider {
+        contract: Option<Arc<DataContract>>,
+        registered: std::sync::Mutex<Option<Arc<DataContract>>>,
+    }
+
+    impl dash_context_provider::ContextProvider for DashPayProvider {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &dpp::version::PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, dash_context_provider::ContextProviderError>
+        {
+            Ok(self
+                .contract
+                .clone()
+                .or_else(|| self.registered.lock().expect("the lock").clone()))
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<
+            Option<dpp::data_contract::TokenConfiguration>,
+            dash_context_provider::ContextProviderError,
+        > {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], dash_context_provider::ContextProviderError> {
+            Err(dash_context_provider::ContextProviderError::InvalidQuorum(
+                "no quorum in this test".to_string(),
+            ))
+        }
+
+        fn get_platform_activation_height(
+            &self,
+        ) -> Result<dpp::prelude::CoreBlockHeight, dash_context_provider::ContextProviderError>
+        {
+            Ok(1)
+        }
+
+        fn register_data_contract(&self, contract: Arc<DataContract>) {
+            *self.registered.lock().expect("the lock") = Some(contract);
+        }
+    }
+
+    /// The latest DashPay contract with its `contactRequest` type requiring a CRITICAL key,
+    /// where the bundled one requires HIGH.
+    fn dashpay_with_critical_contact_request() -> DataContract {
+        use crate::platform::system_data_contract::tests::with_document_security_level;
+        use dpp::identity::SecurityLevel;
+        use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+        use dpp::version::PlatformVersion;
+
+        with_document_security_level(
+            load_system_data_contract(SystemDataContract::Dashpay, PlatformVersion::latest())
+                .expect("the DashPay contract loads"),
+            "contactRequest",
+            SecurityLevel::CRITICAL,
+        )
+    }
+
+    #[tokio::test]
+    async fn should_prepare_the_signing_requirement_from_the_dashpay_contract_the_provider_holds() {
+        use dpp::identity::SecurityLevel;
+        use dpp::version::PlatformVersion;
+
+        // No network expectation: a fetch would fail the test
+        let held = dashpay_with_critical_contact_request();
+        let sdk = crate::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .with_context_provider(DashPayProvider {
+                contract: Some(Arc::new(held.clone())),
+                ..Default::default()
+            })
+            .build()
+            .expect("the mock SDK builds");
+
+        let prepared = sdk
+            .prepare_contact_request()
+            .await
+            .expect("the contact request is prepared");
+
+        assert_eq!(
+            prepared.signing_security_level_requirement(),
+            SecurityLevel::CRITICAL,
+            "the key is judged by the contract the document is built against"
+        );
+        assert_eq!(prepared.dashpay_contract_id(), held.id());
+    }
+
+    #[tokio::test]
+    async fn should_prepare_the_signing_requirement_from_the_fetched_dashpay_contract() {
+        use dpp::identity::SecurityLevel;
+        use dpp::version::PlatformVersion;
+
+        let mut sdk = crate::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .with_context_provider(DashPayProvider::default())
+            .build()
+            .expect("the mock SDK builds");
+        let stored = dashpay_with_critical_contact_request();
+        sdk.mock()
+            .expect_fetch(stored.id(), Some(stored.clone()))
+            .await
+            .expect("the DashPay fetch is expected");
+
+        let prepared = sdk
+            .prepare_contact_request()
+            .await
+            .expect("the contact request is prepared");
+
+        assert_eq!(
+            prepared.signing_security_level_requirement(),
+            SecurityLevel::CRITICAL
+        );
+        assert_eq!(prepared.dashpay_contract_id(), stored.id());
+    }
+
+    /// The DashPay contract the proof confirming `prepared`'s request is verified with: what
+    /// the SDK's context provider answers at the SDK's version, the lookup
+    /// `Waitable::wait_for_response` hands Drive's state-transition proof check.
+    fn confirmation_contract(
+        sdk: &crate::Sdk,
+        prepared: &PreparedContactRequest,
+    ) -> Option<Arc<DataContract>> {
+        use dash_context_provider::ContextProvider;
+
+        sdk.context_provider()
+            .expect("a context provider")
+            .get_data_contract(&prepared.dashpay_contract_id(), sdk.version())
+            .expect("the provider answers")
+    }
+
+    #[tokio::test]
+    async fn should_register_the_fetched_dashpay_contract_for_the_confirmation_proof() {
+        use dpp::version::PlatformVersion;
+
+        let mut sdk = crate::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .with_context_provider(DashPayProvider::default())
+            .build()
+            .expect("the mock SDK builds");
+        let stored = dashpay_with_critical_contact_request();
+        sdk.mock()
+            .expect_fetch(stored.id(), Some(stored.clone()))
+            .await
+            .expect("the DashPay fetch is expected");
+
+        let prepared = sdk
+            .prepare_contact_request()
+            .await
+            .expect("the contact request is prepared");
+
+        let resolved =
+            confirmation_contract(&sdk, &prepared).expect("the fetched contract is registered");
+        assert_eq!(*resolved, stored);
+    }
+
+    /// The trusted HTTP provider the Swift and Kotlin wallets run (directly or under the
+    /// adaptive one) confirms a request against the DashPay contract it was built from, whether
+    /// it bundles DashPay or the SDK fetched it.
+    #[tokio::test]
+    async fn should_confirm_against_the_contract_the_request_was_built_from_on_the_trusted_provider(
+    ) {
+        use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+        use dpp::version::PlatformVersion;
+        use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
+        use std::num::NonZeroUsize;
+
+        let mut sdk = crate::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .build()
+            .expect("the mock SDK builds");
+        sdk.set_context_provider(
+            TrustedHttpContextProvider::new_with_url(
+                sdk.network,
+                "https://127.0.0.1:1".to_string(),
+                NonZeroUsize::new(8).expect("non-zero"),
+            )
+            .expect("the trusted provider builds"),
+        )
+        .expect("the provider serves the SDK's network");
+        let stored = dashpay_with_critical_contact_request();
+        sdk.mock()
+            .expect_fetch(stored.id(), Some(stored.clone()))
+            .await
+            .expect("the DashPay fetch is expected");
+
+        let prepared = sdk
+            .prepare_contact_request()
+            .await
+            .expect("the contact request is prepared");
+
+        let resolved = confirmation_contract(&sdk, &prepared)
+            .expect("the confirmation resolves the DashPay contract");
+        assert_eq!(
+            resolved
+                .document_type_for_name(CONTACT_REQUEST_DOCUMENT_TYPE)
+                .expect("the contactRequest type")
+                .security_level_requirement(),
+            prepared.signing_security_level_requirement()
         );
     }
 }
