@@ -13,8 +13,12 @@ use crate::platform::transition::waitable::wait_for_document_and_owner_balance_w
 use crate::platform::FetchMany;
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::ResponseMetadata;
+use dpp::consensus::basic::BasicError;
+use dpp::consensus::ConsensusError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
+use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, INITIAL_REVISION};
 use dpp::fee::Credits;
@@ -25,6 +29,7 @@ use dpp::prelude::Identifier;
 use dpp::secp256k1::rand::rngs::StdRng;
 use dpp::secp256k1::rand::{Rng, SeedableRng};
 use dpp::state_transition::StateTransition;
+use dpp::version::PlatformVersion;
 use drive::query::{OrderClause, WhereClause, WhereOperator};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -255,7 +260,7 @@ impl Sdk {
         let builder = DocumentReplaceTransitionBuilder::new(
             Arc::clone(dashpay_contract),
             PROFILE_DOCUMENT_TYPE.to_string(),
-            replacement_document(&existing, fields, dashpay_contract)?,
+            replacement_document(&existing, fields, dashpay_contract, self.version())?,
         );
         let state_transition = builder
             .sign(self, signing_key, signer, self.version())
@@ -319,10 +324,15 @@ fn ensure_unique_owners(owner_ids: &[Identifier]) -> Result<(), Error> {
 /// the stored avatar fills the gap, and that would leave a hash of a different
 /// image under the avatar: one of the two hashes alone, and a changed
 /// `avatar_url` without both.
+///
+/// Also refuses an update the contract's `minProperties` bound rejects: one
+/// that removes the profile's last property (for example the only payment
+/// address of a profile that has nothing else).
 fn replacement_document(
     existing: &Document,
     fields: ProfileFields,
     dashpay_contract: &DataContract,
+    platform_version: &PlatformVersion,
 ) -> Result<Document, Error> {
     if fields.avatar_hash.is_some() != fields.avatar_fingerprint.is_some() {
         return Err(Error::Generic(
@@ -345,6 +355,25 @@ fn replacement_document(
         dashpay_contract,
         fields.overlay(existing.properties().clone()),
     )?;
+    // An update can remove the profile's last property, which the profile
+    // schema may not allow. Whether it does is the contract's to say, so the
+    // verdict comes from dpp's check of the merged properties against the
+    // contract given; only its message is replaced here, before anything is
+    // signed, with what to do instead. Every other verdict is left to
+    // Platform, as before.
+    let validation = dashpay_contract.validate_document_properties(
+        PROFILE_DOCUMENT_TYPE,
+        Value::from(properties.clone()),
+        &DocumentSystemValues::default(),
+        platform_version,
+    )?;
+    if validation.errors.iter().any(is_too_few_properties) {
+        return Err(Error::Generic(
+            "this update would remove the profile's last field, and a profile needs at least \
+             one; set another field in the same update"
+                .to_string(),
+        ));
+    }
     let revision = existing.revision().unwrap_or(INITIAL_REVISION) + 1;
     Ok(profile_document(
         existing.id(),
@@ -352,6 +381,16 @@ fn replacement_document(
         properties,
         Some(revision),
     ))
+}
+
+/// Whether `error` is the schema's `minProperties` bound refusing a document
+/// with too few properties.
+fn is_too_few_properties(error: &ConsensusError) -> bool {
+    matches!(
+        error,
+        ConsensusError::BasicError(BasicError::JsonSchemaError(schema_error))
+            if schema_error.keyword() == "minProperties"
+    )
 }
 
 /// Normalize `properties` to the representations the profile schema expects.
@@ -409,8 +448,9 @@ fn profiles_query(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::schema::DataContractSchemaMethodsV0;
     use dpp::system_data_contracts::load_system_data_contract;
-    use dpp::version::PlatformVersion;
 
     fn avatar_fields() -> ProfileFields {
         ProfileFields {
@@ -432,6 +472,16 @@ mod tests {
 
     fn text<'a>(properties: &'a BTreeMap<String, Value>, key: &str) -> Option<&'a str> {
         properties.get(key).and_then(|v| v.as_str())
+    }
+
+    /// A stored profile whose only property is a shielded payment address.
+    fn address_only_profile() -> Document {
+        profile_document(
+            Identifier::new([0xD1; 32]),
+            Identifier::new([0x0E; 32]),
+            BTreeMap::from([("shieldedAddress".to_string(), Value::Bytes(vec![3; 43]))]),
+            Some(1),
+        )
     }
 
     fn dashpay_contract() -> DataContract {
@@ -459,7 +509,13 @@ mod tests {
             ..Default::default()
         };
 
-        let replacement = replacement_document(&existing, fields, &dashpay_contract()).unwrap();
+        let replacement = replacement_document(
+            &existing,
+            fields,
+            &dashpay_contract(),
+            PlatformVersion::latest(),
+        )
+        .unwrap();
 
         assert_eq!(replacement.id(), id);
         assert_eq!(replacement.owner_id(), owner);
@@ -495,7 +551,8 @@ mod tests {
             display_name: Some("Alice II".into()),
             ..Default::default()
         };
-        let renamed = replacement_document(&existing, renamed, &contract).unwrap();
+        let renamed =
+            replacement_document(&existing, renamed, &contract, PlatformVersion::latest()).unwrap();
         for field in [
             "corePaymentAddress",
             "platformPaymentAddress",
@@ -513,7 +570,8 @@ mod tests {
             core_payment_address: PaymentAddressUpdate::Remove,
             ..Default::default()
         };
-        let changed = replacement_document(&renamed, changed, &contract).unwrap();
+        let changed =
+            replacement_document(&renamed, changed, &contract, PlatformVersion::latest()).unwrap();
         let merged = changed.properties();
         assert!(!merged.contains_key("corePaymentAddress"));
         assert_eq!(
@@ -568,8 +626,14 @@ mod tests {
             existing_full(),
             Some(3),
         );
-        let replace =
-            |fields: ProfileFields| replacement_document(&existing, fields, &dashpay_contract());
+        let replace = |fields: ProfileFields| {
+            replacement_document(
+                &existing,
+                fields,
+                &dashpay_contract(),
+                PlatformVersion::latest(),
+            )
+        };
 
         for allowed in [
             avatar_fields(),
@@ -606,6 +670,90 @@ mod tests {
         }
     }
 
+    /// A profile holding only a payment address cannot have it removed on
+    /// its own where the contract requires a property: the document would be
+    /// left without one. Removing it while setting another field is fine.
+    /// Checked on both protocol versions whose DashPay profile has payment
+    /// addresses: 14 reports the bound through the JSON Schema validator and
+    /// the latest through the native one.
+    #[test]
+    fn should_refuse_an_update_that_removes_the_last_profile_field() {
+        for platform_version in [
+            PlatformVersion::get(14).expect("protocol version 14"),
+            PlatformVersion::latest(),
+        ] {
+            let contract = load_system_data_contract(
+                dpp::data_contracts::SystemDataContract::Dashpay,
+                platform_version,
+            )
+            .expect("DashPay system contract loads");
+            let existing = address_only_profile();
+            let replace = |fields: ProfileFields| {
+                replacement_document(&existing, fields, &contract, platform_version)
+            };
+
+            let refused = replace(ProfileFields {
+                shielded_address: PaymentAddressUpdate::Remove,
+                ..Default::default()
+            });
+            assert!(
+                matches!(
+                    refused,
+                    Err(Error::Generic(ref message)) if message.contains("last field")
+                ),
+                "protocol version {}: {refused:?}",
+                platform_version.protocol_version
+            );
+
+            let replaced = replace(ProfileFields {
+                display_name: Some("Alice".into()),
+                shielded_address: PaymentAddressUpdate::Remove,
+                ..Default::default()
+            })
+            .expect("another field keeps the profile non-empty");
+            assert_eq!(replaced.properties().len(), 1);
+            assert_eq!(text(replaced.properties(), "displayName"), Some("Alice"));
+        }
+    }
+
+    /// The refusal is the contract's verdict, not the SDK's: under a profile
+    /// schema without the `minProperties` bound, removing the last field
+    /// gives an empty replacement.
+    #[test]
+    fn should_allow_removing_the_last_profile_field_when_the_contract_permits_it() {
+        let platform_version = PlatformVersion::latest();
+        let mut contract = dashpay_contract();
+        let mut schema = contract
+            .document_type_for_name(PROFILE_DOCUMENT_TYPE)
+            .expect("the profile type")
+            .schema()
+            .clone();
+        schema
+            .remove("minProperties")
+            .expect("the profile schema bounds its property count");
+        contract
+            .set_document_schema(
+                PROFILE_DOCUMENT_TYPE,
+                schema,
+                true,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("the schema without the bound is valid");
+
+        let replaced = replacement_document(
+            &address_only_profile(),
+            ProfileFields {
+                shielded_address: PaymentAddressUpdate::Remove,
+                ..Default::default()
+            },
+            &contract,
+            platform_version,
+        )
+        .expect("the contract permits an empty profile");
+        assert!(replaced.properties().is_empty());
+    }
+
     /// A changed avatar URL must not keep the old hashes under it, but the
     /// unchanged URL the app resends on a text-only edit keeps its hashes.
     #[test]
@@ -616,8 +764,14 @@ mod tests {
             existing_full(),
             Some(3),
         );
-        let replace =
-            |fields: ProfileFields| replacement_document(&existing, fields, &dashpay_contract());
+        let replace = |fields: ProfileFields| {
+            replacement_document(
+                &existing,
+                fields,
+                &dashpay_contract(),
+                PlatformVersion::latest(),
+            )
+        };
         let new_url = Some("https://x/b.png".to_string());
 
         assert!(matches!(

@@ -1,5 +1,8 @@
 package org.dashfoundation.example.ui.dashpay
 
+import org.dashfoundation.dashsdk.persistence.entities.DashpayContactProfileEntity
+import org.dashfoundation.dashsdk.persistence.entities.DashpayProfileEntity
+import org.dashfoundation.dashsdk.tokens.DashPayPaymentAddressKind
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -18,11 +21,66 @@ import org.json.JSONObject
 
 // ── Profile (getProfile / getContactProfile) ─────────────────────────────
 
-/** Cached DashPay profile — the public fields the requests/contacts UI renders. */
+/**
+ * Cached DashPay profile — the public fields the requests/contacts UI
+ * renders. The payment addresses are in their stored form (lower hex in the
+ * JSON); `DashPayPaymentAddresses.string` renders them.
+ */
 data class DashPayProfile(
     val displayName: String?,
     val publicMessage: String?,
     val avatarUrl: String?,
+    val corePaymentAddress: ByteArray? = null,
+    val platformPaymentAddress: ByteArray? = null,
+    val shieldedAddress: ByteArray? = null,
+) {
+    /** The published address of [kind] in its stored form, or null. */
+    fun paymentAddress(kind: DashPayPaymentAddressKind): ByteArray? = when (kind) {
+        DashPayPaymentAddressKind.CORE -> corePaymentAddress
+        DashPayPaymentAddressKind.PLATFORM -> platformPaymentAddress
+        DashPayPaymentAddressKind.SHIELDED -> shieldedAddress
+    }
+
+    override fun equals(other: Any?): Boolean =
+        other is DashPayProfile && displayName == other.displayName &&
+            publicMessage == other.publicMessage && avatarUrl == other.avatarUrl &&
+            corePaymentAddress.contentEquals(other.corePaymentAddress) &&
+            platformPaymentAddress.contentEquals(other.platformPaymentAddress) &&
+            shieldedAddress.contentEquals(other.shieldedAddress)
+
+    override fun hashCode(): Int {
+        var h = displayName.hashCode()
+        h = 31 * h + publicMessage.hashCode()
+        h = 31 * h + avatarUrl.hashCode()
+        h = 31 * h + corePaymentAddress.contentHashCode()
+        h = 31 * h + platformPaymentAddress.contentHashCode()
+        h = 31 * h + shieldedAddress.contentHashCode()
+        return h
+    }
+}
+
+/**
+ * A persisted own profile row as a [DashPayProfile]: the last known profile
+ * while Rust's in-memory copy is not loaded yet (an own profile is not
+ * restored into Rust at launch; the next profile sync fetches it).
+ */
+fun DashpayProfileEntity.toDashPayProfile(): DashPayProfile = DashPayProfile(
+    displayName = displayName,
+    publicMessage = publicMessage,
+    avatarUrl = avatarUrl,
+    corePaymentAddress = corePaymentAddress,
+    platformPaymentAddress = platformPaymentAddress,
+    shieldedAddress = shieldedAddress,
+)
+
+/** A cached contact profile row as a [DashPayProfile]. */
+fun DashpayContactProfileEntity.toDashPayProfile(): DashPayProfile = DashPayProfile(
+    displayName = displayName,
+    publicMessage = publicMessage,
+    avatarUrl = avatarUrl,
+    corePaymentAddress = corePaymentAddress,
+    platformPaymentAddress = platformPaymentAddress,
+    shieldedAddress = shieldedAddress,
 )
 
 /** Parse a `getProfile` / `getContactProfile` JSON object, or null. */
@@ -32,6 +90,9 @@ fun parseDashPayProfile(json: String?): DashPayProfile? {
         displayName = obj.optStringOrNull("displayName"),
         publicMessage = obj.optStringOrNull("publicMessage"),
         avatarUrl = obj.optStringOrNull("avatarUrl"),
+        corePaymentAddress = obj.optStringOrNull("corePaymentAddress")?.hexOrNull(),
+        platformPaymentAddress = obj.optStringOrNull("platformPaymentAddress")?.hexOrNull(),
+        shieldedAddress = obj.optStringOrNull("shieldedAddress")?.hexOrNull(),
     )
 }
 

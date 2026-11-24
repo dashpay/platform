@@ -98,6 +98,9 @@ name = "shielded_chunk_timing_bench"
 required-features = ["shielded"]
 
 [dev-dependencies]
+# Builds address strings with a legacy Bech32 checksum, which the profile
+# payment address parser must refuse.
+bech32 = "0.11"
 tempfile = "3.27.0"
 # `tests::fixtures` for the state transition summary tests.
 dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"] }

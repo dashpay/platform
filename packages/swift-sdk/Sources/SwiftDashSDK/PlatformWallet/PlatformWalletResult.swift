@@ -329,6 +329,12 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// history was returned; the read can be made again later. SDK errors
     /// (stale-node rejection, transport or proof failures) are not this code.
     case errorBalanceHistoryInconsistentHeights = 83
+    /// A shielded Clear was refused because a shielded operation (a bind, an
+    /// account being added, a token pool transfer or unshield, a DashPay
+    /// profile write or a tip address preparation, or another Clear) is in
+    /// flight. Clear does not wait for it: nothing was changed and sync keeps
+    /// running, so the host keeps its rows. Retry once it has finished.
+    case errorShieldedOperationInProgress = 84
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -482,6 +488,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorPublicContactRequestUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_BALANCE_HISTORY_INCONSISTENT_HEIGHTS:
             self = .errorBalanceHistoryInconsistentHeights
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_OPERATION_IN_PROGRESS:
+            self = .errorShieldedOperationInProgress
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -763,6 +771,14 @@ public enum PlatformWalletError: LocalizedError {
     /// failures) keep their existing mapping. Nothing changed; load the
     /// history again later.
     case balanceHistoryInconsistentHeights(String)
+    /// `PlatformWalletManager.clearShielded()` was refused at once because a
+    /// shielded operation (a bind, an account being added, a token pool
+    /// transfer or unshield, a DashPay profile write or a tip address
+    /// preparation, or another Clear) is in flight. Clear does not wait for
+    /// it. Nothing was changed: sync keeps running and no shielded state was
+    /// reset, so the host must not wipe its own rows. Clear again once the
+    /// operation has finished.
+    case shieldedOperationInProgress(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition never
     /// left the wallet (refused before anything was sent), so it cannot
@@ -998,6 +1014,7 @@ public enum PlatformWalletError: LocalizedError {
              .privateContactStoreNotRead(let m), .sdkPinnedBelowProtocolVersion(let m),
              .publicContactRequestUnconfirmed(let m),
              .balanceHistoryInconsistentHeights(let m),
+             .shieldedOperationInProgress(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
@@ -1137,6 +1154,8 @@ public enum PlatformWalletError: LocalizedError {
             self = .publicContactRequestUnconfirmed(detail)
         case .errorBalanceHistoryInconsistentHeights:
             self = .balanceHistoryInconsistentHeights(detail)
+        case .errorShieldedOperationInProgress:
+            self = .shieldedOperationInProgress(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)

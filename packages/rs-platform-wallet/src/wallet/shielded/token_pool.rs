@@ -35,6 +35,9 @@ use dash_sdk::query_types::{
 };
 use dpp::data_contract::TokenContractPosition;
 use dpp::prelude::Identifier;
+use grovedb_commitment_tree::{
+    Anchor, ClientMemoryCommitmentTree, MerklePath, Position, Retention,
+};
 use rusqlite::{params, Connection, OptionalExtension};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
@@ -69,17 +72,27 @@ pub struct ShieldedTokenPoolBalance {
     /// The Orchard account the notes belong to.
     pub account_index: u32,
     /// The value of the account's notes whose nullifiers the scan has not
-    /// seen, in the token's smallest unit.
+    /// seen and that no spend in flight holds, in the token's smallest unit:
+    /// what a token pool spend can use now.
     pub balance: u64,
     /// How many notes make up [`Self::balance`].
     pub unspent_note_count: u32,
+    /// The value of the account's unspent notes a spend in flight holds
+    /// ([`TokenNoteReservation`]): they leave the balance when the scan sees
+    /// them spent, or come back to it if the spend can no longer execute.
+    pub reserved_balance: u64,
     /// How many of the pool's notes, from the first without a gap, were
     /// checked for this account; `None` before the first scan reached it.
     /// The balance covers exactly these.
     pub scanned_note_count: Option<u64>,
-    /// The pool's note count at the last chunk read, `None` before any.
+    /// The highest note count a page of the pool's scans has proved, `None`
+    /// before any. A page answered by a lagging node never lowers it, and it
+    /// does not mean a scan covered it: `scanned_note_count` is what was
+    /// checked for this account.
     pub pool_note_count: Option<u64>,
-    /// The height the last chunk read was proven at, `None` before any.
+    /// The highest height a page of the pool's scans was proven at, `None`
+    /// before any. It does not by itself certify that a scan reached the
+    /// pool's end.
     pub scanned_height: Option<u64>,
     /// Why the last scan of the pool stopped early, if it did. Cleared by the
     /// next chunk read.
@@ -108,6 +121,9 @@ pub struct TokenPoolNote {
     pub block_height: u64,
     /// Whether the scan has seen its nullifier.
     pub is_spent: bool,
+    /// The spend in flight that holds it, if one does: a reservation marker
+    /// or the activity id of the spend's saved record.
+    pub reserved_by: Option<[u8; 32]>,
 }
 
 /// What one pass over the watched token pools did, for logs and tests.
@@ -132,6 +148,8 @@ pub struct TokenPoolChunk {
     pub total_count: u64,
     /// The height the answer was proven at.
     pub height: u64,
+    /// The protocol version of the block the answer was proven at.
+    pub protocol_version: u32,
 }
 
 /// Where a token pool scan reads its chunks from: the SDK, or a test double.
@@ -180,6 +198,7 @@ impl TokenPoolNoteSource for dash_sdk::Sdk {
             notes,
             total_count,
             height: metadata.height,
+            protocol_version: metadata.protocol_version,
         })
     }
 
@@ -272,8 +291,75 @@ pub(super) fn create_tables(conn: &Connection) -> rusqlite::Result<()> {
             PRIMARY KEY (wallet_id, account_index, token_id, nullifier)
         );
         CREATE INDEX IF NOT EXISTS shielded_token_pool_notes_by_nullifier
-            ON shielded_token_pool_notes (token_id, nullifier);",
-    )
+            ON shielded_token_pool_notes (token_id, nullifier);
+        CREATE TABLE IF NOT EXISTS shielded_token_pool_sweep (
+            id           INTEGER NOT NULL PRIMARY KEY CHECK (id = 0),
+            credit_height INTEGER NOT NULL
+        );",
+    )?;
+    // The protocol version of the block a pool's last chunk was proven at;
+    // added to a table made before it was kept.
+    let scan_columns = conn
+        .prepare("PRAGMA table_info(shielded_token_pool_scans)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    if !scan_columns
+        .iter()
+        .any(|column| column == "scanned_protocol_version")
+    {
+        conn.execute(
+            "ALTER TABLE shielded_token_pool_scans ADD COLUMN scanned_protocol_version INTEGER",
+            [],
+        )?;
+    }
+    // The spend in flight holding a note ([`TokenNoteReservation`]), whether
+    // it was signed at a protocol version that binds its token bundle to its
+    // fee bundle (set when the hold moves to its activity id), whether that
+    // spend's record was saved (set in the transaction that saves it,
+    // so a spend never sent is told from one that was), and whether the
+    // credit pool pruned the anchor of its fee bundle after it was saved
+    // ([`mark_fee_anchor_pruned`]); added to a table made before
+    // reservations were kept.
+    let columns = conn
+        .prepare("PRAGMA table_info(shielded_token_pool_notes)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    if !columns.iter().any(|column| column == "reserved_by") {
+        conn.execute(
+            "ALTER TABLE shielded_token_pool_notes ADD COLUMN reserved_by BLOB",
+            [],
+        )?;
+    }
+    if !columns.iter().any(|column| column == "signed_bound") {
+        conn.execute(
+            "ALTER TABLE shielded_token_pool_notes \
+             ADD COLUMN signed_bound INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    if !columns.iter().any(|column| column == "record_saved") {
+        conn.execute(
+            "ALTER TABLE shielded_token_pool_notes \
+             ADD COLUMN record_saved INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    if !columns.iter().any(|column| column == "fee_anchor_pruned") {
+        conn.execute(
+            "ALTER TABLE shielded_token_pool_notes \
+             ADD COLUMN fee_anchor_pruned INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
+    // Finds a spend's holds without reading the account's token note
+    // history: saving any spend's record looks them up.
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS shielded_token_pool_notes_by_reservation \
+         ON shielded_token_pool_notes (wallet_id, account_index, reserved_by) \
+         WHERE reserved_by IS NOT NULL",
+        [],
+    )?;
+    Ok(())
 }
 
 /// Record that `wallet_id` watches `watch`'s pool. Idempotent.
@@ -298,13 +384,21 @@ pub(super) fn insert_watch(
 }
 
 /// Stop `wallet_id` watching `token_id`'s pool, dropping its notes and scan
-/// state there, and the pool's own state once no wallet watches it.
+/// state there, and the pool's own state once no wallet watches it. Refused
+/// ([`PlatformWalletError::TokenShieldedPoolSpendPending`]) while a spend in
+/// flight or a saved record holds any of the wallet's notes there.
 pub(super) fn remove_watch(
     conn: &mut Connection,
     wallet_id: WalletId,
     token_id: Identifier,
 ) -> Result<(), PlatformWalletError> {
     let tx = conn.transaction().map_err(storage("unwatch"))?;
+    // Unwatching forgets the wallet's notes, and with them the holds of a
+    // spend that may still land; watching again would offer those notes to
+    // another spend. Refused, inside the same transaction, until it settles.
+    if has_held_notes(&tx, wallet_id, token_id)? {
+        return Err(PlatformWalletError::TokenShieldedPoolSpendPending { token_id });
+    }
     for table in [
         "shielded_token_pool_watches",
         "shielded_token_pool_watermarks",
@@ -388,6 +482,7 @@ pub(super) fn purge_all(conn: &mut Connection) -> rusqlite::Result<()> {
         "shielded_token_pool_watermarks",
         "shielded_token_pool_leaves",
         "shielded_token_pool_notes",
+        "shielded_token_pool_sweep",
     ] {
         tx.execute(&format!("DELETE FROM {table}"), [])?;
     }
@@ -458,13 +553,35 @@ pub(crate) fn notes(
     id: SubwalletId,
     token_id: Identifier,
 ) -> Result<Vec<TokenPoolNote>, PlatformWalletError> {
+    notes_where(conn, id, token_id, "")
+}
+
+/// The notes `id` holds in `token_id`'s pool that a spend can take: unspent
+/// and held by no spend in flight, by position. Filtered in the query, so a
+/// long history of spent notes is never read.
+fn spendable_notes(
+    conn: &Connection,
+    id: SubwalletId,
+    token_id: Identifier,
+) -> Result<Vec<TokenPoolNote>, PlatformWalletError> {
+    notes_where(conn, id, token_id, " AND spent = 0 AND reserved_by IS NULL")
+}
+
+/// `id`'s notes in `token_id`'s pool matching `filter`, a fixed SQL condition
+/// appended to the account and token match, by position.
+fn notes_where(
+    conn: &Connection,
+    id: SubwalletId,
+    token_id: Identifier,
+    filter: &'static str,
+) -> Result<Vec<TokenPoolNote>, PlatformWalletError> {
     let mut statement = conn
-        .prepare(
-            "SELECT position, cmx, nullifier, value, note_data, block_height, spent \
-             FROM shielded_token_pool_notes \
-             WHERE wallet_id = ?1 AND account_index = ?2 AND token_id = ?3 \
-             ORDER BY position",
-        )
+        .prepare(&format!(
+            "SELECT position, cmx, nullifier, value, note_data, block_height, spent, \
+             reserved_by FROM shielded_token_pool_notes \
+             WHERE wallet_id = ?1 AND account_index = ?2 AND token_id = ?3{filter} \
+             ORDER BY position"
+        ))
         .map_err(storage("read notes"))?;
     let rows = statement
         .query_map(
@@ -482,13 +599,14 @@ pub(crate) fn notes(
                     row.get::<_, Vec<u8>>(4)?,
                     row.get::<_, i64>(5)?,
                     row.get::<_, i64>(6)?,
+                    row.get::<_, Option<Vec<u8>>>(7)?,
                 ))
             },
         )
         .map_err(storage("read notes"))?;
     let mut out = Vec::new();
     for row in rows {
-        let (position, cmx, nullifier, value, note_data, block_height, spent) =
+        let (position, cmx, nullifier, value, note_data, block_height, spent, reserved_by) =
             row.map_err(storage("read notes"))?;
         let value = <[u8; 8]>::try_from(value.as_slice())
             .map(u64::from_le_bytes)
@@ -507,21 +625,25 @@ pub(crate) fn notes(
             note_data,
             block_height: from_sql_u64(block_height, "note height")?,
             is_spent: spent != 0,
+            reserved_by: reserved_by
+                .map(|marker| bytes32(marker, "reservation"))
+                .transpose()?,
         });
     }
     Ok(out)
 }
 
-/// The values of `id`'s unspent notes in `token_id`'s pool, read alone: a
-/// balance needs nothing else of the notes.
+/// The values of `id`'s unspent notes in `token_id`'s pool, each with
+/// whether a spend in flight holds it, read alone: a balance needs nothing
+/// else of the notes.
 fn unspent_values(
     conn: &Connection,
     id: SubwalletId,
     token_id: Identifier,
-) -> Result<Vec<u64>, PlatformWalletError> {
+) -> Result<Vec<(u64, bool)>, PlatformWalletError> {
     let mut statement = conn
         .prepare(
-            "SELECT value FROM shielded_token_pool_notes \
+            "SELECT value, reserved_by IS NOT NULL FROM shielded_token_pool_notes \
              WHERE wallet_id = ?1 AND account_index = ?2 AND token_id = ?3 AND spent = 0",
         )
         .map_err(storage("read note values"))?;
@@ -532,13 +654,13 @@ fn unspent_values(
                 id.account_index,
                 token_id.as_slice()
             ],
-            |row| row.get::<_, Vec<u8>>(0),
+            |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, bool>(1)?)),
         )
         .map_err(storage("read note values"))?;
     rows.map(|row| {
-        let value = row.map_err(storage("read note values"))?;
+        let (value, reserved) = row.map_err(storage("read note values"))?;
         <[u8; 8]>::try_from(value.as_slice())
-            .map(u64::from_le_bytes)
+            .map(|value| (u64::from_le_bytes(value), reserved))
             .map_err(|_| {
                 PlatformWalletError::ShieldedStoreError(
                     "token pool note value is not 8 bytes".to_string(),
@@ -621,21 +743,28 @@ pub(super) fn balances(
             let id = SubwalletId::new(wallet_id, account_index);
             let mut balance = 0u64;
             let mut unspent_note_count = 0u32;
-            for value in unspent_values(conn, id, watch.token_id)? {
-                balance = balance.checked_add(value).ok_or_else(|| {
-                    PlatformWalletError::ShieldedStoreError(format!(
-                        "the notes of account {account_index} in the pool of token {} add up \
-                         past u64",
-                        watch.token_id
-                    ))
-                })?;
-                unspent_note_count = unspent_note_count.saturating_add(1);
+            let mut reserved_balance = 0u64;
+            let overflow = || {
+                PlatformWalletError::ShieldedStoreError(format!(
+                    "the notes of account {account_index} in the pool of token {} add up past \
+                     u64",
+                    watch.token_id
+                ))
+            };
+            for (value, reserved) in unspent_values(conn, id, watch.token_id)? {
+                if reserved {
+                    reserved_balance = reserved_balance.checked_add(value).ok_or_else(overflow)?;
+                } else {
+                    balance = balance.checked_add(value).ok_or_else(overflow)?;
+                    unspent_note_count = unspent_note_count.saturating_add(1);
+                }
             }
             out.push(ShieldedTokenPoolBalance {
                 watch,
                 account_index,
                 balance,
                 unspent_note_count,
+                reserved_balance,
                 scanned_note_count: watermark(conn, id, watch.token_id)?,
                 pool_note_count,
                 scanned_height,
@@ -644,6 +773,526 @@ pub(super) fn balances(
         }
     }
     Ok(out)
+}
+
+/// The markers of the token note reservations this process holds now: a
+/// reservation marker from [`reserve_token_notes`] until the spend's activity
+/// id replaces it, then that id until the spend has settled. Read with the
+/// reservations under the connection's lock, so the sweep
+/// ([`release_orphaned_reservations`]) never releases a spend still being
+/// built or settled.
+static IN_FLIGHT: std::sync::Mutex<BTreeSet<[u8; 32]>> = std::sync::Mutex::new(BTreeSet::new());
+
+fn in_flight() -> std::sync::MutexGuard<'static, BTreeSet<[u8; 32]>> {
+    IN_FLIGHT
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// The token notes one spend holds ([`reserve_token_notes`]).
+///
+/// The reservation is kept in the store, so it outlives the process; what
+/// releases it is either the spend's own settlement ([`Self::release`], for a
+/// spend that never reached the network) or the sweep, for a reservation
+/// whose spend is no longer in flight here and has no saved record left: the
+/// scan found its fee notes spent or their anchor pruned, or the process that
+/// made it is gone. A note the scan sees spent stays spent whatever its
+/// reservation says.
+#[derive(Debug)]
+pub(crate) struct TokenNoteReservation {
+    marker: [u8; 32],
+}
+
+impl TokenNoteReservation {
+    /// Hold the notes under `activity_id`, the id of the spend's saved
+    /// record, from now on, noting whether the spend was signed at a protocol
+    /// version that binds its token bundle to its fee bundle (`signed_bound`):
+    /// one that does not can land with another fee bundle, so its fee side
+    /// alone never settles it.
+    pub(crate) fn rekey<S: TokenPoolConnection>(
+        &mut self,
+        store: &S,
+        activity_id: [u8; 32],
+        signed_bound: bool,
+    ) -> Result<(), PlatformWalletError> {
+        store.with_token_pool_conn(|conn| {
+            conn.execute(
+                "UPDATE shielded_token_pool_notes SET reserved_by = ?1, signed_bound = ?3 \
+                 WHERE reserved_by = ?2",
+                params![activity_id.as_slice(), self.marker.as_slice(), signed_bound],
+            )
+            .map_err(storage("rekey reservation"))?;
+            let mut held = in_flight();
+            held.insert(activity_id);
+            held.remove(&self.marker);
+            Ok(())
+        })?;
+        self.marker = activity_id;
+        Ok(())
+    }
+
+    /// Release the notes, for a spend that cannot execute.
+    pub(crate) fn release<S: TokenPoolConnection>(self, store: &S) {
+        let marker = self.marker;
+        if let Err(e) = store.with_token_pool_conn(|conn| {
+            conn.execute(
+                "UPDATE shielded_token_pool_notes \
+                 SET reserved_by = NULL, signed_bound = 0, record_saved = 0, \
+                 fee_anchor_pruned = 0 WHERE reserved_by = ?1",
+                params![marker.as_slice()],
+            )
+            .map_err(storage("release reservation"))
+        }) {
+            // Left reserved, the notes come back at the next sweep.
+            warn!(error = %e, "releasing token notes failed; the next sync releases them");
+        }
+    }
+}
+
+impl Drop for TokenNoteReservation {
+    fn drop(&mut self) {
+        in_flight().remove(&self.marker);
+    }
+}
+
+/// A reservation marker no other reservation of this or an earlier process
+/// shares: a hash of the process id, the time and a counter.
+fn new_reservation_marker() -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let mut hasher = Sha256::new();
+    hasher.update(b"token note reservation");
+    hasher.update(std::process::id().to_le_bytes());
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_nanos())
+        .unwrap_or_default();
+    hasher.update(nanos.to_le_bytes());
+    hasher.update(
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            .to_le_bytes(),
+    );
+    hasher.finalize().into()
+}
+
+/// Reserve `id`'s unspent, unreserved notes in `token_id`'s pool covering
+/// `amount`, largest first, at most `max_notes` of them. Refuses an amount the
+/// notes do not cover ([`PlatformWalletError::TokenShieldedInsufficientBalance`])
+/// and one needing more notes than allowed
+/// ([`PlatformWalletError::ShieldedTooManyNotes`]) without reserving anything.
+pub(crate) fn reserve_token_notes<S: TokenPoolConnection>(
+    store: &S,
+    id: SubwalletId,
+    token_id: Identifier,
+    amount: u64,
+    max_notes: usize,
+) -> Result<(Vec<TokenPoolNote>, TokenNoteReservation), PlatformWalletError> {
+    store.with_token_pool_conn(|conn| {
+        let selected = select_token_notes(conn, id, token_id, amount, max_notes)?;
+        let marker = new_reservation_marker();
+        let tx = conn.transaction().map_err(storage("reserve"))?;
+        for note in &selected {
+            tx.execute(
+                "UPDATE shielded_token_pool_notes \
+                 SET reserved_by = ?1, signed_bound = 0, record_saved = 0, \
+                 fee_anchor_pruned = 0 WHERE wallet_id = ?2 AND account_index = ?3 AND token_id = ?4 AND nullifier = ?5",
+                params![
+                    marker.as_slice(),
+                    id.wallet_id.as_slice(),
+                    id.account_index,
+                    token_id.as_slice(),
+                    note.nullifier.as_slice()
+                ],
+            )
+            .map_err(storage("reserve"))?;
+        }
+        tx.commit().map_err(storage("reserve"))?;
+        in_flight().insert(marker);
+        let selected = selected
+            .into_iter()
+            .map(|note| TokenPoolNote {
+                reserved_by: Some(marker),
+                ..note
+            })
+            .collect();
+        Ok((selected, TokenNoteReservation { marker }))
+    })
+}
+
+/// The notes [`reserve_token_notes`] would reserve, refused as it refuses,
+/// without reserving them.
+pub(crate) fn select_token_notes(
+    conn: &Connection,
+    id: SubwalletId,
+    token_id: Identifier,
+    amount: u64,
+    max_notes: usize,
+) -> Result<Vec<TokenPoolNote>, PlatformWalletError> {
+    let mut free = spendable_notes(conn, id, token_id)?;
+    free.sort_by(|a, b| b.value.cmp(&a.value).then(a.position.cmp(&b.position)));
+    let available = free
+        .iter()
+        .try_fold(0u64, |total, note| total.checked_add(note.value))
+        .unwrap_or(u64::MAX);
+    let mut selected = Vec::new();
+    let mut covered = 0u64;
+    for note in free {
+        if covered >= amount {
+            break;
+        }
+        covered = covered.saturating_add(note.value);
+        selected.push(note);
+    }
+    if covered < amount || selected.is_empty() {
+        return Err(PlatformWalletError::TokenShieldedInsufficientBalance {
+            token_id,
+            available,
+            required: amount,
+        });
+    }
+    if selected.len() > max_notes {
+        return Err(PlatformWalletError::ShieldedTooManyNotes {
+            required_notes: selected.len(),
+            max_notes,
+        });
+    }
+    Ok(selected)
+}
+
+/// One reservation as read: wallet id, account, token id, marker bytes,
+/// whether its spend was signed bound, whether its record was saved, whether
+/// its fee anchor was pruned, whether any and whether every note it holds is
+/// spent, and the height and protocol version the token pool's last scan read
+/// at.
+type HeldReservation = (
+    Vec<u8>,
+    u32,
+    Vec<u8>,
+    Vec<u8>,
+    [bool; 5],
+    Option<i64>,
+    Option<u32>,
+);
+
+/// A reservation the sweep found orphaned ([`orphaned_reservations`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct OrphanedReservation {
+    /// The account whose notes it holds.
+    pub id: SubwalletId,
+    /// The marker it holds them under: the spend's activity id once moved to
+    /// its saved record.
+    pub marker: [u8; 32],
+    /// Whether the spend's saved record was dropped because the credit pool
+    /// pruned its fee bundle's anchor ([`mark_fee_anchor_pruned`]), so the
+    /// spend may have been sent.
+    pub fee_anchor_pruned: bool,
+    /// Whether the spend's record was ever saved: set in the transaction
+    /// that saves it, so a hold without it belongs to a spend never sent.
+    pub record_saved: bool,
+    /// Whether the spend was signed at a protocol version that binds its
+    /// token bundle to its fee bundle, so it cannot land without that fee
+    /// bundle.
+    pub signed_bound: bool,
+    /// Whether any note it holds is spent, as the token pool's scan, which
+    /// reached the credit scan's height, has seen.
+    pub any_spent: bool,
+    /// Whether every note it holds is spent. A spend's bundle spends all its
+    /// notes at once, so some spent and some not means another spend used
+    /// some: this one did not land and can no longer.
+    pub all_spent: bool,
+    /// The protocol version of the block the token pool's last scan was
+    /// proven at. Protocol versions only rise, so a scan at a version that
+    /// binds a token bundle to its fee bundle saw every block in which an
+    /// unbound spend could still execute.
+    pub scanned_protocol_version: Option<u32>,
+}
+
+/// The height the sweep requires a token pool's scan to have reached: the
+/// highest height a credit pool scan has read, `credit_height` or one kept
+/// from an earlier pass. A saved record a credit scan dropped stays dropped,
+/// so the height that dropped it is kept, across restarts, until a token pool
+/// scan reaches it: a later credit scan answered from a lower height does not
+/// lower it.
+pub(crate) fn raise_sweep_height(
+    conn: &Connection,
+    credit_height: u64,
+) -> Result<u64, PlatformWalletError> {
+    let credit_height = to_sql_u64(credit_height, "credit scan height")?;
+    conn.execute(
+        "INSERT INTO shielded_token_pool_sweep (id, credit_height) VALUES (0, ?1) \
+         ON CONFLICT(id) DO UPDATE SET credit_height = MAX(credit_height, excluded.credit_height)",
+        params![credit_height],
+    )
+    .map_err(storage("raise sweep height"))?;
+    let height: i64 = conn
+        .query_row(
+            "SELECT credit_height FROM shielded_token_pool_sweep WHERE id = 0",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(storage("read sweep height"))?;
+    u64::try_from(height).map_err(|_| {
+        PlatformWalletError::ShieldedStoreError(format!("sweep height {height} is negative"))
+    })
+}
+
+/// The reservations of `owners` in the pools of `scanned` (the pools this
+/// pass scanned to their end) that neither a spend in flight here nor a saved
+/// record in `live_records` holds, whether or not the scan has seen their
+/// notes spent: their spend is not being built or settled in this process
+/// and has no record left, so its fee bundle can no longer land or it never
+/// left the wallet. Only a pool whose scan reached `scanned_from` counts, the
+/// height [`raise_sweep_height`] returns: a credit pool scan that dropped a
+/// landed spend's record read up to at most that height, so a token pool
+/// scan answered from below it may not show that spend's token notes spent
+/// yet. Only the reservations of `owners`, the
+/// accounts whose saved records `live_records` holds, are judged: an account
+/// not registered now has records nobody read.
+///
+/// Reads only; [`release_reservations`] releases. The spends in flight are
+/// read once, up front: a reservation or a rekey takes the same connection,
+/// so none lands during the read.
+pub(crate) fn orphaned_reservations(
+    conn: &Connection,
+    owners: &BTreeSet<SubwalletId>,
+    scanned: &BTreeSet<Identifier>,
+    scanned_from: u64,
+    live_records: &BTreeSet<[u8; 32]>,
+) -> Result<BTreeSet<OrphanedReservation>, PlatformWalletError> {
+    let in_flight: BTreeSet<[u8; 32]> = in_flight().clone();
+    let mut statement = conn
+        .prepare(
+            "SELECT n.wallet_id, n.account_index, n.token_id, n.reserved_by, \
+             MAX(n.signed_bound), MAX(n.record_saved), MAX(n.fee_anchor_pruned), \
+             MAX(n.spent), MIN(n.spent), s.scanned_height, s.scanned_protocol_version \
+             FROM shielded_token_pool_notes n \
+             LEFT JOIN shielded_token_pool_scans s ON s.token_id = n.token_id \
+             WHERE n.reserved_by IS NOT NULL \
+             GROUP BY n.wallet_id, n.account_index, n.token_id, n.reserved_by",
+        )
+        .map_err(storage("read reservations"))?;
+    let held: Vec<HeldReservation> = statement
+        .query_map([], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                [
+                    row.get::<_, i64>(4)? != 0,
+                    row.get::<_, i64>(5)? != 0,
+                    row.get::<_, i64>(6)? != 0,
+                    row.get::<_, i64>(7)? != 0,
+                    row.get::<_, i64>(8)? != 0,
+                ],
+                row.get(9)?,
+                row.get(10)?,
+            ))
+        })
+        .map_err(storage("read reservations"))?
+        .collect::<rusqlite::Result<_>>()
+        .map_err(storage("read reservations"))?;
+    let mut orphaned = BTreeSet::new();
+    for (
+        wallet_id,
+        account_index,
+        token_id,
+        marker,
+        [signed_bound, record_saved, fee_anchor_pruned, any_spent, all_spent],
+        scanned_height,
+        scanned_protocol_version,
+    ) in held
+    {
+        let id = SubwalletId::new(bytes32(wallet_id, "wallet id")?, account_index);
+        let token_id = Identifier::from(bytes32(token_id, "token id")?);
+        let marker = bytes32(marker, "reservation")?;
+        let scanned_far_enough = scanned_height
+            .and_then(|height| u64::try_from(height).ok())
+            .is_some_and(|height| height >= scanned_from);
+        if !owners.contains(&id)
+            || !scanned.contains(&token_id)
+            || !scanned_far_enough
+            || in_flight.contains(&marker)
+            || live_records.contains(&marker)
+        {
+            continue;
+        }
+        orphaned.insert(OrphanedReservation {
+            id,
+            marker,
+            fee_anchor_pruned,
+            record_saved,
+            signed_bound,
+            any_spent,
+            all_spent,
+            scanned_protocol_version,
+        });
+    }
+    Ok(orphaned)
+}
+
+/// Note that the credit pool pruned the anchor of the fee bundle of `id`'s
+/// spend saved as `activity_id`, before its saved record is dropped for it:
+/// a spend signed at a binding version can then never execute, even if a
+/// note it holds was spent by another spend, which tells the sweep it failed
+/// ([`orphaned_reservations`]). Changes nothing for a spend holding no token
+/// notes.
+pub(crate) fn mark_fee_anchor_pruned(
+    conn: &Connection,
+    id: SubwalletId,
+    activity_id: &[u8; 32],
+) -> Result<(), PlatformWalletError> {
+    conn.execute(
+        "UPDATE shielded_token_pool_notes SET fee_anchor_pruned = 1 \
+         WHERE wallet_id = ?1 AND account_index = ?2 AND reserved_by = ?3",
+        params![
+            id.wallet_id.as_slice(),
+            id.account_index,
+            activity_id.as_slice()
+        ],
+    )
+    .map_err(storage("mark fee anchor pruned"))?;
+    Ok(())
+}
+
+/// Release the token notes `releases` hold, in one transaction: a failure
+/// part way leaves every reservation as it was, for a later pass.
+pub(crate) fn release_reservations<'a>(
+    conn: &Connection,
+    releases: impl IntoIterator<Item = &'a OrphanedReservation>,
+) -> Result<(), PlatformWalletError> {
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(storage("begin release"))?;
+    for release in releases {
+        tx.execute(
+            "UPDATE shielded_token_pool_notes \
+             SET reserved_by = NULL, signed_bound = 0, record_saved = 0, \
+             fee_anchor_pruned = 0 \
+             WHERE wallet_id = ?1 AND account_index = ?2 AND reserved_by = ?3",
+            params![
+                release.id.wallet_id.as_slice(),
+                release.id.account_index,
+                release.marker.as_slice()
+            ],
+        )
+        .map_err(storage("release reservation"))?;
+    }
+    tx.commit().map_err(storage("commit release"))?;
+    Ok(())
+}
+
+/// Whether `wallet_id` holds token notes in `token_id`'s pool under a spend in
+/// flight or a saved record, spent or not: a hold on notes another spend used
+/// is still the sweep's only link to the activity row it settles.
+fn has_held_notes(
+    conn: &Connection,
+    wallet_id: WalletId,
+    token_id: Identifier,
+) -> Result<bool, PlatformWalletError> {
+    conn.query_row(
+        "SELECT 1 FROM shielded_token_pool_notes \
+         WHERE wallet_id = ?1 AND token_id = ?2 AND reserved_by IS NOT NULL LIMIT 1",
+        params![wallet_id.as_slice(), token_id.as_slice()],
+        |_| Ok(()),
+    )
+    .optional()
+    .map(|row| row.is_some())
+    .map_err(storage("read held notes"))
+}
+
+/// The Merkle paths of `selected`, notes of `token_id`'s pool, and the anchor
+/// they share: the root of the pool's tree over the leaves the scan kept, from
+/// position 0 to the first one missing. That is the pool's root when its last
+/// scan ended, which is one of the anchors the pool records while it keeps
+/// it; the caller checks that it is.
+pub(crate) fn spend_paths(
+    conn: &Connection,
+    token_id: Identifier,
+    selected: &[TokenPoolNote],
+) -> Result<(Vec<(u64, MerklePath)>, Anchor), PlatformWalletError> {
+    let positions: BTreeSet<u64> = selected.iter().map(|note| note.position).collect();
+    let mut statement = conn
+        .prepare(
+            "SELECT position, cmx FROM shielded_token_pool_leaves \
+             WHERE token_id = ?1 ORDER BY position",
+        )
+        .map_err(storage("read leaves"))?;
+    let rows = statement
+        .query_map(params![token_id.as_slice()], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
+        })
+        .map_err(storage("read leaves"))?;
+    let built = |e: grovedb_commitment_tree::CommitmentTreeError| {
+        PlatformWalletError::ShieldedMerkleWitnessUnavailable(format!(
+            "the tree of the shielded pool of token {token_id} does not build: {e}"
+        ))
+    };
+    let mut tree = ClientMemoryCommitmentTree::new(1);
+    let mut next = 0u64;
+    for row in rows {
+        let (position, cmx) = row.map_err(storage("read leaves"))?;
+        if from_sql_u64(position, "leaf position")? != next {
+            break;
+        }
+        let retention = if positions.contains(&next) {
+            Retention::Marked
+        } else {
+            Retention::Ephemeral
+        };
+        tree.append(bytes32(cmx, "leaf")?, retention)
+            .map_err(built)?;
+        next += 1;
+    }
+    tree.checkpoint(1).map_err(built)?;
+    let anchor = tree.anchor().map_err(built)?;
+    let mut paths = Vec::with_capacity(selected.len());
+    for note in selected {
+        let path = (note.position < next)
+            .then(|| tree.witness(Position::from(note.position), 0))
+            .transpose()
+            .map_err(built)?
+            .flatten()
+            .ok_or_else(|| {
+                PlatformWalletError::ShieldedMerkleWitnessUnavailable(format!(
+                    "note {} of the shielded pool of token {token_id} is past the leaves kept; \
+                     sync the shielded pools first",
+                    note.position
+                ))
+            })?;
+        paths.push((note.position, path));
+    }
+    Ok((paths, anchor))
+}
+
+/// Insert `note` as the scan would have, for tests that start from owned
+/// token notes.
+#[cfg(test)]
+pub(crate) fn insert_note_for_test(
+    conn: &Connection,
+    note: &TokenPoolNote,
+) -> Result<(), PlatformWalletError> {
+    conn.execute(
+        "INSERT INTO shielded_token_pool_notes \
+         (wallet_id, account_index, token_id, position, cmx, nullifier, value, note_data, \
+          block_height, spent, reserved_by) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        params![
+            note.id.wallet_id.as_slice(),
+            note.id.account_index,
+            note.token_id.as_slice(),
+            to_sql_u64(note.position, "position")?,
+            note.cmx.as_slice(),
+            note.nullifier.as_slice(),
+            note.value.to_le_bytes().as_slice(),
+            note.note_data,
+            to_sql_u64(note.block_height, "height")?,
+            i64::from(note.is_spent),
+            note.reserved_by.map(|marker| marker.to_vec()),
+        ],
+    )
+    .map_err(storage("insert note"))?;
+    Ok(())
 }
 
 /// The accounts that scan one pool and the viewing keys they decrypt with,
@@ -662,6 +1311,10 @@ struct ChunkOutcome {
     /// No account scans the pool any more (see [`apply_chunk`]): the scan
     /// ends.
     stopped: bool,
+    /// The scan read the pool to its end, covering the highest note count
+    /// any page of it has proved, so it saw every spend up to the height that
+    /// count was proved at ([`scan_pool`]).
+    covered: bool,
 }
 
 /// Whether `wallet_id` watches `token_id`'s pool.
@@ -807,13 +1460,23 @@ fn apply_chunk(
     }
     tx.execute(
         "INSERT INTO shielded_token_pool_scans \
-         (token_id, pool_note_count, scanned_height, last_error) VALUES (?1, ?2, ?3, NULL) \
-         ON CONFLICT(token_id) DO UPDATE SET pool_note_count = excluded.pool_note_count, \
-         scanned_height = excluded.scanned_height, last_error = NULL",
+         (token_id, pool_note_count, scanned_height, scanned_protocol_version, last_error) \
+         VALUES (?1, ?2, ?3, ?4, NULL) \
+         ON CONFLICT(token_id) DO UPDATE SET \
+         pool_note_count = MAX(COALESCE(pool_note_count, 0), excluded.pool_note_count), \
+         scanned_height = MAX(COALESCE(scanned_height, 0), excluded.scanned_height), \
+         scanned_protocol_version = \
+         MAX(COALESCE(scanned_protocol_version, 0), excluded.scanned_protocol_version), \
+         last_error = NULL",
+        // Each only rises: a page answered by a node a block behind, with a
+        // shorter tree, does not lower what an earlier page proved, and the
+        // scan counts as complete only once it covers the highest count seen
+        // (`scan_pool`).
         params![
             token.as_slice(),
             to_sql_u64(chunk.total_count, "pool note count")?,
-            height
+            height,
+            chunk.protocol_version
         ],
     )
     .map_err(storage("record scan"))?;
@@ -869,7 +1532,19 @@ where
             .with_token_pool_conn(|conn| apply_chunk(conn, &mut scanner, start, &chunk))?;
         total.new_notes += outcome.new_notes;
         total.newly_spent += outcome.newly_spent;
-        if outcome.stopped || read < u64::from(capacity) {
+        if outcome.stopped {
+            return Ok(total);
+        }
+        if read < u64::from(capacity) {
+            // A short page ends the pass. It counts as the pool's end only if
+            // it reaches the highest note count a page has proved: a node a
+            // block behind answers with a shorter tree, and the notes past it
+            // may hold a spend this pass has not seen.
+            let end = start + read;
+            let highest_count = store.read().await.with_token_pool_conn(|conn| {
+                scan_state(conn, scanner.token_id).map(|state| state.pool_note_count)
+            })?;
+            total.covered = highest_count.is_some_and(|count| end >= count);
             return Ok(total);
         }
         start += read;
@@ -933,7 +1608,7 @@ where
             Ok(outcome) => {
                 summary.new_notes += outcome.new_notes;
                 summary.newly_spent += outcome.newly_spent;
-                if !cancel.is_cancelled() {
+                if outcome.covered && !cancel.is_cancelled() {
                     summary.completed.insert(token_id);
                 }
             }

@@ -91,6 +91,30 @@ pub fn token_purchase_from_shielded_pool_requirement() -> ProtocolRequirement {
     }
 }
 
+/// What a token shielded transfer paid from the shielded credit pool (type 26) needs: every node
+/// serves it from protocol version 14, with the token shielded pools. Wallets check it before they
+/// reserve notes or prove the transition ([`Sdk::ensure_protocol_requirement`]); the broadcast
+/// checks it again.
+pub fn token_shielded_transfer_with_shielded_fee_requirement() -> ProtocolRequirement {
+    ProtocolRequirement {
+        protocol_version: TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+        method: BROADCAST_STATE_TRANSITION_METHOD,
+        feature: Some("token shielded transfer transitions"),
+    }
+}
+
+/// What a token unshield paid from the shielded credit pool (type 27) needs: every node serves
+/// it from protocol version 14, with the token shielded pools. Wallets check it before they
+/// reserve notes or prove the transition ([`Sdk::ensure_protocol_requirement`]); the broadcast
+/// checks it again.
+pub fn token_unshield_with_shielded_fee_requirement() -> ProtocolRequirement {
+    ProtocolRequirement {
+        protocol_version: TOKEN_SHIELDED_POOL_INITIAL_PROTOCOL_VERSION,
+        method: BROADCAST_STATE_TRANSITION_METHOD,
+        feature: Some("token unshield transitions"),
+    }
+}
+
 /// The protocol version `transition`'s kind needs before every node serves it, for a kind
 /// newer than every node may run: nodes of an older release reject it, which the client would
 /// take for the transition's own rejection. The broadcast gate applies it; a caller that keeps
@@ -113,6 +137,12 @@ pub fn transition_protocol_requirement(
         }
         StateTransition::TokenPurchaseFromShieldedPool(_) => {
             Some(token_purchase_from_shielded_pool_requirement())
+        }
+        StateTransition::TokenShieldedTransferWithShieldedFee(_) => {
+            Some(token_shielded_transfer_with_shielded_fee_requirement())
+        }
+        StateTransition::TokenUnshieldWithShieldedFee(_) => {
+            Some(token_unshield_with_shielded_fee_requirement())
         }
         _ => None,
     }

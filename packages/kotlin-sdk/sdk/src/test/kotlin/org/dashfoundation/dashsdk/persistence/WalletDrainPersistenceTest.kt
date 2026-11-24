@@ -87,7 +87,7 @@ class WalletDrainPersistenceTest {
         db.assetLockDao().getByOutPointHex(encodeOutPointHex(outPoint))
 
     @Test
-    fun shouldAttestTheOperationIdCapabilityAndNotTheShieldedRecipientOne() {
+    fun shouldAttestTheOperationIdCapability() {
         val bits = handler.persistenceCapabilitiesBits()
         assertEquals(0x2000L, NativePersistenceBridge.CAPABILITY_ASSET_LOCK_OPERATION_IDS)
         assertNotEquals(0L, bits and NativePersistenceBridge.CAPABILITY_ASSET_LOCK_OPERATION_IDS)
@@ -98,8 +98,6 @@ class WalletDrainPersistenceTest {
         // `PersistenceCapabilities::WALLET_DRAIN` (0x2285): atomic changesets,
         // funding indices, wallet restore, tracked asset locks, operation ids.
         assertEquals(0x2285L, bits and 0x2285L)
-        // The shielded recipient sidecar (bit 14) is not implemented.
-        assertEquals(0L, bits and 0x4000L)
     }
 
     @Test

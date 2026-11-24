@@ -28,6 +28,8 @@ enum ShieldedActivityKindDisplay {
         case 8: return "Shielded from Identity"
         case 9: return "Identity Top-Up from Pool"
         case 10: return "Token Purchase"
+        case 11: return "Token Transfer"
+        case 12: return "Token Unshield"
         // 7 (ShieldedSpend) and any tag this build doesn't know yet.
         default: return "Shielded Spend"
         }
@@ -47,6 +49,8 @@ enum ShieldedActivityKindDisplay {
         // Platform identity's balance.
         case 6, 9: return "person.crop.circle.badge.plus"
         case 10: return "cart.fill"                   // TokenPurchase
+        case 11: return "paperplane.fill"             // TokenShieldedTransfer
+        case 12: return "lock.open.rotation"          // TokenUnshield
         default: return "questionmark.circle.fill"     // ShieldedSpend
         }
     }
@@ -54,23 +58,43 @@ enum ShieldedActivityKindDisplay {
     /// `true` for the residual `ShieldedSpend` kind, which a restored
     /// wallet couldn't fully classify — the detail sheet shows a footnote.
     static func isUnclassifiedResidual(_ tag: Int) -> Bool { tag == 7 }
+
+    /// `true` for the kinds whose `amount` is a token count in the token's
+    /// smallest unit rather than credits: 11 (TokenShieldedTransfer, the
+    /// tokens sent) and 12 (TokenUnshield, the tokens moved to the
+    /// identity). Their fee is still credits.
+    static func amountIsTokens(_ tag: Int) -> Bool { tag == 11 || tag == 12 }
+
+    /// The raw stored `amount` with its unit for `tag`: token units for the
+    /// kinds `amountIsTokens` names, credits otherwise. For diagnostic views
+    /// that show the stored number as is.
+    static func rawAmountText(_ amount: UInt64, tag: Int) -> String {
+        amountIsTokens(tag) ? "\(amount) token units" : "\(amount) credits"
+    }
 }
 
 extension PersistentShieldedActivity {
     /// Exact signed amount, e.g. `-0.5 DASH` for an out and `+1 DASH` for
     /// an in, down to one credit. `direction`: 0 In, 1 Out, 2 Self.
+    /// A token transfer (kind 11) shows its token count in the token's
+    /// smallest unit instead, as Rust records it.
     var signedAmountText: String {
-        Self.signedAmountText(amount: amount, direction: direction)
+        if ShieldedActivityKindDisplay.amountIsTokens(kindTag) {
+            return Self.sign(direction) + "\(amount) token units"
+        }
+        return Self.signedAmountText(amount: amount, direction: direction)
     }
 
     static func signedAmountText(amount: UInt64, direction: Int) -> String {
-        let sign: String
+        sign(direction) + formatCreditsAsDash(amount)
+    }
+
+    private static func sign(_ direction: Int) -> String {
         switch direction {
-        case 0: sign = "+"
-        case 1: sign = "-"
-        default: sign = ""
+        case 0: return "+"
+        case 1: return "-"
+        default: return ""
         }
-        return sign + formatCreditsAsDash(amount)
     }
 
     /// Tint for the amount label by direction.
@@ -352,6 +376,32 @@ struct ShieldedActivityDetailView: View {
         }
     }
 
+    /// What a token transfer row says about its tokens, by its stored
+    /// status: delivered only once Confirmed.
+    private var tokenTransferNote: String {
+        switch entry.status {
+        case 1:
+            return "The tokens were sent to the recipient in the token's shielded pool, and any change came back to this wallet."
+        case 2:
+            return "The transfer did not go through; no tokens left this wallet."
+        default:
+            return "Not confirmed yet: a shielded sync confirms the transfer once it lands. Until then Wallet > Shielded Tokens shows the notes it spends as pending."
+        }
+    }
+
+    /// What a token unshield row says about its tokens, by its stored
+    /// status: credited only once Confirmed.
+    private var tokenUnshieldNote: String {
+        switch entry.status {
+        case 1:
+            return "The tokens were added to the identity's token balance, and any change came back to this wallet's shielded token pool."
+        case 2:
+            return "The unshield did not go through; no tokens left this wallet."
+        default:
+            return "Not confirmed yet: a shielded sync confirms the unshield once it lands. Until then Wallet > Shielded Tokens shows the notes it spends as pending."
+        }
+    }
+
     private var directionText: String {
         switch entry.direction {
         case 0: return "In"
@@ -384,15 +434,18 @@ struct ShieldedActivityDetailView: View {
 
                 // Every identity-bearing kind carries `identityId`: 6 is the
                 // identity that was created, 8 the identity that was debited,
-                // 9 the identity the pool topped up.
-                if entry.kindTag == 6 || entry.kindTag == 8 || entry.kindTag == 9,
+                // 9 the identity the pool topped up, 12 the identity whose
+                // token balance an unshield credited.
+                if [6, 8, 9, 12].contains(entry.kindTag),
                    entry.identityId.count == 32 {
                     // An expression, not a `switch` statement: a bare
                     // statement here would be parsed as a view-producing
                     // branch by the enclosing ViewBuilder.
                     let identitySectionTitle = entry.kindTag == 6
                         ? "Created Identity"
-                        : (entry.kindTag == 9 ? "Topped-Up Identity" : "Source Identity")
+                        : (entry.kindTag == 9
+                            ? "Topped-Up Identity"
+                            : (entry.kindTag == 12 ? "Credited Identity" : "Source Identity"))
                     Section(identitySectionTitle) {
                         let idHex = entry.identityId.map { String(format: "%02x", $0) }.joined()
                         Text(idHex)
@@ -419,12 +472,50 @@ struct ShieldedActivityDetailView: View {
                             .font(.footnote)
                             .foregroundColor(.secondary)
                     }
-                } else if !entry.counterparty.isEmpty {
+                } else if entry.kindTag == 11, entry.counterparty.count == 32 {
+                    // TokenShieldedTransfer: the counterparty is the token's
+                    // id and the amount is the tokens sent, in the token's
+                    // smallest unit; the fee came from the credit pool.
+                    Section("Token") {
+                        let tokenIdHex = entry.counterparty.map { String(format: "%02x", $0) }.joined()
+                        Text(tokenIdHex)
+                            .font(.caption.monospaced())
+                            .textSelection(.enabled)
+                        LabeledContent("Transfer amount", value: "\(entry.amount) (smallest units)")
+                        Text(tokenTransferNote)
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
+                    }
+                } else if !entry.counterparty.isEmpty, entry.kindTag != 12 {
+                    // TokenUnshield (12) shows its token id in its own Token
+                    // section below, with or without a credited identity.
                     Section("Counterparty") {
                         let cpHex = entry.counterparty.map { String(format: "%02x", $0) }.joined()
                         Text(cpHex)
                             .font(.caption.monospaced())
                             .textSelection(.enabled)
+                    }
+                }
+
+                // TokenUnshield: the identity section above shows the
+                // credited identity when the row has one (a restored row may
+                // not: then the recipient is shown as unknown); the
+                // counterparty is the token's id and the amount is the tokens
+                // moved, in the token's smallest unit; the fee came from the
+                // credit pool.
+                if entry.kindTag == 12, entry.counterparty.count == 32 {
+                    Section("Token") {
+                        let tokenIdHex = entry.counterparty.map { String(format: "%02x", $0) }.joined()
+                        Text(tokenIdHex)
+                            .font(.caption.monospaced())
+                            .textSelection(.enabled)
+                        LabeledContent("Tokens unshielded", value: "\(entry.amount) (smallest units)")
+                        if entry.identityId.count != 32 {
+                            LabeledContent("Recipient", value: "Unknown")
+                        }
+                        Text(tokenUnshieldNote)
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
                     }
                 }
 

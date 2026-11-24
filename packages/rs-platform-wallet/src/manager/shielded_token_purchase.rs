@@ -17,11 +17,15 @@ use crate::error::PlatformWalletError;
 use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::manager::PlatformWalletManager;
 use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
+use crate::wallet::shielded::operations::token_pool_spend_preview_for;
 use crate::wallet::shielded::{
     NetworkShieldedCoordinator, ShieldedTokenPoolWatch, ShieldedTokenPurchaseOutcome,
+    ShieldedTokenSpendOutcome, ShieldedTokenSpendPreview, SubwalletId, TokenPoolSpendKind,
 };
+use dpp::address_funds::OrchardAddress;
 
-/// What a shielded token purchase from one wallet needs from the manager: the
+/// What a shielded token purchase or token pool spend from one wallet needs
+/// from the manager: the
 /// wallet, the shielded coordinator whose store holds its notes, and the
 /// shielded sync that looks for the purchase. Taken from the manager in one
 /// call ([`PlatformWalletManager::shielded_token_purchaser`]) and owned, so a
@@ -96,6 +100,114 @@ impl ShieldedTokenPurchaser {
     }
 }
 
+impl ShieldedTokenPurchaser {
+    /// Send `amount` of the token at `token_contract_position` of
+    /// `data_contract_id` from `account`'s notes in the token's shielded pool
+    /// to `recipient` in that pool, paying the fee from the account's credit
+    /// pool notes ([`PlatformWallet::shielded_token_transfer`]), then request a
+    /// shielded sync when the transfer may be on the network, as
+    /// [`Self::purchase`] does.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn transfer<P: OrchardProver>(
+        &self,
+        seed: &[u8],
+        account: u32,
+        data_contract_id: &Identifier,
+        token_contract_position: TokenContractPosition,
+        recipient: &OrchardAddress,
+        amount: TokenAmount,
+        prover: P,
+    ) -> Result<ShieldedTokenSpendOutcome, PlatformWalletError> {
+        let result = self
+            .wallet
+            .shielded_token_transfer(
+                &self.coordinator,
+                seed,
+                account,
+                data_contract_id,
+                token_contract_position,
+                recipient,
+                amount,
+                prover,
+            )
+            .await;
+        if spend_needs_shielded_sync(&result) {
+            request_shielded_sync(&self.sync);
+        }
+        result
+    }
+}
+
+impl ShieldedTokenPurchaser {
+    /// Move `amount` of the token at `token_contract_position` of
+    /// `data_contract_id` from `account`'s notes in the token's shielded pool
+    /// into `recipient_id`'s token balance, paying the fee from the account's
+    /// credit pool notes ([`PlatformWallet::shielded_token_unshield`]), then
+    /// request a shielded sync when the unshield may be on the network, as
+    /// [`Self::purchase`] does.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn unshield<P: OrchardProver>(
+        &self,
+        seed: &[u8],
+        account: u32,
+        data_contract_id: &Identifier,
+        token_contract_position: TokenContractPosition,
+        recipient_id: &Identifier,
+        amount: TokenAmount,
+        prover: P,
+    ) -> Result<ShieldedTokenSpendOutcome, PlatformWalletError> {
+        let result = self
+            .wallet
+            .shielded_token_unshield(
+                &self.coordinator,
+                seed,
+                account,
+                data_contract_id,
+                token_contract_position,
+                recipient_id,
+                amount,
+                prover,
+            )
+            .await;
+        if spend_needs_shielded_sync(&result) {
+            request_shielded_sync(&self.sync);
+        }
+        result
+    }
+}
+
+impl ShieldedTokenPurchaser {
+    /// What a token pool spend of `kind` moving `amount` of the token at
+    /// `token_contract_position` of `data_contract_id` would take from
+    /// `account`'s notes, from local state alone and reserving nothing
+    /// ([`token_pool_spend_preview_for`]): the fee a form shows before
+    /// sending, or the refusal the spend would meet on these notes. It prices
+    /// at the version the spend would sign at, and refuses an SDK whose
+    /// version is not the network's as the spend does
+    /// ([`PlatformWalletError::ShieldedProtocolVersionMismatch`]).
+    pub async fn preview_spend(
+        &self,
+        account: u32,
+        data_contract_id: &Identifier,
+        token_contract_position: TokenContractPosition,
+        kind: TokenPoolSpendKind,
+        amount: TokenAmount,
+    ) -> Result<ShieldedTokenSpendPreview, PlatformWalletError> {
+        token_pool_spend_preview_for(
+            self.wallet.sdk(),
+            self.coordinator.store(),
+            SubwalletId::new(self.wallet.wallet_id(), account),
+            Identifier::from(calculate_token_id(
+                &data_contract_id.to_buffer(),
+                token_contract_position,
+            )),
+            kind,
+            amount,
+        )
+        .await
+    }
+}
+
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// What a shielded token purchase from `wallet_id` needs
     /// ([`ShieldedTokenPurchaser`]). Refuses a wallet the manager does not
@@ -160,6 +272,20 @@ fn purchase_needs_shielded_sync(
     matches!(
         result,
         Ok(ShieldedTokenPurchaseOutcome::Submitted)
+            | Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
+            | Err(PlatformWalletError::ShieldedBroadcastUnconfirmed { .. })
+    )
+}
+
+/// Whether a token pool spend that ended as `result` may be on the network
+/// without being confirmed, as [`purchase_needs_shielded_sync`] tells for a
+/// purchase.
+fn spend_needs_shielded_sync(
+    result: &Result<ShieldedTokenSpendOutcome, PlatformWalletError>,
+) -> bool {
+    matches!(
+        result,
+        Ok(ShieldedTokenSpendOutcome::Submitted)
             | Err(PlatformWalletError::ShieldedSpendUnconfirmed { .. })
             | Err(PlatformWalletError::ShieldedBroadcastUnconfirmed { .. })
     )

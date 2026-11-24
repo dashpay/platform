@@ -1019,15 +1019,15 @@ async fn should_not_restore_a_snapshot_for_a_bind_admitted_behind_a_clear() {
     );
     persister.serve_subwallets(snapshot);
 
-    // Admission is held, so the Clear queues for it and the bind queues
-    // behind the Clear (the lock is fair: a waiting writer goes before a
-    // later reader). Releasing it admits the Clear first, and the bind
-    // then reads the rows the host has not wiped yet.
-    let admission = coordinator.operation_guard().await;
+    // An install transaction is open, so the Clear is admitted and parks
+    // on it, and the bind queues behind the Clear for admission. Ending the
+    // transaction lets the Clear run first, and the bind then reads the
+    // rows the host has not wiped yet.
+    let install = coordinator.begin_install(wallet.wallet_id()).await;
     let (cleared, bound, ()) = tokio::join!(
         coordinator.clear(),
         wallet.bind_shielded(&[0x42u8; 64], &[0], &coordinator),
-        async move { drop(admission) },
+        async move { drop(install) },
     );
     cleared.expect("clear succeeds");
     bound.expect("bind succeeds");
@@ -1050,42 +1050,71 @@ async fn should_not_restore_a_snapshot_for_a_bind_admitted_behind_a_clear() {
     );
 }
 
-/// Park `bind` inside its host load, and require a Clear started meanwhile
-/// to wait until the bind has returned.
-async fn assert_clear_waits_for_bind<F>(
+/// Park `operation` inside its host load, and require a Clear requested
+/// meanwhile to be refused at once with nothing changed, and one requested
+/// after the operation returned to go through.
+async fn assert_clear_refused_while_in_flight<F>(
     persister: &CapturingPersistence,
     coordinator: &NetworkShieldedCoordinator,
-    bind: F,
+    operation: F,
 ) -> F::Output
 where
     F: std::future::Future + Send + 'static,
     F::Output: Send + 'static,
 {
+    let generation = coordinator.clear_generation();
+    let registered = coordinator.registered_subwallets().await;
     let release = persister.gate_next_load();
-    let bind = tokio::spawn(bind);
+    let operation = tokio::spawn(operation);
     persister.gated_load_entered().await;
 
-    let mut clear = std::pin::pin!(coordinator.clear());
+    // Polled once while the operation is still parked: a refusal is decided
+    // without waiting, so a Clear that parks here waits for the operation.
+    let refused = match futures::poll!(std::pin::pin!(coordinator.clear())) {
+        std::task::Poll::Ready(refused) => refused,
+        std::task::Poll::Pending => {
+            release.send(()).expect("release the parked load");
+            panic!("the Clear waited for the operation in flight");
+        }
+    };
     assert!(
-        futures::poll!(clear.as_mut()).is_pending(),
-        "the Clear must wait for the bind in flight"
+        matches!(
+            refused,
+            Err(crate::PlatformWalletError::ShieldedOperationInProgress)
+        ),
+        "{refused:?}"
     );
+    assert_eq!(
+        coordinator.clear_generation(),
+        generation,
+        "a refused Clear invalidates no snapshot"
+    );
+    assert_eq!(
+        coordinator.registered_subwallets().await,
+        registered,
+        "a refused Clear drops no registration"
+    );
+
     release.send(()).expect("release the parked load");
-    let bound = bind.await.expect("bind task");
-    clear.await.expect("clear succeeds");
-    bound
+    let outcome = operation.await.expect("operation task");
+    coordinator
+        .clear()
+        .await
+        .expect("clear succeeds once the operation has returned");
+    outcome
 }
 
-/// A Clear waits for a bind in flight. The host wipes its own rows once the
-/// Clear returns, so a Clear that completed while a bind sat between its
-/// host load and its host store would have the bind write its viewing keys
-/// after that wipe: rows for shielded state the user cleared. Waiting puts
-/// the bind's write before the Clear, and so before the wipe.
+/// A Clear is refused while a bind is in flight. The host wipes its own
+/// rows once a Clear returns, so a Clear that completed while a bind sat
+/// between its host load and its host store would have the bind write its
+/// viewing keys after that wipe: rows for shielded state the user cleared.
+/// The refusal leaves the Clear to a retry after the bind's write, and so
+/// the wipe after it too, without the Clear waiting on the bind.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn should_hold_a_clear_until_a_bind_in_flight_returns() {
+async fn should_refuse_a_clear_while_a_bind_is_in_flight() {
     let persister = Arc::new(CapturingPersistence::default());
     let wallet = platform_wallet_with(Arc::clone(&persister)).await;
-    let coordinator = coordinator_at(&temp_dir("clear_waits_for_bind"));
+    let coordinator = coordinator_at(&temp_dir("clear_refused_during_bind"));
 
     let bind = {
         let wallet = wallet.clone();
@@ -1096,7 +1125,7 @@ async fn should_hold_a_clear_until_a_bind_in_flight_returns() {
                 .await
         }
     };
-    assert_clear_waits_for_bind(&persister, &coordinator, bind)
+    assert_clear_refused_while_in_flight(&persister, &coordinator, bind)
         .await
         .expect("bind succeeds");
     assert!(
@@ -1109,14 +1138,14 @@ async fn should_hold_a_clear_until_a_bind_in_flight_returns() {
     );
 }
 
-/// The seedless bind is held the same way: it restores the notes and
-/// watermark of the snapshot it loaded, so a Clear completing while it sat
-/// in that load must wait as well.
+/// The seedless bind refuses a Clear the same way: it restores the notes
+/// and watermark of the snapshot it loaded, so a Clear must not complete
+/// while it sits in that load.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn should_hold_a_clear_until_a_persisted_bind_in_flight_returns() {
+async fn should_refuse_a_clear_while_a_persisted_bind_is_in_flight() {
     let persister = Arc::new(CapturingPersistence::default());
     let wallet = platform_wallet_with(Arc::clone(&persister)).await;
-    let coordinator = coordinator_at(&temp_dir("clear_waits_for_persisted_bind"));
+    let coordinator = coordinator_at(&temp_dir("clear_refused_during_persisted_bind"));
     wallet
         .bind_shielded(&[0x42u8; 64], &[0], &coordinator)
         .await
@@ -1132,7 +1161,7 @@ async fn should_hold_a_clear_until_a_persisted_bind_in_flight_returns() {
                 .await
         }
     };
-    let found = assert_clear_waits_for_bind(&persister, &coordinator, bind)
+    let found = assert_clear_refused_while_in_flight(&persister, &coordinator, bind)
         .await
         .expect("persisted bind succeeds");
     assert!(found, "the bind found its persisted key");
@@ -1143,13 +1172,13 @@ async fn should_hold_a_clear_until_a_persisted_bind_in_flight_returns() {
 }
 
 /// `shielded_add_account` writes a viewing key to the host too, so a Clear
-/// waits for one in flight as it does for a bind. It is given no
+/// is refused while one is in flight as it is for a bind. It is given no
 /// coordinator: it takes the admission of the one the keys were installed on.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn should_hold_a_clear_until_an_account_add_in_flight_returns() {
+async fn should_refuse_a_clear_while_an_account_add_is_in_flight() {
     let persister = Arc::new(CapturingPersistence::default());
     let wallet = platform_wallet_with(Arc::clone(&persister)).await;
-    let coordinator = coordinator_at(&temp_dir("clear_waits_for_account_add"));
+    let coordinator = coordinator_at(&temp_dir("clear_refused_during_account_add"));
     let seed = [0x42u8; 64];
     wallet
         .bind_shielded(&seed, &[0], &coordinator)
@@ -1160,7 +1189,7 @@ async fn should_hold_a_clear_until_an_account_add_in_flight_returns() {
         let wallet = wallet.clone();
         async move { wallet.shielded_add_account(&seed, 1).await }
     };
-    assert_clear_waits_for_bind(&persister, &coordinator, add)
+    assert_clear_refused_while_in_flight(&persister, &coordinator, add)
         .await
         .expect("the account is added");
     assert!(
@@ -1211,6 +1240,72 @@ async fn should_refuse_an_account_add_after_a_clear_until_the_wallet_is_bound_ag
     assert_eq!(wallet.shielded_account_indices().await, vec![0, 1]);
 }
 
+/// A Clear drops the wallet's registration while the handle keeps its keys,
+/// so a token pool spend from the same seed and account would still derive
+/// its keys. The public entry points refuse it as not bound, before any
+/// network read, note selection or proving.
+#[tokio::test]
+async fn should_refuse_token_pool_spends_after_a_clear_until_the_wallet_is_bound_again() {
+    use dpp::prelude::Identifier;
+    use dpp::shielded::builder::OrchardProver;
+    use grovedb_commitment_tree::ProvingKey;
+
+    struct PanicProver;
+    impl OrchardProver for PanicProver {
+        fn proving_key(&self) -> &ProvingKey {
+            panic!("a spend refused at admission must not prove");
+        }
+    }
+
+    let wallet = platform_wallet_with(Arc::new(CapturingPersistence::default())).await;
+    let coordinator = coordinator_at(&temp_dir("token_spend_after_clear"));
+    let seed = [0x42u8; 64];
+    wallet
+        .bind_shielded(&seed, &[0], &coordinator)
+        .await
+        .expect("seed bind succeeds");
+    coordinator.clear().await.expect("clear succeeds");
+
+    let contract = Identifier::from([0x66; 32]);
+    let recipient = dpp::address_funds::OrchardAddress::from(
+        OrchardKeySet::from_seed(&[0x43; 64], wallet.network(), 0)
+            .expect("recipient keys")
+            .default_address,
+    );
+    let transfer = wallet
+        .shielded_token_transfer(
+            &coordinator,
+            &seed,
+            0,
+            &contract,
+            0,
+            &recipient,
+            5,
+            PanicProver,
+        )
+        .await;
+    assert!(
+        matches!(transfer, Err(crate::PlatformWalletError::ShieldedNotBound)),
+        "{transfer:?}"
+    );
+    let unshield = wallet
+        .shielded_token_unshield(
+            &coordinator,
+            &seed,
+            0,
+            &contract,
+            0,
+            &Identifier::from([0x11; 32]),
+            5,
+            PanicProver,
+        )
+        .await;
+    assert!(
+        matches!(unshield, Err(crate::PlatformWalletError::ShieldedNotBound)),
+        "{unshield:?}"
+    );
+}
+
 /// An account add that waited for a Clear is refused the same way: by the
 /// time it is admitted the Clear has dropped the registration.
 #[tokio::test]
@@ -1225,13 +1320,14 @@ async fn should_refuse_an_account_add_admitted_behind_a_clear() {
         .expect("seed bind succeeds");
     let stored = persister.stored_count();
 
-    // Admission is held, so the Clear queues for it and the add queues
-    // behind the Clear. Releasing it admits the Clear first.
-    let admission = coordinator.operation_guard().await;
+    // An install transaction is open, so the Clear is admitted and parks
+    // on it, and the add queues behind the Clear for admission. Ending the
+    // transaction lets the Clear run first.
+    let install = coordinator.begin_install(wallet.wallet_id()).await;
     let (cleared, added, ()) = tokio::join!(
         coordinator.clear(),
         wallet.shielded_add_account(&seed, 1),
-        async move { drop(admission) },
+        async move { drop(install) },
     );
     cleared.expect("clear succeeds");
     assert!(
@@ -2473,14 +2569,14 @@ async fn should_refuse_tip_preparation_when_the_derived_key_is_not_the_master_ke
 #[tokio::test]
 async fn should_refuse_a_tip_preparation_admitted_behind_a_clear() {
     let (wallet, seed, id, coordinator) = tip_race_fixture("tips_behind_clear").await;
-    // Admission is held, so the Clear queues for it and the preparation
-    // queues behind the Clear (the lock is fair: a waiting writer goes
-    // before a later reader). Releasing it admits the Clear first.
-    let admission = coordinator.operation_guard().await;
+    // An install transaction is open, so the Clear is admitted and parks
+    // on it, and the preparation queues behind the Clear for admission.
+    // Ending the transaction lets the Clear run first.
+    let install = coordinator.begin_install(wallet.wallet_id()).await;
     let (cleared, prepared, ()) = tokio::join!(
         coordinator.clear(),
         wallet.prepare_shielded_identity_address(&seed, &id, &coordinator),
-        async move { drop(admission) },
+        async move { drop(install) },
     );
 
     cleared.unwrap();
@@ -2569,7 +2665,7 @@ fn publication_refusal(result: Result<(), crate::PlatformWalletError>) -> String
 }
 
 #[tokio::test]
-async fn should_publish_only_the_prepared_account_among_this_wallets_shielded_addresses() {
+async fn should_publish_only_the_prepared_default_address_among_this_wallets_shielded_addresses() {
     let (wallet, seed, id, coordinator) = tip_race_fixture("profile_publication").await;
     wallet
         .bind_shielded(&seed, &[0, 1], &coordinator)
@@ -2630,12 +2726,20 @@ async fn should_publish_only_the_prepared_account_among_this_wallets_shielded_ad
         .await
         .unwrap();
 
-    // The prepared account at any external diversifier, and any address of
-    // another wallet, whose owner alone can tell what it is.
+    // Another external address of the identity's own account: those are the
+    // addresses it gives to contacts.
+    let message = publication_refusal(
+        wallet
+            .check_shielded_address_publication(&id, &own.address_at(17).to_raw_address_bytes())
+            .await,
+    );
+    assert!(message.contains("reserved for contacts"), "{message}");
+
+    // The prepared default address, and any address of another wallet,
+    // whose owner alone can tell what it is.
     let external = OrchardKeySet::from_seed(&[9; 64], Network::Testnet, 0).unwrap();
     for address in [
         prepared,
-        own.address_at(17).to_raw_address_bytes(),
         external.default_address.to_raw_address_bytes(),
         external.address_at(17).to_raw_address_bytes(),
         external
@@ -2688,11 +2792,12 @@ async fn should_refuse_a_prepared_address_once_its_preparation_no_longer_stands(
 
 /// A Clear ends an identity's preparation. One that ran between a profile
 /// write's publication check and its submission would let the write publish
-/// an address whose preparation no longer stands, so the Clear waits for the
-/// write: the write is paused right after its check and the Clear must not
-/// finish until it is released.
+/// an address whose preparation no longer stands, so the Clear is refused
+/// while the write is in flight: the write is paused right after its check,
+/// a Clear requested then is refused with the preparation standing, and one
+/// requested after the write returned goes through.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn should_hold_a_clear_until_a_profile_write_publishing_a_prepared_address_returns() {
+async fn should_refuse_a_clear_while_a_profile_write_publishes_a_prepared_address() {
     let (wallet, seed, id, coordinator) = tip_race_fixture("profile_write_clear").await;
     let address = wallet
         .prepare_shielded_identity_address(&seed, &id, &coordinator)
@@ -2720,10 +2825,26 @@ async fn should_hold_a_clear_until_a_profile_write_publishing_a_prepared_address
         .await
         .expect("the write passed its publication check");
 
-    let mut clear = std::pin::pin!(coordinator.clear());
+    let refused = match futures::poll!(std::pin::pin!(coordinator.clear())) {
+        std::task::Poll::Ready(refused) => refused,
+        std::task::Poll::Pending => {
+            resume.send(()).expect("release the parked write");
+            panic!("the Clear waited for the profile write in flight");
+        }
+    };
     assert!(
-        futures::poll!(clear.as_mut()).is_pending(),
-        "the Clear must wait for the profile write in flight"
+        matches!(
+            refused,
+            Err(crate::PlatformWalletError::ShieldedOperationInProgress)
+        ),
+        "{refused:?}"
+    );
+    assert!(
+        wallet
+            .prepared_shielded_identity_account(&id)
+            .await
+            .is_some(),
+        "a refused Clear leaves the preparation standing"
     );
     resume.send(()).expect("release the parked write");
     // The mock SDK holds no DashPay contract, so the write itself fails
@@ -2735,19 +2856,22 @@ async fn should_hold_a_clear_until_a_profile_write_publishing_a_prepared_address
             Err(crate::PlatformWalletError::InvalidIdentityData(ref message))
                 if message.contains("was not prepared")
         ),
-        "the publication check passed before the Clear: {written:?}"
+        "the publication check passed with no Clear before it: {written:?}"
     );
-    clear.await.expect("clear succeeds");
+    coordinator
+        .clear()
+        .await
+        .expect("clear succeeds once the write has returned");
     assert_eq!(wallet.prepared_shielded_identity_account(&id).await, None);
 }
 
 /// A profile write chooses the coordinator admission to hold from the
 /// preparation recorded as it starts. A first preparation that lands after
 /// that choice is on a coordinator the write does not hold, so a Clear of
-/// it would not wait for the write. The write is paused right after its
-/// choice while the identity is prepared, and must then refuse to publish
+/// it would not be refused by the write. The write is paused right after
+/// its choice while the identity is prepared, and must then refuse to publish
 /// the prepared address; written again, it holds the admission and a Clear
-/// waits for it.
+/// is refused while it runs.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn should_refuse_a_profile_write_that_raced_the_first_preparation_of_its_address() {
     let (wallet, seed, id, coordinator) = tip_race_fixture("profile_write_first_prep").await;
@@ -2798,20 +2922,32 @@ async fn should_refuse_a_profile_write_that_raced_the_first_preparation_of_its_a
     );
 
     // Written again, the write holds the coordinator the address was
-    // prepared on, and a Clear waits for it.
+    // prepared on, and a Clear is refused while it runs.
     let (reached, resume) = super::tips::test_hooks::pause_after_publication_check(&wallet);
     let writing = tokio::spawn(write(wallet.clone()));
     reached
         .await
         .expect("the write passed its publication check");
-    let mut clear = std::pin::pin!(coordinator.clear());
+    let refused = match futures::poll!(std::pin::pin!(coordinator.clear())) {
+        std::task::Poll::Ready(refused) => refused,
+        std::task::Poll::Pending => {
+            resume.send(()).expect("release the parked write");
+            panic!("the Clear waited for the profile write in flight");
+        }
+    };
     assert!(
-        futures::poll!(clear.as_mut()).is_pending(),
-        "the Clear must wait for the profile write in flight"
+        matches!(
+            refused,
+            Err(crate::PlatformWalletError::ShieldedOperationInProgress)
+        ),
+        "{refused:?}"
     );
     resume.send(()).expect("release the parked write");
     writing.await.expect("write task").unwrap_err();
-    clear.await.expect("clear succeeds");
+    coordinator
+        .clear()
+        .await
+        .expect("clear succeeds once the write has returned");
 }
 
 #[tokio::test]
@@ -3088,4 +3224,64 @@ async fn should_report_a_failed_load_in_an_account_add_as_a_persister_load_failu
         "{failed:?}"
     );
     assert_eq!(wallet.shielded_account_indices().await, vec![0]);
+}
+
+/// A host passes the ordinary accounts back to a bind, which refuses an
+/// identity account, so the read leaves out the identity account the wallet
+/// also holds and reports the rest in ascending order.
+#[tokio::test]
+async fn should_report_only_the_ordinary_accounts_of_a_bound_wallet() {
+    use crate::shielded_identity_account_index;
+    let (wallet, seed, id, coordinator) = tip_race_fixture("ordinary_accounts_bound").await;
+    wallet
+        .prepare_shielded_identity_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+    wallet
+        .bind_shielded(&seed, &[2, 1], &coordinator)
+        .await
+        .unwrap();
+    let tip = shielded_identity_account_index(2).unwrap();
+    assert!(
+        wallet.shielded_account_indices().await.contains(&tip),
+        "the identity account is held, so leaving it out is what is tested"
+    );
+
+    assert_eq!(wallet.shielded_ordinary_account_indices().await, vec![1, 2]);
+}
+
+/// A Clear drops the registration, not the keys the handle holds, so the
+/// ordinary accounts read after it are the ones bound before, and binding
+/// exactly them registers every subwallet again rather than the defaults.
+#[tokio::test]
+async fn should_keep_the_ordinary_accounts_after_a_clear_and_register_them_again() {
+    let wallet = platform_wallet_with(Arc::new(CapturingPersistence::default())).await;
+    let coordinator = coordinator_at(&temp_dir("ordinary_accounts_after_clear"));
+    wallet
+        .bind_shielded(&BIND_SEED, &[1, 2], &coordinator)
+        .await
+        .expect("seed bind succeeds");
+
+    coordinator.clear().await.expect("clear succeeds");
+    assert!(coordinator.registered_subwallets().await.is_empty());
+    let accounts = wallet.shielded_ordinary_account_indices().await;
+    assert_eq!(accounts, vec![1, 2]);
+
+    wallet
+        .bind_shielded(&BIND_SEED, &accounts, &coordinator)
+        .await
+        .expect("bound again");
+    let registered = coordinator.registered_subwallets().await;
+    for account in [1, 2] {
+        assert!(
+            registered.contains(&SubwalletId::new(wallet.wallet_id(), account)),
+            "account {account} registered again"
+        );
+    }
+}
+
+#[tokio::test]
+async fn should_report_no_ordinary_accounts_for_a_wallet_never_bound() {
+    let wallet = platform_wallet_with(Arc::new(CapturingPersistence::default())).await;
+    assert!(wallet.shielded_ordinary_account_indices().await.is_empty());
 }

@@ -2370,7 +2370,7 @@ struct ShieldedActivityStorageListView: View {
                             }
                             Spacer()
                         }
-                        Text("\(record.amount) credits")
+                        Text(ShieldedActivityKindDisplay.rawAmountText(record.amount, tag: record.kindTag))
                             .font(.caption)
                         Text(record.entryId.prefix(8).map { String(format: "%02x", $0) }.joined())
                             .font(.system(.caption2, design: .monospaced))

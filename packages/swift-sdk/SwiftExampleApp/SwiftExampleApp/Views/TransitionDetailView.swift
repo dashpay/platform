@@ -987,8 +987,9 @@ struct TransitionDetailView: View {
       throw SDKError.invalidParameter("Invalid amount")
     }
 
-    // Normalize the recipient identity ID to base58
-    let normalizedToIdentityId = normalizeIdentityId(toIdentityId)
+    // The recipient, decoded once to its 32 bytes and checked: a known
+    // voter identity is refused, and exactly the checked id is sent.
+    let normalizedToIdentityId = try await checkedRecipient(toIdentityId, network: fromIdentity.network)
 
     // Use the convenience method with DPPIdentity
     let dppIdentity = DPPIdentity(
@@ -1938,6 +1939,9 @@ struct TransitionDetailView: View {
     guard let recipientId = formInputs["recipientId"], !recipientId.isEmpty else {
       throw SDKError.invalidParameter("Recipient identity ID is required")
     }
+    // Tokens sent to a known voter identity could not be spent either; the
+    // checked id is the one sent.
+    let checkedRecipientId = try await checkedRecipient(recipientId, network: identity.network)
 
     guard let amountString = formInputs["amount"], !amountString.isEmpty else {
       throw SDKError.invalidParameter("Amount is required")
@@ -1962,7 +1966,7 @@ struct TransitionDetailView: View {
 
     let result = try await sdk.tokenTransfer(
       contractId: contractId,
-      recipientId: recipientId,
+      recipientId: checkedRecipientId,
       amount: amount,
       ownerIdentity: dppIdentity,
       keyId: transferKey.id,
@@ -2515,21 +2519,30 @@ struct TransitionDetailView: View {
     formInputs["documentFields"] = schemaTemplate
   }
 
-  private func normalizeIdentityId(_ identityId: String) -> String {
-    // Remove any prefix
-    let cleanId = identityId
-      .replacingOccurrences(of: "id:", with: "")
-      .replacingOccurrences(of: "0x", with: "")
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-
-    // If it's hex (64 chars = 32 bytes), convert to base58
-    if AddressValidator.isHexIdentityId(cleanId), let data = Data(hexString: cleanId) {
-      return data.toBase58String()
+  /// The recipient typed or picked as `text` (an optional leading `id:` or
+  /// `0x`, then 64 hex characters or Base58), decoded once to exactly 32
+  /// bytes (`AddressTransformer.identityId(fromInput:)`) and returned in
+  /// canonical Base58, so
+  /// the id that is sent is the id that was checked. Throws for text that
+  /// does not decode to an identity id, and for an identity this device
+  /// stores on `network` as a masternode's voter identity, which holds only
+  /// a voting key: what is sent to it could not be spent. An unknown id
+  /// passes.
+  private func checkedRecipient(_ text: String, network: Network) async throws -> String {
+    guard let identityId = AddressTransformer.identityId(fromInput: text) else {
+      throw SDKError.invalidParameter(
+        "The recipient identity ID must be 64 hex characters or a Base58 identity ID."
+      )
     }
-
-    // Otherwise assume it's already base58
-    return cleanId
+    let isVotingOnly = try await MainActor.run {
+      try PersistentIdentity.isKnownVotingOnlyIdentity(identityId, on: network, in: modelContext)
+    }
+    if isVotingOnly {
+      throw SDKError.invalidParameter(PersistentIdentity.votingOnlyRecipientMessage)
+    }
+    return identityId.toBase58String()
   }
+
 }
 
 // IdentityModel's `displayName` extension is gone — the same

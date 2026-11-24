@@ -187,6 +187,11 @@ pub struct FileBackedShieldedStore {
     /// restoring a covered wallet's reservations fails
     /// ([`ShieldedStore::private_contact_redrives_for_wallet`]).
     unloaded_private_contact_payments: BTreeSet<Option<WalletId>>,
+    /// The wallets of damaged note-spend recovery rows retained but not
+    /// loaded, `None` for one whose wallet does not read either: their spends
+    /// may still land, but their nullifiers and activity ids are not known
+    /// here ([`Self::has_unloaded_note_spends`]).
+    unloaded_note_spends: BTreeSet<Option<WalletId>>,
     /// The private payment journal's records, by wallet and commitment, as
     /// the `shielded_private_payment_journal` table keeps them.
     private_payment_journal: BTreeMap<(WalletId, [u8; 32]), PrivatePaymentRecord>,
@@ -280,6 +285,19 @@ impl FileBackedShieldedStore {
                 ],
             )
             .map_err(|e| FileShieldedStoreError::Storage(format!("persist redrive: {e}")))?;
+            // The token notes a token pool spend holds under this record now
+            // belong to a saved spend, which may be sent: the token note sweep
+            // tells it from one never saved by this, written with the record.
+            tx.execute(
+                "UPDATE shielded_token_pool_notes SET record_saved = 1 \
+                 WHERE wallet_id = ?1 AND account_index = ?2 AND reserved_by = ?3",
+                rusqlite::params![
+                    id.wallet_id.as_slice(),
+                    id.account_index,
+                    redrive.activity_id.as_slice()
+                ],
+            )
+            .map_err(|e| FileShieldedStoreError::Storage(format!("mark token hold saved: {e}")))?;
             Self::insert_journal_rows(&tx, id.wallet_id, &journal_rows)?;
             tx.commit()
                 .map_err(|e| FileShieldedStoreError::Storage(format!("commit redrive: {e}")))?;
@@ -417,6 +435,15 @@ impl FileBackedShieldedStore {
         Ok(())
     }
 
+    /// Whether a damaged note-spend recovery row of `wallet_id`, or of a wallet
+    /// that does not read, was retained without being loaded: a spend it
+    /// records may still land, but nothing here holds its activity id, so
+    /// what it holds must not be judged orphaned.
+    pub(crate) fn has_unloaded_note_spends(&self, wallet_id: WalletId) -> bool {
+        self.unloaded_note_spends.contains(&Some(wallet_id))
+            || self.unloaded_note_spends.contains(&None)
+    }
+
     /// The signal this store raises on every change to what
     /// [`Self::local_account_balance`] returns (see [`SignalledSubwallets`]).
     /// The coordinator takes it before it wraps the store in its lock, so
@@ -458,6 +485,23 @@ impl FileBackedShieldedStore {
             && (has_notes || has_sync_state || index > 0)
         {
             state.balance_source = ShieldedBalanceSource::Restored;
+        }
+    }
+
+    /// Forget every subwallet's scan evidence: its completed-scan coverage
+    /// and the balance source that rests on it. Notes, sync watermarks and
+    /// pending spends are kept.
+    ///
+    /// For a Clear that failed. Such a Clear may already have reset the
+    /// commitment tree, and evidence gathered against the tree as it was
+    /// says nothing about the tree as it is. A subwallet left at
+    /// `ScannedThisSession` would keep its amount reported as known with no
+    /// hydration behind it. A completed scan or a restore from the host
+    /// establishes the ledger again.
+    pub(super) fn forget_scan_evidence(&mut self) {
+        for state in self.subwallets.values_mut() {
+            state.last_scanned_index = None;
+            state.balance_source = ShieldedBalanceSource::NoHistory;
         }
     }
 
@@ -595,6 +639,7 @@ impl FileBackedShieldedStore {
             pending_conn: Mutex::new(pending_conn),
             private_contact_payments: BTreeMap::new(),
             unloaded_private_contact_payments: BTreeSet::new(),
+            unloaded_note_spends: BTreeSet::new(),
             private_payment_journal: BTreeMap::new(),
             private_payment_journals: BTreeSet::new(),
             unreadable_private_payment_journal: BTreeSet::new(),
@@ -745,6 +790,7 @@ impl FileBackedShieldedStore {
                             error = %error,
                             "retaining but skipping a damaged shielded note-spend recovery row"
                         );
+                        self.unloaded_note_spends.insert(readable_wallet_id);
                         if private_contact_payment.is_some() || kind == PRIVATE_DOCUMENT_CREATE_KIND
                         {
                             self.unloaded_private_contact_payments
@@ -824,6 +870,7 @@ impl FileBackedShieldedStore {
                             reason = %error,
                             "retaining but skipping a damaged shielded note-spend recovery row"
                         );
+                        self.unloaded_note_spends.insert(readable_wallet_id);
                         if private_contact_payment.is_some() || kind == PRIVATE_DOCUMENT_CREATE_KIND
                         {
                             self.unloaded_private_contact_payments
@@ -877,6 +924,10 @@ impl FileBackedShieldedStore {
             StateTransition::TokenPurchaseFromShieldedPool(_) => {
                 Some("token purchase from shielded pool")
             }
+            StateTransition::TokenShieldedTransferWithShieldedFee(_) => {
+                Some("token shielded transfer")
+            }
+            StateTransition::TokenUnshieldWithShieldedFee(_) => Some("token unshield"),
             _ => None,
         }
     }
@@ -1039,6 +1090,16 @@ impl ShieldedStore for FileBackedShieldedStore {
             .get(&id)
             .map(SubwalletState::all_notes)
             .unwrap_or_default())
+    }
+
+    fn note_spend_scan_height(&mut self, height: u64) -> Result<(), Self::Error> {
+        let conn = self
+            .pending_conn
+            .lock()
+            .map_err(|e| FileShieldedStoreError::Storage(format!("pending_conn mutex: {e}")))?;
+        super::token_pool::raise_sweep_height(&conn, height)
+            .map(|_| ())
+            .map_err(|e| FileShieldedStoreError::Storage(e.to_string()))
     }
 
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
@@ -1709,6 +1770,8 @@ impl ShieldedStore for FileBackedShieldedStore {
             .retain(|(id, _), _| id.wallet_id != wallet_id);
         self.unloaded_private_contact_payments
             .remove(&Some(wallet_id));
+        // The wallet's recovery rows, damaged ones included, are deleted above.
+        self.unloaded_note_spends.remove(&Some(wallet_id));
         Ok(())
     }
 
@@ -1771,6 +1834,8 @@ impl ShieldedStore for FileBackedShieldedStore {
         self.subwallets.clear();
         self.private_contact_payments.clear();
         self.unloaded_private_contact_payments.clear();
+        // Every recovery row, damaged ones included, is deleted above.
+        self.unloaded_note_spends.clear();
         Ok(())
     }
 

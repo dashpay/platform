@@ -124,6 +124,24 @@ pub enum ShieldedActivityKind {
     /// Recorded only by the live path: the scan sees the credit pool
     /// change alone and derives [`Self::ShieldedSpend`].
     TokenPurchase,
+    /// Type 26: tokens sent from the wallet's notes in a token's shielded
+    /// pool to an Orchard address there, the fee paid from the credit pool.
+    /// The amount is the tokens sent, in the token's smallest unit; the
+    /// entry's counterparty is the 32-byte token id. Recorded only by the
+    /// live path, keyed by the fee bundle's credit pool change, as
+    /// [`Self::TokenPurchase`] is.
+    TokenShieldedTransfer,
+    /// Type 27: tokens moved from the wallet's notes in a token's shielded
+    /// pool into an identity's token balance, the fee paid from the credit
+    /// pool. The amount is the tokens moved; the entry's counterparty is the
+    /// 32-byte token id. Recorded only by the live path, as
+    /// [`Self::TokenPurchase`] is.
+    TokenUnshield {
+        /// The credited identity's id (32 bytes); `None` for a row restored
+        /// without it, which is still a token unshield, settled from its
+        /// token notes, with its recipient unknown.
+        identity_id: Option<[u8; 32]>,
+    },
 }
 
 impl ShieldedActivityKind {
@@ -144,6 +162,8 @@ impl ShieldedActivityKind {
             ShieldedActivityKind::ShieldFromIdentity { .. } => 8,
             ShieldedActivityKind::IdentityTopUp { .. } => 9,
             ShieldedActivityKind::TokenPurchase => 10,
+            ShieldedActivityKind::TokenShieldedTransfer => 11,
+            ShieldedActivityKind::TokenUnshield { .. } => 12,
         }
     }
 }
@@ -1207,6 +1227,10 @@ mod tests {
                 identity_id: [0u8; 32],
             },
             ShieldedActivityKind::TokenPurchase,
+            ShieldedActivityKind::TokenShieldedTransfer,
+            ShieldedActivityKind::TokenUnshield {
+                identity_id: Some([0u8; 32]),
+            },
         ];
         let tags: Set<u8> = kinds.iter().map(|k| k.tag()).collect();
         assert_eq!(tags.len(), kinds.len(), "every kind tag must be distinct");
