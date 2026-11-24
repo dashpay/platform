@@ -88,6 +88,11 @@ pub trait PlatformEventHandler: EventHandler {
     /// take 20+ min in a single `sync_shielded_notes` call; without
     /// this event there's no signal between start and end).
     ///
+    /// Called from inside the pass, like
+    /// [`on_shielded_sync_completed`](Self::on_shielded_sync_completed):
+    /// hand the event on and return, and do not wait here for a shielded
+    /// operation, for the reason given there.
+    ///
     /// Default impl is a no-op.
     #[cfg(feature = "shielded")]
     fn on_shielded_sync_progress(&self, _cumulative_scanned: u64, _block_height: u64) {}
@@ -114,6 +119,11 @@ pub trait PlatformEventHandler: EventHandler {
     /// Pairs with `on_shielded_sync_progress` to drive a dual
     /// ProgressView ("downloaded" vs "checked") during long cold
     /// syncs.
+    ///
+    /// Called from inside the pass, like
+    /// [`on_shielded_sync_completed`](Self::on_shielded_sync_completed):
+    /// hand the event on and return, and do not wait here for a shielded
+    /// operation, for the reason given there.
     ///
     /// Default impl is a no-op.
     #[cfg(feature = "shielded")]

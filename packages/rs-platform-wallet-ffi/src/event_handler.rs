@@ -195,6 +195,10 @@ pub struct EventHandlerCallbacks {
     /// progress counter / ProgressView during long cold syncs.
     /// Slot is plumbed unconditionally for C-ABI stability; only
     /// fires when the `shielded` feature is enabled in the FFI.
+    ///
+    /// Runs inside the pass, like `on_shielded_sync_completed_fn`: hand
+    /// the numbers on and return, and do not wait in it for a shielded
+    /// call on this manager, for the reason given there.
     pub on_shielded_sync_progress_fn: Option<
         unsafe extern "C" fn(context: *mut c_void, cumulative_scanned: u64, block_height: u64),
     >,
@@ -210,6 +214,10 @@ pub struct EventHandlerCallbacks {
     /// is plumbed unconditionally for C-ABI stability; only fires when
     /// the `shielded` feature is enabled in the FFI. Appended at the
     /// end of the struct to preserve existing field offsets.
+    ///
+    /// Runs inside the pass, like `on_shielded_sync_completed_fn`: hand
+    /// the numbers on and return, and do not wait in it for a shielded
+    /// call on this manager, for the reason given there.
     pub on_shielded_tree_progress_fn: Option<
         unsafe extern "C" fn(context: *mut c_void, leaves_committed: u64, total_target: u64),
     >,
