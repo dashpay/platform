@@ -1712,9 +1712,9 @@ impl PlatformWallet {
     /// `coordinator` with no Clear of it since. Called by a caller holding
     /// `coordinator`'s operation admission, so no Clear changes the answer
     /// while the caller acts on it. A caller that also holds
-    /// `shielded_config_lock` (the token pool spends, a tip address
-    /// preparation) keeps a bind from changing it too; a spend admitted by
-    /// [`Self::admit_shielded_spend`] does not, and does not need to.
+    /// `shielded_config_lock` keeps a bind from changing it too; a payment
+    /// admitted by [`Self::admit_shielded_payment`] reads it without that
+    /// lock, for the reasons given there.
     #[cfg(feature = "shielded")]
     pub(crate) fn ensure_shielded_bound_on(
         &self,
@@ -1753,40 +1753,20 @@ impl PlatformWallet {
     ///   and a shield needs no note from the cleared store, so it would
     ///   otherwise debit for an account no scan reads.
     ///
-    /// The binding is read without `shielded_config_lock`, which a bind holds
-    /// from its start to its return. Nothing the lock gives is needed here:
-    ///
-    /// - A Clear is what invalidates a binding, and the admission held here
-    ///   keeps it out: the clear generation is bumped only under the
-    ///   admission's exclusive side.
-    /// - A bind only installs a binding, after it has registered the
-    ///   accounts. Read during a bind, the binding either does not stand yet
-    ///   (the spend is refused, as it would be a moment before the bind) or
-    ///   stands, and then the spend runs beside the rest of the install, as
-    ///   one admitted a moment before the bind does. The install's restore
-    ///   adds to the store under one store guard and never rewinds a note
-    ///   the spend reserved.
-    /// - Waiting for the lock would make the spend wait for the bind, and a
-    ///   bind can wait a long time holding it: it takes `shield_guard`
-    ///   next, which an asset-lock funding holds across a ChainLock wait
-    ///   with no deadline. A spend from notes the wallet already has would
-    ///   then hang with it, returning neither a result nor an error. It
-    ///   would also wait for a token pool transfer, which holds the lock
-    ///   through its settlement.
-    ///
-    /// Holding the lock through the spend would keep a bind from replacing
-    /// the accounts meanwhile, as the token pool spends do, but it would
-    /// make every bind of this wallet, a host's routine re-bind of an
-    /// unchanged account list included, wait for the proof and the result,
-    /// and it would run this wallet's transfers one at a time.
+    /// The binding is read under `shielded_config_lock`, which every install
+    /// holds, and the lock is released at once. Holding it through the spend
+    /// would keep a bind from replacing the accounts meanwhile, as the token
+    /// pool spends do, but it would also make every bind of this wallet, a
+    /// host's routine re-bind of an unchanged account list included, wait
+    /// for the proof and the result, and it would run this wallet's
+    /// transfers one at a time.
     ///
     /// # Lock ordering
     ///
-    /// The gate, then the admission, as a bind takes them, and both before
-    /// `shield_guard`, the wallet manager lock and the shielded store. A
-    /// caller must hold neither already: both are write-preferring, and
-    /// neither is reentrant. `shielded_config_lock` is not taken, so a
-    /// caller holding it (none does today) would not deadlock here.
+    /// The gate, the admission, then the configuration lock, as a bind takes
+    /// them, and all three before `shield_guard`, the wallet manager lock and
+    /// the shielded store. A caller must hold none of them already: the gate
+    /// and the admission are write-preferring, and none is reentrant.
     ///
     /// # Signers
     ///
@@ -1801,6 +1781,66 @@ impl PlatformWallet {
         &'a self,
         coordinator: &'a Arc<NetworkShieldedCoordinator>,
     ) -> Result<ShieldedSpendAdmission<'a>, PlatformWalletError> {
+        let admission = self.admit_current_generation(coordinator).await?;
+        {
+            let _config = self.shielded_config_lock.lock().await;
+            self.ensure_shielded_bound_on(coordinator)?;
+        }
+        Ok(admission)
+    }
+
+    /// [`Self::admit_shielded_spend`] for the payments that never waited for
+    /// a bind of their wallet: a token purchase from the pool, the payment
+    /// for a private contact request and a private document create. The same
+    /// gate, liveness check, admission and binding check, with the binding
+    /// read without `shielded_config_lock`.
+    ///
+    /// A bind holds that lock from its start to its return, and takes
+    /// `shield_guard` next, which an asset-lock funding holds across a
+    /// ChainLock wait with no deadline. A payment that waited for the lock
+    /// would wait with the bind, and return neither a result nor an error,
+    /// though it pays from notes the wallet already has. These payments did
+    /// not wait there before they were admitted, and still do not.
+    ///
+    /// The lock is not needed for the answer to be right. A Clear is what
+    /// invalidates a binding, and the admission held here keeps it out: the
+    /// clear generation is bumped only under the admission's exclusive side.
+    /// A bind only installs a binding, once it has registered the accounts.
+    ///
+    /// What the lock would add is an order: the payment after a bind already
+    /// in flight. Without it, as before these payments were admitted:
+    ///
+    /// - a payment that starts while a bind which drops its account waits
+    ///   its turn runs, and that bind can then purge the payment's saved
+    ///   transition, as it can for any spend that started a moment before
+    ///   the bind;
+    /// - a payment that starts while a wallet's first bind restores its
+    ///   notes can find none yet, and fail before anything is sent.
+    ///
+    /// # Lock ordering
+    ///
+    /// The gate, then the admission, as a bind takes them, and both before
+    /// the wallet manager lock and the shielded store. A caller must hold
+    /// neither already: both are write-preferring, and neither is reentrant.
+    #[cfg(feature = "shielded")]
+    async fn admit_shielded_payment<'a>(
+        &'a self,
+        coordinator: &'a Arc<NetworkShieldedCoordinator>,
+    ) -> Result<ShieldedSpendAdmission<'a>, PlatformWalletError> {
+        let admission = self.admit_current_generation(coordinator).await?;
+        self.ensure_shielded_bound_on(coordinator)?;
+        Ok(admission)
+    }
+
+    /// The first two steps of an admission ([`Self::admit_shielded_spend`],
+    /// [`Self::admit_shielded_payment`]): this generation's lifecycle gate,
+    /// the liveness check under it, then `coordinator`'s operation
+    /// admission. The caller checks the binding next.
+    #[cfg(feature = "shielded")]
+    async fn admit_current_generation<'a>(
+        &'a self,
+        coordinator: &'a Arc<NetworkShieldedCoordinator>,
+    ) -> Result<ShieldedSpendAdmission<'a>, PlatformWalletError> {
         let lifecycle = self.core().generation_payment_guard().await;
         if !self.core().is_current_generation().await {
             return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
@@ -1808,10 +1848,6 @@ impl PlatformWallet {
             )));
         }
         let operation = coordinator.operation_guard().await;
-        // Without the configuration lock: a bind holds it while it waits its
-        // turn behind an asset-lock funding, and this spend must not wait
-        // with it (see "The binding is read without" above).
-        self.ensure_shielded_bound_on(coordinator)?;
         Ok(ShieldedSpendAdmission {
             _lifecycle: lifecycle,
             _operation: operation,
@@ -2117,8 +2153,9 @@ impl PlatformWallet {
     /// with [`PlatformWalletError::ShieldedNotBound`], before anything is
     /// read, signed or sent. The call takes the wallet generation's
     /// lifecycle gate and `coordinator`'s operation admission itself and
-    /// holds them until it returns, so a caller must hold neither: a
-    /// removal queued in between would deadlock it.
+    /// holds them until it returns, and takes the wallet's shielded
+    /// configuration lock for its binding check, so a caller must hold none
+    /// of them: a removal or a Clear queued in between would deadlock it.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_transfer_to<P: dpp::shielded::builder::OrchardProver>(
@@ -2173,8 +2210,9 @@ impl PlatformWallet {
     /// with [`PlatformWalletError::ShieldedNotBound`], before anything is
     /// read, signed or sent. The call takes the wallet generation's
     /// lifecycle gate and `coordinator`'s operation admission itself and
-    /// holds them until it returns, so a caller must hold neither: a
-    /// removal queued in between would deadlock it.
+    /// holds them until it returns, and takes the wallet's shielded
+    /// configuration lock for its binding check, so a caller must hold none
+    /// of them: a removal or a Clear queued in between would deadlock it.
     #[cfg(feature = "shielded")]
     pub async fn shielded_unshield_to<P: dpp::shielded::builder::OrchardProver>(
         &self,
@@ -2223,8 +2261,9 @@ impl PlatformWallet {
     /// with [`PlatformWalletError::ShieldedNotBound`], before anything is
     /// read, signed or sent. The call takes the wallet generation's
     /// lifecycle gate and `coordinator`'s operation admission itself and
-    /// holds them until it returns, so a caller must hold neither: a
-    /// removal queued in between would deadlock it.
+    /// holds them until it returns, and takes the wallet's shielded
+    /// configuration lock for its binding check, so a caller must hold none
+    /// of them: a removal or a Clear queued in between would deadlock it.
     #[cfg(feature = "shielded")]
     pub async fn shielded_identity_top_up_from_pool<P: dpp::shielded::builder::OrchardProver>(
         &self,
@@ -2301,7 +2340,7 @@ impl PlatformWallet {
     /// requests that sync.
     ///
     /// Admitted for its whole run, through its settlement
-    /// ([`Self::admit_shielded_spend`]): a removal of the wallet waits for a
+    /// ([`Self::admit_shielded_payment`]): a removal of the wallet waits for a
     /// purchase in flight and a Clear is refused meanwhile. A handle to a
     /// wallet removed, or re-created under the same id, since it was taken is
     /// refused with [`PlatformWalletError::WalletRemovedBeforeSend`], and one
@@ -2329,7 +2368,7 @@ impl PlatformWallet {
         // purchase never reserves notes, records activity or reaches the
         // network, and a Clear does not purge the notes it reserved or the
         // transition it saved while it proves and broadcasts.
-        let _admission = self.admit_shielded_spend(coordinator).await?;
+        let _admission = self.admit_shielded_payment(coordinator).await?;
         let keyset = self.derive_spend_keyset(seed, account).await?;
         token_purchase_from_pool(
             &self.sdk,
@@ -2789,7 +2828,7 @@ impl PlatformWallet {
     /// ([`PlatformWalletError::PrivateContactRequestPending`]).
     ///
     /// Admitted from the liveness check until the spend returns
-    /// ([`Self::admit_shielded_spend`]), so a removal waits for it and a
+    /// ([`Self::admit_shielded_payment`]), so a removal waits for it and a
     /// Clear is refused meanwhile: the journal record, the reserved notes and
     /// the saved transition are not purged under a payment that goes on to
     /// broadcast. A wallet removed or re-created since this handle was taken
@@ -2853,7 +2892,7 @@ impl PlatformWallet {
         // the network, and a Clear cannot purge the journal this reads and
         // the spend writes. The DashPay send that calls this holds none of
         // the locks taken here (see "Lock ordering" above).
-        let _admission = self.admit_shielded_spend(coordinator).await?;
+        let _admission = self.admit_shielded_payment(coordinator).await?;
         // An earlier payment of the pair the journal keeps may still execute,
         // whether or not its redrive record reads: then nothing is paid. The
         // journal is read strictly: a record that does not read refuses.
@@ -2926,7 +2965,7 @@ impl PlatformWallet {
     /// [`shielded_transfer_to`](Self::shielded_transfer_to)).
     ///
     /// Admitted from the liveness check until the spend returns
-    /// ([`Self::admit_shielded_spend`]), so a removal waits for it and a
+    /// ([`Self::admit_shielded_payment`]), so a removal waits for it and a
     /// Clear is refused meanwhile. A wallet removed or re-created since this
     /// handle was taken is refused with
     /// [`PlatformWalletError::WalletRemovedBeforeSend`], and one whose keys
@@ -2971,7 +3010,7 @@ impl PlatformWallet {
         // the liveness check is made again under the gate, and a Clear is
         // refused while the notes are reserved and the transition is saved,
         // proved and broadcast.
-        let _admission = self.admit_shielded_spend(coordinator).await?;
+        let _admission = self.admit_shielded_payment(coordinator).await?;
         let keyset = self.derive_spend_keyset(seed, account).await?;
         private_document_create_from_pool_with_metadata(
             &self.sdk,
@@ -3007,8 +3046,9 @@ impl PlatformWallet {
     /// with [`PlatformWalletError::ShieldedNotBound`], before anything is
     /// read, signed or sent. The call takes the wallet generation's
     /// lifecycle gate and `coordinator`'s operation admission itself and
-    /// holds them until it returns, so a caller must hold neither: a
-    /// removal queued in between would deadlock it.
+    /// holds them until it returns, and takes the wallet's shielded
+    /// configuration lock for its binding check, so a caller must hold none
+    /// of them: a removal or a Clear queued in between would deadlock it.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_withdraw_to<P: dpp::shielded::builder::OrchardProver>(
@@ -3077,8 +3117,9 @@ impl PlatformWallet {
     /// with [`PlatformWalletError::ShieldedNotBound`], before anything is
     /// read, signed or sent. The call takes the wallet generation's
     /// lifecycle gate and `coordinator`'s operation admission itself and
-    /// holds them until it returns, so a caller must hold neither: a
-    /// removal queued in between would deadlock it.
+    /// holds them until it returns, and takes the wallet's shielded
+    /// configuration lock for its binding check, so a caller must hold none
+    /// of them: a removal or a Clear queued in between would deadlock it.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_identity_create_from_pool<P, IS>(
@@ -3281,8 +3322,9 @@ impl PlatformWallet {
     /// with [`PlatformWalletError::ShieldedNotBound`], before anything is
     /// read, signed or sent. The call takes the wallet generation's
     /// lifecycle gate and `coordinator`'s operation admission itself and
-    /// holds them until it returns, so a caller must hold neither: a
-    /// removal queued in between would deadlock it.
+    /// holds them until it returns, and takes the wallet's shielded
+    /// configuration lock for its binding check, so a caller must hold none
+    /// of them: a removal or a Clear queued in between would deadlock it.
     #[cfg(feature = "shielded")]
     pub async fn shielded_shield_from_account<S, P>(
         &self,
@@ -3339,8 +3381,9 @@ impl PlatformWallet {
     /// with [`PlatformWalletError::ShieldedNotBound`], before anything is
     /// read, signed or sent. The call takes the wallet generation's
     /// lifecycle gate and `coordinator`'s operation admission itself and
-    /// holds them until it returns, so a caller must hold neither: a
-    /// removal queued in between would deadlock it.
+    /// holds them until it returns, and takes the wallet's shielded
+    /// configuration lock for its binding check, so a caller must hold none
+    /// of them: a removal or a Clear queued in between would deadlock it.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_shield_from_account_to_recipient<S, P>(
@@ -3511,8 +3554,9 @@ impl PlatformWallet {
     /// with [`PlatformWalletError::ShieldedNotBound`], before anything is
     /// read, signed or sent. The call takes the wallet generation's
     /// lifecycle gate and `coordinator`'s operation admission itself and
-    /// holds them until it returns, so a caller must hold neither: a
-    /// removal queued in between would deadlock it.
+    /// holds them until it returns, and takes the wallet's shielded
+    /// configuration lock for its binding check, so a caller must hold none
+    /// of them: a removal or a Clear queued in between would deadlock it.
     #[cfg(feature = "shielded")]
     pub async fn shielded_shield_from_identity<S, P>(
         &self,
@@ -3553,8 +3597,9 @@ impl PlatformWallet {
     /// with [`PlatformWalletError::ShieldedNotBound`], before anything is
     /// read, signed or sent. The call takes the wallet generation's
     /// lifecycle gate and `coordinator`'s operation admission itself and
-    /// holds them until it returns, so a caller must hold neither: a
-    /// removal queued in between would deadlock it.
+    /// holds them until it returns, and takes the wallet's shielded
+    /// configuration lock for its binding check, so a caller must hold none
+    /// of them: a removal or a Clear queued in between would deadlock it.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_shield_from_identity_to_recipient<S, P>(
