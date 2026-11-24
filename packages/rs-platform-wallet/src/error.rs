@@ -1874,7 +1874,7 @@ pub fn handback_failure_payment_class() -> (PaymentDelivery, bool) {
 /// transition after its Core lock) classes the refusals that follow the first
 /// dispatch itself, through [`PlatformWalletError::after_dispatch`] or the
 /// asset-lock seam (`AssetLockManager::with_funded_lock`).
-fn sdk_payment_delivery(error: &dash_sdk::Error) -> PaymentDelivery {
+pub(crate) fn sdk_payment_delivery(error: &dash_sdk::Error) -> PaymentDelivery {
     match error {
         dash_sdk::Error::ProtocolVersionNotActive { .. } => PaymentDelivery::NotSent,
         dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(s))

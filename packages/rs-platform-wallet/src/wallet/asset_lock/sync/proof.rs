@@ -2589,6 +2589,42 @@ mod chain_lock_wait_tests {
             assert_eq!(effective, calls[1].0);
         }
 
+        /// After the InstantSend attempt, a resubmit the SDK refuses as never
+        /// sent (the signer's key missing) is reported as the unconfirmed
+        /// outcome of the earlier attempt: `MaybeSent`, so the funded-lock
+        /// seam names no held lock for a lock that attempt may have spent.
+        #[tokio::test(start_paused = true)]
+        async fn should_report_a_never_sent_resubmit_as_the_earlier_attempts_unconfirmed_outcome() {
+            let key_unavailable = || {
+                dash_sdk::Error::Protocol(dpp::ProtocolError::Generic(format!(
+                    "{}no key",
+                    crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX
+                )))
+            };
+            assert_eq!(
+                PlatformWalletError::Sdk(key_unavailable()).payment_delivery(),
+                crate::PaymentDelivery::NotSent
+            );
+            let (_ctx, result, calls) = run(vec![Err(oversized()), Err(key_unavailable())]).await;
+
+            assert_eq!(calls.len(), 2);
+            let (submitted, _) = result.expect("no local error");
+            let error = submitted.expect_err("the resubmit is refused");
+            assert!(error.is_state_transition_result_unconfirmed(), "{error:?}");
+            let error = PlatformWalletError::Sdk(error);
+            assert_eq!(error.payment_delivery(), crate::PaymentDelivery::MaybeSent);
+            let out_point =
+                crate::wallet::asset_lock::orchestration::out_point_from_proof(&calls[0].0);
+            assert_eq!(
+                crate::wallet::asset_lock::orchestration::hold_resumable_lock(
+                    error,
+                    Some(out_point)
+                )
+                .held_asset_lock(),
+                None
+            );
+        }
+
         /// A failed resubmit leaves the lock tracked at `ChainLocked` with the
         /// ChainLock proof, so a resume submits that proof rather than the
         /// refused InstantSend one.

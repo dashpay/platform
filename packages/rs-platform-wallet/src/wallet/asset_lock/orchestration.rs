@@ -46,7 +46,7 @@ pub(crate) use dash_sdk::platform::transition::asset_lock_submission::{
 use dash_sdk::platform::transition::put_settings::PutSettings;
 
 use crate::broadcaster::TransactionBroadcaster;
-use crate::error::{is_asset_lock_already_consumed, PlatformWalletError};
+use crate::error::{is_asset_lock_already_consumed, sdk_payment_delivery, PlatformWalletError};
 use crate::wallet::asset_lock::manager::AssetLockManager;
 use crate::wallet::asset_lock::AssetLockOperationContext;
 use crate::PaymentDelivery;
@@ -581,12 +581,24 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         out_point.txid,
                         e
                     );
+                    // The InstantSend attempt may have reached a node: from
+                    // here no failure proves the lock unspent, so none names
+                    // it as held, and a refusal the SDK classes as never sent
+                    // (a signer key missing for the resubmit) is reported as
+                    // the unconfirmed outcome of the earlier attempt.
                     let chain_proof = self
                         .upgrade_to_persisted_chain_lock_proof(&out_point, cl_wait)
-                        .await?;
+                        .await
+                        .map_err(|e| e.after_dispatch().without_held_lock())?;
                     let result =
                         submit_with_cl_height_retry(settings, |s| submit(chain_proof.clone(), s))
-                            .await;
+                            .await
+                            .map_err(|e| match sdk_payment_delivery(&e) {
+                                PaymentDelivery::NotSent => {
+                                    dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(e))
+                                }
+                                PaymentDelivery::MaybeSent | PaymentDelivery::LockHeld(_) => e,
+                            });
                     (result, chain_proof)
                 }
                 Err(e) => (Err(e), proof),
