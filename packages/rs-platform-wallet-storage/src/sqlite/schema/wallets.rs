@@ -94,6 +94,17 @@ pub(crate) fn network_to_str(net: key_wallet::Network) -> &'static str {
     }
 }
 
+/// The network `wallet_id` was stored for.
+pub(crate) fn network_of(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<key_wallet::Network, WalletStorageError> {
+    let label: String = conn
+        .prepare_cached("SELECT network FROM wallets WHERE wallet_id = ?1")?
+        .query_row(params![wallet_id.as_slice()], |row| row.get(0))?;
+    parse_network(&label).ok_or_else(|| WalletStorageError::blob_decode("wallets.network"))
+}
+
 /// Inverse of `network_to_str`.
 pub fn parse_network(s: &str) -> Option<key_wallet::Network> {
     match s {

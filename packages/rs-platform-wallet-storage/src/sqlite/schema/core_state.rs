@@ -2005,7 +2005,7 @@ mod tests {
 
         assert_eq!(
             schema_version(&conn),
-            22,
+            migrations::max_supported_version(),
             "the upgrade runs on through the migrations after V021"
         );
     }

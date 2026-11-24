@@ -197,7 +197,15 @@ pub fn touched_domains(cs: &PlatformWalletChangeSet) -> Vec<Domain> {
     if !account_registrations.is_empty() || !provider_key_account_registrations.is_empty() {
         out.push(Domain::AccountRegistrations);
     }
-    if !account_address_pools.is_empty() {
+    // A DashPay external registration may rotate the account's live pool.
+    if !account_address_pools.is_empty()
+        || account_registrations.iter().any(|entry| {
+            matches!(
+                entry.account_type,
+                key_wallet::account::AccountType::DashpayExternalAccount { .. }
+            )
+        })
+    {
         out.push(Domain::CoreAddressPool);
     }
     if !pending_contact_crypto_added.is_empty() || !pending_contact_crypto_cleared.is_empty() {
