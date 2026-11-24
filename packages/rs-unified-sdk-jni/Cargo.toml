@@ -13,9 +13,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 jni = "0.21"
-# Strict decoding of the Modified UTF-8 `GetStringUTFChars` returns: jni's own
-# conversion replaces an unpaired surrogate instead of refusing it.
-cesu8 = "1.1"
 rs-sdk-ffi = { path = "../rs-sdk-ffi" }
 dpp = { path = "../rs-dpp" }
 serde_json = "1.0"

@@ -6676,7 +6676,6 @@ name = "rs-unified-sdk-jni"
 version = "5.1.0-dev.3"
 dependencies = [
  "android_logger",
- "cesu8",
  "dashcore",
  "dashpay-contract",
  "dpp",

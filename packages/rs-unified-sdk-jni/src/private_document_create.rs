@@ -13,9 +13,7 @@
 
 use crate::private_documents::read_32;
 use crate::support::{guard, take_pwffi_error, throw_sdk_exception};
-use cesu8::from_java_cesu8;
 use jni::objects::{JByteArray, JClass, JString};
-use jni::strings::JNIStr;
 use jni::sys::{jbyteArray, jint, jlong, jlongArray};
 use jni::JNIEnv;
 use platform_wallet_ffi::error::PlatformWalletFFIResultCode;
@@ -41,34 +39,48 @@ use rs_sdk_ffi::MnemonicResolverHandle;
 #[cfg(feature = "shielded")]
 const CREATED_LEN: usize = 36;
 
-/// The Modified UTF-8 bytes `GetStringUTFChars` returned for a Java string, decoded strictly,
-/// as a C string. A Java string holding an unpaired surrogate (which no UTF-8 string can carry)
-/// is refused rather than replaced, and so is one holding a NUL, which C would cut short.
-fn c_string_from_java_utf8(bytes: &[u8]) -> Result<CString, &'static str> {
+/// A Java string's UTF-16 code units, decoded strictly, as a C string: an unpaired surrogate
+/// (which no UTF-8 string can carry) is refused rather than replaced, and the NUL check runs on
+/// the decoded text, so each refusal names its real cause whatever the VM's `GetStringUTFChars`
+/// encoding would have been.
+fn c_string_from_utf16(units: &[u16]) -> Result<CString, &'static str> {
     let decoded =
-        from_java_cesu8(bytes).map_err(|_| "is not valid UTF-16 (an unpaired surrogate)")?;
-    CString::new(decoded.into_owned()).map_err(|_| "holds a NUL character")
+        String::from_utf16(units).map_err(|_| "is not valid UTF-16 (an unpaired surrogate)")?;
+    CString::new(decoded).map_err(|_| "holds a NUL character")
+}
+
+/// The UTF-16 code units of the non-null Java string `string`, read with `GetStringLength` and
+/// `GetStringRegion`; `None` (with any pending exception cleared) when the VM refuses.
+fn java_string_units(env: &mut JNIEnv, string: &JString) -> Option<Vec<u16>> {
+    let raw = env.get_raw();
+    // SAFETY: `raw` is this thread's live JNIEnv and `string` a valid, non-null local
+    // reference; the region read stays within the length the VM reported.
+    let units = unsafe {
+        let functions = &**raw;
+        let length = (functions.GetStringLength?)(raw, string.as_raw());
+        let mut units = vec![0u16; usize::try_from(length).ok()?];
+        (functions.GetStringRegion?)(raw, string.as_raw(), 0, length, units.as_mut_ptr());
+        units
+    };
+    if env.exception_check().unwrap_or(true) {
+        let _ = env.exception_clear();
+        return None;
+    }
+    Some(units)
 }
 
 /// A required Java string as a C string; throws `InvalidParameter` and returns `None` for
-/// null, an unreadable string, an unpaired surrogate or a NUL ([`c_string_from_java_utf8`]).
+/// null, an unreadable string, an unpaired surrogate or a NUL ([`c_string_from_utf16`]).
 fn read_c_string(env: &mut JNIEnv, string: &JString, field: &str) -> Option<CString> {
     if string.is_null() {
         throw_sdk_exception(env, 1, &format!("{field} was null"));
         return None;
     }
-    let decoded = match env.get_string(string) {
-        Ok(java) => {
-            let raw = <&JNIStr>::from(&java);
-            c_string_from_java_utf8(raw.to_bytes())
-        }
-        Err(_) => {
-            let _ = env.exception_clear();
-            throw_sdk_exception(env, 1, &format!("{field} was not a readable string"));
-            return None;
-        }
+    let Some(units) = java_string_units(env, string) else {
+        throw_sdk_exception(env, 1, &format!("{field} was not a readable string"));
+        return None;
     };
-    match decoded {
+    match c_string_from_utf16(&units) {
         Ok(value) => Some(value),
         Err(reason) => {
             throw_sdk_exception(env, 1, &format!("{field} {reason}"));
@@ -319,20 +331,30 @@ mod tests {
 
     #[test]
     fn should_decode_a_java_string_strictly() {
-        // U+1F600 crosses as a surrogate pair, each half three bytes of Modified UTF-8
-        let pair = [0xED, 0xA0, 0xBD, 0xED, 0xB8, 0x80];
+        // U+1F600 is a surrogate pair in UTF-16
+        let emoji: Vec<u16> = "\u{1F600}".encode_utf16().collect();
         assert_eq!(
-            c_string_from_java_utf8(&pair).expect("a valid pair"),
+            c_string_from_utf16(&emoji).expect("a valid pair"),
             CString::new("\u{1F600}").expect("no NUL")
         );
+        let ascii: Vec<u16> = "{\"note\":\"hi\"}".encode_utf16().collect();
         assert_eq!(
-            c_string_from_java_utf8(b"{\"note\":\"hi\"}").expect("ASCII"),
+            c_string_from_utf16(&ascii).expect("ASCII"),
             CString::new("{\"note\":\"hi\"}").expect("no NUL")
         );
-        // A lone high surrogate is refused, not replaced
-        assert!(c_string_from_java_utf8(&[b'a', 0xED, 0xA0, 0xBD, b'b']).is_err());
-        // Modified UTF-8 writes NUL as C0 80: it decodes, then C refuses it
-        assert!(c_string_from_java_utf8(&[b'a', 0xC0, 0x80, b'b']).is_err());
+        // A lone high or low surrogate is refused, not replaced
+        assert_eq!(
+            c_string_from_utf16(&[0x61, 0xD83D, 0x62]),
+            Err("is not valid UTF-16 (an unpaired surrogate)")
+        );
+        assert_eq!(
+            c_string_from_utf16(&[0xDE00]),
+            Err("is not valid UTF-16 (an unpaired surrogate)")
+        );
+        // A NUL is refused as a NUL, also beside a valid pair
+        let mut with_nul = emoji.clone();
+        with_nul.extend([0x00, 0x62]);
+        assert_eq!(c_string_from_utf16(&with_nul), Err("holds a NUL character"));
     }
 
     #[cfg(feature = "shielded")]
