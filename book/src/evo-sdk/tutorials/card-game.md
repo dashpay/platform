@@ -262,6 +262,8 @@ async function buyPack(playerId: string, playerKey: string) {
 
   for (const [cardId, card] of availableCards) {
     if (!card) continue;
+    // A transfer writes the next revision: the stored one + 1
+    card.revision = (card.revision ?? 0n) + 1n;
     await sdk.documents.transfer({
       document: card,
       recipientId: new Identifier(playerId),
@@ -334,6 +336,10 @@ async function tradeCards(
   // Fetch both card documents
   const fromCard = await sdk.documents.get(contractId, 'card', fromCardId);
   const toCard = await sdk.documents.get(contractId, 'card', toCardId);
+
+  // A transfer writes the next revision: the stored one + 1
+  fromCard.revision = (fromCard.revision ?? 0n) + 1n;
+  toCard.revision = (toCard.revision ?? 0n) + 1n;
 
   // Player A sends their card to Player B
   await sdk.documents.transfer({

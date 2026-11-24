@@ -126,6 +126,18 @@ document, with `history()` to read what is left. See the
 parameters and the [Keep-History Documents](../drive/keep-history-documents.md)
 chapter for the lifecycle those calls drive.
 
+`replace()`, `transfer()`, `purchase()` and `setPrice()` each write a new
+revision of the document, and the SDK sends the document's `revision` as
+given. Pass the stored revision + 1: a document from `sdk.documents.get()`
+carries the stored revision, so increase it first. `delete()` carries no
+revision.
+
+```typescript
+const document = await sdk.documents.get(contractId, 'card', documentId);
+document.revision = (document.revision ?? 0n) + 1n;
+await sdk.documents.setPrice({ document, price: 5000000n, identityKey, signer });
+```
+
 ## Token operations
 
 ```typescript

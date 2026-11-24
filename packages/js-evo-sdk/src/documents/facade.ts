@@ -136,6 +136,21 @@ export class DocumentsFacade {
     return w.getContestFundToJoin(document);
   }
 
+  /**
+   * Replaces a document with new data and resolves once Platform confirms it.
+   *
+   * Pass the document with its `revision` already increased by one: the
+   * revision this replace writes is the stored revision + 1, and the SDK
+   * sends the revision as given. A document from {@link get} carries the
+   * stored revision. One still at revision 1 is sent as a create instead,
+   * which Platform refuses because the document already exists.
+   *
+   * @example
+   * const document = await sdk.documents.get(contractId, 'card', documentId);
+   * document.revision = (document.revision ?? 0n) + 1n;
+   * document.properties = { ...document.properties, name: 'New name' };
+   * await sdk.documents.replace({ document, identityKey, signer });
+   */
   async replace(options: wasm.DocumentReplaceOptions): Promise<void> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.documentReplace(options);
@@ -145,6 +160,7 @@ export class DocumentsFacade {
    * Deletes a document and resolves once the proof shows it gone. For an
    * indexOnly type the proof shows the document's entry gone at the proof's
    * block, not that this delete removed it: no stronger proof exists for one.
+   * A delete carries no revision: pass the document as fetched.
    */
   async delete(options: wasm.DocumentDeleteOptions): Promise<void> {
     const w = await this.sdk.getWasmSdkConnected();
@@ -164,16 +180,55 @@ export class DocumentsFacade {
     return w.documentErase(options);
   }
 
+  /**
+   * Transfers a document to `options.recipientId` and resolves once Platform confirms it.
+   *
+   * Pass the document with its `revision` already increased by one: the
+   * revision this transfer writes is the stored revision + 1, and the SDK
+   * sends the revision as given. A document from {@link get} carries the
+   * stored revision.
+   *
+   * @example
+   * const document = await sdk.documents.get(contractId, 'card', documentId);
+   * document.revision = (document.revision ?? 0n) + 1n;
+   * await sdk.documents.transfer({ document, recipientId, identityKey, signer });
+   */
   async transfer(options: wasm.DocumentTransferOptions): Promise<void> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.documentTransfer(options);
   }
 
+  /**
+   * Buys a document listed for sale at `options.price` and resolves once Platform confirms it.
+   *
+   * Pass the document with its `revision` already increased by one: the
+   * revision this purchase writes is the stored revision + 1, and the SDK
+   * sends the revision as given. A document from {@link get} carries the
+   * stored revision.
+   *
+   * @example
+   * const document = await sdk.documents.get(contractId, 'card', documentId);
+   * document.revision = (document.revision ?? 0n) + 1n;
+   * await sdk.documents.purchase({ document, buyerId, price, identityKey, signer });
+   */
   async purchase(options: wasm.DocumentPurchaseOptions): Promise<void> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.documentPurchase(options);
   }
 
+  /**
+   * Sets the sale price of a document (0 takes it off sale) and resolves once Platform confirms it.
+   *
+   * Pass the document with its `revision` already increased by one: the
+   * revision this price update writes is the stored revision + 1, and the SDK
+   * sends the revision as given. A document from {@link get} carries the
+   * stored revision.
+   *
+   * @example
+   * const document = await sdk.documents.get(contractId, 'card', documentId);
+   * document.revision = (document.revision ?? 0n) + 1n;
+   * await sdk.documents.setPrice({ document, price: 5000000n, identityKey, signer });
+   */
   async setPrice(options: wasm.DocumentSetPriceOptions): Promise<void> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.documentSetPrice(options);
