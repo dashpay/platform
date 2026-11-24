@@ -329,16 +329,22 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// history was returned; the read can be made again later. SDK errors
     /// (stale-node rejection, transport or proof failures) are not this code.
     case errorBalanceHistoryInconsistentHeights = 83
+    /// A shielded Clear was refused because a shielded operation (a bind, an
+    /// account being added, a token pool transfer or unshield, a DashPay
+    /// profile write or a tip address preparation, or another Clear) is in
+    /// flight. Clear does not wait for it: nothing was changed and sync keeps
+    /// running, so the host keeps its rows. Retry once it has finished.
+    case errorShieldedOperationInProgress = 84
     /// A shielded tip was refused before anything was selected, built or
     /// sent: another tip from this wallet is being sent, or an earlier
     /// shielded payment to the same recipient may still execute. Nothing was
     /// sent. A shielded sync resolves the earlier payment; then review and
     /// send again. Not `errorShieldedSpendUnconfirmed` (18).
-    case errorShieldedTipPending = 84
+    case errorShieldedTipPending = 85
     /// A shielded tip started from a saved contact was refused because the
     /// username now belongs to another identity than the contact's. Nothing
     /// was sent; the user picks the recipient again.
-    case errorShieldedTipRecipientMismatch = 85
+    case errorShieldedTipRecipientMismatch = 86
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -492,6 +498,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorPublicContactRequestUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_BALANCE_HISTORY_INCONSISTENT_HEIGHTS:
             self = .errorBalanceHistoryInconsistentHeights
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_OPERATION_IN_PROGRESS:
+            self = .errorShieldedOperationInProgress
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_TIP_PENDING:
             self = .errorShieldedTipPending
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_TIP_RECIPIENT_MISMATCH:
@@ -777,6 +785,14 @@ public enum PlatformWalletError: LocalizedError {
     /// failures) keep their existing mapping. Nothing changed; load the
     /// history again later.
     case balanceHistoryInconsistentHeights(String)
+    /// `PlatformWalletManager.clearShielded()` was refused at once because a
+    /// shielded operation (a bind, an account being added, a token pool
+    /// transfer or unshield, a DashPay profile write or a tip address
+    /// preparation, or another Clear) is in flight. Clear does not wait for
+    /// it. Nothing was changed: sync keeps running and no shielded state was
+    /// reset, so the host must not wipe its own rows. Clear again once the
+    /// operation has finished.
+    case shieldedOperationInProgress(String)
     /// `sendShieldedTip` refused the tip with nothing sent: another tip from
     /// this wallet is being sent, or an earlier shielded payment to the
     /// recipient may still execute. This call sent nothing, unlike
@@ -1026,6 +1042,7 @@ public enum PlatformWalletError: LocalizedError {
              .privateContactStoreNotRead(let m), .sdkPinnedBelowProtocolVersion(let m),
              .publicContactRequestUnconfirmed(let m),
              .balanceHistoryInconsistentHeights(let m),
+             .shieldedOperationInProgress(let m),
              .shieldedTipPending(let m), .shieldedTipRecipientMismatch(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
@@ -1166,6 +1183,8 @@ public enum PlatformWalletError: LocalizedError {
             self = .publicContactRequestUnconfirmed(detail)
         case .errorBalanceHistoryInconsistentHeights:
             self = .balanceHistoryInconsistentHeights(detail)
+        case .errorShieldedOperationInProgress:
+            self = .shieldedOperationInProgress(detail)
         case .errorShieldedTipPending:
             self = .shieldedTipPending(detail)
         case .errorShieldedTipRecipientMismatch:

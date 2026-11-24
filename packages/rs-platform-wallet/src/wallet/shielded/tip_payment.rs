@@ -33,8 +33,6 @@ use std::sync::Arc;
 use tokio::sync::OwnedMutexGuard;
 
 use dash_sdk::platform::dpns_usernames::normalize_dpns_label;
-use dash_sdk::platform::shielded::try_recover_outgoing_note;
-use dash_sdk::query_types::ShieldedEncryptedNote;
 use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
@@ -43,7 +41,7 @@ use dpp::shielded::builder::OrchardProver;
 use dpp::state_transition::StateTransition;
 
 use super::activity::compute_activity_id;
-use super::activity_recorder::visible_output_cmxs;
+use super::activity_recorder::visible_outputs;
 use super::balance::ShieldedLocalBalanceState;
 use super::file_store::FileBackedShieldedStore;
 use super::keys::AccountViewingKeys;
@@ -292,8 +290,11 @@ pub(super) fn unresolved_transfer_recipients(
                 reason: "an unresolved shielded transfer was paid from it".to_string(),
             }
         })?;
-        let actions = shielded_actions(&transition);
-        if compute_activity_id(&visible_output_cmxs(actions, views)) != record.activity_id {
+        // One pass reads both what the record's id is checked against and
+        // whom the transfer pays: this runs under the store lock.
+        let outputs = visible_outputs(shielded_actions(&transition), views);
+        let cmxs: Vec<[u8; 32]> = outputs.iter().map(|output| output.cmx).collect();
+        if compute_activity_id(&cmxs) != record.activity_id {
             return Err(PlatformWalletError::ShieldedRecoveryCorrupted {
                 account_index: Some(account_index),
                 reason: "the outputs of an unresolved shielded transfer that its account can \
@@ -301,27 +302,17 @@ pub(super) fn unresolved_transfer_recipients(
                     .to_string(),
             });
         }
-        for action in actions {
-            let output = ShieldedEncryptedNote {
-                cmx: action.cmx.to_vec(),
-                nullifier: action.nullifier.to_vec(),
-                cv_net: action.cv_net.to_vec(),
-                encrypted_note: action.encrypted_note.clone(),
-            };
-            let Some((_, recipient, _)) =
-                try_recover_outgoing_note(&views.outgoing_viewing_key, &output)
-            else {
-                // A padding output, which no key opens.
-                continue;
-            };
-            // The change the transfer returns to its own account is not a
-            // payment. A tip is never paid to the account it is paid from
-            // (the send refuses it), so no payment is left out here.
-            let recipient = recipient.to_raw_address_bytes();
-            if !views.is_own_recipient(&recipient) {
-                recipients.insert(recipient);
-            }
-        }
+        // An output the incoming key decrypts is the account's own: the
+        // change the transfer returns, not a payment. A tip is never paid
+        // to the account it is paid from (the send refuses it), so no
+        // payment is left out.
+        recipients.extend(
+            outputs
+                .into_iter()
+                .filter_map(|output| output.sent_to)
+                .map(|address| address.to_raw_address_bytes())
+                .filter(|address| !views.is_own_recipient(address)),
+        );
     }
     Ok(recipients)
 }
@@ -435,6 +426,11 @@ impl PlatformWallet {
         let keys = self.bound_shielded_keys().await?;
         let recipient = self.resolve_shielded_tip(username).await?;
         ensure_expected_identity(expected_identity, &recipient.identity_id)?;
+        // Admitted like an operation for the local read: a Clear cannot run
+        // while it is held, so the binding checked below and the rows read
+        // under it are of the same state. A Clear that ran during the
+        // lookups has advanced the generation by now.
+        let _operation = coordinator.operation_guard().await;
         let store = coordinator.store().read().await;
         // The keys this handle holds outlive a Clear, and a caller may pass
         // another coordinator: its store would hold neither the recipients
@@ -486,14 +482,15 @@ impl PlatformWallet {
     /// tip. A shielded sync resolves it: it is seen executed, or its anchor
     /// is proven pruned, after which it can never execute.
     ///
-    /// The paying account is settled before the recipient is resolved and
-    /// again after it, right before the spend: an identity's tip is paid
-    /// from the account of the slot the seed proves the identity holds
-    /// then ([`ShieldedTipSource::Identity`]), and a tip whose source no
-    /// longer stands (the identity was removed, or an identity now holds
-    /// the slot of an account named by number) is refused. The
-    /// wallet-manager lock is not held across the spend itself, which
-    /// would stall the wallet's sync for the length of a proof.
+    /// The paying account is settled before the recipient is resolved, and
+    /// checked again once the transfer has claimed its notes, before
+    /// anything is built or sent: an identity's tip is paid from the
+    /// account of the slot the seed proves the identity holds with the
+    /// notes claimed ([`ShieldedTipSource::Identity`]), and a tip whose
+    /// source no longer stands then (the identity was removed, or an
+    /// identity now holds the slot of an account named by number) releases
+    /// its notes and is refused. A change of the wallet's identities after
+    /// that, while the tip is proved and broadcast, does not stop it.
     ///
     /// A failure with [`PlatformWalletError::ShieldedSpendUnconfirmed`] means
     /// the tip may have left the wallet and may still execute: it must not
@@ -556,18 +553,14 @@ impl PlatformWallet {
             ));
         }
         // The lookups above took network time, during which the wallet's
-        // identities can have changed: the source must still stand, and
-        // still select the same account, as the spend starts.
-        if self.tip_source_account(seed, source).await? != account {
-            return Err(PlatformWalletError::InvalidIdentityData(
-                "The paying identity's shielded account changed while the tip was prepared; \
-                 send it again"
-                    .to_string(),
-            ));
-        }
+        // identities can have changed. Refused here before the wait for the
+        // store; the check that counts runs once the notes are claimed.
+        self.ensure_tip_source_selects(seed, source, account)
+            .await?;
         self.send_resolved_shielded_tip(
             coordinator,
             seed,
+            source,
             account,
             &tip_recipient_label(username),
             &current,
@@ -581,12 +574,22 @@ impl PlatformWallet {
     /// The part of [`Self::send_shielded_tip`] that follows the resolution
     /// of the recipient, under the locks it holds: refuse the tip while an
     /// earlier payment to `recipient` is unresolved, record `recipient` as
-    /// the one confirmed for `label`, and send the transfer from `account`.
+    /// the one confirmed for `label`, and send the transfer from `account`,
+    /// the account `source` selected.
+    ///
+    /// `source` is checked again once the transfer has claimed its notes,
+    /// before anything is built or sent. Claiming them waits for the store,
+    /// which a scan can hold for minutes, and an identity can be removed, or
+    /// one added into the slot of an account named by number, meanwhile.
+    /// The notes are then this tip's and nothing else has waited, so the
+    /// tip is paid only if `source` selected `account` with the notes
+    /// claimed; otherwise they are released and nothing is sent.
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn send_resolved_shielded_tip<P: OrchardProver>(
         &self,
         coordinator: &Arc<NetworkShieldedCoordinator>,
         seed: &[u8],
+        source: ShieldedTipSource,
         account: u32,
         label: &str,
         recipient: &ShieldedTipRecipient,
@@ -622,7 +625,7 @@ impl PlatformWallet {
                 &(recipient.identity_id.to_buffer(), recipient.address),
             )?;
         }
-        self.shielded_transfer_to(
+        self.shielded_transfer_once_claimed(
             coordinator,
             seed,
             account,
@@ -630,8 +633,30 @@ impl PlatformWallet {
             amount,
             memo,
             prover,
+            || self.ensure_tip_source_selects(seed, source, account),
         )
         .await
+    }
+
+    /// Refuse unless `source` still selects `account`
+    /// ([`Self::tip_source_account`]): the identity still holds the slot the
+    /// seed proves, or the slot of an account named by number still holds
+    /// no identity.
+    async fn ensure_tip_source_selects(
+        &self,
+        seed: &[u8],
+        source: ShieldedTipSource,
+        account: u32,
+    ) -> Result<(), PlatformWalletError> {
+        if self.tip_source_account(seed, source).await? == account {
+            Ok(())
+        } else {
+            Err(PlatformWalletError::InvalidIdentityData(
+                "The paying identity's shielded account changed while the tip was prepared; \
+                 send it again"
+                    .to_string(),
+            ))
+        }
     }
 
     /// The shielded balance of the wallet identity `identity_id`'s own
@@ -663,7 +688,9 @@ impl PlatformWallet {
             return Ok(ShieldedIdentityBalance::Unverified);
         };
         // The account was proved on the coordinator the wallet is bound on.
-        // Another coordinator's ledger says nothing about it.
+        // Another coordinator's ledger says nothing about it. Admitted like
+        // an operation, so a Clear cannot run between the check and the read.
+        let _operation = coordinator.operation_guard().await;
         self.ensure_shielded_bound_on(coordinator)?;
         let established = match coordinator.local_balance_snapshot(self.wallet_id()).await? {
             ShieldedLocalBalanceState::Ready(snapshot) => snapshot

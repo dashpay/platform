@@ -294,18 +294,24 @@ internal sealed class ReadFailure {
     }
 }
 
-/** Opaque cover over the screen while the app is not in the foreground. It only hides the entries. */
+/**
+ * Opaque cover over a private screen while the app is not in the foreground. It only hides what
+ * is shown; the create screen uses it too.
+ */
 @Composable
-private fun PrivacyCover() {
+internal fun PrivacyCover(
+    text: String = "Private entries hidden",
+    testTag: String = "privateEntries.privacyCover",
+) {
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .testTag("privateEntries.privacyCover"),
+            .testTag(testTag),
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            "Private entries hidden",
+            text,
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

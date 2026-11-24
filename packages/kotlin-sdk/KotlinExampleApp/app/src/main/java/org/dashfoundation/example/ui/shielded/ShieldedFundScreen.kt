@@ -84,9 +84,11 @@ import java.util.UUID
  * lock and its amount were fixed at original build time) and routes Submit to
  * [org.dashfoundation.dashsdk.wallet.PlatformWalletManager.shieldedResumeFundFromAssetLock]
  * instead of `shieldedFundFromAssetLock`, seeded with the parsed outpoint.
- * The recipient is still chosen here — a shielded orphan lock carries no
- * recipient stamp, because the Orchard recipient is an external address
- * picked at ST-submit time, not allocated from the wallet.
+ * A lock that recorded its recipient when it was built
+ * ([AssetLockEntity.shieldedRecipientRaw43]) pays that recipient: Rust
+ * refuses any other, so the screen shows it read-only. Only an older lock
+ * without one lets the recipient be chosen here (← the Swift view's
+ * `lockBoundRecipient`).
  *
  * MAX mode (← the Swift view's `drainMax` toggle, fresh-shield flow only):
  * when the "Max" switch is on, the Amount and Recipient fields are replaced
@@ -197,15 +199,20 @@ fun ShieldedFundScreen(
             }
         }
 
-        // The effective recipient: user hex override (86 hex chars = 43 bytes)
-        // when valid, else the wallet's default.
+        // The recipient a resumed lock recorded when it was built. Rust pays
+        // it and refuses any other, so the screen offers no choice.
+        val lockBoundRecipient = if (isResume) lockBoundRecipient(resumeLock) else null
+
+        // The effective recipient: the lock's recorded one, else the user
+        // hex override (86 hex chars = 43 bytes) when valid, else the
+        // wallet's default.
         val trimmedHex = recipientHex.trim()
         val overrideRecipient = remember(trimmedHex) {
             if (trimmedHex.length == 86) runCatching { trimmedHex.hexToBytes() }
                 .getOrNull()?.takeIf { it.size == 43 }
             else null
         }
-        val recipient = overrideRecipient ?: defaultRecipient
+        val recipient = effectiveShieldRecipient(lockBoundRecipient, overrideRecipient, defaultRecipient)
 
         val amount = amountText.toLongOrNull()
         // Resume only needs a recipient (+ the loaded lock): the shield value
@@ -364,7 +371,21 @@ fun ShieldedFundScreen(
                     }
                 }
 
-                if (!isMax) FormSection(title = "Recipient") {
+                if (!isMax && lockBoundRecipient != null) FormSection(title = "Recipient") {
+                    Text(
+                        lockBoundRecipient.toHex(),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.testTag("shieldFromCore.fixedRecipient"),
+                    )
+                    Text(
+                        "This asset lock is bound to this recipient: it was recorded when the " +
+                            "lock was built, and resuming can only pay it.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                if (!isMax && lockBoundRecipient == null) FormSection(title = "Recipient") {
                     OutlinedTextField(
                         value = recipientHex,
                         onValueChange = { recipientHex = it },
@@ -557,6 +578,26 @@ private const val MAX_FUNDING_ACCOUNT_INDEX = 0
 private const val CORE_SOURCE_TEXT =
     "The Core account's UTXOs are locked into an asset lock; the locked DASH becomes " +
         "shielded credits on the destination Orchard address."
+
+/**
+ * The recipient a resumed [lock] recorded when it was built, or null for a
+ * lock tracked before recipients were recorded (and for a stored value that
+ * is not 43 bytes, which the wallet load already refuses). A resume pays it
+ * and Rust refuses any other (← the Swift view's `lockBoundRecipient`).
+ */
+internal fun lockBoundRecipient(lock: AssetLockEntity?): ByteArray? =
+    lock?.shieldedRecipientRaw43?.takeIf { it.size == 43 }
+
+/**
+ * The recipient Submit pays: the resumed lock's recorded one when it has
+ * one, else the pasted [overrideRecipient], else the wallet's
+ * [defaultRecipient].
+ */
+internal fun effectiveShieldRecipient(
+    lockBound: ByteArray?,
+    overrideRecipient: ByteArray?,
+    defaultRecipient: ByteArray?,
+): ByteArray? = lockBound ?: overrideRecipient ?: defaultRecipient
 
 /** Shown where Rust's rule does not offer a new Max on the current network. */
 private const val MAX_UNAVAILABLE_TEXT =

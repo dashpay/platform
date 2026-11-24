@@ -827,7 +827,24 @@ sealed class DashSdkError(
         }
 
         /**
-         * `ErrorShieldedTipPending` (native code 84). A shielded tip was
+         * `ErrorShieldedOperationInProgress` (native code 84). A shielded
+         * Clear was refused because a shielded operation is in flight on the
+         * wallet manager: a bind, an account being added, a token pool
+         * transfer or unshield, a DashPay profile write, a tip address
+         * preparation, or another Clear. Rust does not make Clear wait for
+         * it. Clear returned at once and changed nothing (the sync loop keeps
+         * running, no registration, note or tree leaf was touched), so the
+         * host keeps its Room rows and offers Clear again once the operation
+         * has finished.
+         * ← Swift `PlatformWalletError.shieldedOperationInProgress`.
+         */
+        class ShieldedOperationInProgress(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
+         * `ErrorShieldedTipPending` (native code 85). A shielded tip was
          * refused before anything was built or sent: another tip from this
          * wallet is being sent, or an earlier shielded payment to the same
          * recipient may still execute. This call sent nothing. Not
@@ -843,7 +860,7 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
-         * `ErrorShieldedTipRecipientMismatch` (native code 85). A shielded
+         * `ErrorShieldedTipRecipientMismatch` (native code 86). A shielded
          * tip was started from a saved contact, and the contact's username
          * now belongs to another identity. Nothing was sent. Not retryable:
          * the user picks the recipient again, and a tip to the name's new
@@ -1064,8 +1081,9 @@ sealed class DashSdkError(
             75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
             76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
             83 -> PlatformWallet.BalanceHistoryInconsistentHeights(message, cause) // ErrorBalanceHistoryInconsistentHeights
-            84 -> PlatformWallet.ShieldedTipPending(message, cause) // ErrorShieldedTipPending
-            85 -> PlatformWallet.ShieldedTipRecipientMismatch(message, cause) // ErrorShieldedTipRecipientMismatch
+            84 -> PlatformWallet.ShieldedOperationInProgress(message, cause) // ErrorShieldedOperationInProgress
+            85 -> PlatformWallet.ShieldedTipPending(message, cause) // ErrorShieldedTipPending
+            86 -> PlatformWallet.ShieldedTipRecipientMismatch(message, cause) // ErrorShieldedTipRecipientMismatch
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

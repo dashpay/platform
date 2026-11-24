@@ -128,18 +128,61 @@ internal object DashpayNative {
      * SHA-256 hash + perceptual fingerprint. Broadcasts a real document
      * state transition (blocking, network). Returns the resulting
      * profile JSON. ← Swift `createDashPayProfile` / `updateDashPayProfile`.
+     *
+     * Each payment address is an action and its bytes
+     * (`PaymentAddressUpdateFFI`): 0 keeps the published value, 1 sets it
+     * to the bytes, 2 removes it. Bridges
+     * `platform_wallet_create_or_update_dashpay_profile_with_addresses_with_signer`.
+     * Named apart from the earlier `createOrUpdateProfile` export so a stale
+     * native library fails to link instead of binding the wrong signature.
      */
     @Suppress("LongParameterList")
-    external fun createOrUpdateProfile(
+    external fun createOrUpdateProfileWithAddresses(
         walletHandle: Long,
         identityId: ByteArray,
         displayName: String?,
         publicMessage: String?,
         avatarUrl: String?,
         avatarBytes: ByteArray?,
+        coreAddressAction: Int,
+        coreAddressBytes: ByteArray?,
+        platformAddressAction: Int,
+        platformAddressBytes: ByteArray?,
+        shieldedAddressAction: Int,
+        shieldedAddressBytes: ByteArray?,
         doCreate: Boolean,
         signerHandle: Long,
     ): String?
+
+    // ── Profile payment addresses ─────────────────────────────────────
+
+    /**
+     * Which payment addresses a profile write may set on the network the
+     * wallet is connected to, as `[core, platform, shielded]`
+     * (`platform_wallet_dashpay_profile_payment_address_support`). Fetches
+     * the network's DashPay contract, so it blocks on the network. Throws on
+     * failure. ← Swift `ManagedPlatformWallet.dashPayPaymentAddressSupport()`.
+     */
+    external fun paymentAddressSupport(walletHandle: Long): BooleanArray?
+
+    /**
+     * The bytes a profile stores for the address [text] of [kind] (a
+     * `DASHPAY_PROFILE_PAYMENT_ADDRESS_*` value) on [network] (an FFINetwork
+     * ordinal), via `dashpay_profile_payment_address_from_string`. Throws
+     * with the wallet's reason for an address of another network or kind, or
+     * text that is not an address.
+     * ← Swift `DashPayProfile.paymentAddressBytes(kind:from:network:)`.
+     */
+    external fun paymentAddressFromString(kind: Int, text: String, network: Int): ByteArray?
+
+    /**
+     * The address string of [network] for the stored [bytes] of a [kind]
+     * address (`dashpay_profile_payment_address_to_string`), or null when the
+     * wallet does not read them as an address of that kind. An unknown
+     * [kind] throws.
+     * ← Swift `DashPayProfile.paymentAddressString(kind:bytes:network:)`.
+     */
+    external fun paymentAddressToString(kind: Int, bytes: ByteArray, network: Int): String?
 
     /**
      * Set owner-private contactInfo (alias / note / displayHidden) for
