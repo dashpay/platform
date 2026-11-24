@@ -89,6 +89,9 @@ dependencies {
     // The framework's own org.json (android.jar has only stubs), for parsers
     // whose behaviour on JSON null is Android's.
     testImplementation(libs.robolectric)
+    // Compose layout and scrolling on the JVM (Robolectric), for what a screen leaves in view.
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.espresso.core)
     androidTestImplementation(platform(libs.compose.bom))
