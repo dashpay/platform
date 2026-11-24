@@ -1177,6 +1177,13 @@ pub enum PlatformWalletError {
         reason: String,
     },
 
+    /// The host's dispatch hook refused a shielded spend before its first
+    /// broadcast (`wallet::shielded::dispatch::ShieldedDispatch`), or the
+    /// spend could not be shown to it. Nothing was sent: the spend's record
+    /// was retired and its notes released.
+    #[error("Shielded spend was not sent: {reason}")]
+    ShieldedDispatchRefused { reason: String },
+
     /// A masternode (evonode) identity credit withdrawal was broadcast and
     /// accepted, or may have been delivered, but its execution result could
     /// not be confirmed (a broadcast attempt that failed in transport, an

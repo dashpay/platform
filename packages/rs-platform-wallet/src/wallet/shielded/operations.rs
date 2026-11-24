@@ -24,6 +24,9 @@ use super::activity_recorder::{
     build_pending_entry, changeset_for_entry, non_zero_memo, with_status, LiveEntryParams,
 };
 use super::anchor_cache::{fetch_recorded_anchor_set, RecordedAnchorCache};
+use super::dispatch::{
+    DispatchedNote, ShieldedDispatch, ShieldedDispatchKind, ShieldedDispatchPayload,
+};
 use super::keys::{AccountViewingKeys, OrchardKeySet};
 use super::note_selection::{
     ensure_allowed_denomination, ensure_positive_amount, select_notes_for_denomination,
@@ -1538,6 +1541,7 @@ pub async fn identity_top_up_from_pool<S: ShieldedStore, P: OrchardProver>(
         account,
         identity_id,
         amount,
+        None,
         prover,
     )
     .await
@@ -1558,6 +1562,7 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
     account: u32,
     identity_id: Identifier,
     amount: u64,
+    dispatch: Option<&dyn ShieldedDispatch>,
     prover: &P,
 ) -> Result<(Option<Credits>, ResponseMetadata), PlatformWalletError> {
     let views = keys.viewing_keys();
@@ -1632,6 +1637,7 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
         broadcast_shielded_spend_with_redrive_with_metadata(
             sdk,
             store,
+            dispatch,
             id,
             &pending_entry,
             anchor_bytes,
@@ -1756,6 +1762,7 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
     entries: Vec<BinaryData>,
     private_contact: Option<PrivateContactPayment>,
     payment_started: &PaymentStarted,
+    dispatch: Option<&dyn ShieldedDispatch>,
     prover: &P,
 ) -> Result<ResponseMetadata, PlatformWalletError> {
     let views = keys.viewing_keys();
@@ -1852,6 +1859,7 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
     submit_private_document_payment(
         PrivateDocumentSubmission {
             store,
+            dispatch,
             persister,
             wallet_id,
             id,
@@ -1882,6 +1890,8 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
 /// ([`submit_private_document_payment`]).
 struct PrivateDocumentSubmission<'a, S: ShieldedStore> {
     store: &'a Arc<RwLock<S>>,
+    /// The host's hook, awaited before the broadcast when set.
+    dispatch: Option<&'a dyn ShieldedDispatch>,
     persister: Option<&'a WalletPersister>,
     wallet_id: WalletId,
     id: SubwalletId,
@@ -1922,6 +1932,7 @@ where
 {
     let PrivateDocumentSubmission {
         store,
+        dispatch,
         persister,
         wallet_id,
         id,
@@ -1965,6 +1976,17 @@ where
         if anchored {
             // Each reservation carries its anchor: a pruned anchor releases it.
             reservation.hand_over();
+        }
+        if let Some(hook) = dispatch {
+            await_dispatch(
+                hook,
+                id,
+                &pending_entry,
+                anchor,
+                selected_notes,
+                &state_transition,
+            )
+            .await?;
         }
         trace!("PrivateDocumentCreateFromShieldedPool: state transition saved, broadcasting...");
         broadcast(state_transition).await
@@ -2237,6 +2259,7 @@ pub(crate) async fn pay_private_document_with_outcome<S: ShieldedStore>(
     submit_private_document_payment(
         PrivateDocumentSubmission {
             store,
+            dispatch: None,
             persister,
             wallet_id,
             id,
@@ -2293,6 +2316,38 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     account: u32,
     to_address: &PlatformAddress,
     amount: u64,
+    prover: &P,
+) -> Result<(), PlatformWalletError> {
+    unshield_dispatched(
+        sdk,
+        store,
+        anchor_cache,
+        persister,
+        wallet_id,
+        keys,
+        account,
+        to_address,
+        amount,
+        None,
+        prover,
+    )
+    .await
+}
+
+/// [`unshield`], with `dispatch` shown each spend before its first broadcast
+/// when set ([`ShieldedDispatch`]).
+#[allow(clippy::too_many_arguments)]
+pub(in crate::wallet) async fn unshield_dispatched<S: ShieldedStore, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    to_address: &PlatformAddress,
+    amount: u64,
+    dispatch: Option<&dyn ShieldedDispatch>,
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
     let views = keys.viewing_keys();
@@ -2384,6 +2439,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
         broadcast_shielded_spend_with_redrive(
             sdk,
             store,
+            dispatch,
             id,
             &pending_entry,
             anchor_bytes,
@@ -2488,6 +2544,40 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     memo: [u8; 36],
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
+    transfer_dispatched(
+        sdk,
+        store,
+        anchor_cache,
+        persister,
+        wallet_id,
+        keys,
+        account,
+        to_address,
+        amount,
+        memo,
+        None,
+        prover,
+    )
+    .await
+}
+
+/// [`transfer`], with `dispatch` shown each spend before its first broadcast
+/// when set ([`ShieldedDispatch`]).
+#[allow(clippy::too_many_arguments)]
+pub(in crate::wallet) async fn transfer_dispatched<S: ShieldedStore, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    to_address: &PaymentAddress,
+    amount: u64,
+    memo: [u8; 36],
+    dispatch: Option<&dyn ShieldedDispatch>,
+    prover: &P,
+) -> Result<(), PlatformWalletError> {
     let recipient_addr = payment_address_to_orchard(to_address)?;
     let views = keys.viewing_keys();
     let change_addr = default_orchard_address(&views)?;
@@ -2564,6 +2654,7 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
         broadcast_shielded_spend_with_redrive(
             sdk,
             store,
+            dispatch,
             id,
             &pending_entry,
             anchor_bytes,
@@ -2648,6 +2739,40 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     to_address: &dashcore::Address,
     amount: u64,
     core_fee_per_byte: u32,
+    prover: &P,
+) -> Result<(), PlatformWalletError> {
+    withdraw_dispatched(
+        sdk,
+        store,
+        anchor_cache,
+        persister,
+        wallet_id,
+        keys,
+        account,
+        to_address,
+        amount,
+        core_fee_per_byte,
+        None,
+        prover,
+    )
+    .await
+}
+
+/// [`withdraw`], with `dispatch` shown each spend before its first broadcast
+/// when set ([`ShieldedDispatch`]).
+#[allow(clippy::too_many_arguments)]
+pub(in crate::wallet) async fn withdraw_dispatched<S: ShieldedStore, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    to_address: &dashcore::Address,
+    amount: u64,
+    core_fee_per_byte: u32,
+    dispatch: Option<&dyn ShieldedDispatch>,
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
     let views = keys.viewing_keys();
@@ -2739,6 +2864,7 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
         broadcast_shielded_spend_with_redrive(
             sdk,
             store,
+            dispatch,
             id,
             &pending_entry,
             anchor_bytes,
@@ -2841,6 +2967,47 @@ pub async fn identity_create_from_shielded_pool<S, P, IS>(
     denomination: u64,
     send_to_address_on_creation_failure: PlatformAddress,
     identity_signer: &IS,
+    prover: &P,
+) -> Result<(Identifier, Identity), PlatformWalletError>
+where
+    S: ShieldedStore,
+    P: OrchardProver,
+    IS: Signer<IdentityPublicKey>,
+{
+    identity_create_from_shielded_pool_dispatched(
+        sdk,
+        store,
+        anchor_cache,
+        persister,
+        wallet_id,
+        keys,
+        account,
+        public_keys,
+        denomination,
+        send_to_address_on_creation_failure,
+        identity_signer,
+        None,
+        prover,
+    )
+    .await
+}
+
+/// [`identity_create_from_shielded_pool`], with `dispatch` shown each spend before its first broadcast
+/// when set ([`ShieldedDispatch`]).
+#[allow(clippy::too_many_arguments)]
+pub(in crate::wallet) async fn identity_create_from_shielded_pool_dispatched<S, P, IS>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    anchor_cache: &RecordedAnchorCache,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    public_keys: Vec<(IdentityPublicKey, IdentityPublicKeyInCreation)>,
+    denomination: u64,
+    send_to_address_on_creation_failure: PlatformAddress,
+    identity_signer: &IS,
+    dispatch: Option<&dyn ShieldedDispatch>,
     prover: &P,
 ) -> Result<(Identifier, Identity), PlatformWalletError>
 where
@@ -2967,6 +3134,7 @@ where
         broadcast_identity_create_with_redrive(
             sdk,
             store,
+            dispatch,
             id,
             &pending_entry,
             anchor_bytes,
@@ -3070,6 +3238,7 @@ fn identity_create_failure(
 async fn broadcast_identity_create_with_redrive<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
+    dispatch: Option<&dyn ShieldedDispatch>,
     id: SubwalletId,
     pending_entry: &Option<super::activity::ShieldedActivityEntry>,
     anchor: [u8; 32],
@@ -3082,6 +3251,7 @@ async fn broadcast_identity_create_with_redrive<S: ShieldedStore>(
 ) -> Result<(Identifier, Identity), SpendFailure> {
     save_spend_then_broadcast(
         store,
+        dispatch,
         id,
         pending_entry,
         anchor,
@@ -3969,6 +4139,7 @@ pub(super) const MAX_REDRIVE_ATTEMPTS: u32 = 3;
 async fn broadcast_shielded_spend_with_redrive<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
+    dispatch: Option<&dyn ShieldedDispatch>,
     id: SubwalletId,
     pending_entry: &Option<super::activity::ShieldedActivityEntry>,
     anchor: [u8; 32],
@@ -3982,6 +4153,7 @@ async fn broadcast_shielded_spend_with_redrive<S: ShieldedStore>(
     broadcast_shielded_spend_with_redrive_with_metadata(
         sdk,
         store,
+        dispatch,
         id,
         pending_entry,
         anchor,
@@ -4011,6 +4183,7 @@ async fn broadcast_shielded_spend_with_redrive<S: ShieldedStore>(
 async fn broadcast_shielded_spend_with_redrive_with_metadata<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
+    dispatch: Option<&dyn ShieldedDispatch>,
     id: SubwalletId,
     pending_entry: &Option<super::activity::ShieldedActivityEntry>,
     anchor: [u8; 32],
@@ -4023,6 +4196,7 @@ async fn broadcast_shielded_spend_with_redrive_with_metadata<S: ShieldedStore>(
 ) -> Result<(StateTransitionProofResult, ResponseMetadata), SpendFailure> {
     save_spend_then_broadcast(
         store,
+        dispatch,
         id,
         pending_entry,
         anchor,
@@ -4057,6 +4231,7 @@ async fn broadcast_shielded_spend_with_redrive_with_metadata<S: ShieldedStore>(
 #[allow(clippy::too_many_arguments)]
 async fn save_spend_then_broadcast<S, B, Fut, T>(
     store: &Arc<RwLock<S>>,
+    dispatch: Option<&dyn ShieldedDispatch>,
     id: SubwalletId,
     pending_entry: &Option<super::activity::ShieldedActivityEntry>,
     anchor: [u8; 32],
@@ -4088,7 +4263,67 @@ where
     .await?;
     // Saved: the notes are the spend's resolution's from here on.
     reservation.hand_over();
+    if let Some(hook) = dispatch {
+        await_dispatch(hook, id, pending_entry, anchor, notes, state_transition).await?;
+    }
     broadcast().await
+}
+
+/// Show the host's `hook` the spend `state_transition`, whose record is
+/// saved, and wait for its answer ([`ShieldedDispatch`]). A refusal, or a
+/// spend the hook cannot be shown, is a failure that never left the wallet
+/// ([`SpendFailure::never_delivered`]): the caller retires the record and
+/// releases the notes ([`settle_failed_spend`]).
+async fn await_dispatch(
+    hook: &dyn ShieldedDispatch,
+    id: SubwalletId,
+    pending_entry: &Option<super::activity::ShieldedActivityEntry>,
+    anchor: [u8; 32],
+    notes: &[ShieldedNote],
+    state_transition: &StateTransition,
+) -> Result<(), SpendFailure> {
+    use dpp::serialization::PlatformSerializable;
+
+    let refused = |reason: String| SpendFailure {
+        error: PlatformWalletError::ShieldedDispatchRefused { reason },
+        never_delivered: true,
+    };
+    let (Some(entry), Some(kind)) = (
+        pending_entry.as_ref(),
+        ShieldedDispatchKind::of(state_transition),
+    ) else {
+        return Err(refused(
+            "the spend has no activity entry or is not a note spend".to_owned(),
+        ));
+    };
+    let st_bytes = state_transition
+        .serialize_to_bytes()
+        .map_err(|e| refused(format!("the transition does not serialize: {e}")))?;
+    let payload = ShieldedDispatchPayload {
+        kind,
+        wallet_id: id.wallet_id,
+        account_index: id.account_index,
+        activity_id: entry.id,
+        st_hash: dpp::util::hash::hash_single(&st_bytes),
+        st_bytes,
+        anchor,
+        selected_notes: notes
+            .iter()
+            .map(|note| DispatchedNote {
+                nullifier: note.nullifier,
+                cmx: note.cmx,
+                value: note.value,
+                position: note.position,
+            })
+            .collect(),
+        published_nullifiers: shielded_actions(state_transition)
+            .iter()
+            .map(|action| action.nullifier)
+            .collect(),
+    };
+    hook.dispatch(payload)
+        .await
+        .map_err(|refusal| refused(refusal.reason))
 }
 
 /// Settle the notes, saved record and activity row of a note-consuming spend
@@ -4989,6 +5224,7 @@ mod shield_recipient_tests {
 #[cfg(test)]
 mod redrive_tests {
     use super::*;
+    use crate::wallet::shielded::dispatch::DispatchRefused;
     use crate::broadcast_outcome::test_sdks::{sdk_refusing_connections, sdk_without_addresses};
     use crate::wallet::identity::network::PaymentStarted;
     use crate::wallet::shielded::activity::ShieldedActivityEntry;
@@ -5553,6 +5789,7 @@ mod redrive_tests {
             let submitted = submit_private_document_payment(
                 PrivateDocumentSubmission {
                     store: &store,
+                    dispatch: None,
                     persister: None,
                     wallet_id,
                     id,
@@ -5698,6 +5935,7 @@ mod redrive_tests {
         let mut submitted = Box::pin(submit_private_document_payment(
             PrivateDocumentSubmission {
                 store: &store,
+                dispatch: None,
                 persister: None,
                 wallet_id,
                 id,
@@ -6129,6 +6367,7 @@ mod redrive_tests {
             vec![BinaryData::new(vec![1; 589])],
             None,
             &started,
+            None,
             &UnreachableProver,
         ));
         assert!(poll!(&mut spend).is_pending(), "waits to reserve");
@@ -6357,6 +6596,7 @@ mod redrive_tests {
                 vec![BinaryData::new(vec![1; 589])],
                 None,
                 &started,
+                None,
                 &UnreachableProver,
             ),
         )
@@ -6759,6 +6999,7 @@ mod redrive_tests {
                 Self::Shared => broadcast_shielded_spend_with_redrive_with_metadata(
                     sdk,
                     &spend.store,
+                    None,
                     id,
                     &spend.entry,
                     SPEND_ANCHOR,
@@ -6774,6 +7015,7 @@ mod redrive_tests {
                 Self::IdentityCreate => broadcast_identity_create_with_redrive(
                     sdk,
                     &spend.store,
+                    None,
                     id,
                     &spend.entry,
                     SPEND_ANCHOR,
@@ -6963,6 +7205,7 @@ mod redrive_tests {
         let mut cx = Context::from_waker(Waker::noop());
         let mut spend = Box::pin(save_spend_then_broadcast(
             &store,
+            None,
             id,
             &entry,
             SPEND_ANCHOR,
@@ -7096,6 +7339,7 @@ mod redrive_tests {
             let store = Arc::clone(&spend.store);
             let result: Result<(), SpendFailure> = save_spend_then_broadcast(
                 &spend.store,
+                None,
                 id,
                 &spend.entry,
                 SPEND_ANCHOR,
@@ -7173,6 +7417,293 @@ mod redrive_tests {
                 }
             }
         }
+    }
+
+    /// A dispatch hook that answers `refuse`, and keeps what it was shown
+    /// and whether the spend's record was on the file at `path` then.
+    struct RecordingHook {
+        path: std::path::PathBuf,
+        id: SubwalletId,
+        refuse: bool,
+        shown: std::sync::Mutex<Vec<(ShieldedDispatchPayload, bool)>>,
+        log: Arc<std::sync::Mutex<Vec<&'static str>>>,
+    }
+
+    impl RecordingHook {
+        fn new(path: &std::path::Path, id: SubwalletId, refuse: bool) -> Self {
+            Self {
+                path: path.to_path_buf(),
+                id,
+                refuse,
+                shown: Default::default(),
+                log: Default::default(),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ShieldedDispatch for RecordingHook {
+        async fn dispatch(&self, payload: ShieldedDispatchPayload) -> Result<(), DispatchRefused> {
+            self.log.lock().unwrap().push("hook");
+            let durable = FileBackedShieldedStore::open_path(&self.path, 100)
+                .expect("a second handle")
+                .pending_redrives(self.id)
+                .expect("the records")
+                .iter()
+                .any(|record| record.st_bytes == payload.st_bytes);
+            self.shown.lock().unwrap().push((payload, durable));
+            if self.refuse {
+                Err(DispatchRefused::new("refused by the host"))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    /// Each note-consuming spend path, with a hook that refuses it: the hook
+    /// is shown the spend once its record is on the file, with every field
+    /// of the payload as the transition and the reserved notes have it.
+    /// Nothing is broadcast, and the settlement retires the record, releases
+    /// the notes and reports the refusal.
+    #[tokio::test]
+    async fn should_send_nothing_a_dispatch_hook_refuses() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let wallet_id = [0x74; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let activity_id = [0x7D; 32];
+        for spend_path in [SpendPath::Shared, SpendPath::IdentityCreate] {
+            let dir = tempfile::tempdir().expect("a directory");
+            let path = dir.path().join("tree.sqlite");
+            let mut spend = ReservedSpend::at(&path, id, activity_id).await;
+            let transition = spend_path.transition();
+            let hook = RecordingHook::new(&path, id, true);
+            let broadcast = AtomicBool::new(false);
+            let result: Result<(), SpendFailure> = save_spend_then_broadcast(
+                &spend.store,
+                Some(&hook),
+                id,
+                &spend.entry,
+                SPEND_ANCHOR,
+                SPEND_ANCHOR_HEIGHT,
+                &spend.notes,
+                &mut spend.reservation,
+                &transition,
+                "transfer",
+                || async {
+                    broadcast.store(true, Ordering::SeqCst);
+                    Ok(())
+                },
+            )
+            .await;
+            let failure = result.expect_err("refused");
+            assert!(failure.never_delivered, "{spend_path:?}");
+            assert!(
+                !broadcast.load(Ordering::SeqCst),
+                "{spend_path:?}: not sent"
+            );
+
+            let shown = std::mem::take(&mut *hook.shown.lock().unwrap());
+            assert_eq!(shown.len(), 1, "{spend_path:?}: shown once");
+            let (payload, durable) = &shown[0];
+            assert!(
+                durable,
+                "{spend_path:?}: the record is saved before the hook"
+            );
+            let st_bytes = transition.serialize_to_bytes().expect("serializes");
+            let expected_kind = match spend_path {
+                SpendPath::Shared => ShieldedDispatchKind::Transfer,
+                SpendPath::IdentityCreate => ShieldedDispatchKind::IdentityCreate {
+                    identity_id: CREATED_IDENTITY,
+                },
+            };
+            let note = spend_note();
+            assert_eq!(
+                payload,
+                &ShieldedDispatchPayload {
+                    kind: expected_kind,
+                    wallet_id,
+                    account_index: 0,
+                    activity_id,
+                    st_hash: dpp::util::hash::hash_single(&st_bytes),
+                    st_bytes,
+                    anchor: SPEND_ANCHOR,
+                    selected_notes: vec![DispatchedNote {
+                        nullifier: note.nullifier,
+                        cmx: note.cmx,
+                        value: note.value,
+                        position: note.position,
+                    }],
+                    published_nullifiers: shielded_actions(&transition)
+                        .iter()
+                        .map(|action| action.nullifier)
+                        .collect(),
+                },
+                "{spend_path:?}"
+            );
+            assert_eq!(payload.published_nullifiers.len(), 2, "padding included");
+
+            let store = Arc::clone(&spend.store);
+            let settled = spend_path.settle(spend, wallet_id, id, failure).await;
+            assert!(
+                matches!(
+                    &settled,
+                    PlatformWalletError::ShieldedDispatchRefused { reason }
+                        if reason == "refused by the host"
+                ),
+                "{spend_path:?}: {settled:?}"
+            );
+            let (spendable, status) = spendable_and_status(&store, id, &activity_id).await;
+            drop(store);
+            assert_eq!(spendable, 1, "{spend_path:?}: the notes are released");
+            assert_eq!(status, ShieldedActivityStatus::Failed, "{spend_path:?}");
+            assert!(
+                FileBackedShieldedStore::open_path(&path, 100)
+                    .expect("reopened")
+                    .pending_redrives(id)
+                    .expect("records")
+                    .is_empty(),
+                "{spend_path:?}: the record is retired"
+            );
+        }
+    }
+
+    /// A hook that accepts a spend runs after its record is saved and before
+    /// its broadcast, which then goes ahead.
+    #[tokio::test]
+    async fn should_broadcast_a_spend_once_its_dispatch_hook_accepts() {
+        let id = SubwalletId::new([0x75; 32], 0);
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("tree.sqlite");
+        let mut spend = ReservedSpend::at(&path, id, [0x7E; 32]).await;
+        let transition = SpendPath::Shared.transition();
+        let hook = RecordingHook::new(&path, id, false);
+        let log = Arc::clone(&hook.log);
+        let result: Result<(), SpendFailure> = save_spend_then_broadcast(
+            &spend.store,
+            Some(&hook),
+            id,
+            &spend.entry,
+            SPEND_ANCHOR,
+            SPEND_ANCHOR_HEIGHT,
+            &spend.notes,
+            &mut spend.reservation,
+            &transition,
+            "transfer",
+            || async {
+                log.lock().unwrap().push("broadcast");
+                Ok(())
+            },
+        )
+        .await;
+        assert!(result.is_ok());
+        assert_eq!(*hook.log.lock().unwrap(), ["hook", "broadcast"]);
+        assert!(hook.shown.lock().unwrap()[0].1, "saved before the hook");
+    }
+
+    /// A private document payment whose hook refuses it is not broadcast:
+    /// its record and journal record are retired, its notes released, and
+    /// the payment reads as never delivered.
+    #[tokio::test]
+    async fn should_send_no_private_payment_a_dispatch_hook_refuses() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let sdk = Arc::new(dash_sdk::Sdk::new_mock());
+        let action = SerializedAction {
+            nullifier: [1; 32],
+            rk: [2; 32],
+            cmx: [3; 32],
+            encrypted_note: vec![4; 216],
+            cv_net: [5; 32],
+            spend_auth_sig: [6; 64],
+        };
+        let wallet_id = [0x69; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("tree.sqlite");
+        let store = Arc::new(RwLock::new(
+            FileBackedShieldedStore::open_path(&path, 100).expect("the store"),
+        ));
+        store
+            .write()
+            .await
+            .save_note(id, &spend_note())
+            .expect("a note");
+        let (selected, _, _, reservation) =
+            reserve_notes_covering(&sdk, &store, id, 1, 2, ShieldedFeeKind::Base)
+                .await
+                .expect("reserved");
+        let transition = PrivateDocumentCreateFromShieldedPoolTransition::try_from_bundle(
+            Identifier::from([0x44; 32]),
+            "privateContactRequest".to_string(),
+            vec![BinaryData::new(vec![9; 589])],
+            vec![action.clone(), action],
+            0,
+            [7; 32],
+            vec![8; 64],
+            [9; 64],
+            PlatformVersion::latest(),
+        )
+        .expect("a type 29 transition");
+        let entry = pending_entry([0x78; 32]);
+        store
+            .write()
+            .await
+            .save_activity(id, &entry)
+            .expect("the pending row");
+        let hook = RecordingHook::new(&path, id, true);
+        let started = PaymentStarted::default();
+        let broadcast = AtomicBool::new(false);
+        let submitted = submit_private_document_payment(
+            PrivateDocumentSubmission {
+                store: &store,
+                dispatch: Some(&hook),
+                persister: None,
+                wallet_id,
+                id,
+                pending_entry: Some(entry),
+                selected_notes: &selected,
+                reservation,
+                state_transition: transition,
+                anchor: [7; 32],
+                anchor_height: 0,
+                private_contact: Some(PrivateContactPayment {
+                    sender: [0xB1; 32],
+                    recipient: [0xA1; 32],
+                    account_reference: 5,
+                }),
+                journaled: Some(&[[9; 32]]),
+                payment_started: &started,
+            },
+            |_| {
+                broadcast.store(true, Ordering::SeqCst);
+                std::future::ready(Err(SpendFailure {
+                    error: PlatformWalletError::ShieldedBroadcastFailed("sent".to_string()),
+                    never_delivered: false,
+                }))
+            },
+        )
+        .await;
+        assert!(
+            matches!(
+                submitted,
+                Err(PlatformWalletError::ShieldedDispatchRefused { .. })
+            ),
+            "{submitted:?}"
+        );
+        assert!(!broadcast.load(Ordering::SeqCst), "not sent");
+        let shown = hook.shown.lock().unwrap().clone();
+        assert_eq!(shown.len(), 1);
+        assert_eq!(shown[0].0.kind, ShieldedDispatchKind::PrivateDocumentCreate);
+        assert!(shown[0].1, "the record is saved before the hook");
+        assert!(!started.may_have_reached_network(), "never delivered");
+        let store = store.read().await;
+        assert_eq!(store.get_unspent_notes(id).expect("notes").len(), 1);
+        assert!(store.pending_redrives(id).expect("records").is_empty());
+        assert!(store
+            .private_payment_journal(wallet_id)
+            .expect("the journal")
+            .is_empty());
     }
 
     /// Each note-consuming spend path, on an SDK whose node answers every
