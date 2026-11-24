@@ -210,35 +210,34 @@ impl PlatformWallet {
         let _shield_guard = self.shield_guard.lock().await;
         // The removal marks the wallet detached under `shield_guard`, held to
         // the funding's end: a removed wallet resumes no drain into a
-        // replacement's asset-lock rows and funds nothing.
-        let result = match self.ensure_shielded_attached() {
-            Err(error) => Err(error),
-            Ok(()) => {
-                let funding = if let Some(operation) = &operation {
-                    match self.asset_locks.begin_wallet_drain(operation).await? {
-                        Some(out_point) => AssetLockFunding::FromExistingAssetLock {
-                            out_point,
-                            consume_invitation_voucher: false,
-                        },
-                        None => funding,
-                    }
-                } else {
-                    funding
-                };
-                self.shielded_fund_from_asset_lock_inner(
-                    funding,
-                    recipients,
-                    asset_lock_signer,
-                    prover,
-                    surplus_output,
-                    dummy_outputs,
-                    settings,
-                    cl_wait,
-                    on_asset_lock_built,
-                )
-                .await
+        // replacement's asset-lock rows and funds nothing. Refused before the
+        // outcome bookkeeping below, so a retry's unchecked outcome stays
+        // unknown rather than not sent.
+        self.ensure_shielded_attached()?;
+        let funding = if let Some(operation) = &operation {
+            match self.asset_locks.begin_wallet_drain(operation).await? {
+                Some(out_point) => AssetLockFunding::FromExistingAssetLock {
+                    out_point,
+                    consume_invitation_voucher: false,
+                },
+                None => funding,
             }
+        } else {
+            funding
         };
+        let result = self
+            .shielded_fund_from_asset_lock_inner(
+                funding,
+                recipients,
+                asset_lock_signer,
+                prover,
+                surplus_output,
+                dummy_outputs,
+                settings,
+                cl_wait,
+                on_asset_lock_built,
+            )
+            .await;
         if let Some(operation) = operation {
             let snapshot = operation.snapshot();
             if result.is_ok() {

@@ -1293,7 +1293,8 @@ async fn should_keep_best_effort_dispatch_on_a_backend_without_recipient_support
 
 /// A retained handle retrying a pending drain after its wallet's removal is
 /// refused before the retry restores the drain's lock into the live map or
-/// writes a row, so a re-imported wallet with the same id gains nothing.
+/// writes a row, so a re-imported wallet with the same id gains nothing, and
+/// its outcome stays unknown.
 #[tokio::test]
 async fn should_refuse_a_pending_drain_retry_on_a_handle_kept_past_its_removal() {
     let (lock, keys) = drain_lock_fixture();
@@ -1316,7 +1317,7 @@ async fn should_refuse_a_pending_drain_retry_on_a_handle_kept_past_its_removal()
             AssetLockFunding::DrainWalletBalance {
                 account_index: 0,
                 minimum_lock_duffs: None,
-                operation,
+                operation: operation.clone(),
             },
             vec![],
             &signer,
@@ -1332,6 +1333,11 @@ async fn should_refuse_a_pending_drain_retry_on_a_handle_kept_past_its_removal()
     assert!(
         matches!(result, Err(PlatformWalletError::WalletNotFound(_))),
         "{result:?}"
+    );
+    assert_eq!(
+        operation.snapshot().state,
+        AssetLockOperationState::Pending,
+        "the refused retry does not report its earlier lock as not sent"
     );
     assert!(wallet.asset_locks.list_tracked_locks().await.is_empty());
     assert!(persistence.staged.lock().unwrap().is_empty());

@@ -1095,6 +1095,8 @@ fn map_identity_create_result(
             PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
             format!("shielded identity-create-from-pool failed: {e}"),
         ),
+        // The wallet was removed before anything was recorded or broadcast.
+        Err(e @ PlatformWalletError::WalletRemovedBeforeSend(_)) => e.into(),
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("shielded identity-create-from-pool failed: {e}"),

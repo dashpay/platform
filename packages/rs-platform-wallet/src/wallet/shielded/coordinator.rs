@@ -1114,12 +1114,7 @@ impl NetworkShieldedCoordinator {
         // restore could repopulate (and re-mark hydrated) the state
         // purged below after the purge ran.
         let _lifecycle = self.lifecycle.lock().await;
-        self.accounts
-            .write()
-            .await
-            .retain(|id, _| id.wallet_id != wallet_id);
-        self.persisters.write().await.remove(&wallet_id);
-        self.hydrated.write().await.remove(&wallet_id);
+        self.release_registration(wallet_id).await;
         if let Err(e) = self.store.write().await.purge_wallet(wallet_id) {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
@@ -1127,6 +1122,24 @@ impl NetworkShieldedCoordinator {
                 "Failed to purge per-subwallet store state on unregister"
             );
         }
+    }
+
+    /// Drop `wallet_id`'s live registration (its accounts, persister and
+    /// hydration) and keep its store state, as a process exit leaves it: for
+    /// a wallet a failed load published, whose signed recovery records a
+    /// later load still needs.
+    pub(crate) async fn release_wallet(&self, wallet_id: WalletId) {
+        let _lifecycle = self.lifecycle.lock().await;
+        self.release_registration(wallet_id).await;
+    }
+
+    async fn release_registration(&self, wallet_id: WalletId) {
+        self.accounts
+            .write()
+            .await
+            .retain(|id, _| id.wallet_id != wallet_id);
+        self.persisters.write().await.remove(&wallet_id);
+        self.hydrated.write().await.remove(&wallet_id);
     }
 
     /// Currently-registered subwallet ids (snapshot, ascending
