@@ -3258,6 +3258,7 @@ mod tests {
                     unconfirmed_outgoing_txs: Vec::new(),
                     dashpay_backfill: Default::default(),
                     funding_issuance_floors: Default::default(),
+                    recorded_history: Default::default(),
                 },
             );
             #[allow(unused_mut)]

@@ -485,6 +485,7 @@ fn tc_p2_005_is_transient_table() {
                 (false, "empty_pool_address_script")
             }
             WalletStorageError::DatabasePathIsSymlink { .. } => (false, "database_path_is_symlink"),
+            WalletStorageError::SpendAuthorization(_) => (false, "spend_authorization"),
         }
     }
 

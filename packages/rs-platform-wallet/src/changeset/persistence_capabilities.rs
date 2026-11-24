@@ -160,13 +160,24 @@ impl PersistenceCapabilities {
     /// load and free slots; all three must be wired.
     pub const OUTPOINT_LOCKS: Self = Self(1 << 16);
 
+    /// Load restores the in-memory spend guards for confirmed AND unconfirmed
+    /// spends from the wallet's complete stored transaction history: either it
+    /// hands the history back
+    /// ([`ClientWalletStartState::recorded_history`](super::ClientWalletStartState::recorded_history))
+    /// for the shared load replay, or it replays the history itself before
+    /// returning. Without it a funding transaction redelivered after restart
+    /// (rescan, gap-limit rediscovery) re-credits an output a confirmed spend
+    /// already consumed until the spend is observed again. Diagnostic only:
+    /// load warns when it is absent and gates nothing.
+    pub const CORE_HISTORY_RESTORE: Self = Self(1 << 17);
+
     /// Index of the highest bit declared above. It lives here, beside the
     /// constants, so adding a bit and bumping this is one edit in one place
     /// — and `every_declared_bit_has_a_stable_name` walks up to it, so a new
     /// bit that never reaches `KNOWN` fails a test instead of gating
     /// behaviour invisibly. The same test asserts nothing above it is named,
     /// which is what catches a bit added without bumping this.
-    const HIGHEST_DECLARED_BIT: u32 = 16;
+    const HIGHEST_DECLARED_BIT: u32 = 17;
 
     /// Capabilities required before exporting and funding an invitation voucher.
     pub const INVITATION_CREATION: Self = Self(
@@ -290,6 +301,10 @@ impl PersistenceCapabilities {
                 "private_contact_request_scan_state",
             ),
             (PersistenceCapabilities::OUTPOINT_LOCKS, "outpoint_locks"),
+            (
+                PersistenceCapabilities::CORE_HISTORY_RESTORE,
+                "core_history_restore",
+            ),
         ];
 
         KNOWN
@@ -307,7 +322,7 @@ impl PersistenceCapabilities {
 /// failure the test exists to catch. Written as a module-level `const _` so
 /// it is evaluated in every build, test or not.
 const _: () = assert!(
-    PersistenceCapabilities::OUTPOINT_LOCKS.bits()
+    PersistenceCapabilities::CORE_HISTORY_RESTORE.bits()
         == 1u64 << PersistenceCapabilities::HIGHEST_DECLARED_BIT,
     "HIGHEST_DECLARED_BIT must name the highest declared capability bit"
 );
@@ -348,6 +363,10 @@ mod tests {
             0x8000
         );
         assert_eq!(PersistenceCapabilities::OUTPOINT_LOCKS.bits(), 0x10000);
+        assert_eq!(
+            PersistenceCapabilities::CORE_HISTORY_RESTORE.bits(),
+            0x2_0000
+        );
         assert_eq!(PersistenceCapabilities::WALLET_DRAIN.bits(), 0x2285);
         assert_eq!(
             PersistenceCapabilities::ASSET_LOCK_RECONCILIATION.bits(),

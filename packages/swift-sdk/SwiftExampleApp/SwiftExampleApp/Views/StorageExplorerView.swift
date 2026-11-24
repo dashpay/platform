@@ -164,6 +164,9 @@ struct StorageExplorerView: View {
             ) {
                 TransactionAccountingStorageListView(network: network)
             }
+            modelRow("InstantSend Locks", icon: "bolt.shield", type: PersistentCoreInstantLock.self) {
+                CoreInstantLockStorageListView(network: network)
+            }
             modelRow("Asset Locks", icon: "lock.shield", type: PersistentAssetLock.self) {
                 AssetLockStorageListView(network: network)
             }
@@ -322,6 +325,7 @@ struct StorageExplorerView: View {
         directCount(PersistentWallet.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentWalletManagerMetadata.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentLockedOutpoint.self, predicate: #Predicate { $0.networkRaw == raw })
+        directCount(PersistentCoreInstantLock.self, predicate: #Predicate { $0.networkRaw == raw })
 
         // Models that derive their network through a relationship —
         // SwiftData's predicate compiler can't follow optional

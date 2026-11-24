@@ -98,7 +98,8 @@ public enum DashModelContainer {
             PersistentPrivateContactRequestsPosition.self,
             PersistentPrivateShieldedAddress.self,
             PersistentLockedOutpoint.self,
-            PersistentTransactionAccounting.self
+            PersistentTransactionAccounting.self,
+            PersistentCoreInstantLock.self
         ]
     }
 
@@ -408,10 +409,12 @@ public enum DashSchemaV4: VersionedSchema {
     public static var models: [any PersistentModel.Type] { DashSchemaSnapshotV4.models }
 }
 
-/// Current schema: asset locks record the optional Orchard recipient of
-/// shielded funding. Private contact request sync keeps its scan state and
-/// shielded addresses. Wallets store locked outpoints, per-wallet
-/// transaction accounting, and the accounting backfill marker.
+/// Current schema: per-wallet transaction accounting (`PersistentTransactionAccounting`),
+/// the wallet's accounting-backfill marker, raw InstantLock sidecars, an asset
+/// lock's optional Orchard recipient of its shielded funding, the private
+/// contact request sync's scan state (each identity's read position and its
+/// private contacts' shielded addresses), and the outpoints a wallet keeps out
+/// of coin selection.
 public enum DashSchemaV5: VersionedSchema {
     public static var versionIdentifier: Schema.Version { Schema.Version(5, 0, 0) }
     public static var models: [any PersistentModel.Type] { DashModelContainer.modelTypes }
