@@ -20,6 +20,16 @@ use rs_dapi_client::{CanRetry, DapiClientError, ExecutionError};
 use std::fmt::Debug;
 use std::time::Duration;
 
+/// The advice that ends the [`Error::Config`] message of a request that ran out of attempts
+/// on answers below the SDK's protocol version, before any verified answer showed the network
+/// running it. The message reports the answers the request received before its retries
+/// ended, not every node: the retries can end with nodes left unasked. It names the Rust
+/// builder method; a binding whose callers set the version under another name replaces this
+/// suffix with advice that names theirs.
+pub const SDK_AHEAD_OF_NETWORK_ADVICE: &str = "if the SDK was set ahead of its network, let it \
+     follow the network's protocol version instead, or seed it with the network's version \
+     (with_initial_version)";
+
 /// Error type for the SDK
 // TODO: Propagate server address and retry information so that the user can retrieve it
 #[allow(clippy::large_enum_variant)]
@@ -361,9 +371,7 @@ impl Error {
             }) => Self::Config(format!(
                 "the last answer names protocol version {signed}, below the SDK's protocol \
                  version {sdk}, and no verified answer has yet shown the network running \
-                 {sdk}; if the SDK was set ahead of its network, let it follow the network's \
-                 protocol version instead, or seed it with the network's version \
-                 (with_initial_version)"
+                 {sdk}; {SDK_AHEAD_OF_NETWORK_ADVICE}"
             )),
             error => error,
         }

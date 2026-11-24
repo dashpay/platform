@@ -312,6 +312,16 @@ const DPNS_DOCUMENT_TYPE: &str = "domain";
 /// DPNS document type of a name given up for good, from DPNS v3
 const DPNS_TOMBSTONE_DOCUMENT_TYPE: &str = "tombstone";
 
+/// What a lookup by name reports of `domain`, the `domain` document of `username`: the name
+/// as it was asked for, the document, and its owner.
+fn dpns_username_info(username: &str, domain: &Document) -> DpnsUsernameInfoWasm {
+    DpnsUsernameInfoWasm {
+        username: username.to_string(),
+        identity_id: IdentifierWasm::from(domain.owner_id()),
+        document_id: IdentifierWasm::from(domain.id()),
+    }
+}
+
 impl WasmSdk {
     /// Get DPNS contract, checking context provider cache first, then fetching if needed.
     async fn get_dpns_contract(&self) -> Result<Arc<DataContract>, WasmSdkError> {
@@ -617,41 +627,12 @@ impl WasmSdk {
         &self,
         username: &str,
     ) -> Result<Option<DpnsUsernameInfoWasm>, WasmSdkError> {
-        let parts: Vec<&str> = username.split('.').collect();
-        if parts.len() != 2 {
-            return Err(WasmSdkError::invalid_argument(
-                "Invalid username format. Expected format: label.domain",
-            ));
-        }
-        let label = parts[0];
-        let domain = parts[1];
+        let domain = self
+            .as_ref()
+            .get_dpns_domain_document_by_name(username)
+            .await?;
 
-        let dpns_contract = self.get_dpns_contract().await?;
-        let mut query = DocumentQuery::new(dpns_contract, DPNS_DOCUMENT_TYPE)?;
-
-        query = query.with_where(WhereClause {
-            field: "normalizedLabel".to_string(),
-            operator: WhereOperator::Equal,
-            value: Value::Text(label.to_lowercase()),
-        });
-
-        query = query.with_where(WhereClause {
-            field: "normalizedParentDomainName".to_string(),
-            operator: WhereOperator::Equal,
-            value: Value::Text(domain.to_lowercase()),
-        });
-
-        let documents = Document::fetch_many(self.as_ref(), query).await?;
-
-        if let Some((_, Some(document))) = documents.into_iter().next() {
-            Ok(Some(DpnsUsernameInfoWasm {
-                username: username.to_string(),
-                identity_id: IdentifierWasm::from(document.owner_id()),
-                document_id: IdentifierWasm::from(document.id()),
-            }))
-        } else {
-            Ok(None)
-        }
+        Ok(domain.map(|domain| dpns_username_info(username, &domain)))
     }
 
     #[wasm_bindgen(
@@ -662,45 +643,19 @@ impl WasmSdk {
         &self,
         username: &str,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let parts: Vec<&str> = username.split('.').collect();
-        if parts.len() != 2 {
-            return Err(WasmSdkError::invalid_argument(
-                "Invalid username format. Expected format: label.domain",
-            ));
-        }
-        let label = parts[0];
-        let domain = parts[1];
+        let (domain, metadata, proof) = self
+            .as_ref()
+            .get_dpns_domain_document_by_name_with_metadata_and_proof(username)
+            .await?;
 
-        let dpns_contract = self.get_dpns_contract().await?;
-        let mut query = DocumentQuery::new(dpns_contract, DPNS_DOCUMENT_TYPE)?;
-
-        query = query.with_where(WhereClause {
-            field: "normalizedLabel".to_string(),
-            operator: WhereOperator::Equal,
-            value: Value::Text(label.to_lowercase()),
-        });
-
-        query = query.with_where(WhereClause {
-            field: "normalizedParentDomainName".to_string(),
-            operator: WhereOperator::Equal,
-            value: Value::Text(domain.to_lowercase()),
-        });
-
-        let (documents, metadata, proof) =
-            Document::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
-
-        let data = if let Some((_, Some(document))) = documents.into_iter().next() {
-            let result = DpnsUsernameInfoWasm {
-                username: username.to_string(),
-                identity_id: IdentifierWasm::from(document.owner_id()),
-                document_id: IdentifierWasm::from(document.id()),
-            };
-
+        let data = if let Some(domain) = domain {
             // Use json_compatible() to ensure objects become plain JS objects (not Maps)
             let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-            result.serialize(&serializer).map_err(|e| {
-                WasmSdkError::serialization(format!("Failed to serialize username info: {}", e))
-            })?
+            dpns_username_info(username, &domain)
+                .serialize(&serializer)
+                .map_err(|e| {
+                    WasmSdkError::serialization(format!("Failed to serialize username info: {}", e))
+                })?
         } else {
             JsValue::NULL
         };
@@ -779,5 +734,149 @@ impl WasmSdk {
         response.set_data(username);
 
         Ok(response)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::context_provider::WasmTrustedContext;
+    #[cfg(not(target_arch = "wasm32"))]
+    use crate::error::WasmSdkErrorKind;
+    use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dash_sdk::dpp::document::DocumentV0;
+    use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dash_sdk::drive::query::SelectProjection;
+    use dash_sdk::Sdk;
+
+    const DOMAIN_OWNER: [u8; 32] = [7; 32];
+    const DOMAIN_DOCUMENT_ID: [u8; 32] = [9; 32];
+
+    /// An SDK whose network holds one name, stored as DPNS stores `alice.dash`: under the
+    /// homograph-safe label `a11ce` and the parent domain `dash`. It answers the query for
+    /// that stored form and no other.
+    async fn sdk_holding_alice_dot_dash() -> WasmSdk {
+        let mut inner_sdk = Sdk::new_mock();
+        let dpns = load_system_data_contract(SystemDataContract::DPNS, inner_sdk.version())
+            .expect("the DPNS contract loads");
+        let domain = Document::V0(DocumentV0 {
+            id: Identifier::new(DOMAIN_DOCUMENT_ID),
+            owner_id: Identifier::new(DOMAIN_OWNER),
+            ..Default::default()
+        });
+        // The Rust SDK asks the context provider for the DPNS contract first, and fetches it
+        // when the provider does not hold it.
+        let context = WasmTrustedContext::for_testing(vec![]);
+        inner_sdk
+            .set_context_provider(context.clone())
+            .expect("the context provider is set");
+        inner_sdk
+            .mock()
+            .expect_fetch(dpns.id(), Some(dpns.clone()))
+            .await
+            .expect("the DPNS contract fetch is expected");
+        let stored_name_query = DocumentQuery {
+            select: SelectProjection::documents(),
+            data_contract: Arc::new(dpns),
+            document_type_name: DPNS_DOCUMENT_TYPE.to_string(),
+            where_clauses: vec![
+                WhereClause {
+                    field: "normalizedParentDomainName".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Text("dash".to_string()),
+                },
+                WhereClause {
+                    field: "normalizedLabel".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Text("a11ce".to_string()),
+                },
+            ],
+            time_range_clauses: vec![],
+            integer_range_clauses: vec![],
+            sub_queries: vec![],
+            group_by: vec![],
+            having: vec![],
+            order_by_clauses: vec![],
+            limit: 1,
+            offset: None,
+            start: None,
+        };
+        inner_sdk
+            .mock()
+            .expect_fetch_many::<Identifier, Document, DocumentQuery, Documents>(
+                stored_name_query,
+                Some([(domain.id(), Some(domain))].into_iter().collect()),
+            )
+            .await
+            .expect("the domain query is expected");
+        WasmSdk::new_for_testing(inner_sdk, Some(context))
+    }
+
+    /// DPNS keeps a name under its homograph-safe label: `alice.dash` is stored as `a11ce`
+    /// under `dash`. A lookup of the name as a user types it has to search for that form, or
+    /// it finds nothing for any label with an `i`, `l` or `o`.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn should_find_a_username_whose_label_dpns_stores_in_homograph_safe_form() {
+        let sdk = sdk_holding_alice_dot_dash().await;
+
+        let info = sdk
+            .get_dpns_username_by_name("Alice.DASH")
+            .await
+            .expect("the lookup succeeds")
+            .expect("the name is found");
+
+        assert_eq!(info.username, "Alice.DASH");
+        assert_eq!(
+            Identifier::from(info.identity_id),
+            Identifier::new(DOMAIN_OWNER)
+        );
+        assert_eq!(
+            Identifier::from(info.document_id),
+            Identifier::new(DOMAIN_DOCUMENT_ID)
+        );
+    }
+
+    /// The lookup that also returns the proof searches for the same stored form, and
+    /// reports the name as it was typed, the document's owner and the document. This
+    /// response carries the two identifiers as their bytes.
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen_test::wasm_bindgen_test]
+    async fn should_find_a_username_in_homograph_safe_form_with_proof_info() {
+        let sdk = sdk_holding_alice_dot_dash().await;
+
+        let response = sdk
+            .get_dpns_username_by_name_with_proof_info("Alice.DASH")
+            .await
+            .expect("the lookup succeeds");
+
+        assert_eq!(
+            wasm_dpp2::serialization::js_value_to_json(&response.data()).expect("the info as JSON"),
+            serde_json::json!({
+                "username": "Alice.DASH",
+                "identityId": DOMAIN_OWNER,
+                "documentId": DOMAIN_DOCUMENT_ID,
+            })
+        );
+    }
+
+    /// A name that is not a label and a parent domain is refused as an invalid argument,
+    /// before anything is read: the mock SDK holds no expectation.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn should_refuse_a_username_that_is_not_a_label_and_a_domain() {
+        let sdk = WasmSdk::new_for_testing(Sdk::new_mock(), None);
+
+        let error = sdk
+            .get_dpns_username_by_name("alice")
+            .await
+            .err()
+            .expect("a bare label is refused");
+
+        assert_eq!(error.kind(), WasmSdkErrorKind::InvalidArgument);
+        assert_eq!(
+            error.message(),
+            "Invalid username format. Expected format: label.domain"
+        );
     }
 }

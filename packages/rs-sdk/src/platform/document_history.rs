@@ -425,6 +425,25 @@ mod tests {
         assert!(!refuses_history_v0(&Error::Generic(refusal.to_string())));
     }
 
+    /// A read that names no starting point takes the first-page filter. A network below
+    /// protocol version 15 serves only what has a V0 form, so that filter must have one, and
+    /// it must start V0 where the history starts.
+    #[test]
+    fn should_serve_the_first_page_filter_below_protocol_version_15() {
+        let settings_source = SdkBuilder::new_mock().build().unwrap();
+        let v1 = query(DocumentHistoryQuery::FIRST_PAGE_FILTER)
+            .query(&settings_source.query_settings())
+            .unwrap();
+        let Some(Version::V0(v0)) = history_request_below_protocol_15(v1)
+            .unwrap()
+            .expect("the first page has a V0 form")
+            .version
+        else {
+            panic!("the first page is a V0 request below protocol version 15");
+        };
+        assert_eq!(v0.start_at_ms, 0);
+    }
+
     #[test]
     fn should_start_v0_at_zero_for_a_start_time_of_zero() {
         let settings_source = SdkBuilder::new_mock().build().unwrap();
