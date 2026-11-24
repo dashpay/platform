@@ -798,7 +798,10 @@ impl PlatformWallet {
         if !self.core().is_current_generation().await {
             return Err(removed());
         }
-        let signed = sign.await?;
+        // Nothing reached the network before `send`: an error building or
+        // signing the top-up (a short input, an oversized transition) is a
+        // refusal before dispatch, keeping its diagnostic.
+        let signed = sign.await.map_err(PlatformWalletError::before_dispatch)?;
         let lifecycle = self.core().generation_payment_guard().await;
         if !self.core().is_current_generation().await {
             return Err(removed());
