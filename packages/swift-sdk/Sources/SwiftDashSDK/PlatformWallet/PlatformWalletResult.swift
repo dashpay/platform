@@ -348,11 +348,11 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// username now belongs to another identity than the contact's. Nothing
     /// was sent; the user picks the recipient again.
     case errorShieldedTipRecipientMismatch = 86
-    /// A local shielded balance read did not finish within its wait budget:
-    /// the wallet's state or its shielded store was held, by a scan for
-    /// instance. Nothing failed and nothing changed: keep the last state
-    /// shown and read again later. The only code of that read that means
-    /// retry.
+    /// A local shielded balance read did not finish within its wait budget
+    /// (the wallet's state or its shielded store was held, by a scan for
+    /// instance), or a shielded Clear was running. Nothing failed and
+    /// nothing changed: keep the last state shown and read again later. The
+    /// only code of that read that means retry.
     case errorShieldedBalanceBusy = 87
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
@@ -818,11 +818,11 @@ public enum PlatformWalletError: LocalizedError {
     /// the recipient again; a tip to the name's new owner starts from the
     /// name, not from the contact.
     case shieldedTipRecipientMismatch(String)
-    /// `shieldedIdentityBalance` did not finish within its wait budget: the
+    /// `shieldedIdentityBalance` did not finish within its wait budget (the
     /// wallet's state or its shielded store was held, by a scan for
-    /// instance. Nothing failed and nothing changed: keep the last state
-    /// shown and read again later. The only error of that read that means
-    /// retry.
+    /// instance), or a shielded Clear was running. Nothing failed and
+    /// nothing changed: keep the last state shown and read again later. The
+    /// only error of that read that means retry.
     case shieldedBalanceBusy(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition never

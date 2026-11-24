@@ -1192,13 +1192,15 @@ pub enum PlatformWalletError {
     )]
     ShieldedTipPending,
 
-    /// A bounded read of a shielded balance did not finish within its wait:
-    /// the wallet's state or its shielded store was held, by a scan for
-    /// instance. Which of the two is not told. Nothing failed and nothing
-    /// changed: the caller keeps the state it last read and reads again
-    /// later.
+    /// A shielded balance could not be read now. Either a bounded read did
+    /// not finish within its wait (the wallet's state or its shielded store
+    /// was held, by a scan for instance), or a shielded Clear was admitted
+    /// and had not finished, so the ledger read may be the one it wipes.
+    /// Which is not told. Nothing failed and nothing changed: the caller
+    /// keeps the state it last read and reads again later.
     #[error(
-        "The shielded balance read did not finish in time; nothing was read. Read it again later"
+        "The shielded balance could not be read now: the wallet was busy; nothing was read. \
+         Read it again later"
     )]
     ShieldedBalanceBusy,
 

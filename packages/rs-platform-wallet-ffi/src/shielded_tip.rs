@@ -589,8 +589,9 @@ fn map_tip_send_result(result: Result<(), PlatformWalletError>) -> PlatformWalle
 /// codes:
 /// - `ErrorShieldedBalanceBusy` (87): the read did not finish within its
 ///   wait budget, because the wallet's state or its shielded store was held
-///   (by a scan, for instance). Nothing failed: keep the last state shown
-///   and read again later. The only code of this call that means that.
+///   (by a scan, for instance), or a shielded Clear was running. Nothing
+///   failed: keep the last state shown and read again later. The only code
+///   of this call that means that.
 /// - `ErrorIdentityNotFound`: the wallet holds no identity with that id.
 /// - `ErrorWalletOperation`: the wallet is unknown, no shielded coordinator
 ///   is configured, the call was made from a callback this library invokes

@@ -276,11 +276,18 @@ pub(super) fn unresolved_transfer_recipients(
     for (id, record) in records {
         let account_index = id.account_index;
         let transition = StateTransition::deserialize_from_bytes_trusted(&record.st_bytes);
+        // Whatever the record lists, a transition that does not decode may
+        // be a transfer, and whom it pays is not known.
+        let transition =
+            transition.map_err(|e| PlatformWalletError::ShieldedRecoveryCorrupted {
+                account_index: Some(account_index),
+                reason: format!("a saved shielded spend does not decode: {e}"),
+            })?;
         // A record that lists no notes is an identity-funded shield's: it
         // consumes none and is not a transfer. One whose bytes are a
         // transfer all the same lost its note list, and may still execute.
         if record.nullifiers.is_empty() {
-            if matches!(transition, Ok(StateTransition::ShieldedTransfer(_))) {
+            if matches!(transition, StateTransition::ShieldedTransfer(_)) {
                 return Err(PlatformWalletError::ShieldedRecoveryCorrupted {
                     account_index: Some(account_index),
                     reason: "a saved shielded transfer lists none of the notes it spends"
@@ -289,11 +296,6 @@ pub(super) fn unresolved_transfer_recipients(
             }
             continue;
         }
-        let transition =
-            transition.map_err(|e| PlatformWalletError::ShieldedRecoveryCorrupted {
-                account_index: Some(account_index),
-                reason: format!("a saved shielded spend does not decode: {e}"),
-            })?;
         // Only a transfer pays an Orchard address of the credit pool. The
         // other note spends pay a Platform address, a Core address, an
         // identity, a document or a token pool.
@@ -507,6 +509,10 @@ impl PlatformWallet {
             return Err(PlatformWalletError::ShieldedNotBound);
         }
         self.ensure_shielded_bound_on(coordinator)?;
+        // Nor if the wallet was removed during the lookups: a removal marks
+        // the handle before it purges the wallet's confirmed recipients,
+        // and that purge waits for the store guard held here.
+        self.ensure_shielded_attached()?;
         Ok(ShieldedTipReview {
             change: recipient_change(previous, &recipient),
             recipient,
@@ -675,7 +681,8 @@ impl PlatformWallet {
         }
         // The account must be bound and the seed must derive its key, or the
         // transfer refuses the tip only after the recipient was recorded.
-        self.derive_spend_keyset(seed, account).await?;
+        // Derived once: the transfer below spends with this keyset.
+        let keyset = self.derive_spend_keyset(seed, account).await?;
         let keys = self.bound_shielded_keys().await?;
         // Paid to the paying account itself, the payment is one more of the
         // account's own outputs beside its change, and an unresolved one
@@ -706,7 +713,7 @@ impl PlatformWallet {
         }
         self.shielded_transfer_once_claimed(
             coordinator,
-            seed,
+            &keyset,
             account,
             &recipient.address,
             amount,
@@ -755,8 +762,12 @@ impl PlatformWallet {
     /// cannot tell an empty account from one whose ledger was cleared.
     /// Reads local state only. Fails with
     /// [`PlatformWalletError::IdentityNotFound`] for an identity this wallet
-    /// does not hold, and with [`PlatformWalletError::ShieldedNotBound`] for
-    /// a `coordinator` other than the one the proved account is bound on.
+    /// does not hold, with [`PlatformWalletError::ShieldedNotBound`] for a
+    /// `coordinator` other than the one the proved account is bound on, and
+    /// with [`PlatformWalletError::ShieldedBalanceBusy`] while a shielded
+    /// Clear is admitted and has not finished: the caller keeps the state
+    /// it last read and reads again. An identity whose account is not
+    /// proved is `Unverified` whichever coordinator is passed.
     pub async fn shielded_identity_balance(
         &self,
         coordinator: &Arc<NetworkShieldedCoordinator>,
@@ -779,15 +790,20 @@ impl PlatformWallet {
                 None
             }
         };
-        // A Clear ends the preparation: one that is purging the ledger just
-        // read, or that finished since the preparation was read, leaves the
-        // account unproved. Checked after the read rather than by holding
-        // the coordinator's operation admission across it, which would
-        // refuse a Clear for as long as the read waited for the store.
-        if coordinator.clear_in_progress()
-            || self.prepared_shielded_identity_account(identity_id).await != Some(account)
-        {
+        // A Clear ends the preparation: one that finished since the
+        // preparation was read leaves the account unproved. Checked after
+        // the read rather than by holding the coordinator's operation
+        // admission across it, which would refuse a Clear for as long as
+        // the read waited for the store.
+        if self.prepared_shielded_identity_account(identity_id).await != Some(account) {
             return Ok(ShieldedIdentityBalance::Unverified);
+        }
+        // A Clear that is admitted and has not finished may be purging the
+        // ledger just read, and may also give up without wiping anything,
+        // with the preparation still standing. Neither is known yet, so
+        // nothing is reported: the caller reads again.
+        if coordinator.clear_in_progress() {
+            return Err(PlatformWalletError::ShieldedBalanceBusy);
         }
         Ok(match established {
             Some(credits) => ShieldedIdentityBalance::Available { account, credits },
@@ -801,9 +817,9 @@ impl PlatformWallet {
     /// [`PlatformWalletError::ShieldedBalanceBusy`] when it has not finished
     /// by then. What it waits for is the wallet's own state and the
     /// shielded store, which a scan or a spend can hold for minutes; the
-    /// error does not say which was held. It is the one error of this read
-    /// that means keep the state last read and read again; every other one
-    /// is a failure.
+    /// error does not say which was held, nor whether it was a Clear in
+    /// progress instead. It is the one error of this read that means keep
+    /// the state last read and read again; every other one is a failure.
     pub async fn shielded_identity_balance_now(
         &self,
         coordinator: &Arc<NetworkShieldedCoordinator>,
