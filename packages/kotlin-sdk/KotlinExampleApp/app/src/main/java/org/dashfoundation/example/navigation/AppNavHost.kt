@@ -83,6 +83,9 @@ import org.dashfoundation.example.ui.funding.AddressFundProgressScreen
 import org.dashfoundation.example.ui.funding.FundFromAssetLockScreen
 import org.dashfoundation.example.ui.shielded.SeedShieldedPoolScreen
 import org.dashfoundation.example.ui.shielded.ShieldedActivityScreen
+import org.dashfoundation.example.ui.shielded.ShieldedTokenPoolsScreen
+import org.dashfoundation.example.ui.shielded.ShieldedTokenSendScreen
+import org.dashfoundation.example.ui.shielded.ShieldedTokenUnshieldScreen
 import org.dashfoundation.example.ui.shielded.ShieldedFundProgressScreen
 import org.dashfoundation.example.ui.shielded.ShieldedFundScreen
 import org.dashfoundation.example.ui.settings.DataManagementScreen
@@ -336,6 +339,20 @@ fun AppNavHost(
 
         composable<ShieldedActivity> { entry ->
             ShieldedActivityScreen(entry.toRoute<ShieldedActivity>().walletIdHex, navController)
+        }
+
+        composable<ShieldedTokens> { entry ->
+            ShieldedTokenPoolsScreen(entry.toRoute<ShieldedTokens>().walletIdHex, navController)
+        }
+
+        composable<ShieldedTokenSend> { entry ->
+            val route = entry.toRoute<ShieldedTokenSend>()
+            ShieldedTokenSendScreen(route.walletIdHex, route.tokenIdHex, route.account, navController)
+        }
+
+        composable<ShieldedTokenUnshield> { entry ->
+            val route = entry.toRoute<ShieldedTokenUnshield>()
+            ShieldedTokenUnshieldScreen(route.walletIdHex, route.tokenIdHex, route.account, navController)
         }
 
         // ── Contracts graph ────────────────────────────────────────────

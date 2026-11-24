@@ -27,6 +27,7 @@ import org.dashfoundation.dashsdk.ffi.DpnsMarketplaceNative
 import org.dashfoundation.dashsdk.ffi.AddressPrivateKeyNative
 import org.dashfoundation.dashsdk.ffi.FundingNative
 import org.dashfoundation.dashsdk.ffi.IdentityRemovalNative
+import org.dashfoundation.dashsdk.ffi.ShieldedTokenPoolNative
 import org.dashfoundation.dashsdk.ffi.ShieldedTokenPurchaseNative
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.ffi.NativeWalletEventBridge
@@ -2559,6 +2560,205 @@ class PlatformWalletManager(
         ShieldedTokenPurchaseAvailability.fromNative(
             mapNativeErrors {
                 ShieldedTokenPurchaseNative.availability(managerHandle, contractId, tokenPosition)
+            },
+        )
+    }
+
+    // ── Token shielded pools (types 26/27) ─────────────────────────────
+    //
+    // The wallet's notes in token shielded pools, kept by Rust in the
+    // shielded store's own SQLite file (no Room table). The watched pools
+    // are scanned by the ordinary shielded sync ([syncShieldedNow] and the
+    // background loop); a type 28 purchase watches its token's pool by
+    // itself. Ports of the same-named Swift methods in
+    // `PlatformWalletManagerShieldedSync.swift`.
+
+    /**
+     * Watch the shielded pool of the token at [tokenPosition] of
+     * [contractId] for [walletId], so every later shielded sync scans it for
+     * the wallet's notes. Returns the token's 32-byte id. Rust reads the
+     * token's configuration from Platform with proofs first and refuses a
+     * token without a shielded pool, or one whose configuration cannot be
+     * read (asking again may succeed), with its reason in the error message.
+     * Watching a watched pool again changes nothing.
+     */
+    suspend fun shieldedTokenPoolWatch(
+        walletId: ByteArray,
+        contractId: ByteArray,
+        tokenPosition: Int,
+    ): ByteArray = teardownGate.op {
+        require(walletId.size == 32) { "walletId must be exactly 32 bytes, got ${walletId.size}" }
+        require(contractId.size == 32) {
+            "contractId must be exactly 32 bytes, got ${contractId.size}"
+        }
+        requireTokenPosition(tokenPosition)
+        mapNativeErrors {
+            ShieldedTokenPoolNative.watch(managerHandle, walletId, contractId, tokenPosition)
+        }
+    }
+
+    /**
+     * Stop watching [tokenId]'s shielded pool for [walletId], forgetting the
+     * wallet's notes and scan state there. Unwatching a pool not watched
+     * changes nothing.
+     */
+    suspend fun shieldedTokenPoolUnwatch(walletId: ByteArray, tokenId: ByteArray): Unit =
+        teardownGate.op {
+            require(walletId.size == 32) { "walletId must be exactly 32 bytes, got ${walletId.size}" }
+            require(tokenId.size == 32) { "tokenId must be exactly 32 bytes, got ${tokenId.size}" }
+            mapNativeErrors { ShieldedTokenPoolNative.unwatch(managerHandle, walletId, tokenId) }
+        }
+
+    /**
+     * [walletId]'s tokens in every shielded pool it watches, one row per
+     * watched pool and bound account, in Rust's order, from the local scan
+     * alone (no network read). Empty when the wallet watches no pool.
+     */
+    suspend fun shieldedTokenPoolBalances(walletId: ByteArray): List<ShieldedTokenPoolBalance> =
+        teardownGate.op {
+            require(walletId.size == 32) { "walletId must be exactly 32 bytes, got ${walletId.size}" }
+            mapNativeErrors {
+                ShieldedTokenPoolNative.balances(managerHandle, walletId)
+                    .map { ShieldedTokenPoolBalance.fromNative(it) }
+            }
+        }
+
+    /**
+     * Send [amount] of the token at [tokenPosition] of [contractId] from the
+     * notes of [account] in that token's shielded pool to the Orchard
+     * address [recipientRaw43] in the same pool: the Type 26
+     * `TokenShieldedTransferWithShieldedFee` transition. The change goes
+     * back to the account and the fee is paid from the account's notes in
+     * the credit pool. Rust checks the amount, the token, the network and
+     * the note counts, selects both note sets, builds, broadcasts, records a
+     * Token Transfer activity row (kind tag 11, amount in the token's
+     * smallest unit) and requests a shielded sync.
+     *
+     * Returning means SUBMITTED, not confirmed: the transfer stays pending,
+     * its notes reserved ([ShieldedTokenPoolBalance.reservedBalance]), until
+     * a shielded sync confirms it. Do not show it as complete and do not
+     * retry it. A caller cancelled while the native call runs still gets
+     * this return once the call finished ([opReturningCompletedResult]), so
+     * a submitted transfer is never reported as a cancellation. Errors are
+     * read as for [shieldedTokenPurchaseFromPool]:
+     * [DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed] (and the other
+     * "result not known" errors) mean it may have gone through.
+     *
+     * @param amount tokens to send, in the token's smallest unit, exactly as
+     *   the user typed them.
+     * @param recipientRaw43 the recipient's raw 43-byte Orchard payment
+     *   address, the shape [shieldedDefaultAddress] returns.
+     */
+    @Suppress("LongParameterList")
+    suspend fun shieldedTokenTransfer(
+        walletId: ByteArray,
+        contractId: ByteArray,
+        tokenPosition: Int,
+        recipientRaw43: ByteArray,
+        amount: ULong,
+        account: Int = 0,
+    ): Unit = teardownGate.opReturningCompletedResult {
+        require(account >= 0) { "account must be non-negative, got $account" }
+        require(walletId.size == 32) { "walletId must be exactly 32 bytes, got ${walletId.size}" }
+        require(contractId.size == 32) {
+            "contractId must be exactly 32 bytes, got ${contractId.size}"
+        }
+        require(recipientRaw43.size == 43) {
+            "recipientRaw43 must be exactly 43 bytes, got ${recipientRaw43.size}"
+        }
+        requireTokenPosition(tokenPosition)
+        mapNativeErrors {
+            ShieldedTokenPoolNative.transfer(
+                managerHandle,
+                walletId,
+                mnemonicResolver.nativeHandle,
+                account,
+                contractId,
+                tokenPosition,
+                recipientRaw43,
+                amount.toLong(),
+            )
+        }
+    }
+
+    /**
+     * Move [amount] of the token at [tokenPosition] of [contractId] from the
+     * notes of [account] in that token's shielded pool into the token
+     * balance of the existing identity [recipientIdentityId]: the Type 27
+     * `TokenUnshieldWithShieldedFee` transition. The change goes back to the
+     * account and the fee is paid from the account's credit pool notes.
+     * Rust checks and selects as for [shieldedTokenTransfer] and records a
+     * Token Unshield activity row (kind tag 12).
+     *
+     * Submitted, never confirmed, exactly as for [shieldedTokenTransfer]
+     * (including its cancellation rule): do not retry it.
+     */
+    @Suppress("LongParameterList")
+    suspend fun shieldedTokenUnshield(
+        walletId: ByteArray,
+        contractId: ByteArray,
+        tokenPosition: Int,
+        recipientIdentityId: ByteArray,
+        amount: ULong,
+        account: Int = 0,
+    ): Unit = teardownGate.opReturningCompletedResult {
+        require(account >= 0) { "account must be non-negative, got $account" }
+        require(walletId.size == 32) { "walletId must be exactly 32 bytes, got ${walletId.size}" }
+        require(contractId.size == 32) {
+            "contractId must be exactly 32 bytes, got ${contractId.size}"
+        }
+        require(recipientIdentityId.size == 32) {
+            "recipientIdentityId must be exactly 32 bytes, got ${recipientIdentityId.size}"
+        }
+        requireTokenPosition(tokenPosition)
+        mapNativeErrors {
+            ShieldedTokenPoolNative.unshield(
+                managerHandle,
+                walletId,
+                mnemonicResolver.nativeHandle,
+                account,
+                contractId,
+                tokenPosition,
+                recipientIdentityId,
+                amount.toLong(),
+            )
+        }
+    }
+
+    /**
+     * What a token pool spend of [kind] moving [amount] would take from
+     * [account]'s notes, chosen as the spend chooses them: the fee in
+     * credits (paid from the credit pool) and the token and credit note
+     * counts. Local state only: no network read, nothing reserved, no seed.
+     * Throws Rust's refusal when the spend would be refused on these notes
+     * (a zero amount, too few tokens, too few credits for the fee, too many
+     * notes); a form shows that message in place of the fee.
+     */
+    suspend fun shieldedTokenSpendPreview(
+        walletId: ByteArray,
+        contractId: ByteArray,
+        tokenPosition: Int,
+        kind: ShieldedTokenPoolSpendKind,
+        amount: ULong,
+        account: Int = 0,
+    ): ShieldedTokenSpendPreview = teardownGate.op {
+        require(account >= 0) { "account must be non-negative, got $account" }
+        require(walletId.size == 32) { "walletId must be exactly 32 bytes, got ${walletId.size}" }
+        require(contractId.size == 32) {
+            "contractId must be exactly 32 bytes, got ${contractId.size}"
+        }
+        requireTokenPosition(tokenPosition)
+        ShieldedTokenSpendPreview.fromNative(
+            mapNativeErrors {
+                ShieldedTokenPoolNative.spendPreview(
+                    managerHandle,
+                    walletId,
+                    account,
+                    contractId,
+                    tokenPosition,
+                    kind.raw,
+                    amount.toLong(),
+                )
             },
         )
     }

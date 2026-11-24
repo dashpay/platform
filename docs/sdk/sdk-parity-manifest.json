@@ -892,7 +892,7 @@
           "sdk": "partial",
           "example_app": "partial",
           "restart": "required",
-          "reason": "Dashpay.syncPrivateContactRequests, privateContact, privateRepliesPending (one pair-hold read per contact, as a send decides it, the shielded store's journal included), privateContactReadiness and privatePaymentsRestoreFailure, and PlatformWalletManager.sendPrivateContactRequest / acceptContactRequestReplyingInKind / acceptPrivateContactRequest bridge the same FFI (signed with the manager's identity signer, behind the manager's teardown gate); the in-kind accept is exported in every build, and codes 68 to 76 map to typed PlatformWallet errors (DashSdkErrorTest). JNI descriptors are covered only by the FfiSmokeTest symbol test; the flows need a protocol version 15 network with shielded funds and have no recorded gate, no test covers a restart, and a paid reply's hold survives one only in the shielded store's payment journal, which no host test exercises. The example app accepts with acceptContactRequestReplyingInKind, keeps a held or unconfirmed reply pending by reading the wallet's per-pair hold on its Requests rows and Add Contact (a failed read keeps the last snapshot and the controls off), re-enables a pair only when that read says free, offers a private sync for a pending request a public send or accept meets (code 71), and reports private refresh failures (quiet before protocol version 15); it has no send-privately toggle. Code 72 (unrestored private payments) is typed apart from 71, and the readiness getter and the restore-failure reason are bound; the example app configures the shielded store when it activates the manager, before loading wallets; on each DashPay refresh while the store did not open or the readiness reads not restored it asks the wallet to retry (a repeat configure) and reads the readiness after that, refreshing again on a timer for as long as the screen is shown while it stays unrestored; it shows \"setting up\", why the last restoration failed or why the store did not open, from 72 or the readiness, lifted only by a readiness read that says restored, never by a private sync. Code 73 (a store that cannot keep a private payment's recovery state) is typed and shown as a storage configuration error; the host declares atomic changesets with the scan state (bit 15), so it should not occur. Code 74 (a private store read that did not finish) is a retry with no pending row, and code 75 (an SDK pinned below the protocol version) a developer-facing message. Code 20 (an SDK outcome left unconfirmed after a possible acceptance, which the spend contract now keeps) reads as may have gone through, as 18 does, with no retry offered. A public send or accept that returned 20 is held by the wallet until a DashPay sync settles it, and every later one to the pair is refused with code 76 (typed as PublicContactRequestUnconfirmed): Dashpay.publicContactRequestsUnconfirmed reads that hold per pair, and the example app reads it beside the private one, shows the pair as being checked with no request or accept offered until the read says settled, shows 20 and 76 the same way at once, and runs the DashPay sync on the Requests refresh and Add Contact's Check again, reading again when any sync pass ends; no gate records it against a network."
+          "reason": "Dashpay.syncPrivateContactRequests, privateContact, privateRepliesPending (one pair-hold read per contact, as a send decides it, the shielded store's journal included), privateContactReadiness and privatePaymentsRestoreFailure, and PlatformWalletManager.sendPrivateContactRequest / acceptContactRequestReplyingInKind / acceptPrivateContactRequest bridge the same FFI (signed with the manager's identity signer, behind the manager's teardown gate); the in-kind accept is exported in every build, and codes 68 to 76 map to typed PlatformWallet errors (DashSdkErrorTest). JNI descriptors are covered only by the FfiSmokeTest symbol test; the flows need a protocol version 15 network with shielded funds and have no recorded gate, no test covers a restart, and a paid reply's hold survives one only in the shielded store's payment journal, which no host test exercises. The example app has Add Contact's send-privately toggle (sendPrivateContactRequest; with it on, the collision dialog accepts with acceptPrivateContactRequest, otherwise in kind), accepts with acceptContactRequestReplyingInKind on its Requests rows, keeps a held or unconfirmed private send or reply pending by reading the wallet's per-pair hold on its Requests rows and Add Contact (a failed read keeps the last snapshot and the controls off), re-enables a pair only when that read says free, offers a private sync for a pending request a public send or accept meets (code 71), and reports private refresh failures (quiet before protocol version 15), with Swift's accessibility ids as test tags and TEST_PLAN rows DP-22 to DP-32 mirroring Swift DP-20 to DP-30, none driven on an emulator yet. Code 72 (unrestored private payments) is typed apart from 71, and the readiness getter and the restore-failure reason are bound; the example app configures the shielded store when it activates the manager, before loading wallets; on each DashPay refresh while the store did not open or the readiness reads not restored it asks the wallet to retry (a repeat configure) and reads the readiness after that, refreshing again on a timer for as long as the screen is shown while it stays unrestored; it shows \"setting up\", why the last restoration failed or why the store did not open, from 72 or the readiness, lifted only by a readiness read that says restored, never by a private sync. Code 73 (a store that cannot keep a private payment's recovery state) is typed and shown as a storage configuration error; the host declares atomic changesets with the scan state (bit 15), so it should not occur. Code 74 (a private store read that did not finish) is a retry with no pending row, and code 75 (an SDK pinned below the protocol version) a developer-facing message. Code 20 (an SDK outcome left unconfirmed after a possible acceptance, which the spend contract now keeps) reads as may have gone through, as 18 does, with no retry offered. A public send or accept that returned 20 is held by the wallet until a DashPay sync settles it, and every later one to the pair is refused with code 76 (typed as PublicContactRequestUnconfirmed): Dashpay.publicContactRequestsUnconfirmed reads that hold per pair, and the example app reads it beside the private one, shows the pair as being checked with no request or accept offered until the read says settled, shows 20 and 76 the same way at once, and runs the DashPay sync on the Requests refresh and Add Contact's Check again, reading again when any sync pass ends; no gate records it against a network."
         }
       },
       "verification": [
@@ -1037,6 +1037,14 @@
           "kind": "unit",
           "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/dashpay/ContactRequestOutcomesTest.kt",
           "id": "shouldKeepAPublicAcceptHeldAfterCode20ThroughAnEmptyPrivateReadAndAnUnsettledSync",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*ContactRequestOutcomesTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/dashpay/ContactRequestOutcomesTest.kt",
+          "id": "shouldAcceptACollisionPrivatelyWhenSendPrivatelyIsOn",
           "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*ContactRequestOutcomesTest*'",
           "covers_restart": false
         }
@@ -3840,7 +3848,7 @@
           "sdk": "partial",
           "example_app": "partial",
           "restart": "required",
-          "reason": "PlatformWalletManager.shieldedTokenPurchaseFromPool and shieldedTokenPurchaseAvailability wrap the two FFI entry points through JNI, and the fee estimate accepts kind 5. KotlinExampleApp's Direct Purchase form offers a Shielded pool funding choice only on Rust's availability answer and reports an accepted purchase as submitted, never complete (TEST_PLAN SH-24); Shielded Activity lists the TokenPurchase row (kind tag 10) and says the tokens were minted only once it is Confirmed. Partial because no emulator or network run has been recorded, and the bought tokens land in the token's shielded pool, which the wallet does not sync yet, so they are not shown and cannot be spent (SH-25). Restart recovery reuses the generic shielded spend record and redrive in Rust; the Kotlin side is covered only by a unit test that a pending purchase row is restored after a restart, with no process-death run of this transition."
+          "reason": "PlatformWalletManager.shieldedTokenPurchaseFromPool and shieldedTokenPurchaseAvailability wrap the two FFI entry points through JNI, and the fee estimate accepts kind 5. KotlinExampleApp's Direct Purchase form offers a Shielded pool funding choice only on Rust's availability answer and reports an accepted purchase as submitted, never complete (TEST_PLAN SH-24); Shielded Activity lists the TokenPurchase row (kind tag 10) and says the tokens were minted only once it is Confirmed. Partial because no emulator or network run has been recorded. The bought tokens land in the token's shielded pool, which the purchase watches for the wallet, so the Shielded Tokens screen shows them after a shielded sync (SH-25) and they can be sent on (SH-26) or unshielded (SH-27). Restart recovery reuses the generic shielded spend record and redrive in Rust; the Kotlin side is covered only by a unit test that a pending purchase row is restored after a restart, with no process-death run of this transition."
         }
       },
       "verification": [
@@ -4166,10 +4174,10 @@
           "reason": "PlatformWalletManager.shieldedTokenPoolWatch, shieldedTokenPoolUnwatch and shieldedTokenPoolBalances wrap the FFI entry points. The platform-wallet shielded coordinator keeps the watched pools, their commitment leaves, the wallet's token notes and each pool's scan state in the shielded store's SQLite file (not the host persister), scans the watched pools inside the ordinary shielded sync pass, and watches a type 28 purchase's token pool by itself. Watching reads the token's configuration with proofs and refuses a token without a shielded pool. The example app's Shielded Tokens screen (WalletDetailView > Shielded Tokens, TEST_PLAN SH-25) lists one row per watched pool and account with Rust's balance, unspent note count, scan progress and last scan error, refreshes with the manual shielded sync, watches one of the app's known tokens and unwatches by swipe. Each row also carries the value of the notes a submitted token transfer still holds (reservedBalance, shown as Pending; the balance excludes it). Partial because no device, simulator or network run has been recorded. Restart keeps the state in the store file, covered by a Rust unit test, with no host restart test."
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
-          "restart": "not_applicable",
-          "reason": "No JNI wrapper or KotlinExampleApp screen for token shielded pools yet."
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PlatformWalletManager.shieldedTokenPoolWatch, shieldedTokenPoolUnwatch and shieldedTokenPoolBalances wrap the FFI entry points through JNI (rs-unified-sdk-jni shielded_token_pools.rs; the balances array is copied and freed inside the JNI call). The wallet keeps the watched pools, token notes and scan state in the shielded store's own SQLite file, so there is no Room change. KotlinExampleApp's Shielded Tokens screen (wallet Shielded Balance menu > Shielded Tokens, TEST_PLAN SH-25) lists one card per watched pool and account with Rust's balance, unspent note count, Pending (reservedBalance), scan progress and last scan error, refreshes with syncShieldedNow, watches one of the app's known tokens and unwatches from a card's menu (Swift uses a swipe). Partial because no emulator or network run has been recorded. Restart keeps the state in the store file, covered by a Rust unit test, with no host restart test."
         }
       },
       "verification": [
@@ -4227,6 +4235,53 @@
           "id": "should_accept_null_and_empty_arrays_in_the_free_function",
           "command": "cargo test -p platform-wallet-ffi --features shielded --lib shielded_token_pools",
           "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "SH-25",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/ShieldedTokenPoolBalanceTest.kt",
+          "id": "shouldReadAClearedFlagAsNullNotZero",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/ShieldedTokenPoolBalanceTest.kt",
+          "id": "shouldMatchTheConstructorDescriptorTheJniLibraryUses",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/rs-unified-sdk-jni/src/shielded_token_pools.rs",
+          "id": "should_copy_every_field_and_the_error_string_of_a_row",
+          "command": "cargo test -p rs-unified-sdk-jni --lib shielded_token_pools",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/shielded/ShieldedTokenPoolsTest.kt",
+          "id": "groups rows by token in the order Rust listed them",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/ShieldedTokenPoolFfiTest.kt",
+          "id": "shouldListNothingAndRefuseAZeroSpendAsNothingSent",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
         }
       ]
     },
@@ -4247,10 +4302,10 @@
           "reason": "PlatformWalletManager.shieldedTokenTransfer wraps the FFI entry point; the platform-wallet manager (ShieldedTokenPurchaser::transfer) refuses a zero amount, a network or token that cannot take the transfer and an SDK whose version is not the network's, reserves the account's token notes for the amount and its credit pool notes for the fee (each bounded by what fits one transition), builds the token bundle against an anchor the token pool records, broadcasts with the shielded spend recovery record, records a TokenShieldedTransfer activity row (kind tag 11, amount in the token's smallest unit) and requests a shielded sync. An accepted transfer stays pending, its notes reserved and reported apart as the balance row's reservedBalance, until a shielded sync confirms it, as its result proof does not show it executed. PlatformWalletManager.shieldedTokenSpendPreview wraps the local fee preview (ShieldedTokenPurchaser::preview_spend: the notes the transfer would take and its fee, or the refusal it would meet, reserving nothing). The example app's Shielded Tokens screen opens a Send form per token row that shows that fee as the amount changes (TEST_PLAN SH-26). Partial because no device, simulator or network run has been recorded. Restart recovery reuses the generic shielded spend record and redrive, with no test specific to this transition."
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
-          "restart": "not_applicable",
-          "reason": "No JNI wrapper or KotlinExampleApp flow for the shielded token transfer yet."
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PlatformWalletManager.shieldedTokenTransfer and shieldedTokenSpendPreview wrap the FFI entry points through JNI; Rust checks, selects both note sets, builds, broadcasts, records the TokenShieldedTransfer activity row (kind tag 11) and requests a shielded sync. KotlinExampleApp opens a Send form per Shielded Tokens card (TEST_PLAN SH-26) that reads an Orchard recipient and a whole number of the token's smallest unit, shows Rust's fee preview as the amount changes and reports an accepted transfer as submitted, never complete; the call runs in the form's ViewModel so a rotation keeps it, and Back is off while it proves. Shielded Activity labels kind 11 and shows its amount in token units. Partial because no emulator or network run has been recorded. Restart recovery reuses the generic shielded spend record and redrive in Rust, with no test specific to this transition."
         }
       },
       "verification": [
@@ -4356,6 +4411,45 @@
           "id": "should_refuse_an_unknown_kind_and_an_unknown_manager_in_the_token_spend_preview",
           "command": "cargo test -p platform-wallet-ffi --features shielded --lib token_spend_preview",
           "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "SH-26",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/shielded/ShieldedTokenPoolsTest.kt",
+          "id": "reports an accepted spend as submitted, never as complete",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/shielded/ShieldedTokenPoolsTest.kt",
+          "id": "reads an Orchard recipient only on its own network",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/ShieldedTokenPoolBalanceTest.kt",
+          "id": "shouldReadThePreviewFeeAndNoteCounts",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/ShieldedTokenPoolFfiTest.kt",
+          "id": "shouldListNothingAndRefuseAZeroSpendAsNothingSent",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
         }
       ]
     },
@@ -4376,10 +4470,10 @@
           "reason": "PlatformWalletManager.shieldedTokenUnshield wraps the FFI entry point; the platform-wallet manager (ShieldedTokenPurchaser::unshield) checks and selects as for the type 26 transfer, reserving the account's token notes for the amount and its credit pool notes for the fee, builds the token bundle against an anchor the token pool records, broadcasts with the shielded spend recovery record, records a TokenUnshield activity row (kind tag 12, amount in the token's smallest unit, the credited identity in identityId) and requests a shielded sync. An accepted unshield stays pending, its notes reserved and reported apart as the balance row's reservedBalance, until a shielded sync confirms it, as its result proof (the recipient's token balance) does not bind it. PlatformWalletManager.shieldedTokenSpendPreview gives the form its fee from local state. The example app's Shielded Tokens screen opens an Unshield form per token row with the wallet's identities or a pasted Base58 id as the recipient and Rust's fee preview (TEST_PLAN SH-27). Partial because no device, simulator or network run has been recorded. Restart recovery reuses the generic shielded spend record and redrive, with no test specific to this transition."
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
-          "restart": "not_applicable",
-          "reason": "No JNI wrapper or KotlinExampleApp flow for the shielded token unshield yet."
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PlatformWalletManager.shieldedTokenUnshield and shieldedTokenSpendPreview wrap the FFI entry points through JNI; Rust checks and selects as for the type 26 transfer and records the TokenUnshield activity row (kind tag 12). KotlinExampleApp opens an Unshield form per Shielded Tokens card (TEST_PLAN SH-27) with the wallet's identities or a typed Base58 id as the recipient, Rust's fee preview, and an accepted unshield reported as submitted, never complete. Partial because no emulator or network run has been recorded. Restart recovery reuses the generic shielded spend record and redrive in Rust, with no test specific to this transition."
         }
       },
       "verification": [
@@ -4420,6 +4514,37 @@
           "file": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
           "id": "should_refuse_null_pointers_in_the_token_unshield",
           "command": "cargo test -p platform-wallet-ffi --features shielded --lib token_unshield",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "SH-27",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/shielded/ShieldedTokenPoolsTest.kt",
+          "id": "reads a Base58 identity id of 32 bytes and nothing else",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/shielded/ShieldedTokenPoolsTest.kt",
+          "id": "reports a spend that may have reached a node without inviting a retry",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/ShieldedTokenPoolFfiTest.kt",
+          "id": "shouldRefuseArgumentsJniCannotReadBeforeAnyWalletCodeRuns",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
           "covers_restart": false
         }
       ]
