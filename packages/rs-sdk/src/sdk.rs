@@ -874,6 +874,12 @@ impl Sdk {
         Some(Arc::clone(&**self.context_provider.load()))
     }
 
+    /// The installed [ContextProvider] as its shared pointer, so a caller can
+    /// tell whether [`Sdk::set_context_provider`] replaced it since.
+    pub fn context_provider_arc(&self) -> Arc<dyn ContextProvider> {
+        Arc::clone(&**self.context_provider.load())
+    }
+
     /// Returns a mutable reference to the `MockDashPlatformSdk` instance.
     ///
     /// Use returned object to configure mock responses with methods like `expect_fetch`.
