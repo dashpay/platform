@@ -237,11 +237,12 @@ pub unsafe extern "C" fn platform_wallet_parse_shielded_tip_amount(
 ///   non-null and the name resolves to another identity; nothing changed.
 /// - `ErrorShieldedRecoveryCorrupted` / `ErrorShieldedRecoveryKeysRequired`:
 ///   the wallet cannot tell whom a saved shielded spend pays.
+/// - `ErrorInvalidHandle`: `handle` is not a live manager handle.
 /// - `ErrorWalletOperation`: every other failure, including a name that does
 ///   not exist, a profile that publishes no valid shielded address, a wallet
-///   whose shielded accounts are not bound, an unknown wallet and a shielded
-///   coordinator that is not configured. The message carries the wallet's
-///   reason.
+///   whose shielded accounts are not bound, an unknown wallet under a valid
+///   manager and a shielded coordinator that is not configured. The message
+///   carries the wallet's reason.
 ///
 /// `unresolved` reports a saved transfer to the recipient. It does not
 /// report another tip being sent, so a send can still return
@@ -270,17 +271,20 @@ pub unsafe extern "C" fn platform_wallet_manager_review_shielded_tip(
     out_review: *mut ShieldedTipReviewFFI,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_review);
+    // Read before the output is zeroed: a caller may pass the recipient of
+    // an earlier review, held in the same struct it passes as `out_review`.
+    let contact_identity = read_optional_identifier(contact_identity_id);
     *out_review = ShieldedTipReviewFFI::default();
+    let contact_identity = match contact_identity {
+        Ok(id) => id,
+        Err(result) => return result,
+    };
     check_ptr!(wallet_id_bytes);
     check_ptr!(username);
     let mut wallet_id = [0u8; 32];
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
     let username = match read_utf8(username, "username") {
         Ok(username) => username.to_owned(),
-        Err(result) => return result,
-    };
-    let contact_identity = match read_optional_identifier(contact_identity_id) {
-        Ok(id) => id,
         Err(result) => return result,
     };
     if let Err(result) = ensure_not_on_runtime("shielded tip review") {
