@@ -120,6 +120,9 @@ fun TokenActionPermissionsScreen(
     LaunchedEffect(manager, sdk, pickedIdentityHex, token?.id?.toHex()) {
         val activeManager = manager ?: return@LaunchedEffect
         val activeSdk = sdk ?: return@LaunchedEffect
+        // During a network switch the new SDK is published before its
+        // manager: never pair them across networks.
+        if (activeManager.network != activeSdk.network) return@LaunchedEffect
         val displayed = token ?: return@LaunchedEffect
         val picked = pickedIdentityHex
         val database = container.database

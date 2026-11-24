@@ -243,7 +243,9 @@ fun LocalDataContractsScreen(navController: NavHostController) {
                                     IconButton(onClick = {
                                         scope.launch {
                                             try {
-                                                unwatchContractTokens(container, network)
+                                                check(unwatchContractTokens(container, network)) {
+                                                    "its tokens' balance watches could not be cleared; try again"
+                                                }
                                                 container.database.dataContractDao()
                                                     .delete(contract)
                                             } catch (e: CancellationException) {
@@ -298,16 +300,17 @@ private val KNOWN_CONTRACTS = listOf(
  * Before a saved contract is deleted, register every wallet identity on
  * [network] with no tokens, so a token-sync pass already reading the deleted
  * contract's tokens stores nothing for them once Room has cascaded the
- * delete. The Tokens screen registers the identity on screen again. Skipped
- * when no manager is active; nothing is watched then.
+ * delete. The Tokens screen registers the identity on screen again. True when
+ * no manager is active (nothing is watched then); false when clearing failed,
+ * and the caller then keeps the contract.
  */
 private suspend fun unwatchContractTokens(
     container: AppContainer,
     network: Network,
-) {
-    val manager = container.walletManagerStore.activeManager.value ?: return
+): Boolean {
+    val manager = container.walletManagerStore.activeManager.value ?: return true
     val identityIds = container.database.identityDao()
         .observeWalletOwnedByNetwork(network.ffiValue).first()
         .map { it.identityId }
-    IdentityTokenSync.clear(identityIds, manager::registerIdentityForTokenSync)
+    return IdentityTokenSync.clear(identityIds, manager::registerIdentityForTokenSync)
 }

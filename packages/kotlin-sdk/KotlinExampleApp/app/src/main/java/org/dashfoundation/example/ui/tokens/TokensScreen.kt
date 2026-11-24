@@ -91,11 +91,13 @@ fun TokensScreen(navController: NavHostController) {
             container.database.tokenDao().observeBalancesByIdentity(it.identityId)
         }
     }
-    val balances by (balancesFlow ?: remember {
+    val identityBalances by (balancesFlow ?: remember {
         kotlinx.coroutines.flow.flowOf(
             emptyList<org.dashfoundation.dashsdk.persistence.entities.TokenBalanceEntity>(),
         )
     }).collectAsStateWithLifecycle(initialValue = emptyList())
+    // Rows are kept per network; this screen shows the active network's only.
+    val balances = identityBalances.filter { it.networkRaw == network.ffiValue }
 
     // Watch the selected identity's tokens in the Rust identity-token sync,
     // which persists their balances into `token_balances` (the list above
@@ -110,6 +112,9 @@ fun TokensScreen(navController: NavHostController) {
     LaunchedEffect(manager, sdk, selectedIdentity?.identityId?.toHex(), identitySetKey, tokenSetKey) {
         val activeManager = manager ?: return@LaunchedEffect
         val activeSdk = sdk ?: return@LaunchedEffect
+        // During a network switch the new SDK is published before its
+        // manager: never pair them across networks.
+        if (activeManager.network != activeSdk.network) return@LaunchedEffect
         val identity = selectedIdentity ?: return@LaunchedEffect
         val otherIds = identities.map { it.identityId }
         val catalog = tokens

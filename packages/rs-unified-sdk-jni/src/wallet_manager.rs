@@ -3155,8 +3155,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_i
 }
 
 /// Run one identity-token sync pass across every registered identity,
-/// blocking the calling thread until it completes (returns at once when a
-/// pass is already in flight). Kotlin wraps it in `Dispatchers.IO`.
+/// blocking the calling thread until it completes. If a pass is already in
+/// flight, waits for it to finish, then runs its own pass. Throws when no
+/// pass ran because the manager is shutting down or the wait budget ran out.
+/// Kotlin wraps it in `Dispatchers.IO`.
 /// Mirrors Swift's `PlatformWalletManager.syncIdentityTokensNow()`.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_identitySyncSyncNow(
