@@ -47,6 +47,12 @@ pub enum FileShieldedStoreError {
         account_index: Option<u32>,
         reason: String,
     },
+    /// Another live store, in this process or another, already owns the file
+    /// at `path`. Nothing was opened; drop that store before opening again.
+    AlreadyOpen { path: PathBuf },
+    /// `path` names a symlink rather than the database file itself. Nothing
+    /// was opened; open the file it points to.
+    DatabasePathIsSymlink { path: PathBuf },
 }
 
 impl fmt::Display for FileShieldedStoreError {
@@ -59,6 +65,16 @@ impl fmt::Display for FileShieldedStoreError {
             } => write!(
                 f,
                 "damaged shielded recovery record (account {account_index:?}): {reason}"
+            ),
+            Self::AlreadyOpen { path } => write!(
+                f,
+                "shielded store {} is already open in another live store",
+                path.display()
+            ),
+            Self::DatabasePathIsSymlink { path } => write!(
+                f,
+                "shielded store path {} is a symlink, not the database file",
+                path.display()
             ),
         }
     }
@@ -77,6 +93,10 @@ impl From<FileShieldedStoreError> for PlatformWalletError {
                 account_index,
                 reason,
             },
+            error @ (FileShieldedStoreError::AlreadyOpen { .. }
+            | FileShieldedStoreError::DatabasePathIsSymlink { .. }) => {
+                Self::ShieldedStoreError(error.to_string())
+            }
         }
     }
 }
@@ -92,7 +112,7 @@ pub struct FileBackedShieldedStore {
     /// `RwLock<S>`; this inner mutex is just a `Sync`-restoring
     /// shim and is uncontended in practice.
     tree: Mutex<ClientPersistentCommitmentTree>,
-    /// Backing SQLite path, retained so [`reset_commitment_tree`]
+    /// Canonical backing SQLite path, retained so [`reset_commitment_tree`]
     /// can wipe the on-disk tree tables and rebuild a fresh
     /// `ClientPersistentCommitmentTree` over the same file. The
     /// wrapper takes its `Connection` by value and exposes no
@@ -144,6 +164,12 @@ pub struct FileBackedShieldedStore {
     /// The largest commitment tree the store had held when it was opened
     /// ([`ShieldedStore::legacy_anchor_tree_bound`]); `None` for none.
     legacy_anchor_tree_bound: Option<u64>,
+    /// Exclusive lock on the sidecar `<path>.lock`, held for the store's
+    /// lifetime so only one live store owns the file: the note reservations
+    /// in `subwallets` are per instance, and a second store on the file would
+    /// not see them. `None` only for a test's file view. The last field, so it
+    /// is released after both connections close.
+    _owner_lock: Option<std::fs::File>,
 }
 
 /// The private contact request association a saved record carries.
@@ -403,11 +429,47 @@ impl FileBackedShieldedStore {
     /// `last_synced_note_index`. A torn WAL on power loss would at worst
     /// require resync from the last checkpoint, which is the same cost the
     /// host already accepts on a fresh install.
+    ///
+    /// One live store per file. Note reservations live in the store, so a
+    /// second store on the same file would not see them and would offer
+    /// reserved notes again. The store takes an exclusive lock on the sidecar
+    /// `<path>.lock` for its lifetime, and an open while another store, in
+    /// this process or another, holds it fails at once with
+    /// [`FileShieldedStoreError::AlreadyOpen`]. Drop the store before opening
+    /// the file again. The OS releases the lock when the process exits, so a
+    /// crash leaves nothing stale.
+    ///
+    /// The file is identified by its canonical parent directory and file name,
+    /// so relative paths and symlinked directories reach the same lock. A path
+    /// whose last component is a symlink is refused with
+    /// [`FileShieldedStoreError::DatabasePathIsSymlink`]. Hard links to the
+    /// database file are unsupported.
     pub fn open_path(
         path: impl AsRef<Path>,
         max_checkpoints: usize,
     ) -> Result<Self, FileShieldedStoreError> {
-        let path = path.as_ref().to_path_buf();
+        let requested = path.as_ref();
+        let path = Self::canonical_store_path(requested)?;
+        let owner_lock = Self::lock_owner(&path, requested)?;
+        Self::open_canonical(path, Some(owner_lock), max_checkpoints)
+    }
+
+    /// A second handle on the file at `path` that takes no owner lock, so a
+    /// test can read what a live store has made durable.
+    #[cfg(test)]
+    pub(crate) fn open_file_view(
+        path: impl AsRef<Path>,
+        max_checkpoints: usize,
+    ) -> Result<Self, FileShieldedStoreError> {
+        let path = Self::canonical_store_path(path.as_ref())?;
+        Self::open_canonical(path, None, max_checkpoints)
+    }
+
+    fn open_canonical(
+        path: PathBuf,
+        owner_lock: Option<std::fs::File>,
+        max_checkpoints: usize,
+    ) -> Result<Self, FileShieldedStoreError> {
         let conn = Self::open_tuned_connection(&path)?;
         let tree = ClientPersistentCommitmentTree::open(conn, max_checkpoints)
             .map_err(|e| FileShieldedStoreError::Storage(format!("open commitment tree: {e}")))?;
@@ -520,6 +582,7 @@ impl FileBackedShieldedStore {
             private_payment_journals: BTreeSet::new(),
             unreadable_private_payment_journal: BTreeSet::new(),
             legacy_anchor_tree_bound: None,
+            _owner_lock: owner_lock,
         };
         // Every record loaded below without an anchor height was saved by an
         // earlier process, from a tree no larger than the largest the store
@@ -531,6 +594,73 @@ impl FileBackedShieldedStore {
         store.rehydrate_pending_spends()?;
         store.load_private_payment_journal()?;
         Ok(store)
+    }
+
+    /// The one path a store uses for `requested`: its canonical parent joined
+    /// with its file name, so a file that does not exist yet is created through
+    /// the canonical parent. A last component that is a symlink is refused.
+    fn canonical_store_path(requested: &Path) -> Result<PathBuf, FileShieldedStoreError> {
+        let name = requested.file_name().ok_or_else(|| {
+            FileShieldedStoreError::Storage(format!(
+                "shielded store path {} has no file name",
+                requested.display()
+            ))
+        })?;
+        let parent = requested
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let parent = parent.canonicalize().map_err(|e| {
+            FileShieldedStoreError::Storage(format!(
+                "resolve shielded store directory {}: {e}",
+                parent.display()
+            ))
+        })?;
+        let path = parent.join(name);
+        match std::fs::symlink_metadata(&path) {
+            Ok(meta) if meta.file_type().is_symlink() => {
+                Err(FileShieldedStoreError::DatabasePathIsSymlink {
+                    path: requested.to_path_buf(),
+                })
+            }
+            Ok(_) => Ok(path),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(path),
+            Err(e) => Err(FileShieldedStoreError::Storage(format!(
+                "inspect shielded store {}: {e}",
+                path.display()
+            ))),
+        }
+    }
+
+    /// Take the store's lifetime lock on the sidecar `<path>.lock`, where
+    /// `path` is the canonical store path. A refusal names `requested`, the
+    /// path the caller gave. The SQLite file itself is never locked here, so
+    /// SQLite's own locking is untouched.
+    fn lock_owner(path: &Path, requested: &Path) -> Result<std::fs::File, FileShieldedStoreError> {
+        let mut lock_path = path.as_os_str().to_owned();
+        lock_path.push(".lock");
+        let lock = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)
+            .map_err(|e| {
+                FileShieldedStoreError::Storage(format!(
+                    "open store lock {}: {e}",
+                    Path::new(&lock_path).display()
+                ))
+            })?;
+        match lock.try_lock() {
+            Ok(()) => Ok(lock),
+            Err(std::fs::TryLockError::WouldBlock) => Err(FileShieldedStoreError::AlreadyOpen {
+                path: requested.to_path_buf(),
+            }),
+            Err(std::fs::TryLockError::Error(e)) => Err(FileShieldedStoreError::Storage(format!(
+                "lock store {}: {e}",
+                Path::new(&lock_path).display()
+            ))),
+        }
     }
 
     /// Raise the largest commitment tree size the store keeps durably to
@@ -3404,5 +3534,218 @@ mod tests {
             .private_contact_redrives_for_wallet([0x7B; 32])
             .is_ok());
         let _ = std::fs::remove_file(&path);
+    }
+
+    fn remove_store_files(path: &Path) {
+        for suffix in ["", "-wal", "-shm", ".lock"] {
+            let mut file = path.as_os_str().to_owned();
+            file.push(suffix);
+            let _ = std::fs::remove_file(file);
+        }
+    }
+
+    /// The store refused an open of `path` because a live store owns it.
+    fn assert_already_open<T>(result: Result<T, FileShieldedStoreError>, path: &Path) {
+        match result {
+            Err(FileShieldedStoreError::AlreadyOpen { path: refused }) => {
+                assert_eq!(refused, path)
+            }
+            Err(other) => panic!("expected AlreadyOpen, got {other}"),
+            Ok(_) => panic!("a second open of a live store must be refused"),
+        }
+    }
+
+    /// A fresh directory for tests that need several paths side by side.
+    fn temp_store_dir(tag: &str) -> PathBuf {
+        let dir = temp_tree_path(tag).with_extension("d");
+        std::fs::create_dir(&dir).expect("create test dir");
+        dir
+    }
+
+    /// `path` spelled relative to the current directory.
+    fn relative_to_cwd(path: &Path) -> PathBuf {
+        let cwd = std::env::current_dir().expect("current dir");
+        let mut relative = PathBuf::new();
+        for _ in cwd.components().skip(1) {
+            relative.push("..");
+        }
+        relative.join(path.strip_prefix("/").expect("absolute path"))
+    }
+
+    fn assert_symlink_refused<T>(result: Result<T, FileShieldedStoreError>, path: &Path) {
+        match result {
+            Err(FileShieldedStoreError::DatabasePathIsSymlink { path: refused }) => {
+                assert_eq!(refused, path)
+            }
+            Err(other) => panic!("expected DatabasePathIsSymlink, got {other}"),
+            Ok(_) => panic!("a symlinked database path must be refused"),
+        }
+    }
+
+    /// One live store per file. Reservations live in the store, so a second
+    /// store would offer a note the first reserved for an in-flight spend:
+    /// it is refused while the first lives, and the file opens again once
+    /// the first is dropped, with the reservation its saved record carries.
+    #[test]
+    fn a_second_open_of_a_live_store_is_refused() {
+        let path = temp_tree_path("store_owner_lock");
+        let id = SubwalletId::new([0xDF; 32], 0);
+        let note = ShieldedNote {
+            position: 0,
+            cmx: [0xF3; 32],
+            nullifier: [0xF4; 32],
+            block_height: 1,
+            is_spent: false,
+            value: 1_000,
+            note_data: vec![],
+        };
+        let redrive = PendingRedrive {
+            activity_id: [0x74; 32],
+            anchor: [0x75; 32],
+            nullifiers: vec![note.nullifier],
+            st_bytes: vec![0xAB; 96],
+            attempts: 0,
+            identity_nonce_finalized: false,
+            identity_user_abandoned: false,
+            anchor_height: Some(1),
+        };
+        let mut first = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+        assert_already_open(FileBackedShieldedStore::open_path(&path, 100), &path);
+
+        first.save_note(id, &note).unwrap();
+        assert!(first.mark_pending(id, &note.nullifier).unwrap());
+        first.arm_redrive(id, redrive).unwrap();
+        assert!(first.get_unspent_notes(id).unwrap().is_empty());
+        assert_already_open(FileBackedShieldedStore::open_path(&path, 100), &path);
+        assert!(matches!(
+            PlatformWalletError::from(FileShieldedStoreError::AlreadyOpen { path: path.clone() }),
+            PlatformWalletError::ShieldedStoreError(message)
+                if message.contains(&path.display().to_string())
+        ));
+
+        drop(first);
+        let mut second =
+            FileBackedShieldedStore::open_path(&path, 100).expect("opens once dropped");
+        second.save_note(id, &note).unwrap();
+        assert!(
+            second.get_unspent_notes(id).unwrap().is_empty(),
+            "the reopened store restores the reservation from the saved record"
+        );
+        drop(second);
+        remove_store_files(&path);
+    }
+
+    /// A symlink to the database file would take a second lock on the same
+    /// database, so it is refused, whether the real file is live, idle or
+    /// not created yet, and the refusal leaves no lock or file behind.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_database_file_is_refused() {
+        let dir = temp_store_dir("db_file_symlink");
+        let real = dir.join("real.sqlite");
+        let alias = dir.join("alias.sqlite");
+        std::os::unix::fs::symlink(&real, &alias).unwrap();
+
+        assert_symlink_refused(FileBackedShieldedStore::open_path(&alias, 100), &alias);
+        assert!(!real.exists(), "a refused open creates nothing");
+        assert!(!dir.join("alias.sqlite.lock").exists());
+
+        let live = FileBackedShieldedStore::open_path(&real, 100).expect("open");
+        assert_symlink_refused(FileBackedShieldedStore::open_path(&alias, 100), &alias);
+        assert!(matches!(
+            PlatformWalletError::from(FileShieldedStoreError::DatabasePathIsSymlink {
+                path: alias.clone()
+            }),
+            PlatformWalletError::ShieldedStoreError(message)
+                if message.contains(&alias.display().to_string())
+        ));
+        drop(live);
+
+        assert_symlink_refused(FileBackedShieldedStore::open_path(&alias, 100), &alias);
+        let reopened = FileBackedShieldedStore::open_path(&real, 100)
+            .expect("a refused alias leaves no lock behind");
+        drop(reopened);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The canonical path, a path through a symlinked directory and a
+    /// relative path all name one database, so each is refused while
+    /// another spelling's store lives.
+    #[cfg(unix)]
+    #[test]
+    fn every_spelling_of_one_database_reaches_one_lock() {
+        let dir = temp_store_dir("db_spellings");
+        let real_dir = dir.join("real");
+        std::fs::create_dir(&real_dir).unwrap();
+        let link_dir = dir.join("link");
+        std::os::unix::fs::symlink(&real_dir, &link_dir).unwrap();
+        let canonical = real_dir.canonicalize().unwrap().join("db.sqlite");
+        let through_link = link_dir.join("db.sqlite");
+        let relative = relative_to_cwd(&canonical);
+        assert!(relative.is_relative());
+
+        for (first, second) in [
+            (&through_link, &canonical),
+            (&canonical, &relative),
+            (&relative, &through_link),
+        ] {
+            let live = FileBackedShieldedStore::open_path(first, 100).expect("open");
+            assert_already_open(FileBackedShieldedStore::open_path(second, 100), second);
+            drop(live);
+        }
+        assert!(
+            canonical.exists(),
+            "created through the canonical directory"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A store keeps using the file it opened: re-pointing the directory
+    /// link it was opened through doesn't move its later connections.
+    #[cfg(unix)]
+    #[test]
+    fn a_store_keeps_its_file_after_its_directory_link_moves() {
+        let dir = temp_store_dir("db_link_moves");
+        let opened_dir = dir.join("opened");
+        let other_dir = dir.join("other");
+        std::fs::create_dir(&opened_dir).unwrap();
+        std::fs::create_dir(&other_dir).unwrap();
+        let link_dir = dir.join("link");
+        std::os::unix::fs::symlink(&opened_dir, &link_dir).unwrap();
+
+        let mut store =
+            FileBackedShieldedStore::open_path(link_dir.join("db.sqlite"), 100).unwrap();
+        store.append_commitment(&[0x31; 32], true).unwrap();
+        std::fs::remove_file(&link_dir).unwrap();
+        std::os::unix::fs::symlink(&other_dir, &link_dir).unwrap();
+
+        store.reset_commitment_tree().unwrap();
+        assert_eq!(store.tree_size().unwrap(), 0);
+        assert!(
+            !other_dir.join("db.sqlite").exists(),
+            "the reset must reconnect to the file the store opened"
+        );
+        drop(store);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// An open that fails after taking the lock releases it, so the path
+    /// opens once the cause is gone.
+    #[test]
+    fn a_failed_open_releases_its_lock() {
+        let path = temp_tree_path("failed_open_lock");
+        std::fs::create_dir(&path).unwrap();
+        match FileBackedShieldedStore::open_path(&path, 100) {
+            Err(FileShieldedStoreError::AlreadyOpen { .. }) => {
+                panic!("nothing else owns the path")
+            }
+            Err(_) => {}
+            Ok(_) => panic!("a directory is not a database"),
+        }
+        std::fs::remove_dir(&path).unwrap();
+        let store = FileBackedShieldedStore::open_path(&path, 100)
+            .expect("a failed open must not keep the lock");
+        drop(store);
+        remove_store_files(&path);
     }
 }
