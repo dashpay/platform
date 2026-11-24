@@ -47,8 +47,9 @@ enum DocumentEraseOutcome {
     }
 }
 extension Data {
-    static func identifier(fromBase58: String) -> Data? { Data(repeating: 1, count: 32) }
-    func toBase58String() -> String { "owner" }
+    // Distinct per input, so a swapped contract / document id shows up.
+    static func identifier(fromBase58 text: String) -> Data? { Data(text.utf8) }
+    func toBase58String() -> String { String(decoding: self, as: UTF8.self) }
 }
 struct Identity {
     let identityIdBase58 = "signer"
@@ -121,12 +122,18 @@ struct SDK {}
             case .notSubmitted(_, let before): observed = before
             case .submitted(_, let after): observed = after
             }
-            if observed?.state == .absent {
-                precondition(DocumentPersistence.removed == ["1/owner/note/owner"],
-                    "an ABSENT observation must drop the local copy on the erasing identity's network")
+            var submitted = false
+            if case .submitted = outcome { submitted = true }
+            if submitted && observed?.state == .absent {
+                precondition(DocumentPersistence.removed == ["1/contract/note/doc"],
+                    "an ABSENT observation after a submission must drop the local copy on the erasing identity's network")
             } else {
                 precondition(DocumentPersistence.removed.isEmpty,
-                    "the local copy stays unless Rust observed the document ABSENT")
+                    "the local copy stays unless a submission ended with Rust observing the document ABSENT")
+            }
+            if !submitted && observed?.state == .absent {
+                precondition(result["localCopy"] is String,
+                    "a skipped erase that observes ABSENT points to the explicit local removal")
             }
             switch outcome {
             case .notSubmitted(let reason, let before):
@@ -159,7 +166,7 @@ struct SDK {}
             precondition(message == "Identity has no wallet linkage; cannot erase document history")
         }
         precondition(wallet.calls == 0)
-        print("Seven typed outcomes, local-copy cleanup and wallet-linkage control passed")
+        print("Seven typed outcomes, local-copy rules and wallet-linkage control passed")
     }
 }
 '''

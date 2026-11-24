@@ -271,9 +271,16 @@ private struct DecisionProposalRow: View {
                 .truncationMode(.middle)
         }
         .padding(.vertical, 2)
-        .task(id: "\(proposal.id)#\(refreshToken)") {
+        // Keyed on the SDK too: a network or endpoint switch swaps it, and
+        // the row then reads again from the new one.
+        .task(id: "\(proposal.id)#\(refreshToken)#\(sdkKey)") {
             await loadPollState()
         }
+    }
+
+    /// Identity of the SDK the badge was read from, for the task key.
+    private var sdkKey: String {
+        appState.sdk.map { "\(ObjectIdentifier($0).hashValue)" } ?? "none"
     }
 
     /// Read the poll so the badge shows whether it still runs, from
@@ -285,7 +292,8 @@ private struct DecisionProposalRow: View {
             let read = try await sdk.decisionProposalVotePollState(proposalId: proposal.id)
             // The read can return after the row's task was cancelled (the
             // row scrolled away or a refresh superseded it).
-            guard !Task.isCancelled, let state = read else { return }
+            // Also drop it if the SDK was swapped while the read ran.
+            guard !Task.isCancelled, appState.sdk === sdk, let state = read else { return }
             if let result = state.result {
                 pollState = .closed(detail: result.passed ? "passed" : "did not pass")
             } else {

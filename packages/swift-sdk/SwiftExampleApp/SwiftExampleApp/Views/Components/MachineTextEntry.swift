@@ -123,7 +123,9 @@ struct PlainTextField: UIViewRepresentable {
     func updateUIView(_ uiView: UITextField, context: Context) {
         context.coordinator.text = $text
         // Assign only on a real change: resetting `text` moves the cursor.
-        if uiView.text != text {
+        // Byte comparison: `String ==` treats canonically equivalent
+        // sequences as equal and would swallow a byte-only change.
+        if !(uiView.text ?? "").utf8.elementsEqual(text.utf8) {
             uiView.text = text
         }
         uiView.isEnabled = context.environment.isEnabled
@@ -141,7 +143,7 @@ struct PlainTextField: UIViewRepresentable {
 
         @objc func editingChanged(_ field: UITextField) {
             let value = field.text ?? ""
-            if text.wrappedValue != value {
+            if !text.wrappedValue.utf8.elementsEqual(value.utf8) {
                 text.wrappedValue = value
             }
         }
@@ -202,7 +204,9 @@ private struct PlainTextView: UIViewRepresentable {
         context.coordinator.text = $text
         // Assign only on a real change: resetting `text` moves the cursor
         // to the end on every keystroke.
-        if uiView.text != text {
+        // Byte comparison: `String ==` treats canonically equivalent
+        // sequences as equal and would swallow a byte-only change.
+        if !(uiView.text ?? "").utf8.elementsEqual(text.utf8) {
             uiView.text = text
         }
         let isEnabled = context.environment.isEnabled
@@ -219,7 +223,7 @@ private struct PlainTextView: UIViewRepresentable {
         }
 
         func textViewDidChange(_ textView: UITextView) {
-            if text.wrappedValue != textView.text {
+            if !text.wrappedValue.utf8.elementsEqual((textView.text ?? "").utf8) {
                 text.wrappedValue = textView.text
             }
         }
