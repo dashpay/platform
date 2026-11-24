@@ -58,14 +58,6 @@ use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, AssetLockFunding, FundingResolution, ResolvedFunding,
 };
 use crate::wallet::asset_lock::AssetLockBuiltObserver;
-use crate::wallet::shielded::activity::{
-    ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection,
-};
-use crate::wallet::shielded::activity_recorder::{
-    build_pending_entry, visible_output_cmxs, with_status, LiveEntryParams,
-};
-use crate::wallet::shielded::operations::queue_shielded_activity;
-use crate::wallet::shielded::SubwalletId;
 use crate::wallet::PlatformWallet;
 use crate::PlatformWalletError;
 
@@ -216,27 +208,22 @@ impl PlatformWallet {
             .as_ref()
             .map(|operation| self.register_wallet_drain_operation(operation.clone()));
         let _shield_guard = self.shield_guard.lock().await;
-        // The removal marks the wallet detached under the generation's
-        // lifecycle gate, taken here after `shield_guard` (the lock order) and
-        // only across the check and the drain's resume: a removed wallet
-        // resumes no drain into a replacement's asset-lock rows and funds
-        // nothing, and a removal never waits on the signer, broadcast or
-        // ChainLock wait below. Refused before the outcome bookkeeping below,
-        // so a retry's unchecked outcome stays unknown rather than not sent.
-        let funding = {
-            let _lifecycle = self.core().generation_payment_guard().await;
-            self.ensure_shielded_attached()?;
-            if let Some(operation) = &operation {
-                match self.asset_locks.begin_wallet_drain(operation).await? {
-                    Some(out_point) => AssetLockFunding::FromExistingAssetLock {
-                        out_point,
-                        consume_invitation_voucher: false,
-                    },
-                    None => funding,
-                }
-            } else {
-                funding
+        // The removal marks the wallet detached under `shield_guard`, held to
+        // the funding's end: a removed wallet resumes no drain into a
+        // replacement's asset-lock rows and funds nothing. Refused before the
+        // outcome bookkeeping below, so a retry's unchecked outcome stays
+        // unknown rather than not sent.
+        self.ensure_shielded_attached()?;
+        let funding = if let Some(operation) = &operation {
+            match self.asset_locks.begin_wallet_drain(operation).await? {
+                Some(out_point) => AssetLockFunding::FromExistingAssetLock {
+                    out_point,
+                    consume_invitation_voucher: false,
+                },
+                None => funding,
             }
+        } else {
+            funding
         };
         let result = self
             .shielded_fund_from_asset_lock_inner(
@@ -774,6 +761,9 @@ impl PlatformWallet {
         shield_amount: Credits,
         funding_epoch: u64,
     ) {
+        use crate::wallet::shielded::activity::{ShieldedActivityKind, ShieldedDirection};
+        use crate::wallet::shielded::activity_recorder::build_pending_entry;
+
         let (account, pending) = {
             let guard = self.shielded_keys.read().await;
             let Some(keys_map) = guard.as_ref() else {
@@ -787,16 +777,17 @@ impl PlatformWallet {
             // shared-id natural key against the eventual scan-derived row.
             // Fall back to the lowest bound account only when nothing
             // matches (a shield to a fully external recipient).
-            let matched = keys_map
-                .iter()
-                .find(|(_, ks)| !visible_output_cmxs(actions, ks).is_empty());
+            let matched = keys_map.iter().find(|(_, ks)| {
+                !crate::wallet::shielded::activity_recorder::visible_output_cmxs(actions, ks)
+                    .is_empty()
+            });
             let Some((&account, keyset)) = matched.or_else(|| keys_map.iter().next()) else {
                 return;
             };
 
             let Some(pending) = build_pending_entry(
                 keyset,
-                LiveEntryParams {
+                crate::wallet::shielded::activity_recorder::LiveEntryParams {
                     kind: ShieldedActivityKind::ShieldFromAssetLock,
                     direction: ShieldedDirection::In,
                     amount: shield_amount,
@@ -823,23 +814,24 @@ impl PlatformWallet {
     /// Write a funding's confirmed activity `pending` under `account`, unless
     /// a Clear has completed since the funding was admitted under
     /// `funding_epoch`. The only shielded write of a funding, admitted on its
-    /// own under the generation's lifecycle gate: the asset lock's broadcast
-    /// and ChainLock wait before it, which can take indefinitely long, write
-    /// no shielded state and hold neither a Clear nor a removal back.
+    /// own: the asset lock's broadcast and ChainLock wait before it, which can
+    /// take indefinitely long, write no shielded state and hold no Clear back.
     /// `shield_guard` is held here, which the lock order allows: it comes
-    /// before the gate and the admission everywhere. Nothing is written for a
-    /// wallet removed since.
+    /// before admission everywhere. Nothing is written for a wallet removed
+    /// since.
     #[cfg(feature = "shielded")]
     pub(super) async fn record_funding_activity_since(
         &self,
         funding_epoch: u64,
         account: u32,
-        pending: ShieldedActivityEntry,
+        pending: crate::wallet::shielded::activity::ShieldedActivityEntry,
     ) {
+        use crate::wallet::shielded::activity::ShieldedActivityStatus;
+        use crate::wallet::shielded::activity_recorder::with_status;
+
         let Ok(coordinator) = self.shielded_coordinator().await else {
             return;
         };
-        let _lifecycle = self.core().generation_payment_guard().await;
         let _admission = match coordinator.admit_since(funding_epoch).await {
             Ok(Some(admission)) => admission,
             Ok(None) => {
@@ -854,15 +846,15 @@ impl PlatformWallet {
                 return;
             }
         };
-        // Under the gate and the admission, as the removal sets it: a wallet
-        // removed while the funding waited keeps no activity row.
+        // Under `shield_guard` and the admission, as the removal sets it: a
+        // wallet removed while the funding waited keeps no activity row.
         if let Err(error) = self.ensure_shielded_attached() {
             tracing::warn!(%error, "shield-from-asset-lock activity not recorded");
             return;
         }
         let confirmed = with_status(&pending, ShieldedActivityStatus::Confirmed, None);
-        let id = SubwalletId::new(self.wallet_id(), account);
-        queue_shielded_activity(
+        let id = crate::wallet::shielded::SubwalletId::new(self.wallet_id(), account);
+        crate::wallet::shielded::operations::queue_shielded_activity(
             coordinator.store(),
             Some(self.persister()),
             self.wallet_id(),

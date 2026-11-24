@@ -147,9 +147,9 @@ impl PlatformWallet {
     /// Requires an existing shielded bind so preparing a tip account cannot
     /// silently replace the host's ordinary account configuration.
     ///
-    /// Runs on the manager's coordinator under `shield_guard`, the
-    /// generation's lifecycle gate and one admission, from the seed proof
-    /// through the record of the preparation: a Clear or a removal waits for it, and
+    /// Runs on the manager's coordinator under the generation's lifecycle
+    /// gate, `shield_guard` and one admission, from the seed proof through
+    /// the record of the preparation: a Clear or a removal waits for it, and
     /// a preparation the Clear epoch has since moved past no longer stands.
     pub async fn prepare_shielded_identity_address(
         &self,
@@ -179,13 +179,13 @@ impl PlatformWallet {
                 "The supplied seed does not belong to this wallet".to_string(),
             ));
         }
-        let _shield_guard = self.shield_guard.lock().await;
         let _lifecycle = self.core().generation_payment_guard().await;
         if !self.core().is_current_generation().await {
             return Err(PlatformWalletError::WalletNotFound(hex::encode(
                 self.wallet_id(),
             )));
         }
+        let _shield_guard = self.shield_guard.lock().await;
         let admission = coordinator.admit().await?;
         let (account, master_key_hash) = self.verified_tip_account(seed, identity_id).await?;
         // Read the bound set and bind the augmented copy as one step: a bind
