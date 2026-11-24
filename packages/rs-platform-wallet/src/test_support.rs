@@ -19,8 +19,7 @@ use dashcore::PubkeyHash;
 use dashcore::PublicKey as AddressPublicKey;
 #[cfg(test)]
 use dashcore::Txid;
-use dashcore::{Address, Network, ScriptBuf, Transaction, TxOut};
-use dashcore::{Network, OutPoint, Transaction};
+use dashcore::{Address, Network, OutPoint, ScriptBuf, Transaction, TxOut};
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
@@ -33,8 +32,8 @@ use key_wallet::signer::{ExtendedPubKeySigner, Signer, SignerMethod};
 use key_wallet::test_utils::TestWalletContext;
 use key_wallet::transaction_checking::WalletTransactionChecker;
 use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
-use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet::{DerivationPath, Wallet};
 use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
@@ -1028,7 +1027,12 @@ pub async fn test_platform_wallet_manager_with<P>(
 where
     P: crate::changeset::PlatformWalletPersistence + 'static,
 {
-    let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().with_network(Network::Testnet).build().expect("mock sdk"));
+    let sdk = Arc::new(
+        dash_sdk::SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
+            .build()
+            .expect("mock sdk"),
+    );
     test_platform_wallet_manager_with_sdk(sdk, persister).await
 }
 

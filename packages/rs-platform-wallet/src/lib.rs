@@ -84,9 +84,9 @@ pub use wallet::identity::network::{
     derive_identity_auth_keypair, fetch_identity_public_keys, AutoAcceptProofSource,
     ContactCryptoProvider, ContactInfoOpened, ContactInfoPublishOutcome, ContactInfoSealed,
     FetchedIdentityPublicKeys, IdentityCreationKeyLayout, IdentityCreationKeySlot,
-    IdentityCreationKeys, IdentityCreationKeysError, PaymentStarted, PreparedDashPayPayment, PrivateContactReadiness,
-    PrivateContactSyncReport, PrivateDocumentKeyPaths, SeedBindingVerification, IDENTITY_GAP_LIMIT,
-    MASTER_KEY_INDEX,
+    IdentityCreationKeys, IdentityCreationKeysError, PaymentStarted, PreparedDashPayPayment,
+    PrivateContactReadiness, PrivateContactSyncReport, PrivateDocumentKeyPaths,
+    SeedBindingVerification, IDENTITY_GAP_LIMIT, MASTER_KEY_INDEX,
 };
 pub use wallet::identity::{
     calculate_account_reference, derive_auto_accept_private_key, derive_contact_payment_address,

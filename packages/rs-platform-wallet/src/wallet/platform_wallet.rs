@@ -49,6 +49,8 @@ use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::prelude::Identifier;
 #[cfg(feature = "shielded")]
+use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+#[cfg(feature = "shielded")]
 use {
     super::identity::network::{
         dashpay_contract, restore_journaled_private_payments, JournaledPrivatePayment,
@@ -75,8 +77,6 @@ use {
     dpp::state_transition::StateTransition,
     sha2::{Digest, Sha256},
 };
-#[cfg(feature = "shielded")]
-use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 
 /// Unique identifier for a wallet (32-byte hash).
 pub type WalletId = [u8; 32];
