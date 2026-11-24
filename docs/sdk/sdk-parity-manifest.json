@@ -148,7 +148,11 @@
     "dashpay_profile_payment_address_from_string": "packages/rs-platform-wallet-ffi/src/dashpay_profile_payment_address.rs",
     "dashpay_profile_payment_address_to_string": "packages/rs-platform-wallet-ffi/src/dashpay_profile_payment_address.rs",
     "platform_wallet_create_or_update_dashpay_profile_with_addresses_with_signer": "packages/rs-platform-wallet-ffi/src/dashpay_profile.rs",
-    "platform_wallet_dashpay_profile_payment_address_support": "packages/rs-platform-wallet-ffi/src/dashpay_profile_payment_address.rs"
+    "platform_wallet_dashpay_profile_payment_address_support": "packages/rs-platform-wallet-ffi/src/dashpay_profile_payment_address.rs",
+    "platform_wallet_parse_shielded_tip_amount": "packages/rs-platform-wallet-ffi/src/shielded_tip.rs",
+    "platform_wallet_manager_review_shielded_tip": "packages/rs-platform-wallet-ffi/src/shielded_tip.rs",
+    "platform_wallet_manager_send_shielded_tip": "packages/rs-platform-wallet-ffi/src/shielded_tip.rs",
+    "platform_wallet_manager_shielded_identity_balance": "packages/rs-platform-wallet-ffi/src/shielded_tip.rs"
   },
   "capabilities": [
     {
@@ -4494,6 +4498,104 @@
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
           "id": "DP-32",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "dashpay.shielded_tips",
+      "title": "Shielded tips to a DashPay username: wallet-parsed amount, reviewed recipient and its change, send from an identity's own account or account 0, unresolved earlier payment (code 84), identity shielded balance",
+      "area": "shared_policy",
+      "shared_apis": [
+        "platform_wallet_parse_shielded_tip_amount",
+        "platform_wallet_manager_review_shielded_tip",
+        "platform_wallet_manager_send_shielded_tip",
+        "platform_wallet_manager_shielded_identity_balance"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "unsupported",
+          "restart": "required",
+          "reason": "PlatformWalletManagerShieldedTips.swift wraps the four FFI calls (parse, review, send, identity balance) and ShieldedTipDecodingTests pins the decoding, but the tests have not run on a simulator and no build links the new symbols yet. SwiftExampleApp has no tip screens on this base; the Swift tip screens pull request adds them."
+        },
+        "kotlin": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PlatformWalletManager.parseShieldedTipAmount / reviewShieldedTip / sendShieldedTip / shieldedIdentityBalance bridge the FFI through four FundingNative calls; ShieldedTipTest pins the review and balance decoding, and the send keeps the result of a native call that completed after its caller was cancelled. Partial because no instrumented test loads the new JNI symbols yet. KotlinExampleApp's SendShieldedTipScreen (from the DashPay tab, and from a contact with its DPNS name filled in) has the wallet parse the amount and review the name, shows the recipient, its change since the last tip (a changed one only after a confirmation dialog) and an unresolved earlier payment (send off, a shielded sync reviews again), and sends the reviewed recipient from the identity's own account or account 0 on the app-scoped ShieldedIdentityPaymentCoordinator, so a rotation or tab switch can neither drop the outcome nor send twice; a returned tip reads submitted, codes 18 and 20 read may have gone through with no resend, code 84 reads refused with nothing sent (TEST_PLAN DP-33 to DP-38; ShieldedTipPresentationTest). The identity balance is shown as the wallet reports it, never unknown as zero, with a prepare action while unverified. Restart is required: the wallet refuses a repeat after a relaunch from its saved spend record (Rust should_refuse_a_tip_while_an_earlier_payment_to_its_recipient_is_unresolved), but no host test or emulator run kills the app with a tip unresolved (DP-36), and none of the rows has been driven on an emulator."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/tip_payment_tests.rs",
+          "id": "should_refuse_a_tip_while_an_earlier_payment_to_its_recipient_is_unresolved",
+          "command": "cargo test -p platform-wallet --features shielded --lib should_refuse_a_tip_while_an_earlier_payment_to_its_recipient_is_unresolved",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/tip_payment_tests.rs",
+          "id": "should_pay_an_identitys_tip_from_the_account_the_seed_proves",
+          "command": "cargo test -p platform-wallet --features shielded --lib should_pay_an_identitys_tip_from_the_account_the_seed_proves",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/shielded_tip.rs",
+          "id": "should_report_a_tip_send_outcome_by_its_own_code",
+          "command": "cargo test -p platform-wallet-ffi --features shielded --lib should_report_a_tip_send_outcome_by_its_own_code",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ShieldedTipDecodingTests.swift",
+          "id": "testShouldExposeThePreviousRecipientOnlyWhenTheRecipientChanged",
+          "command": "swift test --package-path packages/swift-sdk --filter ShieldedTipDecodingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/ShieldedTipTest.kt",
+          "id": "shouldReadAChangedRecipientWithThePreviousOne",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/dashpay/ShieldedTipPresentationTest.kt",
+          "id": "should refuse a second tip from a recreated screen while the first is proving",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/dashpay/ShieldedTipPresentationTest.kt",
+          "id": "should word a tip the wallet refused as pending, with nothing sent",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "DP-33",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "DP-36",
           "covers_restart": false
         }
       ]

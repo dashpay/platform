@@ -127,8 +127,9 @@ class AppContainer(private val context: Context) {
         )
 
     /**
-     * In-flight shields from an identity's balance (type 21) and top-ups of
-     * an identity from the shielded pool (type 22), held past the screen
+     * In-flight shields from an identity's balance (type 21), top-ups of
+     * an identity from the shielded pool (type 22) and shielded tips to a
+     * DashPay username, held past the screen
      * that started them so a rotation or tab switch cannot start a second
      * payment while the first is proving.
      */

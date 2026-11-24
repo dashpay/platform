@@ -11,9 +11,10 @@ import org.dashfoundation.example.ui.shielded.ShieldedPaymentOutcome
 /**
  * Owns the in-flight payment between an identity and the shielded pool, so
  * it outlives the screen that started it: a shield from an identity's
- * balance (type 21) and a top-up of an identity from the shielded pool
- * (type 22) prove for tens of seconds, and a rotation or a tab switch
- * recreates the screen meanwhile. The payment's job runs on the
+ * balance (type 21), a top-up of an identity from the shielded pool
+ * (type 22) and a shielded tip an identity sends to a DashPay username
+ * prove for tens of seconds, and a rotation or a tab switch recreates the
+ * screen meanwhile. The payment's job runs on the
  * application scope; a recreated screen observes the same [states] entry,
  * sees the payment still running and cannot start another for the same
  * wallet and identity until it has finished and its outcome was shown.
@@ -24,7 +25,7 @@ import org.dashfoundation.example.ui.shielded.ShieldedPaymentOutcome
  */
 class ShieldedIdentityPaymentCoordinator(private val scope: CoroutineScope) {
 
-    enum class Kind { SHIELD_FROM_IDENTITY, TOP_UP_FROM_POOL }
+    enum class Kind { SHIELD_FROM_IDENTITY, TOP_UP_FROM_POOL, SHIELDED_TIP }
 
     /** One slot per kind, wallet and identity (lowercase hex ids). */
     data class Key(val kind: Kind, val walletIdHex: String, val identityIdHex: String)
