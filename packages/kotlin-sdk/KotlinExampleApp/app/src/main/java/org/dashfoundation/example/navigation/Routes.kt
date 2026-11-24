@@ -238,6 +238,26 @@ import kotlinx.serialization.Serializable
 /** Shielded activity timeline for a wallet (← `ShieldedActivityView.swift`). */
 @Serializable data class ShieldedActivity(val walletIdHex: String)
 
+/**
+ * The tokens a wallet holds in the token shielded pools it watches
+ * (← `ShieldedTokenPoolsView.swift`).
+ */
+@Serializable data class ShieldedTokens(val walletIdHex: String)
+
+/** Send one row's tokens within their shielded pool, type 26 (← `ShieldedTokenSendSheet`). */
+@Serializable data class ShieldedTokenSend(
+    val walletIdHex: String,
+    val tokenIdHex: String,
+    val account: Int,
+)
+
+/** Unshield one row's tokens to an identity, type 27 (← `ShieldedTokenUnshieldSheet`). */
+@Serializable data class ShieldedTokenUnshield(
+    val walletIdHex: String,
+    val tokenIdHex: String,
+    val account: Int,
+)
+
 // ── DashPay graph (hosted under the DashPay tab, ← the DashPay/ views) ──
 
 /** Established-contacts list for an identity (← `ContactsView.swift`). */

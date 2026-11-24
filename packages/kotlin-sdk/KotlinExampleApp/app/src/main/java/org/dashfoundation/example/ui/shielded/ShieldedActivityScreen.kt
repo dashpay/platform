@@ -259,11 +259,36 @@ internal fun kindLabel(kindTag: Int): String = when (kindTag) {
     8 -> "Shielded from Identity"
     9 -> "Identity Top-Up from Pool"
     KIND_TOKEN_PURCHASE -> "Token Purchase"
+    KIND_TOKEN_TRANSFER -> "Token Transfer"
+    KIND_TOKEN_UNSHIELD -> "Token Unshield"
     else -> "Shielded Spend"
 }
 
 /** `ShieldedActivityKind::TokenPurchase`, a purchase from the shielded pool (type 28). */
 internal const val KIND_TOKEN_PURCHASE = 10
+
+/** `ShieldedActivityKind::TokenShieldedTransfer`, a send within a token's shielded pool (type 26). */
+internal const val KIND_TOKEN_TRANSFER = 11
+
+/** `ShieldedActivityKind::TokenUnshield`, tokens moved from a token's pool to an identity (type 27). */
+internal const val KIND_TOKEN_UNSHIELD = 12
+
+/**
+ * The kinds whose `amount` is a token count in the token's smallest unit
+ * rather than credits: the tokens sent (11) or unshielded (12). Their fee is
+ * still credits. ← Swift `ShieldedActivityKindDisplay.amountIsTokens`.
+ */
+internal fun amountIsTokens(kindTag: Int): Boolean =
+    kindTag == KIND_TOKEN_TRANSFER || kindTag == KIND_TOKEN_UNSHIELD
+
+/**
+ * A stored activity row's raw `amount` with its unit, unsigned: token units
+ * for the kinds [amountIsTokens] names, credits otherwise (a token
+ * purchase's price included). For views that show the stored number as is,
+ * such as the Storage Explorer. ← Swift `ShieldedActivityKindDisplay.rawAmountText`.
+ */
+internal fun storedActivityAmountText(kindTag: Int, amount: Long): String =
+    if (amountIsTokens(kindTag)) "${amount.toULong()} token units" else "${amount.toULong()} credits"
 
 /**
  * What a token purchase row says about its tokens, by its stored status:
@@ -272,19 +297,44 @@ internal const val KIND_TOKEN_PURCHASE = 10
  * executed. ← Swift `ShieldedActivityView.tokenPurchaseNote`.
  */
 internal fun tokenPurchaseNote(status: Int): String = when (status) {
-    1 -> "The tokens were minted to this wallet's shielded token pool, which the app does not show yet."
+    1 -> "The tokens were minted to this wallet's shielded token pool. Wallet > Shielded Tokens " +
+        "shows them after a shielded sync."
     2 -> "The purchase did not go through; no tokens were minted."
     else -> "Not confirmed yet: a shielded sync confirms the purchase once it lands. " +
-        "The app does not show the shielded token pool yet."
+        "Wallet > Shielded Tokens shows the bought tokens after that sync."
 }
 
-/** A row's supporting line: its status, and for a token purchase what that status means. */
-internal fun supportingText(kindTag: Int, status: Int): String =
-    if (kindTag == KIND_TOKEN_PURCHASE) {
-        "${statusLabel(status)}. ${tokenPurchaseNote(status)}"
-    } else {
-        statusLabel(status)
-    }
+/**
+ * What a token transfer row says about its tokens, by its stored status:
+ * delivered only once Confirmed. ← Swift `ShieldedActivityView.tokenTransferNote`.
+ */
+internal fun tokenTransferNote(status: Int): String = when (status) {
+    1 -> "The tokens were sent to the recipient in the token's shielded pool, and any change " +
+        "came back to this wallet."
+    2 -> "The transfer did not go through; no tokens left this wallet."
+    else -> "Not confirmed yet: a shielded sync confirms the transfer once it lands. Until then " +
+        "Wallet > Shielded Tokens shows the notes it spends as pending."
+}
+
+/**
+ * What a token unshield row says about its tokens, by its stored status:
+ * credited only once Confirmed. ← Swift `ShieldedActivityView.tokenUnshieldNote`.
+ */
+internal fun tokenUnshieldNote(status: Int): String = when (status) {
+    1 -> "The tokens were added to the identity's token balance, and any change came back to " +
+        "this wallet's shielded token pool."
+    2 -> "The unshield did not go through; no tokens left this wallet."
+    else -> "Not confirmed yet: a shielded sync confirms the unshield once it lands. Until then " +
+        "Wallet > Shielded Tokens shows the notes it spends as pending."
+}
+
+/** A row's supporting line: its status, and for a token kind what that status means. */
+internal fun supportingText(kindTag: Int, status: Int): String = when (kindTag) {
+    KIND_TOKEN_PURCHASE -> "${statusLabel(status)}. ${tokenPurchaseNote(status)}"
+    KIND_TOKEN_TRANSFER -> "${statusLabel(status)}. ${tokenTransferNote(status)}"
+    KIND_TOKEN_UNSHIELD -> "${statusLabel(status)}. ${tokenUnshieldNote(status)}"
+    else -> statusLabel(status)
+}
 
 private fun statusLabel(status: Int): String = when (status) {
     0 -> "Pending"
@@ -293,13 +343,20 @@ private fun statusLabel(status: Int): String = when (status) {
     else -> "Unknown"
 }
 
-/** 1 DASH = 1e11 credits; signed by direction (0 In +, 1 Out −, 2 Self). */
-private fun signedAmount(row: ShieldedActivityEntity): String {
-    val dash = row.amount.toDouble() / 1e11
-    val sign = when (row.direction) {
+/**
+ * 1 DASH = 1e11 credits; signed by direction (0 In +, 1 Out −, 2 Self). A
+ * token transfer or unshield shows its token count in the token's smallest
+ * unit instead, as Rust records it.
+ */
+internal fun signedAmount(kindTag: Int, direction: Int, amount: Long): String {
+    val sign = when (direction) {
         0 -> "+"
         1 -> "−"
         else -> ""
     }
-    return "%s%.4f DASH".format(sign, dash)
+    if (amountIsTokens(kindTag)) return "$sign${amount.toULong()} token units"
+    return "%s%.4f DASH".format(sign, amount.toDouble() / 1e11)
 }
+
+private fun signedAmount(row: ShieldedActivityEntity): String =
+    signedAmount(row.kindTag, row.direction, row.amount)
