@@ -2379,6 +2379,13 @@ class PlatformWalletManager(
      * [ShieldedTipReview.unresolved] is set a send is refused. Requires a
      * prior [bindShielded] of [walletId].
      *
+     * When the tip starts from a saved contact, pass the contact's 32-byte
+     * identity id as [contactIdentityId]: Rust refuses the review with
+     * [DashSdkError.PlatformWallet.ShieldedTipRecipientMismatch] when the
+     * name now belongs to another identity, instead of showing that
+     * identity as a first tip to the contact. Leave it null when the user
+     * typed the name. Do not compare the ids on the host.
+     *
      * Throws [DashSdkError.PlatformWallet.ShieldedRecoveryCorrupted] or
      * [DashSdkError.PlatformWallet.ShieldedRecoveryKeysRequired] when the
      * wallet cannot tell whom a saved shielded spend pays, and
@@ -2390,10 +2397,16 @@ class PlatformWalletManager(
     suspend fun reviewShieldedTip(
         walletId: ByteArray,
         username: String,
+        contactIdentityId: ByteArray? = null,
     ): ShieldedTipReview = teardownGate.op {
         decodeShieldedTipReview(
             mapNativeErrors {
-                FundingNative.reviewShieldedTip(managerHandle, walletId, username)
+                FundingNative.reviewShieldedTip(
+                    managerHandle,
+                    walletId,
+                    username,
+                    contactIdentityId,
+                )
             },
         )
     }
@@ -2429,6 +2442,9 @@ class PlatformWalletManager(
      *   again.
      * - [DashSdkError.NotFound]: the wallet holds no identity
      *   [ShieldedTipSource.Identity.identityId]. Nothing was sent.
+     * - [DashSdkError.PlatformWallet.ShieldedTipRecipientMismatch]:
+     *   [contactIdentityId] was given and the reviewed recipient is another
+     *   identity. Nothing was sent.
      * - any other error: this call sent nothing (for example
      *   [DashSdkError.PlatformWallet.WalletOperation] for a recipient that
      *   changed since the review).
@@ -2443,6 +2459,9 @@ class PlatformWalletManager(
      *   them.
      * @param memo optional UTF-8 memo on the recipient's note (null or
      *   empty: no memo; Rust refuses more than 32 UTF-8 bytes).
+     * @param contactIdentityId the saved contact's 32-byte identity id when
+     *   the tip starts from a contact, as for [reviewShieldedTip]; null when
+     *   the user typed the name.
      */
     suspend fun sendShieldedTip(
         walletId: ByteArray,
@@ -2451,6 +2470,7 @@ class PlatformWalletManager(
         expectedRecipient: ShieldedTipRecipient,
         amount: Long,
         memo: String? = null,
+        contactIdentityId: ByteArray? = null,
     ): Unit = teardownGate.opReturningCompletedResult {
         // The C call takes the source as a nullable identity id beside an
         // account number that it ignores when the id is present.
@@ -2476,6 +2496,7 @@ class PlatformWalletManager(
                 username,
                 expectedRecipient.identityId,
                 expectedRecipient.address,
+                contactIdentityId,
                 amount,
                 memo,
             )
