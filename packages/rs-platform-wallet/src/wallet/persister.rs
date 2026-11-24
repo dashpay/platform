@@ -741,13 +741,20 @@ impl WalletPersister {
     /// `out_point`, the recipient alone and at once
     /// ([`PlatformWalletPersistence::assign_asset_lock_identity_recipient`]):
     /// `Ok` once committed, and any `Err` leaves nothing to commit later.
+    /// Counted in the flush ledger like a flush: the backend writes what was
+    /// buffered first, so a failure for good there is a loss the others must
+    /// see.
     pub(crate) fn assign_asset_lock_identity_recipient(
         &self,
         out_point: OutPoint,
         identity: Identifier,
     ) -> Result<(), PersistenceError> {
-        self.inner
-            .assign_asset_lock_identity_recipient(self.wallet_id, out_point, identity)
+        self.flush_ledger.assign_identity_recipient(
+            self.inner.as_ref(),
+            self.wallet_id,
+            out_point,
+            identity,
+        )
     }
 
     /// Store `changeset` and answer `Ok` only once it is durable: at once for
@@ -1050,6 +1057,48 @@ mod tests {
         }
         assert!(!BareMinimum.persists_durably());
         assert!(!NoPlatformPersistence.persists_durably());
+    }
+
+    /// A recipient assignment writes what the backend buffered before it, so
+    /// one that fails for good is counted as a lost flush: a caller waiting on
+    /// the ledger for records it buffered earlier learns they went with it,
+    /// instead of trusting a later flush over an emptied buffer.
+    #[test]
+    fn should_count_an_assignment_that_failed_for_good_as_a_lost_flush() {
+        struct DropsOnAssign;
+        impl PlatformWalletPersistence for DropsOnAssign {
+            fn assign_asset_lock_identity_recipient(
+                &self,
+                _wallet_id: WalletId,
+                _out_point: OutPoint,
+                _identity: Identifier,
+            ) -> Result<(), PersistenceError> {
+                Err(PersistenceError::backend("the database is corrupt"))
+            }
+            fn store(
+                &self,
+                _wallet_id: WalletId,
+                _changeset: PlatformWalletChangeSet,
+            ) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+                Ok(())
+            }
+            fn load(&self) -> Result<ClientStartState, PersistenceError> {
+                Ok(ClientStartState::default())
+            }
+        }
+
+        let persister = WalletPersister::new([0; 32], Arc::new(DropsOnAssign) as _);
+        let lost_before = persister.flush_ledger.lost();
+
+        assert!(persister
+            .assign_asset_lock_identity_recipient(OutPoint::null(), Identifier::from([1; 32]))
+            .is_err());
+
+        assert_eq!(persister.flush_ledger.lost(), lost_before + 1);
+        assert_eq!(persister.flush_ledger.in_flight(), 0);
     }
 
     /// A buffered backend that commits a durable write itself answers for it:

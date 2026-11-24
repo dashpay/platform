@@ -144,3 +144,106 @@ fn spent_utxo_address_is_marked_used() {
         "a spent UTXO's address must still be marked used in the pool"
     );
 }
+
+/// The asset-lock funding key accounts restore their stored pools on load.
+/// Their credit outputs never appear as on-chain UTXOs, so no scan finds
+/// their used indices again: without the stored pool a restart rebuilds the
+/// unbound identity top-up account with its initial window only, all unused,
+/// and a recorded top-up built on a later index could not find its signing
+/// key on resume. Every stored index comes back at its path, with its used
+/// mark, beyond the initial window included.
+#[test]
+fn should_restore_an_asset_lock_funding_pool_beyond_its_initial_window() {
+    use key_wallet::account::AccountType;
+    use key_wallet::managed_account::address_pool::KeySource;
+    use platform_wallet::changeset::AccountAddressPoolEntry;
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xDE);
+    let wallet = Wallet::from_seed_bytes(
+        [0x43; 64],
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .unwrap();
+    let mut info = ManagedWalletInfo::from_wallet(&wallet, 7);
+    let account_xpub = wallet
+        .accounts
+        .all_accounts()
+        .into_iter()
+        .find(|a| a.account_type == AccountType::IdentityTopUpNotBoundToIdentity)
+        .expect("the default wallet has an unbound top-up account")
+        .account_xpub;
+    let manifest: Vec<AccountRegistrationEntry> = wallet
+        .accounts
+        .all_accounts()
+        .into_iter()
+        .map(|a| AccountRegistrationEntry {
+            account_type: a.account_type,
+            account_xpub: a.account_xpub,
+        })
+        .collect();
+    let pool = info
+        .accounts
+        .identity_topup_not_bound
+        .as_mut()
+        .expect("managed unbound top-up account")
+        .managed_account_type_mut()
+        .address_pools_mut()
+        .into_iter()
+        .next()
+        .expect("one pool");
+    let window = pool.addresses.len() as u32;
+    pool.generate_addresses(3, &KeySource::Public(account_xpub), true)
+        .unwrap();
+    let deep = window + 1;
+    assert!(pool.mark_index_used(1));
+    assert!(pool.mark_index_used(deep));
+    let pool_type = pool.pool_type;
+    let deep_info = pool.addresses[&deep].clone();
+    let snapshot = AccountAddressPoolEntry {
+        account_type: AccountType::IdentityTopUpNotBoundToIdentity,
+        pool_type,
+        addresses: pool.addresses.values().cloned().collect(),
+    };
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                wallet_metadata: Some(WalletMetadataEntry {
+                    network: key_wallet::Network::Testnet,
+                    wallet_group_id: [0u8; 32],
+                    birth_height: 7,
+                }),
+                account_registrations: manifest,
+                account_address_pools: vec![snapshot],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let state = reopen(&path).load().expect("load");
+    let mut restored = state.wallets[&w].wallet_info.clone();
+    let pool = restored
+        .accounts
+        .identity_topup_not_bound
+        .as_mut()
+        .expect("restored unbound top-up account")
+        .managed_account_type_mut()
+        .address_pools_mut()
+        .into_iter()
+        .next()
+        .expect("one pool");
+    let entry = pool
+        .addresses
+        .get(&deep)
+        .expect("the index beyond the initial window is restored");
+    assert_eq!(entry.address, deep_info.address);
+    assert_eq!(entry.path, deep_info.path);
+    assert!(entry.is_used());
+    assert!(pool.addresses[&1].is_used());
+    assert!(!pool.addresses[&0].is_used());
+    assert_eq!(pool.address_index.get(&deep_info.address), Some(&deep));
+    assert_eq!(pool.highest_used, Some(deep));
+}

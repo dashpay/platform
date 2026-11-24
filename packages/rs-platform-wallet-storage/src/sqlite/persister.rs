@@ -22,7 +22,8 @@ use crate::sqlite::config::{FlushMode, LoadPolicy, SqlitePersisterConfig, Synchr
 use crate::sqlite::error::{AutoBackupOperation, WalletStorageError};
 use crate::sqlite::load_ctx::{LoadCtx, LoadDegradation, LoadSite};
 use crate::sqlite::rehydrate::{
-    apply_persisted_core_state, build_wallet, restore_provider_platform_node_pool,
+    apply_persisted_core_state, build_wallet, restore_asset_lock_funding_pools,
+    restore_provider_platform_node_pool,
 };
 use crate::sqlite::reports::{CommitReport, DeleteWalletReport};
 use crate::sqlite::schema;
@@ -1947,6 +1948,14 @@ fn load_wallet_snapshot(
             hex::encode(wallet_id)
         ))
     })?;
+    restore_asset_lock_funding_pools(&mut wallet_info, conn, &wallet_id, network, ctx).map_err(
+        |e| {
+            PersistenceError::backend(format!(
+                "asset-lock funding pool rehydration failed for {}: {e}",
+                hex::encode(wallet_id)
+            ))
+        },
+    )?;
     if account_manifest
         .provider
         .iter()
