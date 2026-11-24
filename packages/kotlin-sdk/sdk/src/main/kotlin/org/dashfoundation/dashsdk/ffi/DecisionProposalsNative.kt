@@ -108,6 +108,13 @@ internal object DecisionProposalsNative {
     external fun listByCreatedAt(sdk: Long, limit: Int, startAfter: String?): String?
 
     /**
+     * The end date to create a proposal with when the user asked for [requestedEndDateMs]
+     * now, in milliseconds since the Unix epoch as a decimal string. Bridges
+     * `dash_sdk_decision_proposal_get_end_date`.
+     */
+    external fun getEndDate(sdk: Long, requestedEndDateMs: Long): String?
+
+    /**
      * The id of [proposalId]'s yes/no poll, as a plain base58 string. Bridges
      * `dash_sdk_decision_proposal_get_vote_poll_id`.
      */

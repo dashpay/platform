@@ -89,6 +89,29 @@ class DecisionProposals internal constructor(private val sdk: Sdk) {
     }
 
     /**
+     * The end date to create a proposal with when the user asked for [requestedEndDateMs]
+     * (milliseconds since the Unix epoch) now, for a form that offers "ends in N days" or a
+     * date picker.
+     *
+     * Platform accepts an end date from a week to four weeks after the block that creates
+     * the proposal, which comes seconds after now, so exactly a week from now is always
+     * refused and exactly four weeks from now is refused when this device's clock is ahead
+     * of the block's. rs-sdk moves an end date within an hour of either edge to an hour
+     * inside the window (so by at most two hours) and returns any other as it is, for
+     * Platform to judge. [DecisionProposalTransactions.create] puts the end date it is given
+     * as it is: pass it this one.
+     */
+    suspend fun endDate(requestedEndDateMs: Long): Long = sdk.queryGate.op {
+        val decimal = mapNativeErrors {
+            DecisionProposalsNative.getEndDate(sdk.handle, requestedEndDateMs)
+        }.returned("getEndDate")
+        decimal.toLongOrNull()
+            ?: throw DashSdkError.SerializationError(
+                "getEndDate returned a non-numeric end date: $decimal",
+            )
+    }
+
+    /**
      * The id of the yes/no poll [proposalId] opens, base58: the id
      * `Voting.votePollsByEndDate` lists it under.
      */
