@@ -1362,6 +1362,18 @@ pub enum PlatformWalletError {
          it once the spend settles"
     )]
     TokenShieldedPoolSpendPending { token_id: Identifier },
+
+    /// A shielded Clear was refused because a shielded operation is admitted
+    /// on the coordinator: a bind, an account being added, a token pool
+    /// transfer or unshield, a DashPay profile write or a tip address
+    /// preparation, from its first step to its result, or another Clear.
+    /// Clear does not wait for it. It returned at once and changed nothing:
+    /// the sync loop keeps running, and no registration, note, watermark or
+    /// tree leaf was touched, so the host must not wipe its own rows.
+    /// Retryable: Clear goes through once the operation has finished.
+    /// FFI mirror: `PlatformWalletFFIResultCode::ErrorShieldedOperationInProgress`.
+    #[error("A shielded operation is in progress; clear the shielded state once it has finished")]
+    ShieldedOperationInProgress,
 }
 
 /// The SDK's invitation errors map onto the variants the wallet used before

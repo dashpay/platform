@@ -743,6 +743,14 @@ pub unsafe extern "C" fn platform_wallet_manager_configure_shielded(
 /// THIS manager instance — a wiring fault that must surface (and make the host
 /// fail closed) rather than report a phantom success while the on-disk tree is
 /// left untouched.
+///
+/// Returns `ErrorShieldedOperationInProgress` (84) at once, without waiting,
+/// while a shielded operation is in flight (a bind, an account being added, a
+/// token pool transfer or unshield, a DashPay profile write or a tip address
+/// preparation, or another Clear). Nothing was changed: the sync loop keeps
+/// running and no registration, note or tree leaf was touched, so the host
+/// **must not** wipe its own rows. Call again once the operation has
+/// finished.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_clear(
     handle: Handle,
@@ -759,21 +767,31 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_clear(
     });
     let result = unwrap_option_or_return!(option);
     if let Err(e) = result {
-        // A drain that did not complete is NOT an ordinary store failure:
-        // it means callback-capable work may still be running, which the
-        // host must be able to tell apart (it keeps its callback context
-        // alive rather than just retrying the wipe). Route that one case
-        // through the typed conversion and keep the generic mapping for
-        // every other failure.
-        if matches!(
-            e,
-            platform_wallet::PlatformWalletError::ShutdownIncomplete(_)
-        ) {
-            return PlatformWalletFFIResult::from(e);
-        }
-        return map_shielded_error(e, "clear_shielded");
+        return map_clear_error(e);
     }
     PlatformWalletFFIResult::ok()
+}
+
+/// The result [`platform_wallet_manager_shielded_clear`] reports a failed
+/// Clear with.
+///
+/// Two failures keep their own code, because a host acts on each
+/// differently from a store failure. A drain that did not complete
+/// (`ErrorShutdownIncomplete`) means callback-capable work may still be
+/// running, so the host keeps its callback context alive instead of only
+/// retrying the wipe. A Clear refused while a shielded operation is in flight
+/// (`ErrorShieldedOperationInProgress`) changed nothing, so the host keeps
+/// everything as it was and offers the Clear again. Every other failure
+/// keeps the generic mapping.
+fn map_clear_error(error: PlatformWalletError) -> PlatformWalletFFIResult {
+    if matches!(
+        error,
+        PlatformWalletError::ShutdownIncomplete(_)
+            | PlatformWalletError::ShieldedOperationInProgress
+    ) {
+        return PlatformWalletFFIResult::from(error);
+    }
+    map_shielded_error(error, "clear_shielded")
 }
 
 // ---------------------------------------------------------------------------
@@ -1153,6 +1171,36 @@ mod sync_result_tests {
 #[cfg(test)]
 mod recovery_error_tests {
     use super::*;
+
+    /// The exported Clear reports a refusal during a shielded operation and
+    /// an incomplete drain by their own codes, and any other failure as a
+    /// wallet operation failure. Flattening the refusal to the generic code
+    /// would lose the typed retry outcome in Swift and Kotlin.
+    #[test]
+    fn should_keep_the_typed_codes_of_a_refused_and_an_undrained_clear() {
+        for (error, expected, raw) in [
+            (
+                PlatformWalletError::ShieldedOperationInProgress,
+                PlatformWalletFFIResultCode::ErrorShieldedOperationInProgress,
+                84,
+            ),
+            (
+                PlatformWalletError::ShutdownIncomplete("a pass did not drain".into()),
+                PlatformWalletFFIResultCode::ErrorShutdownIncomplete,
+                27,
+            ),
+            (
+                PlatformWalletError::ShieldedStoreError("purge failed".into()),
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                6,
+            ),
+        ] {
+            let mut result = map_clear_error(error);
+            assert_eq!(result.code, expected);
+            assert_eq!(result.code as u32, raw);
+            unsafe { platform_wallet_ffi_result_free(&mut result) };
+        }
+    }
 
     #[test]
     fn should_preserve_recovery_errors_when_configuring_binding_or_syncing() {
