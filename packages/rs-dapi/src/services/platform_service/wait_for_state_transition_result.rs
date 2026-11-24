@@ -509,12 +509,17 @@ impl PlatformServiceImpl {
                     "Drive did not register the state transition for an execution proof"
                 );
                 // Drive answered that it did not take it: it is full, the request is malformed,
-                // or the lease counts as released. There is nothing to release, and releasing
-                // anyway would only make Drive remember the lease, so the registration ends
-                // here and its permit is free for another wait at once.
+                // the lease counts as released, or this Drive is older and has no such call.
+                // There is nothing to release, and releasing anyway would only make Drive
+                // remember the lease, so the registration ends here and its permit is free for
+                // another wait at once. Any other status can be of a registration Drive took
+                // and whose answer was lost, so that one is kept to be released.
                 if matches!(
                     status.code(),
-                    Code::ResourceExhausted | Code::InvalidArgument | Code::FailedPrecondition
+                    Code::ResourceExhausted
+                        | Code::InvalidArgument
+                        | Code::FailedPrecondition
+                        | Code::Unimplemented
                 ) {
                     registration.armed = false;
                     return None;
@@ -665,7 +670,7 @@ impl Drop for ExecutionProofRegistration {
             return;
         }
         // Drop cannot wait, so the call runs on its own. Outside a runtime there is nothing to
-        // run it on; Drive then forgets the registration after its lifetime in blocks.
+        // run it on; Drive then forgets the registration once it has outlived its lifetime.
         let Ok(runtime) = Handle::try_current() else {
             return;
         };
@@ -771,6 +776,19 @@ pub(super) fn build_wait_for_state_transition_error_response(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use dapi_grpc::platform::v0::StateTransitionBroadcastError;
+    use dpp::serialization::PlatformSerializable;
+    use dpp::state_transition::batch_transition::BatchTransition;
+    use dpp::state_transition::batch_transition::BatchTransitionV0;
+    use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
+    use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
+    use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use dpp::state_transition::batch_transition::document_delete_transition::DocumentDeleteTransition;
+    use dpp::state_transition::batch_transition::document_delete_transition::DocumentDeleteTransitionV0;
+    use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+    use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+
     mod drive_calls {
         use super::super::{
             EXECUTION_PROOF_CALL_TIMEOUT, ExecutionProofRegistration, StateBeforeBlock, WaitOptions,
@@ -792,7 +810,7 @@ mod tests {
         use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
         use dapi_grpc::tonic::transport::Server;
         use dapi_grpc::tonic::{Code, Request, Response, Status};
-        use super::event_wait::{LOOKUP_TIME, LookupTenderdash};
+        use super::event_wait::LookupTenderdash;
         use crate::error::DapiError;
         use serde_json::json;
         use dapi_grpc::platform::v0::WaitForStateTransitionResultRequest;
@@ -1140,8 +1158,14 @@ mod tests {
 
         #[tokio::test]
         async fn should_have_no_registration_to_release_when_drive_refuses_it() {
-            // Drive is full, or counts the lease as released already
-            for code in [Code::ResourceExhausted, Code::FailedPrecondition] {
+            // Drive is full, counts the lease as released already, finds the request malformed,
+            // or is an older Drive without the call
+            for code in [
+                Code::ResourceExhausted,
+                Code::FailedPrecondition,
+                Code::InvalidArgument,
+                Code::Unimplemented,
+            ] {
                 let mut fixture = Fixture::new(Registration::Refuse(code));
                 let permits = Arc::new(Semaphore::new(1));
                 fixture.service.execution_proof_registration_permits = Arc::clone(&permits);
@@ -1160,6 +1184,25 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn should_release_a_registration_whose_error_does_not_say_drive_refused_it() {
+            // A status that can follow a registration Drive took, when its answer is lost
+            let fixture = Fixture::new(Registration::Refuse(Code::Unavailable));
+
+            let registration = fixture
+                .service
+                .register_state_transition_execution_proof(&[17; 32], far_deadline())
+                .await
+                .expect("expected a registration to release");
+            let lease = registered_lease(&fixture.calls()[0]);
+
+            drop(registration);
+            fixture.wait_for_calls(2).await;
+            assert_eq!(fixture.calls()[1], Call::Unregister(vec![17; 32], lease));
+        }
+
+        // Only the in-memory Drive stand-in is in play, so the clock is tokio's own: the limit
+        // runs out when nothing else is left to do, however busy the machine is
+        #[tokio::test(start_paused = true)]
         async fn should_stop_waiting_for_a_registration_drive_does_not_answer() {
             let fixture = Fixture::new(Registration::Stall);
 
@@ -1241,7 +1284,7 @@ mod tests {
             }
         }
 
-        #[tokio::test]
+        #[tokio::test(start_paused = true)]
         async fn should_answer_with_a_proof_of_current_state_when_drive_does_not_answer_the_pair() {
             let fixture = Fixture::serving(RecordingDrive {
                 calls: Default::default(),
@@ -1263,7 +1306,7 @@ mod tests {
             assert_eq!(response.state_before_block, None);
         }
 
-        #[tokio::test]
+        #[tokio::test(start_paused = true)]
         async fn should_keep_time_for_the_proof_of_current_state_when_the_pair_lookup_stalls() {
             let fixture = Fixture::serving(RecordingDrive {
                 calls: Default::default(),
@@ -1385,18 +1428,19 @@ mod tests {
                 fixture.wait_for_calls(1).await;
                 lookup_gate.notify_one();
             };
+            let started = Instant::now();
             let (answer, ()) = tokio::join!(
-                tokio::time::timeout(
-                    EXECUTION_PROOF_CALL_TIMEOUT / 2,
-                    fixture
-                        .service
-                        .wait_for_state_transition_result_impl(request),
-                ),
+                fixture
+                    .service
+                    .wait_for_state_transition_result_impl(request),
                 answer_lookup
             );
-            answer
-                .expect("expected the answer before the registration's own limit")
-                .expect("expected an answer");
+            let elapsed = started.elapsed();
+            answer.expect("expected an answer");
+
+            // A wait that waited for its registration would answer no sooner than the
+            // registration's own limit, so anything under it is an answer that did not wait
+            assert!(elapsed < EXECUTION_PROOF_CALL_TIMEOUT, "{elapsed:?}");
 
             // The registration Drive received is released
             fixture.wait_for_calls(2).await;
@@ -1410,7 +1454,9 @@ mod tests {
             // Tenderdash misses at once, and Drive never acknowledges the registration
             let tenderdash = LookupTenderdash::start(Duration::ZERO).await;
             let mut fixture = Fixture::new(Registration::Stall);
-            let wait_timeout = Duration::from_secs(2);
+            // Long enough that a quarter of it is the registration's whole limit, the widest
+            // gap there can be between a wait that counts the registration and one that does not
+            let wait_timeout = 4 * EXECUTION_PROOF_CALL_TIMEOUT;
             tenderdash.serve(&mut fixture.service, wait_timeout);
             let request = Request::new(WaitForStateTransitionResultRequest {
                 version: Some(WaitRequestVersion::V0(
@@ -1437,7 +1483,8 @@ mod tests {
                 "expected the event timeout, got {answer:?}"
             );
             assert!(
-                elapsed >= wait_timeout && elapsed < wait_timeout + wait_timeout / 8,
+                elapsed >= wait_timeout
+                    && elapsed < wait_timeout + EXECUTION_PROOF_CALL_TIMEOUT * 3 / 4,
                 "{elapsed:?}"
             );
             assert!(matches!(
@@ -1448,7 +1495,8 @@ mod tests {
 
         #[tokio::test]
         async fn should_register_while_the_transaction_lookup_is_still_on_its_way() {
-            let tenderdash = LookupTenderdash::start(LOOKUP_TIME).await;
+            // Tenderdash answers no lookup for as long as this test runs
+            let tenderdash = LookupTenderdash::holding_back(Arc::new(Notify::new())).await;
             let mut fixture = Fixture::new(Registration::Take);
             tenderdash.serve(&mut fixture.service, Duration::from_secs(30));
             let request = Request::new(WaitForStateTransitionResultRequest {
@@ -1465,11 +1513,9 @@ mod tests {
             // The block can be finalized during the lookup, so Drive is asked before it answers
             tokio::select! {
                 _ = fixture.service.wait_for_state_transition_result_impl(request) => {
-                    panic!("no event comes, and the wait lasts 30 s")
+                    panic!("the lookup is not answered, and no event comes")
                 }
-                registered = tokio::time::timeout(LOOKUP_TIME / 2, fixture.wait_for_calls(1)) => {
-                    registered.expect("expected Drive to get the registration before the lookup answered");
-                }
+                _ = fixture.wait_for_calls(1) => {}
             }
 
             assert!(matches!(
@@ -1502,7 +1548,7 @@ mod tests {
             assert_eq!(fixture.calls(), vec![Call::GetProofs(tx.to_vec())]);
         }
 
-        #[tokio::test]
+        #[tokio::test(start_paused = true)]
         async fn should_give_a_registration_only_part_of_what_is_left_of_the_wait() {
             let fixture = Fixture::new(Registration::Stall);
 
@@ -1552,9 +1598,6 @@ mod tests {
         use tokio::task::JoinHandle;
         use tokio_stream::StreamExt;
 
-        /// How long the slow Tenderdash stand-in takes to answer that it does not hold a
-        /// transaction.
-        pub(super) const LOOKUP_TIME: Duration = Duration::from_millis(800);
         /// The wait's own timeout.
         const WAIT_TIMEOUT: Duration = Duration::from_millis(1_000);
 
@@ -1574,6 +1617,12 @@ mod tests {
         impl LookupTenderdash {
             pub(super) async fn start(lookup_time: Duration) -> Self {
                 Self::answering(lookup_time, None, None).await
+            }
+
+            /// Answers no lookup until `gate` is notified, then that it holds no such
+            /// transaction.
+            pub(super) async fn holding_back(gate: Arc<Notify>) -> Self {
+                Self::answering(Duration::ZERO, None, Some(gate)).await
             }
 
             /// Answers every lookup with this `tx` result, once `gate` is notified.
@@ -1687,15 +1736,19 @@ mod tests {
 
         #[tokio::test]
         async fn should_give_the_event_the_whole_wait_timeout_after_a_slow_lookup() {
-            let tenderdash = LookupTenderdash::start(LOOKUP_TIME).await;
+            let lookup_gate = Arc::new(Notify::new());
+            let tenderdash = LookupTenderdash::holding_back(Arc::clone(&lookup_gate)).await;
             let service = tenderdash.service(WAIT_TIMEOUT);
             let hash = [3u8; 32];
             let request = Request::new(unflagged_wait(hash));
 
-            // The event comes half a second after the lookup answered: within the wait's own
-            // timeout counted from there, and past it counted from the start of the call
+            // The lookup is answered once the wait's own timeout has passed counted from the
+            // start of the call, and the event comes a little after that: early in the timeout
+            // counted from the lookup's answer
             let deliver_event = async {
-                tokio::time::sleep(LOOKUP_TIME + WAIT_TIMEOUT / 2).await;
+                tokio::time::sleep(WAIT_TIMEOUT).await;
+                lookup_gate.notify_one();
+                tokio::time::sleep(WAIT_TIMEOUT / 10).await;
                 service
                     .subscriber_manager
                     .notify(StreamingEvent::PlatformTx {
@@ -1817,19 +1870,6 @@ mod tests {
             assert!(execution_proof_around_block(pair(8, 10), 10).is_none());
         }
     }
-
-    use super::*;
-    use dapi_grpc::platform::v0::StateTransitionBroadcastError;
-    use dpp::serialization::PlatformSerializable;
-    use dpp::state_transition::batch_transition::BatchTransition;
-    use dpp::state_transition::batch_transition::BatchTransitionV0;
-    use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
-    use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
-    use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
-    use dpp::state_transition::batch_transition::document_delete_transition::DocumentDeleteTransition;
-    use dpp::state_transition::batch_transition::document_delete_transition::DocumentDeleteTransitionV0;
-    use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
-    use dpp::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 
     fn document_batch_bytes(owner_id: Identifier) -> Vec<u8> {
         let base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {

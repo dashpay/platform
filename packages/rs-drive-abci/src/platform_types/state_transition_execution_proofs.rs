@@ -28,6 +28,7 @@ use drive::drive::Drive;
 use drive::verify::grovedb_proof_envelope::require_supported_grovedb_proof_envelope;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::{Duration, Instant};
 
 /// How many registrations can be held at once, one per waiting client. A registration past
 /// this is refused.
@@ -39,6 +40,14 @@ pub const MAX_REGISTERED_STATE_TRANSITIONS: usize = 1024;
 /// How many blocks a registration lives when nothing releases it, as when the client that took
 /// it stopped without saying so. Each registration expires on its own.
 pub const REGISTRATION_LIFETIME_BLOCKS: u64 = 64;
+
+/// How long a registration lives when nothing releases it, however few blocks came since. On a
+/// quiet chain [`REGISTRATION_LIFETIME_BLOCKS`] blocks take hours, and registrations whose
+/// release never arrived, as when the rs-dapi that took them restarted, would hold their slots
+/// all that time. It is longer than rs-dapi lets any wait run, so a registration a client still
+/// waits on does not run out of it. It is counted on this node's clock, which like the rest of
+/// the registry is outside consensus: it only decides which registrations the node still holds.
+pub const REGISTRATION_LIFETIME: Duration = Duration::from_secs(15 * 60);
 
 /// How many blocks a proof is kept for after the block it is of.
 pub const PROOF_RETENTION_BLOCKS: u64 = 64;
@@ -69,7 +78,7 @@ pub const MAX_RETAINED_PROOF_BYTES: usize = 16 * 1024 * 1024;
 pub const MAX_REMEMBERED_RELEASES: usize = MAX_REGISTERED_STATE_TRANSITIONS;
 
 /// How many issuers' low-water marks are kept at once. Past this the oldest is forgotten, and a
-/// late registration under it is taken and expires after [`REGISTRATION_LIFETIME_BLOCKS`].
+/// late registration under it is taken and expires as one nothing releases does.
 pub const MAX_RELEASE_ISSUERS: usize = 64;
 
 /// The hash a state transition is registered and fetched by: the hash of its bytes, which is
@@ -146,11 +155,29 @@ pub enum RegistrationRefused {
     LeaseReleased,
 }
 
+/// When a registration was taken.
+#[derive(Clone, Copy, Debug)]
+struct Taken {
+    /// The height of the last committed block then.
+    height: u64,
+    /// The time then, on this node's clock.
+    at: Instant,
+}
+
+impl Taken {
+    /// Whether the registration is within both of its lifetimes, with the last committed block
+    /// at `height` and the time `now`.
+    fn is_live(&self, height: u64, now: Instant) -> bool {
+        height.saturating_sub(self.height) <= REGISTRATION_LIFETIME_BLOCKS
+            && now.saturating_duration_since(self.at) <= REGISTRATION_LIFETIME
+    }
+}
+
 #[derive(Debug, Default)]
 struct Inner {
-    /// The registered transitions: the registrations waiting for each, with the height of the
-    /// last committed block when each was taken.
-    registered: HashMap<StateTransitionHash, HashMap<RegistrationLease, u64>>,
+    /// The registered transitions: the registrations waiting for each, with when each was
+    /// taken.
+    registered: HashMap<StateTransitionHash, HashMap<RegistrationLease, Taken>>,
     /// How many registrations `registered` holds.
     registrations: usize,
     /// Releases that arrived before their registration, with the height of the last committed
@@ -224,6 +251,20 @@ impl Inner {
     fn waits_for_block(&self, hash: &StateTransitionHash) -> bool {
         self.registered.contains_key(hash) && !self.proved.contains_key(hash)
     }
+
+    /// Forgets the registrations that have outlived either of their lifetimes at the time
+    /// `now`: [`REGISTRATION_LIFETIME_BLOCKS`] and [`REGISTRATION_LIFETIME`].
+    fn expire_registrations(&mut self, now: Instant) {
+        let height = self.last_committed_height;
+        let mut expired = 0;
+        self.registered.retain(|_, leases| {
+            let held = leases.len();
+            leases.retain(|_, taken| taken.is_live(height, now));
+            expired += held - leases.len();
+            !leases.is_empty()
+        });
+        self.registrations -= expired;
+    }
 }
 
 /// The state transitions a node was asked to prove, and the proofs it has made of them.
@@ -265,11 +306,22 @@ impl StateTransitionExecutionProofs {
     /// [`MAX_REMEMBERED_RELEASES`], [`MAX_RELEASE_ISSUERS`] and [`REGISTRATION_LIFETIME_BLOCKS`]:
     /// a registration that arrives after its release is forgotten is taken, and held until it
     /// expires. A lease is held until it is released or expires, also once its transition is
-    /// proved, so that its release finds it.
+    /// proved, so that its release finds it. It expires after [`REGISTRATION_LIFETIME_BLOCKS`]
+    /// blocks or after [`REGISTRATION_LIFETIME`], whichever comes first.
     pub fn register(
         &self,
         hash: StateTransitionHash,
         lease: RegistrationLease,
+    ) -> Result<(), RegistrationRefused> {
+        self.register_at(hash, lease, Instant::now())
+    }
+
+    /// [`register`](Self::register) at the time `now`.
+    fn register_at(
+        &self,
+        hash: StateTransitionHash,
+        lease: RegistrationLease,
+        now: Instant,
     ) -> Result<(), RegistrationRefused> {
         let mut inner = self.inner();
         if inner.released.remove(&lease).is_some() || inner.below_low_water_mark(&lease) {
@@ -283,14 +335,22 @@ impl StateTransitionExecutionProofs {
             return Ok(());
         }
         if inner.registrations >= MAX_REGISTERED_STATE_TRANSITIONS {
+            // Blocks can be minutes apart, so the registrations that ran out of time since the
+            // last one are forgotten here too, when their slots are needed
+            inner.expire_registrations(now);
+        }
+        if inner.registrations >= MAX_REGISTERED_STATE_TRANSITIONS {
             return Err(RegistrationRefused::TooManyRegistered);
         }
-        let taken_at = inner.last_committed_height;
+        let taken = Taken {
+            height: inner.last_committed_height,
+            at: now,
+        };
         inner
             .registered
             .entry(hash)
             .or_default()
-            .insert(lease, taken_at);
+            .insert(lease, taken);
         inner.registrations += 1;
         Ok(())
     }
@@ -399,18 +459,16 @@ impl StateTransitionExecutionProofs {
     /// Records that the block at `height` is committed, and forgets the registrations, the
     /// releases and the proofs that have outlived their bounds.
     fn block_committed(&self, height: u64) {
+        self.block_committed_at(height, Instant::now());
+    }
+
+    /// [`block_committed`](Self::block_committed) at the time `now`.
+    fn block_committed_at(&self, height: u64, now: Instant) {
         let mut inner = self.inner();
         inner.last_committed_height = height;
         let live = |at: &u64| height.saturating_sub(*at) <= REGISTRATION_LIFETIME_BLOCKS;
 
-        let mut expired = 0;
-        inner.registered.retain(|_, leases| {
-            let held = leases.len();
-            leases.retain(|_, taken_at| live(taken_at));
-            expired += held - leases.len();
-            !leases.is_empty()
-        });
-        inner.registrations -= expired;
+        inner.expire_registrations(now);
         inner.released.retain(|_, released_at| live(released_at));
         // A mark is kept as long as a remembered release would be
         inner
@@ -984,6 +1042,50 @@ mod tests {
         proofs.block_committed(20 + REGISTRATION_LIFETIME_BLOCKS + 1);
         assert!(!proofs.is_registered(&[1; 32]));
         assert_eq!(proofs.inner().registrations, 0);
+    }
+
+    #[test]
+    fn should_expire_a_registration_by_time_when_blocks_are_slow_to_come() {
+        let proofs = StateTransitionExecutionProofs::new(10);
+        let taken_at = Instant::now();
+        proofs
+            .register_at([1; 32], A, taken_at)
+            .expect("expected to register");
+
+        // Far fewer blocks than a lifetime in blocks, each minutes after the last
+        proofs.block_committed_at(11, taken_at + REGISTRATION_LIFETIME);
+        assert!(proofs.is_registered(&[1; 32]));
+
+        proofs.block_committed_at(
+            12,
+            taken_at + REGISTRATION_LIFETIME + Duration::from_secs(1),
+        );
+        assert!(!proofs.is_registered(&[1; 32]));
+        assert_eq!(proofs.inner().registrations, 0);
+    }
+
+    #[test]
+    fn should_give_the_slots_of_timed_out_registrations_to_new_ones_between_blocks() {
+        let proofs = StateTransitionExecutionProofs::new(10);
+        let taken_at = Instant::now();
+        // Registrations whose release never arrives, as of an rs-dapi that restarted
+        for index in 0..MAX_REGISTERED_STATE_TRANSITIONS {
+            proofs
+                .register_at(hash_of(index), lease_of(index), taken_at)
+                .expect("expected to register");
+        }
+
+        // Within their lifetime they hold every slot
+        assert_eq!(
+            proofs.register_at([255; 32], [255; 16], taken_at + REGISTRATION_LIFETIME),
+            Err(RegistrationRefused::TooManyRegistered)
+        );
+
+        // Past it a new registration takes a slot, with no block committed in between
+        let later = taken_at + REGISTRATION_LIFETIME + Duration::from_secs(1);
+        assert_eq!(proofs.register_at([255; 32], [255; 16], later), Ok(()));
+        assert_eq!(proofs.inner().registrations, 1);
+        assert!(!proofs.is_registered(&hash_of(0)));
     }
 
     #[test]

@@ -162,27 +162,30 @@ where
         .block_platform_state()
         .current_platform_version()?;
 
-    // The proofs of the state before this block, for the state transitions in it that a
-    // client registered to have proved. This has to come before `finalize_block_proposal`,
-    // which makes the platform state this block's, and before the commit: until then the
-    // committed state and the platform state are both the previous block's.
-    let state_transition_proofs_before_block = app
-        .platform()
-        .prove_registered_state_transitions_before_block(
-            request
-                .block
-                .as_ref()
-                .and_then(|block| block.data.as_ref())
-                .map(|data| data.txs.as_slice())
-                .unwrap_or_default(),
-        );
-
     let request_finalize_block: FinalizeBlockCleanedRequest = request.try_into()?;
 
     let block_height = request_finalize_block.height;
 
     #[cfg(debug_assertions)]
     phases.end_phase("setup");
+
+    // The proofs of the state before this block, for the state transitions in it that a
+    // client registered to have proved. This has to come before `finalize_block_proposal`,
+    // which makes the platform state this block's, and before the commit: until then the
+    // committed state and the platform state are both the previous block's.
+    let state_transition_proofs_before_block = app
+        .platform()
+        .prove_registered_state_transitions_before_block(&request_finalize_block.block.data.txs);
+
+    // Sampled on the blocks that had something to prove only, as is the proving after the
+    // commit below
+    #[cfg(debug_assertions)]
+    let proves_registered_state_transitions = !state_transition_proofs_before_block.is_empty();
+    #[cfg(debug_assertions)]
+    phases.end_phase_if(
+        proves_registered_state_transitions,
+        "prove_registered_state_transitions_before_block",
+    );
 
     let block_finalization_outcome = app.platform().finalize_block_proposal(
         request_finalize_block,
@@ -284,7 +287,10 @@ where
         );
 
     #[cfg(debug_assertions)]
-    phases.end_phase("prove_registered_state_transitions");
+    phases.end_phase_if(
+        proves_registered_state_transitions,
+        "prove_registered_state_transitions_after_block",
+    );
 
     // Reclaim the storage of any TTL'd time-range buckets the block's
     // transaction flat-dropped (grovedb#848 / PR #849): the drops' redo

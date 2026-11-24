@@ -1445,6 +1445,7 @@ fn validate_path_elements_request(request: &GetPathElementsRequest) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 
     mod state_transition_execution_proofs {
         use super::*;
@@ -1588,7 +1589,6 @@ mod tests {
             assert_eq!(status.code(), Code::InvalidArgument);
         }
     }
-    use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 
     #[test]
     fn path_elements_request_is_bounded_before_debug_formatting() {

@@ -20,7 +20,9 @@ service DriveInternal {
   // Drive holds nothing for it. Drive remembers releases that come first within
   // bounds: up to 1,024 releases, and a low-water mark for each of up to 64
   // callers, each for 64 blocks. A registration that arrives after Drive has
-  // forgotten its release is taken, and held until it expires.
+  // forgotten its release is taken, and held until it expires. A registration
+  // nothing releases expires after 64 blocks or 15 minutes, whichever comes
+  // first.
   rpc registerStateTransitionExecutionProof(RegisterStateTransitionExecutionProofRequest)
       returns (RegisterStateTransitionExecutionProofResponse);
   // Undoes one registration of a state transition. A proof Drive already made
