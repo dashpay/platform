@@ -1290,3 +1290,49 @@ async fn should_keep_best_effort_dispatch_on_a_backend_without_recipient_support
     );
     assert_eq!(seen.len(), 1);
 }
+
+/// A retained handle retrying a pending drain after its wallet's removal is
+/// refused before the retry restores the drain's lock into the live map or
+/// writes a row, so a re-imported wallet with the same id gains nothing.
+#[tokio::test]
+async fn should_refuse_a_pending_drain_retry_on_a_handle_kept_past_its_removal() {
+    let (lock, keys) = drain_lock_fixture();
+    let (wallet, persistence, _, _dir) = wallet_fixture(&lock, keys).await;
+    wallet
+        .wallet_manager
+        .write()
+        .await
+        .get_wallet_info_mut(&wallet.wallet_id())
+        .unwrap()
+        .tracked_asset_locks
+        .clear();
+    wallet.mark_shielded_detached();
+    let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
+    let prover = super::prover::CachedOrchardProver::new();
+    let operation = Arc::new(AssetLockOperationContext::new(OPERATION_ID));
+
+    let result = wallet
+        .shielded_fund_from_asset_lock(
+            AssetLockFunding::DrainWalletBalance {
+                account_index: 0,
+                minimum_lock_duffs: None,
+                operation,
+            },
+            vec![],
+            &signer,
+            &prover,
+            None,
+            0,
+            None,
+            None,
+            None,
+        )
+        .await;
+
+    assert!(
+        matches!(result, Err(PlatformWalletError::WalletNotFound(_))),
+        "{result:?}"
+    );
+    assert!(wallet.asset_locks.list_tracked_locks().await.is_empty());
+    assert!(persistence.staged.lock().unwrap().is_empty());
+}

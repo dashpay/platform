@@ -1446,7 +1446,7 @@ unsafe fn shielded_shield_from_identity_to_recipient_inner(
         Err(result) => return result,
     };
 
-    let wallet = match resolve_shielded_wallet(handle, &wallet_id) {
+    let wallet = match resolve_wallet(handle, &wallet_id) {
         Ok(w) => w,
         Err(result) => return result,
     };

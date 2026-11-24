@@ -548,6 +548,18 @@ impl ShieldedOperationLocks<'_> {
         wallet.ensure_shielded_attached()?;
         Ok(admission)
     }
+
+    /// [`admit`](Self::admit) for a payment: a wallet removed first is
+    /// refused as [`PlatformWalletError::WalletRemovedBeforeSend`], which a
+    /// host reads as nothing sent.
+    pub(crate) async fn admit_spend(
+        &self,
+        wallet: &PlatformWallet,
+    ) -> Result<ShieldedAdmission<'_>, PlatformWalletError> {
+        let admission = self.coordinator.admit().await?;
+        wallet.ensure_shielded_attached_for_spend()?;
+        Ok(admission)
+    }
 }
 
 impl PlatformWallet {
@@ -1816,6 +1828,19 @@ impl PlatformWallet {
         Ok(())
     }
 
+    /// [`ensure_shielded_attached`](Self::ensure_shielded_attached) for a
+    /// payment, refused as [`PlatformWalletError::WalletRemovedBeforeSend`].
+    #[cfg(feature = "shielded")]
+    fn ensure_shielded_attached_for_spend(&self) -> Result<(), PlatformWalletError> {
+        self.ensure_shielded_attached()
+            .map_err(|error| match error {
+                PlatformWalletError::WalletNotFound(wallet) => {
+                    PlatformWalletError::WalletRemovedBeforeSend(wallet)
+                }
+                other => other,
+            })
+    }
+
     /// Mark this wallet as removed from the manager, so any handle that
     /// outlives the removal can no longer bind shielded state onto the
     /// coordinator.
@@ -2055,7 +2080,7 @@ impl PlatformWallet {
         prover: P,
     ) -> Result<(), PlatformWalletError> {
         let locks = self.lock_for_shielded_operation(false).await?;
-        let _admission = locks.admit(self).await?;
+        let _admission = locks.admit_spend(self).await?;
         self.shielded_transfer_admitted(
             &locks.coordinator,
             seed,
@@ -2124,7 +2149,7 @@ impl PlatformWallet {
     ) -> Result<(), PlatformWalletError> {
         let locks = self.lock_for_shielded_operation(false).await?;
         let coordinator = &locks.coordinator;
-        let _admission = locks.admit(self).await?;
+        let _admission = locks.admit_spend(self).await?;
         let keyset = self.derive_spend_keyset(seed, account).await?;
         // The decoder is network-agnostic, so guard the recipient's HRP class
         // against the wallet's network before decoding.
@@ -2173,7 +2198,7 @@ impl PlatformWallet {
         // reconcile, and taken before admission (the lock order).
         let locks = self.lock_for_shielded_operation(true).await?;
         let coordinator = &locks.coordinator;
-        let _admission = locks.admit(self).await?;
+        let _admission = locks.admit_spend(self).await?;
 
         let keyset = self.derive_spend_keyset(seed, account).await?;
         let (mut proven_balance, metadata) =
@@ -2690,7 +2715,7 @@ impl PlatformWallet {
     ) -> Result<(), PlatformWalletError> {
         let locks = self.lock_for_shielded_operation(false).await?;
         let coordinator = &locks.coordinator;
-        let _admission = locks.admit(self).await?;
+        let _admission = locks.admit_spend(self).await?;
         let keyset = self.derive_spend_keyset(seed, account).await?;
         let network = self.sdk.network;
         let parsed = to_core_address
@@ -2758,9 +2783,14 @@ impl PlatformWallet {
         P: dpp::shielded::builder::OrchardProver,
         IS: dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> + Send + Sync,
     {
+        // The signer may wait on an external prompt, so no lock is held across the build: the
+        // operation drops the admitting locks before it and reacquires them after, refusing a
+        // removal or a Clear that completed in between. The reacquired locks cover the
+        // registration below.
         let locks = self.lock_for_shielded_operation(false).await?;
-        let coordinator = &locks.coordinator;
-        let _admission = locks.admit(self).await?;
+        let coordinator = Arc::clone(&locks.coordinator);
+        let admission = coordinator.admit().await?;
+        self.ensure_shielded_attached_for_spend()?;
         {
             let wm = self.wallet_manager.read().await;
             let info = wm
@@ -2778,7 +2808,20 @@ impl PlatformWallet {
                 )));
             }
         }
-        let (identity_id, identity) = {
+        let epoch = admission.epoch();
+        let reacquire = || async {
+            let locks = self.lock_for_shielded_operation(false).await?;
+            let admission = coordinator.admit_since(epoch).await?.ok_or_else(|| {
+                PlatformWalletError::ShieldedStoreError(
+                    "a shielded Clear completed while the identity create was being built; \
+                     nothing was broadcast"
+                        .to_string(),
+                )
+            })?;
+            self.ensure_shielded_attached_for_spend()?;
+            Ok((admission, locks))
+        };
+        let (identity_id, identity, _locks) = {
             // Scope the transient keyset so its spend authority is dropped before we take the
             // wallet-manager write lock below — it's only needed for the spend, not for the
             // registration step.
@@ -2795,6 +2838,8 @@ impl PlatformWallet {
                 send_to_address_on_creation_failure,
                 identity_signer,
                 &prover,
+                (admission, locks),
+                reacquire,
             )
             .await?
         };
@@ -3046,7 +3091,7 @@ impl PlatformWallet {
         // taken before admission (the lock order).
         let locks = self.lock_for_shielded_operation(true).await?;
         let coordinator = &locks.coordinator;
-        let _admission = locks.admit(self).await?;
+        let _admission = locks.admit_spend(self).await?;
 
         // Planning and amount selection are shared with the cached preflight.
         // The helper drops the wallet-manager read lock before the expensive
@@ -3230,7 +3275,7 @@ impl PlatformWallet {
         // Taken before admission (the lock order).
         let locks = self.lock_for_shielded_operation(true).await?;
         let coordinator = &locks.coordinator;
-        let _admission = locks.admit(self).await?;
+        let _admission = locks.admit_spend(self).await?;
 
         let identity = {
             let wm = self.wallet_manager.read().await;

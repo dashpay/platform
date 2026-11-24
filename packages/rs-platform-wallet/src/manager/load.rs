@@ -686,6 +686,35 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // a DIFFERENT generation under it before this rollback runs.
             // Removing by id alone would delete that live wallet — one this
             // call never created and whose owner is still using it.
+            // A handle a caller obtained while this load published it is
+            // retired as `remove_wallet` retires it, before the id is freed:
+            // under its lifecycle gate, re-checked as still this load's,
+            // then `shield_guard` and the removal admission, marked detached
+            // and unregistered from the coordinator.
+            #[cfg(feature = "shielded")]
+            {
+                let coordinator = self.shielded_coordinator().await;
+                let published = self.wallets.load_full();
+                for id in rollback_targets(&inserted_in_wallets, &published) {
+                    let wallet = Arc::clone(&published[&id]);
+                    let _teardown = wallet.generation().teardown_guard().await;
+                    let still_ours = self.wallets.load().get(&id).is_some_and(|current| {
+                        Arc::ptr_eq(current.generation(), wallet.generation())
+                    });
+                    if !still_ours {
+                        continue;
+                    }
+                    let _shield_guard = wallet.shield_guard.lock().await;
+                    let _admission = match coordinator.as_ref() {
+                        Some(coordinator) => Some(coordinator.admit_removal().await),
+                        None => None,
+                    };
+                    wallet.mark_shielded_detached();
+                    if let Some(coordinator) = coordinator.as_ref() {
+                        coordinator.unregister_wallet(id).await;
+                    }
+                }
+            }
             let rolled_back = std::cell::RefCell::new(Vec::<WalletId>::new());
             if !inserted_in_wallets.is_empty() {
                 self.wallets.rcu(|wallets| {

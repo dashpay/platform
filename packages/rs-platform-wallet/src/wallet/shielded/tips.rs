@@ -373,12 +373,7 @@ impl PlatformWallet {
         }
         let locks = self.lock_for_shielded_operation(false).await?;
         let coordinator = &locks.coordinator;
-        let _admission = locks.admit(self).await.map_err(|error| match error {
-            PlatformWalletError::WalletNotFound(_) => {
-                PlatformWalletError::WalletRemovedBeforeSend(hex::encode(self.wallet_id()))
-            }
-            error => error,
-        })?;
+        let _admission = locks.admit_spend(self).await?;
         let _placement = self.identity.identity_placement.read().await;
         let account = self.tip_source_account(seed, source).await?;
         #[cfg(test)]

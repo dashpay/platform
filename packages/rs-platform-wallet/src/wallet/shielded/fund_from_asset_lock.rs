@@ -208,30 +208,37 @@ impl PlatformWallet {
             .as_ref()
             .map(|operation| self.register_wallet_drain_operation(operation.clone()));
         let _shield_guard = self.shield_guard.lock().await;
-        let funding = if let Some(operation) = &operation {
-            match self.asset_locks.begin_wallet_drain(operation).await? {
-                Some(out_point) => AssetLockFunding::FromExistingAssetLock {
-                    out_point,
-                    consume_invitation_voucher: false,
-                },
-                None => funding,
+        // The removal marks the wallet detached under `shield_guard`, held to
+        // the funding's end: a removed wallet resumes no drain into a
+        // replacement's asset-lock rows and funds nothing.
+        let result = match self.ensure_shielded_attached() {
+            Err(error) => Err(error),
+            Ok(()) => {
+                let funding = if let Some(operation) = &operation {
+                    match self.asset_locks.begin_wallet_drain(operation).await? {
+                        Some(out_point) => AssetLockFunding::FromExistingAssetLock {
+                            out_point,
+                            consume_invitation_voucher: false,
+                        },
+                        None => funding,
+                    }
+                } else {
+                    funding
+                };
+                self.shielded_fund_from_asset_lock_inner(
+                    funding,
+                    recipients,
+                    asset_lock_signer,
+                    prover,
+                    surplus_output,
+                    dummy_outputs,
+                    settings,
+                    cl_wait,
+                    on_asset_lock_built,
+                )
+                .await
             }
-        } else {
-            funding
         };
-        let result = self
-            .shielded_fund_from_asset_lock_inner(
-                funding,
-                recipients,
-                asset_lock_signer,
-                prover,
-                surplus_output,
-                dummy_outputs,
-                settings,
-                cl_wait,
-                on_asset_lock_built,
-            )
-            .await;
         if let Some(operation) = operation {
             let snapshot = operation.snapshot();
             if result.is_ok() {
@@ -262,10 +269,6 @@ impl PlatformWallet {
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
         P: OrchardProver,
     {
-        // Under `shield_guard`, held by the caller to the funding's end, which
-        // the removal marks the wallet detached under: a removed wallet funds
-        // nothing.
-        self.ensure_shielded_attached()?;
         // On-wire Orchard action count = max(1 real + dummy_outputs, 2). Consensus
         // prices the flat shielded fee from this count, so the wallet's fee
         // reservation below is derived from the SAME value (any mismatch is rejected).
