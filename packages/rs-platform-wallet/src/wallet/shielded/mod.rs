@@ -53,6 +53,8 @@ pub mod seed_pool;
 pub mod store;
 pub mod sync;
 #[cfg(test)]
+mod sync_interleave_tests;
+#[cfg(test)]
 mod viewing_key_bind_tests;
 #[cfg(test)]
 mod wallet_drain_tests;
