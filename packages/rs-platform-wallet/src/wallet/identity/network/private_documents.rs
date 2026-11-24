@@ -1063,6 +1063,38 @@ pub(super) mod tests {
         provider: HeldContract,
         proved: Option<DataContract>,
     ) -> (PlatformWalletManager<NoPersistence>, Arc<PlatformWallet>) {
+        wallet_on_backend(Arc::new(NoPersistence), phrase, own, provider, proved).await
+    }
+
+    /// [`wallet`], on the backend `persistence`: one that keeps the shielded
+    /// viewing keys lets the wallet bind a shielded account.
+    #[cfg(feature = "shielded")]
+    pub(crate) async fn wallet_keeping<P: PlatformWalletPersistence + 'static>(
+        persistence: Arc<P>,
+        phrase: &str,
+        own: &Identity,
+    ) -> (PlatformWalletManager<P>, Arc<PlatformWallet>) {
+        wallet_on_backend(
+            persistence,
+            phrase,
+            own,
+            HeldContract {
+                held: Mutex::new(Some(Arc::new(contract()))),
+                promoted: None,
+            },
+            Some(contract()),
+        )
+        .await
+    }
+
+    /// [`wallet_on_provider`], on the backend `persistence`.
+    async fn wallet_on_backend<P: PlatformWalletPersistence + 'static>(
+        persistence: Arc<P>,
+        phrase: &str,
+        own: &Identity,
+        provider: HeldContract,
+        proved: Option<DataContract>,
+    ) -> (PlatformWalletManager<P>, Arc<PlatformWallet>) {
         let mut sdk = dash_sdk::SdkBuilder::new_mock()
             .with_network(Network::Testnet)
             .with_version(PlatformVersion::latest())
@@ -1075,11 +1107,8 @@ pub(super) mod tests {
                 .await
                 .expect("contract expectation");
         }
-        let manager = PlatformWalletManager::new(
-            Arc::new(sdk),
-            Arc::new(NoPersistence),
-            Arc::new(NoopEventHandler),
-        );
+        let manager =
+            PlatformWalletManager::new(Arc::new(sdk), persistence, Arc::new(NoopEventHandler));
         let wallet = manager
             .create_wallet_from_seed_bytes(
                 Network::Testnet,

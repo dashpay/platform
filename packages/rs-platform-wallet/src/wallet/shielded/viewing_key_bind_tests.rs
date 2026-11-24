@@ -37,7 +37,7 @@ use crate::wallet::shielded::{
 ///   counted so the test can assert the seedless path actually read
 ///   persistence rather than short-circuiting.
 #[derive(Default)]
-pub(super) struct CapturingPersistence {
+pub(crate) struct CapturingPersistence {
     stored: Mutex<Vec<PlatformWalletChangeSet>>,
     durability_events: Mutex<Vec<&'static str>>,
     fail_flush: std::sync::atomic::AtomicBool,

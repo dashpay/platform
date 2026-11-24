@@ -1768,6 +1768,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // `pay` marks the payment started right before it may reach the
         // network: from then on the reservation is the sync's to settle,
         // whatever happens to this send.
+        //
+        // Nothing is held across this call, and nothing may be: a payment
+        // from the shielded pool (`PlatformWallet::pay_private_contact_request`)
+        // takes the wallet generation's lifecycle gate and the shielded
+        // coordinator's operation admission itself, in the order a shielded
+        // bind takes them, before the shielded store and the wallet manager
+        // lock. The gate is write-preferring and not reentrant, so holding
+        // it here would deadlock with a removal queued between the two
+        // acquisitions; holding the wallet manager lock here would reverse a
+        // bind's order. The sections of this send that take either have
+        // ended above.
         let paid = pay(
             entry,
             reservation
@@ -9292,6 +9303,171 @@ mod tests {
             "{next:?}"
         );
         assert_eq!(kept.lock().expect("kept").len(), 1, "the next send pays");
+    }
+
+    /// A private contact request paid for from the shielded pool, through the
+    /// whole DashPay send (`PlatformWallet::send_private_contact_request`): the
+    /// send reads the store, signs, seals and reserves the pair holding none of
+    /// the locks its payment takes, and the payment is then admitted as a
+    /// credit pool spend is. Held at the shielded store, where it reads its
+    /// journal, it keeps a removal of the wallet waiting and a Clear refused,
+    /// with the journal it is about to read untouched.
+    ///
+    /// A bind of the wallet and a removal that arrive meanwhile do not
+    /// deadlock with it: the bind takes the gate and the admission beside the
+    /// payment, the removal queues on the gate behind both, and all three
+    /// return once the store is released. A second acquisition of the gate
+    /// by the send or its payment would hang here, behind the queued removal.
+    /// Each is polled to the point it waits at, so the order does not depend
+    /// on elapsed time.
+    ///
+    /// The store is the manager's own, so the removal also unregisters the
+    /// wallet from the coordinator the payment ran on.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_refuse_a_clear_while_a_private_contact_request_is_paid_for_from_the_pool() {
+        use dpp::shielded::builder::OrchardProver;
+        use grovedb_commitment_tree::ProvingKey;
+
+        struct NoProver;
+        impl OrchardProver for NoProver {
+            fn proving_key(&self) -> &ProvingKey {
+                panic!("nothing is proved")
+            }
+        }
+        /// How long a step gets to reach the point the test holds it at.
+        const REACHED: Duration = Duration::from_secs(5);
+
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        // A backend that keeps the viewing key, so the wallet binds.
+        let persistence = RecordingPersistence::attesting(
+            PersistenceCapabilities::SHIELDED_FVK_RESTART
+                .union(PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART),
+        );
+        let (manager, alice_wallet) =
+            wallet_on(persistence, ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let wallet_id = alice_wallet.wallet_id();
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        manager
+            .configure_shielded(dir.path().join("tree.sqlite"))
+            .await
+            .expect("the shielded store is configured");
+        let coordinator = manager.shielded_coordinator().await.expect("coordinator");
+        let alice_seed = seed(ALICE_PHRASE);
+        alice_wallet
+            .bind_shielded(&alice_seed, &[0], &coordinator)
+            .await
+            .expect("bound");
+        assert!(coordinator.registered_wallets().await.contains(&wallet_id));
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let (alice_id, bob_id) = (alice.id(), bob.id());
+
+        let store = coordinator.store().write().await;
+        let mut send = Box::pin(alice_wallet.send_private_contact_request(
+            &coordinator,
+            &alice_seed,
+            0,
+            &alice_id,
+            &bob_id,
+            None,
+            AutoAcceptProofSource::None,
+            &alice_signer,
+            &alice_crypto,
+            NoProver,
+        ));
+        // Driven until its payment is admitted: past the store read, the
+        // signature, the seal and the reservation.
+        let deadline = tokio::time::Instant::now() + REACHED;
+        while !coordinator.has_admitted_operation() {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "the payment was never admitted"
+            );
+            if let Ok(sent) = tokio::time::timeout(Duration::from_millis(5), &mut send).await {
+                panic!("the send returned before its payment was admitted: {sent:?}");
+            }
+        }
+        assert!(
+            pending_to(&alice_wallet, ALICE, &bob).await,
+            "the pair is reserved for the request being paid for"
+        );
+        assert!(
+            tokio::time::timeout(
+                Duration::from_millis(100),
+                alice_wallet.generation().teardown_guard(),
+            )
+            .await
+            .is_err(),
+            "a removal waits for the payment in flight"
+        );
+        let refused = tokio::time::timeout(REACHED, coordinator.clear())
+            .await
+            .expect("a Clear does not wait for the payment");
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::ShieldedOperationInProgress)
+            ),
+            "{refused:?}"
+        );
+
+        // A bind beside the payment: polled once, it has the gate and the
+        // admission, as no removal is queued yet, and either returned (an
+        // unchanged registration) or waits for something the payment or this
+        // test holds.
+        let mut bind = Box::pin(futures::future::maybe_done(alice_wallet.bind_shielded(
+            &alice_seed,
+            &[0],
+            &coordinator,
+        )));
+        let _ = futures::poll!(&mut bind);
+        // Then a removal, polled until it waits: on the gate, behind the
+        // payment, with nothing else in this fixture to wait for.
+        let mut removal = Box::pin(manager.remove_wallet(&wallet_id));
+        assert!(
+            futures::poll!(&mut removal).is_pending(),
+            "the removal waits for the payment in flight"
+        );
+        assert!(
+            futures::poll!(&mut send).is_pending(),
+            "the payment waits at the store"
+        );
+        assert!(alice_wallet.core().is_current_generation().await);
+
+        drop(store);
+        let (sent, (), removed) = tokio::time::timeout(REACHED, async {
+            tokio::join!(&mut send, &mut bind, &mut removal)
+        })
+        .await
+        .expect("the send, the bind and the removal all return: none waits for another for ever");
+        // The store holds no note, so nothing is paid; the wallet was current
+        // and bound when the payment was admitted, and the refused Clear
+        // changed neither.
+        assert!(
+            !matches!(
+                sent,
+                Ok(_)
+                    | Err(PlatformWalletError::WalletRemovedBeforeSend(_)
+                        | PlatformWalletError::ShieldedNotBound)
+            ),
+            "{sent:?}"
+        );
+        bind.as_mut()
+            .take_output()
+            .expect("the bind returned")
+            .expect("the wallet was current when the bind was admitted");
+        removed.expect("the removal completes");
+        assert!(
+            !coordinator.registered_wallets().await.contains(&wallet_id),
+            "the removal unregistered the wallet from the coordinator the payment ran on"
+        );
+        assert!(!coordinator.has_admitted_operation());
+        coordinator
+            .clear()
+            .await
+            .expect("a Clear goes through once the payment has returned");
     }
 
     /// A private request sent with no address handed to it carries the one the
