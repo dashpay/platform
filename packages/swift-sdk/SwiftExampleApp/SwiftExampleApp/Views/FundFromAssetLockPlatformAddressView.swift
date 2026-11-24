@@ -700,7 +700,8 @@ struct FundFromAssetLockPlatformAddressView: View {
         // controller-lifetime guarantees apply to both fresh and
         // resume flows. Returning the proof-attested credit
         // balance of the recipient so the terminal section can
-        // surface a meaningful number.
+        // surface a meaningful number, or nil when the result
+        // carries none (never a stand-in 0).
         let body: () async throws -> UInt64?
         if let lock = resumeFromLock {
             // Resume path: outpoint is decoded from the persisted
@@ -750,8 +751,10 @@ struct FundFromAssetLockPlatformAddressView: View {
                         ],
                         signer: signer
                     )
-                    return updates
-                        .first(where: { $0.hash == recipientHash })?.balance ?? 0
+                    return AddressFundFromAssetLockController.reportedBalance(
+                        of: recipientHash,
+                        in: updates.map { ($0.hash, $0.balance) }
+                    )
                 }
             }
         } else {
@@ -775,8 +778,10 @@ struct FundFromAssetLockPlatformAddressView: View {
                     ],
                     signer: signer
                 )
-                return updates
-                    .first(where: { $0.hash == recipientHash })?.balance ?? 0
+                return AddressFundFromAssetLockController.reportedBalance(
+                    of: recipientHash,
+                    in: updates.map { ($0.hash, $0.balance) }
+                )
             }
         }
 

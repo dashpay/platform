@@ -38,8 +38,9 @@ final class AddressFundFromAssetLockController: ObservableObject {
         /// Step 4: the funding is done. `newBalance` is the picked
         /// address's proof-attested credit balance the caller should
         /// surface in the terminal banner, or `nil` when the result
-        /// establishes none (an external payment credits its recorded
-        /// payees, not that address).
+        /// establishes none: an external payment credits its recorded
+        /// payees, not that address, and an owned funding's result can
+        /// carry no update when sync already applied the balance.
         case completed(newBalance: UInt64?)
         /// Failure terminal state. Message is shown inline in
         /// `AddressFundFromAssetLockProgressView`'s step 4; the row stays in
@@ -149,6 +150,17 @@ final class AddressFundFromAssetLockController: ObservableObject {
     /// background priority and reports the new credit balance on
     /// success or rethrows on failure. The controller flips `phase`
     /// to `.completed(balance)` / `.failed(message)` accordingly.
+    /// The balance a funding reported for `recipientHash`, or `nil` when
+    /// its result carries no update for that address: reconciliation can
+    /// return an empty changeset when sync already applied the balance.
+    /// `.completed` then shows no balance line instead of a false 0.
+    static func reportedBalance(
+        of recipientHash: Data,
+        in updates: [(hash: Data, balance: UInt64)]
+    ) -> UInt64? {
+        updates.first(where: { $0.hash == recipientHash })?.balance
+    }
+
     func submit(body: @escaping () async throws -> UInt64?) {
         switch phase {
         case .idle, .failed:
