@@ -465,7 +465,7 @@ mod tests {
             .standard_bip44_accounts
             .get_mut(&0)
             .unwrap()
-            .next_change_address(Some(&xpub), true)
+            .next_change_address(Some(&xpub))
             .unwrap();
         let funding = spend_of(&[outside(7)], vec![pay(FUNDING, &receive)]);
         let spend = spend(OutPoint::new(funding.txid(), 0), &change);
@@ -673,7 +673,8 @@ mod tests {
             Network::Testnet,
         )
         .unwrap();
-        let contact_account = ManagedCoreFundsAccount::from_account(&account);
+        let contact_account =
+            ManagedCoreFundsAccount::from_account(&account).expect("managed contact account");
         let contact_address = ManagedAccountRef::Funds(&contact_account)
             .all_addresses()
             .into_iter()
@@ -731,7 +732,7 @@ mod tests {
             .standard_bip44_accounts
             .get_mut(&0)
             .unwrap()
-            .next_change_address(Some(&xpub), true)
+            .next_change_address(Some(&xpub))
             .unwrap();
         let funding = spend_of(&[outside(7)], vec![pay(FUNDING, &receive)]);
         let spend = signed_by(
