@@ -87,9 +87,9 @@ impl PublicKeyWasm {
                 WasmDppError::invalid_argument("compressed public key must contain 33 bytes")
             })?;
 
-            self.0.compressed = true;
             self.0.inner = EcdsaPublicKey::from_bytes(&bytes)
                 .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
+            self.0.compressed = true;
         } else {
             if inner.len() != constants::UNCOMPRESSED_PUBLIC_KEY_SIZE {
                 return Err(WasmDppError::invalid_argument(format!(
@@ -103,9 +103,9 @@ impl PublicKeyWasm {
                     WasmDppError::invalid_argument("uncompressed public key must contain 65 bytes")
                 })?;
 
-            self.0.compressed = false;
             self.0.inner = EcdsaPublicKey::from_bytes(&bytes)
                 .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
+            self.0.compressed = false;
         }
 
         Ok(())
@@ -160,5 +160,23 @@ mod tests {
         assert!(PublicKeyWasm::from_bytes(hybrid.to_vec()).is_err());
         hybrid[0] ^= 1;
         assert!(PublicKeyWasm::constructor(false, hybrid.to_vec()).is_err());
+    }
+
+    #[test]
+    fn should_leave_public_key_unchanged_when_setter_rejects_key() {
+        let key = EcdsaSecretKey::from_bytes(&[1; 32])
+            .expect("valid scalar")
+            .public_key();
+        let mut uncompressed =
+            PublicKeyWasm::constructor(false, key.to_uncompressed().to_vec()).expect("SEC1 key");
+        assert!(uncompressed.set_inner(vec![0xff; 33]).is_err());
+        assert!(!uncompressed.compressed());
+        assert_eq!(uncompressed.inner(), key.to_uncompressed());
+
+        let mut compressed =
+            PublicKeyWasm::constructor(true, key.to_compressed().to_vec()).expect("compressed key");
+        assert!(compressed.set_inner(vec![0xff; 65]).is_err());
+        assert!(compressed.compressed());
+        assert_eq!(compressed.inner(), key.to_compressed());
     }
 }
