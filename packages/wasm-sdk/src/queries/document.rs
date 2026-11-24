@@ -339,9 +339,8 @@ fn parse_document_history_query(
     } else if let Some(revision) = input.revision {
         DocumentHistoryFilter::Revision(revision)
     } else {
-        // No selector reads from the first retained revision, a page every protocol
-        // version serves.
-        DocumentHistoryFilter::StartAtTime(0)
+        // No selector: the first page, as the Rust query API defines it.
+        DocumentHistoryQuery::FIRST_PAGE_FILTER
     };
     Ok(DocumentHistoryQuery {
         data_contract_id: input.data_contract_id.into(),
