@@ -54,6 +54,14 @@ android {
             useLegacyPackaging = false
         }
     }
+
+    testOptions {
+        unitTests {
+            // Robolectric reads the merged manifest, which registers the
+            // ComponentActivity that Compose UI tests launch.
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 dependencies {
@@ -89,6 +97,10 @@ dependencies {
     // The framework's own org.json (android.jar has only stubs), for parsers
     // whose behaviour on JSON null is Android's.
     testImplementation(libs.robolectric)
+    // Compose UI tests under Robolectric; ComponentActivity comes from the
+    // ui-test-manifest debug dependency below.
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.espresso.core)
     androidTestImplementation(platform(libs.compose.bom))

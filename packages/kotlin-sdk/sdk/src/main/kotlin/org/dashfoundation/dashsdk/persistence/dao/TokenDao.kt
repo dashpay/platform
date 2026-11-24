@@ -99,6 +99,16 @@ interface TokenDao {
     suspend fun upsertToken(token: TokenEntity)
 
     /**
+     * Record the token's on-chain paused status, changing nothing else on
+     * the row. Called with Platform's answer to a token status query, or
+     * after a pause or resume this app executed (not a group proposal).
+     * Returns the rows changed: 0 when the row is missing or already says
+     * [paused].
+     */
+    @Query("UPDATE tokens SET isPaused = :paused WHERE id = :id AND isPaused != :paused")
+    suspend fun updatePaused(id: ByteArray, paused: Boolean): Int
+
+    /**
      * Fill in the once-per-identity block of a row that has none, keeping
      * [TokenEntity.hasDistribution] in step. Rows written before schema
      * version 14 have a NULL block even when their contract carries one;

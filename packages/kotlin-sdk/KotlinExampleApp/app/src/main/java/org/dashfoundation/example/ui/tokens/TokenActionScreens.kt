@@ -538,6 +538,7 @@ private fun PauseResumeForm(
     isPause: Boolean,
 ) {
     val token = context.token
+    val tokenDao = LocalAppContainer.current.database.tokenDao()
     var note by rememberSaveable { mutableStateOf("") }
     val banner = GroupActionRuleEvaluator.bannerState(
         token.emergencyActionRules, token.mainControlGroupPosition,
@@ -582,6 +583,21 @@ private fun PauseResumeForm(
                         signingKeyId = TokenActionContext.SIGNING_KEY_ID,
                         signerHandle = signer,
                     )
+                }
+                // A single-signer pause or resume took effect on chain, so
+                // record it now (TokenPauseActionView.swift /
+                // TokenResumeActionView.swift do the same). A group proposal
+                // only takes effect once co-signed: the actions screen reads
+                // the status from Platform when it opens.
+                if (groupAction == GroupAction.None) {
+                    try {
+                        tokenDao.updatePaused(token.id, isPause)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        // The action is done; the actions screen reconciles
+                        // the stored flag from Platform when it next opens.
+                    }
                 }
             }
         },
