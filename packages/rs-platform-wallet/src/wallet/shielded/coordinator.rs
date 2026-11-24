@@ -3512,7 +3512,8 @@ mod tests {
     };
     use crate::wallet::shielded::note_selection::compute_token_purchase_from_pool_fee;
     use crate::wallet::shielded::operations::{
-        record_pending_token_purchase, settle_affected_state_spend,
+        record_pending_private_document_create, record_pending_token_purchase,
+        settle_affected_state_spend, shielded_actions,
     };
     use crate::wallet::shielded::prover::CachedOrchardProver;
     use crate::wallet::shielded::store::{
@@ -3526,9 +3527,10 @@ mod tests {
     use dpp::platform_value::Identifier;
     use dpp::serialization::PlatformSerializable;
     use dpp::shielded::builder::{
+        build_private_document_create_from_shielded_pool_transition,
         build_token_purchase_from_shielded_pool_transition, ShieldedFeePayer, SpendableNote,
     };
-    use dpp::shielded::SerializedAction;
+    use dpp::shielded::{compute_private_document_create_from_shielded_pool_fee, SerializedAction};
     use dpp::state_transition::shield_from_identity_transition::v0::ShieldFromIdentityTransitionV0;
     use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
     use dpp::state_transition::token_purchase_from_shielded_pool_transition::accessors::TokenPurchaseFromShieldedPoolTransitionAccessorsV0;
@@ -4498,6 +4500,237 @@ mod tests {
     }
 
     /// Unique temp directory for a test's SQLite tree (no `tempfile` dev-dep).
+    /// Offline round trip of a private document create (type 29) built by the
+    /// real builder. The row the live recorder writes names the operation
+    /// instead of the residual `ShieldedSpend`: a private document entry with
+    /// its data contract as the counterparty, or, when the entry is a DashPay
+    /// private contact request, a private contact request with the recipient
+    /// identity as the counterparty. Nothing but the fee leaves the pool, so
+    /// the row's amount is the fee. The credit pool scan then confirms that
+    /// same row from the spend's change and derives no second, reconstructed
+    /// row for it.
+    #[tokio::test]
+    async fn should_record_a_private_document_create_under_its_own_kind_with_its_fee() {
+        let dir = temp_dir("private_document_activity");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let views = coordinator.accounts.read().await[&id].clone();
+        let keys = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+            .expect("the coordinator wallet's keys");
+        let own = OrchardAddress::from_raw_bytes(&keys.default_address.to_raw_address_bytes())
+            .expect("the default address");
+        let platform_version = PlatformVersion::latest();
+        let entry = BinaryData::new(vec![1; 589]);
+        let fee = compute_private_document_create_from_shielded_pool_fee(
+            2,
+            1,
+            entry.len() as u32,
+            platform_version,
+        )
+        .expect("the fee");
+        let change = 5_000;
+
+        // The input: one note to the wallet holding the fee and some change,
+        // in the commitment tree the anchor comes from.
+        let mut rng = OsRng;
+        let (rho, rseed) = loop {
+            let mut b = [0u8; 32];
+            rng.fill_bytes(&mut b);
+            let Some(rho) = Rho::from_bytes(&b).into_option() else {
+                continue;
+            };
+            rng.fill_bytes(&mut b);
+            if let Some(rseed) = RandomSeed::from_bytes(b, &rho).into_option() {
+                break (rho, rseed);
+            }
+        };
+        let input = Note::from_parts(
+            keys.default_address,
+            NoteValue::from_raw(fee + change),
+            rho,
+            rseed,
+        )
+        .into_option()
+        .expect("a note");
+        let input_cmx = ExtractedNoteCommitment::from(input.commitment());
+        let input_nf = input.nullifier(&keys.full_viewing_key).to_bytes();
+        let input_row = ShieldedNote {
+            position: 0,
+            cmx: input_cmx.to_bytes(),
+            nullifier: input_nf,
+            block_height: 100,
+            is_spent: false,
+            value: fee + change,
+            note_data: vec![0u8; 115],
+        };
+        let merkle_path = {
+            let mut store = coordinator.store().write().await;
+            store
+                .append_commitment(&input_cmx.to_bytes(), true)
+                .unwrap();
+            store.checkpoint_tree(1).unwrap();
+            store.save_note(id, &input_row).unwrap();
+            store.witness(0).unwrap().expect("a witness")
+        };
+        let anchor = merkle_path.root(input_cmx);
+
+        let data_contract_id = Identifier::from([0x44; 32]);
+        let prover = CachedOrchardProver::new();
+        let (transition, fee_used) = build_private_document_create_from_shielded_pool_transition(
+            vec![SpendableNote {
+                note: input,
+                merkle_path,
+            }],
+            data_contract_id,
+            "note".to_string(),
+            vec![entry],
+            &own,
+            &keys.full_viewing_key,
+            &keys.spend_auth_key,
+            anchor,
+            &&prover,
+            platform_version,
+        )
+        .expect("the private document create builds");
+        assert_eq!(fee_used, fee);
+
+        let wire = |action: &SerializedAction| ShieldedEncryptedNote {
+            cmx: action.cmx.to_vec(),
+            nullifier: action.nullifier.to_vec(),
+            cv_net: action.cv_net.to_vec(),
+            encrypted_note: action.encrypted_note.clone(),
+        };
+        let outputs: Vec<(SerializedAction, Note)> = shielded_actions(&transition)
+            .iter()
+            .filter_map(|action| {
+                try_decrypt_note(&views.prepared_ivk, &wire(action))
+                    .map(|(note, _)| (action.clone(), note))
+            })
+            .collect();
+        assert_eq!(outputs.len(), 1, "the change is its only output");
+        assert_eq!(outputs[0].1.value().inner(), change);
+        let change_cmx = outputs[0].0.cmx;
+
+        // An entry of any private document type: named as one, to its contract.
+        let document_row = record_pending_private_document_create(
+            coordinator.store(),
+            None,
+            wallet_id,
+            id,
+            &views,
+            data_contract_id,
+            None,
+            fee_used,
+            &transition,
+            std::slice::from_ref(&input_row),
+        )
+        .await
+        .expect("the live row");
+        assert_eq!(
+            document_row.kind,
+            ShieldedActivityKind::PrivateDocumentCreate
+        );
+        assert_eq!(document_row.direction, ShieldedDirection::Out);
+        assert_eq!(
+            document_row.amount, fee,
+            "the fee is all that left the pool"
+        );
+        assert_eq!(document_row.fee, Some(fee));
+        assert_eq!(
+            document_row.counterparty,
+            Some(data_contract_id.to_vec()),
+            "its data contract"
+        );
+        assert_eq!(document_row.memo, None);
+        assert_eq!(document_row.status, ShieldedActivityStatus::Pending);
+        assert_eq!(
+            document_row.note_cmxs,
+            vec![change_cmx],
+            "keyed by its change"
+        );
+        assert_eq!(document_row.spent_nullifiers, vec![input_nf]);
+
+        // The same spend as a DashPay private contact request: named as one,
+        // to its recipient, under the same id (the row is replaced).
+        let recipient = Identifier::from([0x77; 32]);
+        let row = record_pending_private_document_create(
+            coordinator.store(),
+            None,
+            wallet_id,
+            id,
+            &views,
+            data_contract_id,
+            Some(recipient),
+            fee_used,
+            &transition,
+            std::slice::from_ref(&input_row),
+        )
+        .await
+        .expect("the live row");
+        assert_eq!(row.kind, ShieldedActivityKind::PrivateContactRequest);
+        assert_eq!(row.direction, ShieldedDirection::Out);
+        assert_eq!(row.amount, fee);
+        assert_eq!(row.fee, Some(fee));
+        assert_eq!(row.counterparty, Some(recipient.to_vec()), "its recipient");
+        assert_eq!(row.id, document_row.id);
+
+        // The credit pool scan: it saves the change it decrypts and marks the
+        // input spent from the nullifier its action reveals.
+        {
+            let mut store = coordinator.store().write().await;
+            for (position, (action, note)) in (1u64..).zip(outputs.iter()) {
+                store
+                    .save_note(
+                        id,
+                        &ShieldedNote {
+                            position,
+                            cmx: action.cmx,
+                            nullifier: note.nullifier(&keys.full_viewing_key).to_bytes(),
+                            block_height: 200,
+                            is_spent: false,
+                            value: note.value().inner(),
+                            note_data: vec![0u8; 115],
+                        },
+                    )
+                    .unwrap();
+            }
+            store.mark_spent(id, &input_nf).unwrap();
+        }
+        coordinator
+            .derive_activity_into_changeset(&[(id, views)], &mut ShieldedChangeSet::default())
+            .await
+            .unwrap();
+        let rows = coordinator
+            .store()
+            .read()
+            .await
+            .get_activity(id, 0, usize::MAX)
+            .unwrap();
+        // The input note's own receipt is a row of its own; the spend has one
+        // row, the live one, and nothing reconstructed beside it.
+        assert!(
+            rows.iter()
+                .all(|row| row.kind != ShieldedActivityKind::ShieldedSpend),
+            "the scan adds no reconstructed row: {rows:?}"
+        );
+        let spend_rows: Vec<&ShieldedActivityEntry> = rows
+            .iter()
+            .filter(|row| row.note_cmxs.contains(&change_cmx))
+            .collect();
+        assert_eq!(spend_rows.len(), 1, "one row for the spend: {rows:?}");
+        assert_eq!(spend_rows[0].id, row.id);
+        assert_eq!(spend_rows[0].status, ShieldedActivityStatus::Confirmed);
+        assert_eq!(
+            spend_rows[0].kind,
+            ShieldedActivityKind::PrivateContactRequest
+        );
+        assert_eq!(spend_rows[0].amount, fee);
+        assert_eq!(spend_rows[0].fee, Some(fee));
+        assert_eq!(spend_rows[0].counterparty, Some(recipient.to_vec()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     fn temp_dir(tag: &str) -> PathBuf {
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

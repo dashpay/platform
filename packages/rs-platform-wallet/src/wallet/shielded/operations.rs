@@ -2921,6 +2921,10 @@ where
 /// Waits for the spent nullifiers to be proven before marking the notes
 /// spent, and returns the metadata of that proof. `payment_started` is
 /// marked right before the transition is broadcast.
+///
+/// `contact_recipient` is the identity a DashPay private contact request is
+/// to, `None` for an entry of any other kind: it decides what the spend's
+/// activity row says ([`record_pending_private_document_create`]).
 #[allow(clippy::too_many_arguments)]
 pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
     S: ShieldedStore,
@@ -2935,6 +2939,7 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
     data_contract_id: Identifier,
     document_type_name: &str,
     entries: Vec<BinaryData>,
+    contact_recipient: Option<Identifier>,
     private_contact: Option<PrivateContactPayment>,
     payment_started: &PaymentStarted,
     prover: &P,
@@ -3007,24 +3012,17 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
             return Err(e);
         }
     };
-    // The spend's only outputs are change, so it records as an own spend
-    // with its fee and no counterparty.
-    let pending_entry = record_pending_activity(
+    let pending_entry = record_pending_private_document_create(
         store,
         persister,
         wallet_id,
         id,
         &views,
-        LiveEntryParams {
-            kind: ShieldedActivityKind::ShieldedSpend,
-            direction: ShieldedDirection::Out,
-            amount: 0,
-            fee: Some(fee_used),
-            counterparty: None,
-            memo: None,
-            actions: shielded_actions(&state_transition),
-            spent_notes: &selected_notes,
-        },
+        data_contract_id,
+        contact_recipient,
+        fee_used,
+        &state_transition,
+        &selected_notes,
     )
     .await;
     // Type 29 proves its spent nullifiers as a snapshot, which a competing
@@ -3054,6 +3052,56 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
                 SpendResultWait::AffectedState,
             )
             .await
+        },
+    )
+    .await
+}
+
+/// Record the pending activity row of the built private document create
+/// `state_transition`, which spends `spent_notes` and pays `fee`.
+///
+/// The row names the operation: a private contact request to
+/// `contact_recipient` when there is one, with that identity as its
+/// counterparty, otherwise a private document entry with `data_contract_id`
+/// as its counterparty. Nothing but the fee leaves the pool, so the row's
+/// amount is the fee: a host that shows the amount of a row shows what the
+/// wallet paid, not zero. Its only outputs are change, which the credit pool
+/// scan finds and confirms the row by.
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn record_pending_private_document_create<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    id: SubwalletId,
+    views: &AccountViewingKeys,
+    data_contract_id: Identifier,
+    contact_recipient: Option<Identifier>,
+    fee: Credits,
+    state_transition: &StateTransition,
+    spent_notes: &[ShieldedNote],
+) -> Option<super::activity::ShieldedActivityEntry> {
+    let (kind, counterparty) = match contact_recipient {
+        Some(recipient) => (ShieldedActivityKind::PrivateContactRequest, recipient),
+        None => (
+            ShieldedActivityKind::PrivateDocumentCreate,
+            data_contract_id,
+        ),
+    };
+    record_pending_activity(
+        store,
+        persister,
+        wallet_id,
+        id,
+        views,
+        LiveEntryParams {
+            kind,
+            direction: ShieldedDirection::Out,
+            amount: fee,
+            fee: Some(fee),
+            counterparty: Some(counterparty.to_vec()),
+            memo: None,
+            actions: shielded_actions(state_transition),
+            spent_notes,
         },
     )
     .await
@@ -7659,6 +7707,7 @@ mod redrive_tests {
             "privateContactRequest",
             vec![BinaryData::new(vec![1; 589])],
             None,
+            None,
             &started,
             &UnreachableProver,
         ));
@@ -7886,6 +7935,7 @@ mod redrive_tests {
                 Identifier::from([0x44; 32]),
                 "privateContactRequest",
                 vec![BinaryData::new(vec![1; 589])],
+                None,
                 None,
                 &started,
                 &UnreachableProver,

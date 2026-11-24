@@ -30,6 +30,8 @@ enum ShieldedActivityKindDisplay {
         case 10: return "Token Purchase"
         case 11: return "Token Transfer"
         case 12: return "Token Unshield"
+        case 13: return "Private Document Entry"
+        case 14: return "Private Contact Request"
         // 7 (ShieldedSpend) and any tag this build doesn't know yet.
         default: return "Shielded Spend"
         }
@@ -51,12 +53,34 @@ enum ShieldedActivityKindDisplay {
         case 10: return "cart.fill"                   // TokenPurchase
         case 11: return "paperplane.fill"             // TokenShieldedTransfer
         case 12: return "lock.open.rotation"          // TokenUnshield
+        case 13: return "doc.badge.plus"              // PrivateDocumentCreate
+        case 14: return "person.badge.plus"           // PrivateContactRequest
         default: return "questionmark.circle.fill"     // ShieldedSpend
+        }
+    }
+
+    /// `true` for the kinds where only the fee left the shielded pool and
+    /// Rust records `amount` equal to `fee`: 13 (PrivateDocumentCreate,
+    /// `counterparty` the data contract id) and 14 (PrivateContactRequest,
+    /// `counterparty` the recipient identity id).
+    static func isFeeOnlySpend(_ tag: Int) -> Bool { tag == 13 || tag == 14 }
+
+    /// What a fee-only spend row (`isFeeOnlySpend`) says about its amount,
+    /// by its stored status. Mirrors KotlinExampleApp's `feeOnlySpendNote`.
+    static func feeOnlySpendNote(status: Int) -> String {
+        switch status {
+        case 1:
+            return "The amount is the fee, which is all that left the shielded pool."
+        case 2:
+            return "It did not go through; nothing left the shielded pool."
+        default:
+            return "Not confirmed yet: a shielded sync confirms it once it lands. The amount is the fee, which is all that leaves the shielded pool."
         }
     }
 
     /// `true` for the residual `ShieldedSpend` kind, which a restored
     /// wallet couldn't fully classify — the detail sheet shows a footnote.
+    /// Not the fee-only spends (13, 14): Rust classifies those.
     static func isUnclassifiedResidual(_ tag: Int) -> Bool { tag == 7 }
 
     /// `true` for the kinds whose `amount` is a token count in the token's
@@ -348,8 +372,9 @@ struct ShieldedActivityListView: View {
 // MARK: - Detail
 
 /// Full detail sheet for one activity entry. Shows every field; for
-/// `IdentityCreate` the identity id is copyable, and `ShieldedSpend`
-/// (restore-path residual) carries a clarifying footnote.
+/// `IdentityCreate` the identity id is copyable, the fee-only spends (13,
+/// 14) say their amount is the fee, and `ShieldedSpend` (restore-path
+/// residual) carries a clarifying footnote.
 struct ShieldedActivityDetailView: View {
     let entry: PersistentShieldedActivity
     @Environment(\.dismiss) private var dismiss
@@ -399,6 +424,34 @@ struct ShieldedActivityDetailView: View {
             return "The unshield did not go through; no tokens left this wallet."
         default:
             return "Not confirmed yet: a shielded sync confirms the unshield once it lands. Until then Wallet > Shielded Tokens shows the notes it spends as pending."
+        }
+    }
+
+    /// Section for a fee-only spend (kinds 13 and 14): the data contract id
+    /// (13) or the recipient identity id (14) when the row carries a 32-byte
+    /// counterparty, then the note on what the amount is. Without an id the
+    /// note still shows, in its own section. Extracted from `body` to keep
+    /// its `if / else if` chain within the type-check budget.
+    @ViewBuilder
+    private var feeOnlySpendSection: some View {
+        let note = ShieldedActivityKindDisplay.feeOnlySpendNote(status: entry.status)
+        if entry.counterparty.count == 32 {
+            let title = entry.kindTag == 13 ? "Data Contract" : "Recipient Identity"
+            Section(title) {
+                let idHex = entry.counterparty.map { String(format: "%02x", $0) }.joined()
+                Text(idHex)
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+                Text(note)
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
+        } else {
+            Section {
+                Text(note)
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+            }
         }
     }
 
@@ -486,6 +539,10 @@ struct ShieldedActivityDetailView: View {
                             .font(.footnote)
                             .foregroundColor(.secondary)
                     }
+                } else if ShieldedActivityKindDisplay.isFeeOnlySpend(entry.kindTag) {
+                    // PrivateDocumentCreate / PrivateContactRequest: never the
+                    // generic Counterparty section, with or without an id.
+                    feeOnlySpendSection
                 } else if !entry.counterparty.isEmpty, entry.kindTag != 12 {
                     // TokenUnshield (12) shows its token id in its own Token
                     // section below, with or without a credited identity.

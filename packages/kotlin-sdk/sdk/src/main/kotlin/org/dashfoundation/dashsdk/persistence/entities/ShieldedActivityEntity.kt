@@ -29,14 +29,21 @@ data class ShieldedActivityEntity(
     /**
      * `ShieldedActivityKind::tag`: 0 Shield, 1 ShieldFromAssetLock,
      * 2 Received, 3 Sent, 4 Unshield, 5 Withdrawal, 6 IdentityCreate,
-     * 7 ShieldedSpend, 8 ShieldFromIdentity, 9 IdentityTopUpFromPool.
+     * 7 ShieldedSpend, 8 ShieldFromIdentity, 9 IdentityTopUpFromPool,
+     * 10 TokenPurchase, 11 TokenShieldedTransfer, 12 TokenUnshield,
+     * 13 PrivateDocumentCreate, 14 PrivateContactRequest. Stored as Rust
+     * sends it: a tag this build does not know is kept and shown as 7.
      */
     val kindTag: Int,
     /** 0 In, 1 Out, 2 Self. */
     val direction: Int,
     /** 0 Pending, 1 Confirmed, 2 Failed, 3 Unknown. */
     val status: Int,
-    /** Principal amount in credits; Swift `UInt64` → [Long]. */
+    /**
+     * Principal amount in credits; Swift `UInt64` → [Long]. In the token's
+     * smallest unit for kindTag 11 and 12; the fee for kindTag 13 and 14,
+     * which move nothing else (the same number as [fee]).
+     */
     val amount: Long,
     /** Fee in credits, meaningful only when [hasFee]; Swift `UInt64` → [Long]. */
     val fee: Long,
@@ -53,7 +60,11 @@ data class ShieldedActivityEntity(
      * kindTag == 9 (IdentityTopUpFromPool); empty otherwise.
      */
     val identityId: ByteArray = ByteArray(0),
-    /** Counterparty bytes (43B Orchard / 21B PlatformAddress / Core script). */
+    /**
+     * Counterparty bytes (43B Orchard / 21B PlatformAddress / Core script),
+     * or a 32-byte id: the token for kindTag 10 to 12, the data contract for
+     * kindTag 13, the recipient identity for kindTag 14.
+     */
     val counterparty: ByteArray = ByteArray(0),
     /** 36-byte memo when present; empty otherwise. */
     val memo: ByteArray = ByteArray(0),

@@ -4835,6 +4835,29 @@ mod activity_status_tests {
         );
     }
 
+    /// A row restored at boot keeps its kind: a private document entry and a
+    /// private contact request paid from the pool do not come back as the
+    /// opaque spend, which a later status change would then store over them.
+    /// A tag this build does not know still loads as the opaque spend.
+    #[cfg(feature = "shielded")]
+    #[test]
+    fn should_restore_the_private_document_kinds_from_their_stored_tags() {
+        use platform_wallet::wallet::shielded::ShieldedActivityKind;
+        for kind in [
+            ShieldedActivityKind::PrivateDocumentCreate,
+            ShieldedActivityKind::PrivateContactRequest,
+        ] {
+            assert_eq!(
+                super::restored_activity_kind(kind.tag(), [0u8; 32], false),
+                kind
+            );
+        }
+        assert_eq!(
+            super::restored_activity_kind(15, [0u8; 32], false),
+            ShieldedActivityKind::ShieldedSpend
+        );
+    }
+
     #[test]
     fn should_roundtrip_abandoned_activity_as_unknown_and_preserve_existing_status_bytes() {
         for (status, tag) in [
@@ -8178,6 +8201,8 @@ fn restored_activity_kind(
         12 => ShieldedActivityKind::TokenUnshield {
             identity_id: has_identity.then_some(identity_id),
         },
+        13 => ShieldedActivityKind::PrivateDocumentCreate,
+        14 => ShieldedActivityKind::PrivateContactRequest,
         _ => ShieldedActivityKind::ShieldedSpend,
     }
 }

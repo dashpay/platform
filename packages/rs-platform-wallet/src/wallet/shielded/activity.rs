@@ -142,6 +142,19 @@ pub enum ShieldedActivityKind {
         /// token notes, with its recipient unknown.
         identity_id: Option<[u8; 32]>,
     },
+    /// Type 29: an entry appended to a private document type's store, paid
+    /// for from the shielded pool. Nothing but the fee leaves the pool, so
+    /// the amount is the fee, the same number as the entry's `fee`; the
+    /// entry's counterparty is the 32-byte data contract id. Recorded only
+    /// by the live path: the scan sees the credit pool change alone and
+    /// derives [`Self::ShieldedSpend`].
+    PrivateDocumentCreate,
+    /// Type 29 for a DashPay private contact request, or the request sent
+    /// back to accept one. The amount is the fee, as for
+    /// [`Self::PrivateDocumentCreate`]; the entry's counterparty is the
+    /// 32-byte id of the identity the request is to. Recorded only by the
+    /// live path, as [`Self::PrivateDocumentCreate`] is.
+    PrivateContactRequest,
 }
 
 impl ShieldedActivityKind {
@@ -164,6 +177,8 @@ impl ShieldedActivityKind {
             ShieldedActivityKind::TokenPurchase => 10,
             ShieldedActivityKind::TokenShieldedTransfer => 11,
             ShieldedActivityKind::TokenUnshield { .. } => 12,
+            ShieldedActivityKind::PrivateDocumentCreate => 13,
+            ShieldedActivityKind::PrivateContactRequest => 14,
         }
     }
 }
@@ -186,7 +201,9 @@ pub struct ShieldedActivityEntry {
     /// Display amount in credits: the operation principal, excluding
     /// self-change outputs and zero-value fillers. For a send this is the
     /// value paid to the counterparty; for a receive/shield the value
-    /// received.
+    /// received. A spend that moves nothing but its fee (a private document
+    /// create or a private contact request) has no principal: its amount is
+    /// the fee, so a host that shows the amount shows what left the pool.
     pub amount: u64,
     /// Exact fee in credits when derivable (live entries:
     /// `spent − outputs − change`); `None` when underivable (restored
@@ -196,6 +213,11 @@ pub struct ShieldedActivityEntry {
     /// - `Sent`: 43-byte raw Orchard address.
     /// - `Unshield`: 21-byte serialized `PlatformAddress`.
     /// - `Withdrawal`: Core output script / address bytes.
+    /// - `TokenPurchase` / `TokenShieldedTransfer` / `TokenUnshield`: the
+    ///   32-byte token id.
+    /// - `PrivateDocumentCreate`: the 32-byte data contract id.
+    /// - `PrivateContactRequest`: the 32-byte id of the recipient identity.
+    ///
     /// `None` for self / receive / shield kinds.
     pub counterparty: Option<Vec<u8>>,
     /// 36-byte `DashMemo` when present and non-zero; `None` otherwise.
@@ -1231,9 +1253,23 @@ mod tests {
             ShieldedActivityKind::TokenUnshield {
                 identity_id: Some([0u8; 32]),
             },
+            ShieldedActivityKind::PrivateDocumentCreate,
+            ShieldedActivityKind::PrivateContactRequest,
         ];
         let tags: Set<u8> = kinds.iter().map(|k| k.tag()).collect();
         assert_eq!(tags.len(), kinds.len(), "every kind tag must be distinct");
+    }
+
+    /// The tags are stored by the hosts: a kind keeps its tag, and a new
+    /// kind takes the next free one.
+    #[test]
+    fn should_keep_the_stored_tags_of_the_private_document_kinds() {
+        assert_eq!(
+            ShieldedActivityKind::TokenUnshield { identity_id: None }.tag(),
+            12
+        );
+        assert_eq!(ShieldedActivityKind::PrivateDocumentCreate.tag(), 13);
+        assert_eq!(ShieldedActivityKind::PrivateContactRequest.tag(), 14);
     }
 
     // ── rho linkage (restore-path spend identification) ───────────
