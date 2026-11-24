@@ -280,12 +280,10 @@ impl IdentityWallet {
         self.persist_proven_owner_balance(identity_id, owner_balance, metadata)
             .await;
 
-        // Same book-keeping as `register_name`: append the just-
-        // registered label to `ManagedIdentity.dpns_names` and emit
-        // an `IdentityChangeSet` so the Swift persister callback
-        // refreshes `PersistentIdentity.dpnsName` automatically.
-        // Skip on duplicate to avoid emitting a redundant entry on
-        // re-runs.
+        // Record the just-registered label and emit an
+        // `IdentityChangeSet` so the persister callback refreshes the
+        // app's name lists. A contested label is recorded as contested,
+        // not owned: its domain is awarded only when the vote ends.
         let acquired_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
@@ -295,19 +293,11 @@ impl IdentityWallet {
             let mut wm = self.wallet_manager.write().await;
             if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
                 if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                    if !managed
-                        .dpns_names
-                        .iter()
-                        .any(|existing| existing.label == label_to_store)
-                    {
-                        managed.add_dpns_name(
-                            DpnsNameInfo {
-                                label: label_to_store,
-                                acquired_at,
-                            },
-                            &self.persister,
-                        );
-                    }
+                    managed.record_registered_dpns_name(
+                        label_to_store,
+                        acquired_at,
+                        &self.persister,
+                    );
                 }
             }
         }

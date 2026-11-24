@@ -8,6 +8,7 @@ use crate::changeset::{
 };
 use crate::wallet::persister::WalletPersister;
 use crate::BlockTime;
+use dash_sdk::platform::dpns_usernames::is_contested_username;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
@@ -352,6 +353,30 @@ impl ManagedIdentity {
         let cs = self.snapshot_changeset();
         if let Err(e) = persister.store(cs.into()) {
             tracing::error!("Failed to persist changeset: {}", e);
+        }
+    }
+
+    /// Record a label this identity just registered.
+    ///
+    /// A contested label goes to a masternode vote and is not owned until
+    /// the contest is awarded, so it is recorded in `contested_dpns_names`;
+    /// any other label is owned at once and goes to `dpns_names`. A label
+    /// already in the list it belongs to is skipped. The next contested or
+    /// owned-name sync reconciles both lists with Platform.
+    pub fn record_registered_dpns_name(
+        &mut self,
+        label: String,
+        acquired_at: Option<u64>,
+        persister: &WalletPersister,
+    ) {
+        if is_contested_username(&label) {
+            self.add_contested_dpns_name(label, persister);
+        } else if !self
+            .dpns_names
+            .iter()
+            .any(|existing| existing.label == label)
+        {
+            self.add_dpns_name(DpnsNameInfo { label, acquired_at }, persister);
         }
     }
 
@@ -1159,6 +1184,34 @@ mod tests {
     /// A batch of fetched names lands as one snapshot carrying every name,
     /// skips labels already held, and persists nothing when all are known.
     /// One snapshot per name made the first read as the complete owned set.
+    /// A contested registration is not owned until its vote ends, so it
+    /// lands in the contested list; a regular one is owned at once.
+    #[test]
+    fn should_record_a_contested_registration_as_contested_not_owned() {
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        let mut managed = ManagedIdentity::new(identity, 0);
+        let persister = std::sync::Arc::new(CapturingPersister::default());
+        let p = WalletPersister::new([0xAB; 32], std::sync::Arc::clone(&persister) as _);
+
+        managed.record_registered_dpns_name("swqa-award".to_string(), Some(1), &p);
+        managed.record_registered_dpns_name("w3qa-ta1e".to_string(), Some(2), &p);
+        managed.record_registered_dpns_name("swqa-award".to_string(), Some(3), &p);
+        managed.record_registered_dpns_name("w3qa-ta1e".to_string(), Some(4), &p);
+
+        assert_eq!(managed.contested_dpns_names, ["swqa-award"]);
+        let owned: Vec<_> = managed
+            .dpns_names
+            .iter()
+            .map(|n| n.label.as_str())
+            .collect();
+        assert_eq!(owned, ["w3qa-ta1e"]);
+    }
+
     #[test]
     fn merge_dpns_names_persists_one_complete_snapshot() {
         let identity = Identity::V0(IdentityV0 {
