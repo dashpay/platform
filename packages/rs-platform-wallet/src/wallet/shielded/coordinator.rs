@@ -6184,14 +6184,16 @@ mod tests {
                 .status,
             ShieldedActivityStatus::Failed
         );
-        assert!(
-            store
-                .get_all_notes(id)
-                .expect("notes")
-                .iter()
-                .all(|note| note.is_spent),
-            "the result proves both notes spent"
-        );
+        let stored_notes = store.get_all_notes(id).expect("notes");
+        for selected in &notes {
+            assert!(
+                stored_notes
+                    .iter()
+                    .any(|note| note.nullifier == selected.nullifier && note.is_spent),
+                "the result proves note {} spent",
+                hex::encode(selected.nullifier)
+            );
+        }
         drop(store);
 
         let _ = std::fs::remove_dir_all(&dir);

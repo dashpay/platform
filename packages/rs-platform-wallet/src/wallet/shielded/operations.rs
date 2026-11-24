@@ -435,6 +435,11 @@ async fn record_activity_status<S: ShieldedStore>(
 /// result, and the snapshot contradicts neither, so the failure stays. The
 /// row is read and written under one store guard, so a scan pass cannot fail
 /// it in between.
+///
+/// A row that does not read counts as not proved failed: the write is
+/// skipped and the snapshot is accepted, as before. Both writers above run
+/// only on the coordinator's file store, whose read of a row cannot fail, so
+/// a store whose read can fail never holds a failure this would pass over.
 async fn confirm_unless_proved_failed<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
