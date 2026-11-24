@@ -227,7 +227,10 @@ pub enum PlatformWalletFFIResultCode {
     /// Existing-lock recovery referenced an outpoint not owned/tracked by the wallet.
     ErrorAssetLockNotTracked = 23,
     /// Asset-lock funding cannot reuse this one-shot output; Platform
-    /// completion for the requested operation is unconfirmed.
+    /// completion for the requested operation is unconfirmed. An invitation
+    /// claim also returns it when the invitation is claimed by an identity
+    /// this wallet does not record; the message names that identity and says
+    /// a rescan loads it if this wallet submitted the claim.
     ErrorAssetLockAlreadyConsumed = 24,
     /// Existing-lock recovery attempted to use a lock for the wrong funding
     /// family or bound identity index.
@@ -2699,6 +2702,29 @@ mod tests {
 
     /// Codes 63/64 carry the identity they name as a STABLE JSON detail,
     /// `null` when Platform refused the broadcast and named no owner.
+    /// Code 24 for an invitation carries the rescan hint to the host
+    /// verbatim: the apps show this text for a claim whose owner is unknown.
+    #[test]
+    fn should_pass_the_rescan_hint_of_an_unrecorded_claim_through() {
+        use dpp::prelude::Identifier;
+
+        let err = PlatformWalletError::InvitationAlreadyClaimed {
+            identity_id: Identifier::new([5; 32]),
+        };
+        let rendered = err.to_string();
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed
+        );
+        assert!(!result.message.is_null());
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(msg, rendered);
+        assert!(msg.contains("rescan its identities"), "{msg}");
+    }
+
     #[test]
     fn should_carry_the_documented_json_detail_for_invitation_identity_outcomes() {
         use dpp::prelude::Identifier;

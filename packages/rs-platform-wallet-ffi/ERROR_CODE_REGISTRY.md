@@ -95,7 +95,7 @@ These are shipped ABI. Do not renumber.
 | 21 | `ErrorAddressNonceMismatch` | No longer returned by a shield from Platform addresses: an endpoint's nonce verdict on a dispatched shield is 18. Nor, since #5860, by an identity top-up from Platform addresses: its nonce verdict after a dispatch is 20. Transfers and withdrawals from Platform addresses, and identity registrations from them, still return it |
 | 22 | `ErrorCoreInsufficientFunds` | |
 | 23 | `ErrorAssetLockNotTracked` | |
-| 24 | `ErrorAssetLockAlreadyConsumed` | |
+| 24 | `ErrorAssetLockAlreadyConsumed` | Also an invitation claimed by an identity this wallet does not record; the message names it and says a rescan loads it if this wallet submitted the claim. |
 | 25 | `ErrorAssetLockFundingMismatch` | |
 | 26 | `ErrorTransactionBroadcastRejected` | Merged in `9302c62e8b`; took a number several open branches had been treating as free |
 | 27 | `ErrorShutdownIncomplete` | Merged 2026-08-02 by **#4268** (`429667e723`). A quiesce/drain barrier missed its budget. **Took the number #4185 had held since before this file existed** — see the collision history below |

@@ -169,44 +169,48 @@ pub unsafe extern "C" fn platform_wallet_create_invitation(
     // `Send + 'static` (raw pointers are `!Send`).
     let core_signer_addr = core_signer_handle as usize;
 
+    // Wait for the build and broadcast after releasing the registry guard, so
+    // they do not hold off other handles' open/destroy.
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity_wallet = wallet.identity().clone();
-        let wallet_id = wallet.wallet_id();
-        let network = wallet.network();
-        block_on_worker(async move {
-            // SAFETY: see the fn-level safety doc — the caller pins
-            // `core_signer_handle` for the duration of this call. Two views over
-            // the same resolver handle: one as the asset-lock/Core signer, one
-            // wrapped as the `ContactCryptoProvider` used to export the voucher
-            // key. Both are `Send + Sync` and dropped when this task completes.
-            let asset_lock_signer = unsafe {
-                MnemonicResolverCoreSigner::new(
-                    core_signer_addr as *mut MnemonicResolverHandle,
-                    wallet_id,
-                    network,
-                )
-            };
-            let provider = unsafe {
-                resolver_contact_crypto_provider(
-                    core_signer_addr as *mut MnemonicResolverHandle,
-                    wallet_id,
-                    network,
-                )
-            };
-            identity_wallet
-                .create_invitation(
-                    amount_duffs,
-                    funding_account_index,
-                    inviter,
-                    expiry_unix,
-                    now_unix,
-                    &asset_lock_signer,
-                    &provider,
-                )
-                .await
-        })
+        (
+            wallet.identity().clone(),
+            wallet.wallet_id(),
+            wallet.network(),
+        )
     });
-    let result = unwrap_option_or_return!(option);
+    let (identity_wallet, wallet_id, network) = unwrap_option_or_return!(option);
+    let result = block_on_worker(async move {
+        // SAFETY: see the fn-level safety doc — the caller pins
+        // `core_signer_handle` for the duration of this call. Two views over
+        // the same resolver handle: one as the asset-lock/Core signer, one
+        // wrapped as the `ContactCryptoProvider` used to export the voucher
+        // key. Both are `Send + Sync` and dropped when this task completes.
+        let asset_lock_signer = unsafe {
+            MnemonicResolverCoreSigner::new(
+                core_signer_addr as *mut MnemonicResolverHandle,
+                wallet_id,
+                network,
+            )
+        };
+        let provider = unsafe {
+            resolver_contact_crypto_provider(
+                core_signer_addr as *mut MnemonicResolverHandle,
+                wallet_id,
+                network,
+            )
+        };
+        identity_wallet
+            .create_invitation(
+                amount_duffs,
+                funding_account_index,
+                inviter,
+                expiry_unix,
+                now_unix,
+                &asset_lock_signer,
+                &provider,
+            )
+            .await
+    });
     let invitation = unwrap_result_or_return!(result);
 
     // Marshal the funding outpoint out through the crate's one conversion
@@ -432,15 +436,16 @@ pub unsafe extern "C" fn platform_wallet_invitation_prospective_identity_id(
 
     // A link for the other network comes back as the library's typed
     // mismatch, which maps to `ErrorInvalidNetwork`.
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity_wallet = wallet.identity().clone();
-        block_on_worker(async move {
-            identity_wallet
-                .invitation_prospective_identity_id(&invitation)
-                .await
-        })
+    // Wait for the lookup after releasing the registry guard, so a slow
+    // network does not hold off other handles' open/destroy.
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+    let identity_wallet = unwrap_option_or_return!(option);
+    let result = block_on_worker(async move {
+        identity_wallet
+            .invitation_prospective_identity_id(&invitation)
+            .await
     });
-    let result = unwrap_option_or_return!(option);
     let identifier = unwrap_result_or_return!(result);
     unsafe {
         *out_identity_id = identifier.to_buffer();
@@ -557,11 +562,13 @@ pub unsafe extern "C" fn platform_wallet_invitation_claim_status(
         Err(e) => return e,
     };
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity_wallet = wallet.identity().clone();
-        block_on_worker(async move { identity_wallet.invitation_claim_status(&invitation).await })
-    });
-    let result = unwrap_option_or_return!(option);
+    // Wait for the lookup after releasing the registry guard, so a slow
+    // network does not hold off other handles' open/destroy.
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+    let identity_wallet = unwrap_option_or_return!(option);
+    let result =
+        block_on_worker(async move { identity_wallet.invitation_claim_status(&invitation).await });
     let status = unwrap_result_or_return!(result);
     unsafe {
         *out_status = status.into();
@@ -597,15 +604,16 @@ pub unsafe extern "C" fn platform_wallet_invitation_claim_status_for_identity(
         Err(e) => return e,
     };
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity_wallet = wallet.identity().clone();
-        block_on_worker(async move {
-            identity_wallet
-                .invitation_claim_status_for_identity(&invitation)
-                .await
-        })
+    // Wait for the lookup after releasing the registry guard, so a slow
+    // network does not hold off other handles' open/destroy.
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+    let identity_wallet = unwrap_option_or_return!(option);
+    let result = block_on_worker(async move {
+        identity_wallet
+            .invitation_claim_status_for_identity(&invitation)
+            .await
     });
-    let result = unwrap_option_or_return!(option);
     let (status, claimed_by_this_wallet) = unwrap_result_or_return!(result);
     unsafe {
         *out_status = InvitationClaimStatusFFI::new(status, claimed_by_this_wallet);

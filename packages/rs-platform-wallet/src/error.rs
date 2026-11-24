@@ -135,7 +135,10 @@ pub enum PlatformWalletError {
     /// recorded (a rescan records it). No key the identity holds decides
     /// this. Nothing was broadcast unless a node that lagged behind let the
     /// claim through.
-    #[error("invitation was already claimed by identity {identity_id}")]
+    #[error(
+        "invitation was already claimed by identity {identity_id}; if this wallet \
+         submitted the claim earlier, rescan its identities to load it"
+    )]
     InvitationAlreadyClaimed { identity_id: Identifier },
 
     /// A key of the claim is already registered to another identity, so
@@ -2134,6 +2137,20 @@ mod invitation_error_mapping_tests {
             ))),
             PlatformWalletError::Sdk(dash_sdk::Error::Generic(message)) if message == "boom"
         ));
+    }
+
+    /// Code 24 cannot say whose claim it is, so its text tells the invitee
+    /// a rescan loads the identity if this wallet's earlier claim landed
+    /// unrecorded, and still names the identity.
+    #[test]
+    fn should_point_an_unrecorded_claim_to_a_rescan() {
+        let id = Identifier::new([5; 32]);
+        let message = PlatformWalletError::InvitationAlreadyClaimed { identity_id: id }.to_string();
+        assert!(message.contains(&format!("{id}")), "{message}");
+        assert!(
+            message.contains("if this wallet submitted the claim earlier, rescan its identities"),
+            "{message}"
+        );
     }
 
     /// The claim's preflight outcomes keep the identity they name.
