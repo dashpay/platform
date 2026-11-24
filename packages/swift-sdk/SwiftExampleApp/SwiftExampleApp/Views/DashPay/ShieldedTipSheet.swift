@@ -255,7 +255,7 @@ private struct ShieldedTipSheetContent: View {
                 }
                 .disabled(!flow.canSend)
                 .accessibilityIdentifier("dashpay.tip.send")
-            } else if !flow.inputsLocked, !flow.offersReviewAgain {
+            } else if !flow.inputsLocked {
                 Button {
                     Task { await flow.review() }
                 } label: {
@@ -263,14 +263,6 @@ private struct ShieldedTipSheetContent: View {
                 }
                 .disabled(!flow.canReview)
                 .accessibilityIdentifier("dashpay.tip.review")
-            }
-
-            if flow.offersReviewAgain {
-                Button("Review again") {
-                    Task { await flow.review() }
-                }
-                .disabled(!flow.canReview)
-                .accessibilityIdentifier("dashpay.tip.reviewAgain")
             }
 
             if flow.offersShieldedSync {
@@ -373,8 +365,12 @@ private struct ShieldedTipSheetContent: View {
 
 /// The shielded balance of `identity`'s own account, as the wallet reports
 /// it, with a way to prove the account when it is not verified yet. Read
-/// again when a shielded sync of the identity's wallet ends and when
-/// `reloadToken` changes; a busy store keeps the last state and reads again.
+/// again when a shielded sync of the identity's wallet ends, when
+/// `reloadToken` changes and after a prepare. Every read goes through
+/// `readUntilSettled`, run by the one `.task(id:)`: a newer trigger cancels
+/// the task, a cancelled task applies nothing, and only the latest read
+/// (`ShieldedTipBalanceState.beginRead`) may apply its result or schedule a
+/// retry.
 struct ShieldedTipBalanceRow: View {
     let identity: PersistentIdentity
     var reloadToken: Int = 0
@@ -383,16 +379,15 @@ struct ShieldedTipBalanceRow: View {
 
     @State private var state = ShieldedTipBalanceState()
     @State private var syncs = 0
+    @State private var prepares = 0
     @State private var preparing = false
     @State private var prepareError: String?
 
     private struct ReadInputs: Equatable {
         let reload: Int
         let syncs: Int
+        let prepares: Int
     }
-
-    /// The pause before reading again while the store is busy.
-    private static let busyRetry: Duration = .seconds(2)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -403,6 +398,12 @@ struct ShieldedTipBalanceRow: View {
                 .font(.caption)
                 .foregroundColor(state.isFailure ? .red : .primary)
                 .accessibilityIdentifier("dashpay.tip.balance")
+            if let readErrorText = state.readErrorText {
+                Text(readErrorText)
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                    .accessibilityIdentifier("dashpay.tip.balance.readError")
+            }
             if state.offersPrepare {
                 Button {
                     Task { await prepare() }
@@ -423,8 +424,8 @@ struct ShieldedTipBalanceRow: View {
                     .accessibilityIdentifier("dashpay.tip.balance.prepareError")
             }
         }
-        .task(id: ReadInputs(reload: reloadToken, syncs: syncs)) {
-            await readUntilNotBusy()
+        .task(id: ReadInputs(reload: reloadToken, syncs: syncs, prepares: prepares)) {
+            await readUntilSettled()
         }
         .onReceive(walletManager.$lastShieldedSyncEvent) { event in
             guard let walletId = identity.wallet?.walletId,
@@ -433,35 +434,38 @@ struct ShieldedTipBalanceRow: View {
         }
     }
 
-    private func read() async {
+    private func fetch() async -> Result<ShieldedIdentityBalance, Error> {
         guard let walletId = identity.wallet?.walletId else {
-            state.record(error: PlatformWalletError.identityNotFound(
+            return .failure(PlatformWalletError.identityNotFound(
                 "This identity has no wallet on this device."))
-            return
         }
         do {
-            let balance = try await walletManager.shieldedIdentityBalance(
-                walletId: walletId, identityId: identity.identityId)
-            state.record(balance)
+            return .success(try await walletManager.shieldedIdentityBalance(
+                walletId: walletId, identityId: identity.identityId))
         } catch {
-            state.record(error: error)
+            return .failure(error)
         }
     }
 
-    private func readUntilNotBusy() async {
-        await read()
-        while state.readsAgain, !Task.isCancelled {
+    /// Read, and while the latest read asks for it, read again after its
+    /// backoff. Stops when the task is cancelled or a newer read started.
+    private func readUntilSettled() async {
+        while !Task.isCancelled {
+            let request = state.beginRead()
+            let result = await fetch()
+            guard !Task.isCancelled else { return }
+            guard state.apply(result, for: request), let delay = state.retryDelay else { return }
             do {
-                try await Task.sleep(for: Self.busyRetry)
+                try await Task.sleep(for: delay)
             } catch {
                 return
             }
-            await read()
         }
     }
 
     /// Prove the identity's shielded account with the seed for this session
-    /// (`prepareShieldedIdentityAddress`), then read the balance again.
+    /// (`prepareShieldedIdentityAddress`), then read the balance again
+    /// through the row's one read task.
     private func prepare() async {
         guard let walletId = identity.wallet?.walletId else { return }
         preparing = true
@@ -476,6 +480,6 @@ struct ShieldedTipBalanceRow: View {
         } catch {
             prepareError = "Couldn't prepare the shielded account: \(error.localizedDescription)"
         }
-        await readUntilNotBusy()
+        prepares += 1
     }
 }

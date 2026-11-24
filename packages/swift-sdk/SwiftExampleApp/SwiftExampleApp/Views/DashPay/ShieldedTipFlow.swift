@@ -11,6 +11,12 @@ import SwiftDashSDK
 // Restart safety is the wallet's too. After a relaunch an unresolved earlier
 // tip comes back from the review (`unresolved`) and from a send (code 84), so
 // the app keeps no record of its own of a tip in flight.
+//
+// Neither code 84 nor `unresolved` says what became of the earlier payment:
+// it may be this same tip and may pay the recipient, and the wallet stops
+// refusing once a sync resolves it, whether it executed or was proven unable
+// to. The app cannot tell which attempt that payment was, so its outcome is
+// unknown to the app, and the screens never steer the user to send again.
 
 /// How a shielded tip send ended.
 enum ShieldedTipSendOutcome: Equatable {
@@ -19,9 +25,9 @@ enum ShieldedTipSendOutcome: Equatable {
     /// The tip may have left the wallet and may still execute (code 18 or
     /// 20). Never offered again: a shielded sync resolves it.
     case mayHaveGoneThrough(String)
-    /// Refused with nothing sent (code 84): another tip is being sent, or an
-    /// earlier payment to the recipient is unresolved. It clears by itself
-    /// after a shielded sync; then the user reviews again.
+    /// Refused with nothing sent by this attempt (code 84): another tip is
+    /// being sent, or an earlier payment to the recipient is unresolved and
+    /// may pay them. Never offered again, as for 18 and 20.
     case earlierTipPending(String)
     /// Not sent (code 7, a recipient that changed since the review, a memo
     /// the wallet refused, and every other error). The message is the
@@ -47,7 +53,7 @@ enum ShieldedTipSendOutcome: Equatable {
         switch self {
         case .submitted: return "Tip sent"
         case .mayHaveGoneThrough: return "This tip may have gone through"
-        case .earlierTipPending: return "Not sent: an earlier tip is still pending"
+        case .earlierTipPending: return "Not sent: an earlier payment is unresolved"
         case .notSent: return "Not sent"
         }
     }
@@ -60,9 +66,8 @@ enum ShieldedTipSendOutcome: Equatable {
             return "Do not send it again. A shielded sync tells whether it went through; "
                 + "until then the wallet refuses another tip to this recipient."
         case .earlierTipPending:
-            return "Nothing was sent. Another tip from this wallet is being sent, or an earlier "
-                + "payment to this recipient has not resolved yet. It clears by itself after a "
-                + "shielded sync; then review again."
+            return "Nothing was sent by this attempt. "
+                + ShieldedTipPresentation.unresolvedCaution
         case .notSent:
             return "Nothing was sent."
         }
@@ -108,12 +113,12 @@ enum ShieldedTipPresentation {
     static func changeText(_ change: ShieldedTipRecipientChange) -> String {
         switch change {
         case .new:
-            return "This wallet has not tipped this name before."
+            return "No recipient was confirmed for this name from this wallet before."
         case .unchanged:
-            return "Same recipient as the last tip from this wallet to this name."
+            return "Same recipient as the one last confirmed for this name from this wallet."
         case .changed:
-            return "This name now pays a different identity or shielded address than the "
-                + "last tip from this wallet to it. Check with the recipient before sending."
+            return "This name now pays a different identity or shielded address than the one "
+                + "last confirmed for it from this wallet. Check with the recipient before sending."
         }
     }
 
@@ -129,16 +134,30 @@ enum ShieldedTipPresentation {
         return nil
     }
 
-    static let unresolvedMessage = "An earlier shielded payment from this wallet to this "
-        + "recipient has not resolved yet, so the wallet would refuse another. A shielded "
-        + "sync resolves it; then review again."
+    /// Why nothing can be sent while an earlier payment to the recipient is
+    /// unresolved, and what to check before tipping them again.
+    static let unresolvedCaution = "An earlier payment to this recipient has not resolved and "
+        + "may pay them. Check shielded activity before tipping this recipient again; the "
+        + "wallet stops refusing once a sync resolves it, whether or not it paid."
+
+    /// The review's notice when the wallet marks it unresolved.
+    static let unresolvedMessage = "The wallet refuses a tip to this recipient for now. "
+        + unresolvedCaution
 
     static let noUsernameMessage = "A shielded tip is sent to a username, and no username "
         + "is known for this contact on this device."
 }
 
-/// The paying identity's shielded balance as last read. A busy shielded store
-/// (`walletOperation`) keeps the last state shown and asks for another read.
+/// The paying identity's shielded balance as last read.
+///
+/// A read that fails with `walletOperation` keeps the last balance shown with
+/// the wallet's message under it and reads again after a backoff: the wallet
+/// reports both a busy store and a permanent failure with that code
+/// (dashpay/platform#6201 asks for a distinct one), so the message is shown
+/// rather than parsed. Other errors replace the balance with their message.
+///
+/// Every read is numbered by `beginRead()`; only the latest one may apply
+/// its result, so a read that finishes after a newer one changes nothing.
 struct ShieldedTipBalanceState: Equatable {
     enum Shown: Equatable {
         case notRead
@@ -146,27 +165,60 @@ struct ShieldedTipBalanceState: Equatable {
         case failed(String)
     }
 
+    /// The first pause before reading again after a `walletOperation`.
+    static let firstRetryDelay: Duration = .seconds(2)
+    /// The longest pause between reads.
+    static let maxRetryDelay: Duration = .seconds(30)
+
     private(set) var shown: Shown = .notRead
-    /// The last read found the store busy; `shown` is what the read before
-    /// it said.
-    private(set) var busy = false
+    /// The wallet's message from the latest read, when it failed with
+    /// `walletOperation`; `shown` is what the read before it said.
+    private(set) var readError: String?
+    /// `walletOperation` failures since the last read that did not fail so.
+    private(set) var failedReads = 0
+    /// The number of the latest read started.
+    private(set) var latestRead = 0
 
-    mutating func record(_ balance: ShieldedIdentityBalance) {
-        shown = .balance(balance)
-        busy = false
+    /// Start a read and return its number.
+    mutating func beginRead() -> Int {
+        latestRead += 1
+        return latestRead
     }
 
-    mutating func record(error: Error) {
-        if let walletError = error as? PlatformWalletError, case .walletOperation = walletError {
-            busy = true
-            return
+    /// Apply the result of read `request`. Returns false, changing nothing,
+    /// when a newer read was started since.
+    @discardableResult
+    mutating func apply(_ result: Result<ShieldedIdentityBalance, Error>, for request: Int) -> Bool {
+        guard request == latestRead else { return false }
+        switch result {
+        case .success(let balance):
+            shown = .balance(balance)
+            readError = nil
+            failedReads = 0
+        case .failure(let error):
+            if let walletError = error as? PlatformWalletError, case .walletOperation = walletError {
+                readError = walletError.localizedDescription
+                failedReads += 1
+            } else {
+                shown = .failed(error.localizedDescription)
+                readError = nil
+                failedReads = 0
+            }
         }
-        shown = .failed(error.localizedDescription)
-        busy = false
+        return true
     }
 
-    /// Whether to read again shortly.
-    var readsAgain: Bool { busy }
+    /// The pause before reading again, or nil when the latest read needs
+    /// none: 2 seconds after the first `walletOperation`, doubling to 30.
+    var retryDelay: Duration? {
+        guard failedReads > 0 else { return nil }
+        var delay = Self.firstRetryDelay
+        for _ in 1..<failedReads {
+            delay = delay * 2
+            if delay >= Self.maxRetryDelay { return Self.maxRetryDelay }
+        }
+        return min(delay, Self.maxRetryDelay)
+    }
 
     /// Whether to offer proving the identity's account
     /// (`prepareShieldedIdentityAddress`).
@@ -175,9 +227,7 @@ struct ShieldedTipBalanceState: Equatable {
     var text: String {
         switch shown {
         case .notRead:
-            return busy
-                ? "The shielded store is busy. Reading again shortly."
-                : "Reading the shielded balance…"
+            return readError == nil ? "Reading the shielded balance…" : "Not read yet."
         case .balance(.unverified):
             return "Not verified yet. The wallet proves this identity's shielded account with "
                 + "its seed once per session; prepare it to read the balance."
@@ -189,6 +239,12 @@ struct ShieldedTipBalanceState: Equatable {
         case .failed(let message):
             return "Could not read the shielded balance: \(message)"
         }
+    }
+
+    /// The line under the balance while the latest read failed with
+    /// `walletOperation`.
+    var readErrorText: String? {
+        readError.map { "Could not read the shielded balance now: \($0). Reading again." }
     }
 
     var isFailure: Bool {
@@ -262,11 +318,12 @@ final class ShieldedTipFlow: ObservableObject {
 
     // MARK: Derived
 
-    /// While a send runs, and after one that went or may have gone through,
-    /// the inputs stay as they were sent.
+    /// While a send runs, and after one that went, may have gone through, or
+    /// met an unresolved earlier payment, the inputs stay as they were sent.
     var inputsLocked: Bool {
         switch phase {
-        case .sending, .finished(.submitted), .finished(.mayHaveGoneThrough):
+        case .sending, .finished(.submitted), .finished(.mayHaveGoneThrough),
+             .finished(.earlierTipPending):
             return true
         default:
             return false
@@ -302,16 +359,6 @@ final class ShieldedTipFlow: ObservableObject {
         switch phase {
         case .reviewed(let tip): return tip.review.unresolved
         case .finished(.earlierTipPending), .finished(.mayHaveGoneThrough): return true
-        default: return false
-        }
-    }
-
-    /// "Review again" is offered where a shielded sync may have cleared what
-    /// held the tip. Never after a tip that may have gone through.
-    var offersReviewAgain: Bool {
-        switch phase {
-        case .reviewed(let tip): return tip.review.unresolved
-        case .finished(.earlierTipPending): return true
         default: return false
         }
     }

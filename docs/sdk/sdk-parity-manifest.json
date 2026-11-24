@@ -4518,7 +4518,7 @@
           "sdk": "supported",
           "example_app": "partial",
           "restart": "required",
-          "reason": "PlatformWalletManager.parseShieldedTipAmount, reviewShieldedTip, sendShieldedTip and shieldedIdentityBalance (PlatformWalletManagerShieldedTips.swift) marshal the four exports and decode the review and balance blobs, unit-tested in ShieldedTipDecodingTests; the wallet decides the amount, the recipient, its change and every refusal. SwiftExampleApp tips a contact from its detail screen (the username this device knows for it) and any username from the own profile's Shielded tips section (ShieldedTipSheet): the amount parsed by the wallet, an optional memo, a review showing the recipient identity and address, the change (a changed recipient as a warning with the previous one) and an unresolved earlier payment (Send off, with a shielded sync and Review again), then a send from .identity of the acting identity; sends that may have gone through (18, 20) are never offered again, a pending tip (84) offers a sync and another review, and every other error reads not sent with the wallet's message. The paying identity's balance shows unverified (with Prepare through prepareShieldedIdentityAddress), unavailable and available. ShieldedTipFlowTests pin that mapping with closures in place of the native calls. The app is partial and restart is required because none of TEST_PLAN DP-33 to DP-38 has been driven on a simulator: the unresolved tip that survives a relaunch (DP-35) is read from the wallet's saved payment, which only the Rust tests exercise, and the app keeps no record of its own."
+          "reason": "PlatformWalletManager.parseShieldedTipAmount, reviewShieldedTip, sendShieldedTip and shieldedIdentityBalance (PlatformWalletManagerShieldedTips.swift) marshal the four exports and decode the review and balance blobs, unit-tested in ShieldedTipDecodingTests; the wallet decides the amount, the recipient, its change and every refusal. SwiftExampleApp tips a contact from its detail screen (the username this device knows for it) and any username from the own profile's Shielded tips section (ShieldedTipSheet): the amount parsed by the wallet, an optional memo, a review showing the recipient identity and address, the change (a changed recipient as a warning with the previous one) and an unresolved earlier payment (Send off, with a caution that it may pay the recipient and a shielded sync), then a send from .identity of the acting identity; sends that may have gone through (18, 20) or met an unresolved earlier payment (84) are never offered again and offer only a shielded sync, since the app cannot tell what became of that payment, and every other error reads not sent with the wallet's message. The paying identity's balance shows unverified (with Prepare through prepareShieldedIdentityAddress), unavailable and available; a walletOperation read keeps the last balance with the wallet's message and retries with a backoff, and only the latest read applies. ShieldedTipFlowTests pin that mapping with closures in place of the native calls. The app is partial and restart is required because none of TEST_PLAN DP-33 to DP-38 has been driven on a simulator: the unresolved tip that survives a relaunch (DP-35) is read from the wallet's saved payment, which only the Rust tests exercise, and the app keeps no record of its own."
         },
         "kotlin": {
           "sdk": "supported",
@@ -4700,7 +4700,7 @@
           "host": "swift",
           "kind": "unit",
           "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
-          "id": "testShouldOfferASyncAndAnotherReviewAfterAnEarlierTipIsPending",
+          "id": "testShouldOfferOnlyASyncAfterAnEarlierTipIsPending",
           "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
           "covers_restart": false
         },
@@ -4772,7 +4772,31 @@
           "host": "swift",
           "kind": "unit",
           "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
-          "id": "testShouldKeepTheLastBalanceWhileTheStoreIsBusy",
+          "id": "testShouldShowTheWalletsMessageUnderTheKeptBalance",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
+          "id": "testShouldKeepTheInputsAndOfferNoReviewAfterAnEarlierTipIsPending",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
+          "id": "testShouldBackOffTheRetryAndResetItAfterASuccessfulRead",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
+          "id": "testShouldIgnoreABalanceReadThatFinishesAfterANewerOne",
           "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
           "covers_restart": false
         },

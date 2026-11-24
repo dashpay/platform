@@ -6,10 +6,12 @@ import SwiftDashSDK
 /// parses the amount, reviews the recipient and decides each refusal; these
 /// tests drive `ShieldedTipFlow` with closures in place of the native calls
 /// and check what it shows and offers: a tip that may have gone through (18,
-/// 20) is never offered again, an earlier tip still pending (84) offers a
-/// shielded sync and another review, every other error is "not sent" with
-/// the wallet's message, an unresolved review keeps Send off, and the
-/// paying identity's balance shows the wallet's state.
+/// 20) or that met an unresolved earlier payment (84) is never offered
+/// again, and only a shielded sync is offered after it; every other error is
+/// "not sent" with the wallet's message; an unresolved review keeps Send off
+/// and steers nobody to send again; and the paying identity's balance shows
+/// the wallet's state, keeps the last one through a `walletOperation` with
+/// a backoff, and ignores a read that finishes after a newer one.
 @MainActor
 final class ShieldedTipFlowTests: XCTestCase {
 
@@ -79,7 +81,6 @@ final class ShieldedTipFlowTests: XCTestCase {
             PlatformWalletError.shieldedSpendUnconfirmed("not proved").localizedDescription)))
         XCTAssertFalse(flow.canSend)
         XCTAssertFalse(flow.canReview)
-        XCTAssertFalse(flow.offersReviewAgain)
         XCTAssertFalse(flow.offersTipAgain)
         XCTAssertTrue(flow.inputsLocked)
         XCTAssertTrue(flow.offersShieldedSync)
@@ -105,17 +106,46 @@ final class ShieldedTipFlowTests: XCTestCase {
             PlatformWalletError.shieldedSpendUnconfirmed("not proved").localizedDescription)))
     }
 
-    func testShouldOfferASyncAndAnotherReviewAfterAnEarlierTipIsPending() async {
+    func testShouldOfferOnlyASyncAfterAnEarlierTipIsPending() async {
         let error = PlatformWalletError.shieldedTipPending("an earlier payment is unresolved")
         let flow = makeFlow(sendError: error)
         await reviewAndSend(flow)
 
         XCTAssertEqual(flow.phase, .finished(.earlierTipPending(error.localizedDescription)))
         XCTAssertTrue(flow.offersShieldedSync)
-        XCTAssertTrue(flow.offersReviewAgain)
         XCTAssertFalse(flow.canSend)
-        XCTAssertFalse(flow.inputsLocked)
-        XCTAssertTrue(flow.canReview)
+        XCTAssertFalse(flow.canReview)
+        XCTAssertFalse(flow.offersTipAgain)
+        XCTAssertTrue(flow.inputsLocked)
+    }
+
+    func testShouldKeepTheInputsAndOfferNoReviewAfterAnEarlierTipIsPending() async {
+        let error = PlatformWalletError.shieldedTipPending("an earlier payment is unresolved")
+        let flow = makeFlow(sendError: error)
+        await reviewAndSend(flow)
+        flow.amountText = "2"
+        flow.memo = "again"
+        await flow.review()
+        await flow.send()
+
+        XCTAssertEqual(flow.phase, .finished(.earlierTipPending(error.localizedDescription)))
+        XCTAssertEqual(reviewedNames.count, 1)
+        XCTAssertEqual(sent.count, 1)
+    }
+
+    func testShouldTellThatAPendingTipMayStillPayTheRecipient() {
+        let outcome = ShieldedTipSendOutcome.earlierTipPending("refused")
+        XCTAssertEqual(
+            outcome.message,
+            "Nothing was sent by this attempt. An earlier payment to this recipient has not "
+                + "resolved and may pay them. Check shielded activity before tipping this "
+                + "recipient again; the wallet stops refusing once a sync resolves it, whether "
+                + "or not it paid.")
+        XCTAssertFalse(outcome.message.localizedCaseInsensitiveContains("review again"))
+        XCTAssertFalse(ShieldedTipPresentation.unresolvedMessage
+            .localizedCaseInsensitiveContains("review again"))
+        XCTAssertTrue(ShieldedTipPresentation.unresolvedMessage
+            .hasSuffix(ShieldedTipPresentation.unresolvedCaution))
     }
 
     func testShouldShowAMissingIdentityAsNotSent() async {
@@ -135,7 +165,8 @@ final class ShieldedTipFlowTests: XCTestCase {
 
         XCTAssertEqual(flow.phase, .finished(.notSent(error.localizedDescription)))
         XCTAssertEqual(ShieldedTipSendOutcome.of(error).detail, error.localizedDescription)
-        XCTAssertFalse(flow.offersReviewAgain)
+        XCTAssertFalse(flow.offersShieldedSync)
+        XCTAssertFalse(flow.inputsLocked)
         XCTAssertTrue(flow.canReview)
     }
 
@@ -190,7 +221,7 @@ final class ShieldedTipFlowTests: XCTestCase {
         XCTAssertNil(ShieldedTipPresentation.previousRecipient(.new))
         XCTAssertEqual(
             ShieldedTipPresentation.changeText(.new),
-            "This wallet has not tipped this name before.")
+            "No recipient was confirmed for this name from this wallet before.")
     }
 
     func testShouldDescribeAnUnchangedRecipientWithoutAWarning() {
@@ -198,13 +229,17 @@ final class ShieldedTipFlowTests: XCTestCase {
         XCTAssertNil(ShieldedTipPresentation.previousRecipient(.unchanged))
         XCTAssertEqual(
             ShieldedTipPresentation.changeText(.unchanged),
-            "Same recipient as the last tip from this wallet to this name.")
+            "Same recipient as the one last confirmed for this name from this wallet.")
     }
 
     func testShouldWarnOfAChangedRecipientAndShowThePreviousOne() async {
         let change = ShieldedTipRecipientChange.changed(previous: previous)
         XCTAssertTrue(ShieldedTipPresentation.changeIsWarning(change))
         XCTAssertEqual(ShieldedTipPresentation.previousRecipient(change), previous)
+        XCTAssertEqual(
+            ShieldedTipPresentation.changeText(change),
+            "This name now pays a different identity or shielded address than the one last "
+                + "confirmed for it from this wallet. Check with the recipient before sending.")
 
         // A changed recipient is a warning, not a refusal: the wallet sends
         // to the recipient the user reviewed.
@@ -224,7 +259,7 @@ final class ShieldedTipFlowTests: XCTestCase {
         XCTAssertNotNil(flow.reviewed)
         XCTAssertFalse(flow.canSend)
         XCTAssertTrue(flow.offersShieldedSync)
-        XCTAssertTrue(flow.offersReviewAgain)
+        XCTAssertFalse(flow.offersTipAgain)
 
         await flow.send()
         XCTAssertTrue(sent.isEmpty)
@@ -341,42 +376,81 @@ final class ShieldedTipFlowTests: XCTestCase {
         var state = ShieldedTipBalanceState()
         XCTAssertEqual(state.shown, .notRead)
 
-        state.record(.unverified)
+        state.apply(.success(.unverified), for: state.beginRead())
         XCTAssertTrue(state.offersPrepare)
         XCTAssertTrue(state.text.hasPrefix("Not verified yet."))
 
-        state.record(.unavailable(account: 3))
+        state.apply(.success(.unavailable(account: 3)), for: state.beginRead())
         XCTAssertFalse(state.offersPrepare)
         XCTAssertTrue(state.text.contains("Not known yet (account 3)"))
         XCTAssertTrue(state.text.contains("Not known is not zero."))
 
-        state.record(.available(account: 3, credits: 150_000_000_000))
+        state.apply(.success(.available(account: 3, credits: 150_000_000_000)), for: state.beginRead())
         XCTAssertFalse(state.offersPrepare)
         XCTAssertEqual(state.text, "\(formatCreditsAsDash(150_000_000_000)) (account 3)")
         XCTAssertFalse(state.isFailure)
+        XCTAssertNil(state.readErrorText)
+        XCTAssertNil(state.retryDelay)
     }
 
-    func testShouldKeepTheLastBalanceWhileTheStoreIsBusy() {
+    func testShouldShowTheWalletsMessageUnderTheKeptBalance() {
         var state = ShieldedTipBalanceState()
-        state.record(.available(account: 1, credits: 5))
-        state.record(error: PlatformWalletError.walletOperation("the shielded store is busy"))
+        state.apply(.success(.available(account: 1, credits: 5)), for: state.beginRead())
+        let error = PlatformWalletError.walletOperation("the shielded store is busy")
+        state.apply(.failure(error), for: state.beginRead())
 
         XCTAssertEqual(state.shown, .balance(.available(account: 1, credits: 5)))
-        XCTAssertTrue(state.readsAgain)
+        XCTAssertEqual(state.text, "\(formatCreditsAsDash(5)) (account 1)")
+        XCTAssertEqual(
+            state.readErrorText,
+            "Could not read the shielded balance now: \(error.localizedDescription). Reading again.")
+        XCTAssertFalse(state.isFailure)
 
-        state.record(.available(account: 1, credits: 7))
-        XCTAssertFalse(state.readsAgain)
+        state.apply(.success(.available(account: 1, credits: 7)), for: state.beginRead())
+        XCTAssertNil(state.readErrorText)
         XCTAssertEqual(state.shown, .balance(.available(account: 1, credits: 7)))
+    }
+
+    func testShouldBackOffTheRetryAndResetItAfterASuccessfulRead() {
+        var state = ShieldedTipBalanceState()
+        let error = PlatformWalletError.walletOperation("unknown wallet")
+        var delays: [Duration] = []
+        for _ in 0..<6 {
+            state.apply(.failure(error), for: state.beginRead())
+            delays.append(state.retryDelay ?? .zero)
+        }
+        XCTAssertEqual(delays, [.seconds(2), .seconds(4), .seconds(8), .seconds(16), .seconds(30), .seconds(30)])
+
+        state.apply(.success(.unavailable(account: 0)), for: state.beginRead())
+        XCTAssertNil(state.retryDelay)
+        state.apply(.failure(error), for: state.beginRead())
+        XCTAssertEqual(state.retryDelay, .seconds(2))
     }
 
     func testShouldShowOtherBalanceErrorsWithTheirMessage() {
         var state = ShieldedTipBalanceState()
         let error = PlatformWalletError.identityNotFound("no such identity in this wallet")
-        state.record(error: error)
+        state.apply(.failure(error), for: state.beginRead())
 
         XCTAssertEqual(state.shown, .failed(error.localizedDescription))
         XCTAssertTrue(state.isFailure)
-        XCTAssertFalse(state.readsAgain)
+        XCTAssertNil(state.readErrorText)
+        XCTAssertNil(state.retryDelay)
+    }
+
+    func testShouldIgnoreABalanceReadThatFinishesAfterANewerOne() {
+        var state = ShieldedTipBalanceState()
+        let older = state.beginRead()
+        let newer = state.beginRead()
+
+        XCTAssertTrue(state.apply(.success(.available(account: 2, credits: 9)), for: newer))
+        XCTAssertFalse(state.apply(.success(.unverified), for: older))
+        XCTAssertFalse(state.apply(
+            .failure(PlatformWalletError.walletOperation("busy")), for: older))
+
+        XCTAssertEqual(state.shown, .balance(.available(account: 2, credits: 9)))
+        XCTAssertNil(state.readErrorText)
+        XCTAssertNil(state.retryDelay)
     }
 }
 
