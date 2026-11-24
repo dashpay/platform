@@ -1561,10 +1561,17 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // anything hits the wire.
         // For an unbound identity top-up the pool is the only record of the
         // credit output's key index, which a resume after a restart needs to
-        // sign the top-up, so a failed store stops it too; the row's durable
-        // store below flushes it.
+        // sign the top-up: it is not stored here but in the same durable
+        // changeset as the row that records the recipient (below), so the two
+        // reach disk together or not at all, and a flush between two separate
+        // writes cannot commit the row without it.
         // Aborting BEFORE broadcast is harmless (no tx on the wire); the other
         // asset-lock accounts keep their keys on-device, so they stay best-effort.
+        let (funding_pools, row_funding_pools) = if identity_recipient.is_some() {
+            (Vec::new(), funding_pools)
+        } else {
+            (funding_pools, Vec::new())
+        };
         let pool_durability = match self.persist_asset_lock_account_pools(funding_pools) {
             Ok(())
                 if funding_type == AssetLockFundingType::IdentityInvitation
@@ -1576,32 +1583,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         };
         if let Err(e) = pool_durability {
             tracing::error!(error = %e, "failed to persist asset-lock funding index");
-            if operation.is_some()
-                || funding_type == AssetLockFundingType::IdentityInvitation
-                || identity_recipient.is_some()
-            {
+            if operation.is_some() || funding_type == AssetLockFundingType::IdentityInvitation {
                 // Only funding pools have been written: no lock row can be
                 // recovered and no transaction was sent. Keep the consumed
                 // funding index, but discard the unpublished outpoint.
                 if let Some(operation) = operation {
                     operation.set(AssetLockOperationState::NotSent, None);
-                }
-                let mut in_broadcast_pin = in_broadcast_pin;
-                if identity_recipient.is_some() {
-                    // Except for an unbound top-up: its key never left the
-                    // device and nothing was sent, so the index is handed back.
-                    // The released verdict is recorded before the manager
-                    // lock's await, and the index goes back before the
-                    // build→persist gate is dropped (see the drain-floor
-                    // branch).
-                    in_broadcast_pin.settle_released_on_drop();
-                    self.hand_back_unsent_funding_index(
-                        &in_broadcast_pin,
-                        funding_type,
-                        identity_index,
-                        &path,
-                    )
-                    .await;
                 }
                 // The pooled build reserved every selected input across its
                 // contributing accounts under `reservation_token`. Nothing
@@ -1632,11 +1619,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 if operation.is_some() {
                     return Err(PlatformWalletError::Persistence(format!(
                         "drain funding indices could not be made durable before dispatch: {e}"
-                    )));
-                }
-                if identity_recipient.is_some() {
-                    return Err(PlatformWalletError::Persistence(format!(
-                        "identity top-up funding index could not be stored before dispatch: {e}"
                     )));
                 }
                 return Err(PlatformWalletError::AssetLockTransaction(format!(
@@ -1712,8 +1694,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
             let mut changeset = AssetLockChangeSet::default();
             changeset.asset_locks.insert(out_point, (&tracked).into());
+            // With the funding pool for an unbound top-up (see the pool gate
+            // above): a resume after a restart signs with the key index it
+            // records.
             let durable = self.persister.store_durably(PlatformWalletChangeSet {
                 asset_locks: Some(changeset),
+                account_address_pools: row_funding_pools,
                 ..Default::default()
             });
             if let Err(error) = durable {
@@ -3319,9 +3305,11 @@ mod tests {
 
     /// The stored address pool is the only record of an unbound top-up's
     /// credit-output key, which a resume after a restart signs the top-up
-    /// with, so a pool store that fails stops the funding before the
-    /// broadcaster: nothing is tracked and the inputs are released, so an
-    /// immediate retry funds the lock.
+    /// with, so it is stored in the same durable write as the row recording
+    /// the recipient: the two reach disk together or not at all, and no flush
+    /// between two separate writes can commit the row without it. A write
+    /// that fails stops the funding before the broadcaster: nothing is tracked
+    /// and the inputs are released, so an immediate retry funds the lock.
     #[tokio::test]
     async fn should_refuse_an_unbound_top_up_whose_funding_pool_was_not_stored() {
         use crate::changeset::AssetLockRecipient;
@@ -3349,7 +3337,7 @@ mod tests {
 
         assert!(
             matches!(&result, Err(PlatformWalletError::Persistence(message))
-                if message.contains("identity top-up funding index could not be stored")),
+                if message.contains("identity recipient was not made durable")),
             "{result:?}"
         );
         assert_eq!(broadcaster.calls(), 0);
@@ -3367,6 +3355,26 @@ mod tests {
         .await
         .expect("the refused build released its inputs, so a retry funds the lock");
         assert_eq!(broadcaster.calls(), 1);
+        let stored = persistence.stored.lock().unwrap();
+        let row_write = stored
+            .iter()
+            .find(|cs| {
+                cs.asset_locks
+                    .as_ref()
+                    .is_some_and(|locks| !locks.asset_locks.is_empty())
+            })
+            .expect("the row was stored");
+        assert!(
+            !row_write.account_address_pools.is_empty(),
+            "the funding pool is in the row's own write"
+        );
+        assert!(
+            stored
+                .iter()
+                .filter(|cs| !cs.account_address_pools.is_empty())
+                .all(|cs| cs.asset_locks.is_some()),
+            "no separate pool write precedes the row"
+        );
     }
 
     /// A refused unbound top-up hands its funding index back: nothing was
