@@ -36,10 +36,16 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import org.dashfoundation.dashsdk.Network
+import org.dashfoundation.dashsdk.Sdk
+import org.dashfoundation.example.di.AppContainer
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.ContractDetail
+import org.dashfoundation.example.services.tokens.IdentityTokenSync
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.SubmitButton
@@ -238,8 +244,13 @@ fun LocalDataContractsScreen(navController: NavHostController) {
                                     IconButton(onClick = {
                                         scope.launch {
                                             try {
+                                                unwatchContractTokens(
+                                                    container, sdk, network, contract.id,
+                                                )
                                                 container.database.dataContractDao()
                                                     .delete(contract)
+                                            } catch (e: CancellationException) {
+                                                throw e
                                             } catch (e: Exception) {
                                                 errorMessage =
                                                     "Failed to delete contract: ${e.message}"
@@ -285,3 +296,31 @@ private val KNOWN_CONTRACTS = listOf(
     "Token History" to "43gujrzZgXqcKBiScLa4T8XTDnRhenR9BLx8GWVHjPxF",
     "Keyword Search" to "BsjE6tQxG47wffZCRQCovFx5rYrAYYC3rTVRWKro27LA",
 )
+
+/**
+ * Before a saved contract is deleted, re-register every wallet identity on
+ * [network] with the saved tokens that remain, so a token-sync pass already
+ * reading the deleted contract's tokens stores nothing for them once Room has
+ * cascaded the delete. Skipped when no manager or SDK is active; nothing is
+ * watched then.
+ */
+private suspend fun unwatchContractTokens(
+    container: AppContainer,
+    sdk: Sdk?,
+    network: Network,
+    contractId: ByteArray,
+) {
+    val manager = container.walletManagerStore.activeManager.value ?: return
+    val activeSdk = sdk ?: return
+    val remaining = container.database.tokenDao().getTokensByNetwork(network.ffiValue)
+        .filterNot { it.contractId.contentEquals(contractId) }
+    val identityIds = container.database.identityDao()
+        .observeWalletOwnedByNetwork(network.ffiValue).first()
+        .map { it.identityId }
+    IdentityTokenSync.watch(
+        identityIds = identityIds,
+        tokens = remaining,
+        calculateTokenId = activeSdk.tokenQueries::calculateTokenId,
+        register = manager::registerIdentityForTokenSync,
+    )
+}

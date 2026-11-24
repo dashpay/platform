@@ -64,11 +64,9 @@ object IdentityTokenSync {
         register: suspend (identityId: ByteArray, tokenIds: List<ByteArray>) -> Unit,
         syncNow: suspend () -> Unit,
     ): Boolean {
-        if (identityIds.isEmpty()) return false
-        val tokenIds = watchedTokenIds(tokens, calculateTokenId)
+        val tokenIds = watch(identityIds, tokens, calculateTokenId, register) ?: return false
+        if (tokenIds.isEmpty()) return false
         return try {
-            for (identityId in identityIds) register(identityId, tokenIds)
-            if (tokenIds.isEmpty()) return false
             syncNow()
             true
         } catch (e: CancellationException) {
@@ -76,6 +74,33 @@ object IdentityTokenSync {
         } catch (e: Exception) {
             runCatching { Log.w(TAG, "identity token sync failed", e) }
             false
+        }
+    }
+
+    /**
+     * Register each of [identityIds] with the watched ids of [tokens], without
+     * a sync pass. Contract deletion calls this with the tokens that remain
+     * before it deletes the contract, so a pass already reading the removed
+     * tokens cannot store their balances after the delete (platform-wallet
+     * stores a result only for tokens still watched). Returns the watched
+     * ids, or null when there are no identities or registration failed.
+     */
+    suspend fun watch(
+        identityIds: List<ByteArray>,
+        tokens: List<TokenEntity>,
+        calculateTokenId: suspend (contractIdBase58: String, position: Int) -> String?,
+        register: suspend (identityId: ByteArray, tokenIds: List<ByteArray>) -> Unit,
+    ): List<ByteArray>? {
+        if (identityIds.isEmpty()) return null
+        val tokenIds = watchedTokenIds(tokens, calculateTokenId)
+        return try {
+            for (identityId in identityIds) register(identityId, tokenIds)
+            tokenIds
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            runCatching { Log.w(TAG, "identity token watch update failed", e) }
+            null
         }
     }
 }

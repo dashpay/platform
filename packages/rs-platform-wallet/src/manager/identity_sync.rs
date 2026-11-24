@@ -532,7 +532,9 @@ where
     /// gate is left closed and the caller must fail closed.
     #[must_use = "None means the pass did NOT drain; the caller must fail closed"]
     pub(crate) async fn quiesce_held_within(&self, budget: Duration) -> Option<QuiesceGuard<'_>> {
-        drain_pass(&self.quiescing, &self.is_syncing, || self.stop(), budget).await
+        let guard = drain_pass(&self.quiescing, &self.is_syncing, || self.stop(), budget).await;
+        self.persistence_barrier().await;
+        guard
     }
 
     /// [`quiesce_within`](Self::quiesce_within) that **seals** the gate:
@@ -549,8 +551,17 @@ where
         let drained = guard.is_some();
         // Seal before the guard drops so its Drop cannot reopen.
         self.quiescing.seal();
+        self.persistence_barrier().await;
         drop(guard);
         drained
+    }
+
+    /// Wait out a result application already past its gate check. Results
+    /// are applied under the `state` write lock after checking the gate, so
+    /// once the gate is closed and this lock has been taken once, no pass
+    /// (including one whose drain timed out) stores anything more.
+    async fn persistence_barrier(&self) {
+        drop(self.state.write().await);
     }
 
     /// Test-only: whether new sync passes are currently barred — a drain in
@@ -691,6 +702,14 @@ where
             .unwrap_or(0);
 
         let mut state = self.state.write().await;
+        // A pass that outlived a quiesce (its drain timed out, or shutdown
+        // sealed the gate while it was reading) stores nothing: after
+        // `quiesce` returns no `persister.store(...)` may follow, or a
+        // retired manager could overwrite balances its replacement wrote.
+        // Checked under the write lock the quiesce barrier takes.
+        if self.quiescing.is_closed() {
+            return;
+        }
         let Some(existing_row) = state.get(&identity_id).cloned() else {
             return;
         };
@@ -1214,6 +1233,27 @@ mod tests {
         assert_eq!(row.tokens.len(), 1);
         assert_eq!(row.tokens[0].token_id, token_y);
         assert_eq!(row.tokens[0].balance, 0);
+    }
+
+    /// A pass that resumes after shutdown sealed the gate (its drain timed
+    /// out) stores nothing, so a retired manager cannot overwrite balances
+    /// its replacement wrote.
+    #[tokio::test]
+    async fn should_not_persist_a_result_after_the_gate_is_sealed() {
+        let (mgr, persister) = make_recording_manager();
+        let id_a = Identifier::from([1u8; 32]);
+        let token_x = Identifier::from([10u8; 32]);
+        mgr.register_identity(id_a, [token_x]).await;
+        // A pass is still reading when shutdown gives up on the drain.
+        mgr.is_syncing.store(true, Ordering::Release);
+        assert!(!mgr.quiesce_sealed_within(Duration::from_millis(50)).await);
+
+        let mut fresh = BTreeMap::new();
+        fresh.insert(token_x, Some(5u64));
+        mgr.apply_fresh_balances(id_a, fresh).await;
+
+        assert_eq!(persister.stores.load(AtomicOrdering::SeqCst), 0);
+        mgr.is_syncing.store(false, Ordering::Release);
     }
 
     /// A token proved absent (the identity holds none yet) has its stored

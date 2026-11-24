@@ -104,6 +104,23 @@ class IdentityTokenSyncTest {
     }
 
     @Test
+    fun shouldReplaceTheWatchesWithoutASyncPassBeforeAContractIsDeleted() = runTest {
+        val remaining = listOf(token(2, 0))
+        val recorder = Recorder()
+
+        val watched = IdentityTokenSync.watch(
+            listOf(identityId, otherIdentityId), remaining, calculate, recorder.register,
+        )
+
+        assertEquals(1, watched!!.size)
+        assertEquals("register only, no pass", listOf("register", "register"), recorder.calls)
+        assertArrayEquals(
+            fakeTokenId(Base58.encode(remaining.single().contractId), 0),
+            recorder.registered[0].second.single(),
+        )
+    }
+
+    @Test
     fun shouldDoNothingWithoutIdentities() = runTest {
         val recorder = Recorder()
 
