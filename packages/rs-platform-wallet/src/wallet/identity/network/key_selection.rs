@@ -1327,7 +1327,6 @@ pub(super) mod tests {
             &KeyFilter(|_| true),
             Purpose::AUTHENTICATION,
             &LEVELS,
-            &TYPES,
             scope,
         )
         .unwrap();
