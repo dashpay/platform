@@ -41,8 +41,8 @@ PACKAGES = ['dashmate-v5.1.0-3a5da22021-arm64.pkg', 'dashmate-v5.1.0-3a5da22021-
 # The release lives in STATE (JSON) and its files in RELEASE_FILES. --jq goes through real jq,
 # as gh's own filter would. An API path containing GH_PARTIAL is answered and then fails, as a
 # paginated listing does when a later page cannot be read. GH_AFTER_UPLOAD changes the release
-# right after the upload (a package replaced, the tag moved, the run restarted or a newer run of
-# another commit); GH_READ_BACK_FAILS fails downloading the signature back, and
+# right after the upload (a package replaced, the tag moved, the run restarted, the checksums job
+# re-run or a newer run of another commit); GH_READ_BACK_FAILS fails downloading the signature back, and
 # GH_UPLOAD_FAILS the upload itself. GH_AFTER_DOWNLOAD changes the release once the packages are
 # downloaded, as a re-run or another maintainer could while this one signs. GH_UPLOAD_FAILS fails
 # the upload: with 1 nothing is attached, with `created` or `partial` the asset is created with
@@ -209,6 +209,13 @@ if args[:2] == ['release', 'upload']:
         state['tag_commit'] = '3d8365918935a2cad03b04fa70d8bb9d07f9a849'
     if after == 'run-restarted':
         state['runs'][0]['status'] = 'in_progress'
+    if after == 'checksums-job-rerun':
+        # a re-run of the checksums job alone keeps the run and its commit; it sees the
+        # signature and fails without touching an asset
+        checksums = next(job for job in state['jobs'][str(state['runs'][0]['id'])]
+                         if job['name'] == 'Release Dashmate checksums')
+        state['logs'][str(checksums['id'] + 100)] = state['logs'][str(checksums['id'])]
+        checksums.update(id=checksums['id'] + 100, conclusion='failure')
     if after == 'run-of-another-commit':
         state['runs'].insert(0, dict(state['runs'][0], id=state['runs'][0]['id'] + 1,
                                      head_sha='3d8365918935a2cad03b04fa70d8bb9d07f9a849'))
@@ -775,6 +782,9 @@ class SignDashmateChecksumsTests(ReleaseFixture):
                 {'GH_AFTER_UPLOAD': 'tag-moved'}, f'{TAG} names {OTHER_SHA}, not {HEAD_SHA}'),
             'a re-run started during the upload': (
                 {'GH_AFTER_UPLOAD': 'run-restarted'}, f'{RUN_ID} (in_progress)'),
+            'the checksums job re-run during the upload': (
+                {'GH_AFTER_UPLOAD': 'checksums-job-rerun'},
+                'the release.yml run or its Release Dashmate checksums job changed while SHA256SUMS.asc was uploaded'),
             'a run of another commit during the upload': (
                 {'GH_AFTER_UPLOAD': 'run-of-another-commit'},
                 f'release.yml run {RUN_ID + 1} built {OTHER_SHA}, not {HEAD_SHA}'),

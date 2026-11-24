@@ -358,9 +358,13 @@ done
 ASSETS="$(release_assets)" || fail_attached "could not list its assets"
 check_published_packages "${ASSETS}" "${DIR}/SHA256SUMS" \
   || fail_attached "the dashmate packages it serves are not the ones its SHA256SUMS lists (< served, > listed)"
-# The tag or the newest run can have moved while the signature was uploaded: success only for a
-# release still approved at --commit.
+# The tag, the newest run or its checksums job can have changed while the signature was uploaded:
+# success only for the same run and job, still approved at --commit.
 FINAL_RUN="$(finished_run fail_attached)" || exit 1
 check_commit "${FINAL_RUN}" fail_attached
+FINAL_JOB="$(checksums_job "${RUN_ID}")" || fail_attached "the jobs of release.yml run ${RUN_ID} could not be listed"
+if [ "${FINAL_RUN}" != "${RUN}" ] || [ "${FINAL_JOB}" != "${JOB}" ]; then
+  fail_attached "the release.yml run or its Release Dashmate checksums job changed while SHA256SUMS.asc was uploaded"
+fi
 
 echo "Attached SHA256SUMS.asc to ${TAG}; the release serves the signed SHA256SUMS and the packages it lists."
