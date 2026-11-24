@@ -273,14 +273,12 @@ mod tests {
         assert!(event.is_object(), "event must be an object, got {event}");
         assert_eq!(event["$kind"], "tokenEvent");
         assert_eq!(event["$type"], "mint");
-        assert!(
-            json.contains(&serde_json::to_string(&note).expect("note encodes")),
-            "the note must round-trip exactly: {json}"
-        );
+        assert_eq!(event["publicNote"].as_str(), Some(note.as_str()));
         assert_eq!(
             parsed[1]["id"],
             bs58::encode(closed_id.as_bytes()).into_string()
         );
-        assert!(parsed[1]["action"].is_null());
+        // An explicit null, not a missing key (indexing a missing key yields Null too).
+        assert_eq!(parsed[1].get("action"), Some(&serde_json::Value::Null));
     }
 }

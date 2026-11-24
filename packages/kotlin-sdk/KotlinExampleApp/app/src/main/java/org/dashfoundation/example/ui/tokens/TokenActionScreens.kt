@@ -959,11 +959,12 @@ private fun PurchaseForm(
 
 /**
  * Run an identity-funded [purchase] and say what happened. Success means
- * Platform accepted the transition; the proof may show only the buyer's
- * balance (a token without purchase history), so it is worded as accepted,
- * not as a receipt. An unconfirmed broadcast may still execute: the buyer
- * is told to check before trying again, and the form closes, as the
- * shielded path does. Other errors propagate to the form's error dialog.
+ * the SDK returned no error; the proof may show only the buyer's balance (a
+ * token without purchase history), so it is worded as submitted, not as a
+ * receipt. An unconfirmed broadcast may still execute: the buyer is told not
+ * to submit again until its outcome is known (a balance snapshot cannot
+ * settle it), and the form closes, as the shielded path does. Other errors
+ * propagate to the form's error dialog.
  */
 internal suspend fun identityPurchaseNotice(
     amountText: String,
@@ -973,9 +974,9 @@ internal suspend fun identityPurchaseNotice(
     purchase()
     TokenActionNotice(
         title = "Purchase submitted",
-        message = "Platform accepted the purchase of $amountText for $totalCost credits from this " +
-            "identity's balance. The token balance shows it after the next refresh. Do not buy " +
-            "again unless you want more.",
+        message = "The purchase of $amountText for $totalCost credits from this identity's " +
+            "balance was submitted and Platform returned no error. Do not buy again unless you " +
+            "want more.",
         testTag = "tokenPurchase.outcome",
     )
 } catch (e: CancellationException) {
@@ -985,8 +986,8 @@ internal suspend fun identityPurchaseNotice(
     TokenActionNotice(
         title = "Purchase may have gone through",
         message = "The purchase of $amountText for $totalCost credits was sent, but its result " +
-            "could not be confirmed. It may still go through. Check this identity's token " +
-            "balance before trying again.",
+            "could not be confirmed, and it may still go through. Do not submit it again until " +
+            "you know its outcome: an unchanged token balance does not mean it failed.",
         testTag = "tokenPurchase.outcome",
     )
 }

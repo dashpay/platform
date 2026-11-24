@@ -49,6 +49,13 @@ import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.toHex
 
 /**
+ * What a form shows after its action returned: everything the dialog
+ * renders, fixed when the action ends, so a configuration change cannot
+ * relabel it from form state that is reloading.
+ */
+data class TokenActionNotice(val title: String, val message: String, val testTag: String)
+
+/**
  * Shared submit state for the 12 token-action forms — the Kotlin
  * counterpart of the `isSubmitting` / `submitError` / `submitGeneration`
  * trio each `TokenXxxActionView.swift` carries. Scoped to the action's
@@ -56,13 +63,6 @@ import org.dashfoundation.example.util.toHex
  * late-resolving submit from the old instance can't write into the new
  * one (the role of the Swift generation counter).
  */
-/**
- * What a form shows after its action returned: everything the dialog
- * renders, fixed when the action ends, so a configuration change cannot
- * relabel it from form state that is reloading.
- */
-data class TokenActionNotice(val title: String, val message: String, val testTag: String)
-
 class TokenActionViewModel : ViewModel() {
 
     var isSubmitting by mutableStateOf(false)
@@ -85,7 +85,7 @@ class TokenActionViewModel : ViewModel() {
     private var noticeDismissed: CompletableDeferred<Unit>? = null
 
     /**
-     * Show [message] and suspend until [dismissNotice]. Called at the end
+     * Show [notice] and suspend until [dismissNotice]. Called at the end
      * of a [submit] block whose result the user must read before the form
      * pops: the action is over, so no retry is offered while it shows.
      */
