@@ -963,9 +963,12 @@ async fn should_not_refuse_a_clear_while_a_balance_read_waits_for_the_store() {
         .try_admit_clear()
         .expect("a Clear is admitted while the read waits");
     assert!(coordinator.clear_in_progress());
-    // The scan ends with the Clear still admitted.
+    // The scan ends with the Clear still admitted. Bounded here, so a read
+    // that came to wait for the Clear fails instead of hanging the test.
     drop(scan);
-    let during = waiting.await;
+    let during = tokio::time::timeout(std::time::Duration::from_secs(5), waiting)
+        .await
+        .expect("the balance read finishes while the Clear is admitted");
     assert!(
         matches!(during, Err(PlatformWalletError::ShieldedBalanceBusy)),
         "{during:?}"
