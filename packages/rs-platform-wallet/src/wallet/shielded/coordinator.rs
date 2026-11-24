@@ -902,6 +902,15 @@ impl NetworkShieldedCoordinator {
     /// here before starting it. The admission is spent by
     /// [`ShieldedClearAdmission::clear`]; while it is held, every new
     /// operation waits.
+    /// Whether a Clear is admitted right now ([`Self::try_admit_clear`]).
+    /// Asks without holding the admission, so asking never refuses a Clear:
+    /// a local read that must not use rows a Clear is purging checks this
+    /// after it read them, instead of taking
+    /// [`operation_guard`](Self::operation_guard) for the read.
+    pub(crate) fn clear_in_progress(&self) -> bool {
+        self.operation_admission.try_read().is_err()
+    }
+
     pub(crate) fn try_admit_clear(
         &self,
     ) -> Result<ShieldedClearAdmission<'_>, PlatformWalletError> {
@@ -1085,6 +1094,27 @@ impl NetworkShieldedCoordinator {
         if !stale.is_empty() {
             let mut store = self.store.write().await;
             for (id, _) in stale {
+                // The check above ran under a store guard it released. A
+                // spend that holds neither the lifecycle mutex nor the
+                // account-set lock (a credit pool transfer, unshield or
+                // withdrawal) can have saved its record since. Purging the
+                // account now would delete that record while the spend may
+                // still execute, so the account's state stays: it is no
+                // longer registered, and what reads the record fails closed
+                // asking for the account until it is bound again.
+                let holds_a_spend = store
+                    .pending_redrives(id)
+                    .map(|records| records.iter().any(|record| !record.nullifiers.is_empty()))
+                    .unwrap_or(true);
+                if holds_a_spend {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(id.wallet_id),
+                        account = id.account_index,
+                        "a shielded spend from a dropped account saved its record while the \
+                         account was dropped; its store state is kept"
+                    );
+                    continue;
+                }
                 if let Err(e) = store.purge_subwallet(id) {
                     tracing::warn!(
                         wallet_id = %hex::encode(id.wallet_id),

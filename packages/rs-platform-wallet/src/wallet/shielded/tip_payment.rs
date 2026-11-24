@@ -30,6 +30,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::sync::OwnedMutexGuard;
 
@@ -155,6 +156,10 @@ pub enum ShieldedIdentityBalance {
         credits: u64,
     },
 }
+
+/// How long [`PlatformWallet::shielded_identity_balance_now`] waits for the
+/// shielded store before it reports it busy.
+pub const SHIELDED_IDENTITY_BALANCE_WAIT: Duration = Duration::from_millis(100);
 
 /// Credits in one DASH: 10^8 duffs of [`CREDITS_PER_DUFF`] credits each.
 const CREDITS_PER_DASH: u64 = 100_000_000 * CREDITS_PER_DUFF;
@@ -470,24 +475,21 @@ impl PlatformWallet {
         username: &str,
         expected_identity: Option<&Identifier>,
     ) -> Result<ShieldedTipReview, PlatformWalletError> {
-        // Refused before the lookups, and checked again under the store
-        // lock below.
+        // Refused before the lookups, and checked again below.
         self.ensure_shielded_bound_on(coordinator)?;
-        let keys = self.bound_shielded_keys().await?;
         let recipient = self
             .resolve_tip_recipient(username, expected_identity)
             .await?;
-        // Admitted like an operation for the local read: a Clear cannot run
-        // while it is held, so the binding checked below and the rows read
-        // under it are of the same state. A Clear that ran during the
-        // lookups has advanced the generation by now.
-        let _operation = coordinator.operation_guard().await;
+        // Read after the lookups: an account bound meanwhile is in them.
+        let keys = self.bound_shielded_keys().await?;
+        // This wait can be as long as a scan. It is made without the
+        // coordinator's operation admission, which would refuse a Clear for
+        // as long as the review waited.
         let store = coordinator.store().read().await;
-        // The keys this handle holds outlive a Clear, and a caller may pass
-        // another coordinator: its store would hold neither the recipients
-        // this wallet confirmed nor its unresolved transfers, and the review
-        // would show a changed or still unpaid recipient as new and free.
-        self.ensure_shielded_bound_on(coordinator)?;
+        // An account bound during that wait too, when the keys can be read
+        // at once. They are not waited for under the store guard: a bind
+        // holds them while it waits for the store.
+        let keys = self.bound_shielded_keys_now().unwrap_or(keys);
         let previous =
             confirmed_recipient(&store, self.wallet_id(), &tip_recipient_label(username))?;
         let unresolved = pays_unresolved(
@@ -495,6 +497,16 @@ impl PlatformWallet {
             &recipient,
             previous.as_ref(),
         );
+        // The rows were read under the store guard still held. They are not
+        // this wallet's history if a Clear is purging them (it is admitted
+        // from before its purge until it has advanced the generation), if
+        // one finished since the wallet was bound, or if the caller passed
+        // another coordinator: the review would then show a changed or
+        // still unpaid recipient as new and free.
+        if coordinator.clear_in_progress() {
+            return Err(PlatformWalletError::ShieldedNotBound);
+        }
+        self.ensure_shielded_bound_on(coordinator)?;
         Ok(ShieldedTipReview {
             change: recipient_change(previous, &recipient),
             recipient,
@@ -661,6 +673,9 @@ impl PlatformWallet {
                 "A tip amount must be more than zero".to_string(),
             ));
         }
+        // The account must be bound and the seed must derive its key, or the
+        // transfer refuses the tip only after the recipient was recorded.
+        self.derive_spend_keyset(seed, account).await?;
         let keys = self.bound_shielded_keys().await?;
         // Paid to the paying account itself, the payment is one more of the
         // account's own outputs beside its change, and an unresolved one
@@ -747,11 +762,6 @@ impl PlatformWallet {
         coordinator: &Arc<NetworkShieldedCoordinator>,
         identity_id: &Identifier,
     ) -> Result<ShieldedIdentityBalance, PlatformWalletError> {
-        // Admitted like an operation from before the preparation is read
-        // until the ledger is: a Clear ends a preparation, and none can run
-        // in between, so the account proved and the ledger read are of the
-        // same state.
-        let _operation = coordinator.operation_guard().await;
         self.ensure_wallet_identity(identity_id).await?;
         let Some(account) = self.prepared_shielded_identity_account(identity_id).await else {
             return Ok(ShieldedIdentityBalance::Unverified);
@@ -769,10 +779,40 @@ impl PlatformWallet {
                 None
             }
         };
+        // A Clear ends the preparation: one that is purging the ledger just
+        // read, or that finished since the preparation was read, leaves the
+        // account unproved. Checked after the read rather than by holding
+        // the coordinator's operation admission across it, which would
+        // refuse a Clear for as long as the read waited for the store.
+        if coordinator.clear_in_progress()
+            || self.prepared_shielded_identity_account(identity_id).await != Some(account)
+        {
+            return Ok(ShieldedIdentityBalance::Unverified);
+        }
         Ok(match established {
             Some(credits) => ShieldedIdentityBalance::Available { account, credits },
             None => ShieldedIdentityBalance::Unavailable { account },
         })
+    }
+
+    /// [`Self::shielded_identity_balance`] for a caller that must not wait
+    /// for the shielded store, which a scan or a spend can hold for minutes
+    /// (a screen refreshing a balance): the read is given
+    /// [`SHIELDED_IDENTITY_BALANCE_WAIT`], and fails with
+    /// [`PlatformWalletError::ShieldedBalanceBusy`] when the store stays
+    /// held past it. That is the one error of this read that means keep the
+    /// state last read and read again; every other one is a failure.
+    pub async fn shielded_identity_balance_now(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+        identity_id: &Identifier,
+    ) -> Result<ShieldedIdentityBalance, PlatformWalletError> {
+        tokio::time::timeout(
+            SHIELDED_IDENTITY_BALANCE_WAIT,
+            self.shielded_identity_balance(coordinator, identity_id),
+        )
+        .await
+        .unwrap_or(Err(PlatformWalletError::ShieldedBalanceBusy))
     }
 
     /// Admit one shielded tip from this wallet, or refuse with
@@ -840,6 +880,12 @@ impl PlatformWallet {
             .await
             .clone()
             .ok_or(PlatformWalletError::ShieldedNotBound)
+    }
+
+    /// [`Self::bound_shielded_keys`] without waiting: `None` while the keys
+    /// are being replaced, or when the wallet is not bound.
+    fn bound_shielded_keys_now(&self) -> Option<BTreeMap<u32, AccountViewingKeys>> {
+        self.shielded_keys.try_read().ok()?.clone()
     }
 
     /// [`PlatformWalletError::IdentityNotFound`] unless this wallet holds

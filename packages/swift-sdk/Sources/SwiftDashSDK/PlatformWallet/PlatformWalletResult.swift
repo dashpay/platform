@@ -331,8 +331,9 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorBalanceHistoryInconsistentHeights = 83
     /// A shielded Clear was refused because a shielded operation (a bind, an
     /// account being added, a token pool transfer or unshield, a DashPay
-    /// profile write or a tip address preparation, or another Clear) is in
-    /// flight. Clear does not wait for it: nothing was changed and sync keeps
+    /// profile write, a tip address preparation or a shielded tip being
+    /// sent, or another Clear) is in flight. Clear does not wait for it:
+    /// nothing was changed and sync keeps
     /// running, so the host keeps its rows. Retry once it has finished.
     case errorShieldedOperationInProgress = 84
     /// A shielded tip was refused before anything was selected, built or

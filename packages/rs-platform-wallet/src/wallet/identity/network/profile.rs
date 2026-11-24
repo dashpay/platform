@@ -584,6 +584,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// its profile carries no valid `shieldedAddress`
     /// ([`validated_shielded_address`]). Reads nothing from, and writes
     /// nothing to, the local profile caches.
+    #[cfg(feature = "shielded")]
     pub(crate) async fn published_shielded_address(
         &self,
         identity_id: &Identifier,

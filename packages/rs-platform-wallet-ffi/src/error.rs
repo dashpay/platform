@@ -785,7 +785,8 @@ pub enum PlatformWalletFFIResultCode {
     /// Maps `PlatformWalletError::ShieldedOperationInProgress`: a shielded
     /// Clear was refused because a shielded operation (a bind, an account
     /// being added, a token pool transfer or unshield, a DashPay profile
-    /// write or a tip address preparation, or another Clear) is in flight.
+    /// write, a tip address preparation or a shielded tip being sent, or
+    /// another Clear) is in flight.
     /// Clear does not wait for it: it returned at once and changed nothing,
     /// so the sync loop keeps running and the host must not wipe its own
     /// rows. Retryable once the operation has finished. Returned by
@@ -814,10 +815,10 @@ pub enum PlatformWalletFFIResultCode {
     /// A local shielded balance read did not get the shielded store within
     /// its wait budget, because a scan or a spend holds it. Nothing failed
     /// and nothing changed: keep the last state shown and read again later.
-    /// The only code of that read that means retry. Maps no
-    /// `PlatformWalletError` variant: the FFI export decides it from its own
-    /// timeout. Returned by
-    /// `platform_wallet_manager_shielded_identity_balance`;
+    /// The only code of that read that means retry. Maps
+    /// `PlatformWalletError::ShieldedBalanceBusy`, which the wallet's bounded
+    /// read (`PlatformWallet::shielded_identity_balance_now`) returns.
+    /// Returned by `platform_wallet_manager_shielded_identity_balance`;
     /// `platform_wallet_manager_local_shielded_balance_snapshot` still
     /// reports its busy case as [`Self::ErrorWalletOperation`] (6).
     ErrorShieldedBalanceBusy = 87,
@@ -1325,6 +1326,11 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // to another identity than the contact it was started from.
             PlatformWalletError::ShieldedTipRecipientMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedTipRecipientMismatch
+            }
+            // A bounded balance read that found the shielded store held:
+            // nothing failed, and the host reads again later.
+            PlatformWalletError::ShieldedBalanceBusy => {
+                PlatformWalletFFIResultCode::ErrorShieldedBalanceBusy
             }
             // The wallet's private payments from an earlier process are not
             // restored yet: wallet readiness, not one contact's pending request.
@@ -3350,6 +3356,12 @@ mod private_contact_request_error_tests {
             PlatformWalletFFIResultCode::ErrorShieldedBalanceBusy as u32,
             87
         );
+        let mut result = PlatformWalletFFIResult::from(PlatformWalletError::ShieldedBalanceBusy);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedBalanceBusy
+        );
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
     }
 
     /// A public contact request a loaded wallet refuses until its private

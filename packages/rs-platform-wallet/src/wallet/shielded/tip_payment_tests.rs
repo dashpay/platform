@@ -25,8 +25,8 @@ use grovedb_commitment_tree::{
     NoteValue, Nullifier, OrchardDomain, OutgoingViewingKey, PaymentAddress, RandomSeed, Rho,
     ValueCommitTrapdoor, ValueCommitment, NOTE_COMMITMENT_TREE_DEPTH,
 };
-use rand::rngs::OsRng;
-use rand::RngCore;
+use rand::rngs::StdRng;
+use rand::{RngCore, SeedableRng};
 
 use super::activity::compute_activity_id;
 use super::activity_recorder::visible_output_cmxs;
@@ -57,20 +57,30 @@ fn keys_of(seed_byte: u8, account: u32) -> AccountViewingKeys {
         .viewing_keys()
 }
 
-fn random_bytes() -> [u8; 32] {
+fn random_bytes(rng: &mut StdRng) -> [u8; 32] {
     let mut bytes = [0u8; 32];
-    OsRng.fill_bytes(&mut bytes);
+    rng.fill_bytes(&mut bytes);
     bytes
+}
+
+/// The randomness of one output, seeded from what the output is (whom it
+/// pays, and whether the paying account's key opens it), so a failing test
+/// builds the same bytes when it is run again.
+fn output_rng(recipient: &PaymentAddress, keyed: bool) -> StdRng {
+    let raw = recipient.to_raw_address_bytes();
+    let mut seed = [0u8; 8];
+    seed.copy_from_slice(&raw[..8]);
+    StdRng::seed_from_u64(u64::from_le_bytes(seed) ^ u64::from(keyed))
 }
 
 /// One action of a transfer as the builder emits it: an output note to
 /// `recipient`, whose outgoing ciphertext is keyed to `ovk`. `None` is a
 /// padding output, keyed to a random key that nothing opens.
 fn output_to(recipient: PaymentAddress, ovk: Option<OutgoingViewingKey>) -> SerializedAction {
-    let mut rng = OsRng;
+    let mut rng = output_rng(&recipient, ovk.is_some());
     // The output note's rho is the nullifier of the note the action spends.
     let (nullifier, rho) = loop {
-        let bytes = random_bytes();
+        let bytes = random_bytes(&mut rng);
         if let (Some(nullifier), Some(rho)) = (
             Nullifier::from_bytes(&bytes).into_option(),
             Rho::from_bytes(&bytes).into_option(),
@@ -79,7 +89,7 @@ fn output_to(recipient: PaymentAddress, ovk: Option<OutgoingViewingKey>) -> Seri
         }
     };
     let rseed = loop {
-        if let Some(rseed) = RandomSeed::from_bytes(random_bytes(), &rho).into_option() {
+        if let Some(rseed) = RandomSeed::from_bytes(random_bytes(&mut rng), &rho).into_option() {
             break rseed;
         }
     };
@@ -89,7 +99,7 @@ fn output_to(recipient: PaymentAddress, ovk: Option<OutgoingViewingKey>) -> Seri
         .expect("valid note parts");
     let cmx = ExtractedNoteCommitment::from(note.commitment());
     let rcv = loop {
-        if let Some(rcv) = ValueCommitTrapdoor::from_bytes(random_bytes()).into_option() {
+        if let Some(rcv) = ValueCommitTrapdoor::from_bytes(random_bytes(&mut rng)).into_option() {
             break rcv;
         }
     };
@@ -506,10 +516,24 @@ fn should_fail_closed_when_a_saved_transfer_does_not_say_whom_it_pays() {
         })
     ));
 
-    // The keys of another seed open nothing either.
+    // The keys of another seed open nothing of an intact transfer either.
+    let (mut store, _) = store_at("tip_keys_of_another_seed");
+    store
+        .arm_redrive(id, transfer_paying(&payer, paid))
+        .expect("arm");
+    assert_eq!(
+        unresolved_transfer_recipients(&store, WALLET, &keys)
+            .unwrap()
+            .len(),
+        1,
+        "the record reads with its own account's keys"
+    );
     assert!(matches!(
         unresolved_transfer_recipients(&store, WALLET, &BTreeMap::from([(0, keys_of(3, 0))])),
-        Err(PlatformWalletError::ShieldedRecoveryCorrupted { .. })
+        Err(PlatformWalletError::ShieldedRecoveryCorrupted {
+            account_index: Some(0),
+            ..
+        })
     ));
 
     // A transfer paid from an account whose keys are not bound.
@@ -799,6 +823,25 @@ async fn should_refuse_a_zero_tip_before_confirming_its_recipient() {
         matches!(result, Err(PlatformWalletError::InvalidParameter(_))),
         "{result:?}"
     );
+    // Nor does a tip from an account that is not bound: it could never be
+    // paid, so it confirms nothing either.
+    let result = wallet
+        .send_resolved_shielded_tip(
+            &coordinator,
+            &seed[..],
+            ShieldedTipSource::Account(5),
+            5,
+            "b0b",
+            &paid,
+            1_000,
+            [0; 36],
+            &CachedOrchardProver::new(),
+        )
+        .await;
+    assert!(
+        matches!(result, Err(PlatformWalletError::ShieldedKeyDerivation(_))),
+        "{result:?}"
+    );
     assert_eq!(
         coordinator
             .store()
@@ -808,6 +851,53 @@ async fn should_refuse_a_zero_tip_before_confirming_its_recipient() {
             .unwrap(),
         None
     );
+}
+
+/// A balance read that waits for the shielded store does not hold the
+/// coordinator's operation admission, so a Clear requested meanwhile is
+/// admitted. The bounded read reports the held store as busy, by its own
+/// error.
+#[tokio::test]
+async fn should_not_refuse_a_clear_while_a_balance_read_waits_for_the_store() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tip_balance_read_and_clear").await;
+    wallet
+        .prepare_shielded_identity_address(&seed[..], &id, &coordinator)
+        .await
+        .expect("prepare");
+    let account = shielded_identity_account_index(2).unwrap();
+
+    // A scan holds the store.
+    let scan = coordinator.store().write().await;
+    let busy = wallet
+        .shielded_identity_balance_now(&coordinator, &id)
+        .await;
+    assert!(
+        matches!(busy, Err(PlatformWalletError::ShieldedBalanceBusy)),
+        "{busy:?}"
+    );
+    let waiting = tokio::spawn({
+        let (wallet, coordinator) = (wallet.clone(), Arc::clone(&coordinator));
+        async move { wallet.shielded_identity_balance(&coordinator, &id).await }
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    assert!(!waiting.is_finished(), "the read waits for the store");
+    drop(
+        coordinator
+            .try_admit_clear()
+            .expect("a Clear is admitted while the read waits"),
+    );
+    drop(scan);
+    assert_eq!(
+        waiting.await.expect("join").expect("read"),
+        ShieldedIdentityBalance::Unavailable { account }
+    );
+    // An identity the wallet does not hold is not a busy store.
+    assert!(matches!(
+        wallet
+            .shielded_identity_balance_now(&coordinator, &Identifier::from([0x01; 32]))
+            .await,
+        Err(PlatformWalletError::IdentityNotFound(_))
+    ));
 }
 
 /// A tip to an address of the account it is paid from is refused: its

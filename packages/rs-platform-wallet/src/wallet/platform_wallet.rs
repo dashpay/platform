@@ -1917,7 +1917,7 @@ impl PlatformWallet {
     ///   loudly here instead of burning a ~30 s Halo 2 proof on a
     ///   spend the chain would reject.
     #[cfg(feature = "shielded")]
-    async fn derive_spend_keyset(
+    pub(crate) async fn derive_spend_keyset(
         &self,
         seed: &[u8],
         account: u32,
