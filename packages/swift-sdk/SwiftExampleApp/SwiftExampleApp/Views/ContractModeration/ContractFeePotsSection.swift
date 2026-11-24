@@ -257,7 +257,7 @@ struct ContractFeePotsSection: View {
                     severity: .warning,
                     fields: [
                         "wallet_reference": .reference(walletId),
-                        "contract_reference": .reference(contractIdBytes),
+                        "contract_reference": .keyedReference(contractIdBytes),
                     ]
                 )
                 continue

@@ -53,9 +53,9 @@ final class ContractModerationOfferStoreTests: XCTestCase {
         { wallets[$0] }
     }
 
-    /// No wallet on the network holds an identity: no wallet is asked, and
-    /// the store says so instead of saying nobody moderates.
-    func testShouldSayNoWalletWasAskedWhenNoWalletHoldsAnIdentity() async {
+    /// No wallet linked to an identity on the network is found: no wallet
+    /// is asked, and the store says so instead of saying nobody moderates.
+    func testShouldSayNoWalletWasAskedWhenNoLinkedWalletIsFound() async {
         let store = ContractModerationOfferStore()
         var lookups = 0
 
@@ -67,7 +67,7 @@ final class ContractModerationOfferStoreTests: XCTestCase {
         XCTAssertEqual(lookups, 0)
         XCTAssertTrue(store.loadedOnce)
         XCTAssertFalse(store.isLoading)
-        XCTAssertTrue(store.noWalletHoldsIdentity)
+        XCTAssertTrue(store.noLinkedWallet)
         XCTAssertFalse(store.nobodyModerates)
         XCTAssertEqual(store.askedWalletCount, 0)
         XCTAssertEqual(store.unloadedWalletCount, 0)
@@ -89,7 +89,7 @@ final class ContractModerationOfferStoreTests: XCTestCase {
 
         XCTAssertEqual(store.unloadedWalletCount, 1)
         XCTAssertEqual(store.askedWalletCount, 1)
-        XCTAssertFalse(store.noWalletHoldsIdentity)
+        XCTAssertFalse(store.noLinkedWallet)
         XCTAssertFalse(store.nobodyModerates)
         XCTAssertNil(store.errorMessage)
         XCTAssertEqual(store.moderators.map(\.identityIdBase58), [identityB])
@@ -110,7 +110,7 @@ final class ContractModerationOfferStoreTests: XCTestCase {
 
         XCTAssertEqual(store.unloadedWalletCount, 2)
         XCTAssertEqual(store.askedWalletCount, 0)
-        XCTAssertFalse(store.noWalletHoldsIdentity)
+        XCTAssertFalse(store.noLinkedWallet)
         XCTAssertFalse(store.nobodyModerates)
         XCTAssertNil(store.errorMessage)
         XCTAssertTrue(store.moderators.isEmpty)
@@ -173,7 +173,7 @@ final class ContractModerationOfferStoreTests: XCTestCase {
         )
 
         XCTAssertTrue(store.nobodyModerates)
-        XCTAssertFalse(store.noWalletHoldsIdentity)
+        XCTAssertFalse(store.noLinkedWallet)
         XCTAssertEqual(store.unloadedWalletCount, 0)
         XCTAssertEqual(store.moderatorsTeam, .noModeration)
     }
@@ -196,6 +196,34 @@ final class ContractModerationOfferStoreTests: XCTestCase {
         XCTAssertEqual(store.moderators.map(\.walletId), [walletA])
     }
 
+    /// A base58 id that is not 32 bytes is refused before any wallet is
+    /// looked up, and is not reported as no linked wallet.
+    func testShouldRefuseAContractIdThatIsNot32Bytes() async {
+        let store = ContractModerationOfferStore()
+        var lookups = 0
+
+        await store.reload(contractId: "1", walletIds: []) { _ in
+            lookups += 1
+            return nil
+        }
+
+        XCTAssertEqual(lookups, 0)
+        XCTAssertEqual(store.errorMessage, "The contract id must be a 32-byte base58 identifier.")
+        XCTAssertFalse(store.noLinkedWallet)
+        XCTAssertFalse(store.nobodyModerates)
+        XCTAssertEqual(store.askedWalletCount, 0)
+        XCTAssertTrue(store.loadedOnce)
+        XCTAssertFalse(store.isLoading)
+
+        // With a wallet id listed, still no wallet is looked up
+        await store.reload(contractId: "1", walletIds: [walletA]) { _ in
+            lookups += 1
+            return nil
+        }
+        XCTAssertEqual(lookups, 0)
+        XCTAssertEqual(store.unloadedWalletCount, 0)
+    }
+
     /// Clearing drops the counts with the answer, so a later screen does
     /// not show a stale note.
     func testShouldDropTheCountsOnClear() async {
@@ -207,7 +235,7 @@ final class ContractModerationOfferStoreTests: XCTestCase {
 
         XCTAssertEqual(store.unloadedWalletCount, 0)
         XCTAssertEqual(store.askedWalletCount, 0)
-        XCTAssertFalse(store.noWalletHoldsIdentity)
+        XCTAssertFalse(store.noLinkedWallet)
         XCTAssertFalse(store.loadedOnce)
     }
 }

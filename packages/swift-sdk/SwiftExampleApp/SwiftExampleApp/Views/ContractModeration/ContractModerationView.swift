@@ -86,10 +86,10 @@ struct ContractModerationView: View {
                     text: "Could not ask who may moderate: \(error)",
                     identifier: "contractModeration.offer.error"
                 )
-            } else if offers.loadedOnce && offers.noWalletHoldsIdentity {
+            } else if offers.loadedOnce && offers.noLinkedWallet {
                 ModerationMessageRow(
                     kind: .empty,
-                    text: "No loaded wallet on this network holds an identity, so no wallet was asked who may moderate this contract.",
+                    text: "No wallet linked to an identity on this network was found in this app, so no wallet was asked who may moderate this contract.",
                     identifier: "contractModeration.offer.noWallet"
                 )
             } else if offers.nobodyModerates {

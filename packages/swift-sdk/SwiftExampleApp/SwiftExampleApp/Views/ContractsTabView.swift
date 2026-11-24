@@ -248,7 +248,8 @@ struct ContractsTabView: View {
                     ? nil
                     : { Task { await savePreview(preview) } },
                 isSaving: isSavingPreview,
-                appModelContainer: modelContext.container
+                appModelContainer: modelContext.container,
+                moderationGeneration: preview.sdkGeneration
             )
             .environmentObject(platformState)
             .environmentObject(walletManager)
@@ -802,12 +803,15 @@ struct ContractsTabView: View {
             await MainActor.run { searchError = "SDK not initialized" }
             return
         }
+        // The connection of the SDK the fetch goes through, read with it
+        let sdkGeneration = platformState.sdkGeneration
 
         await MainActor.run { searchInFlight = true }
         do {
             let preview = try await ContractDownloader.previewContractInMemory(
                 contractId: result.contractIdBase58,
                 sdk: sdk,
+                sdkGeneration: sdkGeneration,
                 network: platformState.currentNetwork
             )
             await MainActor.run {

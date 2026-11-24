@@ -20,6 +20,12 @@ struct DataContractDetailsView: View {
     /// hub then reads identities and signs against the app's store, not the
     /// preview's. Nil when this view already runs on the app's store.
     var appModelContainer: ModelContainer? = nil
+    /// `AppState.sdkGeneration` of the SDK this contract was read through.
+    /// Set for a preview fetched from the network: the moderation hub is
+    /// scoped to that connection, so after an SDK rebuild it asks the user
+    /// to reopen. Nil for a saved contract, whose hub takes the connection
+    /// current when it is opened.
+    var moderationGeneration: Int? = nil
     @Environment(\.dismiss) var dismiss
     /// Read for the connection the moderation screens are opened on.
     @EnvironmentObject var appState: AppState
@@ -312,10 +318,11 @@ struct DataContractDetailsView: View {
                 value: ModerationRoute(
                     // The connection is captured as the hub is opened: once it is
                     // replaced, the hub shows a notice rather than read this id
-                    // through the new SDK, which may hold another chain's contract
+                    // through the new SDK, which may hold another chain's contract.
+                    // A preview keeps the connection it was fetched through
                     scope: ModerationScope(
                         contractId: contract.idBase58,
-                        generation: appState.sdkGeneration
+                        generation: moderationGeneration ?? appState.sdkGeneration
                     ),
                     documentTypeNames: (contract.documentTypes ?? []).map(\.name).sorted()
                 )

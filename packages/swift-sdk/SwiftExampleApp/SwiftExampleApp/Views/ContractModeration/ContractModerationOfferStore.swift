@@ -16,9 +16,9 @@ import SwiftDashSDK
 /// still gets a control, and its moderation fails when sent with that error,
 /// which the screen shows inline.
 ///
-/// When no wallet was asked, because none on this network holds an identity
-/// or none of those is loaded, the screen says so rather than that nobody
-/// moderates.
+/// When no wallet was asked, because the app finds no wallet linked to an
+/// identity on this network or none of those is loaded, the screen says so
+/// rather than that nobody moderates.
 @MainActor
 final class ContractModerationOfferStore: ObservableObject {
     /// One identity Rust named, with the wallet that holds it. Two wallets
@@ -41,9 +41,11 @@ final class ContractModerationOfferStore: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var isLoading = false
     @Published private(set) var loadedOnce = false
-    /// Whether the last answer asked no wallet because no wallet on this
-    /// network holds an identity. It says nothing about who moderates.
-    @Published private(set) var noWalletHoldsIdentity = false
+    /// Whether the last answer asked no wallet because this app's local data
+    /// links no wallet to an identity on this network. An identity can
+    /// arrive before its wallet row, so this says only what was found here,
+    /// and nothing about who moderates.
+    @Published private(set) var noLinkedWallet = false
     /// How many wallets holding identities on this network are not loaded,
     /// so they were not asked in the last answer.
     @Published private(set) var unloadedWalletCount = 0
@@ -94,18 +96,19 @@ final class ContractModerationOfferStore: ObservableObject {
             moderators = []
             moderatorsTeam = nil
             loadedOnce = false
-            noWalletHoldsIdentity = false
+            noLinkedWallet = false
             unloadedWalletCount = 0
             askedWalletCount = 0
         }
         answeredContractId = contractId
-        guard let contractIdBytes = Data.identifier(fromBase58: contractId) else {
+        guard let contractIdBytes = Data.identifier(fromBase58: contractId),
+              contractIdBytes.count == 32 else {
             moderators = []
             moderatorsTeam = nil
-            noWalletHoldsIdentity = false
+            noLinkedWallet = false
             unloadedWalletCount = 0
             askedWalletCount = 0
-            errorMessage = "The contract id is not a base58 identifier."
+            errorMessage = "The contract id must be a 32-byte base58 identifier."
             isLoading = false
             loadedOnce = true
             return
@@ -114,7 +117,7 @@ final class ContractModerationOfferStore: ObservableObject {
             SDKLogger.event(
                 "contract_moderation_offer_no_wallet",
                 category: .lifecycle,
-                fields: ["contract_reference": .reference(contractIdBytes)]
+                fields: ["contract_reference": .keyedReference(contractIdBytes)]
             )
         }
         var named: [Moderator] = []
@@ -131,7 +134,7 @@ final class ContractModerationOfferStore: ObservableObject {
                     severity: .warning,
                     fields: [
                         "wallet_reference": .reference(walletId),
-                        "contract_reference": .reference(contractIdBytes),
+                        "contract_reference": .keyedReference(contractIdBytes),
                     ]
                 )
                 continue
@@ -148,7 +151,7 @@ final class ContractModerationOfferStore: ObservableObject {
         guard mine == generation else { return }
         moderators = named
         moderatorsTeam = team
-        noWalletHoldsIdentity = walletIds.isEmpty
+        noLinkedWallet = walletIds.isEmpty
         unloadedWalletCount = unloaded
         askedWalletCount = asked
         if !failures.isEmpty {
@@ -167,7 +170,7 @@ final class ContractModerationOfferStore: ObservableObject {
         errorMessage = nil
         isLoading = false
         loadedOnce = false
-        noWalletHoldsIdentity = false
+        noLinkedWallet = false
         unloadedWalletCount = 0
         askedWalletCount = 0
     }
