@@ -17,17 +17,16 @@ mod token_market_orders_tests {
     use dpp::state_transition::StateTransition;
     use dpp::system_data_contracts::token_market_contract;
     use dpp::system_data_contracts::token_market_contract::v1::document_types::{ask, bid};
-    use dpp::version::mocks::v5_test::TEST_PROTOCOL_VERSION_5;
+    use dpp::version::feature_initial_protocol_versions::TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION;
     use drive::util::object_size_info::{
         DocumentAndContractInfo, DocumentInfo::DocumentRefInfo, OwnedDocumentInfo,
     };
     use std::collections::BTreeMap;
 
-    /// The token market contract exists from protocol version 16, which has no tables yet: the
-    /// test version that selects the token marketplace stands in for it.
+    /// The token market contract exists from protocol version 16.
     fn token_marketplace_version() -> &'static PlatformVersion {
-        PlatformVersion::get(TEST_PROTOCOL_VERSION_5)
-            .expect("expected the token marketplace test version")
+        PlatformVersion::get(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION)
+            .expect("expected the token marketplace's first protocol version")
     }
 
     /// An order of `document_type_name` owned by `owner_id`, for 10 units of `token_id` (a

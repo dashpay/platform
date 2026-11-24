@@ -1054,10 +1054,9 @@ impl ContextProvider for TrustedHttpContextProvider {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 pub(crate) mod tests {
-    /// The token marketplace starts with protocol version 16, which has no tables yet: the test
-    /// version that selects it stands in for it.
+    /// The token marketplace starts with protocol version 16.
     fn token_marketplace_version() -> &'static dpp::version::PlatformVersion {
-        &dpp::version::mocks::v5_test::TEST_PLATFORM_V5
+        &dpp::version::v16::PLATFORM_V16
     }
 
     use super::*;

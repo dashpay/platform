@@ -1214,7 +1214,6 @@ mod marketplace_rules_tests {
     use crate::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
     use crate::data_contract::associated_token::token_marketplace_rules::accessors::v0::TokenMarketplaceRulesV0Setters;
     use crate::data_contract::associated_token::token_marketplace_rules::v0::TokenTradeMode;
-    use platform_version::version::mocks::v5_test::TEST_PROTOCOL_VERSION_5;
 
     fn not_tradeable() -> TokenConfiguration {
         TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive())
@@ -1232,12 +1231,9 @@ mod marketplace_rules_tests {
         PlatformVersion::get(14).expect("expected protocol version 14")
     }
 
-    /// The protocol version that admits a tradeable token. While it has no tables of its own,
-    /// the test version that selects the token marketplace stands in for it; once it has them,
-    /// they are the ones used.
+    /// The protocol version that admits a tradeable token.
     fn protocol_version_admitting_tradeable() -> &'static PlatformVersion {
         PlatformVersion::get(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION)
-            .or_else(|_| PlatformVersion::get(TEST_PROTOCOL_VERSION_5))
             .expect("expected a version that admits a tradeable token")
     }
 
