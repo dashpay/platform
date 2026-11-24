@@ -86,7 +86,7 @@ pub use wallet::identity::network::{
     ContactInfoPublishOutcome, ContactInfoSealed, FetchedIdentityPublicKeys, PaymentStarted,
     PreparedDashPayPayment, PrivateContactReadiness, PrivateContactSyncReport,
     PrivateDocumentKeyPaths, SeedBindingVerification, SigningScope, IDENTITY_GAP_LIMIT,
-    MASTER_KEY_INDEX, PLATFORM_SIGNING_KEY_TYPES, WALLET_SIGNING_KEY_TYPES,
+    MASTER_KEY_INDEX,
 };
 pub use wallet::identity::{
     calculate_account_reference, derive_auto_accept_private_key, derive_contact_payment_address,

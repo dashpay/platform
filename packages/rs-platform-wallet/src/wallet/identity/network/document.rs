@@ -354,7 +354,6 @@ impl IdentityWallet {
                 identity_id: *owner_identity_id,
                 purpose: Purpose::AUTHENTICATION,
                 security_levels: SecurityLevel::accepted_for_requirement(required_level),
-                key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
                 transition: format!("a {} document transition", document_type.name()),
             })?;
         Ok(signing_key.clone())
