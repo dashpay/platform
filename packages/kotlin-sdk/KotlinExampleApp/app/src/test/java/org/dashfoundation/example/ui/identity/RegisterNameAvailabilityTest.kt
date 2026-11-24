@@ -63,4 +63,24 @@ class RegisterNameAvailabilityTest {
         assertFalse(canRegisterName("qa", aliceAvailable, isSubmitting = false))
         assertTrue(canRegisterName(" alice ", aliceAvailable, isSubmitting = false))
     }
+
+    @Test
+    fun `should not offer again a name submitted from this screen`() {
+        // Registration landed (or joined a contest); Rust's check can still
+        // call the normalized name available, and a second preorder would be
+        // paid and then refused.
+        val again = parseNameAvailability(
+            "Alice",
+            """{"label":"Alice","valid":true,"available":true,"normalizedLabel":"a11ce",""" +
+                """"isContested":true,"message":"✅ Username is available"}""",
+        )
+        assertEquals("a11ce", again.normalizedLabel)
+        val shown = nameAvailabilityForVisit(again, setOf("a11ce"))
+        assertFalse(shown.available)
+        assertEquals("Already submitted from this screen", shown.text)
+        assertFalse(canRegisterName("Alice", shown, isSubmitting = false))
+        // A genuinely different name is still offered.
+        val other = NameAvailability("bob", "Available", available = true, normalizedLabel = "b0b")
+        assertTrue(nameAvailabilityForVisit(other, setOf("a11ce")).available)
+    }
 }

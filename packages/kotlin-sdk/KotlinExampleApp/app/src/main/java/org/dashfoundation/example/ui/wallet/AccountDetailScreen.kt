@@ -37,7 +37,6 @@ import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.CoreAddressDetail
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
-import org.dashfoundation.example.util.formatCredits
 import org.dashfoundation.example.util.formatDuffs
 import org.dashfoundation.example.util.truncateMiddle
 
@@ -76,11 +75,9 @@ fun AccountDetailScreen(
     }.collectAsStateWithLifecycle(initialValue = emptyList())
 
     // ← AccountDetailView.balanceCard: Rust's per-account read for a Core
-    // account, the account's Platform address credits for PlatformPayment.
+    // account. PlatformPayment shows no balance until Rust offers an
+    // account-scoped total (#6235).
     val coreBalances = rememberCoreAccountBalances(walletId)
-    val platformAddresses by remember(walletIdHex) {
-        container.database.platformAddressDao().observeByWallet(walletId)
-    }.collectAsStateWithLifecycle(initialValue = emptyList())
 
     Scaffold(
         topBar = {
@@ -120,7 +117,7 @@ fun AccountDetailScreen(
                 LabeledContent("Network", network.displayName)
             }
 
-            when (val balance = accountRowBalance(current, coreBalances, platformAddresses)) {
+            when (val balance = accountRowBalance(current, coreBalances)) {
                 is AccountRowBalance.Core -> FormSection(title = "Balance") {
                     LabeledContent("Confirmed", formatDuffs(balance.confirmed))
                     if (balance.unconfirmed > 0) {
@@ -136,10 +133,7 @@ fun AccountDetailScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                is AccountRowBalance.Platform -> FormSection(title = "Balance") {
-                    LabeledContent("Balance", formatCredits(balance.credits))
-                }
-                AccountRowBalance.None -> Unit
+                AccountRowBalance.PlatformNotShown, AccountRowBalance.None -> Unit
             }
 
             // Pool summary (← poolSummaryCard).

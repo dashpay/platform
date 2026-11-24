@@ -18,6 +18,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -64,6 +66,13 @@ fun RegisterNameScreen(identityIdHex: String, navController: NavHostController) 
     // while it is pending, after a label change, and after a registration
     // (the label just registered is no longer available).
     var availability by remember { mutableStateOf<NameAvailability?>(null) }
+    // Bumped on every edit, so the check runs again even when an edit and
+    // its undo reach the field before the screen redraws (same label key).
+    var editRevision by remember { mutableIntStateOf(0) }
+    // Normalized labels (Rust's `normalizedLabel`) submitted successfully
+    // from this screen: a second preorder for one of them would be paid
+    // and then refused (the domain or contest entry already exists).
+    val submittedThisVisit = remember { mutableStateListOf<String>() }
     // Contested-ness of the entered label, decided by the FFI (`isContested`
     // in the `dash_sdk_dpns_check_availability` JSON) — ← RegisterNameView's
     // `isNameContested` (`dash_sdk_dpns_is_contested_username`). Drives the
@@ -74,7 +83,7 @@ fun RegisterNameScreen(identityIdHex: String, navController: NavHostController) 
     var success by remember { mutableStateOf<String?>(null) }
 
     // Debounced availability check (300ms) — ← RegisterNameView's async check.
-    LaunchedEffect(label) {
+    LaunchedEffect(label, editRevision) {
         availability = null
         isContested = false
         // A new label starts a new registration: drop the previous one's
@@ -93,8 +102,9 @@ fun RegisterNameScreen(identityIdHex: String, navController: NavHostController) 
         } catch (e: Exception) {
             NameAvailability(queried, "Check failed: ${e.message}", available = false)
         }
-        isContested = checked.isContested
-        availability = checked
+        val shown = nameAvailabilityForVisit(checked, submittedThisVisit.toSet())
+        isContested = shown.isContested
+        availability = shown
     }
 
     Scaffold(
@@ -121,7 +131,10 @@ fun RegisterNameScreen(identityIdHex: String, navController: NavHostController) 
                         // Drop the old answer in the same event as the
                         // edit, before any recomposition, so a tap that
                         // lands in between cannot use it for the new label.
-                        if (edited != label) availability = null
+                        if (edited != label) {
+                            availability = null
+                            editRevision++
+                        }
                         label = edited
                     },
                     label = { Text("Label (without .dash)") },
@@ -257,7 +270,8 @@ fun RegisterNameScreen(identityIdHex: String, navController: NavHostController) 
                             "Registered $full"
                         }
                         // The label is taken now; the next label typed
-                        // gets a fresh check.
+                        // gets a fresh check, and this one stays blocked.
+                        checked.normalizedLabel?.let { submittedThisVisit.add(it) }
                         availability = null
                     } catch (e: Exception) {
                         error = e.message ?: "Registration failed"
@@ -283,6 +297,8 @@ internal data class NameAvailability(
     val text: String,
     val available: Boolean,
     val isContested: Boolean = false,
+    /** Rust's homograph-safe `normalizedLabel`; null when the check gave none. */
+    val normalizedLabel: String? = null,
 )
 
 /**
@@ -302,8 +318,27 @@ internal fun parseNameAvailability(label: String, json: String?): NameAvailabili
         obj["valid"]?.jsonPrimitive?.content == "false" -> "Invalid label"
         else -> obj["message"]?.jsonPrimitive?.content ?: "Taken"
     }
-    return NameAvailability(label, text, available, isContested)
+    val normalizedLabel = obj["normalizedLabel"]?.jsonPrimitive?.content
+    return NameAvailability(label, text, available, isContested, normalizedLabel)
 }
+
+/**
+ * [checked] as this screen shows it: a name whose normalized label was
+ * already submitted from this screen is not offered again (Rust's check
+ * still calls it available until the domain lands, or for good when a
+ * contest entry holds it), while a genuinely different name is.
+ */
+internal fun nameAvailabilityForVisit(
+    checked: NameAvailability,
+    submittedThisVisit: Set<String>,
+): NameAvailability =
+    if (checked.available && checked.normalizedLabel != null &&
+        checked.normalizedLabel in submittedThisVisit
+    ) {
+        checked.copy(text = "Already submitted from this screen", available = false)
+    } else {
+        checked
+    }
 
 /**
  * Register is offered only for a non-blank label the check reported

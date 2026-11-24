@@ -23,12 +23,10 @@ import androidx.navigation.NavHostController
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import org.dashfoundation.dashsdk.persistence.entities.AccountEntity
-import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.navigation.AccountDetail
 import org.dashfoundation.example.ui.dashpay.AccountBalance
 import org.dashfoundation.example.ui.dashpay.parseAccountBalances
-import org.dashfoundation.example.util.formatCredits
 import org.dashfoundation.example.util.formatDuffs
 
 /**
@@ -38,8 +36,9 @@ import org.dashfoundation.example.util.formatDuffs
  * special purpose). A Core account's balance is Rust's in-memory
  * per-account read (`PlatformWalletManager.accountBalances`, ← Swift
  * `accountBalances(for:)`): nothing persists the Room balance columns,
- * which stay 0. A PlatformPayment account shows the credits of its
- * Platform addresses, as Swift's `platformBalanceRow` does.
+ * which stay 0. A PlatformPayment account shows no balance line until Rust
+ * offers an account-scoped credit total (#6235); a sum of its persisted
+ * address rows can lag the managed account.
  */
 @Composable
 internal fun AccountListSection(
@@ -52,9 +51,6 @@ internal fun AccountListSection(
         container.database.accountDao().observeByWallet(walletId)
     }.collectAsStateWithLifecycle(initialValue = emptyList())
     val coreBalances = rememberCoreAccountBalances(walletId)
-    val platformAddresses by remember(walletIdHex) {
-        container.database.platformAddressDao().observeByWallet(walletId)
-    }.collectAsStateWithLifecycle(initialValue = emptyList())
 
     if (accounts.isEmpty()) {
         Text(
@@ -71,7 +67,7 @@ internal fun AccountListSection(
         ordered.forEachIndexed { index, account ->
             AccountRow(
                 account = account,
-                balance = accountRowBalance(account, coreBalances, platformAddresses),
+                balance = accountRowBalance(account, coreBalances),
                 modifier = Modifier
                     .clickable {
                         navController.navigate(AccountDetail(walletIdHex, account.id))
@@ -144,8 +140,11 @@ internal sealed interface AccountRowBalance {
      */
     data object CoreUnknown : AccountRowBalance
 
-    /** A PlatformPayment account: the credits of its Platform addresses. */
-    data class Platform(val credits: Long) : AccountRowBalance
+    /**
+     * A PlatformPayment account: no balance line until Rust offers an
+     * account-scoped credit total (#6235).
+     */
+    data object PlatformNotShown : AccountRowBalance
 
     /** Any other account: no balance line (special purpose). */
     data object None : AccountRowBalance
@@ -159,7 +158,6 @@ internal sealed interface AccountRowBalance {
 internal fun accountRowBalance(
     account: AccountEntity,
     coreBalances: List<AccountBalance>?,
-    platformAddresses: List<PlatformAddressEntity>,
 ): AccountRowBalance = when (account.accountType) {
     0, 1 -> {
         val match = coreBalances?.firstOrNull {
@@ -173,9 +171,7 @@ internal fun accountRowBalance(
             AccountRowBalance.Core(match.confirmed, match.unconfirmed)
         }
     }
-    14 -> AccountRowBalance.Platform(
-        platformAddresses.filter { it.accountId == account.id }.sumOf { it.balance },
-    )
+    14 -> AccountRowBalance.PlatformNotShown
     else -> AccountRowBalance.None
 }
 
@@ -226,10 +222,7 @@ private fun AccountRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            is AccountRowBalance.Platform -> Text(
-                "Balance ${formatCredits(balance.credits)}",
-                style = MaterialTheme.typography.bodySmall,
-            )
+            AccountRowBalance.PlatformNotShown -> Unit
             AccountRowBalance.None -> Text(
                 "Special Purpose Account",
                 style = MaterialTheme.typography.bodySmall,
