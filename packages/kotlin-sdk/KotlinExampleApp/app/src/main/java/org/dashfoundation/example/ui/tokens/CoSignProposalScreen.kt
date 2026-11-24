@@ -329,7 +329,7 @@ private fun ProposalParams(proposal: GroupActionProposal) {
 
 /**
  * Route to the right `Tokens.<action>` from the proposal payload,
- * passing the original parameters (all but the note) straight through — port of
+ * passing the original parameters straight through — port of
  * `CoSignProposalView.dispatch`.
  */
 private suspend fun dispatchCoSign(
@@ -343,9 +343,7 @@ private suspend fun dispatchCoSign(
     val identityId = context.identity.identityId
     val contractId = context.token.contractId
     val tokenPosition = proposal.tokenContractPosition
-    // The proposal's note is shown above but never sent back: only the
-    // proposer writes a note, and Platform refuses one from a co-signer
-    // (the Rust SDK leaves it off a co-sign either way).
+    val note = proposal.paramString("publicNote")
 
     when (proposal.type) {
         "mint" -> {
@@ -357,6 +355,7 @@ private suspend fun dispatchCoSign(
                     ?: throw IllegalStateException("Proposal amount missing"),
                 issuedToIdentityId = proposal.paramString("recipient")
                     ?.let { Base58.decodeIdentifier(it) },
+                publicNote = note,
                 groupAction = mode,
                 signingKeyId = TokenActionContext.SIGNING_KEY_ID,
                 signerHandle = signerHandle,
@@ -373,6 +372,7 @@ private suspend fun dispatchCoSign(
                 tokenPosition = tokenPosition,
                 amount = proposal.paramAmount()
                     ?: throw IllegalStateException("Proposal amount missing"),
+                publicNote = note,
                 groupAction = mode,
                 signingKeyId = TokenActionContext.SIGNING_KEY_ID,
                 signerHandle = signerHandle,
@@ -384,6 +384,7 @@ private suspend fun dispatchCoSign(
             tokenContractId = contractId,
             tokenPosition = tokenPosition,
             frozenIdentityId = proposal.requiredTarget(),
+            publicNote = note,
             groupAction = mode,
             signingKeyId = TokenActionContext.SIGNING_KEY_ID,
             signerHandle = signerHandle,
@@ -393,6 +394,7 @@ private suspend fun dispatchCoSign(
             tokenContractId = contractId,
             tokenPosition = tokenPosition,
             frozenIdentityId = proposal.requiredTarget(),
+            publicNote = note,
             groupAction = mode,
             signingKeyId = TokenActionContext.SIGNING_KEY_ID,
             signerHandle = signerHandle,
@@ -402,6 +404,7 @@ private suspend fun dispatchCoSign(
             tokenContractId = contractId,
             tokenPosition = tokenPosition,
             frozenIdentityId = proposal.requiredTarget(),
+            publicNote = note,
             groupAction = mode,
             signingKeyId = TokenActionContext.SIGNING_KEY_ID,
             signerHandle = signerHandle,
@@ -410,6 +413,7 @@ private suspend fun dispatchCoSign(
             identityId = identityId,
             tokenContractId = contractId,
             tokenPosition = tokenPosition,
+            publicNote = note,
             groupAction = mode,
             signingKeyId = TokenActionContext.SIGNING_KEY_ID,
             signerHandle = signerHandle,
@@ -418,6 +422,7 @@ private suspend fun dispatchCoSign(
             identityId = identityId,
             tokenContractId = contractId,
             tokenPosition = tokenPosition,
+            publicNote = note,
             groupAction = mode,
             signingKeyId = TokenActionContext.SIGNING_KEY_ID,
             signerHandle = signerHandle,
@@ -427,6 +432,7 @@ private suspend fun dispatchCoSign(
             tokenContractId = contractId,
             tokenPosition = tokenPosition,
             pricePerToken = proposal.paramAmount("pricePerToken") ?: 0u,
+            publicNote = note,
             groupAction = mode,
             signingKeyId = TokenActionContext.SIGNING_KEY_ID,
             signerHandle = signerHandle,

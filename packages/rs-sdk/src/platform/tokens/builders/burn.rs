@@ -60,6 +60,10 @@ impl TokenBurnTransitionBuilder {
 
     /// Adds a public note to the token burn transition
     ///
+    /// Only the proposer of a group action writes a note. When the group info marks the
+    /// signer as another signer who is not the proposer, `sign` leaves the note off and
+    /// the action keeps the proposer's note.
+    ///
     /// # Arguments
     ///
     /// * `note` - The public note to add

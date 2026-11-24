@@ -21,8 +21,11 @@ use dpp::data_contract::DataContract;
 use dpp::group::{GroupStateTransitionInfo, GroupStateTransitionInfoStatus};
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
-use dpp::state_transition::batch_transition::batched_transition::token_transition::TokenTransition;
+use dpp::state_transition::batch_transition::batched_transition::token_transition::{
+    TokenTransition, TokenTransitionV0Methods,
+};
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
+use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransition;
@@ -41,12 +44,17 @@ fn target_id() -> Identifier {
     Identifier::new([4; 32])
 }
 
-fn other_signer() -> GroupStateTransitionInfoStatus {
-    GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(GroupStateTransitionInfo {
-        group_contract_position: 0,
+/// A non-default position, so a builder that reset the group info would be caught.
+fn co_sign_info() -> GroupStateTransitionInfo {
+    GroupStateTransitionInfo {
+        group_contract_position: 2,
         action_id: Identifier::new([7; 32]),
         action_is_proposer: false,
-    })
+    }
+}
+
+fn other_signer() -> GroupStateTransitionInfoStatus {
+    GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(co_sign_info())
 }
 
 fn contract() -> Arc<DataContract> {
@@ -98,6 +106,17 @@ fn batch(state_transition: &StateTransition) -> &BatchTransition {
     }
 }
 
+/// The signature still counts toward the proposal: same position, action and signer role.
+fn assert_targets_the_proposal(state_transition: &StateTransition) {
+    let BatchTransition::V1(v1) = batch(state_transition) else {
+        panic!("token transitions are built as batch v1");
+    };
+    let [BatchedTransition::Token(token)] = v1.transitions.as_slice() else {
+        panic!("expected a single token transition");
+    };
+    assert_eq!(token.base().using_group_info(), Some(co_sign_info()));
+}
+
 fn assert_passes_structure_validation(state_transition: &StateTransition) {
     let result = batch(state_transition)
         .validate_base_structure(PlatformVersion::latest())
@@ -130,6 +149,7 @@ async fn should_leave_the_proposal_note_off_a_mint_co_sign() {
         panic!("expected a single mint transition");
     };
     assert_eq!(mint.public_note(), None);
+    assert_targets_the_proposal(&st);
     assert_passes_structure_validation(&st);
 }
 
@@ -215,6 +235,7 @@ async fn should_leave_the_proposal_note_off_every_group_co_sign() {
             .sign(&f.sdk, &f.key, &f.signer, version)
             .await
             .unwrap_or_else(|e| panic!("{name}: sign failed: {e}"));
+        assert_targets_the_proposal(&st);
         let result = batch(&st)
             .validate_base_structure(version)
             .expect("structure validation runs");

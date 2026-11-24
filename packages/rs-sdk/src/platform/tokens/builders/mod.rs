@@ -33,6 +33,12 @@ pub(crate) fn public_note_for_signer(
         Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(info))
             if !info.action_is_proposer =>
         {
+            if public_note.is_some() {
+                tracing::debug!(
+                    action_id = %info.action_id,
+                    "leaving the public note off a co-sign: only the proposer writes one"
+                );
+            }
             None
         }
         _ => public_note,
