@@ -2737,11 +2737,14 @@ class PlatformWalletPersistenceHandler(
      * asset lock the network has locked ([spendByFinalizedAssetLock]): an
      * asset-lock spender's row often never leaves mempool context, and the
      * lock's own status is the signal that arrives, as in the restore
-     * guard (#4336). A lock at InstantSendLocked counts as
-     * [CONTEXT_INSTANT_SEND]; any later status (ChainLocked, Consumed,
-     * RecoveredFromChain) as [CONTEXT_CHAIN_LOCKED], so the DIP-10
-     * chainlock-over-IS-lock takeover in [keepSettledSpenderLink] applies
-     * only to a lock that is merely IS-locked.
+     * guard (#4336). Only a lock at ChainLocked counts as
+     * [CONTEXT_CHAIN_LOCKED]. Every other locked status (InstantSendLocked,
+     * Consumed, RecoveredFromChain) counts as [CONTEXT_INSTANT_SEND]:
+     * Consumed and RecoveredFromChain are lifecycle steps, not Core
+     * finality, and a lock can be consumed on an InstantSend proof alone.
+     * So the DIP-10 chainlock-over-IS-lock takeover in
+     * [keepSettledSpenderLink] still applies to them; only a ChainLocked
+     * lock is proof the conflicting chainlock cannot exist.
      *
      * Shared by the re-delivery clear ([hasSettledSpender]), the link
      * guard ([keepSettledSpenderLink]) and the sweep-release veto
@@ -2760,8 +2763,8 @@ class PlatformWalletPersistenceHandler(
             .maxStatusForTxid(spendingTxid.reversedArray().toHex())
             ?: return null
         return when {
-            lockStatus > ASSET_LOCK_STATUS_INSTANT_SEND_LOCKED -> CONTEXT_CHAIN_LOCKED
-            lockStatus == ASSET_LOCK_STATUS_INSTANT_SEND_LOCKED -> CONTEXT_INSTANT_SEND
+            lockStatus == ASSET_LOCK_STATUS_CHAIN_LOCKED -> CONTEXT_CHAIN_LOCKED
+            lockStatus >= ASSET_LOCK_STATUS_INSTANT_SEND_LOCKED -> CONTEXT_INSTANT_SEND
             else -> null
         }
     }
@@ -6062,6 +6065,9 @@ class PlatformWalletPersistenceHandler(
          * reconcile treats the linked TXOs as spent from there on.
          */
         private const val ASSET_LOCK_STATUS_INSTANT_SEND_LOCKED = 2
+
+        /** `AssetLockStatus::ChainLocked` — the only status that proves Core finality. */
+        private const val ASSET_LOCK_STATUS_CHAIN_LOCKED = 3
 
         /** `TransactionContext::InChainLockedBlock` — outranks an IS lock. */
         private const val CONTEXT_CHAIN_LOCKED = 3
