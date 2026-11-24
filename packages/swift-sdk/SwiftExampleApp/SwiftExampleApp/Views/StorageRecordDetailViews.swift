@@ -2673,6 +2673,8 @@ struct ShieldedActivityStorageDetailView: View {
         case 10: name = "TokenPurchase"
         case 11: name = "TokenShieldedTransfer"
         case 12: name = "TokenUnshield"
+        case 13: name = "PrivateDocumentCreate"
+        case 14: name = "PrivateContactRequest"
         default: return "Unknown(\(tag))"
         }
         return "\(name) (\(tag))"

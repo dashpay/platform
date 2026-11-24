@@ -53,7 +53,14 @@ public final class PersistentShieldedActivity {
     /// `amount` the tokens sent, in the token's smallest unit),
     /// 12 TokenUnshield (`counterparty` is the token id, `identityId` the
     /// credited identity and `amount` the tokens moved, in the token's
-    /// smallest unit).
+    /// smallest unit),
+    /// 13 PrivateDocumentCreate (an entry appended to a private document
+    /// type's store, paid from the shielded pool; `counterparty` is the
+    /// 32-byte data contract id),
+    /// 14 PrivateContactRequest (a DashPay private contact request, or the
+    /// private request sent back to accept one; `counterparty` is the
+    /// 32-byte id of the identity the request is to).
+    /// 13 and 14 are outgoing, carry a fee and no `identityId`.
     public var kindTag: Int
     /// Direction: 0 In, 1 Out, 2 Self.
     public var direction: Int
@@ -63,7 +70,9 @@ public final class PersistentShieldedActivity {
     /// Display amount in credits (principal; excludes self-change /
     /// zero-value fillers). For `kindTag` 11 (TokenShieldedTransfer) and 12
     /// (TokenUnshield) it is the tokens moved, in the token's smallest unit,
-    /// not credits.
+    /// not credits. For `kindTag` 13 (PrivateDocumentCreate) and 14
+    /// (PrivateContactRequest) it is the fee, the same number as `fee` and
+    /// not a second charge: nothing but the fee leaves the pool.
     public var amount: UInt64
     /// Exact fee in credits when `hasFee == true`; otherwise unknown.
     public var fee: UInt64
@@ -102,8 +111,9 @@ public final class PersistentShieldedActivity {
     /// Empty otherwise.
     public var identityId: Data
     /// Counterparty bytes (43B Orchard / 21B PlatformAddress / Core
-    /// script, or the 32-byte token id for `kindTag` 10 to 12) when
-    /// present; empty otherwise.
+    /// script, the 32-byte token id for `kindTag` 10 to 12, the 32-byte
+    /// data contract id for `kindTag` 13, or the 32-byte recipient
+    /// identity id for `kindTag` 14) when present; empty otherwise.
     public var counterparty: Data
     /// 36-byte memo when present and non-zero; empty otherwise.
     public var memo: Data

@@ -2921,6 +2921,11 @@ where
 /// Waits for the spent nullifiers to be proven before marking the notes
 /// spent, and returns the metadata of that proof. `payment_started` is
 /// marked right before the transition is broadcast.
+///
+/// `purpose` says what the entries are for: it names the spend's activity row
+/// ([`record_pending_private_document_create`]) and, for a private contact
+/// request, the payment its journal records are kept for
+/// ([`PrivateDocumentPurpose::journaled_payment`]).
 #[allow(clippy::too_many_arguments)]
 pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
     S: ShieldedStore,
@@ -2935,10 +2940,11 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
     data_contract_id: Identifier,
     document_type_name: &str,
     entries: Vec<BinaryData>,
-    private_contact: Option<PrivateContactPayment>,
+    purpose: PrivateDocumentPurpose,
     payment_started: &PaymentStarted,
     prover: &P,
 ) -> Result<ResponseMetadata, PlatformWalletError> {
+    let private_contact = purpose.journaled_payment();
     let views = keys.viewing_keys();
     let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
@@ -3007,24 +3013,17 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
             return Err(e);
         }
     };
-    // The spend's only outputs are change, so it records as an own spend
-    // with its fee and no counterparty.
-    let pending_entry = record_pending_activity(
+    let pending_entry = record_pending_private_document_create(
         store,
         persister,
         wallet_id,
         id,
         &views,
-        LiveEntryParams {
-            kind: ShieldedActivityKind::ShieldedSpend,
-            direction: ShieldedDirection::Out,
-            amount: 0,
-            fee: Some(fee_used),
-            counterparty: None,
-            memo: None,
-            actions: shielded_actions(&state_transition),
-            spent_notes: &selected_notes,
-        },
+        data_contract_id,
+        purpose,
+        fee_used,
+        &state_transition,
+        &selected_notes,
     )
     .await;
     // Type 29 proves its spent nullifiers as a snapshot, which a competing
@@ -3054,6 +3053,107 @@ pub(in crate::wallet) async fn private_document_create_from_pool_with_metadata<
                 SpendResultWait::AffectedState,
             )
             .await
+        },
+    )
+    .await
+}
+
+/// What a private document create from the shielded pool pays for. The one
+/// value names the spend's activity row and, for a private contact request,
+/// the payment its journal records are kept for, so the two cannot name
+/// different recipients.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::wallet) enum PrivateDocumentPurpose {
+    /// An entry of a private document type, with nothing journaled.
+    Entry,
+    /// A DashPay private contact request from `sender` to `recipient`, or
+    /// the private request sent back to accept one.
+    ContactRequest {
+        /// The identity sending the request.
+        sender: Identifier,
+        /// The identity it is to.
+        recipient: Identifier,
+        /// The request's account reference, when the send handed it over:
+        /// with it the payment is journaled, so a restart restores the pair's
+        /// reservation without opening the entry.
+        account_reference: Option<u32>,
+    },
+}
+
+impl PrivateDocumentPurpose {
+    /// The payment a private contact request's journal records are kept for.
+    /// `None` for any other entry, and for a request whose send handed over
+    /// no account reference.
+    fn journaled_payment(self) -> Option<PrivateContactPayment> {
+        match self {
+            Self::ContactRequest {
+                sender,
+                recipient,
+                account_reference: Some(account_reference),
+            } => Some(PrivateContactPayment {
+                sender: sender.to_buffer(),
+                recipient: recipient.to_buffer(),
+                account_reference,
+            }),
+            Self::Entry | Self::ContactRequest { .. } => None,
+        }
+    }
+
+    /// The kind and counterparty of the spend's activity row: a private
+    /// contact request to its recipient, or a private document entry of
+    /// `data_contract_id`.
+    fn activity(self, data_contract_id: Identifier) -> (ShieldedActivityKind, Identifier) {
+        match self {
+            Self::ContactRequest { recipient, .. } => {
+                (ShieldedActivityKind::PrivateContactRequest, recipient)
+            }
+            Self::Entry => (
+                ShieldedActivityKind::PrivateDocumentCreate,
+                data_contract_id,
+            ),
+        }
+    }
+}
+
+/// Record the pending activity row of the built private document create
+/// `state_transition`, which spends `spent_notes` and pays `fee`.
+///
+/// The row names the operation by its `purpose`
+/// ([`PrivateDocumentPurpose::activity`]). It is recorded before the
+/// broadcast, as every spend's row is: a payment that is then refused keeps
+/// its row, as Failed, with its counterparty. Nothing but the fee leaves the
+/// pool, so the row's amount is the fee: a host that shows the amount of a
+/// row shows what the wallet paid, not zero. Its only outputs are change,
+/// which the credit pool scan finds and confirms the row by.
+#[allow(clippy::too_many_arguments)]
+pub(super) async fn record_pending_private_document_create<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    id: SubwalletId,
+    views: &AccountViewingKeys,
+    data_contract_id: Identifier,
+    purpose: PrivateDocumentPurpose,
+    fee: Credits,
+    state_transition: &StateTransition,
+    spent_notes: &[ShieldedNote],
+) -> Option<super::activity::ShieldedActivityEntry> {
+    let (kind, counterparty) = purpose.activity(data_contract_id);
+    record_pending_activity(
+        store,
+        persister,
+        wallet_id,
+        id,
+        views,
+        LiveEntryParams {
+            kind,
+            direction: ShieldedDirection::Out,
+            amount: fee,
+            fee: Some(fee),
+            counterparty: Some(counterparty.to_vec()),
+            memo: None,
+            actions: shielded_actions(state_transition),
+            spent_notes,
         },
     )
     .await
@@ -7610,6 +7710,53 @@ mod redrive_tests {
         }
     }
 
+    /// A private contact request's purpose names one recipient: the activity row's
+    /// counterparty and the journaled payment's recipient are read from the same field, and
+    /// the row is a contact request whether or not the send handed over an account
+    /// reference. Any other entry is a private document entry of its contract, with nothing
+    /// journaled.
+    #[test]
+    fn should_name_one_recipient_for_a_contact_request_s_row_and_its_journal_record() {
+        let contract = Identifier::from([0x44; 32]);
+        let sender = Identifier::from([0x51; 32]);
+        let recipient = Identifier::from([0x52; 32]);
+
+        let journaled = PrivateDocumentPurpose::ContactRequest {
+            sender,
+            recipient,
+            account_reference: Some(9),
+        };
+        assert_eq!(
+            journaled.activity(contract),
+            (ShieldedActivityKind::PrivateContactRequest, recipient)
+        );
+        assert_eq!(
+            journaled.journaled_payment(),
+            Some(PrivateContactPayment {
+                sender: sender.to_buffer(),
+                recipient: recipient.to_buffer(),
+                account_reference: 9,
+            })
+        );
+
+        let unreferenced = PrivateDocumentPurpose::ContactRequest {
+            sender,
+            recipient,
+            account_reference: None,
+        };
+        assert_eq!(
+            unreferenced.activity(contract),
+            (ShieldedActivityKind::PrivateContactRequest, recipient)
+        );
+        assert_eq!(unreferenced.journaled_payment(), None);
+
+        assert_eq!(
+            PrivateDocumentPurpose::Entry.activity(contract),
+            (ShieldedActivityKind::PrivateDocumentCreate, contract)
+        );
+        assert_eq!(PrivateDocumentPurpose::Entry.journaled_payment(), None);
+    }
+
     /// A spend that failed before anything was broadcast, here a private document payment
     /// whose anchor fetch the mock refuses, and is dropped while its rollback waits for the
     /// store lock another task holds, still releases its notes: the guard owns them until the
@@ -7658,7 +7805,7 @@ mod redrive_tests {
             Identifier::from([0x44; 32]),
             "privateContactRequest",
             vec![BinaryData::new(vec![1; 589])],
-            None,
+            PrivateDocumentPurpose::Entry,
             &started,
             &UnreachableProver,
         ));
@@ -7886,7 +8033,7 @@ mod redrive_tests {
                 Identifier::from([0x44; 32]),
                 "privateContactRequest",
                 vec![BinaryData::new(vec![1; 589])],
-                None,
+                PrivateDocumentPurpose::Entry,
                 &started,
                 &UnreachableProver,
             ),

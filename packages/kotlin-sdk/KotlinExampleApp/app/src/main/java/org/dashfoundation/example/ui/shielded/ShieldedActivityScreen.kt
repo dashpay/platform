@@ -271,6 +271,8 @@ internal fun kindLabel(kindTag: Int): String = when (kindTag) {
     KIND_TOKEN_PURCHASE -> "Token Purchase"
     KIND_TOKEN_TRANSFER -> "Token Transfer"
     KIND_TOKEN_UNSHIELD -> "Token Unshield"
+    KIND_PRIVATE_DOCUMENT_CREATE -> "Private Document Entry"
+    KIND_PRIVATE_CONTACT_REQUEST -> "Private Contact Request"
     else -> "Shielded Spend"
 }
 
@@ -282,6 +284,18 @@ internal const val KIND_TOKEN_TRANSFER = 11
 
 /** `ShieldedActivityKind::TokenUnshield`, tokens moved from a token's pool to an identity (type 27). */
 internal const val KIND_TOKEN_UNSHIELD = 12
+
+/**
+ * `ShieldedActivityKind::PrivateDocumentCreate`, an entry appended to a private document
+ * type's store and paid for from the shielded pool (type 29). Its amount is its fee.
+ */
+internal const val KIND_PRIVATE_DOCUMENT_CREATE = 13
+
+/**
+ * `ShieldedActivityKind::PrivateContactRequest`, a DashPay private contact request or the
+ * private reply that accepts one (type 29). Its amount is its fee.
+ */
+internal const val KIND_PRIVATE_CONTACT_REQUEST = 14
 
 /**
  * The kinds whose `amount` is a token count in the token's smallest unit
@@ -338,11 +352,28 @@ internal fun tokenUnshieldNote(status: Int): String = when (status) {
         "Wallet > Shielded Tokens shows the notes it spends as pending."
 }
 
-/** A row's supporting line: its status, and for a token kind what that status means. */
+/**
+ * What a private document entry or private contact request row (kinds 13 and 14) says about
+ * its amount, by its stored status: Rust records the fee as the amount, as nothing else
+ * leaves the shielded pool. ← Swift `ShieldedActivityView.feeOnlySpendNote`.
+ */
+internal fun feeOnlySpendNote(status: Int): String = when (status) {
+    1 -> "The amount is the fee, which is all that left the shielded pool."
+    2 -> "It did not go through; the fee shown was not charged."
+    else -> "Not confirmed yet: a shielded sync confirms it once it lands. The amount is the " +
+        "fee, which is all that leaves the shielded pool."
+}
+
+/**
+ * A row's supporting line: its status, and for a token kind or a fee-only spend what that
+ * status means.
+ */
 internal fun supportingText(kindTag: Int, status: Int): String = when (kindTag) {
     KIND_TOKEN_PURCHASE -> "${statusLabel(status)}. ${tokenPurchaseNote(status)}"
     KIND_TOKEN_TRANSFER -> "${statusLabel(status)}. ${tokenTransferNote(status)}"
     KIND_TOKEN_UNSHIELD -> "${statusLabel(status)}. ${tokenUnshieldNote(status)}"
+    KIND_PRIVATE_DOCUMENT_CREATE, KIND_PRIVATE_CONTACT_REQUEST ->
+        "${statusLabel(status)}. ${feeOnlySpendNote(status)}"
     else -> statusLabel(status)
 }
 
