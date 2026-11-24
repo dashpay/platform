@@ -575,6 +575,83 @@ class FfiSmokeTest {
     }
 
     /**
+     * The four shielded tip exports bind with the descriptors
+     * `FundingNative` declares, through the loaded library: the amount
+     * parser answers and refuses, text that cannot cross to Rust intact is
+     * refused at the JNI boundary (code 1), and review, send and balance
+     * throw for an id of the wrong size and for an unknown manager instead
+     * of crashing. Nothing reaches the network or the prover.
+     */
+    @Test
+    fun shieldedTipSymbolsBindAndRejectInvalidInput() {
+        NativeLoader.ensureLoaded()
+        // The four exports exist only in a build with shielded support.
+        assumeTrue("the native library has no shielded support", Sdk.hasShielded())
+        val id = ByteArray(32) { 7 }
+        val shortId = ByteArray(31)
+        val address = ByteArray(43) { 9 }
+        val unknownManager = Long.MAX_VALUE
+        fun code(block: () -> Unit): Int = assertThrows(DashSDKException::class.java) { block() }.code
+
+        // Rust parses: one optional separator, exact credits.
+        assertEquals(150_000_000_000L, FundingNative.parseShieldedTipAmount("1,5"))
+        assertEquals(1L, FundingNative.parseShieldedTipAmount("0.00000000001"))
+        // Rust refuses: `ErrorInvalidParameter` (2), shifted by the wallet offset.
+        assertEquals(1000 + 2, code { FundingNative.parseShieldedTipAmount("-1") })
+        assertEquals(1000 + 2, code { FundingNative.parseShieldedTipAmount("") })
+        // Refused at the boundary: Rust would otherwise read only "1".
+        assertEquals(1, code { FundingNative.parseShieldedTipAmount("1\u00002") })
+        // A NUL beside a supplementary character, and an unpaired surrogate.
+        assertEquals(1, code { FundingNative.parseShieldedTipAmount("\uD83D\uDE00\u00001") })
+        assertEquals(1, code { FundingNative.parseShieldedTipAmount("1\uD83D") })
+        // A valid surrogate pair crosses intact; Rust refuses it as an amount.
+        val emoji = "\uD83D\uDE00"
+        val refusal = assertThrows(DashSDKException::class.java) {
+            FundingNative.parseShieldedTipAmount(emoji)
+        }
+        assertEquals(1000 + 2, refusal.code)
+        assertTrue(refusal.message?.contains(emoji) == true)
+
+        assertEquals(1, code { FundingNative.reviewShieldedTip(1L, shortId, "alice", null) })
+        assertEquals(1, code { FundingNative.reviewShieldedTip(1L, id, "ali\u0000ce", null) })
+        assertEquals(1, code { FundingNative.shieldedIdentityBalance(1L, id, shortId) })
+        // A contact identity of the wrong size is refused at the boundary too.
+        assertEquals(1, code { FundingNative.reviewShieldedTip(1L, id, "alice", shortId) })
+        assertEquals(1, code {
+            FundingNative.sendShieldedTip(1L, id, 1L, null, 0, "alice", id, address, shortId, 1L, null)
+        })
+        assertEquals(1, code {
+            FundingNative.sendShieldedTip(1L, id, 1L, null, 0, "alice", id, ByteArray(42), null, 1L, null)
+        })
+        assertEquals(1, code {
+            FundingNative.sendShieldedTip(1L, id, 1L, shortId, 0, "alice", id, address, null, 1L, null)
+        })
+        assertEquals(1, code {
+            FundingNative.sendShieldedTip(1L, id, 1L, null, 0, "alice", id, address, null, -1L, null)
+        })
+        assertEquals(1, code {
+            FundingNative.sendShieldedTip(1L, id, 1L, null, -1, "alice", id, address, null, 1L, null)
+        })
+        // A memo that cannot cross intact is refused, not sent rewritten or dropped.
+        assertEquals(1, code {
+            FundingNative.sendShieldedTip(
+                1L, id, 1L, null, 0, "alice", id, address, null, 1L, "\uD83D\uDE00\u0000",
+            )
+        })
+
+        // Valid arguments on an unknown manager reach Rust, which refuses
+        // them before any lookup, proof or resolver call. The send is given
+        // a null resolver, which Rust refuses first.
+        assertTrue(code { FundingNative.reviewShieldedTip(unknownManager, id, "alice", id) } >= 1000)
+        assertTrue(code { FundingNative.shieldedIdentityBalance(unknownManager, id, id) } >= 1000)
+        assertTrue(code {
+            FundingNative.sendShieldedTip(
+                unknownManager, id, 0L, id, 0, "alice", id, address, id, 1L, "thanks",
+            )
+        } >= 1000)
+    }
+
+    /**
      * The private contact request scan state needs every override it
      * depends on, and atomic changesets: JNI wires its slots only for a
      * bridge that overrides the contact upsert native calls, the
