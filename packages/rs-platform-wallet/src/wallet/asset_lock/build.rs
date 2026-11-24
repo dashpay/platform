@@ -1453,6 +1453,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 .contains(PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS);
         let tracked = TrackedAssetLock {
             operation_id: operation.map(|context| context.operation_id),
+            operation_revision: 0,
             out_point,
             transaction: tx.clone(),
             account_index: source_index,
@@ -2126,6 +2127,7 @@ mod tests {
                                 entry.out_point,
                                 TrackedAssetLock {
                                     operation_id: entry.operation_id,
+                                    operation_revision: entry.operation_revision,
                                     out_point: entry.out_point,
                                     transaction: entry.transaction.clone(),
                                     account_index: entry.account_index,
@@ -4688,6 +4690,9 @@ mod tests {
             wallet_id,
             Arc::new(CountingOkBroadcaster::default()),
         );
+        persistence
+            .restore_stored_locks
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         let operation = Arc::new(super::AssetLockOperationContext::new([11; 16]));
         let _registration = manager.register_wallet_drain_operation(operation.clone());
         assert_eq!(

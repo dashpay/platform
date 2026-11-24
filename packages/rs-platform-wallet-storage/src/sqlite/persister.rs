@@ -1333,9 +1333,8 @@ impl PlatformWalletPersistence for SqlitePersister {
         // by `core_state::apply`, handed back by `load_state`).
         // WALLET_RESTORE covers the Core snapshot; auxiliary token, profile,
         // invitation, and deferred-contact readback remains separate.
-        // Conflict cleanup can remove asset-lock operation evidence. Until it
-        // preserves that evidence, do not attest ASSET_LOCK_OPERATION_IDS:
-        // absence cannot safely mean NotSent, so wallet draining stays disabled.
+        // Operation UUIDs survive conflict cleanup; revision/CAS sidecars fence
+        // stale snapshots and allow only authenticated same-outpoint recovery.
         let capabilities = PersistenceCapabilities::ATOMIC_CHANGESETS
             .union(PersistenceCapabilities::WALLET_RESTORE)
             .union(PersistenceCapabilities::INVITATIONS)
@@ -1344,6 +1343,7 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::PENDING_CONTACT_CRYPTO)
             .union(PersistenceCapabilities::DPNS_NAME_STATES)
             .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
+            .union(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS)
             .union(PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS)
             .union(PersistenceCapabilities::TRACKED_MASTERNODES)
             .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
