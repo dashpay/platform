@@ -71,3 +71,40 @@ struct ProposalPollStateBadge: View {
         }
     }
 }
+
+/// A proposal listing row's title with its ``ProposalPollStateBadge``:
+/// the badge sits beside the title, and below it at accessibility text
+/// sizes, where a wide badge such as "Closed: did not pass" would leave
+/// the two-line title too little room to identify the proposal.
+struct ProposalRowHeader: View {
+    let title: String
+    let pollState: ProposalPollBadgeState?
+    let badgeIdentifier: String
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 4) {
+                titleText
+                badge
+            }
+        } else {
+            HStack(alignment: .firstTextBaseline) {
+                titleText
+                Spacer(minLength: 8)
+                badge
+            }
+        }
+    }
+
+    private var titleText: some View {
+        Text(title)
+            .font(.headline)
+            .lineLimit(2)
+    }
+
+    private var badge: some View {
+        ProposalPollStateBadge(state: pollState, accessibilityIdentifier: badgeIdentifier)
+    }
+}

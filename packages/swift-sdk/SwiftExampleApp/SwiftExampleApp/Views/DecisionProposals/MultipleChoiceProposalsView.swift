@@ -234,16 +234,11 @@ private struct MultipleChoiceProposalRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(proposal.title)
-                    .font(.headline)
-                    .lineLimit(2)
-                Spacer(minLength: 8)
-                ProposalPollStateBadge(
-                    state: pollState,
-                    accessibilityIdentifier: "multipleChoiceProposals.row.pollState"
-                )
-            }
+            ProposalRowHeader(
+                title: proposal.title,
+                pollState: pollState,
+                badgeIdentifier: "multipleChoiceProposals.row.pollState"
+            )
             HStack(spacing: 12) {
                 if let createdAt = proposal.createdAt {
                     Label {
