@@ -22,6 +22,16 @@ on:
   schedule:
     - cron: "0 23 * * *"
 
+# What a job gets unless its call below asks for more. The CI images on GHCR
+# belong to this repository, so no job may write packages except the one that
+# builds them.
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  statuses: read
+  packages: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -479,6 +489,9 @@ jobs:
     if: >-
       needs.check-secrets.outputs.can_build_images == 'true' &&
       (needs.changes.outputs.version-changed == 'true' || needs.changes.outputs.e2e-tests-changed == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    permissions:
+      contents: read
+      packages: write
     secrets: inherit
     strategy:
       fail-fast: false
@@ -627,6 +640,9 @@ jobs:
       - changes
       - build-js
     if: ${{ needs.changes.outputs.js-lint != '[]' }}
+    permissions:
+      contents: read
+      id-token: write
     secrets: inherit
     uses: ./.github/workflows/tests-js-package.yml
     with:
@@ -639,6 +655,9 @@ jobs:
       - changes
       - build-js
     if: ${{ needs.changes.outputs.js-test-jobs != '[]' }}
+    permissions:
+      contents: read
+      id-token: write
     secrets: inherit
     strategy:
       fail-fast: false

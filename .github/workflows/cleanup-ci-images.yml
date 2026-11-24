@@ -20,9 +20,9 @@ on:
       - .github/workflows/cleanup-ci-images.yml
       - .github/scripts/cleanup-ci-images.py
 
+# Each job names the package access it needs.
 permissions:
   contents: read
-  packages: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || 'sweep' }}
@@ -31,8 +31,10 @@ concurrency:
 jobs:
   cleanup:
     name: Delete old CI Docker images
-    # A pull request runs its own version of the script, so this stays on a
-    # GitHub-hosted runner.
+    if: ${{ github.event_name != 'pull_request' }}
+    permissions:
+      contents: read
+      packages: write
     runs-on: ubuntu-24.04
     # The script stops itself after five minutes.
     timeout-minutes: 10
@@ -47,5 +49,28 @@ jobs:
       - name: Delete CI images older than three days
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          DRY_RUN: ${{ github.event_name == 'pull_request' && '--dry-run' || '' }}
-        run: python3 .github/scripts/cleanup-ci-images.py $DRY_RUN
+        run: python3 .github/scripts/cleanup-ci-images.py
+
+  dry-run:
+    name: Dry-run the CI image cleanup
+    if: ${{ github.event_name == 'pull_request' }}
+    # A pull request runs its own version of the script, so its token can read
+    # the packages but not delete from them, and the job stays on a
+    # GitHub-hosted runner.
+    permissions:
+      contents: read
+      packages: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out the cleanup script
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Report the CI images a sweep would delete
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/cleanup-ci-images.py --dry-run

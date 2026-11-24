@@ -7,6 +7,7 @@ spends, and never fail a run.
 """
 from datetime import datetime, timedelta, timezone
 import importlib.util
+import io
 from pathlib import Path
 import re
 import time
@@ -94,9 +95,11 @@ class ExpiryTests(unittest.TestCase):
                     version(3, timedelta(days=7), ["c"])]
         self.assertEqual([item["id"] for item in cleanup.expired(versions, NOW)], [2, 3, 1])
 
-    def test_should_read_a_version_without_container_metadata_as_untagged(self):
-        self.assertEqual(cleanup.tags({"metadata": None}), [])
-        self.assertEqual(cleanup.tags({"metadata": {"container": None}}), [])
+    def test_should_not_take_a_version_without_tag_information_for_untagged(self):
+        self.assertIsNone(cleanup.tags({"metadata": None}))
+        self.assertIsNone(cleanup.tags({"metadata": {"container": None}}))
+        self.assertIsNone(cleanup.tags({"metadata": {"container": {"tags": None}}}))
+        self.assertEqual(cleanup.tags({"metadata": {"container": {"tags": []}}}), [])
 
 
 class ImagePartsTests(unittest.TestCase):
@@ -135,6 +138,19 @@ class ImagePartsTests(unittest.TestCase):
         self.assertEqual(count, 1)
         self.assertEqual(github.deleted, [(DRIVE, 1)])
         self.assertTrue(any(line.startswith("::warning::") and "untagged versions stay" in line for line in log))
+
+    def test_should_keep_an_index_without_tag_information_and_its_manifests(self):
+        # The packages API did not report the tags of the index, so it cannot
+        # be told from an untagged version by its metadata.
+        packages = self.image()
+        packages[DRIVE][0]["metadata"] = None
+        github = FakeGitHub(packages)
+        registry = FakeRegistry({1: [2, 3]})
+        count, log = clean(github, registry)
+        self.assertEqual(count, 0)
+        self.assertEqual(github.attempted, [])
+        self.assertEqual(registry.read, [("dashpay/platform/ci/drive", "sha256:1")])
+        self.assertTrue(any("without tag information" in line for line in log))
 
     def test_should_report_the_same_deletions_in_a_dry_run(self):
         github = FakeGitHub(self.image())
@@ -183,8 +199,9 @@ class CleanTests(unittest.TestCase):
 
 
 class HttpTests(unittest.TestCase):
-    def error(self, code, headers=None):
-        return urllib.error.HTTPError("https://api.github.invalid", code, "refused", headers or {}, None)
+    def error(self, code, headers=None, body=None):
+        return urllib.error.HTTPError("https://api.github.invalid", code, "refused", headers or {},
+                                      None if body is None else io.BytesIO(body))
 
     def test_should_tell_a_rate_limit_from_a_refusal(self):
         self.assertTrue(cleanup.rate_limited(self.error(429)))
@@ -192,6 +209,18 @@ class HttpTests(unittest.TestCase):
         self.assertTrue(cleanup.rate_limited(self.error(403, {"X-RateLimit-Remaining": "0"})))
         self.assertFalse(cleanup.rate_limited(self.error(403, {"X-RateLimit-Remaining": "4000"})))
         self.assertFalse(cleanup.rate_limited(self.error(400)))
+
+    def test_should_see_a_secondary_rate_limit_that_only_the_message_names(self):
+        # No Retry-After header and primary quota left: the body is all there is.
+        quota_left = {"X-RateLimit-Remaining": "4000"}
+        secondary = b'{"message": "You have exceeded a secondary rate limit. Please wait a few minutes."}'
+        self.assertTrue(cleanup.rate_limited(self.error(403, quota_left, secondary)))
+        forbidden = b'{"message": "Resource not accessible by integration"}'
+        self.assertFalse(cleanup.rate_limited(self.error(403, quota_left, forbidden)))
+        http = cleanup.Http(time.monotonic() + 60)
+        with mock.patch("urllib.request.urlopen", side_effect=self.error(403, quota_left, secondary)):
+            with self.assertRaises(cleanup.Stop):
+                http.json("DELETE", "https://api.github.invalid", {})
 
     def test_should_stop_on_a_rate_limit_and_pass_other_errors_on(self):
         http = cleanup.Http(time.monotonic() + 60)
@@ -259,6 +288,28 @@ class WorkflowTests(unittest.TestCase):
         # A registry or API problem must not change the result of a Tests run.
         self.assertNotIn("cleanup-ci-images", (ROOT / ".github/workflows/tests.yml").read_text())
         self.assertIn("cleanup-ci-images.py", (ROOT / ".github/workflows/cleanup-ci-images.yml").read_text())
+
+    def test_should_give_a_pull_request_a_read_only_package_token(self):
+        # A pull request runs its own version of the script, so its dry run
+        # must not hold a token that can delete images.
+        workflow = (ROOT / ".github/workflows/cleanup-ci-images.yml").read_text()
+        sweep, dry_run = workflow.split("\njobs:\n", 1)[1].split("\n  dry-run:\n", 1)
+        self.assertIn("if: ${{ github.event_name != 'pull_request' }}", sweep)
+        self.assertNotIn("--dry-run", sweep)
+        self.assertIn("if: ${{ github.event_name == 'pull_request' }}", dry_run)
+        self.assertIn("packages: read", dry_run)
+        self.assertIn("cleanup-ci-images.py --dry-run", dry_run)
+        self.assertEqual(workflow.count("packages: write"), 1)
+        self.assertNotIn("packages: write", dry_run)
+
+    def test_should_let_only_the_image_build_write_packages_in_the_tests_workflow(self):
+        workflow = (ROOT / ".github/workflows/tests.yml").read_text()
+        default = workflow.split("\njobs:\n", 1)[0].split("\npermissions:\n", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("packages: read", default)
+        self.assertNotIn("write", default)
+        build = workflow.split("  build-images:\n", 1)[1].split("    uses: ./.github/workflows/tests-build-image.yml", 1)[0]
+        self.assertIn("packages: write", build)
+        self.assertEqual(workflow.count("packages: write"), 1)
 
     def test_should_address_a_package_whose_name_has_slashes(self):
         github = cleanup.GitHub(None, "token", "https://api.github.invalid/")

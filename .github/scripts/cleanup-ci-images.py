@@ -11,7 +11,9 @@ last pushed. The untagged versions are the platform manifests and attestations
 that the indexes point to, and two images share one when a build changed
 nothing. An untagged version is deleted only when it is that old too and no
 tagged version that is left points to it. If the registry cannot say what a
-tagged version points to, the untagged versions of that image stay.
+tagged version points to, the untagged versions of that image stay. A version
+whose tags the packages API does not report may be an index: it is never
+deleted, and what it points to stays as well.
 
 The script always exits 0: any problem is reported as a warning, and the next
 run continues where this one stopped.
@@ -56,7 +58,9 @@ def package_name(repository, image):
 
 
 def tags(version):
-    return ((version.get("metadata") or {}).get("container") or {}).get("tags") or []
+    """Return the tags of a version, or None when the packages API does not report them."""
+    found = ((version.get("metadata") or {}).get("container") or {}).get("tags")
+    return found if isinstance(found, list) else None
 
 
 def expired(versions, now):
@@ -71,9 +75,17 @@ def expired(versions, now):
 
 def rate_limited(error):
     """Tell a rate limit apart from GitHub refusing one request."""
+    if error.code != 403:
+        return error.code == 429
     headers = error.headers or {}
-    return error.code == 429 or (
-        error.code == 403 and (headers.get("Retry-After") is not None or headers.get("X-RateLimit-Remaining") == "0"))
+    if headers.get("Retry-After") is not None or headers.get("X-RateLimit-Remaining") == "0":
+        return True
+    # A secondary limit can come without either header; then only the message names it.
+    try:
+        message = error.read().decode("utf-8", "replace").lower()
+    except Exception:
+        return False
+    return "rate limit" in message or "abuse detection" in message
 
 
 class Http:
@@ -192,15 +204,18 @@ def clean_package(github, registry, repository, image, now, dry_run, log, delete
 
     # Indexes go first: a tag must never outlive a manifest it points to.
     gone = delete([version for version in old if tags(version)])
-    untagged = [version for version in old if not tags(version)]
+    unknown = sum(1 for version in versions if tags(version) is None)
+    if unknown:
+        log(f"::warning::{package}: {unknown} versions without tag information are kept")
+    untagged = [version for version in old if tags(version) == []]
     if not untagged:
         return
-    # Every tagged version still there protects what it points to, whether it
-    # is recent or could not be deleted.
+    # Every version still there that is tagged, or may be, protects what it
+    # points to, whether it is recent or could not be deleted.
     referenced = set()
     try:
         for version in versions:
-            if tags(version) and version["id"] not in gone:
+            if tags(version) != [] and version["id"] not in gone:
                 referenced |= registry.references(f"{repository.lower()}/ci/{image}", version["name"])
     except (OSError, ValueError, LookupError, TypeError, AttributeError) as error:
         log(f"::warning::{package}: cannot read what its images point to, so untagged versions stay: {error}")

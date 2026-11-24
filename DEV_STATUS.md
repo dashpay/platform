@@ -12,7 +12,9 @@ The full test suite runs nightly at 11:00 PM UTC, including Docker image builds 
 
 ### Docker Images
 
-Tests runs on branches that carry the GHCR change (`v5.2-dev` and later) build Docker images for their commit and push them to the GitHub Container Registry (GHCR), tagged by commit SHA. They are deleted after three days.
+Tests runs on branches that carry the GHCR change (`v5.2-dev` and later) build Docker images for their commit and push them to the GitHub Container Registry (GHCR), tagged by commit SHA.
+
+An image may be deleted once it is three days old. The `CI image cleanup` workflow does that when it next runs: on every push to `master` or a `v*-dev` branch that has the workflow, and nightly and on manual dispatch once the default branch has it. While the default branch is `v5.1-dev`, only pushes to `v5.2-dev` and later branches start a sweep, so an image can stay longer than three days.
 
 | Image | Target |
 |-------|--------|
