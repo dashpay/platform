@@ -790,6 +790,11 @@ impl PlatformWallet {
                 None
             }
         };
+        // Whether a Clear is admitted is sampled before the preparation is
+        // read again, not after: a Clear that wiped the ledger just read
+        // and finished between the two checks would otherwise be seen by
+        // neither, and the wiped ledger's balance returned.
+        let clearing = coordinator.clear_in_progress();
         // A Clear ends the preparation: one that finished since the
         // preparation was read leaves the account unproved. Checked after
         // the read rather than by holding the coordinator's operation
@@ -798,11 +803,11 @@ impl PlatformWallet {
         if self.prepared_shielded_identity_account(identity_id).await != Some(account) {
             return Ok(ShieldedIdentityBalance::Unverified);
         }
-        // A Clear that is admitted and has not finished may be purging the
+        // A Clear that was admitted and had not finished may be purging the
         // ledger just read, and may also give up without wiping anything,
         // with the preparation still standing. Neither is known yet, so
         // nothing is reported: the caller reads again.
-        if coordinator.clear_in_progress() {
+        if clearing {
             return Err(PlatformWalletError::ShieldedBalanceBusy);
         }
         Ok(match established {
