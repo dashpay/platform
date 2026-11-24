@@ -619,10 +619,12 @@ fn spend_result_code(
 ) -> PlatformWalletFFIResult {
     match result {
         Ok(()) => PlatformWalletFFIResult::ok(),
-        // A refusal the wallet proved came before the dispatch keeps its
-        // source's code, as through the blanket conversion; its class
-        // (`NotSent`) is the wrapper's, stamped by `map_spend_result`.
-        Err(PlatformWalletError::RefusedBeforeDispatch { source }) => {
+        // A refusal the wallet proved came before the dispatch, or one that
+        // followed it, keeps its source's code, as through the blanket
+        // conversion; its class (`NotSent`, or `MaybeSent` and the held lock)
+        // is the wrapper's, stamped by `map_spend_result`.
+        Err(PlatformWalletError::RefusedBeforeDispatch { source })
+        | Err(PlatformWalletError::PaymentAlreadyDispatched { source, .. }) => {
             spend_result_code(Err(*source), operation)
         }
         // Outcome not known: a dispatch may have reached a node and the
@@ -3959,6 +3961,31 @@ mod tests {
         assert_eq!(result.code, PlatformWalletFFIResultCode::NotFound);
         assert_eq!(result.code as i32, 98);
         assert!(message_of(&result).contains("wallet removed"));
+    }
+
+    /// A private contact request paid but not yet read back
+    /// (`PrivateContactRequestPending` after the payment, wrapped as
+    /// `PaymentAlreadyDispatched`) keeps its pending code 71 and the
+    /// wrapper's `MaybeSent`, and is not retryable.
+    #[test]
+    fn map_spend_result_keeps_a_paid_pending_contact_request_at_71() {
+        let paid_pending: Result<(), PlatformWalletError> =
+            Err(PlatformWalletError::PaymentAlreadyDispatched {
+                held_lock: None,
+                source: Box::new(PlatformWalletError::PrivateContactRequestPending(
+                    dpp::prelude::Identifier::from([9; 32]),
+                )),
+            });
+        let result = map_spend_result(paid_pending, "private contact request");
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorPrivateContactRequestPending
+        );
+        assert_eq!(
+            result.payment_delivery,
+            PlatformWalletFFIPaymentDelivery::MaybeSent
+        );
+        assert!(!result.retryable);
     }
 
     /// A key-unavailable signer completion preserved under `Sdk` by the wallet

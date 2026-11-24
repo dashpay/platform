@@ -427,34 +427,7 @@ unsafe fn asset_lock_manager_catch_up_blocking_inner(
                 error = %e,
                 "asset_lock_manager_catch_up_blocking: resume_asset_lock failed"
             );
-            match e {
-                // Double-spend verdicts route through the typed conversion
-                // so the host receives the real code. In practice that is
-                // always the provisional ErrorAssetLockInputContested
-                // (48), which bounds the wait but keeps the lock for a
-                // later retry: the resume never raises the terminal
-                // ErrorAssetLockInputConflict (47), which stays reserved
-                // for a finalized-ancestry proof the wallet cannot make.
-                // 47 is matched anyway so the reserved code would cross
-                // intact rather than flattening the day it ships.
-                // Flattening either to ErrorWalletOperation would leave
-                // the host with a spinner it can never resolve.
-                //
-                // The input-cap refusal (60) crosses typed for the same
-                // reason: a lock over the cap is never re-sent, so every
-                // catch-up of it ends here, and only the code tells the
-                // host why this row will not complete.
-                typed @ (PlatformWalletError::AssetLockInputConflict { .. }
-                | PlatformWalletError::AssetLockInputContested { .. }
-                | PlatformWalletError::AssetLockTooManyInputs { .. }) => typed.into(),
-                // The fold keeps the error's payment-delivery class, so a
-                // proof wait that timed out still names the lock it holds.
-                other => PlatformWalletFFIResult::err_from_wallet_error(
-                    PlatformWalletFFIResultCode::ErrorWalletOperation,
-                    format!("{}", other),
-                    &other,
-                ),
-            }
+            catch_up_error_result(e)
         }
     }
 }
@@ -521,12 +494,48 @@ pub unsafe extern "C" fn asset_lock_manager_recover(
     PlatformWalletFFIResult::ok()
 }
 
+/// The result a failed catch-up resume reports: the double-spend verdicts and
+/// the input-cap refusal keep their typed codes, everything else folds into
+/// `ErrorWalletOperation`; every arm keeps the error's payment class.
+fn catch_up_error_result(e: PlatformWalletError) -> PlatformWalletFFIResult {
+    // Read through the payment-class wrapper: a contested lock the
+    // resume names no held lock for keeps its typed code.
+    match e.dispatched_source() {
+        // Double-spend verdicts route through the typed conversion
+        // so the host receives the real code. In practice that is
+        // always the provisional ErrorAssetLockInputContested
+        // (48), which bounds the wait but keeps the lock for a
+        // later retry: the resume never raises the terminal
+        // ErrorAssetLockInputConflict (47), which stays reserved
+        // for a finalized-ancestry proof the wallet cannot make.
+        // 47 is matched anyway so the reserved code would cross
+        // intact rather than flattening the day it ships.
+        // Flattening either to ErrorWalletOperation would leave
+        // the host with a spinner it can never resolve.
+        //
+        // The input-cap refusal (60) crosses typed for the same
+        // reason: a lock over the cap is never re-sent, so every
+        // catch-up of it ends here, and only the code tells the
+        // host why this row will not complete.
+        PlatformWalletError::AssetLockInputConflict { .. }
+        | PlatformWalletError::AssetLockInputContested { .. }
+        | PlatformWalletError::AssetLockTooManyInputs { .. } => e.into(),
+        // The fold keeps the error's payment-delivery class, so a
+        // proof wait that timed out still names the lock it holds.
+        _ => PlatformWalletFFIResult::err_from_wallet_error(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("{}", e),
+            &e,
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        asset_lock_manager_catch_up_blocking, asset_lock_manager_resume, resume_timeout,
-        timeout_probe, validate_asset_lock_proof_size, MAX_ASSET_LOCK_PROOF_SIZE_BYTES,
-        MAX_TIMEOUT_SECS,
+        asset_lock_manager_catch_up_blocking, asset_lock_manager_resume, catch_up_error_result,
+        resume_timeout, timeout_probe, validate_asset_lock_proof_size,
+        MAX_ASSET_LOCK_PROOF_SIZE_BYTES, MAX_TIMEOUT_SECS,
     };
     use crate::error::PlatformWalletFFIResultCode;
     use crate::handle::{Handle, ASSET_LOCK_MANAGER_STORAGE};
@@ -686,6 +695,30 @@ mod tests {
     /// with one input more than the cap. It carries no asset-lock payload:
     /// the resume asks only DPP's input check, which reads the input count
     /// and nothing else.
+    #[test]
+    fn should_keep_a_contested_lock_typed_when_the_resume_names_no_held_lock() {
+        use platform_wallet::PlatformWalletError;
+        let contested = PlatformWalletError::AssetLockInputContested {
+            out_point: OutPoint::new(Txid::from_byte_array([1u8; 32]), 0),
+            input: OutPoint::new(Txid::from_byte_array([2u8; 32]), 1),
+            spent_by: Txid::from_byte_array([3u8; 32]),
+            height: None,
+        };
+        let wrapped = PlatformWalletError::PaymentAlreadyDispatched {
+            held_lock: None,
+            source: Box::new(contested),
+        };
+        let result = catch_up_error_result(wrapped);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockInputContested
+        );
+        assert_eq!(
+            result.payment_delivery,
+            crate::error::PlatformWalletFFIPaymentDelivery::MaybeSent
+        );
+    }
+
     #[test]
     fn should_keep_the_input_cap_refusal_typed_through_the_exported_catch_up() {
         let (manager, handle) = live_manager_handle();
