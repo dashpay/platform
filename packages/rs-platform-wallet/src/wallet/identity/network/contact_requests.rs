@@ -2421,6 +2421,11 @@ pub(crate) fn budget_spent(deadline: Option<std::time::Instant>) -> bool {
 /// contact's current `incoming_request.account_reference`, including a `None`
 /// marker from a cold restore that did not carry it, queues it here.
 /// Idempotent: once rebuilt the marker is stamped and the next sweep skips it.
+///
+/// A rebuild from an unchanged xpub hands out the pool's early addresses
+/// again. That is accepted: by the restart a reservation has either reached
+/// the chain, and payout selection re-marks it from the wallet's
+/// transactions, or was abandoned with no on-chain trace to link.
 pub(super) fn tear_down_stale_external_accounts(
     wallet: &mut key_wallet::wallet::Wallet,
     info: &mut PlatformWalletInfo,

@@ -69,7 +69,8 @@ use std::sync::Arc;
 
 use super::contact_requests::ContactCryptoProvider;
 use super::payments::{
-    contact_address_paid_on_chain, contact_external_account, record_contact_addresses_paid_on_chain,
+    contact_address_paid_on_chain, next_contact_payout_address,
+    record_contact_addresses_paid_on_chain,
 };
 use super::DashPayView;
 use crate::broadcaster::TransactionBroadcaster;
@@ -507,16 +508,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             from_identity_id,
             to_contact_id,
         )?;
-        let (contact_xpub, external_account) = contact_external_account(
+        let (payment_address, _) = next_contact_payout_address(
             &mut wm,
             self.wallet_id,
             Some(generation),
             from_identity_id,
             to_contact_id,
         )?;
-        let payment_address = external_account
-            .next_address(Some(&contact_xpub))
-            .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
         Ok((payment_address, found_paid))
     }
 

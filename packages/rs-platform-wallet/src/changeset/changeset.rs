@@ -2151,12 +2151,12 @@ pub struct ProviderKeyAccountEntry {
 /// **Merge policy** on the parent
 /// [`PlatformWalletChangeSet::account_address_pools`] field is plain
 /// `Vec::extend` — entries are *not* deduplicated by
-/// `(account_type, pool_type)`. The FFI emits whole-pool snapshots,
-/// so a second snapshot for the same key inside one merged round
-/// represents the latest pool state and the apply-time consumer is
-/// expected to treat the last entry per `(account_type, pool_type)`
-/// as authoritative. Mid-round multi-snapshots for the same key are
-/// not produced by any current emitter (snapshots fire at register,
+/// `(account_type, pool_type)`. An entry may hold only some of the
+/// pool's rows (used-flag flips, derived rows, rows above an issuance
+/// floor), so a persister upserts each row by index, a later entry's row
+/// winning, and never deletes rows an entry omits. Mid-round
+/// multi-snapshots for the same key are not produced by any current
+/// emitter (snapshots fire at register,
 /// pool extension, and used-flag flip — each on a fresh `store`
 /// round), so this is a forward-looking documentation of intent
 /// rather than a hot path.
@@ -2172,15 +2172,16 @@ pub struct AccountAddressPoolEntry {
     pub account_type: AccountType,
     /// Pool variant (External / Internal / Absent / AbsentHardened).
     pub pool_type: AddressPoolType,
-    /// Snapshot of every `AddressInfo` entry in the pool at emit time.
+    /// The pool's `AddressInfo` rows at emit time; possibly a subset of the
+    /// pool, never a replacement for it.
     pub addresses: Vec<AddressInfo>,
 }
 
 /// Snapshot the non-empty address pools of one account into
 /// [`AccountAddressPoolEntry`] rows.
 ///
-/// Pool snapshots are whole-pool and last-write-wins on the persistence
-/// side, so each emission carries the full pool state; empty pools are
+/// Each emission carries the full pool state; persisters still upsert per
+/// row, as other entries may hold a subset of a pool. Empty pools are
 /// dropped so the FFI receiver keeps its "skip empty pools" semantics.
 /// Callers pass `account.managed_account_type().address_pools()` — this
 /// works for any account shape (`ManagedCoreFundsAccount`,
@@ -2206,6 +2207,23 @@ pub(crate) fn account_address_pool_entries<'a>(
             })
         })
         .collect()
+}
+
+/// Drop from `entries` the rows at or below their account's entry in
+/// `issuance_floors`, and the entries left empty. A pool the load could not
+/// restore may hold a refilled, unused key at the index of a used row the
+/// store still keeps; persisters upsert by row, so the store keeps its rows
+/// there as they are.
+pub(crate) fn drop_rows_at_or_below_issuance_floors(
+    entries: &mut Vec<AccountAddressPoolEntry>,
+    issuance_floors: &BTreeMap<AccountType, u32>,
+) {
+    for entry in entries.iter_mut() {
+        if let Some(floor) = issuance_floors.get(&entry.account_type) {
+            entry.addresses.retain(|row| row.index > *floor);
+        }
+    }
+    entries.retain(|entry| !entry.addresses.is_empty());
 }
 
 // ---------------------------------------------------------------------------

@@ -25,8 +25,8 @@ use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 
 use crate::changeset::{
-    AccountAddressPoolEntry, AccountRegistrationEntry, AssetLockChangeSet, PersistenceCapabilities,
-    PlatformWalletChangeSet,
+    drop_rows_at_or_below_issuance_floors, AccountAddressPoolEntry, AccountRegistrationEntry,
+    AssetLockChangeSet, PersistenceCapabilities, PlatformWalletChangeSet,
 };
 use crate::error::PlatformWalletError;
 use crate::wallet::core::InBroadcastPin;
@@ -792,7 +792,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     fn asset_lock_account_pool_entries(
         wallet_info: &PlatformWalletInfo,
     ) -> Vec<AccountAddressPoolEntry> {
-        wallet_info
+        let mut entries = wallet_info
             .core_wallet
             .all_managed_accounts()
             .iter()
@@ -813,7 +813,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     managed.managed_account_type().address_pools(),
                 )
             })
-            .collect()
+            .collect();
+        drop_rows_at_or_below_issuance_floors(&mut entries, &wallet_info.funding_issuance_floors);
+        entries
     }
 
     fn persist_asset_lock_account_pools(
@@ -1921,6 +1923,57 @@ mod tests {
             matches!(next, Err(PlatformWalletError::AssetLockTransaction(_))),
             "{next:?}"
         );
+    }
+
+    /// A funding pool the load could not restore may hold refilled keys at
+    /// the index of a used row the store still keeps, so its snapshot leaves
+    /// the rows at or below the floor to the store. A key used above the floor
+    /// is stored like in any other pool, or the next load hands it out again.
+    #[test]
+    fn should_snapshot_only_the_rows_above_a_funding_pools_issuance_floor() {
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+        let wallet = Wallet::from_seed_bytes(
+            [5u8; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .expect("wallet from seed");
+        let mut info = PlatformWalletInfo::from_wallet(&wallet, 0);
+        let floor = 2;
+        info.funding_issuance_floors
+            .insert(AccountType::IdentityInvitation, floor);
+        let account = info
+            .core_wallet
+            .accounts
+            .identity_invitation
+            .as_mut()
+            .expect("managed invitation account");
+        let above = account.managed_account_type().address_pools()[0].addresses()[&(floor + 1)]
+            .address
+            .clone();
+        account.mark_address_used(&above);
+
+        let entries =
+            AssetLockManager::<AlwaysOkBroadcaster>::asset_lock_account_pool_entries(&info);
+
+        let invitation: Vec<_> = entries
+            .iter()
+            .filter(|entry| entry.account_type == AccountType::IdentityInvitation)
+            .flat_map(|entry| &entry.addresses)
+            .collect();
+        assert!(
+            invitation.iter().all(|row| row.index > floor),
+            "{invitation:?}"
+        );
+        assert!(
+            invitation
+                .iter()
+                .any(|row| row.index == floor + 1 && row.is_used()),
+            "{invitation:?}"
+        );
+        assert!(entries.iter().any(|entry| entry.account_type
+            == AccountType::IdentityRegistration
+            && entry.addresses.iter().any(|row| row.index == 0)));
     }
 
     /// The zero-spendable-candidate selection error must surface the SAME

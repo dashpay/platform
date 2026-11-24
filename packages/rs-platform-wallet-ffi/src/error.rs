@@ -1178,6 +1178,12 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::InputMidBroadcast { .. } => {
                 PlatformWalletFFIResultCode::ErrorUnknown
             }
+            // A payout refused because the load could not restore the contact's
+            // pool. Deliberately the code its `TransactionBuild` predecessor
+            // produced; a dedicated code goes through the same registry.
+            PlatformWalletError::ContactPayoutPoolNotRestored { .. } => {
+                PlatformWalletFFIResultCode::ErrorUnknown
+            }
             // A definitively-failed address-nonce race (reaches the blanket impl
             // via `?`/`.into()` from the address-funds paths that promote it;
             // an identity top-up from addresses never does). Exposing

@@ -92,6 +92,16 @@ pub enum PlatformWalletError {
     #[error("{0}; nothing was sent — prepare the payment again")]
     PreparedPaymentAddressTaken(String),
 
+    /// The load could not restore the contact's payout address pool past
+    /// `floor`, so any address up to it may already have been paid. Nothing
+    /// was reserved or sent.
+    #[error(
+        "the payout addresses up to index {floor} for contact {contact} may already have been \
+         paid, but the wallet's stored addresses could not be restored that far; payments to \
+         this contact are refused"
+    )]
+    ContactPayoutPoolNotRestored { contact: Identifier, floor: u32 },
+
     #[error("Wallet already exists: {0}")]
     WalletAlreadyExists(String),
 

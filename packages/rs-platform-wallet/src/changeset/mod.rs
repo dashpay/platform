@@ -33,7 +33,7 @@ pub mod shielded_sync_start_state;
 pub mod traits;
 mod wallet_accounting;
 
-pub(crate) use changeset::account_address_pool_entries;
+pub(crate) use changeset::{account_address_pool_entries, drop_rows_at_or_below_issuance_floors};
 pub use changeset::{
     upsert_pending_contact_crypto, AccountAddressPoolEntry, AccountRegistrationEntry,
     AssetLockChangeSet, AssetLockEntry, ContactChangeSet, ContactRequestEntry, CoreChangeSet,

@@ -1691,9 +1691,10 @@ fn clear_restored_outbound_markers(info: &mut PlatformWalletInfo) -> usize {
 pub struct AddressPoolRestoreStats {
     pub routed: usize,
     pub dropped: usize,
-    /// Per asset-lock funding account, the highest persisted row index its
-    /// pool could not reach: keys at or below it may already be handed out,
-    /// so none of them may fund an asset lock.
+    /// Per asset-lock funding or DashPay payout account, the highest
+    /// persisted row index its pool could not reach: keys at or below it may
+    /// already be handed out, so none of them may fund an asset lock or
+    /// receive a payout.
     pub funding_issuance_floors: BTreeMap<AccountType, u32>,
 }
 
@@ -1704,19 +1705,20 @@ pub struct AddressPoolRestoreStats {
 ///
 /// A DashPay payment pool is restored like an asset-lock funding pool: an
 /// address reserved for a withdrawal is used whether or not the chain shows
-/// it. A funding pool that cannot reach its highest persisted row, because
-/// the gap below it exceeds the derivation budget or the row is refused, gets
-/// an entry in [`AddressPoolRestoreStats::funding_issuance_floors`].
+/// it. A funding or payment pool that cannot reach its highest persisted row,
+/// because the gap below it exceeds the derivation budget or the row is
+/// refused, gets an entry in [`AddressPoolRestoreStats::funding_issuance_floors`].
 ///
 /// Covers the funds-bearing accounts, the asset-lock funding accounts and the
 /// four provider key accounts. Each pool's rows go through
 /// the crate's address-row restore with the key source of their account, so rows
 /// missing below a persisted one are derived; entries naming the same pool
-/// are restored together, under one gap-fill budget. In an asset-lock funding
-/// pool every address at or below the highest persisted row that no row
-/// restored is marked used, since the chain cannot show whether its key was
-/// handed out. A pool whose account or pool type the wallet does not hold is
-/// dropped as a whole and counts once.
+/// are restored together, under one gap-fill budget. In an asset-lock
+/// funding or payment pool, a missing row, including inside the pre-derived
+/// window, marks every address of the pool used,
+/// since the chain cannot show whether their keys were handed out. A pool
+/// whose account or pool type the wallet does not hold is dropped as a whole
+/// and counts once.
 pub fn restore_account_address_pools(
     wallet: &Wallet,
     wallet_info: &mut ManagedWalletInfo,
@@ -1875,8 +1877,10 @@ pub fn restore_account_address_pools(
         };
         let key_source = wallet.key_source_for_account(entry.account_type);
         let funding = funding_family(&entry.account_type).is_some();
-        let gap_rows = if funding || is_watch_only_contact(&entry.account_type) {
+        let gap_rows = if funding {
             GapRows::Used
+        } else if is_watch_only_contact(&entry.account_type) {
+            GapRows::UsedThroughHighestUsed
         } else {
             GapRows::Available
         };
@@ -1890,7 +1894,7 @@ pub fn restore_account_address_pools(
         stats.routed += outcome.restored;
         stats.dropped += outcome.refused;
         if let Some(highest_row) = highest_row.filter(|row| {
-            funding
+            gap_rows.marks_used()
                 && pool
                     .highest_generated()
                     .is_none_or(|derived| derived < *row)
@@ -1899,9 +1903,9 @@ pub fn restore_account_address_pools(
                 wallet_id = %hex::encode(wallet.wallet_id),
                 account_type = ?entry.account_type,
                 funding_issuance_floor = highest_row,
-                "load: funding pool cannot reach its highest persisted address row, so the \
-                 address store is damaged; asset locks funded from this account are refused \
-                 rather than risk reusing a key already handed out"
+                "load: funding or payment pool cannot reach its highest persisted address row, \
+                 so the address store is damaged; asset locks funded from this account and \
+                 payouts to it are refused rather than risk reusing a key already handed out"
             );
             stats
                 .funding_issuance_floors
@@ -2603,7 +2607,10 @@ mod address_pool_restore_tests {
             .expect("managed invitation account")
             .next_address(None)
             .expect("next funding address");
-        assert_eq!(next, probe.addresses()[&(lost + 2)].address);
+        let index = invitation_pool(&mut info)
+            .address_index(&next)
+            .expect("the address is in the pool");
+        assert!(index > lost + 1, "key {index} may already be handed out");
     }
 
     /// A lost invitation row may hold an exported voucher key whether it
@@ -2747,22 +2754,7 @@ mod address_pool_restore_tests {
     #[test]
     fn should_not_reissue_a_lost_dashpay_payment_address_after_restart() {
         let (mut wallet, mut info) = wallet_and_info();
-        let key = DashpayAccountKey {
-            index: 0,
-            user_identity_id: [0xAA; 32],
-            friend_identity_id: [0x01; 32],
-        };
-        let account_type = AccountType::DashpayExternalAccount {
-            index: key.index,
-            user_identity_id: key.user_identity_id,
-            friend_identity_id: key.friend_identity_id,
-        };
-        let contact_xpub = ExtendedPubKey::from_priv(
-            &ExtendedPrivKey::new_master(Network::Testnet, &[1; 32]).expect("master"),
-        );
-        wallet
-            .add_account(account_type, Some(contact_xpub))
-            .expect("add the contact account");
+        let (account_type, contact_xpub) = add_contact_account(&mut wallet);
         let managed = ManagedCoreFundsAccount::from_account(
             wallet
                 .accounts
@@ -2773,6 +2765,7 @@ mod address_pool_restore_tests {
         info.accounts
             .insert_funds_bearing_account(managed)
             .expect("register the managed contact account");
+        let key = CONTACT;
         let key_source = wallet.key_source_for_account(account_type);
         let mut probe = info.accounts.dashpay_external_accounts[&key]
             .managed_account_type()
@@ -2807,7 +2800,265 @@ mod address_pool_restore_tests {
             .expect("managed contact account")
             .next_address(Some(&contact_xpub))
             .expect("next payment address");
-        assert_eq!(next, probe.addresses()[&(lost + 2)].address);
+        let index = contact_pool(&mut info)
+            .address_index(&next)
+            .expect("the address is in the pool");
+        assert!(
+            index > lost + 1,
+            "payout address {index} may already be paid"
+        );
+        assert!(
+            index <= lost + 1 + probe.gap_limit(),
+            "payout address {index} is past the window the contact watches"
+        );
+    }
+
+    const CONTACT: DashpayAccountKey = DashpayAccountKey {
+        index: 0,
+        user_identity_id: [0xAA; 32],
+        friend_identity_id: [0x01; 32],
+    };
+
+    /// Add the [`CONTACT`] payout account to `wallet`; returns its type and
+    /// the contact's xpub its addresses derive from.
+    fn add_contact_account(wallet: &mut Wallet) -> (AccountType, ExtendedPubKey) {
+        let account_type = AccountType::DashpayExternalAccount {
+            index: CONTACT.index,
+            user_identity_id: CONTACT.user_identity_id,
+            friend_identity_id: CONTACT.friend_identity_id,
+        };
+        let contact_xpub = ExtendedPubKey::from_priv(
+            &ExtendedPrivKey::new_master(Network::Testnet, &[1; 32]).expect("master"),
+        );
+        wallet
+            .add_account(account_type, Some(contact_xpub))
+            .expect("add the contact account");
+        (account_type, contact_xpub)
+    }
+
+    fn invitation_pool(info: &mut ManagedWalletInfo) -> &mut AddressPool {
+        info.accounts
+            .identity_invitation
+            .as_mut()
+            .expect("managed invitation account")
+            .managed_account_type_mut()
+            .address_pools_mut()
+            .into_iter()
+            .next()
+            .expect("invitation pool")
+    }
+
+    fn contact_pool(info: &mut ManagedWalletInfo) -> &mut AddressPool {
+        info.accounts
+            .dashpay_external_accounts
+            .get_mut(&CONTACT)
+            .expect("managed contact account")
+            .managed_account_type_mut()
+            .address_pools_mut()
+            .into_iter()
+            .next()
+            .expect("contact pool")
+    }
+
+    /// Damaged stores for [`reload_after_refill`], as the rows lost below
+    /// each used row past the window: one gap past the restore budget, and
+    /// one that spends the budget exactly with a refused row one lost row
+    /// above it, inside the window a refill derives.
+    const DAMAGED_STORES: [&[u32]; 2] = [&[MAX_RESTORE_GAP_FILL + 1], &[MAX_RESTORE_GAP_FILL, 1]];
+
+    /// Two loads of `account_type`'s pool from one damaged store. The store
+    /// holds used rows over the window `from_wallet` derives, then a used
+    /// row past each of `lost` rows, so the first load cannot reach the last
+    /// one. Between the loads, a payment to the highest restored used address
+    /// refills the pool and the host upserts the rows the refill derived over
+    /// the store, a refused row's index included, so the second load's gaps
+    /// fit the budget.
+    ///
+    /// Returns both loads' stats, the wallet info of the second load, the
+    /// highest persisted row and the highest row the second load reads as used.
+    fn reload_after_refill(
+        wallet: &Wallet,
+        account_type: AccountType,
+        pool: fn(&mut ManagedWalletInfo) -> &mut AddressPool,
+        lost: &[u32],
+    ) -> (
+        AddressPoolRestoreStats,
+        AddressPoolRestoreStats,
+        ManagedWalletInfo,
+        u32,
+        u32,
+    ) {
+        let key_source = wallet.key_source_for_account(account_type);
+        let mut first = ManagedWalletInfo::from_wallet(wallet, 0);
+        let mut probe = pool(&mut first).clone();
+        let window = probe.highest_generated().map_or(0, |h| h + 1);
+        let past_window: Vec<u32> = lost
+            .iter()
+            .scan(window, |next, lost| {
+                let index = *next + lost;
+                *next = index + 1;
+                Some(index)
+            })
+            .collect();
+        let far = *past_window.last().expect("a row past the window");
+        derive_through(&mut probe, &key_source, far).expect("derive the persisted rows");
+        let mut store: BTreeMap<u32, key_wallet::AddressInfo> = (0..window)
+            .chain(past_window)
+            .map(|index| {
+                let mut row = probe.addresses()[&index].clone();
+                row.state = AddressState::Used;
+                (index, row)
+            })
+            .collect();
+        let pool_type = probe.pool_type();
+        let first_load = restore_account_address_pools(
+            wallet,
+            &mut first,
+            vec![entry(
+                account_type,
+                pool_type,
+                store.values().cloned().collect(),
+            )],
+        );
+
+        let refill = pool(&mut first)
+            .maintain_gap_limit(&key_source)
+            .expect("refill the pool");
+        store.extend(refill.into_iter().map(|row| (row.index, row)));
+
+        let highest_used = store
+            .values()
+            .filter(|row| row.is_used())
+            .map(|row| row.index)
+            .max()
+            .expect("a used row");
+        let mut second = ManagedWalletInfo::from_wallet(wallet, 0);
+        let second_load = restore_account_address_pools(
+            wallet,
+            &mut second,
+            vec![entry(
+                account_type,
+                pool_type,
+                store.into_values().collect(),
+            )],
+        );
+        (first_load, second_load, second, far, highest_used)
+    }
+
+    /// Whether `index` may be handed out from `account_type`'s pool after a
+    /// load that reported `stats`.
+    fn issuable(stats: &AddressPoolRestoreStats, account_type: AccountType, index: u32) -> bool {
+        stats
+            .funding_issuance_floors
+            .get(&account_type)
+            .is_none_or(|floor| index > *floor)
+    }
+
+    /// Every invitation key up to a lost row may be in an exported voucher.
+    /// A reload that reaches the row after a refill shrank the gap below it
+    /// must still keep the refilled keys out of the next voucher.
+    #[test]
+    fn should_not_reissue_an_invitation_key_below_a_lost_row_after_a_refill_and_reload() {
+        let (wallet, _) = wallet_and_info();
+        let account_type = AccountType::IdentityInvitation;
+
+        for lost in DAMAGED_STORES {
+            let (first, second, mut info, far, _) =
+                reload_after_refill(&wallet, account_type, invitation_pool, lost);
+
+            assert_eq!(
+                first.funding_issuance_floors,
+                BTreeMap::from([(account_type, far)]),
+                "{lost:?}"
+            );
+            // The selection `AssetLockManager::peek_next_funding_address` makes.
+            let next = info
+                .accounts
+                .identity_invitation
+                .as_mut()
+                .expect("managed invitation account")
+                .next_address(None)
+                .expect("next funding address");
+            let index = invitation_pool(&mut info)
+                .address_index(&next)
+                .expect("the address is in the pool");
+            assert!(
+                index > far || !issuable(&second, account_type, index),
+                "{lost:?}: key {index} at or below the lost row {far} is issuable"
+            );
+        }
+    }
+
+    /// Every payout address up to a lost row of a contact's pool may already
+    /// be paid. The load that cannot reach the row refuses payouts. A reload
+    /// that reaches it after a refill pays above every used row, but no
+    /// further than the contact watches: a refilled row the host stored as
+    /// unused may be paid again, an address reuse only, as a payment
+    /// selection re-marks the addresses the wallet's transactions paid.
+    #[test]
+    fn should_pay_a_dashpay_contact_above_its_used_rows_and_inside_its_watch_window_after_a_refill_and_reload(
+    ) {
+        let (mut wallet, _) = wallet_and_info();
+        let (account_type, contact_xpub) = add_contact_account(&mut wallet);
+
+        for lost in DAMAGED_STORES {
+            let (first, _, mut info, far, highest_used) =
+                reload_after_refill(&wallet, account_type, contact_pool, lost);
+
+            assert_eq!(
+                first.funding_issuance_floors,
+                BTreeMap::from([(account_type, far)]),
+                "{lost:?}"
+            );
+            // The selection `reserve_contact_payment_address` makes.
+            let next = info
+                .accounts
+                .dashpay_external_accounts
+                .get_mut(&CONTACT)
+                .expect("managed contact account")
+                .next_address(Some(&contact_xpub))
+                .expect("next payment address");
+            let index = contact_pool(&mut info)
+                .address_index(&next)
+                .expect("the address is in the pool");
+            let gap_limit = contact_pool(&mut info).gap_limit();
+            assert!(
+                index > highest_used && index <= highest_used + gap_limit,
+                "{lost:?}: payout address {index} is not past the used row {highest_used} \
+                 inside the window the contact watches"
+            );
+        }
+    }
+
+    /// A store without lost rows restores as persisted: a refilled unused
+    /// row below the highest used one stays available.
+    #[test]
+    fn should_keep_unused_funding_rows_below_a_used_row_available_in_an_undamaged_store() {
+        let (wallet, mut info) = wallet_and_info();
+        let account_type = AccountType::IdentityInvitation;
+        let key_source = wallet.key_source_for_account(account_type);
+        let mut probe = invitation_pool(&mut info).clone();
+        let last = probe.highest_generated().map_or(0, |h| h + 1) + 2;
+        derive_through(&mut probe, &key_source, last).expect("derive the probe rows");
+        let rows = (0..=last)
+            .map(|index| {
+                let mut row = probe.addresses()[&index].clone();
+                if index == 0 || index == last {
+                    row.state = AddressState::Used;
+                }
+                row
+            })
+            .collect();
+
+        let stats = restore_account_address_pools(
+            &wallet,
+            &mut info,
+            vec![entry(account_type, probe.pool_type(), rows)],
+        );
+
+        assert_eq!(stats.funding_issuance_floors, BTreeMap::new());
+        let pool = invitation_pool(&mut info);
+        assert!((1..last).all(|index| pool.addresses()[&index].is_available()));
     }
 }
 

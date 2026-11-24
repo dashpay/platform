@@ -69,8 +69,9 @@ pub struct ClientWalletStartState {
     /// rescan sweep then behaves exactly as before and writes one. See
     /// [`DashPayBackfillRecord`].
     pub dashpay_backfill: DashPayBackfillRecord,
-    /// Funding accounts whose restored pool could not reach a persisted row:
-    /// no key at or below the index may fund an asset lock. See
+    /// Funding and DashPay payout accounts whose restored pool could not
+    /// reach a persisted row: no key at or below the index may fund an asset
+    /// lock or receive a payout. See
     /// [`AddressPoolRestoreStats::funding_issuance_floors`](crate::manager::AddressPoolRestoreStats::funding_issuance_floors).
     ///
     /// A persister that restores pools with
