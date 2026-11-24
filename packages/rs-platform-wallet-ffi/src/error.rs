@@ -811,6 +811,17 @@ pub enum PlatformWalletFFIResultCode {
     /// name, with no expected identity.
     ErrorShieldedTipRecipientMismatch = 86,
 
+    /// A local shielded balance read did not get the shielded store within
+    /// its wait budget, because a scan or a spend holds it. Nothing failed
+    /// and nothing changed: keep the last state shown and read again later.
+    /// The only code of that read that means retry. Maps no
+    /// `PlatformWalletError` variant: the FFI export decides it from its own
+    /// timeout. Returned by
+    /// `platform_wallet_manager_shielded_identity_balance`;
+    /// `platform_wallet_manager_local_shielded_balance_snapshot` still
+    /// reports its busy case as [`Self::ErrorWalletOperation`] (6).
+    ErrorShieldedBalanceBusy = 87,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -3329,6 +3340,16 @@ mod private_contact_request_error_tests {
         );
         assert_eq!(result.code as u32, 86);
         unsafe { platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    /// The busy code of a local shielded balance read keeps its raw value:
+    /// hosts match on 87 to keep the last state and read again.
+    #[test]
+    fn should_pin_the_shielded_balance_busy_code() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorShieldedBalanceBusy as u32,
+            87
+        );
     }
 
     /// A public contact request a loaded wallet refuses until its private
