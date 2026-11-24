@@ -773,9 +773,11 @@ public enum PlatformWalletError: LocalizedError {
     case balanceHistoryInconsistentHeights(String)
     /// `sendShieldedTip` refused the tip with nothing sent: another tip from
     /// this wallet is being sent, or an earlier shielded payment to the
-    /// recipient may still execute. A shielded sync resolves it; then review
-    /// and send again. Unlike `shieldedSpendUnconfirmed`, nothing left the
-    /// wallet.
+    /// recipient may still execute. This call sent nothing, unlike
+    /// `shieldedSpendUnconfirmed`. The earlier payment may be the same tip
+    /// and may pay the recipient: a shielded sync resolves it as executed or
+    /// as unable to execute, so do not send again because the refusal
+    /// ended, only once that payment is known to have failed.
     case shieldedTipPending(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition never
