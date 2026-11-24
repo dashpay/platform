@@ -50,13 +50,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.persistence.entities.TokenEntity
+import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 import org.dashfoundation.dashsdk.wallet.ShieldedTokenPoolBalance
 import org.dashfoundation.dashsdk.wallet.WalletSyncEvent
 import org.dashfoundation.example.di.LocalAppContainer
@@ -119,19 +123,17 @@ fun ShieldedTokenPoolsScreen(walletIdHex: String, navController: NavHostControll
     // only the newest read applies its result.
     var readEpoch by remember { mutableIntStateOf(0) }
     var checkStatus by remember { mutableStateOf<CheckNowStatus>(CheckNowStatus.Idle) }
-    var showWatchSheet by remember { mutableStateOf(false) }
     var unwatchError by remember { mutableStateOf<String?>(null) }
-    // The watch call belongs to this screen, not to the picker sheet: closing
-    // the sheet while Rust reads the token's configuration must not cancel
-    // the reload that shows a watch Rust saved.
-    var watchingTokenId by remember { mutableStateOf<String?>(null) }
-    var watchError by remember { mutableStateOf<String?>(null) }
+    // The watch call and the picker live in the back-stack ViewModel, so
+    // neither closing the picker nor an activity recreation (rotation) drops
+    // the reread that shows a watch Rust saved.
+    val watchModel: ShieldedTokenPoolWatchViewModel = viewModel()
 
     LifecycleResumeEffect(Unit) {
         readEpoch++
         onPauseOrDispose {}
     }
-    LaunchedEffect(manager, walletIdHex, readEpoch) {
+    LaunchedEffect(manager, walletIdHex, readEpoch, watchModel.watchRevision) {
         val activeManager = manager ?: return@LaunchedEffect
         if (!hasShielded) {
             loadError = "This build does not support shielded token pools."
@@ -217,7 +219,7 @@ fun ShieldedTokenPoolsScreen(walletIdHex: String, navController: NavHostControll
                             }
                         }
                         OutlinedButton(
-                            onClick = { showWatchSheet = true },
+                            onClick = { watchModel.showSheet = true },
                             enabled = hasShielded && manager != null,
                             modifier = Modifier.testTag("shieldedTokens.watchButton"),
                         ) {
@@ -318,36 +320,17 @@ fun ShieldedTokenPoolsScreen(walletIdHex: String, navController: NavHostControll
         }
     }
 
-    if (showWatchSheet) {
+    if (watchModel.showSheet) {
         ShieldedTokenPoolWatchSheet(
             tokens = tokens,
             watched = balances.orEmpty(),
-            watchingTokenId = watchingTokenId,
-            watchError = watchError,
+            watchingTokenId = watchModel.watchingTokenId,
+            watchError = watchModel.watchError,
             onWatch = onWatch@{ token ->
                 val activeManager = manager ?: return@onWatch
-                if (watchingTokenId != null) return@onWatch
-                watchingTokenId = token.id.toHex()
-                watchError = null
-                scope.launch {
-                    try {
-                        activeManager.shieldedTokenPoolWatch(walletId, token.contractId, token.position)
-                        showWatchSheet = false
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        watchError = e.message ?: "unknown error"
-                    } finally {
-                        watchingTokenId = null
-                        // Read whatever Rust now holds, success or not.
-                        readEpoch++
-                    }
-                }
+                watchModel.watch(activeManager, walletId, token)
             },
-            onDismiss = {
-                showWatchSheet = false
-                watchError = null
-            },
+            onDismiss = watchModel::closeSheet,
         )
     }
 
@@ -356,6 +339,56 @@ fun ShieldedTokenPoolsScreen(walletIdHex: String, navController: NavHostControll
         title = "Could not stop watching",
         onDismiss = { unwatchError = null },
     )
+}
+
+/**
+ * The Watch a Token Pool picker and its call, held for the list's back-stack
+ * entry. The watch is a blocking verified read that can outlive the sheet and
+ * the activity (a rotation recreates the screen while it runs); its
+ * completion bumps [watchRevision], which the list's read is keyed by, so the
+ * list that is on screen when the call ends reads Rust's rows again, whether
+ * the watch was saved or refused.
+ */
+class ShieldedTokenPoolWatchViewModel : ViewModel() {
+
+    var showSheet by mutableStateOf(false)
+
+    /** The local token id (hex) of the watch in flight, if any. */
+    var watchingTokenId by mutableStateOf<String?>(null)
+        private set
+
+    /** Rust's refusal of the last watch, shown in the picker. */
+    var watchError by mutableStateOf<String?>(null)
+        private set
+
+    /** Bumped when a watch call ends. */
+    var watchRevision by mutableIntStateOf(0)
+        private set
+
+    /** Watch [token]'s pool for [walletId]; ignored while one runs. */
+    fun watch(manager: PlatformWalletManager, walletId: ByteArray, token: TokenEntity) {
+        if (watchingTokenId != null) return
+        watchingTokenId = token.id.toHex()
+        watchError = null
+        viewModelScope.launch {
+            try {
+                manager.shieldedTokenPoolWatch(walletId, token.contractId, token.position)
+                showSheet = false
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                watchError = e.message ?: "unknown error"
+            } finally {
+                watchingTokenId = null
+                watchRevision++
+            }
+        }
+    }
+
+    fun closeSheet() {
+        showSheet = false
+        watchError = null
+    }
 }
 
 @Composable
