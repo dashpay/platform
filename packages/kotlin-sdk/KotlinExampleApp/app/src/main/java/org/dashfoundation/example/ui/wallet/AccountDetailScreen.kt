@@ -126,7 +126,15 @@ fun AccountDetailScreen(
                     if (balance.unconfirmed > 0) {
                         LabeledContent("Pending", formatDuffs(balance.unconfirmed))
                     }
-                    LabeledContent("Total", formatDuffs(balance.confirmed + balance.unconfirmed))
+                    // key-wallet's `spendable()`: immature and locked funds are not in it.
+                    LabeledContent("Spendable", formatDuffs(balance.confirmed + balance.unconfirmed))
+                }
+                AccountRowBalance.CoreUnknown -> FormSection(title = "Balance") {
+                    Text(
+                        "Balance not read yet",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 is AccountRowBalance.Platform -> FormSection(title = "Balance") {
                     LabeledContent("Balance", formatCredits(balance.credits))

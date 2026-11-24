@@ -106,15 +106,15 @@ private fun accountSortKey(account: AccountEntity): String {
 /**
  * Rust's per-account Core balances for [walletId], read again every two
  * seconds while shown (the wallet detail's Core balance has the same
- * cadence). Empty until the first read and without an active manager; a
- * new manager starts empty again, and a failed read keeps the same
- * manager's last snapshot.
+ * cadence). Null while nothing has been read: before the first read,
+ * without an active manager, and after a manager change. A failed read
+ * keeps the same manager's last snapshot.
  */
 @Composable
-internal fun rememberCoreAccountBalances(walletId: ByteArray): List<AccountBalance> {
+internal fun rememberCoreAccountBalances(walletId: ByteArray): List<AccountBalance>? {
     val container = LocalAppContainer.current
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
-    var balances by remember(walletId, manager) { mutableStateOf(emptyList<AccountBalance>()) }
+    var balances by remember(walletId, manager) { mutableStateOf<List<AccountBalance>?>(null) }
     LaunchedEffect(manager, walletId) {
         val m = manager ?: return@LaunchedEffect
         while (true) {
@@ -137,6 +137,13 @@ internal sealed interface AccountRowBalance {
     /** A Core account (BIP44, BIP32): duffs, from Rust's per-account read. */
     data class Core(val confirmed: Long, val unconfirmed: Long) : AccountRowBalance
 
+    /**
+     * A Core account whose balance is not known: nothing read yet, or the
+     * read has no row for it (wallet not loaded in Rust). Shown as such,
+     * never as a measured 0.
+     */
+    data object CoreUnknown : AccountRowBalance
+
     /** A PlatformPayment account: the credits of its Platform addresses. */
     data class Platform(val credits: Long) : AccountRowBalance
 
@@ -146,21 +153,25 @@ internal sealed interface AccountRowBalance {
 
 /**
  * The balance of [account]. A Core account matches Rust's row on type tag,
- * standard tag and index, as `AccountListView` does, and reads 0 when Rust
- * has no row for it.
+ * standard tag and index, as `AccountListView` does; with no read yet
+ * ([coreBalances] null) or no matching row it is [AccountRowBalance.CoreUnknown].
  */
 internal fun accountRowBalance(
     account: AccountEntity,
-    coreBalances: List<AccountBalance>,
+    coreBalances: List<AccountBalance>?,
     platformAddresses: List<PlatformAddressEntity>,
 ): AccountRowBalance = when (account.accountType) {
     0, 1 -> {
-        val match = coreBalances.firstOrNull {
+        val match = coreBalances?.firstOrNull {
             it.typeTag == account.accountType &&
                 it.standardTag == account.standardTag &&
                 it.index == account.accountIndex
         }
-        AccountRowBalance.Core(match?.confirmed ?: 0, match?.unconfirmed ?: 0)
+        if (match == null) {
+            AccountRowBalance.CoreUnknown
+        } else {
+            AccountRowBalance.Core(match.confirmed, match.unconfirmed)
+        }
     }
     14 -> AccountRowBalance.Platform(
         platformAddresses.filter { it.accountId == account.id }.sumOf { it.balance },
@@ -203,11 +214,18 @@ private fun AccountRow(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                // confirmed + unconfirmed is key-wallet's `spendable()`;
+                // immature and locked funds are not in it.
                 Text(
-                    "Total ${formatDuffs(balance.confirmed + balance.unconfirmed)}",
+                    "Spendable ${formatDuffs(balance.confirmed + balance.unconfirmed)}",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
+            AccountRowBalance.CoreUnknown -> Text(
+                "Balance not read yet",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             is AccountRowBalance.Platform -> Text(
                 "Balance ${formatCredits(balance.credits)}",
                 style = MaterialTheme.typography.bodySmall,

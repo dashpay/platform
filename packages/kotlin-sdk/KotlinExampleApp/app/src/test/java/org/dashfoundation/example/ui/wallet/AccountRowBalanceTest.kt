@@ -73,10 +73,23 @@ class AccountRowBalanceTest {
             AccountRowBalance.Core(confirmed = 42, unconfirmed = 0),
             accountRowBalance(account(3, type = 0, index = 0, standardTag = 1), rustRows, emptyList()),
         )
-        // No Rust row for this account: zero, as Swift shows it.
+    }
+
+    @Test
+    fun `should show an unread Core balance as unknown, never as zero`() {
+        // Nothing read yet (manager starting or replaced).
         assertEquals(
-            AccountRowBalance.Core(confirmed = 0, unconfirmed = 0),
+            AccountRowBalance.CoreUnknown,
+            accountRowBalance(account(1, type = 0, index = 0), null, emptyList()),
+        )
+        // A read with no row for this account (wallet not loaded in Rust).
+        assertEquals(
+            AccountRowBalance.CoreUnknown,
             accountRowBalance(account(4, type = 0, index = 9), rustRows, emptyList()),
+        )
+        assertEquals(
+            AccountRowBalance.CoreUnknown,
+            accountRowBalance(account(1, type = 0, index = 0), emptyList(), emptyList()),
         )
     }
 

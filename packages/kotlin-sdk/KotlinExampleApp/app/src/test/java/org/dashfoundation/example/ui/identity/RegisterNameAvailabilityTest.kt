@@ -10,10 +10,12 @@ class RegisterNameAvailabilityTest {
     @Test
     fun `should enable Register only for a label the check reported available`() {
         val available = parseNameAvailability(
+            "alice",
             """{"label":"alice","valid":true,"available":true,"isContested":false,""" +
                 """"message":"✅ Username is available"}""",
         )
         assertTrue(available.available)
+        assertEquals("alice", available.label)
         assertEquals("Available", available.text)
         assertTrue(canRegisterName("alice", available, isSubmitting = false))
     }
@@ -22,6 +24,7 @@ class RegisterNameAvailabilityTest {
     fun `should keep Register disabled for a taken label`() {
         // The tombstoned label of the QA run: valid, but not available.
         val taken = parseNameAvailability(
+            "qa",
             """{"label":"qa","valid":true,"available":false,"isContested":true,""" +
                 """"message":"❌ Username is already taken"}""",
         )
@@ -34,6 +37,7 @@ class RegisterNameAvailabilityTest {
     @Test
     fun `should keep Register disabled for an invalid label`() {
         val invalid = parseNameAvailability(
+            "a",
             """{"label":"a","valid":false,"available":false,"message":"❌ Invalid username format"}""",
         )
         assertEquals("Invalid label", invalid.text)
@@ -42,12 +46,21 @@ class RegisterNameAvailabilityTest {
 
     @Test
     fun `should keep Register disabled without an answer`() {
-        assertFalse(parseNameAvailability(null).available)
-        assertFalse(parseNameAvailability("""{"valid":true}""").available)
+        assertFalse(parseNameAvailability("alice", null).available)
+        assertFalse(parseNameAvailability("alice", """{"valid":true}""").available)
         // Pending check (null), blank label, or a registration in flight.
         assertFalse(canRegisterName("alice", null, isSubmitting = false))
-        val available = NameAvailability("Available", available = true)
+        val available = NameAvailability("alice", "Available", available = true)
         assertFalse(canRegisterName("", available, isSubmitting = false))
         assertFalse(canRegisterName("alice", available, isSubmitting = true))
+    }
+
+    @Test
+    fun `should not use an available answer for a different label`() {
+        // "alice" was checked and is available; the user then typed a taken
+        // name and tapped before the screen redrew.
+        val aliceAvailable = NameAvailability("alice", "Available", available = true)
+        assertFalse(canRegisterName("qa", aliceAvailable, isSubmitting = false))
+        assertTrue(canRegisterName(" alice ", aliceAvailable, isSubmitting = false))
     }
 }

@@ -83,14 +83,15 @@ fun RegisterNameScreen(identityIdHex: String, navController: NavHostController) 
         if (label.isBlank()) return@LaunchedEffect
         delay(300)
         val activeSdk = sdk ?: return@LaunchedEffect
+        val queried = label.trim()
         val checked = try {
-            parseNameAvailability(activeSdk.dpns.checkAvailability(label.trim()))
+            parseNameAvailability(queried, activeSdk.dpns.checkAvailability(queried))
         } catch (e: CancellationException) {
             // The label changed while the check ran: publish nothing for
             // the old label.
             throw e
         } catch (e: Exception) {
-            NameAvailability("Check failed: ${e.message}", available = false)
+            NameAvailability(queried, "Check failed: ${e.message}", available = false)
         }
         isContested = checked.isContested
         availability = checked
@@ -115,7 +116,14 @@ fun RegisterNameScreen(identityIdHex: String, navController: NavHostController) 
             FormSection(title = "Name") {
                 OutlinedTextField(
                     value = label,
-                    onValueChange = { label = it.trim() },
+                    onValueChange = {
+                        val edited = it.trim()
+                        // Drop the old answer in the same event as the
+                        // edit, before any recomposition, so a tap that
+                        // lands in between cannot use it for the new label.
+                        if (edited != label) availability = null
+                        label = edited
+                    },
                     label = { Text("Label (without .dash)") },
                     singleLine = true,
                     // Held while a registration runs, so its result always
@@ -202,12 +210,18 @@ fun RegisterNameScreen(identityIdHex: String, navController: NavHostController) 
                 enabled = canRegisterName(label, availability, isSubmitting),
                 modifier = Modifier.fillMaxWidth().testTag("registerName.submit"),
             ) {
+                // The button may still be drawn enabled from an earlier
+                // frame: ask again at the tap, against the live label.
+                val checked = availability
+                if (checked == null || !canRegisterName(label, checked, isSubmitting)) {
+                    return@SubmitButton
+                }
                 val mgr = manager ?: run { error = "No active wallet manager"; return@SubmitButton }
                 // The label and contested-ness the availability check
                 // covered, taken at the tap: the field is locked from here
                 // (isSubmitting), so nothing typed later can be submitted.
-                val checkedLabel = label.trim()
-                val checkedContested = isContested
+                val checkedLabel = checked.label
+                val checkedContested = checked.isContested
                 isSubmitting = true
                 // The owning wallet drives the signer; resolve it from the
                 // identity's stored walletId.
@@ -259,11 +273,13 @@ fun RegisterNameScreen(identityIdHex: String, navController: NavHostController) 
 }
 
 /**
- * The availability check's answer for one label: the text to show and
- * whether the FFI said it can be registered. [available] is Rust's
- * `available` flag as is; Kotlin adds no rule of its own.
+ * The availability check's answer for one label: the label it was asked
+ * about, the text to show and whether the FFI said it can be registered.
+ * [available] is Rust's `available` flag as is; Kotlin adds no rule of its
+ * own.
  */
 internal data class NameAvailability(
+    val label: String,
     val text: String,
     val available: Boolean,
     val isContested: Boolean = false,
@@ -274,8 +290,8 @@ internal data class NameAvailability(
  * JSON `"available": true` counts as not available, so a missing or
  * unreadable answer never enables Register.
  */
-internal fun parseNameAvailability(json: String?): NameAvailability {
-    if (json == null) return NameAvailability("Unknown", available = false)
+internal fun parseNameAvailability(label: String, json: String?): NameAvailability {
+    if (json == null) return NameAvailability(label, "Unknown", available = false)
     val obj = Json.parseToJsonElement(json).jsonObject
     val available = obj["available"]?.jsonPrimitive?.content == "true"
     // `isContested` is a JSON boolean the FFI computes from the normalized
@@ -286,12 +302,18 @@ internal fun parseNameAvailability(json: String?): NameAvailability {
         obj["valid"]?.jsonPrimitive?.content == "false" -> "Invalid label"
         else -> obj["message"]?.jsonPrimitive?.content ?: "Taken"
     }
-    return NameAvailability(text, available, isContested)
+    return NameAvailability(label, text, available, isContested)
 }
 
-/** Register is offered only for a non-blank label the check reported available. */
+/**
+ * Register is offered only for a non-blank label the check reported
+ * available, and only while that answer is about the label now entered.
+ */
 internal fun canRegisterName(
     label: String,
     availability: NameAvailability?,
     isSubmitting: Boolean,
-): Boolean = label.isNotBlank() && availability?.available == true && !isSubmitting
+): Boolean = label.isNotBlank() &&
+    availability?.available == true &&
+    availability.label == label.trim() &&
+    !isSubmitting
