@@ -93,7 +93,10 @@ impl Drive {
             };
             let value = match &read.kind {
                 AggregateKind::Count => i128::from(element.count_value_or_default()),
-                AggregateKind::Sum { .. } => i128::from(element.sum_value_or_default()),
+                // At either width a type keeps its sums in. For every element holding no
+                // 128-bit sum this is `sum_value_or_default` widened, and no such element
+                // exists before protocol version 15, so earlier versions read what they read.
+                AggregateKind::Sum { .. } => element.big_sum_value_or_default(),
             };
             // Each element holds at most a `u64` or an `i64`, and a point lookup reaches one
             total = total.checked_add(value).ok_or_else(|| {

@@ -10,6 +10,7 @@ use super::super::{DriveDocumentSumQuery, SumEntry};
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::sum_width::element_sum;
 use crate::query::ResolvedTimeRange;
 use crate::query::WhereClause;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -130,6 +131,6 @@ impl Drive {
                      insert_contract_operations_v0 must have created it",
                 ))
             })?;
-        Ok(element.sum_value_or_default())
+        element_sum(&element)
     }
 }

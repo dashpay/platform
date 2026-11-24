@@ -71,7 +71,7 @@ use super::contact_requests::{
 use super::signing_key::first_available;
 use super::{dashpay_contract, DashPayView, IdentityWallet};
 use crate::broadcaster::TransactionBroadcaster;
-use crate::changeset::{ContactChangeSet, PersistenceError, PrivateContactRequestsPosition};
+use crate::changeset::{ContactChangeSet, PrivateContactRequestsPosition};
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
 use crate::wallet::identity::types::dashpay::contact_request::ContactRequest;
@@ -680,6 +680,16 @@ pub(crate) async fn restore_journaled_private_payments(
 /// journal being open by then and showing the payment resolved. Never the
 /// other way round.
 ///
+/// A record dropped after it was stored, by a flush that failed for good or
+/// by a drain of the backend the wallet did not make, goes the same way. This
+/// is never the store that first marks a payment as unresolved: that one is
+/// made durable before anything is paid
+/// (`store_private_payment_marker_before_paying`). So what is dropped here
+/// either repeats a marker the disk already has or clears one, and the note
+/// that it was stored is forgotten once the loss is counted
+/// (`WalletPersister::store_private_marker_record`), so the next comparison
+/// stores it again.
+///
 /// Only while the wallet is still `generation`: a replacement under the id
 /// stores its own records.
 fn store_private_payment_marker(
@@ -769,17 +779,17 @@ fn store_private_position(
     changeset
         .private_contact_requests_positions
         .insert(owner, position);
-    match persister.store(changeset.into()) {
-        Ok(()) => {
-            persister.note_private_marker_stored(owner, Some(position.private_payments_unresolved))
-        }
-        Err(error) => {
-            persister.note_private_marker_stored(owner, None);
-            tracing::warn!(
-                owner = %owner, position = position.position, %error,
-                "private read position not stored; the next launch reads from the last one stored"
-            );
-        }
+    // Noted as stored only when no flush of the wallet's records failed for
+    // good since before the store: one that did may have dropped the record.
+    if let Err(error) = persister.store_private_marker_record(
+        owner,
+        position.private_payments_unresolved,
+        changeset.into(),
+    ) {
+        tracing::warn!(
+            owner = %owner, position = position.position, %error,
+            "private read position not stored; the next launch reads from the last one stored"
+        );
     }
 }
 
@@ -883,7 +893,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     /// Send a private contact request from `sender_identity_id` to
     /// `recipient_identity_id`: the request a `contactRequest` document would
     /// carry (our receiving xpub for the pair, the masked account reference,
-    /// the label and the auto-accept proof) plus our `shielded_address`,
+    /// the label and the auto-accept proof) plus the shielded address the
+    /// wallet derives for the recipient
+    /// (`IdentityWallet::contact_shielded_address`),
     /// signed by `signer` with one of the sender's signing keys, sealed in the
     /// crypto provider to the recipient's DashPay key, then appended by `pay`,
     /// which pays for it from the shielded pool and returns the metadata of
@@ -934,7 +946,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         recipient_identity_id: &Identifier,
         account_label: Option<String>,
         auto_accept_proof: AutoAcceptProofSource,
-        shielded_address: Option<[u8; 43]>,
         signer: &S,
         crypto: &C,
         pay: F,
@@ -950,7 +961,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             recipient_identity_id,
             account_label,
             auto_accept_proof,
-            shielded_address,
             signer,
             crypto,
             false,
@@ -972,7 +982,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     pub(super) async fn send_private_reply<S, C, F, Fut>(
         &self,
         request: &ContactRequest,
-        shielded_address: Option<[u8; 43]>,
         signer: &S,
         crypto: &C,
         pay: F,
@@ -990,7 +999,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     &request.sender_id,
                     None,
                     AutoAcceptProofSource::None,
-                    shielded_address,
                     signer,
                     crypto,
                     true,
@@ -1015,7 +1023,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         recipient_identity_id: &Identifier,
         account_label: Option<String>,
         auto_accept_proof: AutoAcceptProofSource,
-        shielded_address: Option<[u8; 43]>,
         signer: &S,
         crypto: &C,
         adopt_reply: bool,
@@ -1045,13 +1052,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         self.release_discharged_private_requests().await?;
         // A public request to the recipient whose outcome is unconfirmed is
         // settled first where proof allows; while it stands nothing is
-        // reserved.
-        Box::pin(
-            self.settle_unconfirmed_public_request_logged(
-                sender_identity_id,
-                recipient_identity_id,
-            ),
-        )
+        // reserved. Its bytes are not broadcast again from here: this send is
+        // about to take the pair privately.
+        Box::pin(self.settle_unconfirmed_public_request_logged(
+            sender_identity_id,
+            recipient_identity_id,
+            false,
+        ))
         .await;
         // Held beyond the sender identity: a journaled payment's pair outlives
         // the identity's removal, and holds for a sender loaded after it was
@@ -1108,7 +1115,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 recipient_identity_id,
                 account_label,
                 auto_accept_proof,
-                shielded_address,
                 signer,
                 crypto,
                 &mut reservation,
@@ -1364,12 +1370,14 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     }
 
     /// Store `owner`'s position record, marking it as holding a private payment
-    /// that may be unresolved, durably, before anything is paid: flushed when
-    /// the backend does not commit a store inline. A backend that does not
-    /// keep the marker refuses the payment
+    /// that may be unresolved, durably, before anything is paid
+    /// (`WalletPersister::store_durably`): flushed when the backend does not
+    /// commit a store inline, and trusted only when no other flush of the
+    /// wallet's records can have dropped it. A backend that does not keep the
+    /// marker refuses the payment
     /// ([`PlatformWalletError::PrivateContactRecoveryUnsupported`]), and a
-    /// failed store or flush refuses it too, with nothing paid: a payment a
-    /// restart could not see would leave the pair unheld.
+    /// store that is not known to be durable refuses it too, with nothing
+    /// paid: a payment a restart could not see would leave the pair unheld.
     ///
     /// Clearing the marker once the payment resolves is not flushed: a clear
     /// that is lost only holds the identity after a restart until a
@@ -1401,18 +1409,16 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         changeset
             .private_contact_requests_positions
             .insert(*owner, marker);
-        let not_kept = |error: PersistenceError| {
-            PlatformWalletError::Persistence(format!(
-                "the private contact request's unresolved payment was not stored durably, so it \
-                 is not paid for: {error}"
-            ))
-        };
-        // Not known to be stored until both succeed.
+        // Not known to be stored until it is durable.
         self.persister.note_private_marker_stored(*owner, None);
-        self.persister.store(changeset.into()).map_err(not_kept)?;
-        if !self.persister.store_commits_inline() {
-            self.persister.flush().map_err(not_kept)?;
-        }
+        self.persister
+            .store_durably(changeset.into())
+            .map_err(|error| {
+                PlatformWalletError::Persistence(format!(
+                    "the private contact request's unresolved payment was not stored durably, so \
+                     it is not paid for: {error}"
+                ))
+            })?;
         self.persister
             .note_private_marker_stored(*owner, Some(marker.private_payments_unresolved));
         drop(wm);
@@ -1619,7 +1625,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         recipient_identity_id: &Identifier,
         account_label: Option<String>,
         auto_accept_proof: AutoAcceptProofSource,
-        shielded_address: Option<[u8; 43]>,
         signer: &S,
         crypto: &C,
         reservation: &mut PrivateReplyReservation,
@@ -1651,6 +1656,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 crypto,
             )
             .await?;
+        // Our shielded payment address for this contact, derived as a public
+        // request's is (`IdentityWallet::contact_shielded_address`): the address
+        // the sender's shielded account gives this request alone, or none.
+        let shielded_address = self
+            .contact_shielded_address(
+                sender_identity_id,
+                recipient_identity_id,
+                account_reference,
+                crypto,
+            )
+            .await?;
         let extended_public_key: [u8; COMPACT_XPUB_LEN] =
             xpub_bytes.as_slice().try_into().map_err(|_| {
                 PlatformWalletError::InvalidIdentityData(format!(
@@ -1663,7 +1679,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             extended_public_key,
             account_label,
             auto_accept_proof,
-            shielded_address,
+            shielded_address: shielded_address.as_ref().map(|derived| derived.address),
         };
 
         // The request is signed as a public request's transition is: by the
@@ -1762,6 +1778,18 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             0,
         );
 
+        // The last step before the request is paid for: its shielded address was
+        // derived from the key the account is still bound to, or nothing is paid, the
+        // reservation is released as for any refusal before the payment, and the
+        // send can be made again. A check, not a fence: a re-key that completes
+        // before it is caught; one that completes while the payment is built and
+        // broadcast is not, and no lock can be held across the payment, which
+        // reads the key map itself.
+        if let Some(shielded_address) = &shielded_address {
+            self.check_contact_shielded_address(shielded_address)
+                .await?;
+        }
+
         // `pay` marks the payment started right before it may reach the
         // network: from then on the reservation is the sync's to settle,
         // whatever happens to this send.
@@ -1789,6 +1817,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 "private contact request paid for; reading it back failed, a later sync reads it"
             );
         }
+        // The payment went out, so nothing from here on reports a failure:
+        // a handle that can no longer read the request back (its wallet
+        // removed, or re-created under its id, or the identity removed,
+        // since) reports it pending, as one not read back yet.
         let recorded = self
             .with_managed(sender_identity_id, |managed| {
                 managed
@@ -1800,7 +1832,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     })
                     .cloned()
             })
-            .await?;
+            .await
+            .unwrap_or_else(|error| {
+                tracing::warn!(
+                    sender = %sender_identity_id,
+                    recipient = %recipient_identity_id,
+                    %error,
+                    "private contact request paid for; it cannot be read back on this handle, \
+                     so it is reported pending"
+                );
+                None
+            });
         let Some(contact_request) = recorded else {
             return Err(PlatformWalletError::PrivateContactRequestPending(
                 *recipient_identity_id,
@@ -1828,9 +1870,10 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
     /// Accept a contact request that came privately, replying privately: as
     /// [`Self::accept_contact_request_with_external_signer`], with the reply
-    /// sent by [`Self::send_private_contact_request`], signed by `signer`,
-    /// `pay` paying for it and `shielded_address` the address the contact may
-    /// pay us at privately.
+    /// sent by [`Self::send_private_contact_request`], signed by `signer`
+    /// and paid for by `pay`. The address the contact may pay us at
+    /// privately is the one the wallet derives for this contact, as for any
+    /// request it sends.
     ///
     /// As for the send, refused first for a persister that cannot keep a
     /// private payment's recovery marker
@@ -1847,7 +1890,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     pub async fn accept_private_contact_request<S, C, F, Fut>(
         &self,
         request: &ContactRequest,
-        shielded_address: Option<[u8; 43]>,
         signer: &S,
         crypto: &C,
         pay: F,
@@ -1870,7 +1912,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         Box::pin(self.read_private_store_and_keys(&request.recipient_id, crypto)).await?;
         Box::pin(
             self.accept_contact_request_replying_with(request, crypto, || {
-                self.send_private_reply(request, shielded_address, signer, crypto, pay)
+                self.send_private_reply(request, signer, crypto, pay)
             }),
         )
         .await
@@ -1893,7 +1935,6 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
     pub async fn accept_contact_request_replying_in_kind<S, C, F, Fut>(
         &self,
         request: &ContactRequest,
-        shielded_address: Option<[u8; 43]>,
         signer: &S,
         crypto: &C,
         pay: F,
@@ -1907,14 +1948,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         Box::pin(self.read_private_store_before_deciding(&request.recipient_id, crypto)).await?;
         // Boxed: each accept's future holds a store read and a payment.
         if self.needs_private_reply(request).await {
-            Box::pin(self.accept_private_contact_request(
-                request,
-                shielded_address,
-                signer,
-                crypto,
-                pay,
-            ))
-            .await
+            Box::pin(self.accept_private_contact_request(request, signer, crypto, pay)).await
         } else {
             Box::pin(self.accept_contact_request_with_external_signer(request, signer, crypto))
                 .await
@@ -2718,6 +2752,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 #[cfg(test)]
 mod tests {
     use super::super::contact_requests::sent_contact_request_query;
+    use super::super::contact_shielded_address::test_hooks::give_every_contact;
     use super::*;
     use crate::changeset::{
         ClientStartState, ClientWalletStartState, IdentityManagerStartState,
@@ -2725,8 +2760,15 @@ mod tests {
         PlatformWalletPersistence,
     };
     use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::wallet::identity::network::contacts::RegisterExternalError;
+    #[cfg(feature = "shielded")]
+    use crate::wallet::identity::network::derive_ecdsa_identity_auth_keypair_from_master;
     use crate::wallet::identity::network::identity_auth_derivation_path_for_type;
     use crate::wallet::identity::network::SeedCryptoProvider;
+    #[cfg(feature = "shielded")]
+    use crate::wallet::identity::network::MASTER_KEY_INDEX;
+    #[cfg(feature = "shielded")]
+    use crate::wallet::persister::NotDurable;
     use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
     #[cfg(feature = "shielded")]
     use crate::wallet::shielded::coordinator::{
@@ -2739,8 +2781,9 @@ mod tests {
     };
     #[cfg(feature = "shielded")]
     use crate::wallet::shielded::{
-        FileBackedShieldedStore, NetworkShieldedCoordinator, OrchardKeySet, PrivateContactPayment,
-        PrivatePaymentRecord, ShieldedNote, ShieldedStore, SubwalletId,
+        shielded_identity_account_index, FileBackedShieldedStore, NetworkShieldedCoordinator,
+        OrchardKeySet, PrivateContactPayment, PrivatePaymentRecord, ShieldedNote, ShieldedStore,
+        SubwalletId,
     };
     use crate::PlatformWalletManager;
     use dash_sdk::error::ContextProviderError;
@@ -2961,6 +3004,14 @@ mod tests {
         /// While set, a flush fails fatally: the backend drops what it
         /// buffered.
         flush_fails_fatally: AtomicBool,
+        /// While set, a store carrying an account registration fails and
+        /// keeps nothing.
+        accounts_fail: AtomicBool,
+        /// Once set, the next flush is overtaken: before it writes, a flush
+        /// through this persister fails fatally, as one from another thread
+        /// would, dropping what was buffered; the overtaken flush then
+        /// succeeds over nothing.
+        overtaken_by: Mutex<Option<WalletPersister>>,
     }
 
     impl RecordingPersistence {
@@ -2971,6 +3022,8 @@ mod tests {
                 positions_fail: AtomicBool::new(false),
                 flush_fails: AtomicBool::new(false),
                 flush_fails_fatally: AtomicBool::new(false),
+                accounts_fail: AtomicBool::new(false),
+                overtaken_by: Mutex::new(None),
             })
         }
 
@@ -2999,11 +3052,25 @@ mod tests {
             {
                 return Err(PersistenceError::backend("the disk is full"));
             }
+            if self.accounts_fail.load(Ordering::SeqCst)
+                && !changeset.account_registrations.is_empty()
+            {
+                return Err(PersistenceError::backend("the disk is full"));
+            }
             self.stored.lock().expect("stored").push(changeset);
             Ok(())
         }
 
         fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            // Taken in its own statement: the flush below comes back here.
+            let overtaking = self.overtaken_by.lock().expect("overtaken").take();
+            if let Some(persister) = overtaking {
+                self.flush_fails_fatally.store(true, Ordering::SeqCst);
+                let overtook = persister.flush();
+                self.flush_fails_fatally.store(false, Ordering::SeqCst);
+                assert!(overtook.is_err_and(|error| !error.is_transient()));
+                return Ok(());
+            }
             if self.flush_fails.load(Ordering::SeqCst) {
                 return Err(PersistenceError::backend_with_kind(
                     PersistenceErrorKind::Transient,
@@ -3368,7 +3435,6 @@ mod tests {
                 .dashpay()
                 .accept_contact_request_replying_in_kind(
                     &incoming,
-                    None,
                     &alice_signer,
                     &alice_crypto,
                     no_payment,
@@ -3391,7 +3457,6 @@ mod tests {
                     &bob.id(),
                     None,
                     AutoAcceptProofSource::None,
-                    None,
                     &alice_signer,
                     &alice_crypto,
                     no_payment,
@@ -3949,6 +4014,73 @@ mod tests {
             .private_pair_held(&alice.id(), &bob.id())
             .await
             .expect("the hold"));
+    }
+
+    /// A restoration does not discharge a record its sender's tracked request
+    /// settles on the strength of its own flush when another flush failed
+    /// for good while it ran: that one dropped what was buffered, the request
+    /// among it, and the restoration's flush then succeeded over nothing.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_keep_a_settled_record_when_a_flush_fails_for_good_during_the_restoration() {
+        use platform_encryption::ACCOUNT_REFERENCE_VERSION_SHIFT;
+
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let fixture = ExpiryFixture::new().await;
+        fixture
+            .pay_unconfirmed(ExpiryFixture::ANCHOR, ExpiryFixture::ANCHOR_SET_HEIGHT)
+            .await;
+        fixture
+            .wallet
+            .restore_private_contact_payments(&fixture.coordinator)
+            .await
+            .expect("restored");
+        let reference = fixture.journal_snapshot().await[0]
+            .1
+            .payment
+            .account_reference;
+        // A newer request to the pair, buffered: it settles the record.
+        {
+            let iw = fixture.wallet.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&fixture.wallet.wallet_id())
+                .expect("wallet info")
+                .identity_manager
+                .managed_identity_mut(&alice.id())
+                .expect("Alice")
+                .add_sent_contact_request(
+                    public_request(
+                        &alice,
+                        &bob,
+                        reference + (1 << ACCOUNT_REFERENCE_VERSION_SHIFT),
+                    ),
+                    &iw.persister,
+                )
+                .expect("stored, not flushed");
+        }
+        *fixture.persistence.overtaken_by.lock().expect("overtaken") =
+            Some(fixture.wallet.persister().clone());
+        fixture
+            .wallet
+            .restore_private_contact_payments(&fixture.coordinator)
+            .await
+            .expect("restored");
+        assert!(
+            fixture
+                .persistence
+                .overtaken_by
+                .lock()
+                .expect("overtaken")
+                .is_none(),
+            "the restoration flushed"
+        );
+        assert!(fixture.wallet.persister().buffered_writes_lost());
+        assert_eq!(
+            fixture.journaled().await,
+            1,
+            "kept: the request settling it never reached disk"
+        );
     }
 
     /// A restoration discharges a record its sender's tracked request settles
@@ -4589,7 +4721,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 pay,
@@ -4635,7 +4766,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 failing,
@@ -4751,7 +4881,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 no_payment,
@@ -4763,6 +4892,58 @@ mod tests {
                 Err(PlatformWalletError::PrivateContactRecoveryUnsupported)
             ),
             "{refused:?}"
+        );
+        assert!(!pending_to(&alice_wallet, ALICE, &bob).await);
+    }
+
+    /// A private payment is refused, with nothing paid, when another flush of
+    /// the wallet's records fails for good while the marker's own flush runs:
+    /// that one dropped the buffered marker, so the flush that then succeeded
+    /// proves nothing, and a restart would not hold the pair.
+    #[tokio::test]
+    async fn should_not_pay_for_a_private_request_whose_marker_another_flush_dropped() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let persistence = RecordingPersistence::attesting(
+            PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
+        );
+        let (_manager, alice_wallet) = wallet_on(
+            Arc::clone(&persistence),
+            ALICE_PHRASE,
+            &alice,
+            &[&alice, &bob],
+            vec![],
+        )
+        .await;
+        *persistence.overtaken_by.lock().expect("overtaken") =
+            Some(alice_wallet.persister().clone());
+        let refused = alice_wallet
+            .identity()
+            .dashpay()
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &alice_signer,
+                &alice_crypto,
+                no_payment,
+            )
+            .await;
+        assert!(
+            matches!(&refused, Err(PlatformWalletError::Persistence(message))
+                if message.contains("not stored durably")),
+            "{refused:?}"
+        );
+        assert!(
+            persistence
+                .overtaken_by
+                .lock()
+                .expect("overtaken")
+                .is_none(),
+            "a flush was overtaken"
         );
         assert!(!pending_to(&alice_wallet, ALICE, &bob).await);
     }
@@ -4797,7 +4978,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 no_payment,
@@ -4846,7 +5026,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 unconfirmed,
@@ -4939,7 +5118,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 delivered,
@@ -5022,7 +5200,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 keep_entry(&kept),
@@ -5144,7 +5321,7 @@ mod tests {
             let paid = before
                 .identity()
                 .dashpay()
-                .accept_private_contact_request(&incoming, None, &bob_signer, &bob_crypto, pay)
+                .accept_private_contact_request(&incoming, &bob_signer, &bob_crypto, pay)
                 .await;
             assert!(
                 matches!(
@@ -5219,7 +5396,6 @@ mod tests {
                             &alice.id(),
                             None,
                             AutoAcceptProofSource::None,
-                            None,
                             &bob_signer,
                             &bob_crypto,
                             no_payment,
@@ -5390,6 +5566,7 @@ mod tests {
         let (_alice_manager, alice_wallet) =
             wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
         let kept = Arc::new(Mutex::new(Vec::new()));
+        let given = give_every_contact(shielded_address);
         let sent = alice_wallet
             .identity()
             .dashpay()
@@ -5398,13 +5575,13 @@ mod tests {
                 &bob.id(),
                 Some("Alice".to_string()),
                 AutoAcceptProofSource::None,
-                Some(shielded_address),
                 &alice_signer,
                 &alice_crypto,
                 append_entry(&alice_wallet, 0, vec![], &kept),
             )
             .await
             .expect("Alice sends the request, read back from the store");
+        drop(given);
         let entry = kept.lock().expect("kept entries").remove(0);
         assert_eq!(entry.len(), 589, "the entry takes DashPay's entry size");
         assert_eq!(sent.sender_key_index, ENCRYPTION_KEY_ID);
@@ -5528,7 +5705,6 @@ mod tests {
         let established = bob_view
             .accept_contact_request_replying_in_kind(
                 &received,
-                None,
                 &bob_signer,
                 &bob_crypto,
                 append_entry(&bob_wallet, 1, vec![], &reply),
@@ -5655,7 +5831,6 @@ mod tests {
             .dashpay()
             .accept_contact_request_replying_in_kind(
                 &incoming,
-                None,
                 &bob_signer,
                 &bob_crypto,
                 keep_entry(&paid),
@@ -5674,7 +5849,6 @@ mod tests {
             .dashpay()
             .accept_contact_request_replying_in_kind(
                 &incoming,
-                None,
                 &bob_signer,
                 &bob_crypto,
                 keep_entry(&paid),
@@ -5698,7 +5872,6 @@ mod tests {
                 .dashpay()
                 .accept_contact_request_replying_in_kind(
                     &unknown,
-                    None,
                     &bob_signer,
                     &bob_crypto,
                     keep_entry(&paid),
@@ -5728,7 +5901,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 append_entry(&alice_wallet, 0, vec![], &kept),
@@ -5776,7 +5948,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 append_entry(&alice_wallet, 0, vec![], &kept),
@@ -5855,7 +6026,6 @@ mod tests {
                     &bob.id(),
                     None,
                     AutoAcceptProofSource::None,
-                    None,
                     &alice_signer,
                     &alice_crypto,
                     $pay,
@@ -5914,7 +6084,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 |_, started: PaymentStarted| {
@@ -6370,6 +6539,1102 @@ mod tests {
             .expect("the read"));
     }
 
+    /// An unconfirmed public request from Alice to Bob on a fresh wallet of
+    /// hers, as a send whose broadcast may have been delivered leaves it: the
+    /// wallet, its transition and its account reference.
+    async fn unconfirmed_public_request(
+        alice: &Identity,
+        bob: &Identity,
+        signer: &impl Signer<IdentityPublicKey>,
+        crypto: &SeedCryptoProvider,
+    ) -> (
+        PlatformWalletManager<NoPersistence>,
+        Arc<PlatformWallet>,
+        StateTransition,
+        u32,
+    ) {
+        unconfirmed_public_request_on(Arc::new(NoPersistence), alice, bob, signer, crypto).await
+    }
+
+    /// [`unconfirmed_public_request`] on the backend `persistence`.
+    async fn unconfirmed_public_request_on<P: PlatformWalletPersistence + 'static>(
+        persistence: Arc<P>,
+        alice: &Identity,
+        bob: &Identity,
+        signer: &impl Signer<IdentityPublicKey>,
+        crypto: &SeedCryptoProvider,
+    ) -> (
+        PlatformWalletManager<P>,
+        Arc<PlatformWallet>,
+        StateTransition,
+        u32,
+    ) {
+        let (manager, alice_wallet) =
+            wallet_on(persistence, ALICE_PHRASE, alice, &[alice, bob], vec![]).await;
+        expect_dashpay_nonce(&alice_wallet, alice, 3).await;
+        let sent = alice_wallet
+            .identity()
+            .dashpay()
+            .send_contact_request_with_external_signer(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                signer,
+                crypto,
+            )
+            .await;
+        assert!(
+            matches!(&sent, Err(PlatformWalletError::Sdk(error))
+                if error.is_state_transition_result_unconfirmed()),
+            "{sent:?}"
+        );
+        let (transition, reference) = unconfirmed_to(&alice_wallet, ALICE, bob)
+            .await
+            .expect("held");
+        (manager, alice_wallet, transition, reference)
+    }
+
+    /// The bytes of an unconfirmed public request are broadcast again only
+    /// where a public request to its recipient would still go out, and never
+    /// by a private send: not once the recipient's request came privately,
+    /// and not while the sender's read of the private store is rewound. The
+    /// request stays held, and once that read reaches the store's end again
+    /// its bytes go out.
+    #[tokio::test]
+    async fn should_broadcast_an_unconfirmed_public_request_again_only_while_its_pair_is_clear() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+
+        for came_privately in [true, false] {
+            let (_manager, alice_wallet, transition, reference) =
+                unconfirmed_public_request(&alice, &bob, &alice_signer, &alice_crypto).await;
+            // Not on Platform, and its nonce not used: it may still execute.
+            expect_sent_request(&alice_wallet, &alice, &bob, reference, None).await;
+            let view = alice_wallet.identity().dashpay();
+            let sent_once = broadcasts_of(&alice_wallet, &transition).await;
+            assert!(sent_once > 0, "the send broadcast it");
+
+            // As a private send settles it: what proof allows, and no bytes.
+            view.settle_unconfirmed_public_request(&alice.id(), &bob.id(), false)
+                .await
+                .expect("the reads");
+            assert_eq!(
+                broadcasts_of(&alice_wallet, &transition).await,
+                sent_once,
+                "a private send broadcasts nothing"
+            );
+
+            if came_privately {
+                // Bob's request, read from the private store since.
+                track_incoming(
+                    &alice_wallet,
+                    &ContactRequest::new(
+                        bob.id(),
+                        alice.id(),
+                        ENCRYPTION_KEY_ID,
+                        DECRYPTION_KEY_ID,
+                        0,
+                        vec![7; 96],
+                        0,
+                        BLOCK_TIME_MS,
+                    ),
+                )
+                .await;
+            } else {
+                // A sender unignored since: the store is read again from 0.
+                let iw = alice_wallet.identity();
+                let mut wm = iw.wallet_manager.write().await;
+                let managed = wm
+                    .get_wallet_info_mut(&alice_wallet.wallet_id())
+                    .expect("wallet info")
+                    .identity_manager
+                    .managed_identity_mut(&alice.id())
+                    .expect("Alice");
+                let carol = Identifier::from([9; 32]);
+                managed.ignore_sender(&carol);
+                managed.unignore_sender(&carol);
+                assert!(managed.dashpay().private_store_read_rewound());
+            }
+            let _ = view.sync_contact_requests_reporting().await;
+            assert_eq!(
+                broadcasts_of(&alice_wallet, &transition).await,
+                sent_once,
+                "not broadcast again ({came_privately})"
+            );
+            assert_eq!(
+                unconfirmed_to(&alice_wallet, ALICE, &bob).await,
+                Some((transition.clone(), reference)),
+                "the request stays held ({came_privately})"
+            );
+
+            if !came_privately {
+                view.sync_private_contact_requests(&alice_crypto, 4)
+                    .await
+                    .expect("the store is read to its end again");
+                let _ = view.sync_contact_requests_reporting().await;
+                assert!(
+                    broadcasts_of(&alice_wallet, &transition).await > sent_once,
+                    "broadcast again once the read is at the store's end"
+                );
+            }
+        }
+    }
+
+    /// One public send holds a pair at a time: while one is being sent, a
+    /// second to the same recipient is refused with nothing signed, and the
+    /// first's release frees the pair.
+    #[tokio::test]
+    async fn should_refuse_a_second_public_send_while_one_is_being_sent() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let signed = Arc::new(AtomicUsize::new(0));
+        let alice_signer = CountingSigner {
+            inner: signer(ALICE_PHRASE, &alice),
+            signed: Arc::clone(&signed),
+        };
+        let (_manager, alice_wallet) = wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        expect_dashpay_nonce(&alice_wallet, &alice, 3).await;
+        let view = alice_wallet.identity().dashpay();
+
+        let first = view
+            .claim_public_pair(&alice.id(), &bob.id(), false, false)
+            .await
+            .expect("claimed")
+            .expect("a claim");
+        let second = view
+            .claim_public_pair(&alice.id(), &bob.id(), false, false)
+            .await;
+        assert!(
+            matches!(
+                &second,
+                Err(PlatformWalletError::PublicContactRequestUnconfirmed(recipient))
+                    if *recipient == bob.id()
+            ),
+            "{:?}",
+            second.err()
+        );
+        let sent = view
+            .send_contact_request_with_external_signer(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &alice_signer,
+                &alice_crypto,
+            )
+            .await;
+        assert!(
+            matches!(
+                &sent,
+                Err(PlatformWalletError::PublicContactRequestUnconfirmed(recipient))
+                    if *recipient == bob.id()
+            ),
+            "{sent:?}"
+        );
+        assert_eq!(signed.load(Ordering::SeqCst), 0, "nothing is signed");
+        managed(&alice_wallet, ALICE, |managed| {
+            assert!(
+                managed.dashpay().public_contact_request_claimed(&bob.id()),
+                "the first send's claim stays"
+            );
+        })
+        .await;
+
+        first.release().await;
+        let third = view
+            .claim_public_pair(&alice.id(), &bob.id(), false, false)
+            .await;
+        assert!(
+            matches!(third, Ok(Some(_))),
+            "the pair is free once the first send ends: {:?}",
+            third.err()
+        );
+    }
+
+    /// A send retried after an unconfirmed outcome, once its request is on
+    /// Platform, records that request and returns it as the one sent, with
+    /// nothing signed or broadcast: it does not build a request past the one
+    /// it just recorded.
+    #[tokio::test]
+    async fn should_return_the_unconfirmed_request_a_retry_finds_on_platform() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let signed = Arc::new(AtomicUsize::new(0));
+        let alice_signer = CountingSigner {
+            inner: signer(ALICE_PHRASE, &alice),
+            signed: Arc::clone(&signed),
+        };
+        let (_manager, alice_wallet, transition, reference) =
+            unconfirmed_public_request(&alice, &bob, &alice_signer, &alice_crypto).await;
+        let view = alice_wallet.identity().dashpay();
+        let signatures = signed.load(Ordering::SeqCst);
+        let broadcasts = broadcasts_of(&alice_wallet, &transition).await;
+
+        expect_sent_request(
+            &alice_wallet,
+            &alice,
+            &bob,
+            reference,
+            Some(sent_request_document(&alice, &bob, reference)),
+        )
+        .await;
+        let retried = view
+            .send_contact_request_with_external_signer(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &alice_signer,
+                &alice_crypto,
+            )
+            .await
+            .expect("the request it sent");
+        assert_eq!(retried.account_reference, reference);
+        assert_eq!(
+            signed.load(Ordering::SeqCst),
+            signatures,
+            "nothing is signed"
+        );
+        assert_eq!(
+            broadcasts_of(&alice_wallet, &transition).await,
+            broadcasts,
+            "nothing is broadcast"
+        );
+        assert!(unconfirmed_to(&alice_wallet, ALICE, &bob).await.is_none());
+        managed(&alice_wallet, ALICE, |managed| {
+            assert_eq!(
+                managed
+                    .dashpay()
+                    .outgoing_request(&bob.id())
+                    .map(|request| request.account_reference),
+                Some(reference),
+                "recorded as sent"
+            );
+        })
+        .await;
+    }
+
+    /// A settle that found its request on Platform records it only while its
+    /// own hold still stands. One whose reads came back after another settle
+    /// of the hold recorded the request and released it records nothing: it
+    /// answers that request while it is the one tracked, and nothing once a
+    /// request sent since is, which the older one is not recorded over.
+    #[tokio::test]
+    async fn should_record_nothing_from_a_settle_whose_hold_was_settled_meanwhile() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+
+        for sent_since in [true, false] {
+            let (_manager, alice_wallet, _transition, reference) =
+                unconfirmed_public_request(&alice, &bob, &alice_signer, &alice_crypto).await;
+            expect_sent_request(
+                &alice_wallet,
+                &alice,
+                &bob,
+                reference,
+                Some(sent_request_document(&alice, &bob, reference)),
+            )
+            .await;
+            let view = alice_wallet.identity().dashpay();
+
+            // Its reads done, the settle waits at the lifecycle gate, here
+            // held as a removal holds it: what follows happens between its
+            // reads and its recording.
+            let gate = alice_wallet.generation().teardown_guard().await;
+            let (alice_id, bob_id) = (alice.id(), bob.id());
+            let mut settling =
+                Box::pin(view.settle_unconfirmed_public_request(&alice_id, &bob_id, true));
+            assert!(
+                tokio::time::timeout(Duration::from_millis(300), &mut settling)
+                    .await
+                    .is_err(),
+                "the settle waits at the gate"
+            );
+            {
+                let iw = alice_wallet.identity();
+                let mut wm = iw.wallet_manager.write().await;
+                let managed = wm
+                    .get_wallet_info_mut(&alice_wallet.wallet_id())
+                    .expect("wallet info")
+                    .identity_manager
+                    .managed_identity_mut(&alice_id)
+                    .expect("the sender");
+                let attempt = managed
+                    .dashpay()
+                    .unconfirmed_public_request(&bob_id)
+                    .expect("held")
+                    .attempt;
+                // As another settle of the hold leaves it.
+                managed
+                    .add_sent_contact_request(
+                        public_request(&alice, &bob, reference),
+                        &iw.persister,
+                    )
+                    .expect("recorded");
+                managed.settle_unconfirmed_public_request(&bob_id, attempt);
+                if sent_since {
+                    // As a send since leaves it: a rotation past that request.
+                    managed
+                        .add_sent_contact_request(
+                            public_request(&alice, &bob, reference + 1),
+                            &iw.persister,
+                        )
+                        .expect("recorded");
+                }
+            }
+            drop(gate);
+
+            let settled = settling.await.expect("the reads");
+            let tracked = if sent_since { reference + 1 } else { reference };
+            assert_eq!(
+                settled.map(|request| request.account_reference),
+                (!sent_since).then_some(reference),
+                "sent since: {sent_since}"
+            );
+            managed(&alice_wallet, ALICE, |managed| {
+                assert_eq!(
+                    managed
+                        .dashpay()
+                        .outgoing_request(&bob_id)
+                        .map(|request| request.account_reference),
+                    Some(tracked),
+                    "sent since: {sent_since}"
+                );
+            })
+            .await;
+        }
+    }
+
+    /// A settle that finds its held request on Platform does not record it
+    /// over a newer request the wallet tracks, as a sweep read in one that
+    /// another device of the identity sent while the hold stood: the hold is
+    /// released, the newer request stays tracked, and nothing is answered as
+    /// recorded.
+    #[tokio::test]
+    async fn should_keep_a_newer_tracked_request_when_a_settle_finds_the_held_one() {
+        use platform_encryption::ACCOUNT_REFERENCE_VERSION_SHIFT;
+
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let (_manager, alice_wallet, _transition, reference) =
+            unconfirmed_public_request(&alice, &bob, &alice_signer, &alice_crypto).await;
+        expect_sent_request(
+            &alice_wallet,
+            &alice,
+            &bob,
+            reference,
+            Some(sent_request_document(&alice, &bob, reference)),
+        )
+        .await;
+        // As a sweep reads in a rotation past the held request.
+        let newer = reference + (1 << ACCOUNT_REFERENCE_VERSION_SHIFT);
+        {
+            let iw = alice_wallet.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&alice_wallet.wallet_id())
+                .expect("wallet info")
+                .identity_manager
+                .managed_identity_mut(&alice.id())
+                .expect("the sender")
+                .add_sent_contact_request(public_request(&alice, &bob, newer), &iw.persister)
+                .expect("recorded");
+        }
+        assert!(
+            unconfirmed_to(&alice_wallet, ALICE, &bob).await.is_some(),
+            "the older request is held still"
+        );
+
+        let settled = alice_wallet
+            .identity()
+            .dashpay()
+            .settle_unconfirmed_public_request(&alice.id(), &bob.id(), true)
+            .await
+            .expect("the reads");
+
+        assert_eq!(settled, None, "nothing recorded");
+        assert!(
+            unconfirmed_to(&alice_wallet, ALICE, &bob).await.is_none(),
+            "the hold is released"
+        );
+        managed(&alice_wallet, ALICE, |managed| {
+            assert_eq!(
+                managed
+                    .dashpay()
+                    .outgoing_request(&bob.id())
+                    .map(|request| request.account_reference),
+                Some(newer),
+                "the newer request stays tracked"
+            );
+        })
+        .await;
+    }
+
+    /// A request recorded as sent is not recorded over a newer one the wallet
+    /// tracks for the pair, as a sweep read in one that another device of the
+    /// identity sent while this one was being looked up or broadcast: the
+    /// newer request stays tracked and is answered as the request sent. One
+    /// that is not older is recorded.
+    #[tokio::test]
+    async fn should_keep_a_newer_tracked_request_when_an_older_one_is_recorded_as_sent() {
+        use platform_encryption::ACCOUNT_REFERENCE_VERSION_SHIFT;
+
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let manager = manager_on(Arc::new(NoPersistence)).await;
+        let wallet = create_holding(&manager, ALICE_PHRASE, &alice).await;
+        let xpub = alice_crypto
+            .receiving_xpub(&"m/9'/1'/15'/0'".parse::<DerivationPath>().expect("a path"))
+            .await
+            .expect("an xpub");
+        let older = 7;
+        let newer = older + (1 << ACCOUNT_REFERENCE_VERSION_SHIFT);
+        let newest = older + (2 << ACCOUNT_REFERENCE_VERSION_SHIFT);
+        // As a sweep reads in a rotation past the request being recorded.
+        {
+            let iw = wallet.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet.wallet_id())
+                .expect("wallet info")
+                .identity_manager
+                .managed_identity_mut(&alice.id())
+                .expect("the sender")
+                .add_sent_contact_request(public_request(&alice, &bob, newer), &iw.persister)
+                .expect("recorded");
+        }
+        let tracked = |wallet: Arc<PlatformWallet>| async move {
+            managed(&wallet, ALICE, |managed| {
+                managed
+                    .dashpay()
+                    .outgoing_request(&Identifier::from(BOB))
+                    .map(|request| request.account_reference)
+            })
+            .await
+        };
+        let view = wallet.identity().dashpay();
+
+        let answered = view
+            .record_sent_contact_request(
+                &alice.id(),
+                &bob.id(),
+                public_request(&alice, &bob, older),
+                0,
+                xpub,
+            )
+            .await
+            .expect("answered");
+        assert_eq!(
+            answered.account_reference, newer,
+            "the tracked request is the request sent"
+        );
+        assert_eq!(
+            tracked(Arc::clone(&wallet)).await,
+            Some(newer),
+            "the newer request stays tracked"
+        );
+
+        let answered = view
+            .record_sent_contact_request(
+                &alice.id(),
+                &bob.id(),
+                public_request(&alice, &bob, newest),
+                0,
+                xpub,
+            )
+            .await
+            .expect("recorded");
+        assert_eq!(answered.account_reference, newest);
+        assert_eq!(
+            tracked(wallet).await,
+            Some(newest),
+            "one that is not older is recorded"
+        );
+    }
+
+    /// Every flush of the records under a wallet id is counted in one place,
+    /// whichever handle makes it: one through the handle of a wallet removed
+    /// since, failing for good, drops what its same-id successor had
+    /// buffered, and the successor then vouches for nothing it stored. A
+    /// wallet created under the id after that starts from what is on disk.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_count_a_removed_wallets_flush_against_its_successor() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let persistence = RecordingPersistence::attesting(
+            PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
+        );
+        let manager = manager_on(Arc::clone(&persistence)).await;
+        let first = create_holding(&manager, ALICE_PHRASE, &alice).await;
+        let wallet_id = first.wallet_id();
+        manager.remove_wallet(&wallet_id).await.expect("removed");
+        let successor = create_holding(&manager, ALICE_PHRASE, &alice).await;
+        assert_eq!(successor.wallet_id(), wallet_id);
+        assert!(!successor.persister().buffered_writes_lost());
+
+        persistence
+            .flush_fails_fatally
+            .store(true, Ordering::SeqCst);
+        assert!(first.flush_persist().is_err());
+        persistence
+            .flush_fails_fatally
+            .store(false, Ordering::SeqCst);
+
+        assert!(
+            successor.persister().buffered_writes_lost(),
+            "the flush dropped the one buffer the id's records share"
+        );
+        assert!(matches!(
+            successor.persister().flush_durably(),
+            Err(NotDurable::Lost)
+        ));
+
+        manager.remove_wallet(&wallet_id).await.expect("removed");
+        let later = create_holding(&manager, ALICE_PHRASE, &alice).await;
+        assert!(!later.persister().buffered_writes_lost());
+        assert!(later.persister().flush_durably().is_ok());
+    }
+
+    /// A handle taken before its wallet was removed and created again under
+    /// its id registers no contact account on the replacement, whose own
+    /// handle does.
+    #[tokio::test]
+    async fn should_register_no_contact_account_on_a_replacement_from_a_stale_handle() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let manager = manager_on(Arc::new(NoPersistence)).await;
+        let first = create_holding(&manager, ALICE_PHRASE, &alice).await;
+        let wallet_id = first.wallet_id();
+        let stale = first.identity().dashpay();
+        manager.remove_wallet(&wallet_id).await.expect("removed");
+        let again = create_holding(&manager, ALICE_PHRASE, &alice).await;
+        assert_eq!(again.wallet_id(), wallet_id);
+        let xpub = alice_crypto
+            .receiving_xpub(&"m/9'/1'/15'/0'".parse::<DerivationPath>().expect("a path"))
+            .await
+            .expect("an xpub");
+        let registered = |wallet: Arc<PlatformWallet>| async move {
+            let iw = wallet.identity();
+            let wm = iw.wallet_manager.read().await;
+            wm.get_wallet_info(&wallet.wallet_id())
+                .expect("wallet info")
+                .core_wallet
+                .accounts
+                .dashpay_receival_accounts
+                .contains_key(&DashpayAccountKey {
+                    index: 0,
+                    user_identity_id: ALICE,
+                    friend_identity_id: BOB,
+                })
+        };
+
+        let refused = stale
+            .register_contact_account(&alice.id(), &bob.id(), 0, xpub)
+            .await;
+        assert!(
+            matches!(refused, Err(PlatformWalletError::WalletNotFound(_))),
+            "{refused:?}"
+        );
+        assert!(
+            !registered(Arc::clone(&again)).await,
+            "the replacement is given no account"
+        );
+
+        again
+            .identity()
+            .dashpay()
+            .register_contact_account(&alice.id(), &bob.id(), 0, xpub)
+            .await
+            .expect("registered by its own handle");
+        assert!(registered(again).await);
+    }
+
+    /// A private request paid for on a wallet removed, and created again
+    /// under its id, before the send read it back is reported pending, not
+    /// failed: the payment went out.
+    #[tokio::test]
+    async fn should_report_a_paid_private_request_pending_once_its_wallet_is_replaced() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let persistence = RecordingPersistence::attesting(
+            PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
+        );
+        let manager = manager_on(Arc::clone(&persistence)).await;
+        #[cfg(feature = "shielded")]
+        let _store = {
+            let dir = tempfile::tempdir().expect("temporary shielded store");
+            manager
+                .configure_shielded(dir.path().join("tree.sqlite"))
+                .await
+                .expect("the shielded store is configured");
+            dir
+        };
+        let first = create_holding(&manager, ALICE_PHRASE, &alice).await;
+        let wallet_id = first.wallet_id();
+        // The payment goes out, and the wallet is replaced before it returns.
+        let replacing = |_entry: BinaryData, started: PaymentStarted| {
+            let (manager, alice) = (&manager, &alice);
+            async move {
+                started.mark();
+                manager.remove_wallet(&wallet_id).await.expect("removed");
+                let again = create_holding(manager, ALICE_PHRASE, alice).await;
+                assert_eq!(again.wallet_id(), wallet_id);
+                Ok(ResponseMetadata {
+                    time_ms: BLOCK_TIME_MS,
+                    ..Default::default()
+                })
+            }
+        };
+        let sent = first
+            .identity()
+            .dashpay()
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &alice_signer,
+                &alice_crypto,
+                replacing,
+            )
+            .await;
+        assert!(
+            matches!(
+                &sent,
+                Err(PlatformWalletError::PrivateContactRequestPending(recipient))
+                    if *recipient == bob.id()
+            ),
+            "{sent:?}"
+        );
+    }
+
+    /// A send retried after an unconfirmed outcome, whose request is on
+    /// Platform but whose receiving account cannot be registered, still
+    /// returns the request it recorded, with nothing signed or broadcast: the
+    /// account is left to the next sync, and is no reason to send again.
+    #[tokio::test]
+    async fn should_return_the_recorded_request_when_its_receiving_account_is_not_registered() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let signed = Arc::new(AtomicUsize::new(0));
+        let alice_signer = CountingSigner {
+            inner: signer(ALICE_PHRASE, &alice),
+            signed: Arc::clone(&signed),
+        };
+        let persistence = RecordingPersistence::attesting(
+            PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
+        );
+        let (_manager, alice_wallet, transition, reference) = unconfirmed_public_request_on(
+            Arc::clone(&persistence),
+            &alice,
+            &bob,
+            &alice_signer,
+            &alice_crypto,
+        )
+        .await;
+        let view = alice_wallet.identity().dashpay();
+        let signatures = signed.load(Ordering::SeqCst);
+        let broadcasts = broadcasts_of(&alice_wallet, &transition).await;
+
+        expect_sent_request(
+            &alice_wallet,
+            &alice,
+            &bob,
+            reference,
+            Some(sent_request_document(&alice, &bob, reference)),
+        )
+        .await;
+        persistence.accounts_fail.store(true, Ordering::SeqCst);
+        let retried = view
+            .send_contact_request_with_external_signer(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &alice_signer,
+                &alice_crypto,
+            )
+            .await
+            .expect("the request it recorded");
+        assert_eq!(retried.account_reference, reference);
+        assert_eq!(
+            signed.load(Ordering::SeqCst),
+            signatures,
+            "nothing is signed"
+        );
+        assert_eq!(
+            broadcasts_of(&alice_wallet, &transition).await,
+            broadcasts,
+            "nothing is broadcast"
+        );
+        assert!(unconfirmed_to(&alice_wallet, ALICE, &bob).await.is_none());
+        let iw = alice_wallet.identity();
+        let wm = iw.wallet_manager.read().await;
+        assert!(
+            !wm.get_wallet_info(&alice_wallet.wallet_id())
+                .expect("wallet info")
+                .core_wallet
+                .accounts
+                .dashpay_receival_accounts
+                .contains_key(&DashpayAccountKey {
+                    index: 0,
+                    user_identity_id: ALICE,
+                    friend_identity_id: BOB,
+                }),
+            "its account waits for the next sync"
+        );
+    }
+
+    /// While its wallet is being removed, an unconfirmed public request is
+    /// not broadcast again: the settling takes the wallet generation's
+    /// lifecycle gate before it checks that the request may go out, and
+    /// keeps it through the dispatch.
+    #[tokio::test]
+    async fn should_not_broadcast_a_held_request_again_while_its_wallet_is_being_removed() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let (_manager, alice_wallet, transition, reference) =
+            unconfirmed_public_request(&alice, &bob, &alice_signer, &alice_crypto).await;
+        expect_sent_request(&alice_wallet, &alice, &bob, reference, None).await;
+        let view = alice_wallet.identity().dashpay();
+        let sent_once = broadcasts_of(&alice_wallet, &transition).await;
+
+        // As a removal holds it.
+        let removal = alice_wallet.generation().teardown_guard().await;
+        let (alice_id, bob_id) = (alice.id(), bob.id());
+        let mut settling =
+            Box::pin(view.settle_unconfirmed_public_request(&alice_id, &bob_id, true));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(300), &mut settling)
+                .await
+                .is_err(),
+            "the settling waits for the removal"
+        );
+        assert_eq!(
+            broadcasts_of(&alice_wallet, &transition).await,
+            sent_once,
+            "nothing is broadcast while the wallet is being removed"
+        );
+
+        drop(removal);
+        settling.await.expect("the reads");
+        assert!(
+            broadcasts_of(&alice_wallet, &transition).await > sent_once,
+            "broadcast again once the gate is free"
+        );
+    }
+
+    /// A hold on unrestored private payments that is being raised while an
+    /// unconfirmed public request's repeat broadcast is in flight waits for
+    /// that broadcast, and a repeat broadcast that begins once the raise is
+    /// waiting waits for the hold and then finds it: its bytes do not go out.
+    /// So no repeat broadcast is decided while the hold is down and
+    /// dispatched once it is up.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_not_broadcast_a_held_request_again_once_a_hold_being_raised_stands() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let alice_signer = signer(ALICE_PHRASE, &alice);
+        let (_manager, alice_wallet, transition, reference) =
+            unconfirmed_public_request(&alice, &bob, &alice_signer, &alice_crypto).await;
+        expect_sent_request(&alice_wallet, &alice, &bob, reference, None).await;
+        let view = alice_wallet.identity().dashpay();
+        let persister = alice_wallet.persister().clone();
+        persister.private_payments_restored();
+        let sent_once = broadcasts_of(&alice_wallet, &transition).await;
+
+        // As another held request's repeat broadcast, mid-dispatch.
+        let dispatching = persister.held_request_dispatch().await;
+        let mut raising = Box::pin(persister.hold_until_private_payments_restored());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), &mut raising)
+                .await
+                .is_err(),
+            "the raise waits for the dispatch in flight"
+        );
+        assert!(!persister.private_payments_unrestored());
+
+        // A repeat broadcast that begins now is ordered after the raise.
+        let (alice_id, bob_id) = (alice.id(), bob.id());
+        let mut settling =
+            Box::pin(view.settle_unconfirmed_public_request(&alice_id, &bob_id, true));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(300), &mut settling)
+                .await
+                .is_err(),
+            "the settling waits for the hold being raised"
+        );
+        assert_eq!(broadcasts_of(&alice_wallet, &transition).await, sent_once);
+
+        drop(dispatching);
+        raising.await;
+        assert!(persister.private_payments_unrestored(), "the hold stands");
+        settling.await.expect("the reads");
+        assert_eq!(
+            broadcasts_of(&alice_wallet, &transition).await,
+            sent_once,
+            "nothing is broadcast once the hold stands"
+        );
+    }
+
+    /// An accept whose wallet is removed and created again under its id
+    /// while the accept derives its receiving key, after it adopted the
+    /// request on its own generation, answers that its wallet is gone. It
+    /// does not answer with the contact the replacement holds for the pair.
+    #[tokio::test]
+    async fn should_not_answer_an_accept_with_a_replacement_wallets_contact() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let bob_signer = signer(BOB_PHRASE, &bob);
+        let incoming = public_request(&alice, &bob, 3);
+        let reciprocated = |wallet: Arc<PlatformWallet>| {
+            let (incoming, reply) = (incoming.clone(), public_request(&bob, &alice, 4));
+            async move {
+                let iw = wallet.identity();
+                let mut wm = iw.wallet_manager.write().await;
+                let managed = wm
+                    .get_wallet_info_mut(&wallet.wallet_id())
+                    .expect("wallet info")
+                    .identity_manager
+                    .managed_identity_mut(&Identifier::from(BOB))
+                    .expect("Bob");
+                managed
+                    .add_incoming_contact_request(incoming, &iw.persister)
+                    .expect("incoming request");
+                managed
+                    .add_sent_contact_request(reply, &iw.persister)
+                    .expect("sent request");
+            }
+        };
+        let (manager, first) = wallet(BOB_PHRASE, &bob, &[&alice, &bob], vec![]).await;
+        let wallet_id = first.wallet_id();
+        reciprocated(Arc::clone(&first)).await;
+
+        let reached = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        // The second derivation, the one for the receiving account, which
+        // follows the adoption on the accept's own generation: the first
+        // checks the provider's seed before the store is read.
+        let mut pausing = HookedCrypto::new(BOB_PHRASE);
+        pausing.before_receiving_xpub =
+            Some(pause_on_call(2, Arc::clone(&reached), Arc::clone(&release)));
+
+        let view = first.identity().dashpay();
+        let accept =
+            view.accept_contact_request_with_external_signer(&incoming, &bob_signer, &pausing);
+        let replace = async {
+            reached.notified().await;
+            manager.remove_wallet(&wallet_id).await.expect("removed");
+            let again = create_holding(&manager, BOB_PHRASE, &bob).await;
+            assert_eq!(again.wallet_id(), wallet_id);
+            // The replacement holds the same contact.
+            reciprocated(Arc::clone(&again)).await;
+            release.notify_one();
+            again
+        };
+        let (accepted, again) = tokio::time::timeout(Duration::from_secs(30), async {
+            tokio::join!(accept, replace)
+        })
+        .await
+        .expect("the accept reaches its receiving key");
+
+        managed(&again, BOB, |managed| {
+            assert!(
+                managed
+                    .dashpay()
+                    .established_contacts()
+                    .contains_key(&alice.id()),
+                "the replacement holds the contact"
+            );
+        })
+        .await;
+        assert!(
+            matches!(accepted, Err(PlatformWalletError::WalletNotFound(_))),
+            "{accepted:?}"
+        );
+    }
+
+    /// A handle taken before its wallet was removed and created again under
+    /// its id completes no external account registration on the replacement:
+    /// it stamps no outbound-account marker, stores no label, and its
+    /// registration is refused as not found before anything is read from the
+    /// replacement's accounts. The replacement's own handle does all three.
+    #[tokio::test]
+    async fn should_complete_no_external_account_on_a_replacement_from_a_stale_handle() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let manager = manager_on(RecordingPersistence::attesting(
+            PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
+        ))
+        .await;
+        let first = create_holding(&manager, ALICE_PHRASE, &alice).await;
+        let wallet_id = first.wallet_id();
+        let stale = first.identity().dashpay();
+        manager.remove_wallet(&wallet_id).await.expect("removed");
+        let again = create_holding(&manager, ALICE_PHRASE, &alice).await;
+        assert_eq!(again.wallet_id(), wallet_id);
+
+        // Bob is a contact of the replacement, his request carrying a label.
+        let shared = [0x55u8; 32];
+        let mut incoming = public_request(&bob, &alice, 0);
+        incoming.encrypted_account_label = Some(platform_encryption::encrypt_account_label(
+            &shared,
+            &[0x11u8; 16],
+            "Main wallet",
+        ));
+        let payload = incoming.encrypted_public_key.clone();
+        {
+            let iw = again.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            let managed = wm
+                .get_wallet_info_mut(&wallet_id)
+                .expect("wallet info")
+                .identity_manager
+                .managed_identity_mut(&alice.id())
+                .expect("Alice");
+            managed
+                .add_sent_contact_request(public_request(&alice, &bob, 0), &iw.persister)
+                .expect("sent request");
+            managed
+                .add_incoming_contact_request(incoming, &iw.persister)
+                .expect("incoming request");
+        }
+        let completed = |wallet: Arc<PlatformWallet>| async move {
+            managed(&wallet, ALICE, |managed| {
+                let contact = managed
+                    .dashpay()
+                    .established_contacts()
+                    .get(&Identifier::from(BOB))
+                    .expect("established");
+                (
+                    contact.external_account_reference,
+                    contact.contact_account_label.clone(),
+                )
+            })
+            .await
+        };
+
+        stale
+            .note_external_account_registered(&alice.id(), &bob.id(), &payload)
+            .await;
+        stale
+            .store_contact_account_label(&alice.id(), &bob.id(), &shared)
+            .await;
+        assert_eq!(
+            completed(Arc::clone(&again)).await,
+            (None, None),
+            "the replacement keeps its own marker and label"
+        );
+        let refused = stale
+            .register_external_contact_account(
+                &alice.id(),
+                &bob,
+                &payload,
+                zeroize::Zeroizing::new(shared),
+            )
+            .await;
+        assert!(
+            matches!(
+                refused,
+                Err(RegisterExternalError::Transient(
+                    PlatformWalletError::WalletNotFound(_)
+                ))
+            ),
+            "refused before the payload is opened"
+        );
+
+        let live = again.identity().dashpay();
+        live.note_external_account_registered(&alice.id(), &bob.id(), &payload)
+            .await;
+        live.store_contact_account_label(&alice.id(), &bob.id(), &shared)
+            .await;
+        assert_eq!(
+            completed(again).await,
+            (Some(0), Some("Main wallet".to_string())),
+            "completed by its own handle"
+        );
+    }
+
+    /// A handle taken before its wallet was removed and created again under
+    /// its id breaks no payment channel on the replacement: the fault its
+    /// work found was found for the wallet it was taken from. The
+    /// replacement's own handle does.
+    #[tokio::test]
+    async fn should_break_no_channel_on_a_replacement_from_a_stale_handle() {
+        let alice = identity(ALICE_PHRASE, ALICE);
+        let bob = identity(BOB_PHRASE, BOB);
+        let manager = manager_on(RecordingPersistence::attesting(
+            PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART,
+        ))
+        .await;
+        let first = create_holding(&manager, ALICE_PHRASE, &alice).await;
+        let wallet_id = first.wallet_id();
+        let stale = first.identity().dashpay();
+        manager.remove_wallet(&wallet_id).await.expect("removed");
+        let again = create_holding(&manager, ALICE_PHRASE, &alice).await;
+        assert_eq!(again.wallet_id(), wallet_id);
+
+        // Bob is a contact of the replacement.
+        {
+            let iw = again.identity();
+            let mut wm = iw.wallet_manager.write().await;
+            let managed = wm
+                .get_wallet_info_mut(&wallet_id)
+                .expect("wallet info")
+                .identity_manager
+                .managed_identity_mut(&alice.id())
+                .expect("Alice");
+            managed
+                .add_sent_contact_request(public_request(&alice, &bob, 0), &iw.persister)
+                .expect("sent request");
+            managed
+                .add_incoming_contact_request(public_request(&bob, &alice, 0), &iw.persister)
+                .expect("incoming request");
+        }
+        let broken = |wallet: Arc<PlatformWallet>| async move {
+            managed(&wallet, ALICE, |managed| {
+                managed
+                    .dashpay()
+                    .established_contacts()
+                    .get(&Identifier::from(BOB))
+                    .expect("established")
+                    .payment_channel_broken
+            })
+            .await
+        };
+
+        stale
+            .mark_contact_channel_broken(&alice.id(), &bob.id())
+            .await;
+        assert!(
+            !broken(Arc::clone(&again)).await,
+            "the replacement's channel is its own to judge"
+        );
+
+        again
+            .identity()
+            .dashpay()
+            .mark_contact_channel_broken(&alice.id(), &bob.id())
+            .await;
+        assert!(broken(again).await, "broken by its own handle");
+    }
+
     /// A handle taken before its wallet was removed and created again under
     /// its id settles nothing of the replacement's unconfirmed public request,
     /// whatever the proofs show, and claims nothing on its pair.
@@ -6426,7 +7691,7 @@ mod tests {
         )
         .await;
         stale
-            .settle_unconfirmed_public_request(&alice.id(), &bob.id())
+            .settle_unconfirmed_public_request(&alice.id(), &bob.id(), true)
             .await
             .expect("nothing to settle");
         assert_eq!(
@@ -6454,7 +7719,7 @@ mod tests {
         again
             .identity()
             .dashpay()
-            .settle_unconfirmed_public_request(&alice.id(), &bob.id())
+            .settle_unconfirmed_public_request(&alice.id(), &bob.id(), true)
             .await
             .expect("settled");
         assert!(unconfirmed_to(&again, ALICE, &bob).await.is_none());
@@ -6585,7 +7850,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 keep_entry(&paid),
@@ -6697,7 +7961,6 @@ mod tests {
                 &bob_id,
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &pausing,
                 keep_entry(&paid),
@@ -7079,7 +8342,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &stalled,
                 &alice_crypto,
                 keep_entry(&paid),
@@ -7101,7 +8363,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &signer(ALICE_PHRASE, &alice),
                 &alice_crypto,
                 keep_entry(&kept),
@@ -7135,7 +8396,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 keep_entry(&kept),
@@ -7198,7 +8458,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 keep_entry(&kept),
@@ -7257,7 +8516,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 keep_entry(&kept),
@@ -7284,7 +8542,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 keep_entry(&paid),
@@ -7353,7 +8610,6 @@ mod tests {
                 &bob_id,
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 keep_entry(&kept),
@@ -7373,7 +8629,6 @@ mod tests {
                 &bob_id,
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 |entry: BinaryData, started: PaymentStarted| {
@@ -7438,7 +8693,6 @@ mod tests {
                 &bob_id,
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 append_entry(&before, 0, vec![], &kept),
@@ -7468,7 +8722,6 @@ mod tests {
                 &bob_id,
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 unconfirmed,
@@ -7516,7 +8769,6 @@ mod tests {
                 &bob_id,
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 no_payment,
@@ -7546,7 +8798,6 @@ mod tests {
                 &bob_id,
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 |entry: BinaryData, started: PaymentStarted| {
@@ -7681,7 +8932,6 @@ mod tests {
                     &recipient,
                     None,
                     AutoAcceptProofSource::None,
-                    None,
                     &alice_signer,
                     &alice_crypto,
                     append_entry(&alice_wallet, start, vec![], &kept),
@@ -7699,7 +8949,6 @@ mod tests {
                 &alice.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &bob_signer,
                 &bob_crypto,
                 append_entry(&bob_wallet, 1, vec![], &kept),
@@ -7773,6 +9022,7 @@ mod tests {
         let (_alice_manager, alice_wallet) =
             wallet(ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
         let kept = Arc::new(Mutex::new(Vec::new()));
+        let given = give_every_contact(shielded_address);
         alice_wallet
             .identity()
             .dashpay()
@@ -7781,13 +9031,13 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                Some(shielded_address),
                 &signer(ALICE_PHRASE, &alice),
                 &alice_crypto,
                 append_entry(&alice_wallet, 0, vec![], &kept),
             )
             .await
             .expect("Alice sends");
+        drop(given);
         let entry = kept.lock().expect("kept").remove(0).to_vec();
         let (_bob_manager, bob_wallet) =
             wallet(BOB_PHRASE, &bob, &[&alice, &bob], vec![entry.clone()]).await;
@@ -7803,6 +9053,329 @@ mod tests {
         .await
         .expect("Bob holds Alice's request");
         (entry, received)
+    }
+
+    /// Alice's wallet bound to account 0 and to her identity's shielded account, with Bob
+    /// known: her identity carries the MASTER key her seed derives at identity index 0,
+    /// so a send proves her slot and its request carries her derived address. The
+    /// returned store directory and coordinator keep the bind alive.
+    #[cfg(feature = "shielded")]
+    async fn alice_bound_at_her_slot() -> (
+        PlatformWalletManager<RecordingPersistence>,
+        Arc<PlatformWallet>,
+        Identity,
+        Identity,
+        tempfile::TempDir,
+        Arc<NetworkShieldedCoordinator>,
+    ) {
+        let mut alice = identity(ALICE_PHRASE, ALICE);
+        // The key the seed derives for identity index 0, as the identity's
+        // MASTER key: what the send proves through Alice's crypto provider.
+        let master =
+            key_wallet::bip32::ExtendedPrivKey::new_master(Network::Testnet, &seed(ALICE_PHRASE))
+                .expect("master key");
+        let derived = derive_ecdsa_identity_auth_keypair_from_master(
+            &master,
+            Network::Testnet,
+            0,
+            MASTER_KEY_INDEX,
+        )
+        .expect("the identity's master key");
+        alice.add_public_key(IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 3,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(derived.public_key.to_vec()),
+            disabled_at: None,
+        }));
+        let bob = identity(BOB_PHRASE, BOB);
+
+        // A backend that keeps the viewing key, so the wallet binds.
+        let persistence = RecordingPersistence::attesting(
+            PersistenceCapabilities::SHIELDED_FVK_RESTART
+                .union(PersistenceCapabilities::PRIVATE_CONTACT_SCAN_STATE_RESTART),
+        );
+        let (manager, alice_wallet) =
+            wallet_on(persistence, ALICE_PHRASE, &alice, &[&alice, &bob], vec![]).await;
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let db_path = dir.path().join("tree.sqlite");
+        let coordinator = Arc::new(NetworkShieldedCoordinator::new(
+            Arc::clone(&alice_wallet.identity().sdk),
+            Network::Testnet,
+            db_path.clone(),
+            FileBackedShieldedStore::open_path(&db_path, 100).expect("the store"),
+        ));
+        alice_wallet
+            .bind_shielded(&seed(ALICE_PHRASE), &[0], &coordinator)
+            .await
+            .expect("bound");
+        (manager, alice_wallet, alice, bob, dir, coordinator)
+    }
+
+    /// A signer that, the first time it signs, binds Bob's seed's keys as the keys of
+    /// Alice's identity shielded account, as a Clear and a bind with another seed
+    /// would while the request is signed: after the address is derived and before the
+    /// request leaves the wallet.
+    #[cfg(feature = "shielded")]
+    struct RekeyingSigner {
+        inner: simple_signer::signer::SimpleSigner,
+        wallet: Arc<PlatformWallet>,
+        rekeyed: AtomicBool,
+    }
+
+    #[cfg(feature = "shielded")]
+    impl std::fmt::Debug for RekeyingSigner {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("RekeyingSigner").finish_non_exhaustive()
+        }
+    }
+
+    #[cfg(feature = "shielded")]
+    #[async_trait::async_trait]
+    impl Signer<IdentityPublicKey> for RekeyingSigner {
+        async fn sign(
+            &self,
+            key: &IdentityPublicKey,
+            data: &[u8],
+        ) -> Result<BinaryData, ProtocolError> {
+            if !self.rekeyed.swap(true, Ordering::SeqCst) {
+                let account = shielded_identity_account_index(0).expect("identity account");
+                let other = OrchardKeySet::from_seed(&seed(BOB_PHRASE), Network::Testnet, account)
+                    .expect("other keys")
+                    .viewing_keys();
+                self.wallet
+                    .shielded_keys
+                    .write()
+                    .await
+                    .as_mut()
+                    .expect("bound")
+                    .insert(account, other);
+            }
+            self.inner.sign(key, data).await
+        }
+        async fn sign_create_witness(
+            &self,
+            key: &IdentityPublicKey,
+            data: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            self.inner.sign_create_witness(key, data).await
+        }
+        fn can_sign_with(&self, key: &IdentityPublicKey) -> bool {
+            self.inner.can_sign_with(key)
+        }
+    }
+
+    /// Whether `error` is the refusal of a request whose shielded address was derived
+    /// from keys the account is no longer bound to.
+    #[cfg(feature = "shielded")]
+    fn refused_for_rekeyed_address(error: &PlatformWalletError) -> bool {
+        matches!(error, PlatformWalletError::InvalidIdentityData(message)
+            if message.contains("no longer bound to that key"))
+    }
+
+    /// The keys of Alice's identity shielded account are replaced with another seed's
+    /// while her public request is signed. The send is refused before the broadcast:
+    /// nothing is recorded or held as unconfirmed and the pair is free again. A send
+    /// made again derives its address from the keys bound now and is broadcast.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_refuse_a_public_request_whose_address_keys_were_replaced_while_signing() {
+        use dash_sdk::query_types::IdentityContractNonceFetcher;
+
+        let (_manager, alice_wallet, alice, bob, _dir, _coordinator) =
+            alice_bound_at_her_slot().await;
+        let mut sdk = (*alice_wallet.identity().sdk).clone();
+        sdk.mock()
+            .expect_fetch(
+                (
+                    alice.id(),
+                    dashpay_contract().expect("bundled DashPay").id(),
+                ),
+                Some(IdentityContractNonceFetcher(3)),
+            )
+            .await
+            .expect("the nonce read");
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let rekeying = RekeyingSigner {
+            inner: signer(ALICE_PHRASE, &alice),
+            wallet: Arc::clone(&alice_wallet),
+            rekeyed: AtomicBool::new(false),
+        };
+
+        let sent = alice_wallet
+            .identity()
+            .dashpay()
+            .send_contact_request_with_external_signer(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &rekeying,
+                &alice_crypto,
+            )
+            .await;
+        assert!(
+            rekeying.rekeyed.load(Ordering::SeqCst),
+            "the send was signed"
+        );
+        assert!(
+            sent.as_ref().is_err_and(refused_for_rekeyed_address),
+            "{sent:?}"
+        );
+        managed(&alice_wallet, ALICE, |managed| {
+            assert!(managed.dashpay().outgoing_request(&bob.id()).is_none());
+            assert!(managed
+                .dashpay()
+                .unconfirmed_public_request(&bob.id())
+                .is_none());
+            assert!(!managed.dashpay().public_contact_request_claimed(&bob.id()));
+        })
+        .await;
+
+        let again = alice_wallet
+            .identity()
+            .dashpay()
+            .send_contact_request_with_external_signer(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &signer(ALICE_PHRASE, &alice),
+                &alice_crypto,
+            )
+            .await;
+        // Broadcast: the mock answers no wait for its result, so it is unconfirmed.
+        assert!(
+            matches!(&again, Err(PlatformWalletError::Sdk(error))
+                if error.is_state_transition_result_unconfirmed()),
+            "{again:?}"
+        );
+    }
+
+    /// The keys of Alice's identity shielded account are replaced with another seed's
+    /// after her private request's address is derived and before it is paid for: the
+    /// send is refused, nothing is paid, and the reservation is released, so the next
+    /// send pays.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_refuse_a_private_request_whose_address_keys_were_replaced_before_paying() {
+        let (_manager, alice_wallet, alice, bob, _dir, _coordinator) =
+            alice_bound_at_her_slot().await;
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let rekeying = RekeyingSigner {
+            inner: signer(ALICE_PHRASE, &alice),
+            wallet: Arc::clone(&alice_wallet),
+            rekeyed: AtomicBool::new(false),
+        };
+        let view = alice_wallet.identity().dashpay();
+
+        let paid = Arc::new(Mutex::new(Vec::new()));
+        let sent = view
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &rekeying,
+                &alice_crypto,
+                keep_entry(&paid),
+            )
+            .await;
+        assert!(
+            rekeying.rekeyed.load(Ordering::SeqCst),
+            "the send was signed"
+        );
+        assert!(
+            sent.as_ref().is_err_and(refused_for_rekeyed_address),
+            "{sent:?}"
+        );
+        assert!(paid.lock().expect("paid").is_empty(), "nothing is paid");
+        assert!(!pending_to(&alice_wallet, ALICE, &bob).await);
+
+        let kept = Arc::new(Mutex::new(Vec::new()));
+        let next = view
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &signer(ALICE_PHRASE, &alice),
+                &alice_crypto,
+                keep_entry(&kept),
+            )
+            .await;
+        // Paid for, and pending until a sync reads it back.
+        assert!(
+            matches!(
+                next,
+                Err(PlatformWalletError::PrivateContactRequestPending(_))
+            ),
+            "{next:?}"
+        );
+        assert_eq!(kept.lock().expect("kept").len(), 1, "the next send pays");
+    }
+
+    /// A private request sent with no address handed to it carries the one the
+    /// sender's wallet derives, with nothing prepared beforehand: the send
+    /// proves Alice's slot through her crypto provider, and Bob reads from the
+    /// store the address her identity shielded account derives for this
+    /// request: its sender, its recipient and its account reference.
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_carry_the_derived_shielded_address_in_a_private_contact_request() {
+        let (_alice_manager, alice_wallet, alice, bob, _dir, _coordinator) =
+            alice_bound_at_her_slot().await;
+        let alice_crypto = SeedCryptoProvider::from_seed(seed(ALICE_PHRASE), Network::Testnet);
+        let bob_crypto = SeedCryptoProvider::from_seed(seed(BOB_PHRASE), Network::Testnet);
+
+        let kept = Arc::new(Mutex::new(Vec::new()));
+        let sent = alice_wallet
+            .identity()
+            .dashpay()
+            .send_private_contact_request(
+                &alice.id(),
+                &bob.id(),
+                None,
+                AutoAcceptProofSource::None,
+                &signer(ALICE_PHRASE, &alice),
+                &alice_crypto,
+                append_entry(&alice_wallet, 0, vec![], &kept),
+            )
+            .await
+            .expect("Alice sends");
+        let entry = kept.lock().expect("kept").remove(0).to_vec();
+
+        let (_bob_manager, bob_wallet) =
+            wallet(BOB_PHRASE, &bob, &[&alice, &bob], vec![entry]).await;
+        bob_wallet
+            .identity()
+            .dashpay()
+            .sync_private_contact_requests(&bob_crypto, 4)
+            .await
+            .expect("Bob reads the store");
+        let received = managed(&bob_wallet, BOB, |managed| {
+            managed
+                .dashpay()
+                .private_contact(&alice.id())
+                .expect("noted")
+                .shielded_address
+        })
+        .await;
+
+        let account = shielded_identity_account_index(0).expect("identity account");
+        let derived = OrchardKeySet::from_seed(&seed(ALICE_PHRASE), Network::Testnet, account)
+            .expect("Alice's identity account keys")
+            .viewing_keys()
+            .contact_address(
+                alice.id().as_bytes(),
+                bob.id().as_bytes(),
+                u64::from(sent.account_reference),
+            )
+            .to_raw_address_bytes();
+        assert_eq!(received, Some(derived));
     }
 
     /// For a backend attesting the scan state, a sync stores the private
@@ -8088,7 +9661,6 @@ mod tests {
                 &alice.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &bob_signer,
                 &bob_crypto,
                 no_payment,
@@ -8390,7 +9962,6 @@ mod tests {
                     &bob.id(),
                     None,
                     AutoAcceptProofSource::None,
-                    None,
                     &alice_signer,
                     &alice_crypto,
                     keep_entry(&paid),
@@ -8428,7 +9999,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 keep_entry(&kept),
@@ -9138,13 +10708,7 @@ mod tests {
         let replied = other
             .identity()
             .dashpay()
-            .accept_private_contact_request(
-                &received,
-                None,
-                &bob_signer,
-                &bob_crypto,
-                keep_entry(&reply),
-            )
+            .accept_private_contact_request(&received, &bob_signer, &bob_crypto, keep_entry(&reply))
             .await;
         assert!(
             matches!(
@@ -9173,7 +10737,7 @@ mod tests {
         .await;
 
         let adopted = view
-            .accept_private_contact_request(&received, None, &bob_signer, &bob_crypto, no_payment)
+            .accept_private_contact_request(&received, &bob_signer, &bob_crypto, no_payment)
             .await
             .expect("the reply is adopted");
         assert_eq!(adopted.contact_identity_id, alice.id());
@@ -9437,7 +11001,6 @@ mod tests {
             Duration::from_millis(200),
             bob_wallet.accept_contact_request_replying_in_kind(
                 &received,
-                None,
                 &bob_signer,
                 &bob_crypto,
                 || {
@@ -9455,13 +11018,7 @@ mod tests {
         let retried = bob_wallet
             .identity()
             .dashpay()
-            .accept_private_contact_request(
-                &received,
-                None,
-                &bob_signer,
-                &bob_crypto,
-                keep_entry(&reply),
-            )
+            .accept_private_contact_request(&received, &bob_signer, &bob_crypto, keep_entry(&reply))
             .await;
         assert!(
             matches!(
@@ -9531,7 +11088,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 pay,
@@ -9577,7 +11133,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 no_payment,
@@ -9656,7 +11211,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 pay,
@@ -9718,7 +11272,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 keep_entry(&retry),
@@ -9870,7 +11423,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 keep_entry(&kept),
@@ -10065,7 +11617,6 @@ mod tests {
                     &bob.id(),
                     None,
                     AutoAcceptProofSource::None,
-                    None,
                     &alice_signer,
                     &alice_crypto,
                     pay,
@@ -10143,7 +11694,6 @@ mod tests {
                     &bob.id(),
                     None,
                     AutoAcceptProofSource::None,
-                    None,
                     &alice_signer,
                     &alice_crypto,
                     pay,
@@ -10629,7 +12179,6 @@ mod tests {
                                 &bob_id,
                                 None,
                                 AutoAcceptProofSource::None,
-                                None,
                                 &signer,
                                 &crypto,
                                 |_: BinaryData, _: PaymentStarted| {
@@ -10773,7 +12322,6 @@ mod tests {
                     &bob_id,
                     None,
                     AutoAcceptProofSource::None,
-                    None,
                     signer,
                     crypto,
                     keep_entry(&kept),
@@ -11802,7 +13350,10 @@ mod tests {
             .expect("the shielded store is configured");
         let wallet = create_holding(&manager, ALICE_PHRASE, &alice).await;
         // As the registration's check before the store was configured left it.
-        wallet.persister().hold_until_private_payments_restored();
+        wallet
+            .persister()
+            .hold_until_private_payments_restored()
+            .await;
         manager
             .restore_private_payments_configured_since(&wallet)
             .await;
@@ -12244,7 +13795,6 @@ mod tests {
                     &bob.id(),
                     None,
                     AutoAcceptProofSource::None,
-                    None,
                     &alice_signer,
                     &alice_crypto,
                     failing,
@@ -12354,7 +13904,6 @@ mod tests {
                     &bob.id(),
                     None,
                     AutoAcceptProofSource::None,
-                    None,
                     &alice_signer,
                     &alice_crypto,
                     pay,
@@ -12420,7 +13969,7 @@ mod tests {
             let (received, bob_signer, bob_crypto) = (&received, &bob_signer, &bob_crypto);
             async move {
                 first_done.notified().await;
-                view.send_private_reply(received, None, bob_signer, bob_crypto, no_payment)
+                view.send_private_reply(received, bob_signer, bob_crypto, no_payment)
                     .await
             }
         });
@@ -12428,7 +13977,6 @@ mod tests {
             let accepted = view
                 .accept_private_contact_request(
                     &received,
-                    None,
                     &bob_signer,
                     &bob_crypto,
                     append_entry(&bob_wallet, 1, vec![], &reply),
@@ -12486,7 +14034,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 append_entry(&alice_wallet, 0, vec![], &kept),
@@ -12519,7 +14066,6 @@ mod tests {
             .dashpay()
             .accept_contact_request_replying_in_kind(
                 &received,
-                None,
                 &bob_signer,
                 &bob_crypto,
                 keep_entry(&reply),
@@ -12559,7 +14105,6 @@ mod tests {
             .dashpay()
             .accept_contact_request_replying_in_kind(
                 &received,
-                None,
                 &bob_signer,
                 &bob_crypto,
                 no_payment,
@@ -12610,13 +14155,7 @@ mod tests {
         let paid = before
             .identity()
             .dashpay()
-            .accept_private_contact_request(
-                &incoming,
-                None,
-                &bob_signer,
-                &bob_crypto,
-                keep_entry(&reply),
-            )
+            .accept_private_contact_request(&incoming, &bob_signer, &bob_crypto, keep_entry(&reply))
             .await;
         assert!(
             matches!(
@@ -12661,7 +14200,6 @@ mod tests {
             .dashpay()
             .accept_contact_request_replying_in_kind(
                 &incoming,
-                None,
                 &bob_signer,
                 &bob_crypto,
                 no_payment,
@@ -12711,7 +14249,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 append_entry(&alice_wallet, 0, vec![], &kept),
@@ -12731,7 +14268,6 @@ mod tests {
             .dashpay()
             .accept_contact_request_replying_in_kind(
                 &public,
-                None,
                 &bob_signer,
                 &bob_crypto,
                 keep_entry(&reply),
@@ -12769,8 +14305,12 @@ mod tests {
         let db_path = dir.path().join("tree.sqlite");
         let coordinator_at = |db_path: std::path::PathBuf| {
             let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open the store");
+            let sdk = dash_sdk::SdkBuilder::new_mock()
+                .with_network(Network::Testnet)
+                .build()
+                .expect("mock sdk");
             Arc::new(NetworkShieldedCoordinator::new(
-                Arc::new(dash_sdk::Sdk::new_mock()),
+                Arc::new(sdk),
                 Network::Testnet,
                 db_path,
                 store,
@@ -12822,7 +14362,7 @@ mod tests {
         let paid = before
             .identity()
             .dashpay()
-            .accept_private_contact_request(&incoming, None, &bob_signer, &bob_crypto, pay)
+            .accept_private_contact_request(&incoming, &bob_signer, &bob_crypto, pay)
             .await;
         assert!(
             matches!(
@@ -12857,7 +14397,6 @@ mod tests {
             .dashpay()
             .accept_contact_request_replying_in_kind(
                 &incoming,
-                None,
                 &bob_signer,
                 &bob_crypto,
                 no_payment,
@@ -12926,7 +14465,6 @@ mod tests {
             .dashpay()
             .accept_contact_request_replying_in_kind(
                 &incoming,
-                None,
                 &bob_signer,
                 &bob_crypto,
                 no_payment,
@@ -13336,7 +14874,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 keep_entry(&kept),
@@ -13355,7 +14892,6 @@ mod tests {
                     &bob.id(),
                     None,
                     AutoAcceptProofSource::None,
-                    None,
                     &alice_signer,
                     &alice_crypto,
                     $pay,
@@ -13437,7 +14973,6 @@ mod tests {
                     &$recipient,
                     None,
                     AutoAcceptProofSource::None,
-                    None,
                     &alice_signer,
                     &alice_crypto,
                     keep_entry($kept),
@@ -13452,7 +14987,6 @@ mod tests {
             &bob.id(),
             None,
             AutoAcceptProofSource::None,
-            None,
             &alice_signer,
             &alice_crypto,
             |_: BinaryData, started: PaymentStarted| {
@@ -13516,7 +15050,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 append_entry(&alice_wallet, 0, vec![], &kept),
@@ -13546,7 +15079,6 @@ mod tests {
                 &bob.id(),
                 None,
                 AutoAcceptProofSource::None,
-                None,
                 &alice_signer,
                 &alice_crypto,
                 |_: BinaryData, _: PaymentStarted| -> std::future::Ready<Result<ResponseMetadata, PlatformWalletError>> {

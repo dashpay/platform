@@ -37,12 +37,18 @@ mod contract;
 mod decision_proposal;
 mod discovery;
 mod document;
+mod document_erase;
+pub(crate) use document_erase::DocumentEraseGate;
+pub use document_erase::{
+    DocumentEraseNotSubmittedReason, DocumentEraseOutcome, DocumentLifecycleObservation,
+};
 mod dpns;
 mod dpns_marketplace;
 mod identity_handle;
 mod key_limits;
 mod key_selection;
 mod loading;
+mod multiple_choice_proposal;
 mod register_from_addresses;
 mod registration;
 mod state_transition_summary;
@@ -58,6 +64,7 @@ pub(crate) use withdrawal::{select_owner_withdrawal_key, select_transfer_withdra
 // DashPay-contract operations, namespaced behind `IdentityWallet::dashpay()`.
 mod contact_info;
 mod contact_requests;
+mod contact_shielded_address;
 mod contacts;
 mod dashpay_view;
 mod invitation;

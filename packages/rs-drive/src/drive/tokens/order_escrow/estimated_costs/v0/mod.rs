@@ -44,7 +44,7 @@ impl Drive {
 
         // The escrow key sits deeper in the Tokens Merk than the balances key the token balance
         // estimation describes at level 0, and a batch moving tokens into or out of escrow writes
-        // both. From protocol version 15 the token balance estimation keeps this deeper
+        // both. From protocol version 16 the token balance estimation keeps this deeper
         // description too (`for_token_balances` 1), whichever registers first.
         insert_estimated_layer_keeping_deeper(
             estimated_costs_only_with_layer_info,
@@ -102,6 +102,9 @@ impl Drive {
                         provable_count_trees_weight: 0,
                         provable_count_sum_trees_weight: 0,
                         provable_count_provable_sum_trees_weight: 0,
+                        provable_count_provable_big_sum_trees_weight: 0,
+                        count_big_sum_trees_weight: 0,
+                        provable_big_sum_trees_weight: 0,
                     },
                     None,
                 ),

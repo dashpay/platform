@@ -97,6 +97,15 @@ pub enum ProofError {
         /// The lowest envelope version clients accept
         minimum: u32,
     },
+
+    /// A proof verified to a sum past the 64 bits a sum result carries. `root_hash` is the
+    /// root the proof reconstructs: once the signature over the block authenticates it, every
+    /// honest node proves the same sum, so the refusal is the request's, not the node's.
+    #[error("the proved sum does not fit the 64 bits a sum result carries")]
+    SumPastResultWidth {
+        /// The root the proof reconstructs.
+        root_hash: [u8; 32],
+    },
 }
 #[allow(dead_code)]
 #[deprecated(note = "This function is marked as unused.")]
@@ -119,5 +128,6 @@ fn get_error_code(error: &ProofError) -> u32 {
         ProofError::UnexpectedResultProof(_) => 6013,
         ProofError::InvalidGroveDBProofEnvelope { .. } => 6014,
         ProofError::UnsupportedGroveDBProofEnvelopeVersion { .. } => 6015,
+        ProofError::SumPastResultWidth { .. } => 6016,
     }
 }

@@ -1,5 +1,6 @@
 use crate::drive::contract::DataContractFetchInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::version::PlatformVersion;
 use moka::ops::compute::Op;
 use moka::sync::Cache;
 use parking_lot::RwLock;
@@ -43,6 +44,18 @@ pub struct CommittedGeneration(u64);
 ///   was committed between the read that produced it and the insert. Without this, a query
 ///   thread that read a contract, was descheduled across the block's commit and promotion,
 ///   and inserted afterwards would clobber the promoted definition with the pre-block one.
+///
+/// A third keeps the readers of different protocol versions apart. A contract is parsed under
+/// the protocol version of the reader that loaded it, and two versions may parse the same
+/// stored contract differently. A query thread reads at the version of the platform state it
+/// loaded, which on the first block of a protocol version, and for a query that loaded it just
+/// before the block's state was published, is still the previous version. Every entry records
+/// the version that parsed it (`DataContractFetchInfo::parsed_under_protocol_version`), and
+/// from protocol version 15 block execution and queries read through
+/// [`Self::get_parsed_under`], which returns only entries parsed under the reader's version.
+/// Entries are keyed by contract alone, so a lookup from another version is a miss: the reader
+/// reads state as a node with an empty cache does, and replaces the entry with its own parse if
+/// it may cache.
 pub struct DataContractCache {
     global_cache: Cache<[u8; 32], Arc<DataContractFetchInfo>>,
     block_cache: Cache<[u8; 32], Arc<DataContractFetchInfo>>,
@@ -184,6 +197,12 @@ impl DataContractCache {
     /// ([`Self::mark_modified_in_block`]) does not fall back to the global cache: on a
     /// block-cache miss it returns `None`, and the caller reads state through the
     /// transaction. A read with no transaction only consults the global cache.
+    ///
+    /// The entry may have been parsed under any protocol version. Generation 0 of
+    /// `Drive::get_contract_with_fetch_info`, which protocol versions up to 14 select, reads
+    /// through this, and so do readers that only use what no parse changes, such as the
+    /// contract's version. A reader that uses the parsed contract reads through
+    /// [`Self::get_parsed_under`].
     pub fn get(
         &self,
         contract_id: [u8; 32],
@@ -199,6 +218,39 @@ impl DataContractCache {
         }
 
         self.global_cache.get(&contract_id)
+    }
+
+    /// [`Self::get`] for a reader at `platform_version`: an entry parsed under another protocol
+    /// version makes the lookup a miss.
+    ///
+    /// Such an entry in the block cache is a miss with no fallback to the global cache: the
+    /// caller reads through the transaction, as for a rewritten contract. Block execution
+    /// parses at the block's version, so this is not expected in a block, and a miss is correct
+    /// whatever made the entry. Such an entry in the global cache is what a query at the
+    /// previous protocol version leaves: the caller then reads state itself, as a node with an
+    /// empty cache does.
+    pub fn get_parsed_under(
+        &self,
+        contract_id: [u8; 32],
+        is_block_cache: bool,
+        platform_version: &PlatformVersion,
+    ) -> Option<Arc<DataContractFetchInfo>> {
+        let parsed_under_the_reader = |fetch_info: &Arc<DataContractFetchInfo>| {
+            fetch_info.parsed_under_protocol_version == platform_version.protocol_version
+        };
+
+        if is_block_cache {
+            if let Some(fetch_info) = self.block_cache.get(&contract_id) {
+                return parsed_under_the_reader(&fetch_info).then_some(fetch_info);
+            }
+            if self.block_modified.read().contains(&contract_id) {
+                return None;
+            }
+        }
+
+        self.global_cache
+            .get(&contract_id)
+            .filter(parsed_under_the_reader)
     }
 
     /// Remove contract from both block and global cache
@@ -468,6 +520,128 @@ mod tests {
                 .get(contract_id, false)
                 .expect("should be present");
             assert_eq!(cached.contract.version(), 1);
+        }
+    }
+
+    mod get_parsed_under {
+        use super::*;
+
+        /// A copy of `fetch_info` as a reader at `protocol_version` would have parsed it.
+        fn parsed_under(
+            fetch_info: &Arc<DataContractFetchInfo>,
+            protocol_version: u32,
+        ) -> Arc<DataContractFetchInfo> {
+            let mut copy = Arc::clone(fetch_info);
+            Arc::make_mut(&mut copy).parsed_under_protocol_version = protocol_version;
+            copy
+        }
+
+        fn other_protocol_version() -> u32 {
+            PlatformVersion::latest().protocol_version - 1
+        }
+
+        #[test]
+        fn should_return_a_global_entry_parsed_under_the_reader_s_protocol_version() {
+            let data_contract_cache = DataContractCache::new(10, 10);
+            let platform_version = PlatformVersion::latest();
+            let (fetch_info, _) = same_contract_at_versions(1, 1);
+            let contract_id = fetch_info.contract.id().to_buffer();
+
+            data_contract_cache.insert_committed(
+                Arc::clone(&fetch_info),
+                data_contract_cache.committed_generation(),
+            );
+
+            for is_block_cache in [false, true] {
+                let cached = data_contract_cache
+                    .get_parsed_under(contract_id, is_block_cache, platform_version)
+                    .expect("should be present");
+                assert!(Arc::ptr_eq(&cached, &fetch_info));
+            }
+        }
+
+        /// What a query at the previous protocol version cached is not served to a reader at
+        /// the current one, with or without a transaction; `get` still returns it.
+        #[test]
+        fn should_not_return_a_global_entry_parsed_under_another_protocol_version() {
+            let data_contract_cache = DataContractCache::new(10, 10);
+            let platform_version = PlatformVersion::latest();
+            let (fetch_info, _) = same_contract_at_versions(1, 1);
+            let contract_id = fetch_info.contract.id().to_buffer();
+
+            data_contract_cache.insert_committed(
+                parsed_under(&fetch_info, other_protocol_version()),
+                data_contract_cache.committed_generation(),
+            );
+
+            for is_block_cache in [false, true] {
+                assert!(data_contract_cache
+                    .get_parsed_under(contract_id, is_block_cache, platform_version)
+                    .is_none());
+                assert!(data_contract_cache
+                    .get(contract_id, is_block_cache)
+                    .is_some());
+            }
+        }
+
+        /// A block-cache entry parsed under another protocol version makes a transactional
+        /// read a miss, even when the global cache holds a copy parsed under the reader's: the
+        /// caller reads through the transaction rather than trusting either.
+        #[test]
+        fn should_miss_on_a_block_entry_parsed_under_another_protocol_version() {
+            let data_contract_cache = DataContractCache::new(10, 10);
+            let platform_version = PlatformVersion::latest();
+            let (fetch_info, _) = same_contract_at_versions(1, 1);
+            let contract_id = fetch_info.contract.id().to_buffer();
+
+            data_contract_cache.insert_committed(
+                Arc::clone(&fetch_info),
+                data_contract_cache.committed_generation(),
+            );
+            data_contract_cache.insert_block(parsed_under(&fetch_info, other_protocol_version()));
+
+            assert!(data_contract_cache
+                .get_parsed_under(contract_id, true, platform_version)
+                .is_none());
+            // A read with no transaction does not consult the block cache.
+            assert!(data_contract_cache
+                .get_parsed_under(contract_id, false, platform_version)
+                .is_some());
+        }
+
+        #[test]
+        fn should_return_a_block_entry_parsed_under_the_reader_s_protocol_version() {
+            let data_contract_cache = DataContractCache::new(10, 10);
+            let platform_version = PlatformVersion::latest();
+            let (committed, rewritten) = same_contract_at_versions(1, 2);
+            let contract_id = committed.contract.id().to_buffer();
+
+            data_contract_cache.mark_modified_in_block(contract_id);
+            data_contract_cache.insert_block(rewritten);
+            data_contract_cache
+                .insert_committed(committed, data_contract_cache.committed_generation());
+
+            let cached = data_contract_cache
+                .get_parsed_under(contract_id, true, platform_version)
+                .expect("should be present");
+            assert_eq!(cached.contract.version(), 2);
+        }
+
+        /// The rewritten-contract rule holds as for `get`: no fallback to the global cache.
+        #[test]
+        fn should_not_fall_back_to_global_for_a_modified_contract() {
+            let data_contract_cache = DataContractCache::new(10, 10);
+            let platform_version = PlatformVersion::latest();
+            let (committed, _) = same_contract_at_versions(1, 2);
+            let contract_id = committed.contract.id().to_buffer();
+
+            data_contract_cache.mark_modified_in_block(contract_id);
+            data_contract_cache
+                .insert_committed(committed, data_contract_cache.committed_generation());
+
+            assert!(data_contract_cache
+                .get_parsed_under(contract_id, true, platform_version)
+                .is_none());
         }
     }
 

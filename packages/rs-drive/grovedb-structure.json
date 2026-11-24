@@ -157,6 +157,36 @@
       "is_tree": false,
       "is_opaque": false,
       "is_reference": false
+    },
+    {
+      "name": "ProvableCountProvableBigSumTree",
+      "is_tree": true,
+      "is_opaque": false,
+      "is_reference": false
+    },
+    {
+      "name": "CountBigSumTree",
+      "is_tree": true,
+      "is_opaque": false,
+      "is_reference": false
+    },
+    {
+      "name": "ProvableBigSumTree",
+      "is_tree": true,
+      "is_opaque": false,
+      "is_reference": false
+    },
+    {
+      "name": "ProvableBigSumIndexedTree",
+      "is_tree": true,
+      "is_opaque": false,
+      "is_reference": false
+    },
+    {
+      "name": "ProvableCountProvableBigSumIndexedTree",
+      "is_tree": true,
+      "is_opaque": false,
+      "is_reference": false
     }
   ],
   "flag_kinds": [
@@ -792,7 +822,7 @@
             "kinds": [
               "BigSumTree"
             ],
-            "since": 15,
+            "since": 16,
             "presence": "always",
             "source": "packages/rs-drive/src/drive/tokens/paths.rs",
             "book": "data-model/token-marketplace.md",
@@ -813,7 +843,7 @@
                 "kinds": [
                   "SumTree"
                 ],
-                "since": 15,
+                "since": 16,
                 "presence": "lazy",
                 "source": "packages/rs-drive/src/drive/tokens/paths.rs",
                 "description": "The escrowed listings of one token; created with its first listing.",
@@ -834,7 +864,7 @@
                       "SumItem"
                     ],
                     "value": "token amount",
-                    "since": 15,
+                    "since": 16,
                     "presence": "lazy",
                     "source": "packages/rs-drive/src/drive/tokens/paths.rs",
                     "description": "What one open listing still holds.",
@@ -2044,7 +2074,7 @@
             "kinds": [
               "SumTree"
             ],
-            "since": 15,
+            "since": 16,
             "presence": "always",
             "source": "packages/rs-drive/src/drive/prefunded_specialized_balances/mod.rs",
             "book": "data-model/token-marketplace.md",
@@ -2066,7 +2096,7 @@
                   "SumItem"
                 ],
                 "value": "credits",
-                "since": 15,
+                "since": 16,
                 "presence": "lazy",
                 "source": "packages/rs-drive/src/drive/prefunded_specialized_balances/mod.rs",
                 "description": "What one open offer still holds.",
@@ -3015,7 +3045,11 @@
                           "CountSumTree",
                           "ProvableCountSumTree",
                           "ProvableCountProvableSumTree",
-                          "PrivateDocumentStore"
+                          "PrivateDocumentStore",
+                          "BigSumTree",
+                          "ProvableBigSumTree",
+                          "CountBigSumTree",
+                          "ProvableCountProvableBigSumTree"
                         ],
                         "kinds_note": "Chosen by the document type's documentsCountable and documentsSummable settings; see primary_key_tree_type.rs. A private document store for a private type; see private_document_store.rs.",
                         "flags": [
@@ -3263,7 +3297,11 @@
                           "ProvableCountProvableSumTree",
                           "ProvableCountIndexedTree",
                           "ProvableSumIndexedTree",
-                          "ProvableCountProvableSumIndexedTree"
+                          "ProvableCountProvableSumIndexedTree",
+                          "ProvableBigSumTree",
+                          "ProvableCountProvableBigSumTree",
+                          "ProvableBigSumIndexedTree",
+                          "ProvableCountProvableBigSumIndexedTree"
                         ],
                         "kinds_note": "A plain tree unless the index is range countable, range summable or ranked, or the level carries a ranking's counts or sums up to an earlier level; see ranked_index_tree_type.rs.",
                         "flags": [
@@ -3295,7 +3333,10 @@
                               "CountSumTree",
                               "ProvableCountSumTree",
                               "ProvableCountProvableSumTree",
-                              "SumItem"
+                              "SumItem",
+                              "BigSumTree",
+                              "CountBigSumTree",
+                              "ProvableCountProvableBigSumTree"
                             ],
                             "kinds_note": "A plain tree unless the index is countable or summable, so each value carries its count or sum. At the last property of a summableOffCountIndex index, a sum item counting the source index's entries for the value, in place of the tree.",
                             "flags": [
@@ -3326,7 +3367,11 @@
                                   "ProvableCountSumTree",
                                   "ProvableCountProvableSumTree",
                                   "Reference",
-                                  "ReferenceWithSumItem"
+                                  "ReferenceWithSumItem",
+                                  "BigSumTree",
+                                  "ProvableBigSumTree",
+                                  "CountBigSumTree",
+                                  "ProvableCountProvableBigSumTree"
                                 ],
                                 "kinds_note": "The end of an index: a tree of members, or for a unique index the one reference itself.",
                                 "flags": [
@@ -3395,7 +3440,11 @@
                                   "ProvableCountProvableSumTree",
                                   "ProvableCountIndexedTree",
                                   "ProvableSumIndexedTree",
-                                  "ProvableCountProvableSumIndexedTree"
+                                  "ProvableCountProvableSumIndexedTree",
+                                  "ProvableBigSumTree",
+                                  "ProvableCountProvableBigSumTree",
+                                  "ProvableBigSumIndexedTree",
+                                  "ProvableCountProvableBigSumIndexedTree"
                                 ],
                                 "kinds_note": "A plain tree unless the index is range countable, range summable or ranked, or the level carries a ranking's counts or sums up to an earlier level; see ranked_index_tree_type.rs.",
                                 "flags": [
@@ -5658,11 +5707,11 @@
                   "EpochOwned",
                   "None"
                 ],
-                "flags_note": "The owner is the identity whose contested document started the poll. A yes/no poll is opened by the system and carries none.",
+                "flags_note": "The owner is the identity whose contested document started the poll. A yes/no poll is opened by the system and carries none, and so does a contest the system lists under the left open end date.",
                 "since": 1,
                 "presence": "always",
                 "source": "packages/rs-drive/src/drive/votes/paths.rs",
-                "description": "The polls ending at this time.",
+                "description": "The polls ending at this time. The last key, VOTE_POLLS_LEFT_OPEN_END_DATE (i64::MAX), is a time no block reaches: it lists the contests whose end left them open because the winner could not be awarded its document (protocol version 15). Such a contest keeps its contenders, documents, votes, record and prefunded balance.",
                 "children": [
                   {
                     "id": "votes.end_date_queries.end_date.poll",
@@ -5683,7 +5732,7 @@
                       "EpochOwned",
                       "None"
                     ],
-                    "flags_note": "The owner is the identity whose contested document started the poll. A yes/no poll is opened by the system and carries none.",
+                    "flags_note": "The owner is the identity whose contested document started the poll. A yes/no poll is opened by the system and carries none, and so does a contest the system lists under the left open end date.",
                     "value": "serialized VotePoll",
                     "since": 1,
                     "presence": "always",
@@ -6551,10 +6600,7 @@
       "tree": {
         "hex": "80",
         "left": {
-          "hex": "40",
-          "left": {
-            "hex": "20"
-          }
+          "hex": "40"
         },
         "right": {
           "hex": "c0"
@@ -6658,10 +6704,7 @@
             "hex": "20"
           },
           "right": {
-            "hex": "5c",
-            "right": {
-              "hex": "60"
-            }
+            "hex": "5c"
           }
         },
         "right": {

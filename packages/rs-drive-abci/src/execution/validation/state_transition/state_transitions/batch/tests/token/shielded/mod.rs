@@ -5,6 +5,7 @@ mod gas_sponsored_bundle;
 mod minimum_pool_notes;
 mod nullifier_batch_guard;
 mod pool_nullifier_admission;
+mod token_pool_paid_fee_binding;
 
 /// Token shielded pool transitions: shield, unshield and shielded transfer inside a batch.
 ///
@@ -293,7 +294,7 @@ mod token_shielded_pool_tests {
     pub(super) fn assert_tokens_conserved(platform: &TempPlatform<MockCoreRPCLike>) {
         let total = platform
             .drive
-            .calculate_total_tokens_balance(None, PlatformVersion::latest())
+            .calculate_total_tokens_balance(None, current_platform_version(platform))
             .expect("total tokens balance");
         assert!(
             total.ok().expect("conservation check"),
@@ -301,12 +302,25 @@ mod token_shielded_pool_tests {
         );
     }
 
-    /// Processes one transition in its own transaction and commits it.
+    /// The protocol version the platform's state is at: the one CheckTx and block execution
+    /// validate under.
+    pub(super) fn current_platform_version(
+        platform: &TempPlatform<MockCoreRPCLike>,
+    ) -> &'static PlatformVersion {
+        platform
+            .state
+            .load()
+            .current_platform_version()
+            .expect("known protocol version")
+    }
+
+    /// Processes one transition in its own transaction, at the platform's protocol version, and
+    /// commits it.
     pub(super) fn process(
         platform: &TempPlatform<MockCoreRPCLike>,
         transition: &StateTransition,
     ) -> StateTransitionsProcessingResult {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = current_platform_version(platform);
         let platform_state = platform.state.load();
         let serialized = transition
             .serialize_to_bytes()
@@ -354,7 +368,7 @@ mod token_shielded_pool_tests {
                     .expect("serialize transition"),
                 CheckTxLevel::FirstTimeCheck,
                 &platform_ref,
-                PlatformVersion::latest(),
+                current_platform_version(platform),
             )
             .expect("check tx");
         assert!(
@@ -389,7 +403,7 @@ mod token_shielded_pool_tests {
                     .expect("serialize transition"),
                 CheckTxLevel::FirstTimeCheck,
                 &platform_ref,
-                PlatformVersion::latest(),
+                current_platform_version(platform),
             )
             .expect("check tx");
         assert!(
@@ -4187,10 +4201,10 @@ mod document_shielded_token_payment_tests {
 mod token_pool_paid_transitions_tests {
     use crate::execution::validation::state_transition::state_transitions::test_helpers::insert_dummy_encrypted_notes;
     use super::token_shielded_pool_tests::{
-        assert_check_tx_accepts, assert_tokens_conserved, build_shield_bundle, dummy_bundle,
-        enable_shielded_pool, identity_token_balance, insert_token_pool_anchor, nullifier_is_spent,
-        platform_with_latest_version, pool_balance, process, spend_keys, spendable_note,
-        OWNER_INITIAL_BALANCE,
+        assert_check_tx_accepts, assert_tokens_conserved, build_shield_bundle,
+        current_platform_version, dummy_bundle, enable_shielded_pool, identity_token_balance,
+        insert_token_pool_anchor, nullifier_is_spent, platform_with_latest_version, pool_balance,
+        process, spend_keys, spendable_note, OWNER_INITIAL_BALANCE,
     };
     use super::*;
     use crate::execution::validation::state_transition::state_transitions::shielded_common::read_pool_total_balance;
@@ -4279,7 +4293,7 @@ mod token_pool_paid_transitions_tests {
             &platform.drive,
             None,
             &mut vec![],
-            PlatformVersion::latest(),
+            current_platform_version(platform),
         )
         .expect("credit pool balance")
     }
@@ -5110,7 +5124,7 @@ mod token_pool_outputs_only_copy_tests {
     };
     use super::token_shielded_pool_tests::{
         assert_check_tx_accepts, assert_check_tx_rejects, assert_tokens_conserved,
-        build_shield_bundle, build_spend_bundle,
+        build_shield_bundle, build_spend_bundle, current_platform_version,
         enable_shielded_pool, identity_token_balance, nullifier_is_spent,
         platform_with_latest_version, pool_balance, pool_notes_count, process, spend_keys,
         OWNER_INITIAL_BALANCE,
@@ -5119,7 +5133,9 @@ mod token_pool_outputs_only_copy_tests {
     use crate::platform_types::state_transitions_processing_result::StateTransitionsProcessingResult;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
-    use crate::execution::validation::state_transition::state_transitions::test_helpers::set_pool_total_balance;
+    use crate::execution::validation::state_transition::state_transitions::test_helpers::{
+        set_pool_total_balance, setup_platform_at_protocol_version,
+    };
     use crate::test::helpers::setup::TempPlatform;
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
@@ -5382,14 +5398,15 @@ mod token_pool_outputs_only_copy_tests {
         process_in_one_block(platform, &[transition], block_info)
     }
 
-    /// Processes `transitions` in order in one block transaction, then commits it: each is
-    /// validated against what the ones before it wrote, not only against committed state.
-    fn process_in_one_block(
+    /// Processes `transitions` in order in one block transaction, at the platform's protocol
+    /// version, then commits it: each is validated against what the ones before it wrote, not
+    /// only against committed state.
+    pub(super) fn process_in_one_block(
         platform: &TempPlatform<MockCoreRPCLike>,
         transitions: &[&StateTransition],
         block_info: &BlockInfo,
     ) -> StateTransitionsProcessingResult {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = current_platform_version(platform);
         let platform_state = platform.state.load();
         let serialized: Vec<Vec<u8>> = transitions
             .iter()
@@ -7344,12 +7361,12 @@ mod token_pool_outputs_only_copy_tests {
 
     /// A token that owns a pool, sold directly at `price_per_token` by its contract owner.
     /// Returns the seller's, the contract's and the token's ids.
-    async fn token_for_sale(
+    pub(super) async fn token_for_sale(
         platform: &mut TempPlatform<MockCoreRPCLike>,
         seller_seed: u64,
         price_per_token: Credits,
+        platform_version: &PlatformVersion,
     ) -> (Identifier, Identifier, Identifier) {
-        let platform_version = PlatformVersion::latest();
         let (seller, seller_signer, seller_key) =
             setup_identity(platform, seller_seed, dash_to_credits!(0.5));
         let (contract, token_id) = create_token_contract_with_owner_identity(
@@ -7413,13 +7430,14 @@ mod token_pool_outputs_only_copy_tests {
 
     /// A client-built purchase of `token_count` tokens for `price`, paid from a fresh credit
     /// pool note (`tag`). Returns the transition and the fee it carries.
-    fn build_purchase(
+    pub(super) fn build_purchase(
         platform: &TempPlatform<MockCoreRPCLike>,
         token_id: Identifier,
         contract_id: Identifier,
         token_count: u64,
         price: Credits,
         tag: u8,
+        platform_version: &PlatformVersion,
     ) -> (StateTransition, Credits) {
         let (fvk, ask, _) = spend_keys();
         let address = wallet_address();
@@ -7441,7 +7459,7 @@ mod token_pool_outputs_only_copy_tests {
                 anchor: credit_anchor,
             },
             &Prover,
-            PlatformVersion::latest(),
+            platform_version,
         )
         .expect("build transition")
     }
@@ -7466,8 +7484,8 @@ mod token_pool_outputs_only_copy_tests {
         fee: Credits,
         tag: u8,
         seed: u64,
+        platform_version: &PlatformVersion,
     ) -> (StateTransition, [u8; 32]) {
-        let platform_version = PlatformVersion::latest();
         let (other_note, other_anchor, other_path) = fund_credit_pool(platform, tag);
         let fee_extra = token_pool_fee_bundle_extra_sighash_data(
             TOKEN_PURCHASE_FROM_SHIELDED_POOL_TYPE,
@@ -7510,25 +7528,33 @@ mod token_pool_outputs_only_copy_tests {
         )
     }
 
-    /// The identity-less purchase (state transition type 28) mints into the pool through the
-    /// same drive operation as a batch mint, and its token bundle is outputs-only too. Its
-    /// sighash binds the token, the count and the price but no payer, and its fee bundle binds
-    /// only the type, the token and a digest of the token bundle's actions — which anybody can
-    /// reproduce with credit notes of their own. So the copy here keeps the original's token
-    /// bundle verbatim and pays for it with a fresh fee bundle from another note.
+    /// At protocol version 14 the identity-less purchase (state transition type 28) mints into
+    /// the pool through the same drive operation as a batch mint, its token bundle is
+    /// outputs-only too, and its sighash binds the token, the count and the price but no payer
+    /// and no fee bundle; its fee bundle binds only the type, the token and a digest of the
+    /// token bundle's actions, which anybody can reproduce with credit notes of their own. So the
+    /// copy here keeps the original's token bundle verbatim and pays for it with a fresh fee
+    /// bundle from another note.
     #[tokio::test]
     async fn test_a_purchase_from_shielded_pool_token_bundle_copied_with_another_fee_bundle_is_refused(
     ) {
-        let platform_version = PlatformVersion::latest();
-        let mut platform = platform_with_latest_version();
+        let platform_version = PlatformVersion::get(14).expect("protocol version 14");
+        let mut platform = setup_platform_at_protocol_version(platform_version.protocol_version);
         let price_per_token = dash_to_credits!(0.01);
         let (seller_id, contract_id, token_id) =
-            token_for_sale(&mut platform, 9505, price_per_token).await;
+            token_for_sale(&mut platform, 9505, price_per_token, platform_version).await;
         let token_count = 3;
         let price = price_per_token * token_count;
 
-        let (purchase, fee) =
-            build_purchase(&platform, token_id, contract_id, token_count, price, 15);
+        let (purchase, fee) = build_purchase(
+            &platform,
+            token_id,
+            contract_id,
+            token_count,
+            price,
+            15,
+            platform_version,
+        );
         assert_check_tx_accepts(&platform, &purchase);
         assert_matches!(
             process(&platform, &purchase).execution_results().as_slice(),
@@ -7547,8 +7573,15 @@ mod token_pool_outputs_only_copy_tests {
         assert_dummy_nullifiers_recorded(&platform, token_id, &token_bundle);
         let notes_after_original = pool_notes_count(&platform, token_id);
 
-        let (copy, copy_fee_nullifier) =
-            purchase_copy_with_another_fee_bundle(&platform, original, price, fee, 16, 9506);
+        let (copy, copy_fee_nullifier) = purchase_copy_with_another_fee_bundle(
+            &platform,
+            original,
+            price,
+            fee,
+            16,
+            9506,
+            platform_version,
+        );
 
         let seller_credits_after_original = credits(&platform, seller_id);
         let credit_pool_before_copy = credit_pool_balance(&platform);
@@ -7594,25 +7627,38 @@ mod token_pool_outputs_only_copy_tests {
         assert_tokens_conserved(&platform);
     }
 
-    /// The type 28 copy, lifted from the mempool before its original executed, reaches the
-    /// same block. CheckTx admits both, since neither token bundle is in the pool yet; the
-    /// block must land the original and refuse the copy on the original's write in the block's
-    /// own transaction.
+    /// At protocol version 14 the type 28 copy reaches the same block as its original. CheckTx
+    /// admits both, since neither token bundle is in the pool yet; the block must land the
+    /// original and refuse the copy on the original's write in the block's own transaction.
     #[tokio::test]
     async fn test_a_purchase_from_shielded_pool_and_its_copy_in_one_block_land_only_once() {
-        let platform_version = PlatformVersion::latest();
-        let mut platform = platform_with_latest_version();
+        let platform_version = PlatformVersion::get(14).expect("protocol version 14");
+        let mut platform = setup_platform_at_protocol_version(platform_version.protocol_version);
         let price_per_token = dash_to_credits!(0.01);
         let (seller_id, contract_id, token_id) =
-            token_for_sale(&mut platform, 9510, price_per_token).await;
+            token_for_sale(&mut platform, 9510, price_per_token, platform_version).await;
         let token_count = 3;
         let price = price_per_token * token_count;
 
-        let (purchase, fee) =
-            build_purchase(&platform, token_id, contract_id, token_count, price, 15);
+        let (purchase, fee) = build_purchase(
+            &platform,
+            token_id,
+            contract_id,
+            token_count,
+            price,
+            15,
+            platform_version,
+        );
         let original = purchase_v0(&purchase);
-        let (copy, copy_fee_nullifier) =
-            purchase_copy_with_another_fee_bundle(&platform, original, price, fee, 16, 9511);
+        let (copy, copy_fee_nullifier) = purchase_copy_with_another_fee_bundle(
+            &platform,
+            original,
+            price,
+            fee,
+            16,
+            9511,
+            platform_version,
+        );
         // Both payers' notes are in the credit pool and its total covers both purchases, so
         // only the token bundle can tell the two apart.
         set_pool_total_balance(&platform, 2 * CREDIT_NOTE);
@@ -7662,29 +7708,42 @@ mod token_pool_outputs_only_copy_tests {
     }
 
     /// The same two type 28 transitions in the other order: the copy is sequenced ahead of the
-    /// original, which the block proposer can do with anything it lifted from the mempool.
-    /// Nothing in the token bundle's sighash names who pays, so the copy lands and pays for the
+    /// original, which a block proposer can do. At protocol version 14 nothing in the token
+    /// bundle's sighash names who pays or which fee bundle, so the copy lands and pays for the
     /// original's notes. What matters is who bears the refusal that follows: the original is
-    /// refused on the dummy nullifier the copy recorded, and that refusal must be unpaid — the
-    /// honest payer's credit note stays unspent — or a stranger could make the honest payer pay
-    /// for a purchase it never got to make.
+    /// refused on the dummy nullifier the copy recorded, and that refusal must be unpaid, so the
+    /// original payer's credit note stays unspent.
     #[tokio::test]
     async fn test_a_purchase_from_shielded_pool_copy_sequenced_first_does_not_charge_the_original_payer(
     ) {
-        let platform_version = PlatformVersion::latest();
-        let mut platform = platform_with_latest_version();
+        let platform_version = PlatformVersion::get(14).expect("protocol version 14");
+        let mut platform = setup_platform_at_protocol_version(platform_version.protocol_version);
         let price_per_token = dash_to_credits!(0.01);
         let (seller_id, contract_id, token_id) =
-            token_for_sale(&mut platform, 9516, price_per_token).await;
+            token_for_sale(&mut platform, 9516, price_per_token, platform_version).await;
         let token_count = 3;
         let price = price_per_token * token_count;
 
-        let (purchase, fee) =
-            build_purchase(&platform, token_id, contract_id, token_count, price, 15);
+        let (purchase, fee) = build_purchase(
+            &platform,
+            token_id,
+            contract_id,
+            token_count,
+            price,
+            15,
+            platform_version,
+        );
         let original = purchase_v0(&purchase);
         let original_fee_nullifier = original.fee_actions[0].nullifier;
-        let (copy, copy_fee_nullifier) =
-            purchase_copy_with_another_fee_bundle(&platform, original, price, fee, 16, 9517);
+        let (copy, copy_fee_nullifier) = purchase_copy_with_another_fee_bundle(
+            &platform,
+            original,
+            price,
+            fee,
+            16,
+            9517,
+            platform_version,
+        );
         // Both payers' notes are in the credit pool and its total covers both purchases, so
         // only the token bundle can tell the two apart.
         set_pool_total_balance(&platform, 2 * CREDIT_NOTE);

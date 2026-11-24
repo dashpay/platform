@@ -10,14 +10,20 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 /// - `parse_property_constraints`, 1 rather than 0: a `countOf` or `sumOf` of a
 ///   `propertyConstraints` or `deleteConstraints` rule may match its documents by a byte array
 ///   key, bound to a byte array property of the document written (or deleted), as it matches
-///   them by an integer, string or identifier key;
+///   them by an integer, string or identifier key, and may match a key by any element of a
+///   typed array of that document (`{ "in": path }`), the total then being over the documents
+///   whose key is one of the list's distinct elements;
 /// - `validate_document`, 2 rather than 1: a document is checked against its type's native
 ///   validator (the typed validation schema of `document_type::schema::validation_schema`)
 ///   instead of the `jsonschema` crate. A document type whose schema has no validation schema
-///   has its documents refused;
+///   has its documents refused, and so is a byte array written as a list holding a member
+///   that is not a byte, which the document serializer cannot read;
 /// - `check_document_type_schema`, 1 rather than 0: a schema is checked at registration
 ///   natively instead of against the document meta-schema through the `jsonschema` crate, and
 ///   every new document type must have a validation schema;
+/// - `validate_update`, 2 rather than 1: an update of a contract is refused when an object of
+///   a stored document type's schema, or of the stored `$defs`, names a key twice, as
+///   registration from this version refuses a schema that does;
 /// - `validate_max_depth`, 2 rather than 1: the depth and cycle check resolves `$ref`
 ///   pointers by RFC 6901, as the native validator does;
 /// - `validation_schema`, `Some(0)` rather than `None`: builds that typed validation schema
@@ -34,12 +40,22 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 /// - `apply_generated_from`, `Some(1)` rather than `Some(0)`: a `generatedFrom` property may
 ///   also be generated with `sys.tokens.decimals`, the decimals of the token an identifier
 ///   property names, on an integer property;
+/// - `validate_schema_patterns`, `Some(0)` rather than `None`: registration and update refuse
+///   a contract whose document schemas and `$defs` hold more than
+///   `max_contract_schema_patterns` patterns, or one that does not compile within
+///   `max_schema_pattern_compiled_size`;
+/// - `registration_cost`, 3 rather than 2: the fee a state transition's contract is estimated
+///   at bills each index by the keys it declares instead of parsing it, which compiled the
+///   field matches of a contested index before anything bounded them;
 /// - `contract_storage_serialization_version`, 2 rather than 1: Drive stores a contract in
 ///   format version 2, its document types compiled, while state transitions and clients keep
 ///   format version 1;
 /// - `canonical_contested_index_values`, `Some(1)` rather than `Some(0)`: every index value
 ///   of a contest is written the one way its property's type keys it, so the values of one
-///   contest name one poll; 0 wrote only identifiers one way.
+///   contest name one poll; 0 wrote only identifiers one way;
+/// - `max_size`, 1 rather than 0: a string of 16384 or more characters without `maxBytes`
+///   counts as `u16::MAX` bytes toward a document type's largest size rather than failing it
+///   with an overflow. Only the erase of retained revisions, new in this version, reads it.
 ///
 /// v6 remains unchanged for `PROTOCOL_VERSION_14`, whose parse refuses a byte array key and
 /// whose schemas and documents the `jsonschema` crate checks.
@@ -49,6 +65,12 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
         // `jsonschema` crate: uniqueItems treats signed zeros as one value, and a
         // format:regex value is checked for syntax rather than compilation
         validate_document: 2,
+        // changed: a contract's schemas hold a bounded number of patterns of bounded size
+        validate_schema_patterns: Some(0),
+        // changed: the fee estimate bills an index without compiling its field matches
+        registration_cost: 3,
+        // changed: an update of a contract whose stored schema repeats a key is refused
+        validate_update: 2,
         ..CONTRACT_VERSIONS_V6.methods
     },
     document_type_versions: DocumentTypeVersions {
@@ -61,7 +83,7 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
         schema: DocumentTypeSchemaVersions {
             // changed: checks a schema natively at registration and requires a validation schema
             check_document_type_schema: 1,
-            parse_property_constraints: Some(1), // changed: countOf and sumOf match byte array keys
+            parse_property_constraints: Some(1), // changed: countOf and sumOf match byte array keys, and a key by the elements of an array
             // changed: documents are checked against the typed validation schema this builds
             validation_schema: Some(0),
             // changed: the `private` keyword declares a private document type
@@ -80,6 +102,8 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
             // changed: every index value of a contest is written the one way its property's
             // type keys it, where 0 wrote only identifiers one way
             canonical_contested_index_values: Some(1),
+            // changed: a string bound past `u16::MAX` bytes is held there, not an overflow
+            max_size: 1,
             ..CONTRACT_VERSIONS_V6.document_type_versions.methods
         },
         ..CONTRACT_VERSIONS_V6.document_type_versions

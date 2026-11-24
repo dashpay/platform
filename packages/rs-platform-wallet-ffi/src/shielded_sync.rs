@@ -398,6 +398,12 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_sync_now(
 /// on the wallet — no `SpendAuthorizingKey` stays resident; spends
 /// re-derive it per operation.
 ///
+/// The seed is the one of the mnemonic the resolver returns for
+/// `wallet_id`, and it must be the seed the wallet was created from:
+/// another is refused, nothing bound or stored, with
+/// `ErrorWalletOperation` and a message naming "The supplied seed does
+/// not belong to this wallet".
+///
 /// **Prerequisite**: the host must have already called
 /// [`platform_wallet_manager_configure_shielded`] with the
 /// per-network SQLite path before invoking this function — the
@@ -406,7 +412,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_sync_now(
 /// `ErrorWalletOperation`.
 ///
 /// Idempotent: a second call replaces the previously-bound
-/// shielded wallet on the same `wallet_id`.
+/// shielded wallet on the same `wallet_id`. The wallet stays on the
+/// manager's coordinator; a bind on another one is refused.
 ///
 /// # Safety
 /// - `wallet_id_bytes` must point at 32 readable bytes.

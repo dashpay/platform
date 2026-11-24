@@ -1468,6 +1468,109 @@ mod dpns_v3_tests {
             Some("nameHash")
         );
     }
+
+    /// A name's owner may delete it, which frees the name, or tombstone it: a tombstone is
+    /// created by the owner of the domain of that name, found through the domain's unique
+    /// index, and the create deletes the domain. A tombstone itself never changes, moves or
+    /// leaves, and says so, with what may one day undo it
+    #[test]
+    fn should_tombstone_a_name_by_consuming_its_owners_domain() {
+        let contract = dpns();
+        assert!(document_type(&contract, "domain").documents_can_be_deleted());
+
+        let tombstone = document_type(&contract, "tombstone");
+        assert!(!tombstone.documents_mutable());
+        assert!(!tombstone.documents_can_be_deleted());
+        assert!(!tombstone.documents_transferable().is_transferable());
+
+        let target = tombstone
+            .flattened_properties()
+            .get("normalizedLabel")
+            .and_then(|property| property.revealed_reference.as_ref())
+            .expect("the tombstone's normalizedLabel carries a refersTo");
+        let declaration = target
+            .as_any_document_reference()
+            .expect("the tombstone refers to a document");
+        assert_eq!(declaration.document_type_name, "domain");
+        assert_eq!(declaration.kind, DocumentReferenceKind::Deletable);
+        assert_eq!(
+            declaration.property_agreement.get("$ownerId"),
+            Some(&"$ownerId".to_string()),
+            "only the domain's owner tombstones it"
+        );
+        let lookup = declaration.lookup.expect("found by findBy");
+        assert_eq!(
+            lookup.keys,
+            BTreeMap::from([
+                (
+                    "normalizedLabel".to_string(),
+                    LookupKeySource::ReferenceValue
+                ),
+                (
+                    "normalizedParentDomainName".to_string(),
+                    LookupKeySource::Property("normalizedParentDomainName".to_string())
+                ),
+            ])
+        );
+        assert!(lookup.consume);
+
+        let description = tombstone
+            .schema()
+            .get_str("description")
+            .expect("the tombstone type describes itself");
+        assert!(
+            description.contains(
+                "may later be brought back and redistributed through a direct or indirect \
+                 will of the DAO"
+            ),
+            "{description}"
+        );
+    }
+
+    /// A name is refused while a tombstone of it exists, counted by the name through the
+    /// tombstone's countable index
+    #[test]
+    fn should_refuse_a_name_while_its_tombstone_exists() {
+        let contract = dpns();
+        let domain = document_type(&contract, "domain");
+        let tombstone = document_type(&contract, "tombstone");
+
+        let rule = domain
+            .property_constraints()
+            .get("nameIsNotTombstoned")
+            .expect("the tombstone rule");
+        let text = |path: &str| AggregateBinding::Property {
+            path: path.to_string(),
+            kind: Some(EqualityKind::Text),
+        };
+        let tombstones_of_the_name = AggregateRead {
+            kind: AggregateKind::Count,
+            document_type: "tombstone".to_string(),
+            filter: [
+                ("normalizedLabel".to_string(), text("normalizedLabel")),
+                (
+                    "normalizedParentDomainName".to_string(),
+                    text("normalizedParentDomainName"),
+                ),
+            ]
+            .into(),
+            of_own_type: false,
+        };
+        assert_eq!(
+            rule,
+            &PropertyConstraint::Compare {
+                comparison: ConstraintComparison::Equal,
+                left: ConstraintExpression::Aggregate(tombstones_of_the_name.clone()),
+                right: ConstraintExpression::Value(0),
+            }
+        );
+        assert_eq!(
+            tombstones_of_the_name
+                .answering_index(&tombstone)
+                .map(|index| index.name.as_str()),
+            Some("parentNameAndLabel")
+        );
+    }
 }
 
 #[cfg(test)]
@@ -1817,6 +1920,7 @@ mod token_market_tests {
     use crate::document::transfer::Transferable;
     use crate::nft::TradeMode;
     use crate::system_data_contracts::token_market_contract::v1::document_types::{ask, bid};
+    use platform_version::version::mocks::v5_test::TEST_PLATFORM_V5;
 
     /// The order types are what the marketplace transitions rely on: only they create orders,
     /// orders stay mutable and deletable so a partial fill can rewrite them and a close can
@@ -1824,8 +1928,10 @@ mod token_market_tests {
     /// `depth` index sums what the order holds in escrow.
     #[test]
     fn should_load_the_order_types_the_marketplace_writes() {
+        // The token marketplace starts with protocol version 16, which has no tables yet: the
+        // test version that selects it stands in.
         let contract =
-            load_system_data_contract(SystemDataContract::TokenMarket, PlatformVersion::latest())
+            load_system_data_contract(SystemDataContract::TokenMarket, &TEST_PLATFORM_V5)
                 .expect("the token market contract loads with full validation");
         assert_eq!(contract.id(), token_market_contract::ID);
         assert_eq!(contract.owner_id(), token_market_contract::OWNER_ID);
@@ -1908,10 +2014,15 @@ mod token_market_tests {
     }
 
     #[test]
-    fn should_not_exist_before_protocol_version_15() {
-        let platform_version = PlatformVersion::get(14).expect("protocol version 14");
-        assert!(
-            load_system_data_contract(SystemDataContract::TokenMarket, platform_version).is_err()
-        );
+    fn should_not_exist_before_protocol_version_16() {
+        for protocol_version in [14, 15] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected the protocol version");
+            assert!(
+                load_system_data_contract(SystemDataContract::TokenMarket, platform_version)
+                    .is_err(),
+                "protocol version {protocol_version}"
+            );
+        }
     }
 }

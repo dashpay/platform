@@ -10,6 +10,7 @@
 //! decided, of the contract and the document type it names: a moderated type of a contract
 //! whose moderators the masternodes elect, holding text a moderator's removal takes away.
 
+use crate::execution::validation::state_transition::processor::identity_balance::StateTransitionIdentityBalanceValidationV0;
 use crate::execution::validation::state_transition::state_transitions::tests::{
     setup_identity, setup_masternode_voting_identity,
 };
@@ -50,15 +51,16 @@ use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::document::{Document, DocumentV0, DocumentV0Getters, DocumentV0Setters};
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::{Identity, IdentityPublicKey, TimestampMillis};
+use dpp::identity::{Identity, IdentityPublicKey, PartialIdentity, TimestampMillis};
 use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::platform_value::{platform_value, Bytes32, Identifier, Value};
 use dpp::prelude::IdentityNonce;
-use dpp::serialization::PlatformSerializable;
+use dpp::serialization::{PlatformDeserializableTrusted, PlatformSerializable};
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+use dpp::state_transition::StateTransition;
 use dpp::system_data_contracts::decision_proposals_contract::v1::document_types::{
     choice, multiple_choice_proposal,
 };
@@ -378,6 +380,28 @@ async fn create_transition(
     rng: &mut StdRng,
     platform_version: &PlatformVersion,
 ) -> (Vec<u8>, Identifier) {
+    create_transition_raising_fees(
+        contract,
+        writer,
+        document_type_name,
+        properties,
+        0,
+        rng,
+        platform_version,
+    )
+    .await
+}
+
+/// [`create_transition`] with the fees raised by `user_fee_increase` percent.
+async fn create_transition_raising_fees(
+    contract: &DataContract,
+    writer: &mut Writer,
+    document_type_name: &str,
+    properties: BTreeMap<String, Value>,
+    user_fee_increase: u16,
+    rng: &mut StdRng,
+    platform_version: &PlatformVersion,
+) -> (Vec<u8>, Identifier) {
     let document_type = contract
         .document_type_for_name(document_type_name)
         .expect("expected the document type");
@@ -401,7 +425,7 @@ async fn create_transition(
         entropy.0,
         key,
         nonce,
-        0,
+        user_fee_increase,
         None,
         signer,
         platform_version,
@@ -811,6 +835,38 @@ fn stored_choice(
     stored_document(platform, contract, choice::NAME, choice_id)
 }
 
+/// The ids of the choices of the proposal `proposal_id` a document query finds through the
+/// `byProposal` index, as a client reads the choice a vote kept: the choices a vote still
+/// holds are in the vote's own storage, not there.
+fn choices_found_by_proposal(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    contract: &DataContract,
+    proposal_id: Identifier,
+    platform_version: &PlatformVersion,
+) -> Vec<Identifier> {
+    let document_type = contract
+        .document_type_for_name(choice::NAME)
+        .expect("expected the choice type");
+    let query = DriveDocumentQuery::from_value(
+        platform_value!({
+            "where": [[choice::properties::PROPOSAL_ID, "==", proposal_id]],
+        }),
+        contract,
+        document_type,
+        &platform.config.drive,
+        platform_version,
+    )
+    .expect("expected a document query");
+    platform
+        .drive
+        .query_documents(query, None, false, None, None)
+        .expect("expected to query the choices")
+        .documents()
+        .iter()
+        .map(|document| document.id())
+        .collect()
+}
+
 /// A serialized edit of the multiple choice proposal `question` by `proposer` (its owner)
 /// setting `changes`, its revision bumped.
 async fn edit_transition(
@@ -1007,8 +1063,12 @@ async fn should_keep_the_choice_the_masternodes_vote_for_most() {
         prefunded_balance(&platform, &poll, platform_version),
         4 * fund
     );
-    // A choice is held by the vote, not stored, until the vote ends
+    // A choice is held by the vote, not stored, until the vote ends: a document query of the
+    // proposal's choices finds none of the four
     assert!(stored_choice(&platform, &contract, bob_choice).is_none());
+    assert!(
+        choices_found_by_proposal(&platform, &contract, proposal_id, platform_version).is_empty()
+    );
 
     // A vote names a choice by its document id. Two masternodes for Bob's choice, one each for
     // Alice's and Carol's, one for none of them
@@ -1044,6 +1104,11 @@ async fn should_keep_the_choice_the_masternodes_vote_for_most() {
     for other in [alice_choice, carol_choice, proposer_choice] {
         assert!(stored_choice(&platform, &contract, other).is_none());
     }
+    // Which leaves the kept choice the only one a document query of the proposal's finds
+    assert_eq!(
+        choices_found_by_proposal(&platform, &contract, proposal_id, platform_version),
+        vec![bob_choice]
+    );
 }
 
 #[tokio::test]
@@ -1112,6 +1177,9 @@ async fn should_keep_no_choice_when_the_lock_votes_outnumber_every_choice() {
     for entered in [alice_choice, bob_choice] {
         assert!(stored_choice(&platform, &contract, entered).is_none());
     }
+    assert!(
+        choices_found_by_proposal(&platform, &contract, proposal_id, platform_version).is_empty()
+    );
 
     // The masternodes' answer stands: no choice can be entered for the proposal again
     let (again, _) = choice_transition(
@@ -2568,4 +2636,77 @@ async fn should_charge_a_flat_processing_fee_for_a_multiple_choice_proposal() {
         balance(&platform, poor.id(), platform_version),
         dash_to_credits!(0.1)
     );
+}
+
+/// The minimum balance pre-check holds a multiple choice proposal's signer to the flat
+/// processing fee too, before the create is transformed or judged: a signer holding the
+/// per-transition minimum but not the fee is refused there, and one holding both passes it. A
+/// block adds the fee after raising the batch's fees by the user fee increase, so the pre-check
+/// raises the minimum alone. At protocol version 14 the fee schedule charges no such fee, and
+/// the pre-check asks for the minimum alone.
+#[tokio::test]
+async fn should_hold_a_proposal_signer_to_the_processing_fee_in_the_minimum_balance_pre_check() {
+    let (mut platform, platform_version, contract, mut rng) = setup();
+    let fee = multiple_choice_proposal_processing_fee(platform_version);
+    let minimum = platform_version
+        .fee_version
+        .state_transition_min_fees
+        .document_batch_sub_transition;
+    let mut proposer = writer(&mut platform, &mut rng);
+    let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+    // The floor at the latest protocol version and at 14, by the user fee increase
+    for (user_fee_increase, floor, floor_at_14) in [
+        (0, minimum + fee, minimum),
+        (100, 2 * minimum + fee, 2 * minimum),
+    ] {
+        let properties = BTreeMap::from([
+            (
+                multiple_choice_proposal::properties::TITLE.to_string(),
+                Value::Text("Which mascot?".to_string()),
+            ),
+            (
+                multiple_choice_proposal::properties::URL.to_string(),
+                Value::Text("https://example.org/proposals/mascot".to_string()),
+            ),
+            (
+                multiple_choice_proposal::properties::OPEN.to_string(),
+                Value::Bool(true),
+            ),
+        ]);
+        let (transition, _) = create_transition_raising_fees(
+            &contract,
+            &mut proposer,
+            multiple_choice_proposal::NAME,
+            properties,
+            user_fee_increase,
+            &mut rng,
+            platform_version,
+        )
+        .await;
+        let transition = StateTransition::deserialize_from_bytes_trusted(&transition)
+            .expect("expected the transition to deserialize");
+        let passes_pre_check = |balance: Credits, platform_version: &PlatformVersion| {
+            let identity = PartialIdentity {
+                id: proposer.id(),
+                loaded_public_keys: BTreeMap::new(),
+                balance: Some(balance),
+                revision: None,
+                not_found_public_keys: BTreeSet::new(),
+            };
+            transition
+                .validate_identity_minimum_balance_pre_check(&identity, platform_version)
+                .expect("expected the pre-check to run")
+                .is_valid()
+        };
+        assert!(
+            !passes_pre_check(floor - 1, platform_version),
+            "a fee increase of {user_fee_increase}%"
+        );
+        assert!(
+            passes_pre_check(floor, platform_version),
+            "a fee increase of {user_fee_increase}%"
+        );
+        assert!(!passes_pre_check(floor_at_14 - 1, protocol_version_14));
+        assert!(passes_pre_check(floor_at_14, protocol_version_14));
+    }
 }

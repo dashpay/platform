@@ -1,17 +1,24 @@
 use crate::execution::validation::state_transition::batch::data_triggers::bindings::data_trigger_binding::DataTriggerBindingV0;
 use crate::execution::validation::state_transition::batch::data_triggers::bindings::list::v2::data_trigger_bindings_list_v2;
+use crate::execution::validation::state_transition::batch::data_triggers::triggers::dpns::delete_domain_data_trigger;
 use crate::execution::validation::state_transition::batch::data_triggers::triggers::reject::reject_data_trigger;
 
 use dpp::errors::ProtocolError;
 use dpp::system_data_contracts::dashpay_contract;
+use dpp::system_data_contracts::dpns_contract;
+use dpp::system_data_contracts::dpns_contract::v1::document_types::domain;
 use dpp::system_data_contracts::token_market_contract;
 use dpp::system_data_contracts::token_market_contract::v1::document_types::{ask, bid};
 use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionActionType;
 
 /// Retrieves a list of data triggers binding with matching params.
 ///
-/// v3 (PROTOCOL_VERSION_15) is v2 with two changes:
+/// v3 (PROTOCOL_VERSION_15) is v2 with three changes:
 ///
+/// - The delete of a DPNS `domain` is no longer refused outright: the DPNS contract v3 that
+///   protocol version selects lets a name's owner delete it (`canBeDeleted: true`), and the
+///   binding runs `delete_domain_data_trigger`, which refuses the delete of a contested name
+///   alone. Such a name can only be tombstoned, by a `tombstone` create that consumes it.
 /// - No DashPay bindings. The DashPay contract v3 that protocol version selects declares what
 ///   both triggers checked: `contactRequest.toUserId` refers to an identity (`refersTo`) other
 ///   than the writer (`distinctFrom`), and the `profile` rules `corePaymentAddressType` and
@@ -20,7 +27,8 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 ///   sent as a document transition. Only the token marketplace transitions write orders:
 ///   creating one as a document is refused by `creationRestrictionMode` 2, and the types stay
 ///   mutable and deletable, so documents carry a revision and storage flags for the partial
-///   fills and closes the platform writes.
+///   fills and closes the platform writes. The contract exists from protocol version 16, so
+///   nothing matches these bindings under protocol version 15.
 ///
 /// Every other binding is v2's.
 #[inline(always)]
@@ -28,6 +36,15 @@ pub(super) fn data_trigger_bindings_list_v3() -> Result<Vec<DataTriggerBindingV0
     let mut data_triggers: Vec<DataTriggerBindingV0> = data_trigger_bindings_list_v2()?
         .into_iter()
         .filter(|binding| binding.data_contract_id != dashpay_contract::ID)
+        .map(|mut binding| {
+            if binding.data_contract_id == dpns_contract::ID
+                && binding.document_type == domain::NAME
+                && binding.transition_action_type == DocumentTransitionActionType::Delete
+            {
+                binding.data_trigger = delete_domain_data_trigger;
+            }
+            binding
+        })
         .collect();
     for document_type in [ask::NAME, bid::NAME] {
         for transition_action_type in [

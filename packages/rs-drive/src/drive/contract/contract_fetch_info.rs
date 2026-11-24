@@ -14,6 +14,7 @@ use dpp::tests::fixtures::get_masternode_reward_shares_data_contract_fixture;
 use grovedb_costs::OperationCost;
 #[cfg(feature = "fixtures-and-mocks")]
 use platform_version::version::PlatformVersion;
+use platform_version::version::ProtocolVersion;
 /// DataContract and fetch information
 #[derive(PartialEq, Debug, Clone)]
 pub struct DataContractFetchInfo {
@@ -25,11 +26,19 @@ pub struct DataContractFetchInfo {
     /// This is only used on epoch change
     pub(crate) cost: OperationCost,
     /// The fee of the read that built this entry, when it was built with an epoch, which a cache
-    /// hit bills again. A read's fee depends only on the fee schedule, and from protocol
-    /// version 14 the contract cache is cleared on the first block of every protocol change,
-    /// the only time the schedule can change. Entries are cached with and without a fee, so
-    /// callers bill the fee `Drive::get_contract_with_fetch_info_and_fee` returns, never this.
+    /// hit of `get_contract_with_fetch_info` 0 (protocol version 14 and earlier) bills again. A
+    /// read's fee depends only on the fee schedule, and from protocol version 14 the contract
+    /// cache is cleared on the first block of every protocol change, the only time the schedule
+    /// can change. Generation 1 (protocol version 15 on) never bills it: a hit there prices the
+    /// entry's `cost` under the reader's protocol version. Entries are cached with and without a
+    /// fee, so callers bill the fee `Drive::get_contract_with_fetch_info_and_fee` returns, never
+    /// this.
     pub(crate) fee: Option<FeeResult>,
+    /// The protocol version whose platform version parsed `contract`. The parsed contract
+    /// depends on it as well as on the stored bytes, so from protocol version 15 a cache read
+    /// returns an entry only to a reader at this protocol version
+    /// (`DataContractCache::get_parsed_under`).
+    pub(crate) parsed_under_protocol_version: ProtocolVersion,
 }
 
 #[cfg(feature = "fixtures-and-mocks")]
@@ -48,6 +57,7 @@ impl DataContractFetchInfo {
             storage_flags: None,
             cost: OperationCost::with_seek_count(1), //Just so there's a cost
             fee: Some(FeeResult::new_from_processing_fee(30000)),
+            parsed_under_protocol_version: protocol_version,
         }
     }
 
@@ -59,6 +69,7 @@ impl DataContractFetchInfo {
             storage_flags: None,
             cost: OperationCost::with_seek_count(1), //Just so there's a cost
             fee: Some(FeeResult::new_from_processing_fee(30000)),
+            parsed_under_protocol_version: protocol_version,
         }
     }
 
@@ -71,6 +82,7 @@ impl DataContractFetchInfo {
             storage_flags: None,
             cost: OperationCost::with_seek_count(1), //Just so there's a cost
             fee: Some(FeeResult::new_from_processing_fee(30000)),
+            parsed_under_protocol_version: protocol_version,
         }
     }
 
@@ -90,6 +102,7 @@ impl DataContractFetchInfo {
             storage_flags: None,
             cost: OperationCost::with_seek_count(1), //Just so there's a cost
             fee: Some(FeeResult::new_from_processing_fee(30000)),
+            parsed_under_protocol_version: protocol_version,
         }
     }
 
@@ -109,6 +122,7 @@ impl DataContractFetchInfo {
             storage_flags: None,
             cost: OperationCost::with_seek_count(1), //Just so there's a cost
             fee: Some(FeeResult::new_from_processing_fee(30000)),
+            parsed_under_protocol_version: protocol_version,
         }
     }
 }

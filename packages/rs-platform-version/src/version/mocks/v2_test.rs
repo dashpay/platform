@@ -599,6 +599,8 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
     fee_version: FEE_VERSION1,
     system_limits: SystemLimits {
         max_document_revisions_erased_per_transition: None,
+        max_enum_violation_listed_values: None,
+        max_enum_violation_listed_bytes: None,
     credit_pool_nullifier_backfill_page_size: 0,
     credit_pool_nullifier_backfill_batch_size: 0,
         estimated_contract_max_serialized_size: 16384,
@@ -606,6 +608,8 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_document_value_depth: None,
         max_typed_array_items: 1024,
         max_index_property_name_bytes: 255,
+        max_contract_schema_patterns: 32,
+        max_schema_pattern_compiled_size: 131_072,
         max_compiled_contract_size: None,
         max_private_document_entry_size: None,
         private_document_store_target_chunk_bytes: None,
@@ -675,11 +679,14 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         max_document_expiration_weight_per_block: 0,
         max_contested_summed_value_magnitude: None,
         max_expiring_signed_summed_value_magnitude: None,
+        max_summed_value_magnitude_without_type_total: None,
+        max_summed_value_magnitude_in_64_bit_sums: None,
         max_indexed_array_items: None,
         max_windowed_indexed_array_items: None,
         max_index_entries_per_document: None,
         max_choose_first_candidates: 1_000, // read only by document reference validation 0 at v14
         max_rekey_batch_moves: None,
+        max_history_migration_batch_operations: None,
     },
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 0,

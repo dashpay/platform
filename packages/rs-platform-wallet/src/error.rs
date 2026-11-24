@@ -13,6 +13,8 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundin
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::Network;
 
+use crate::changeset::PersistenceError;
+
 pub use dash_sdk::platform::transition::asset_lock_submission::{
     as_asset_lock_proof_cl_height_too_low, as_state_transition_max_size_exceeded,
     is_asset_lock_already_consumed, is_instant_lock_proof_invalid,
@@ -21,6 +23,9 @@ pub use dash_sdk::platform::transition::asset_lock_submission::{
 /// Errors that can occur in platform wallet operations
 #[derive(Debug, thiserror::Error)]
 pub enum PlatformWalletError {
+    #[error("An erase for this document is already in flight; read history before retrying")]
+    DocumentEraseBusy,
+
     #[error("Wallet creation failed: {0}")]
     WalletCreation(String),
 
@@ -194,8 +199,10 @@ pub enum PlatformWalletError {
     /// For Core transactions, the
     /// transaction may already have reached the network (transport timeout
     /// after delivery, partial peer send, or an internal multi-node retry
-    /// whose earlier attempt may have succeeded). The spent Core inputs are
-    /// intentionally kept out of the selectable set, so an immediate retry
+    /// whose earlier attempt may have succeeded). One case was not sent but
+    /// may still be: a shielded funding abandoned before its broadcast whose
+    /// row may be on disk, where a restart resumes it. The spent Core inputs
+    /// are intentionally kept out of the selectable set, so an immediate retry
     /// fails at input selection instead of double-spending.
     ///
     /// A Platform state transition may instead have been accepted but its
@@ -705,11 +712,16 @@ pub enum PlatformWalletError {
     /// identity, public or private, until a proved read shows the request on
     /// Platform (it is then recorded as sent) or shows the transition can no
     /// longer write it. A public contact request sync settles it, broadcasting
-    /// the same transition again while it may still execute. Unconfirmed, not
-    /// failed: it is not submitted again.
+    /// the same transition again while it may still execute and a public
+    /// request to the identity would still go out. Unconfirmed, not failed:
+    /// it is not submitted again.
+    ///
+    /// Also what a public send gets while another public request to the
+    /// identity is being sent: that one's outcome is not known yet either,
+    /// and nothing is signed for the second.
     #[error(
-        "a public contact request to {0} was broadcast and its outcome is not proved yet; sync \
-         contact requests to settle it"
+        "a public contact request to {0} is being sent or was broadcast, and its outcome is not \
+         proved yet; sync contact requests to settle it"
     )]
     PublicContactRequestUnconfirmed(Identifier),
 
@@ -1273,6 +1285,19 @@ impl PlatformWalletError {
             }
             _ => source,
         };
+        Self::PersisterStore(source)
+    }
+
+    /// A persister's `store_and_commit` refused a changeset before it was
+    /// staged (`StoreAndCommitError::NotStaged`). Unlike
+    /// [`from_store_failure`](Self::from_store_failure) the classification is
+    /// kept as the backend reported it. A `Transient` store failure tells
+    /// the caller that nothing was committed and nothing was kept, so the
+    /// changeset may be issued again, and that is exactly what this answer
+    /// states, for the changeset it was given: the backend attested it with
+    /// the step itself. The reissue attestation speaks for a plain `store`,
+    /// which this was not, so it is not asked.
+    pub fn from_unstaged_store_failure(source: PersistenceError) -> Self {
         Self::PersisterStore(source)
     }
 

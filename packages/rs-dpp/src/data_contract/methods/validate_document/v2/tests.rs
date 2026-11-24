@@ -1,5 +1,6 @@
 //! Generation 2 of document validation, at protocol version 15 against generation 1 at 14.
 
+use crate::consensus::basic::json_schema_error::JsonSchemaError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::codes::ErrorWithCode;
 use crate::consensus::ConsensusError;
@@ -9,7 +10,9 @@ use crate::data_contract::document_type::property_constraints::DocumentSystemVal
 use crate::data_contract::document_type::schema::validation_schema::DocumentSchemaValidator;
 use crate::data_contract::document_type::validator::LoadedValidationSchema;
 use crate::data_contract::errors::DataContractError;
-use crate::data_contract::methods::validate_document::DataContractDocumentValidationMethodsV0;
+use crate::data_contract::methods::validate_document::{
+    is_unreadable_byte_array_refusal, DataContractDocumentValidationMethodsV0,
+};
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::DataContract;
 use crate::tests::fixtures::get_data_contract_fixture;
@@ -129,7 +132,8 @@ fn should_validate_documents_at_protocol_version_15_as_at_14() {
         platform_value!({ "kind": "c" }),
         platform_value!({ "tags": ["a", "a"] }),
         platform_value!({ "tags": ["abcd"] }),
-        platform_value!({ "data": [1, 2] }),
+        // Written as bytes: a byte array of other integers is refused from 15 only
+        platform_value!({ "data": [Value::U8(1), Value::U8(2)] }),
         platform_value!({ "data": [1, 300] }),
         platform_value!({ "when": "2026-10-22" }),
         platform_value!({ "when": "2026-13-01" }),
@@ -950,4 +954,416 @@ fn should_refuse_every_document_of_a_type_holding_a_pattern_that_does_not_parse(
         ),
         "{errors:?}"
     );
+}
+
+/// The document type `item` with a typed array `list` whose elements take one of `members`
+/// integers, and a document whose `list` holds `elements` integers none of them takes.
+fn enum_list_contract_and_document(members: u64, elements: u64) -> (DataContract, Value) {
+    let allowed: Vec<Value> = (0..members).map(Value::U64).collect();
+    let contract = item_contract(platform_value!({
+        "list": {
+            "type": "array",
+            "items": { "type": "integer", "enum": allowed },
+            "maxItems": elements,
+            "position": 0,
+        },
+    }));
+    let list: Vec<Value> = (0..elements)
+        .map(|element| Value::U64(members + element))
+        .collect();
+    (contract, platform_value!({ "list": list }))
+}
+
+/// The JSON Schema error `error` is.
+fn json_schema_error(error: &ConsensusError) -> &JsonSchemaError {
+    match error {
+        ConsensusError::BasicError(BasicError::JsonSchemaError(error)) => error,
+        other => panic!("expected a JSON Schema error, got {other:?}"),
+    }
+}
+
+#[test]
+fn should_report_one_small_enum_violation_for_a_document_breaking_a_long_enum_many_times() {
+    use crate::serialization::{
+        PlatformDeserializableUntrusted, PlatformSerializableWithPlatformVersion,
+    };
+    let latest = PlatformVersion::latest();
+    let (contract, document) = enum_list_contract_and_document(300, 300);
+    let errors = document_errors(&contract, document, latest);
+    // The first violation only, the one consensus reports
+    assert_eq!(errors.len(), 1);
+    let error = json_schema_error(&errors[0]);
+    assert_eq!(error.keyword(), "enum");
+    assert_eq!(error.instance_path(), "/list/0");
+    let listed = error
+        .params()
+        .get_optional_array_slice("enum")
+        .expect("expected params")
+        .expect("expected a list")
+        .len();
+    assert_eq!(
+        Some(listed),
+        latest
+            .system_limits
+            .max_enum_violation_listed_values
+            .map(usize::from)
+    );
+    // A client can read the error back
+    let bytes = errors[0]
+        .serialize_to_bytes_with_platform_version(latest)
+        .expect("expected the error to serialize");
+    assert_eq!(
+        ConsensusError::deserialize_from_bytes_untrusted(&bytes).expect("expected it to read back"),
+        errors[0]
+    );
+}
+
+#[test]
+fn should_report_an_enum_violation_a_client_can_read_whatever_the_allowed_values_hold() {
+    use crate::serialization::{
+        PlatformDeserializableUntrusted, PlatformSerializableWithPlatformVersion,
+    };
+    let latest = PlatformVersion::latest();
+    let long = "x".repeat(1500);
+    // Strings whose JSON fills the listing's bytes, the most a listing holds
+    let filling: Vec<Value> = (0..16)
+        .map(|member| Value::Text(format!("{member:014}")))
+        .collect();
+    let object = |last: u64| platform_value!({ "a": long.clone(), "b": [1, 2, last] });
+    for allowed in [
+        filling,
+        vec![Value::Text(long.clone()), Value::Text("b".to_string())],
+        vec![Value::Text("a".to_string()), Value::Text(long.clone())],
+        vec![object(3), object(4)],
+    ] {
+        let contract = item_contract(platform_value!({
+            "label": { "type": "string", "enum": allowed, "position": 0 },
+        }));
+        let errors = document_errors(
+            &contract,
+            platform_value!({ "label": "not an allowed value" }),
+            latest,
+        );
+        assert_eq!(errors.len(), 1);
+        assert_eq!(json_schema_error(&errors[0]).keyword(), "enum");
+        let bytes = errors[0]
+            .serialize_to_bytes_with_platform_version(latest)
+            .expect("expected the error to serialize");
+        assert_eq!(
+            ConsensusError::deserialize_from_bytes_untrusted(&bytes)
+                .expect("expected it to read back"),
+            errors[0]
+        );
+    }
+}
+
+#[test]
+fn should_report_an_enum_violation_at_protocol_version_14_as_before() {
+    let protocol_version_14 = PlatformVersion::get(14).expect("expected protocol version 14");
+    let (contract, document) = enum_list_contract_and_document(300, 2);
+    let errors = document_errors(&contract, document.clone(), protocol_version_14);
+    let first = json_schema_error(errors.first().expect("expected an error"));
+    assert_eq!(first.keyword(), "enum");
+    // Every allowed value listed, as the JSON Schema validator lists them
+    assert_eq!(
+        first
+            .params()
+            .get_optional_array_slice("enum")
+            .expect("expected params")
+            .map(<[Value]>::len),
+        Some(300)
+    );
+    // with the code protocol version 15 reports
+    let latest = document_errors(&contract, document, PlatformVersion::latest());
+    assert_eq!(
+        latest.first().map(ErrorWithCode::code),
+        errors.first().map(ErrorWithCode::code)
+    );
+}
+
+/// A type with a plain byte array `data`, an identifier `owner`, an object `nested` holding a
+/// byte array, and a list of identifiers `members`.
+fn byte_array_contract() -> DataContract {
+    item_contract(platform_value!({
+        "data": { "type": "array", "byteArray": true, "maxItems": 64, "position": 0 },
+        "owner": {
+            "type": "array",
+            "byteArray": true,
+            "minItems": 32,
+            "maxItems": 32,
+            "contentMediaType": "application/x.dash.dpp.identifier",
+            "position": 1,
+        },
+        "nested": {
+            "type": "object",
+            "properties": {
+                "blob": { "type": "array", "byteArray": true, "maxItems": 8, "position": 0 },
+            },
+            "additionalProperties": false,
+            "position": 2,
+        },
+        "members": {
+            "type": "array",
+            "items": {
+                "type": "array",
+                "byteArray": true,
+                "minItems": 32,
+                "maxItems": 32,
+                "contentMediaType": "application/x.dash.dpp.identifier",
+            },
+            "maxItems": 4,
+            "position": 3,
+        },
+    }))
+}
+
+/// Whether the document serializer writes a document holding `properties` as an `item`.
+fn serializes(contract: &DataContract, properties: &Value) -> bool {
+    use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+    use crate::document::{Document, DocumentV0};
+    let document = Document::V0(DocumentV0 {
+        properties: properties
+            .clone()
+            .into_btree_string_map()
+            .expect("expected a map of properties"),
+        ..Default::default()
+    });
+    let document_type = contract
+        .document_type_for_name("item")
+        .expect("expected the document type");
+    document
+        .serialize(document_type, contract, PlatformVersion::latest())
+        .is_ok()
+}
+
+/// The instance path of a single `byteArray` refusal, or a description of what was reported.
+fn byte_array_refusal(errors: &[ConsensusError]) -> Result<String, String> {
+    match errors {
+        [refusal @ ConsensusError::BasicError(BasicError::JsonSchemaError(error))]
+            if error.keyword() == "byteArray" && is_unreadable_byte_array_refusal(refusal) =>
+        {
+            Ok(error.instance_path().to_string())
+        }
+        other => Err(format!("{other:?}")),
+    }
+}
+
+fn bytes_of(member: fn(u8) -> Value, count: usize) -> Value {
+    Value::Array((0..count).map(|byte| member(byte as u8)).collect())
+}
+
+#[test]
+fn should_refuse_a_byte_array_holding_integers_that_are_not_bytes_at_protocol_version_15() {
+    let contract = byte_array_contract();
+    let latest = PlatformVersion::latest();
+    let identifier = Value::Identifier([7; 32]);
+    let cases = [
+        (
+            platform_value!({ "data": [Value::U64(1), Value::U64(2)] }),
+            "/data/0",
+        ),
+        (
+            platform_value!({ "data": [Value::U8(1), Value::I8(2)] }),
+            "/data/1",
+        ),
+        (
+            platform_value!({ "data": [Value::U8(1), Value::U16(255)] }),
+            "/data/1",
+        ),
+        (
+            platform_value!({ "owner": bytes_of(|byte| Value::U64(byte as u64), 32) }),
+            "/owner/0",
+        ),
+        (
+            platform_value!({ "nested": { "blob": [Value::U8(0), Value::I64(5)] } }),
+            "/nested/blob/1",
+        ),
+        (
+            platform_value!({
+                "members": [identifier, bytes_of(|byte| Value::U32(byte as u32), 32)],
+            }),
+            "/members/1/0",
+        ),
+    ];
+    for (properties, path) in cases {
+        let errors = document_errors(&contract, properties.clone(), latest);
+        assert_eq!(
+            byte_array_refusal(&errors),
+            Ok(path.to_string()),
+            "{properties:?}"
+        );
+        // Refused for what the serializer refuses
+        assert!(!serializes(&contract, &properties), "{properties:?}");
+    }
+}
+
+#[test]
+fn should_accept_byte_arrays_written_as_bytes_at_protocol_version_15() {
+    let contract = byte_array_contract();
+    let latest = PlatformVersion::latest();
+    let cases = [
+        platform_value!({ "data": [Value::U8(0), Value::U8(255)] }),
+        platform_value!({ "data": Value::Bytes(vec![0, 1, 255]) }),
+        platform_value!({ "data": Value::Array(vec![]) }),
+        platform_value!({ "data": Value::Bytes32([9; 32]) }),
+        platform_value!({ "owner": Value::Identifier([3; 32]) }),
+        platform_value!({ "owner": Value::Bytes32([3; 32]) }),
+        platform_value!({ "owner": bytes_of(Value::U8, 32) }),
+        platform_value!({ "owner": Value::Bytes(vec![4; 32]) }),
+        platform_value!({ "nested": { "blob": Value::Bytes(vec![1, 2]) } }),
+        platform_value!({ "members": [Value::Identifier([1; 32]), bytes_of(Value::U8, 32)] }),
+    ];
+    for properties in cases {
+        let errors = document_errors(&contract, properties.clone(), latest);
+        assert!(errors.is_empty(), "{properties:?}: {errors:?}");
+        assert!(serializes(&contract, &properties), "{properties:?}");
+    }
+}
+
+/// A member above 255, negative or not an integer is refused by the schema check, at both
+/// protocol versions, before the byte reading is reached.
+#[test]
+fn should_refuse_members_out_of_byte_range_by_the_schema_check_at_both_protocol_versions() {
+    let contract = byte_array_contract();
+    let protocol_version_14 =
+        PlatformVersion::get(14).expect("expected protocol version 14 to exist");
+    let cases = [
+        (Value::U64(300), "maximum"),
+        (Value::I64(-1), "type"),
+        (Value::Float(1.5), "type"),
+        (Value::Float(1.0), "type"),
+        (Value::Text("a".to_string()), "type"),
+    ];
+    for (member, keyword) in cases {
+        let properties = platform_value!({ "data": [Value::U8(1), member] });
+        for platform_version in [PlatformVersion::latest(), protocol_version_14] {
+            let errors = document_errors(&contract, properties.clone(), platform_version);
+            assert!(
+                matches!(
+                    errors.as_slice(),
+                    [ConsensusError::BasicError(BasicError::JsonSchemaError(error))]
+                        if error.keyword() == keyword && error.instance_path() == "/data/1"
+                ),
+                "{properties:?} at {}: {errors:?}",
+                platform_version.protocol_version
+            );
+            // A schema violation, not the refusal a batch is refused unpaid for
+            assert!(!errors.iter().any(is_unreadable_byte_array_refusal));
+        }
+        assert!(!serializes(&contract, &properties), "{properties:?}");
+    }
+}
+
+/// A transient property is dropped before a document is written, so the serializer never
+/// reads its value and the byte reading leaves it to the schema check.
+#[test]
+fn should_not_read_the_bytes_of_a_transient_byte_array() {
+    let latest = PlatformVersion::latest();
+    let mut contract =
+        get_data_contract_fixture(None, 0, latest.protocol_version).data_contract_owned();
+    contract
+        .set_document_schema(
+            "item",
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "data": { "type": "array", "byteArray": true, "maxItems": 64, "position": 0 },
+                    "pad": { "type": "array", "byteArray": true, "maxItems": 64, "position": 1 },
+                },
+                "transient": ["pad"],
+                "additionalProperties": false,
+            }),
+            true,
+            &mut Vec::new(),
+            latest,
+        )
+        .expect("expected the document type to register");
+
+    let errors = document_errors(
+        &contract,
+        platform_value!({ "data": [Value::U8(1)], "pad": [Value::U64(1), Value::U64(2)] }),
+        latest,
+    );
+    assert!(errors.is_empty(), "{errors:?}");
+
+    // The schema check still holds it, and a stored byte array beside it is still read
+    let errors = document_errors(
+        &contract,
+        platform_value!({ "pad": [Value::U64(300)] }),
+        latest,
+    );
+    assert!(
+        matches!(
+            errors.as_slice(),
+            [ConsensusError::BasicError(BasicError::JsonSchemaError(error))]
+                if error.keyword() == "maximum"
+        ),
+        "{errors:?}"
+    );
+    let errors = document_errors(
+        &contract,
+        platform_value!({ "data": [Value::U64(1)], "pad": [Value::U64(1)] }),
+        latest,
+    );
+    assert_eq!(byte_array_refusal(&errors), Ok("/data/0".to_string()));
+}
+
+/// The refusal is told from any other error under its keyword by the empty schema path and
+/// property name it is built with, so nothing else is refused unpaid in its place.
+#[test]
+fn should_not_take_another_error_under_the_byte_array_keyword_for_the_refusal() {
+    let error = |schema_path: &str, property_name: &str| -> ConsensusError {
+        JsonSchemaError::new(
+            "not bytes".to_string(),
+            "byteArray".to_string(),
+            "/data/0".to_string(),
+            schema_path.to_string(),
+            platform_value!({ "byteArray": true }),
+            property_name.to_string(),
+        )
+        .into()
+    };
+    assert!(is_unreadable_byte_array_refusal(&error("", "")));
+    assert!(!is_unreadable_byte_array_refusal(&error(
+        "/properties/data/byteArray",
+        ""
+    )));
+    assert!(!is_unreadable_byte_array_refusal(&error("", "data")));
+}
+
+/// Protocol version 14 keeps passing a byte array of integers that are not bytes, as it did.
+#[test]
+fn should_pass_a_byte_array_holding_integers_that_are_not_bytes_at_protocol_version_14() {
+    let contract = byte_array_contract();
+    let protocol_version_14 =
+        PlatformVersion::get(14).expect("expected protocol version 14 to exist");
+    for properties in [
+        platform_value!({ "data": [Value::U64(1), Value::U64(2)] }),
+        platform_value!({ "owner": bytes_of(|byte| Value::U64(byte as u64), 32) }),
+    ] {
+        let errors = document_errors(&contract, properties.clone(), protocol_version_14);
+        assert!(errors.is_empty(), "{properties:?}: {errors:?}");
+    }
+}
+
+/// An identifier written as text is refused by the field size check past 5 KiB (10417) and by
+/// the schema check below it (10101), whether it is base 58 or not. The byte array reading tells
+/// whether the serializer could read the text, which for a text is whether it is base 58,
+/// without decoding it: a full decode of a text of a million characters takes minutes, as base
+/// 58 decoding takes time quadratic in a text's length.
+#[test]
+fn should_refuse_an_identifier_written_as_a_long_text_without_decoding_it() {
+    let contract = byte_array_contract();
+    let latest = PlatformVersion::latest();
+    for (owner, code) in [
+        ("2".repeat(1_000_000), 10417),
+        (format!("{}0", "2".repeat(999_999)), 10417),
+        ("2".repeat(5_000), 10101),
+        (format!("{}0", "2".repeat(4_999)), 10101),
+    ] {
+        let properties = platform_value!({ "owner": owner });
+        let errors = document_errors(&contract, properties, latest);
+        let codes: Vec<u32> = errors.iter().map(|error| error.code()).collect();
+        assert_eq!(codes, vec![code], "{errors:?}");
+    }
 }

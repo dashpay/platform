@@ -530,11 +530,11 @@ mod bounds {
         let (_, upper) = bounds.secondary_key_bounds();
         assert_eq!(upper, None, "hi == MAX has no representable successor");
 
-        let sum_bounds = AxisRangeBounds::Sum {
-            lo: 0,
-            hi: i64::MAX,
-        };
-        assert_eq!(sum_bounds.secondary_key_bounds().1, None);
+        // An open sum end, and one the clause states at the edge of 64 bits
+        for hi in [i128::MAX, i128::from(i64::MAX)] {
+            let sum_bounds = AxisRangeBounds::Sum { lo: 0, hi };
+            assert_eq!(sum_bounds.secondary_key_bounds().1, None);
+        }
 
         let avg_bounds = AxisRangeBounds::Avg {
             lo: 0,
@@ -574,6 +574,8 @@ mod execution {
     use super::super::{AxisRangeBounds, DriveDocumentHavingQuery};
     use super::clause;
     use crate::drive::Drive;
+    use crate::error::proof::ProofError;
+    use crate::error::query::QuerySyntaxError;
     use crate::error::Error;
     use crate::query::drive_document_having_query::resolve_having_query_for_mode;
     use crate::query::drive_document_ranked_query::{
@@ -967,6 +969,143 @@ mod execution {
         );
 
         assert_proof_round_trips(&drive, &contract, &case, &entries);
+    }
+
+    /// The same `HAVING SUM` over a type that keeps its sums in 128 bits, whose
+    /// ranking is on the big sum axis (protocol version 15).
+    #[test]
+    fn sum_between_reads_and_proves_consistently_on_the_big_sum_axis() {
+        let (drive, contract) = setup_restaurants_keeping_big_sums(i64::from(u32::MAX));
+        insert_docs(
+            &drive,
+            &contract,
+            "tip",
+            "amount",
+            300,
+            &[
+                ("alpha", 100),
+                ("alpha", 50),
+                ("beta", 4_000_000_000),
+                ("gamma", 400),
+            ],
+        );
+
+        let case = HavingCase::sum(
+            HavingOperator::Between,
+            Value::Array(vec![Value::I64(100), Value::I64(500)]),
+            10,
+        );
+        let entries = entries_of(run(&drive, &contract, &case, false).expect("read succeeds"));
+        assert_eq!(keys_of(&entries), vec!["alpha", "gamma"]);
+        assert_eq!(
+            entries.iter().map(|e| e.value).collect::<Vec<_>>(),
+            vec![RankedEntryValue::Sum(150), RankedEntryValue::Sum(400)]
+        );
+        assert_proof_round_trips(&drive, &contract, &case, &entries);
+    }
+
+    /// On the big sum axis an open bound reaches the groups past 64 bits:
+    /// `HAVING SUM(amount) >= 0` over a group summing to `i64::MAX + 1`
+    /// refuses the page that would hold it, read and proved alike, rather
+    /// than leave the group out. A page that ends before it still returns,
+    /// and so does a bound the clause states at the edge of 64 bits, which
+    /// leaves the group out.
+    #[test]
+    fn open_sum_bound_reaches_the_groups_past_64_bits_on_the_big_sum_axis() {
+        let (drive, contract) = setup_restaurants_keeping_big_sums(i64::MAX);
+        insert_docs(
+            &drive,
+            &contract,
+            "tip",
+            "amount",
+            300,
+            &[
+                ("alpha", 100),
+                ("beta", i64::MAX),
+                ("beta", 1),
+                ("gamma", 400),
+            ],
+        );
+
+        let case = HavingCase::sum(HavingOperator::GreaterThanOrEquals, Value::I64(0), 10);
+        assert!(
+            matches!(
+                run(&drive, &contract, &case, false),
+                Err(Error::Query(QuerySyntaxError::Unsupported(_)))
+            ),
+            "the page holds beta, past 64 bits"
+        );
+        let proof = proof_of(run(&drive, &contract, &case, true).expect("prove must succeed"));
+        let live_root = grovedb_root_hash(&drive);
+        assert!(
+            matches!(
+                client_side_query(&contract, &case)
+                    .verify_having_range_proof(&proof, platform_version()),
+                Err(Error::Proof(ProofError::SumPastResultWidth { root_hash }))
+                    if root_hash == live_root
+            ),
+            "the proved page holds beta too, refused with the root it proves"
+        );
+
+        let case = HavingCase::sum(HavingOperator::GreaterThanOrEquals, Value::I64(0), 2);
+        let entries = entries_of(run(&drive, &contract, &case, false).expect("read succeeds"));
+        assert_eq!(keys_of(&entries), vec!["alpha", "gamma"]);
+        assert_proof_round_trips(&drive, &contract, &case, &entries);
+
+        for (case, expected) in [
+            (
+                HavingCase::sum(HavingOperator::Equal, Value::I64(i64::MAX), 10),
+                vec![],
+            ),
+            (
+                HavingCase::sum(HavingOperator::LessThanOrEquals, Value::I64(i64::MAX), 10),
+                vec!["alpha", "gamma"],
+            ),
+            (
+                HavingCase::sum(
+                    HavingOperator::Between,
+                    Value::Array(vec![Value::I64(0), Value::I64(i64::MAX)]),
+                    10,
+                ),
+                vec!["alpha", "gamma"],
+            ),
+        ] {
+            let entries = entries_of(run(&drive, &contract, &case, false).expect("read succeeds"));
+            assert_eq!(keys_of(&entries), expected, "{:?}", case.having.operator);
+            assert_proof_round_trips(&drive, &contract, &case, &entries);
+        }
+    }
+
+    /// The restaurants contract with the tip amount bounded by `maximum`, so the tip type
+    /// keeps its sums in 128 bits and ranks them on the big sum axis (protocol version 15).
+    fn setup_restaurants_keeping_big_sums(maximum: i64) -> (Drive, DataContract) {
+        use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
+        use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+        let drive = setup_drive_with_initial_state_structure(None);
+        let pv = platform_version();
+        let mut json = dpp::tests::json_document::json_document_to_json_value(
+            "tests/supporting_files/contract/restaurants/restaurants-contract.json",
+        )
+        .expect("expected to read the restaurants contract");
+        json["documentSchemas"]["tip"]["properties"]["amount"]["maximum"] =
+            serde_json::Value::from(maximum);
+        let contract =
+            DataContract::from_json(json, false, pv).expect("expected the contract to parse");
+        assert!(contract
+            .document_type_for_name("tip")
+            .expect("tip")
+            .uses_big_sums());
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                pv,
+            )
+            .expect("expected to apply the restaurants contract");
+        (drive, contract)
     }
 
     /// Reviews: alpha (90+80)/2 = 85, beta (60+70+50)/3 = 60, gamma 95.

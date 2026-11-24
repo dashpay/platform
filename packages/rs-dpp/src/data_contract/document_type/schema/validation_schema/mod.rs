@@ -92,11 +92,11 @@ pub use keyword::{
     ObjectKeyword, RelationshipKeyword, ResolutionKeyword, SchemaKeyword, StorageKeyword,
     StringKeyword,
 };
-pub use validate::DocumentSchemaValidator;
 /// Registration's native schema checks compare values and read list uniqueness as the
 /// document validator does.
 #[cfg(feature = "validation")]
 pub(crate) use validate::{equal_json, is_unique};
+pub use validate::{DocumentSchemaValidator, EnumViolationListing};
 
 /// A JSON Schema simple type.
 #[derive(

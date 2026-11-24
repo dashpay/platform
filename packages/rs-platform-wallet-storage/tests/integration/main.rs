@@ -73,6 +73,7 @@ mod sqlite_schema_pinning;
 mod sqlite_second_open_guard;
 mod sqlite_sent_payment_verdict_durability;
 mod sqlite_shielded_viewing_keys;
+mod sqlite_store_and_commit;
 mod sqlite_store_flush_seam;
 mod sqlite_store_generation;
 mod sqlite_structural_hardening;

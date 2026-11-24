@@ -11,6 +11,7 @@ use super::{DriveDocumentSumQuery, SumEntry};
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::sum_width::element_sum;
 use dpp::version::PlatformVersion;
 use grovedb::query_result_type::{QueryResultElement, QueryResultType};
 use grovedb::TransactionArg;
@@ -52,13 +53,16 @@ impl DriveDocumentSumQuery<'_> {
         // panicking (debug) or silently wrapping (release). The
         // iterator `.sum::<i64>()` form would do `i64::Add` which has
         // neither property in a stable consensus-level contract.
-        let sum: i64 = results
+        let sums = results
             .elements
             .iter()
             .map(|e| match e {
-                QueryResultElement::ElementResultItem(elem) => elem.sum_value_or_default(),
-                _ => 0,
+                QueryResultElement::ElementResultItem(elem) => element_sum(elem),
+                _ => Ok(0),
             })
+            .collect::<Result<Vec<i64>, Error>>()?;
+        let sum: i64 = sums
+            .into_iter()
             .try_fold(0i64, |acc, v| acc.checked_add(v))
             .ok_or_else(|| {
                 Error::Query(QuerySyntaxError::Unsupported(

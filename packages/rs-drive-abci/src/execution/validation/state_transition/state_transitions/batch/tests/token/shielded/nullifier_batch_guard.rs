@@ -651,6 +651,16 @@ fn cap_two() -> PlatformVersion {
     version
 }
 
+/// How the Debug output of a contract fetch info names the protocol version its contract was
+/// parsed under, for a contract read at `platform_version`. It records which reader parsed the
+/// copy, which the characterizations below do not cover.
+fn parsed_under_debug_field(platform_version: &PlatformVersion) -> String {
+    format!(
+        ", parsed_under_protocol_version: {}",
+        platform_version.protocol_version
+    )
+}
+
 #[tokio::test]
 async fn should_preserve_single_entry_full_processor_fees_and_result() {
     let pool = FundedPool::new().await;
@@ -673,12 +683,15 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
                 PlatformVersion::latest(),
             )
             .unwrap();
+        // The protocol version the cached contract was parsed under is incidental Debug
+        // output; keep actions, charges and operations in the original pin.
         let snapshot = format!(
             "{:?}/{:?}/{:?}",
             validated,
             context.operations_slice(),
             operations
-        );
+        )
+        .replace(&parsed_under_debug_field(PlatformVersion::latest()), "");
         println!(
             "SINGLE ENTRY VALIDATION {mode:?}/{dry_run}: {}",
             hex::encode(hash_single(snapshot.as_bytes()))
@@ -731,7 +744,7 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
                 .value
                 .unwrap()
         ),
-        "9401d37544da815c64abeff4aba2c939cddf246f6e56af99e220b78c98514e46"
+        "7775176ede9a6676c614f43f4adf2fd35ff6a09b7c80fea554fe8b45d607d062"
     );
     assert_eq!(
         pool.platform
@@ -1893,9 +1906,9 @@ async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_an
         // the batch's estimate (protocol v15 note 14).
         let (estimated_storage, estimated_processing, actual_storage, actual_processing) =
             if shielded {
-                (171_126_000, 213_389_040, 155_142_000, 92_739_560)
+                (171_126_000, 213_389_040, 155_142_000, 92_785_480)
             } else {
-                (138_024_000, 117_713_120, 126_468_000, 3_870_440)
+                (138_024_000, 117_713_120, 126_468_000, 3_916_360)
             };
         assert_eq!(
             result.execution_results().as_slice(),
@@ -2144,13 +2157,17 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
             .unwrap()
             .into_high_level_drive_operations(&BlockInfo::default().epoch, version)
             .unwrap();
-        // This non-history fixture cannot erase documents. Its inactive lifecycle flag is
-        // incidental Debug output; keep actions, charges and operations in the original pin.
+        // This non-history fixture cannot erase documents and sums nothing. Its inactive
+        // lifecycle flag, the sum width of its type and index levels, and the protocol version
+        // its cached contract was parsed under are incidental Debug output; keep actions,
+        // charges and operations in the original pin.
         let validation = format!(
             "{validated:?}/{:?}/{operations:?}",
             context.operations_slice()
         )
-        .replace(", documents_can_be_erased: false", "");
+        .replace(", documents_can_be_erased: false", "")
+        .replace(", big_sums: false", "")
+        .replace(&parsed_under_debug_field(version), "");
         let result = process(&pool.platform, &transition);
         let root_after = pool
             .platform
@@ -2185,39 +2202,39 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
         let (expected_validation, expected_settled) = match case {
             "shield" => (
                 "6a823c2db94612652926e6b9c1ae7feec9c2547dfd4cfc4e474318da1c16d59c",
-                "6eec6da9023f5143a81f4ee42f3549b31ea8d7f035cf664b5ec429cc5da4d81a",
+                "7dd1f295a9a9b60092f07461255c4674f2304b1cf0acb1db035435123b41a322",
             ),
             "valid-payment" => (
-                "9388d5cf63c4a571b9fb009679e2e34d0b681acc88f0f5195e7287c7efbd92f7",
-                "0c3d3f5692aa6b658389d5b6c477f081dba505f350f65f8c3ee1f28dde3a68f2",
+                "c45968b193c120f67d1e9ff916dec97d4399b2fe6d2d3633d03dc80c50418a3a",
+                "50f443124d8d86b7524bcf3a2d588fa97800e6b85e327547018cd8cd7ae68c2a",
             ),
             "failed-payment" => (
                 "d9b5fe191841bea952494f2a45e3833f925f4d367a1937b2ef1235a1aa01f51e",
-                "53c5a1d1399e154096559ec2a9a3ba560db72f08c1f6b0cd316e87131af5d657",
+                "d119b9aa19edbca8f3bc46253dd5f3af3f476619142552ce991f9ae7f028f7c8",
             ),
             "within-bundle-repeat" => (
                 "8023e03a697a20f6a78396a05503a4bc583ca8f69e19bd7ee07a6ae0ce7be478",
-                "5766cf0e494a1cae19e034a4336196c62184c699a646d71f0de5e382b6b61fc1",
+                "5ec7ac3c9957e775e95c2e0e46473122aba5910b8de02ceb5232ade827f4ea48",
             ),
             "stored-repeat" => (
                 "05652ac85c972902e8c09d20a7d8586e17e9434a478b335da136ad85f73def01",
-                "653f494271acdedb71dc0b9e7a224cc47c84e188a6c5aeb315ff7da2f66627ec",
+                "e52acc36821db4fd55baec552b3b65bab1b17c224913a1d8ce3f2c6b73952eb4",
             ),
             "open-mint-group" => (
                 "5c68381297c9bf68c5e85ebe6bb9e0f1289e2c07718eecfb5e6773d6009455bb",
-                "c4f5e4054bfa4e85548d713765c6da605f38559e871a2824c38bc8209f3b5a17",
+                "9e3b9fef174a39160a4ee6e510fd8387b2b87795464c06c2447fbe3aca268d1a",
             ),
             "closing-mint-group" => (
                 "2cedc16732c76e0605b5f46085db3d69c12936a5af55a2a82f52ec9e9ca67e38",
-                "16e25a2c4139c7b5294599a63461d1ecbba5109fcbf16e61a3578fb152ea72b2",
+                "08b4d9c6a4e32d802839d2fef0d80b7b55fa8dab8a2ecda9169a08b31bfaf162",
             ),
             "open-burn-group" => (
                 "e664a045f020ff84de1ca98f364fbabccfc141ad46aa82c79491a340bb0db5f8",
-                "f49e470f2f1b5a9ca68245783952dac60d26d7b8b89c20766cc1a3ba43c5e0f5",
+                "53d73f296715a8acff75090dee6b4300ff2d0fea40dad6ecd6c351044cc764b9",
             ),
             "closing-burn-group" => (
                 "93e1732286f168c4a91d2765931e181c5721bfca1bfd5f93b8baacca03e00b2b",
-                "3d5beeb201a0a33daacce4469c0a4aec845a82e6b74d31678dfe6aec24481830",
+                "0edfa92c12118ddd7fb6d6159d77311f3e23781bbeec6d5e67c2075903e8ed43",
             ),
             _ => unreachable!("enumerated characterization case"),
         };

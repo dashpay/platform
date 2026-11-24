@@ -12,8 +12,15 @@
 //!   itself immutable, so an erasable type that stopped allowing deletion could
 //!   never again reach a state erase acts on.
 //!
-//! Every other check is v1's, which v2 delegates to once the two lifecycle
-//! rules above have passed. The one case where v1 alone would decide
+//! A third rule is not about the lifecycle: the width a type keeps its sums
+//! in (`DocumentTypeV2Getters::uses_big_sums`) is immutable. It follows the
+//! bounds of the summed property, which an update may widen, and the trees
+//! holding the type's sums were created at the width it had, so a type that
+//! changed width would write and read its sums at a width its trees do not
+//! have.
+//!
+//! Every other check is v1's, which v2 delegates to once the rules above
+//! have passed. The one case where v1 alone would decide
 //! differently, an erasable type withdrawing deletion, is refused here before
 //! v1 sees it, so v1's option computation stays what it was.
 
@@ -43,6 +50,23 @@ impl DocumentTypeRef<'_> {
                         "document type can not change whether its documents can be erased: changing from {} to {}",
                         self.documents_can_be_erased(),
                         new_document_type.documents_can_be_erased()
+                    ),
+                )
+                .into(),
+            ));
+        }
+
+        if new_document_type.uses_big_sums() != self.uses_big_sums() {
+            let width = |big_sums: bool| if big_sums { "128" } else { "64" };
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change the width it keeps its sums in: the bounds \
+                         of its summed property would take it from {}-bit to {}-bit sums",
+                        width(self.uses_big_sums()),
+                        width(new_document_type.uses_big_sums()),
                     ),
                 )
                 .into(),

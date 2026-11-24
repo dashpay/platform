@@ -21,7 +21,7 @@
 //! among the free-function verifiers below based on the resolved
 //! `DocumentAverageMode`.
 
-use crate::error::MapGroveDbError;
+use crate::verify::MapProvedSumError;
 use crate::verify::{document_query_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error};
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
@@ -54,7 +54,7 @@ pub fn verify_point_lookup_count_and_sum_proof(
             document_query_proof_bytes(proof, mtd, platform_version)?,
             platform_version,
         )
-        .map_drive_error(proof, mtd)?;
+        .map_proved_sum_error(proof, mtd, provider)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -91,7 +91,7 @@ pub fn verify_distinct_count_and_sum_proof(
             left_to_right,
             platform_version,
         )
-        .map_drive_error(proof, mtd)?;
+        .map_proved_sum_error(proof, mtd, provider)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -164,7 +164,7 @@ pub fn verify_aggregate_count_and_sum_proof(
             document_query_proof_bytes(proof, mtd, platform_version)?,
             platform_version,
         )
-        .map_drive_error(proof, mtd)?;
+        .map_proved_sum_error(proof, mtd, provider)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -201,7 +201,7 @@ pub fn verify_primary_key_count_sum_tree_proof(
         document_type_name,
         platform_version,
     )
-    .map_drive_error(proof, mtd)?;
+    .map_proved_sum_error(proof, mtd, provider)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
@@ -247,7 +247,7 @@ pub fn verify_carrier_aggregate_count_and_sum_proof(
             left_to_right,
             platform_version,
         )
-        .map_drive_error(proof, mtd)?;
+        .map_proved_sum_error(proof, mtd, provider)?;
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
