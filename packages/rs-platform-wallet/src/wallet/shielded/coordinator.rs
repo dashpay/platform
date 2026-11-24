@@ -1146,14 +1146,17 @@ impl NetworkShieldedCoordinator {
     /// A wallet with no persister had its registration released or removed
     /// while the pass ran, so the host will never receive what the pass
     /// scanned for it. Its scan results are dropped from the store instead
-    /// ([`ShieldedStore::forget_wallet_scan`]): a later bind hydrates from the
-    /// host and rescans those notes rather than resuming past them, and its
-    /// signed recovery records stay. The persister map is read-locked across
-    /// the whole handoff, so a release or a new registration lands either
-    /// before a wallet's decision or after it.
-    async fn hand_off_scan_changeset(&self, changeset: ShieldedChangeSet) {
+    /// ([`FileBackedShieldedStore::forget_wallet_scan`]): a later bind
+    /// hydrates from the host and rescans those notes rather than resuming
+    /// past them, and its signed recovery records stay. Returns those
+    /// wallets, whose pass results the caller must not report as synced. The
+    /// persister map is read-locked across the whole handoff, so a release
+    /// or a new registration lands either before a wallet's decision or
+    /// after it.
+    async fn hand_off_scan_changeset(&self, changeset: ShieldedChangeSet) -> BTreeSet<WalletId> {
+        let mut discarded = BTreeSet::new();
         if Merge::is_empty(&changeset) {
-            return;
+            return discarded;
         }
         let persisters = self.persisters.read().await;
         for (wallet_id, cs) in changeset.split_by_wallet_id() {
@@ -1163,13 +1166,8 @@ impl NetworkShieldedCoordinator {
                     "Shielded sync changeset dropped: the wallet's registration went away during \
                      the pass; dropping its scan results so a later bind rescans them"
                 );
-                if let Err(e) = self.store.write().await.forget_wallet_scan(wallet_id) {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(wallet_id),
-                        error = %e,
-                        "Failed to drop the scan results of a released wallet"
-                    );
-                }
+                self.store.write().await.forget_wallet_scan(wallet_id);
+                discarded.insert(wallet_id);
                 continue;
             };
             let full = PlatformWalletChangeSet {
@@ -1184,6 +1182,7 @@ impl NetworkShieldedCoordinator {
                 );
             }
         }
+        discarded
     }
 
     async fn release_registration(&self, wallet_id: WalletId) {
@@ -1944,7 +1943,7 @@ impl NetworkShieldedCoordinator {
             .await;
         }
 
-        self.hand_off_scan_changeset(notes.changeset.clone()).await;
+        let discarded = self.hand_off_scan_changeset(notes.changeset.clone()).await;
 
         // Cooldown decision based on aggregate activity across
         // every subwallet — any new commitment scanned or
@@ -1973,6 +1972,7 @@ impl NetworkShieldedCoordinator {
         // already speaks. Same emission shape as Phase 2a.
         summary =
             build_per_wallet_summary(&subwallets, &notes, &newly_spent_per_sub, &balances_per_sub);
+        skip_discarded_wallets(&mut summary, &discarded);
         summary.sync_unix_seconds = Self::now_unix();
         summary
     }
@@ -2795,6 +2795,18 @@ impl NetworkShieldedCoordinator {
     }
 }
 
+/// Report each wallet in `discarded` as skipped rather than synced: its
+/// registration went away during the pass, so the note counts and balances
+/// the pass computed for it were neither kept nor handed to its host
+/// ([`NetworkShieldedCoordinator::hand_off_scan_changeset`]).
+fn skip_discarded_wallets(summary: &mut ShieldedSyncPassSummary, discarded: &BTreeSet<WalletId>) {
+    for wallet_id in discarded {
+        summary
+            .wallet_results
+            .insert(*wallet_id, WalletShieldedOutcome::Skipped);
+    }
+}
+
 /// Demux the multi-subwallet sync result into the per-wallet
 /// [`ShieldedSyncSummary`] shape that
 /// [`PlatformEventManager::on_shielded_sync_completed`] already
@@ -3099,11 +3111,12 @@ mod tests {
     use crate::wallet::persister::NoPlatformPersistence;
     use crate::wallet::shielded::keys::OrchardKeySet;
 
-    use crate::changeset::ShieldedChangeSet;
+    use crate::changeset::{ClientStartState, PersistenceError, ShieldedChangeSet};
     use crate::wallet::shielded::activity::compute_activity_id;
     use crate::wallet::shielded::store::{
         InMemoryShieldedStore, PendingRedrive, PrivateContactPayment, ShieldedNote,
     };
+    use crate::wallet::shielded::sync::{ShieldedSyncSummary, SyncNotesResult};
     use dpp::platform_value::BinaryData;
     use dpp::serialization::PlatformSerializable;
     use dpp::shielded::SerializedAction;
@@ -3641,6 +3654,15 @@ mod tests {
     /// Build a coordinator backed by a fresh file store under `dir`, with one
     /// wallet registered so `accounts` / `persisters` are both non-empty.
     async fn coordinator_with_one_wallet(dir: &std::path::Path) -> NetworkShieldedCoordinator {
+        coordinator_with_one_wallet_persisting_to(dir, Arc::new(NoPlatformPersistence)).await
+    }
+
+    /// [`coordinator_with_one_wallet`], with the wallet's changesets going to
+    /// `persistence`.
+    async fn coordinator_with_one_wallet_persisting_to(
+        dir: &std::path::Path,
+        persistence: Arc<dyn PlatformWalletPersistence>,
+    ) -> NetworkShieldedCoordinator {
         std::fs::create_dir_all(dir).expect("create temp dir");
         let db_path = dir.join("tree.sqlite");
         let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store");
@@ -3657,12 +3679,41 @@ mod tests {
             .viewing_keys();
         let mut account_views = BTreeMap::new();
         account_views.insert(0u32, views);
-        let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
+        let persister = WalletPersister::new(wallet_id, persistence);
         coordinator
             .register_wallet(wallet_id, account_views, persister)
             .await
             .expect("register wallet");
         coordinator
+    }
+
+    /// A host that keeps every changeset it is handed, with the wallet it was
+    /// handed for.
+    #[derive(Default)]
+    struct RecordingPersistence {
+        stored: std::sync::Mutex<Vec<(WalletId, PlatformWalletChangeSet)>>,
+    }
+
+    impl PlatformWalletPersistence for RecordingPersistence {
+        fn store(
+            &self,
+            wallet_id: WalletId,
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            self.stored
+                .lock()
+                .expect("recording persistence mutex")
+                .push((wallet_id, changeset));
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
     }
 
     /// Success path: a healthy `clear()` empties the shared commitment tree
@@ -3966,8 +4017,9 @@ mod tests {
         let changeset = scanned_by_a_pass(&coordinator, id).await;
 
         coordinator.release_wallet(id.wallet_id).await;
-        coordinator.hand_off_scan_changeset(changeset).await;
+        let discarded = coordinator.hand_off_scan_changeset(changeset).await;
 
+        assert_eq!(discarded, BTreeSet::from([id.wallet_id]));
         let store = coordinator.store().read().await;
         assert_eq!(store.last_synced_note_index(id).unwrap(), 0);
         assert!(store.get_all_notes(id).unwrap().is_empty());
@@ -3976,23 +4028,65 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// A wallet still registered at the handoff gets the changeset and keeps
-    /// its scan results.
+    /// A wallet still registered at the handoff has the pass's notes and
+    /// watermark handed to its host in one changeset, and keeps its scan
+    /// results.
     #[tokio::test]
-    async fn should_keep_the_scan_results_of_a_wallet_registered_at_the_handoff() {
+    async fn should_hand_the_scan_results_of_a_registered_wallet_to_its_host() {
         let dir = temp_dir("handoff_registered");
-        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let host = Arc::new(RecordingPersistence::default());
+        let coordinator = coordinator_with_one_wallet_persisting_to(
+            &dir,
+            Arc::clone(&host) as Arc<dyn PlatformWalletPersistence>,
+        )
+        .await;
         let id = SubwalletId::new([0x11; 32], 0);
         let changeset = scanned_by_a_pass(&coordinator, id).await;
 
-        coordinator.hand_off_scan_changeset(changeset).await;
+        let discarded = coordinator.hand_off_scan_changeset(changeset).await;
 
+        assert!(discarded.is_empty());
+        {
+            let stored = host.stored.lock().expect("recording persistence mutex");
+            let [(wallet_id, handed)] = stored.as_slice() else {
+                panic!("the host receives one changeset, got {}", stored.len());
+            };
+            assert_eq!(*wallet_id, id.wallet_id);
+            let shielded = handed.shielded.as_ref().expect("a shielded changeset");
+            let notes = shielded.notes_saved.get(&id).expect("the scanned note");
+            assert_eq!(notes.len(), 1);
+            assert_eq!(notes[0].nullifier, [0x31; 32]);
+            assert_eq!(shielded.synced_indices.get(&id), Some(&5));
+        }
         let store = coordinator.store().read().await;
         assert_eq!(store.last_synced_note_index(id).unwrap(), 5);
         assert_eq!(store.get_all_notes(id).unwrap().len(), 1);
         assert_eq!(store.pending_redrives(id).unwrap().len(), 1);
         drop(store);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A pass reports a wallet whose scan results it discarded as skipped,
+    /// and leaves the other wallets' results as they were.
+    #[test]
+    fn should_report_a_wallet_whose_scan_results_were_discarded_as_skipped() {
+        let synced = || {
+            WalletShieldedOutcome::Ok(ShieldedSyncSummary {
+                notes_result: SyncNotesResult::default(),
+                newly_spent_per_account: BTreeMap::new(),
+                balances: BTreeMap::from([(0, 1_000)]),
+                is_cooldown_skip: false,
+            })
+        };
+        let (released, kept): (WalletId, WalletId) = ([0x11; 32], [0x22; 32]);
+        let mut summary = ShieldedSyncPassSummary::default();
+        summary.wallet_results.insert(released, synced());
+        summary.wallet_results.insert(kept, synced());
+
+        skip_discarded_wallets(&mut summary, &BTreeSet::from([released]));
+
+        assert!(summary.wallet_results[&released].is_skipped());
+        assert!(summary.wallet_results[&kept].is_ok());
     }
 
     /// Regression guard for the mid-session re-bind stomp: a

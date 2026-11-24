@@ -971,6 +971,23 @@ impl FileBackedShieldedStore {
     }
 }
 
+impl FileBackedShieldedStore {
+    /// Drop the scan results held in memory for every subwallet of
+    /// `wallet_id` (notes, outgoing notes, activity and the sync watermark),
+    /// keeping its note reservations, its saved recovery records (durable
+    /// rows included) and the shared commitment tree, as a process exit
+    /// leaves them. For a wallet whose registration went away while a sync
+    /// pass ran: the host never received what that pass scanned for it, so a
+    /// later bind hydrates from the host and rescans it rather than resuming
+    /// past it.
+    pub(crate) fn forget_wallet_scan(&mut self, wallet_id: WalletId) {
+        self.subwallets
+            .iter_mut()
+            .filter(|(id, _)| id.wallet_id == wallet_id)
+            .for_each(|(_, state)| state.forget_scan());
+    }
+}
+
 impl ShieldedStore for FileBackedShieldedStore {
     type Error = FileShieldedStoreError;
 
@@ -1669,16 +1686,6 @@ impl ShieldedStore for FileBackedShieldedStore {
             .retain(|(id, _), _| id.wallet_id != wallet_id);
         self.unloaded_private_contact_payments
             .remove(&Some(wallet_id));
-        Ok(())
-    }
-
-    fn forget_wallet_scan(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
-        // Scan results are in-memory only; the durable redrive rows and the
-        // in-memory reservations and records they back are kept.
-        self.subwallets
-            .iter_mut()
-            .filter(|(id, _)| id.wallet_id == wallet_id)
-            .for_each(|(_, state)| state.forget_scan());
         Ok(())
     }
 
