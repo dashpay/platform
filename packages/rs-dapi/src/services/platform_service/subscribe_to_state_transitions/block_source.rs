@@ -16,8 +16,11 @@ use dpp::version::PlatformVersion;
 use quick_cache::sync::{Cache, DefaultLifecycle};
 use quick_cache::{DefaultHashBuilder, OptionsBuilder, Weighter};
 use sha2::{Digest, Sha256};
+use std::future::Future;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{Semaphore, SemaphorePermit};
+use tokio::time::timeout;
 
 /// Heights per `blockchain` page; Tenderdash's own cap.
 pub const META_PAGE: u64 = 20;
@@ -32,6 +35,11 @@ const BLOCK_CACHE_SHARDS: usize = 1;
 const META_PAGE_CACHE_PAGES: usize = 256;
 /// Tenderdash RPCs in flight at once, across all subscriptions and the tip tracker.
 pub const MAX_CONCURRENT_FETCHES: usize = 8;
+/// How long a read of a block or of its results waits for Tenderdash. The calls have no
+/// deadline of their own, because the block queries that share them wait for as long as
+/// Tenderdash works. A stream that waited forever would stall without an error, so it gives
+/// up, ends with `UNAVAILABLE`, and the client resumes on another node.
+const BLOCK_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The Tenderdash RPCs the block source reads.
 #[async_trait]
@@ -53,11 +61,11 @@ impl TenderdashBlocks for TenderdashClient {
     }
 
     async fn block(&self, height: u64) -> DAPIResult<ResultBlock> {
-        TenderdashClient::block(self, height).await
+        within_read_timeout(TenderdashClient::block(self, height)).await
     }
 
     async fn block_results(&self, height: u64) -> DAPIResult<ResultBlockResults> {
-        TenderdashClient::block_results(self, height).await
+        within_read_timeout(TenderdashClient::block_results(self, height)).await
     }
 
     async fn blockchain(
@@ -67,6 +75,15 @@ impl TenderdashBlocks for TenderdashClient {
     ) -> DAPIResult<ResultBlockchainInfo> {
         TenderdashClient::blockchain(self, min_height, max_height).await
     }
+}
+
+/// `read`, failing once [`BLOCK_READ_TIMEOUT`] has passed without an answer.
+async fn within_read_timeout<T>(read: impl Future<Output = DAPIResult<T>>) -> DAPIResult<T> {
+    timeout(BLOCK_READ_TIMEOUT, read).await.unwrap_or_else(|_| {
+        Err(DapiError::Timeout(format!(
+            "Tenderdash did not answer a block read in {BLOCK_READ_TIMEOUT:?}"
+        )))
+    })
 }
 
 /// One successfully executed transaction of a committed block.

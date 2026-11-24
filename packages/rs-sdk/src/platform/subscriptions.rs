@@ -52,7 +52,7 @@ use dapi_grpc::platform::v0::subscribe_to_state_transitions_response::Version;
 use dapi_grpc::platform::v0::{SubscribeToStateTransitionsRequest, SubscribeToStateTransitionsResponse};
 use dapi_grpc::tonic::{Code, Status};
 use dash_platform_queries::subscriptions::{subscribe_request, StateTransitionFilter};
-use dpp::dashcore::hashes::{sha256, Hash};
+use dpp::dashcore::hashes::sha256;
 use dpp::platform_value::DEFAULT_MAX_VALUE_DECODE_DEPTH;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::StateTransition;
@@ -684,6 +684,7 @@ mod tests {
                 .unwrap_or_else(|| Err(Status::invalid_argument("no more streams")))
                 .map(|messages| (messages, node()))
                 .map_err(|status| ExecutionError {
+                    possibly_accepted: false,
                     inner: DapiClientError::Transport(TransportError::Grpc(status)),
                     retries: 0,
                     address: Some(node()),
@@ -871,6 +872,17 @@ mod tests {
 
     #[test]
     fn should_refuse_values_nested_deeper_than_the_default_bound_without_blaming_the_node() {
+        // Building and dropping a value 300 levels deep needs more stack than libtest's
+        // default test thread has.
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(refuse_values_nested_deeper_than_the_default_bound)
+            .expect("the test thread spawns")
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+    }
+
+    fn refuse_values_nested_deeper_than_the_default_bound() {
         let (mut subscription, _) = subscription(Some(42), ending(vec![]), vec![]);
         let no_limit = (1..PlatformVersion::latest().protocol_version)
             .rev()

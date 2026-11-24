@@ -22,6 +22,8 @@ use dpp::state_transition::batch_transition::batched_transition::document_create
 use dpp::state_transition::batch_transition::batched_transition::document_create_transition::DocumentCreateTransition;
 use dpp::state_transition::batch_transition::batched_transition::document_delete_transition::v0::DocumentDeleteTransitionV0;
 use dpp::state_transition::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransition;
+use dpp::state_transition::batch_transition::batched_transition::document_erase_transition::v0::DocumentEraseTransitionV0;
+use dpp::state_transition::batch_transition::batched_transition::document_erase_transition::DocumentEraseTransition;
 use dpp::state_transition::batch_transition::batched_transition::document_purchase_transition::v0::DocumentPurchaseTransitionV0;
 use dpp::state_transition::batch_transition::batched_transition::document_purchase_transition::DocumentPurchaseTransition;
 use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::DocumentTransferTransitionV0;
@@ -125,6 +127,14 @@ fn create_document(contract: &DataContract, doc: u8, name: &str) -> BatchedTrans
 fn delete_document(contract: &DataContract, doc: u8) -> BatchedTransition {
     BatchedTransition::Document(DocumentTransition::Delete(DocumentDeleteTransition::V0(
         DocumentDeleteTransitionV0 {
+            base: document_base(contract, doc),
+        },
+    )))
+}
+
+fn erase_document(contract: &DataContract, doc: u8) -> BatchedTransition {
+    BatchedTransition::Document(DocumentTransition::Erase(DocumentEraseTransition::V0(
+        DocumentEraseTransitionV0 {
             base: document_base(contract, doc),
         },
     )))
@@ -494,6 +504,41 @@ fn should_match_document_filters_on_action_and_batch_owner() {
         PlatformAddress::P2pkh([2u8; 20]),
     );
     assert!(matches(&resolved(DocumentFilter::new(contract.id())), &transfer).is_none());
+}
+
+/// An erase acts on a document that is already deleted, and no action names it: a filter
+/// without actions delivers it, a filter listing actions does not.
+#[test]
+fn should_deliver_an_erase_only_to_a_filter_without_actions() {
+    let contract = contract();
+    let erasing = batch(id(1), vec![erase_document(&contract, 10)]);
+    let resolved = |filter: DocumentFilter| {
+        resolve(vec![StateTransitionFilter::Documents(filter)], &contract).unwrap()
+    };
+
+    let anything = resolved(DocumentFilter::new(contract.id()));
+    assert_eq!(
+        matches(&anything, &erasing).map(|matched| matched.matched_batch_positions),
+        Some(vec![0])
+    );
+    let of_the_type =
+        resolved(DocumentFilter::new(contract.id()).with_document_type("niceDocument"));
+    assert!(matches(&of_the_type, &erasing).is_some());
+
+    let deletes = resolved(
+        DocumentFilter::new(contract.id())
+            .with_action(DocumentActionMatch::new(DocumentAction::Delete)),
+    );
+    assert!(matches(&deletes, &erasing).is_none());
+    let deletes_of_the_type = resolve(
+        vec![nice_documents(
+            &contract,
+            DocumentActionMatch::new(DocumentAction::Delete),
+        )],
+        &contract,
+    )
+    .unwrap();
+    assert!(matches(&deletes_of_the_type, &erasing).is_none());
 }
 
 #[test]

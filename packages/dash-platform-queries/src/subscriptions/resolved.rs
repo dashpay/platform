@@ -168,7 +168,9 @@ impl ResolvedDocumentFilter {
         }
         match &self.actions {
             ResolvedActions::Any => true,
-            ResolvedActions::Kinds(actions) => actions.contains(&action_of(transition)),
+            ResolvedActions::Kinds(actions) => {
+                action_of(transition).is_some_and(|action| actions.contains(&action))
+            }
             ResolvedActions::Clauses(alternatives) => {
                 let batch_owner = Value::from(batch_owner_id);
                 alternatives.iter().any(|filter| {
@@ -183,8 +185,10 @@ impl ResolvedDocumentFilter {
     }
 }
 
-fn action_of(transition: &DocumentTransition) -> DocumentAction {
-    match transition {
+/// The action a filter names `transition` by. `None` for an erase, which no action names: it
+/// acts on a document that is already deleted, so only a filter without actions delivers it.
+fn action_of(transition: &DocumentTransition) -> Option<DocumentAction> {
+    Some(match transition {
         DocumentTransition::Create(_) => DocumentAction::Create,
         DocumentTransition::Replace(_) => DocumentAction::Replace,
         DocumentTransition::Delete(_) | DocumentTransition::IndexOnlyDelete(_) => {
@@ -193,7 +197,8 @@ fn action_of(transition: &DocumentTransition) -> DocumentAction {
         DocumentTransition::Transfer(_) => DocumentAction::Transfer,
         DocumentTransition::UpdatePrice(_) => DocumentAction::UpdatePrice,
         DocumentTransition::Purchase(_) => DocumentAction::Purchase,
-    }
+        DocumentTransition::Erase(_) => return None,
+    })
 }
 
 fn resolve_filter(

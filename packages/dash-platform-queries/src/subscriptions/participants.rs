@@ -63,7 +63,8 @@ pub(super) fn addresses(state_transition: &StateTransition) -> Vec<(PlatformAddr
         | StateTransition::ShieldedWithdrawal(_)
         | StateTransition::TokenShieldedTransferWithShieldedFee(_)
         | StateTransition::TokenPurchaseFromShieldedPool(_)
-        | StateTransition::TokenUnshieldWithShieldedFee(_) => vec![],
+        | StateTransition::TokenUnshieldWithShieldedFee(_)
+        | StateTransition::PrivateDocumentCreateFromShieldedPool(_) => vec![],
     };
     let senders = state_transition
         .inputs()
