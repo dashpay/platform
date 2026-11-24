@@ -8108,20 +8108,15 @@ mod redrive_tests {
             "{settled:?}"
         );
         let notes = store.read().await.get_all_notes(id).expect("notes");
+        assert_eq!(notes.len(), 1, "the input note stays in the store");
         assert!(
-            notes.iter().all(|note| !note.is_spent),
-            "the scan marks the notes spent, not the report"
+            !notes[0].is_spent,
+            "the scan marks the note spent, not the report"
         );
-        let row = store
-            .read()
-            .await
-            .get_activity_by_entry_id(id, &activity_id)
-            .expect("the row reads")
-            .expect("the row");
         assert_eq!(
-            row.status,
-            ShieldedActivityStatus::Pending,
-            "the report does not write the row"
+            spendable_and_status(&store, id, &activity_id).await,
+            (0, ShieldedActivityStatus::Pending),
+            "the input stays reserved and the report does not write the row"
         );
         drop(store);
         let records = FileBackedShieldedStore::open_path(&path, 100)
