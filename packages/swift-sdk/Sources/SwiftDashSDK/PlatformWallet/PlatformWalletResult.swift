@@ -328,6 +328,13 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// lookup failed, which is not Platform's answer that it does not exist,
     /// 7). Nothing was signed, reserved or broadcast: retry as it is.
     case errorIdentityLookupFailed = 80
+    /// A shielded spend selected a note the wallet's local commitment tree
+    /// cannot witness yet (no checkpoint covers its position). Refused while
+    /// the spend was assembled, before any proof or broadcast, and the notes
+    /// were released: nothing was sent. Retryable after the next shielded
+    /// sync, which checkpoints the tree. Distinct from
+    /// `errorShieldedSpendUnconfirmed`, which must NOT be retried.
+    case errorShieldedMerkleWitnessUnavailable = 85
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -481,6 +488,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorPublicContactRequestUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_LOOKUP_FAILED:
             self = .errorIdentityLookupFailed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_MERKLE_WITNESS_UNAVAILABLE:
+            self = .errorShieldedMerkleWitnessUnavailable
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -786,6 +795,12 @@ public enum PlatformWalletError: LocalizedError {
     /// sync reaches a confirmed state. Distinct from `shieldedSpendUnconfirmed`,
     /// which must NOT be retried.
     case shieldedNoRecordedAnchor(String)
+    /// A shielded spend selected a note the local commitment tree cannot
+    /// witness yet (code 85). Nothing was proved or broadcast and the notes
+    /// were released: retryable once the next shielded sync checkpoints the
+    /// tree. Distinct from `shieldedSpendUnconfirmed`, which must NOT be
+    /// retried.
+    case shieldedMerkleWitnessUnavailable(String)
     /// The cached Platform Payment-account input set cannot cover a shield's
     /// requested amount plus the fee reserve retained on input 0. Despite the
     /// retained public Swift/FFI name, this is not a shielded-pool balance
@@ -996,7 +1011,8 @@ public enum PlatformWalletError: LocalizedError {
              .publicContactRequestUnconfirmed(let m), .identityLookupFailed(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
-             .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
+             .shieldedNoRecordedAnchor(let m), .shieldedMerkleWitnessUnavailable(let m),
+             .shieldedInsufficientBalance(let m),
              .shieldedIdentityDebitPending(let m),
              .shieldedRecoveryCorrupted(let m), .shieldedRecoveryKeysRequired(let m),
              .transactionBroadcastUnconfirmed(let m),
@@ -1138,6 +1154,8 @@ public enum PlatformWalletError: LocalizedError {
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)
         case .errorShieldedSpendUnconfirmed: self = .shieldedSpendUnconfirmed(detail)
         case .errorShieldedNoRecordedAnchor: self = .shieldedNoRecordedAnchor(detail)
+        case .errorShieldedMerkleWitnessUnavailable:
+            self = .shieldedMerkleWitnessUnavailable(detail)
         case .errorShieldedInsufficientBalance: self = .shieldedInsufficientBalance(detail)
         case .errorTransactionBroadcastUnconfirmed:
             self = .transactionBroadcastUnconfirmed(detail)

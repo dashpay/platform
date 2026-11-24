@@ -1223,6 +1223,15 @@ pub enum PlatformWalletError {
     #[error("Shielded store error: {0}")]
     ShieldedStoreError(String),
 
+    /// A note selected for a shielded spend cannot be witnessed against the
+    /// local commitment tree: no checkpoint covers its position, or the store
+    /// failed to produce the path.
+    ///
+    /// Raised while the spend is assembled, **before** any proof is built or
+    /// anything is broadcast; the caller's generic error path releases the
+    /// note reservations, so nothing left the wallet. **Retryable**: the next
+    /// shielded sync checkpoints the tree at its size. FFI mirror:
+    /// `PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable`.
     #[error("Shielded Merkle witness unavailable: {0}")]
     ShieldedMerkleWitnessUnavailable(String),
 

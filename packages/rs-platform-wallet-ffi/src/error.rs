@@ -785,6 +785,18 @@ pub enum PlatformWalletFFIResultCode {
     /// managed ones.
     ErrorIdentityLookupFailed = 80,
 
+    /// Maps `PlatformWalletError::ShieldedMerkleWitnessUnavailable`: the
+    /// wallet could not witness a selected note against its local commitment
+    /// tree (no checkpoint covers the note's position yet). Raised while the
+    /// spend is assembled, before any proof is built or anything broadcast,
+    /// and the note reservations are released, so nothing left the wallet:
+    /// RETRYABLE after the next shielded sync, which checkpoints the tree's
+    /// leaves. Returned by every note spend (transfer, unshield, withdrawal,
+    /// identity top-up and identity create from the pool, private document
+    /// create). Distinct from [`Self::ErrorShieldedSpendUnconfirmed`] (18),
+    /// which must NOT be retried.
+    ErrorShieldedMerkleWitnessUnavailable = 85,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1118,6 +1130,12 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::ShieldedNoRecordedAnchor(..) => {
                 PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor
+            }
+            // Raised before the proof and the broadcast: nothing was sent, so
+            // it keeps a retryable code instead of the catch-all a host must
+            // read as possibly sent.
+            PlatformWalletError::ShieldedMerkleWitnessUnavailable(..) => {
+                PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable
             }
             PlatformWalletError::PlatformShieldCapacityExceeded { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedInsufficientBalance
@@ -3209,6 +3227,21 @@ mod private_contact_request_error_tests {
             PlatformWalletFFIResultCode::ErrorIdentityLookupFailed
         );
         assert_eq!(result.code as u32, 80);
+    }
+
+    /// A note the local tree cannot witness is refused before the proof and
+    /// the broadcast, so it reaches the host by its own retryable code, never
+    /// as the catch-all a host reads as possibly sent.
+    #[test]
+    fn should_report_an_unavailable_merkle_witness_by_its_own_code() {
+        let result = PlatformWalletFFIResult::from(
+            PlatformWalletError::ShieldedMerkleWitnessUnavailable("position 7".to_string()),
+        );
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable
+        );
+        assert_eq!(result.code as u32, 85);
     }
 
     /// A public contact request a loaded wallet refuses until its private
