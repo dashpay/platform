@@ -46,6 +46,7 @@
 #![allow(clippy::missing_safety_doc)]
 
 use crate::credits::parse_credit_rows;
+use crate::dpns_marketplace::read_id32 as read_named_id32;
 use crate::events::{build_event_extension, build_event_vtable, KotlinEventCtx};
 use crate::persistence::{
     build_extension, build_vtable, restrict_account_writers, KotlinPersistenceCtx,
@@ -3104,6 +3105,74 @@ sync_start_stop!(
     platform_wallet_ffi::platform_wallet_manager_identity_sync_stop,
     platform_wallet_ffi::platform_wallet_manager_identity_sync_is_running
 );
+
+/// Add or replace the identity-token sync registry row for one identity:
+/// `identity_id` is 32 bytes, `token_ids` is the watched token ids laid out
+/// back to back (`32 * N` bytes, empty for none). The next sync pass reads
+/// these balances and persists them through `onPersistTokenBalanceUpsert`.
+/// Mirrors Swift's `PlatformWalletManager.registerIdentityForTokenSync`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_identitySyncRegisterIdentity(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    identity_id: JByteArray,
+    token_ids: JByteArray,
+) {
+    guard(&mut env, (), |env| {
+        let Some(identity) = read_named_id32(env, &identity_id, "identityId") else {
+            return;
+        };
+        let tokens = match env.convert_byte_array(&token_ids) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "tokenIds byte[] was null/invalid");
+                return;
+            }
+        };
+        if tokens.len() % 32 != 0 {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!(
+                    "tokenIds must be a multiple of 32 bytes, got {}",
+                    tokens.len()
+                ),
+            );
+            return;
+        }
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_identity_sync_register_identity(
+                manager_handle as Handle,
+                identity.as_ptr(),
+                tokens.as_ptr(),
+                tokens.len() / 32,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// Run one identity-token sync pass across every registered identity,
+/// blocking the calling thread until it completes (returns at once when a
+/// pass is already in flight). Kotlin wraps it in `Dispatchers.IO`.
+/// Mirrors Swift's `PlatformWalletManager.syncIdentityTokensNow()`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_identitySyncSyncNow(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+) {
+    guard(&mut env, (), |env| {
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_identity_sync_sync_now(
+                manager_handle as Handle,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
 
 /// Whether the manager has frozen a durable sync watermark this manager's
 /// lifetime (dashpay/platform#4069). `true` means a persistence `store()`

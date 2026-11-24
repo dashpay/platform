@@ -1789,6 +1789,41 @@ class PlatformWalletManager(
     }
 
     /**
+     * Add or replace the identity-token sync registry row for [identityId],
+     * watching [tokenIds] (each a 32-byte token id). Each sync pass then reads
+     * these balances and persists them through `onPersistTokenBalanceUpsert`
+     * into the `token_balances` table. Idempotent: a second call replaces the
+     * watched set, and balances of tokens kept across the swap survive.
+     *
+     * Port of Swift's `PlatformWalletManager.registerIdentityForTokenSync`
+     * (`PlatformWalletManagerIdentitySync.swift`).
+     */
+    suspend fun registerIdentityForTokenSync(
+        identityId: ByteArray,
+        tokenIds: List<ByteArray>,
+    ) = withContext(Dispatchers.IO) {
+        val flatTokenIds = flattenTokenSyncIds(identityId, tokenIds)
+        mapNativeErrors {
+            WalletManagerNative.identitySyncRegisterIdentity(
+                managerHandle,
+                identityId,
+                flatTokenIds,
+            )
+        }
+    }
+
+    /**
+     * Run one identity-token sync pass across every registered identity now,
+     * returning when it completes (at once when a pass is already running).
+     *
+     * Port of Swift's `PlatformWalletManager.syncIdentityTokensNow()`
+     * (`PlatformWalletManagerIdentitySync.swift`).
+     */
+    suspend fun syncIdentityTokensNow() = withContext(Dispatchers.IO) {
+        mapNativeErrors { WalletManagerNative.identitySyncSyncNow(managerHandle) }
+    }
+
+    /**
      * Start the shielded sync loop. Only meaningful when the native
      * library was built with shielded support ([Sdk.hasShielded]); the
      * Rust entry point is absent otherwise and this throws.
@@ -3852,6 +3887,23 @@ class PlatformWalletManager(
         /** De-offset `PlatformWalletFFIResultCode::ErrorInvalidParameter`. */
         const val PWFFI_INVALID_PARAMETER = 2
     }
+}
+
+/**
+ * Marshal [PlatformWalletManager.registerIdentityForTokenSync]'s arguments
+ * into the FFI layout: the token ids back to back in one `32 * N` buffer, in
+ * the order given. Rejects an identity id or token id that is not 32 bytes,
+ * as Swift's wrapper does; which tokens to watch is the caller's input, not
+ * decided here.
+ */
+internal fun flattenTokenSyncIds(identityId: ByteArray, tokenIds: List<ByteArray>): ByteArray {
+    require(identityId.size == 32) { "identityId must be 32 bytes, got ${identityId.size}" }
+    val flat = ByteArray(32 * tokenIds.size)
+    tokenIds.forEachIndexed { index, tokenId ->
+        require(tokenId.size == 32) { "token id must be 32 bytes, got ${tokenId.size}" }
+        tokenId.copyInto(flat, destinationOffset = 32 * index)
+    }
+    return flat
 }
 
 /**

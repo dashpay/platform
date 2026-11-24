@@ -26,6 +26,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,6 +44,7 @@ import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.TokenActionPermissions
 import org.dashfoundation.example.navigation.TokenDetail
 import org.dashfoundation.example.navigation.TokenSearch
+import org.dashfoundation.example.services.tokens.IdentityTokenSync
 import org.dashfoundation.example.services.tokens.TokenAmounts
 import org.dashfoundation.example.ui.components.AccessiblePicker
 import org.dashfoundation.example.ui.components.FormSection
@@ -93,6 +95,27 @@ fun TokensScreen(navController: NavHostController) {
             emptyList<org.dashfoundation.dashsdk.persistence.entities.TokenBalanceEntity>(),
         )
     }).collectAsStateWithLifecycle(initialValue = emptyList())
+
+    // Watch the selected identity's tokens in the Rust identity-token sync,
+    // which persists their balances into `token_balances` (the list above
+    // and the token action forms read it). Re-runs when the identity, the
+    // manager or the set of locally saved tokens changes (a contract load or
+    // removal). Port of `IdentityDetailView.reloadTokenBalances`.
+    val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
+    val sdk by appState.sdk.collectAsStateWithLifecycle()
+    val tokenSetKey = tokens.joinToString(",") { it.id.toHex() }
+    LaunchedEffect(manager, sdk, selectedIdentity?.identityId?.toHex(), tokenSetKey) {
+        val activeManager = manager ?: return@LaunchedEffect
+        val activeSdk = sdk ?: return@LaunchedEffect
+        val identity = selectedIdentity ?: return@LaunchedEffect
+        IdentityTokenSync.refresh(
+            identityId = identity.identityId,
+            tokens = tokens,
+            calculateTokenId = activeSdk.tokenQueries::calculateTokenId,
+            register = activeManager::registerIdentityForTokenSync,
+            syncNow = activeManager::syncIdentityTokensNow,
+        )
+    }
 
     Scaffold(
         topBar = {
