@@ -1503,7 +1503,7 @@ impl NetworkShieldedCoordinator {
     pub(crate) async fn clear(
         &self,
         host: &dyn PlatformWalletPersistence,
-    ) -> Result<(), crate::error::PlatformWalletError> {
+    ) -> Result<(), PlatformWalletError> {
         let Ok(mut clear_state) =
             tokio::time::timeout(COORDINATOR_DRAIN_BUDGET, self.admission.write()).await
         else {
@@ -3097,6 +3097,7 @@ fn unchanged<S: ShieldedStore>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::WipeCountingPersistence;
     use crate::wallet::persister::NoPlatformPersistence;
     use crate::wallet::shielded::keys::OrchardKeySet;
 
@@ -3682,7 +3683,7 @@ mod tests {
         assert!(!coordinator.accounts.read().await.is_empty());
         assert!(!coordinator.persisters.read().await.is_empty());
 
-        let host = crate::test_support::WipeCountingPersistence::default();
+        let host = WipeCountingPersistence::default();
         coordinator
             .clear(&host)
             .await
@@ -3738,7 +3739,7 @@ mod tests {
         }
 
         coordinator
-            .clear(&crate::test_support::WipeCountingPersistence::default())
+            .clear(&WipeCountingPersistence::default())
             .await
             .expect("clear should succeed");
 
@@ -3810,7 +3811,7 @@ mod tests {
         // inode, but a fresh open at the now-missing path errors.
         std::fs::remove_dir_all(&dir).expect("remove temp dir to break reopen");
 
-        let host = crate::test_support::WipeCountingPersistence::default();
+        let host = WipeCountingPersistence::default();
         let result = coordinator.clear(&host).await;
         assert!(
             result.is_err(),
@@ -3863,9 +3864,7 @@ mod tests {
         // after this failure.
         std::fs::remove_dir_all(&dir).expect("remove temp dir to break reopen");
 
-        let result = coordinator
-            .clear(&crate::test_support::WipeCountingPersistence::default())
-            .await;
+        let result = coordinator.clear(&WipeCountingPersistence::default()).await;
         assert!(result.is_err(), "the store-reset failure must surface");
         assert!(
             !coordinator.is_hydrated(wallet_id).await,
@@ -4596,7 +4595,7 @@ mod tests {
 
         let admission = coordinator.admit().await.unwrap();
         let install = admission.begin_install(wallet_id).await;
-        let host = Arc::new(crate::test_support::WipeCountingPersistence::default());
+        let host = Arc::new(WipeCountingPersistence::default());
         let clearer = {
             let coordinator = Arc::clone(&coordinator);
             let host = Arc::clone(&host);
