@@ -35,10 +35,12 @@ final class AddressFundFromAssetLockController: ObservableObject {
         /// Stage within this phase is read from the matching
         /// `PersistentAssetLock.statusRaw` row.
         case inFlight
-        /// Step 4: the address has been credited. `newBalance` is
-        /// the proof-attested credit balance the caller should
-        /// surface in the terminal banner.
-        case completed(newBalance: UInt64)
+        /// Step 4: the funding is done. `newBalance` is the picked
+        /// address's proof-attested credit balance the caller should
+        /// surface in the terminal banner, or `nil` when the result
+        /// establishes none (an external payment credits its recorded
+        /// payees, not that address).
+        case completed(newBalance: UInt64?)
         /// Failure terminal state. Message is shown inline in
         /// `AddressFundFromAssetLockProgressView`'s step 4; the row stays in
         /// the coordinator's map until the user dismisses it
@@ -91,6 +93,11 @@ final class AddressFundFromAssetLockController: ObservableObject {
     /// mis-tag any future P2SH funding for the lifetime of the row.
     let recipientType: UInt8
 
+    /// The resumed lock's `outPointHex`, or `nil` for a fresh funding.
+    /// Part of the slot: an external payment does not credit the picked
+    /// address, so a later resume of another lock can pick it again.
+    let assetLockOutPoint: String?
+
     /// Timestamp of the most recent `submit` call. Used by the
     /// coordinator's TTL-based retention policy (`.completed` rows
     /// purge ~30s after the success transition).
@@ -118,12 +125,14 @@ final class AddressFundFromAssetLockController: ObservableObject {
         walletId: Data,
         platformAccountIndex: UInt32,
         recipientHash: Data,
-        recipientType: UInt8
+        recipientType: UInt8,
+        assetLockOutPoint: String? = nil
     ) {
         self.walletId = walletId
         self.platformAccountIndex = platformAccountIndex
         self.recipientHash = recipientHash
         self.recipientType = recipientType
+        self.assetLockOutPoint = assetLockOutPoint
     }
 
     /// Submit the funding. Defensively rejects any phase that
@@ -140,7 +149,7 @@ final class AddressFundFromAssetLockController: ObservableObject {
     /// background priority and reports the new credit balance on
     /// success or rethrows on failure. The controller flips `phase`
     /// to `.completed(balance)` / `.failed(message)` accordingly.
-    func submit(body: @escaping () async throws -> UInt64) {
+    func submit(body: @escaping () async throws -> UInt64?) {
         switch phase {
         case .idle, .failed:
             break
