@@ -11,6 +11,7 @@ use dpp::prelude::{AddressNonce, CoreBlockHeight};
 use key_wallet::account::{AccountType, StandardAccountType};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
+use key_wallet::wallet::managed_wallet_info::ProviderKeyRole;
 use key_wallet::Network;
 
 use crate::wallet::masternode_withdrawal::MasternodeWithdrawalKey;
@@ -192,6 +193,15 @@ pub enum PlatformWalletError {
     #[error("Failed to build DashPay account {account_type}: {source}")]
     DashpayAccountBuild {
         account_type: AccountType,
+        #[source]
+        source: key_wallet::Error,
+    },
+
+    /// key-wallet refused to look up a provider key by its hash, such as for
+    /// an index hint in the hardened range.
+    #[error("Failed to look up the wallet's {role:?} key: {source}")]
+    ProviderKeyLookup {
+        role: ProviderKeyRole,
         #[source]
         source: key_wallet::Error,
     },
