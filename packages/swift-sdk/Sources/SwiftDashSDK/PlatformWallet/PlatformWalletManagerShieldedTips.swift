@@ -21,7 +21,9 @@ public struct ShieldedTipRecipient: Sendable, Equatable {
 /// How a tip recipient compares with the one this wallet last confirmed for
 /// the same name.
 public enum ShieldedTipRecipientChange: Sendable, Equatable {
-    /// This wallet has not sent a tip to the name before.
+    /// No recipient was confirmed for the name from this wallet before. A
+    /// recipient is confirmed when a send to it is admitted, so none of
+    /// these cases says a tip was paid.
     case new
     /// The same identity and address as last confirmed.
     case unchanged
@@ -168,12 +170,17 @@ extension PlatformWalletManager {
     /// - `shieldedSpendUnconfirmed`: the tip may have left the wallet and
     ///   may still execute. Never send it again; a shielded sync resolves
     ///   it. (`transactionBroadcastUnconfirmed` means the same.)
-    /// - `shieldedTipPending`: refused, nothing sent. Another tip is being
-    ///   sent, or an earlier payment to the recipient is unresolved; a
-    ///   shielded sync resolves it.
+    /// - `shieldedTipPending`: this call sent nothing. Another tip is being
+    ///   sent, or an earlier payment to the recipient is unresolved. That
+    ///   payment may be this same tip and may pay the recipient: a shielded
+    ///   sync resolves it as executed or as unable to execute, and the
+    ///   refusal ends either way. Send again only once it is known to have
+    ///   failed, never because the refusal ended; when the exact attempt
+    ///   cannot be identified, treat its outcome as unknown and do not send
+    ///   again.
     /// - `identityNotFound`: the wallet holds no identity `source` names.
     ///   Nothing sent.
-    /// - Anything else: the tip was not sent.
+    /// - Anything else: this call sent nothing.
     public func sendShieldedTip(
         walletId: Data,
         source: ShieldedTipSource,

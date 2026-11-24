@@ -2416,13 +2416,20 @@ class PlatformWalletManager(
      *   [DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed] and
      *   [DashSdkError.StateTransitionResultUnconfirmed] the same way, as
      *   for [shieldedTransfer].
-     * - [DashSdkError.PlatformWallet.ShieldedTipPending]: refused, nothing
-     *   was sent. Another tip from this wallet is being sent, or an earlier
-     *   shielded payment to the recipient may still execute; after a
-     *   shielded sync resolves it, review and send again.
+     * - [DashSdkError.PlatformWallet.ShieldedTipPending]: this call sent
+     *   nothing. Another tip from this wallet is being sent, or an earlier
+     *   shielded payment to the recipient may still execute. That earlier
+     *   payment may be this same tip and may pay the recipient: a shielded
+     *   sync resolves it as executed or as unable to execute, and the
+     *   refusal ends either way. Do not send again because the refusal
+     *   ended; send again only once the earlier payment is known to have
+     *   failed (its shielded activity entry reads failed, not confirmed).
+     *   This call returns no id for that entry, so when the exact attempt
+     *   cannot be identified, treat its outcome as unknown and do not send
+     *   again.
      * - [DashSdkError.NotFound]: the wallet holds no identity
      *   [ShieldedTipSource.Identity.identityId]. Nothing was sent.
-     * - any other error: the tip was not sent (for example
+     * - any other error: this call sent nothing (for example
      *   [DashSdkError.PlatformWallet.WalletOperation] for a recipient that
      *   changed since the review).
      *

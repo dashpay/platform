@@ -1314,35 +1314,69 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_prepare
 // whether that changed, whether an earlier payment is unresolved, which
 // account pays and whether an identity's balance is known. A JVM value the
 // C type cannot carry (a negative amount or account, an id of the wrong
-// length, a string with an interior NUL) throws code 1 before the C call;
-// every other argument reaches Rust as given, the empty string included.
+// length, a string that holds a NUL or an unpaired surrogate) throws code 1
+// before the C call; every other argument reaches Rust as given, the empty
+// string included.
 
 /// Bytes of the review BLOB: the fields of [`ShieldedTipReviewFFI`].
 const TIP_REVIEW_BLOB_LEN: usize = 32 + 43 + 1 + 32 + 43 + 1;
 /// Bytes of the balance BLOB: the fields of [`ShieldedIdentityBalanceFFI`].
 const IDENTITY_BALANCE_BLOB_LEN: usize = 1 + 4 + 8;
 
-/// Read a required Java `String` into an owned `CString`, the empty string
-/// included; throws and returns `None` on JVM null, a JNI read error or an
-/// interior NUL. Unlike [`read_cstring_required`] it lets an empty string
-/// through, for Rust to refuse.
-fn read_cstring(env: &mut JNIEnv, s: &JString, field: &str) -> Option<std::ffi::CString> {
+/// Read a Java `String` exactly as the caller built it, into an owned
+/// `CString`, the empty string included; throws and returns `None` for JVM
+/// null and for a string that cannot cross intact: one that does not read,
+/// holds an unpaired surrogate, or holds a NUL (a C string ends at its
+/// first). A caller for which null is a value checks for it first.
+///
+/// The code units are read as UTF-16 and decoded strictly. The modified
+/// UTF-8 view `get_string` reads is not used here: for a string holding
+/// both a supplementary character and a NUL, ART's encoding of it does not
+/// decode, and the fallback is a lossy one that would replace the NUL
+/// instead of refusing it. Unlike [`read_cstring_required`] an empty string
+/// passes, for Rust to judge.
+fn read_cstring_exact(env: &mut JNIEnv, s: &JString, field: &str) -> Option<std::ffi::CString> {
+    // `GetStringLength` requires a non-null string: checked here, at the raw
+    // call, whatever the caller checked.
     if s.is_null() {
         throw_sdk_exception(env, 1, &format!("{field} was null"));
         return None;
     }
-    let owned: String = match env.get_string(s) {
-        Ok(v) => v.into(),
-        Err(_) => {
-            let _ = env.exception_clear();
-            throw_sdk_exception(env, 1, &format!("{field} string was invalid"));
-            return None;
+    let raw = env.get_raw();
+    // SAFETY: `raw` is this thread's live `JNIEnv`, and `s` a live string
+    // reference, non-null as checked above. `GetStringRegion` writes
+    // exactly `length` code units into a buffer of that length.
+    let units = unsafe {
+        match ((**raw).GetStringLength, (**raw).GetStringRegion) {
+            (Some(string_length), Some(string_region)) => {
+                let length = string_length(raw, s.as_raw());
+                usize::try_from(length).ok().map(|capacity| {
+                    let mut units = vec![0u16; capacity];
+                    string_region(raw, s.as_raw(), 0, length, units.as_mut_ptr());
+                    units
+                })
+            }
+            _ => None,
         }
     };
-    match std::ffi::CString::new(owned) {
+    // A pending exception (or one that cannot be checked) is a failed read.
+    if !matches!(env.exception_check(), Ok(false)) {
+        let _ = env.exception_clear();
+        throw_sdk_exception(env, 1, &format!("{field} string could not be read"));
+        return None;
+    }
+    let Some(units) = units else {
+        throw_sdk_exception(env, 1, &format!("{field} string could not be read"));
+        return None;
+    };
+    let Ok(text) = String::from_utf16(&units) else {
+        throw_sdk_exception(env, 1, &format!("{field} is not valid UTF-16"));
+        return None;
+    };
+    match std::ffi::CString::new(text) {
         Ok(c) => Some(c),
         Err(_) => {
-            throw_sdk_exception(env, 1, &format!("{field} contained an interior NUL"));
+            throw_sdk_exception(env, 1, &format!("{field} contained a NUL"));
             None
         }
     }
@@ -1398,7 +1432,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_parseSh
     amount_text: JString,
 ) -> jlong {
     guard(&mut env, 0i64, |env| {
-        let Some(text) = read_cstring(env, &amount_text, "amountText") else {
+        let Some(text) = read_cstring_exact(env, &amount_text, "amountText") else {
             return 0;
         };
         let mut credits: u64 = 0;
@@ -1433,7 +1467,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_reviewS
         let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
             return ptr::null_mut();
         };
-        let Some(name) = read_cstring(env, &username, "username") else {
+        let Some(name) = read_cstring_exact(env, &username, "username") else {
             return ptr::null_mut();
         };
         let mut review = ShieldedTipReviewFFI::default();
@@ -1461,8 +1495,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_reviewS
 /// recipient a review returned, passed back unchanged. A non-null
 /// `sourceIdentityId` pays from that wallet identity's own shielded account
 /// and `sourceAccount` is ignored; a null one pays from account
-/// `sourceAccount`. `resolverHandle` and `memoText` are passed exactly as
-/// [`Java_..._shieldedTransfer`] passes them.
+/// `sourceAccount`. `resolverHandle` is passed as
+/// [`Java_..._shieldedTransfer`] passes it. A null `memoText` is no memo; a
+/// supplied one crosses exactly ([`read_cstring_exact`]) or is refused.
 ///
 /// Errors are thrown as the other note-spending exports throw them: the
 /// spend-unconfirmed code (18) means the tip may have left the wallet and
@@ -1509,7 +1544,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_sendShi
         let source_identity_ptr = source_identity
             .as_ref()
             .map_or(ptr::null(), |id| id.as_ptr());
-        let Some(name) = read_cstring(env, &username, "username") else {
+        let Some(name) = read_cstring_exact(env, &username, "username") else {
             return;
         };
         let Some(expected_id) = read_id32(env, &expected_identity_id, "expectedIdentityId") else {
@@ -1519,12 +1554,17 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_sendShi
         else {
             return;
         };
-        // A null or empty memo crosses as a null pointer (no memo), as the
-        // transfer passes it. The CString owns the bytes through the
-        // blocking FFI call below.
-        let memo = match read_cstring_opt(env, &memo_text, "memoText") {
-            Ok(m) => m,
-            Err(()) => return,
+        // Only JVM null is no memo here. A memo that was supplied crosses
+        // as it is, the empty string included (Rust reads that as no memo),
+        // or is refused: never dropped because it did not read. The CString
+        // owns the bytes through the blocking FFI call below.
+        let memo = if memo_text.is_null() {
+            None
+        } else {
+            let Some(memo) = read_cstring_exact(env, &memo_text, "memoText") else {
+                return;
+            };
+            Some(memo)
         };
         let memo_ptr = memo.as_ref().map_or(ptr::null(), |c| c.as_ptr());
         let result = unsafe {

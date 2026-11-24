@@ -83,9 +83,13 @@ pub enum ShieldedTipSource {
 
 /// How a tip recipient compares with the one this wallet last confirmed for
 /// the same name.
+///
+/// A recipient is confirmed when a send to it is admitted, before the
+/// transfer is built: none of these says a tip was paid. A send that then
+/// found no notes to pay with still leaves its recipient confirmed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ShieldedTipRecipientChange {
-    /// This wallet has not sent a tip to the name before.
+    /// No recipient was confirmed for the name from this wallet before.
     New,
     /// The same identity and address as last confirmed.
     Unchanged,
@@ -450,7 +454,10 @@ impl PlatformWallet {
     ///
     /// A failure with [`PlatformWalletError::ShieldedSpendUnconfirmed`] means
     /// the tip may have left the wallet and may still execute: it must not
-    /// be sent again. Every other failure means it was not sent.
+    /// be sent again. Every other failure means this call sent nothing.
+    /// [`PlatformWalletError::ShieldedTipPending`] among them says nothing
+    /// about the earlier payment that caused it, which may pay the
+    /// recipient: see the variant.
     ///
     /// Holds the wallet's lifecycle gate, `coordinator`'s operation
     /// admission and the account-set lock through the spend, so a removal

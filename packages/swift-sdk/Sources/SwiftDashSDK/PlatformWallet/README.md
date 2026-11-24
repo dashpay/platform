@@ -672,9 +672,10 @@ publishes. Rust decides everything; the screen only shows what it returns.
    `PlatformWalletManager.parseShieldedTipAmount(_:)`, which returns credits.
    Show the parsed amount in the confirmation, not the typed text.
 2. Call `await manager.reviewShieldedTip(walletId:username:)`. Show the
-   recipient and the change: `.new` for a name never tipped from this wallet,
-   `.unchanged`, or `.changed(previous:)` when the name now pays another
-   identity or address. `unresolved` means an earlier payment to the recipient
+   recipient and the change: `.new` when no recipient was confirmed for the
+   name from this wallet before, `.unchanged`, or `.changed(previous:)` when
+   the name now pays another identity or address. A recipient is confirmed when
+   a send to it is admitted, so none of these says a tip was paid. `unresolved` means an earlier payment to the recipient
    may still execute, so a send would be refused.
 3. Send with `await manager.sendShieldedTip(walletId:source:username:expectedRecipient:amount:memo:resolver:)`,
    passing the review's `recipient` back unchanged. `source` is
@@ -683,11 +684,23 @@ publishes. Rust decides everything; the screen only shows what it returns.
    refuses a recipient that changed, so the user reviews again.
 
 `shieldedSpendUnconfirmed` means the tip may have left the wallet and may still
-execute: never send it again; a shielded sync resolves it.
-`shieldedTipPending` means nothing was sent because an earlier payment to the
-recipient is unresolved (or another tip is being sent); a shielded sync
-resolves it, after which review and send again. Every other error means the tip
-was not sent.
+execute: never send it again; a shielded sync resolves it. Read
+`transactionBroadcastUnconfirmed` the same way.
+
+`shieldedTipPending` means this call sent nothing, because another tip is being
+sent or an earlier payment to the recipient is unresolved. It says nothing
+about that earlier payment, which may be this same tip submitted twice and may
+pay the recipient. A shielded sync resolves it as executed or as unable to
+execute, and the refusal ends either way, so do not send the tip again because
+the refusal ended or a new review says `unresolved == false`. Send it again
+only once the earlier payment is known to have failed: its shielded activity
+entry reads failed, not confirmed. The send returns no id for that entry, and
+entries with the same account, recipient, amount and memo can have different
+outcomes, so an entry that merely looks like the payment is not that evidence.
+When the exact attempt cannot be identified, treat its outcome as unknown and
+do not send again.
+
+Any error other than these means the call sent nothing.
 
 To show what an identity can tip from, call
 `await manager.shieldedIdentityBalance(walletId:identityId:)` and show its
