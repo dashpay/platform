@@ -1368,7 +1368,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
     /// An external Platform-address funding is built only for a backend that
     /// keeps its recipients across a restart
-    /// ([`PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS`]).
+    /// ([`PersistenceCapabilities::EXTERNAL_PLATFORM_ADDRESS_FUNDING`]).
     /// Nothing on chain names the payee, so a backend that loses the record
     /// would reload the lock as an owned top-up, and a resume would refund
     /// the sender instead of paying the payee. Checked before anything is
@@ -1377,7 +1377,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         &self,
     ) -> Result<(), PlatformWalletError> {
         let capabilities = self.persister.persistence_capabilities();
-        let required = PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS;
+        let required = PersistenceCapabilities::EXTERNAL_PLATFORM_ADDRESS_FUNDING;
         if capabilities.contains(required) {
             Ok(())
         } else {

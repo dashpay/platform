@@ -245,7 +245,7 @@ impl PlatformAddressWallet {
     /// before the lock is sent, so the caller does not have to associate the
     /// outpoint with its recipients itself, and `on_asset_lock_built` is
     /// informational only. A backend that does not declare
-    /// [`ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS`](crate::changeset::PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS)
+    /// [`EXTERNAL_PLATFORM_ADDRESS_FUNDING`](crate::changeset::PersistenceCapabilities::EXTERNAL_PLATFORM_ADDRESS_FUNDING)
     /// is refused before anything is built. A lock left behind by a failed or
     /// interrupted call is resumed with
     /// [`PlatformAddressWallet::resume_platform_address_funding_to_recorded_recipients`],
@@ -1502,7 +1502,7 @@ mod tests {
         use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
         let persister = Arc::new(RecipientRecordingPersister::new(
-            crate::changeset::PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS,
+            crate::changeset::PersistenceCapabilities::EXTERNAL_PLATFORM_ADDRESS_FUNDING,
         ));
         let sdk = Arc::new(
             dash_sdk::SdkBuilder::new_mock()
@@ -1963,7 +1963,7 @@ mod tests {
     async fn should_report_the_built_lock_to_the_caller_of_fund_from_asset_lock_external() {
         let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager_with(
             Arc::new(RecipientRecordingPersister::new(
-                crate::changeset::PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS,
+                crate::changeset::PersistenceCapabilities::EXTERNAL_PLATFORM_ADDRESS_FUNDING,
             )),
         )
         .await;
@@ -2131,7 +2131,7 @@ mod tests {
     ) -> (PlatformWalletError, Vec<OutPoint>, usize) {
         let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager_with(
             Arc::new(RecipientRecordingPersister::new(
-                crate::changeset::PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS,
+                crate::changeset::PersistenceCapabilities::EXTERNAL_PLATFORM_ADDRESS_FUNDING,
             )),
         )
         .await;
@@ -2432,7 +2432,7 @@ mod tests {
         crate::test_support::WalletSigner,
     ) {
         let persister = Arc::new(RecipientRecordingPersister::new(
-            crate::changeset::PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS,
+            crate::changeset::PersistenceCapabilities::EXTERNAL_PLATFORM_ADDRESS_FUNDING,
         ));
         let (manager, wallet, signer) = funded_wallet_over(persister.clone()).await;
         let recipients = external_recipients(&wallet).await;
@@ -2487,7 +2487,7 @@ mod tests {
     #[tokio::test]
     async fn should_record_no_recipients_for_an_owned_top_up() {
         let persister = Arc::new(RecipientRecordingPersister::new(
-            crate::changeset::PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS,
+            crate::changeset::PersistenceCapabilities::EXTERNAL_PLATFORM_ADDRESS_FUNDING,
         ));
         let (_manager, wallet, signer) = funded_wallet_over(persister.clone()).await;
         let mut recipients = external_recipients(&wallet).await;
@@ -2516,48 +2516,73 @@ mod tests {
         assert_eq!(row.platform_address_recipients, None);
     }
 
-    /// A backend that would lose the recipients across a restart gets no
-    /// external funding: nothing is built, stored or reported.
+    /// A backend that would lose the recipients across a restart, or keep
+    /// them apart from the lock's row or its funding key, gets no external
+    /// funding: nothing is built, stored or reported, and the refusal names
+    /// what is missing.
     #[tokio::test]
     async fn should_refuse_an_external_funding_on_a_backend_that_cannot_keep_its_recipients() {
-        let persister = Arc::new(RecipientRecordingPersister::new(
-            crate::changeset::PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS,
-        ));
-        let (_manager, wallet, signer) = funded_wallet_over(persister.clone()).await;
-        let recipients = external_recipients(&wallet).await;
-        let seen = Mutex::new(Vec::new());
-        let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+        use crate::changeset::PersistenceCapabilities as C;
+        let without = |dropped: C| {
+            C::from_bits_retain(C::EXTERNAL_PLATFORM_ADDRESS_FUNDING.bits() & !dropped.bits())
+        };
+        for (declared, missing) in [
+            (
+                C::ASSET_LOCK_IDENTITY_RECIPIENTS,
+                "asset_lock_platform_address_recipients",
+            ),
+            (without(C::ATOMIC_CHANGESETS), "atomic_changesets"),
+            (
+                without(C::ASSET_LOCK_FUNDING_INDICES),
+                "asset_lock_funding_indices",
+            ),
+        ] {
+            let persister = Arc::new(RecipientRecordingPersister::new(declared));
+            let (_manager, wallet, signer) = funded_wallet_over(persister.clone()).await;
+            let recipients = external_recipients(&wallet).await;
+            let seen = Mutex::new(Vec::new());
+            let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
 
-        let error = wallet
-            .platform()
-            .fund_from_asset_lock_external(
-                AssetLockFunding::FromWalletBalance {
-                    amount_duffs: 1_000_000,
-                    account_index: 0,
-                },
+            let error = wallet
+                .platform()
+                .fund_from_asset_lock_external(
+                    AssetLockFunding::FromWalletBalance {
+                        amount_duffs: 1_000_000,
+                        account_index: 0,
+                    },
+                    0,
+                    recipients,
+                    &NullAddressSigner,
+                    &signer,
+                    None,
+                    Some(&observer),
+                )
+                .await
+                .expect_err("the funding must be refused");
+
+            assert!(
+                matches!(&error, PlatformWalletError::Persistence(message)
+                    if message.contains(missing)),
+                "{missing}: {error:?}"
+            );
+            assert!(
+                seen.into_inner().unwrap().is_empty(),
+                "{missing}: no lock was built"
+            );
+            assert_eq!(
+                persister.stored_rows(),
                 0,
-                recipients,
-                &NullAddressSigner,
-                &signer,
-                None,
-                Some(&observer),
-            )
-            .await
-            .expect_err("the funding must be refused");
-
-        assert!(
-            matches!(&error, PlatformWalletError::Persistence(message)
-                if message.contains("asset_lock_platform_address_recipients")),
-            "{error:?}"
-        );
-        assert!(seen.into_inner().unwrap().is_empty(), "no lock was built");
-        assert_eq!(persister.stored_rows(), 0, "no lock row was stored");
-        let wm = wallet.wallet_manager().read().await;
-        assert!(wm
-            .get_wallet_info(&wallet.wallet_id())
-            .expect("wallet registered")
-            .tracked_asset_locks
-            .is_empty());
+                "{missing}: no lock row was stored"
+            );
+            let wm = wallet.wallet_manager().read().await;
+            assert!(
+                wm.get_wallet_info(&wallet.wallet_id())
+                    .expect("wallet registered")
+                    .tracked_asset_locks
+                    .is_empty(),
+                "{missing}"
+            );
+        }
     }
 
     /// Re-installs `row` as a tracked lock whose Core finality is proven, as

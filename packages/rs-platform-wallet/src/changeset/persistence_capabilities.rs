@@ -227,6 +227,17 @@ impl PersistenceCapabilities {
             | Self::ASSET_LOCK_IDENTITY_RECIPIENTS.0,
     );
 
+    /// Capabilities required to build an external Platform-address funding,
+    /// for the reasons [`Self::IDENTITY_RECIPIENT_TOP_UP`] gives: the
+    /// recipients themselves, atomic changesets (they reach an FFI host in a
+    /// callback of their own beside the lock's row) and the funding indices
+    /// (the only record of the credit output's key a resume signs with).
+    pub const EXTERNAL_PLATFORM_ADDRESS_FUNDING: Self = Self(
+        Self::ATOMIC_CHANGESETS.0
+            | Self::ASSET_LOCK_FUNDING_INDICES.0
+            | Self::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS.0,
+    );
+
     /// Durable correlation and funding-key indices required for wallet drain.
     pub const WALLET_DRAIN: Self = Self(
         Self::ASSET_LOCK_RECONCILIATION.0
