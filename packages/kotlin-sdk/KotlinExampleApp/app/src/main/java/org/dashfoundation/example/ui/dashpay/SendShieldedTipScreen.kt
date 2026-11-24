@@ -155,19 +155,20 @@ fun SendShieldedTipScreen(
         balanceEpoch++
         onPauseOrDispose {}
     }
-    val identityBalance by produceState<ShieldedIdentityBalance?>(
-        null, manager, walletIdHex, balanceEpoch, syncPasses,
+    val identityBalanceRead by produceState(
+        ShieldedIdentityBalanceRead(), manager, walletIdHex, balanceEpoch, syncPasses,
     ) {
         val m = manager ?: return@produceState
         val wid = walletId ?: return@produceState
-        try {
-            value = m.shieldedIdentityBalance(wid, idBytes)
+        value = try {
+            value.applySuccess(m.shieldedIdentityBalance(wid, idBytes))
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {
-            // Keep the last state; the next trigger reads again.
+        } catch (e: Exception) {
+            value.applyFailure(e)
         }
     }
+    val identityBalance = identityBalanceRead.balance
     val mainBalance by remember(walletIdHex) {
         if (walletId != null) {
             container.shieldedService.accountBalance(walletId, SHIELDED_TIP_MAIN_ACCOUNT)
@@ -396,7 +397,7 @@ fun SendShieldedTipScreen(
                     ShieldedTipSourceChoice.IDENTITY -> {
                         LabeledContent(
                             "Identity's shielded balance",
-                            ShieldedTipMessages.identityBalanceText(identityBalance),
+                            identityBalanceRead.text,
                             modifier = Modifier.testTag("dashpay.tip.identityBalance"),
                         )
                         if (identityBalance == ShieldedIdentityBalance.Unverified) {

@@ -127,6 +127,23 @@ class ShieldedTipPresentationTest {
     }
 
     @Test
+    fun `should keep the last identity balance only for a busy read and show any other failure`() {
+        val known = ShieldedIdentityBalanceRead().applySuccess(ShieldedIdentityBalance.Available(3, 7))
+        assertEquals(known, known.applyFailure(DashSdkError.PlatformWallet.ShieldedBalanceBusy("store held")))
+        val failed = known.applyFailure(DashSdkError.PlatformWallet.WalletOperation("not bound"))
+        assertEquals("Could not read: not bound", failed.text)
+        assertEquals(
+            "Could not read: no identity",
+            ShieldedIdentityBalanceRead().applyFailure(DashSdkError.NotFound("no identity")).text,
+        )
+        // A later successful read clears the failure.
+        assertEquals(
+            ShieldedTipMessages.identityBalanceText(ShieldedIdentityBalance.Unverified),
+            failed.applySuccess(ShieldedIdentityBalance.Unverified).text,
+        )
+    }
+
+    @Test
     fun `should word each recipient change as a confirmation, never as a paid tip`() {
         val texts = listOf(
             ShieldedTipMessages.changeText(ShieldedTipRecipientChange.New),

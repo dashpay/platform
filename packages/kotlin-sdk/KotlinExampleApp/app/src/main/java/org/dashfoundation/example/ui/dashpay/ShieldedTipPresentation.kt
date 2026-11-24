@@ -54,6 +54,29 @@ internal data class ReviewedShieldedTip(
 /** The saved contact a tip was opened from: its identity (lowercase hex) and DPNS name. */
 data class ShieldedTipContact(val identityIdHex: String, val username: String)
 
+/**
+ * The paying identity's shielded balance as last read from the wallet.
+ * A busy read ([DashSdkError.PlatformWallet.ShieldedBalanceBusy]: a scan or
+ * spend holds the store) keeps the last state for the next trigger to read
+ * again; any other failure is shown, with no retry.
+ */
+internal data class ShieldedIdentityBalanceRead(
+    val balance: ShieldedIdentityBalance? = null,
+    val failure: String? = null,
+) {
+    fun applySuccess(balance: ShieldedIdentityBalance) = ShieldedIdentityBalanceRead(balance, null)
+
+    fun applyFailure(error: Throwable): ShieldedIdentityBalanceRead =
+        if (error is DashSdkError.PlatformWallet.ShieldedBalanceBusy) {
+            this
+        } else {
+            copy(failure = error.message ?: "unknown error")
+        }
+
+    val text: String
+        get() = failure?.let { "Could not read: $it" } ?: ShieldedTipMessages.identityBalanceText(balance)
+}
+
 /** The fields a review reads, as they were when it started. */
 internal data class ShieldedTipDraft(val username: String, val amountText: String)
 
