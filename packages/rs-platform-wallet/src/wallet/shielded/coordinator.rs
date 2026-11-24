@@ -284,28 +284,30 @@ pub struct NetworkShieldedCoordinator {
     /// makes that snapshot detectably stale.
     clear_generation: std::sync::atomic::AtomicU64,
 
-    /// Per-wallet removal counts; see [`WalletRemovals`].
-    removals: WalletRemovals,
+    /// Per-subwallet removal counts; see [`SubwalletRemovals`].
+    removals: SubwalletRemovals,
 }
 
-/// Per-wallet count of removals, so a sync pass can skip a wallet removed
-/// after it took its subwallet list. A removal is an
-/// [`unregister_wallet`](NetworkShieldedCoordinator::unregister_wallet), a
-/// re-bind that drops or re-keys one of the wallet's accounts, or a
-/// successful [`clear`](NetworkShieldedCoordinator::clear).
+/// Per-subwallet count of removals, so a sync pass can skip a subwallet
+/// removed after it took its subwallet list. A removal is an
+/// [`unregister_wallet`](NetworkShieldedCoordinator::unregister_wallet) (every
+/// account of the wallet), a re-bind that drops or re-keys an account (that
+/// account only: the accounts it keeps are not purged, and the pass hands
+/// their changes to the wallet's new persister), or a successful
+/// [`clear`](NetworkShieldedCoordinator::clear) (every account).
 ///
 /// [`sync`](NetworkShieldedCoordinator::sync) lists the registered
 /// subwallets under `accounts.read` and takes the store write guard only
 /// later, so a removal can complete in between. The pass records each listed
-/// wallet's count with the list and compares it under the store write guard
-/// in the scan, and under `persisters.read` when it hands the host its
-/// changeset. A changed count means the wallet was removed, and maybe added
+/// subwallet's count with the list and compares it under the store write
+/// guard in the scan, and under `persisters.read` when it hands the host its
+/// changeset. A changed count means the subwallet was removed, and maybe added
 /// again under the same id, after the list was taken: the pass then saves no
-/// note, advances no watermark and hands the host nothing for it. Checking
-/// that the wallet is still registered could not tell a same-id re-add from
-/// no removal.
+/// note, advances no watermark, releases no reservation and hands the host
+/// nothing for it. Checking that the subwallet is still registered could not
+/// tell a same-id re-add from no removal.
 ///
-/// A removal bumps the count under `accounts.write`, before its purge and
+/// A removal bumps the counts under `accounts.write`, before its purge and
 /// before it removes or replaces the wallet's persister, so a list taken
 /// under `accounts.read` pairs with the count of that same registration, and
 /// a persister installed after the list is only ever seen with the changed
@@ -318,36 +320,38 @@ pub struct NetworkShieldedCoordinator {
 /// list) or under `persisters` or `store` (compare), and is never held
 /// across an await.
 #[derive(Default)]
-struct WalletRemovals(std::sync::Mutex<BTreeMap<WalletId, u64>>);
+struct SubwalletRemovals(std::sync::Mutex<BTreeMap<SubwalletId, u64>>);
 
-/// Each listed wallet's removal count when a sync pass took its list.
-type RemovalMarks = BTreeMap<WalletId, u64>;
+/// Each listed subwallet's removal count when a sync pass took its list.
+type RemovalMarks = BTreeMap<SubwalletId, u64>;
 
-impl WalletRemovals {
-    fn counts(&self) -> std::sync::MutexGuard<'_, BTreeMap<WalletId, u64>> {
+impl SubwalletRemovals {
+    fn counts(&self) -> std::sync::MutexGuard<'_, BTreeMap<SubwalletId, u64>> {
         // Plain counters: a panic elsewhere cannot leave them half-written.
         self.0
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
-    fn record(&self, wallet_id: WalletId) {
-        *self.counts().entry(wallet_id).or_default() += 1;
+    fn record(&self, ids: impl IntoIterator<Item = SubwalletId>) {
+        let mut counts = self.counts();
+        for id in ids {
+            *counts.entry(id).or_default() += 1;
+        }
     }
 
-    fn marks(&self, wallet_ids: impl IntoIterator<Item = WalletId>) -> RemovalMarks {
+    fn marks(&self, ids: impl IntoIterator<Item = SubwalletId>) -> RemovalMarks {
         let counts = self.counts();
-        wallet_ids
-            .into_iter()
-            .map(|wallet_id| (wallet_id, counts.get(&wallet_id).copied().unwrap_or(0)))
+        ids.into_iter()
+            .map(|id| (id, counts.get(&id).copied().unwrap_or(0)))
             .collect()
     }
 
-    /// Whether `wallet_id` was removed after `marks` were taken. A wallet
-    /// `marks` does not list counts as removed.
-    fn removed_since(&self, marks: &RemovalMarks, wallet_id: WalletId) -> bool {
-        let current = self.counts().get(&wallet_id).copied().unwrap_or(0);
-        marks.get(&wallet_id) != Some(&current)
+    /// Whether `id` was removed after `marks` were taken. A subwallet `marks`
+    /// does not list counts as removed.
+    fn removed_since(&self, marks: &RemovalMarks, id: SubwalletId) -> bool {
+        let current = self.counts().get(&id).copied().unwrap_or(0);
+        marks.get(&id) != Some(&current)
     }
 }
 
@@ -488,7 +492,7 @@ impl NetworkShieldedCoordinator {
             lifecycle: tokio::sync::Mutex::new(()),
             hydrated: RwLock::new(std::collections::BTreeSet::new()),
             clear_generation: std::sync::atomic::AtomicU64::new(0),
-            removals: WalletRemovals::default(),
+            removals: SubwalletRemovals::default(),
         }
     }
 
@@ -834,11 +838,9 @@ impl NetworkShieldedCoordinator {
             let mut accounts = self.accounts.write().await;
             // A dropped or re-keyed account is a removal: a pass that
             // listed the old registration must write nothing for it and
-            // hand the new persister nothing (see `WalletRemovals`).
-            // Bumped before the persister is replaced.
-            if !stale.is_empty() {
-                self.removals.record(wallet_id);
-            }
+            // hand the new persister nothing of it (see
+            // `SubwalletRemovals`). Bumped before the persister is replaced.
+            self.removals.record(stale.iter().map(|(id, _)| *id));
             // Persister FIRST, accounts second, both under
             // `accounts.write`. `sync()` snapshots `accounts` at pass
             // start and looks the persister up only when it queues the
@@ -993,8 +995,13 @@ impl NetworkShieldedCoordinator {
         let _lifecycle = self.lifecycle.lock().await;
         {
             let mut accounts = self.accounts.write().await;
+            self.removals.record(
+                accounts
+                    .keys()
+                    .filter(|id| id.wallet_id == wallet_id)
+                    .copied(),
+            );
             accounts.retain(|id, _| id.wallet_id != wallet_id);
-            self.removals.record(wallet_id);
         }
         self.persisters.write().await.remove(&wallet_id);
         self.hydrated.write().await.remove(&wallet_id);
@@ -1374,8 +1381,8 @@ impl NetworkShieldedCoordinator {
                     });
                 }
             }
-            // Once the reset succeeded, every wallet counts as removed
-            // (`WalletRemovals`), under this store guard. A pass that listed
+            // Once the reset succeeded, every subwallet counts as removed
+            // (`SubwalletRemovals`), under this store guard. A pass that listed
             // before this Clear would otherwise write its notes and its
             // watermarks into the reset store; a restore never rewinds a
             // watermark, so the rebound wallet's cold rebuild from index 0
@@ -1384,11 +1391,7 @@ impl NetworkShieldedCoordinator {
             // skips. A failed reset bumps nothing, so such a pass still hands
             // its host what it left in the store.
             if first_err.is_none() {
-                let wallet_ids: std::collections::BTreeSet<WalletId> =
-                    accounts.keys().map(|id| id.wallet_id).collect();
-                for wallet_id in wallet_ids {
-                    self.removals.record(wallet_id);
-                }
+                self.removals.record(accounts.keys().copied());
             }
         }
         #[cfg(test)]
@@ -1528,14 +1531,12 @@ impl NetworkShieldedCoordinator {
         // Snapshot the flat subwallet registry. This Vec is both
         // the IVK fan-out for sync_notes_across and the
         // identity-map for per-wallet summary demux below. Each
-        // wallet's removal count is taken with it (see `WalletRemovals`).
+        // subwallet's removal count is taken with it (see `SubwalletRemovals`).
         let (subwallets, removal_marks) = {
             let accounts = self.accounts.read().await;
             let subwallets: Vec<(SubwalletId, AccountViewingKeys)> =
                 accounts.iter().map(|(id, v)| (*id, v.clone())).collect();
-            let marks = self
-                .removals
-                .marks(subwallets.iter().map(|(id, _)| id.wallet_id));
+            let marks = self.removals.marks(subwallets.iter().map(|(id, _)| *id));
             (subwallets, marks)
         };
         #[cfg(test)]
@@ -1586,7 +1587,7 @@ impl NetworkShieldedCoordinator {
             &self.sdk,
             &self.store,
             &subwallets,
-            &|wallet_id| self.removals.removed_since(&removal_marks, wallet_id),
+            &|id| self.removals.removed_since(&removal_marks, id),
             on_progress.as_ref(),
             on_tree_progress.as_ref(),
             cancel,
@@ -1596,10 +1597,10 @@ impl NetworkShieldedCoordinator {
             Ok(r) => r,
             Err(e) => return self.fail_all_wallets(&subwallets, &e),
         };
-        // The rest of the pass leaves a wallet the scan skipped as removed.
+        // The rest of the pass leaves a subwallet the scan skipped as removed.
         let subwallets: Vec<(SubwalletId, AccountViewingKeys)> = subwallets
             .into_iter()
-            .filter(|(id, _)| !notes.removed_wallets.contains(&id.wallet_id))
+            .filter(|(id, _)| !notes.removed_subwallets.contains(id))
             .collect();
         // Everything below that talks to the network is skipped once the
         // pass is cancelled; the store-only steps and the host flush of a
@@ -1652,13 +1653,19 @@ impl NetworkShieldedCoordinator {
         // this pass's balances. Skipped on a cancelled pass: the re-drive
         // broadcasts, and a skipped release simply waits for the next pass.
         if let Some(PreScanEvidence {
-            stale,
-            journal,
+            mut stale,
+            mut journal,
             recorded,
             recorded_height,
             heightless,
         }) = stranded_release.filter(|_| !cancelled)
         {
+            // Judged only for what the scan replayed: a skipped subwallet's
+            // landed spend was not cleared by it.
+            stale.retain(|(id, _)| !notes.removed_subwallets.contains(id));
+            journal.retain(|(wallet_id, _)| {
+                subwallets.iter().any(|(id, _)| id.wallet_id == *wallet_id)
+            });
             for (id, _) in &subwallets {
                 // Network broadcasts: a stop that lands after the scan's
                 // snapshot above stops the loop here, and the helper
@@ -1743,13 +1750,16 @@ impl NetworkShieldedCoordinator {
         // indices, AND the scan-detected spends, so split it per
         // WalletId directly — each per-wallet `WalletPersister.store`
         // only sees its own wallet's deltas.
-        let consolidated = notes.changeset.clone();
+        let mut consolidated = notes.changeset.clone();
         #[cfg(test)]
         super::sync::pass_pause::reached(pass_key, super::sync::pass_pause::Point::BeforeHostSave)
             .await;
         if !Merge::is_empty(&consolidated) {
-            let per_wallet = consolidated.split_by_wallet_id();
             let persisters = self.persisters.read().await;
+            // A subwallet removed since the list: the wallet's persister may
+            // be its new registration's (see `SubwalletRemovals`).
+            consolidated.retain_subwallets(|id| !self.removals.removed_since(&removal_marks, *id));
+            let per_wallet = consolidated.split_by_wallet_id();
             for (wallet_id, cs) in per_wallet {
                 let Some(persister) = persisters.get(&wallet_id) else {
                     tracing::warn!(
@@ -1758,11 +1768,6 @@ impl NetworkShieldedCoordinator {
                     );
                     continue;
                 };
-                // A wallet removed since the list: this may be its new
-                // registration's persister (see `WalletRemovals`).
-                if self.removals.removed_since(&removal_marks, wallet_id) {
-                    continue;
-                }
                 let full = crate::changeset::PlatformWalletChangeSet {
                     shielded: Some(cs),
                     ..Default::default()
@@ -1784,7 +1789,11 @@ impl NetworkShieldedCoordinator {
         // needs an uncancelled pass: a stop after a complete scan that
         // found nothing proves nothing about staying caught up, so the
         // next pass walks Platform again right away.
-        let any_activity = notes.total_scanned > 0 || newly_spent_per_sub.values().any(|&n| n > 0);
+        // A pass that skipped a removed subwallet proves nothing about the
+        // registration that replaced it, so it stamps nothing either.
+        let any_activity = notes.total_scanned > 0
+            || newly_spent_per_sub.values().any(|&n| n > 0)
+            || !notes.removed_subwallets.is_empty();
         if let Ok(mut guard) = self.last_caught_up_at.lock() {
             if any_activity {
                 *guard = None;

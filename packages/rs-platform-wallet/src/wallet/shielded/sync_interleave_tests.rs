@@ -572,3 +572,169 @@ async fn a_pass_listing_during_a_clear_writes_nothing_into_the_reset_store() {
     drop(coordinator);
     remove_store_files(&path);
 }
+
+/// Register `wallet`'s `accounts` under `seed` with `host` as its persister.
+async fn register_accounts(
+    coordinator: &NetworkShieldedCoordinator,
+    wallet: [u8; 32],
+    host: &Arc<Host>,
+    seed: &[u8; 64],
+    accounts: &[u32],
+) {
+    let views = accounts
+        .iter()
+        .map(|&account| {
+            let keys = OrchardKeySet::from_seed(seed, dashcore::Network::Testnet, account)
+                .expect("test viewing key");
+            (account, keys.viewing_keys())
+        })
+        .collect();
+    coordinator
+        .register_wallet(wallet, views, WalletPersister::new(wallet, host.clone()))
+        .await
+        .expect("register test wallet");
+}
+
+/// A re-bind that drops account 1 after a pass scanned both accounts, before
+/// the pass hands its host the changeset: the new persister gets nothing of
+/// the dropped account, and all of the kept account's, so the host's
+/// watermark for it never runs past a spend the host was not handed.
+#[tokio::test]
+async fn a_re_bind_dropping_an_account_hands_the_kept_one_to_the_new_host() {
+    let path = tree_path();
+    let coordinator = coordinator_on(pool_sdk().await, &path);
+    let kept = SubwalletId::new(WALLET, 0);
+    let dropped = SubwalletId::new(WALLET, 1);
+    register_accounts(&coordinator, WALLET, &Host::new(), &[42; 64], &[0, 1]).await;
+    coordinator
+        .restore_for_wallet(WALLET, &older_snapshot(kept))
+        .await
+        .unwrap();
+    coordinator.mark_hydrated(WALLET, true).await;
+
+    let pause = pass_pause::arm_at(pass_pause::key(coordinator.store()), Point::BeforeHostSave);
+    let pass = tokio::spawn({
+        let coordinator = coordinator.clone();
+        async move { sync(&coordinator).await }
+    });
+    wait_for(&pause).await;
+    let host = Host::new();
+    register_accounts(&coordinator, WALLET, &host, &[42; 64], &[0]).await;
+    pause.resume.add_permits(1);
+    pass.await.unwrap();
+
+    assert!(
+        host.took_spent(kept, SPENT_NULLIFIER),
+        "the new host takes the kept account's spend"
+    );
+    assert!(
+        host.saved
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|changeset| changeset.synced_indices.get(&kept) == Some(&POOL_SIZE)),
+        "the new host takes the kept account's watermark"
+    );
+    assert!(
+        !host.took_any_for(dropped),
+        "the new host takes nothing of the dropped account"
+    );
+    drop(coordinator);
+    remove_store_files(&path);
+}
+
+/// The first-listed wallet removed before the pass takes the store guard:
+/// the next listed wallet drives the stream, and its own note is saved under
+/// it, not under the removed wallet's key.
+#[tokio::test]
+async fn the_first_kept_wallet_drives_the_pass_when_the_first_listed_is_removed() {
+    use super::cancelled_scan_tests::{chunked_pool, note_to};
+
+    const FIRST: [u8; 32] = [0x01; 32];
+    const SECOND: [u8; 32] = [0x02; 32];
+    let first_seed = [1u8; 64];
+    let second_seed = [2u8; 64];
+    let address = |seed: &[u8; 64]| {
+        OrchardKeySet::from_seed(seed, dashcore::Network::Testnet, 0)
+            .expect("test viewing key")
+            .viewing_keys()
+            .default_address
+    };
+    let (sdk, _) = chunked_pool(&[vec![
+        note_to(address(&first_seed), 111),
+        note_to(address(&second_seed), 222),
+    ]])
+    .await;
+    let path = tree_path();
+    let coordinator = Arc::new(NetworkShieldedCoordinator::new(
+        sdk,
+        dashcore::Network::Testnet,
+        path.clone(),
+        FileBackedShieldedStore::open_path(&path, 100).unwrap(),
+    ));
+    let first = SubwalletId::new(FIRST, 0);
+    let second = SubwalletId::new(SECOND, 0);
+    register_accounts(&coordinator, FIRST, &Host::new(), &first_seed, &[0]).await;
+    let host = Host::new();
+    register_accounts(&coordinator, SECOND, &host, &second_seed, &[0]).await;
+    coordinator.mark_hydrated(FIRST, true).await;
+    coordinator.mark_hydrated(SECOND, true).await;
+
+    let pause = pass_pause::arm_at(
+        pass_pause::key(coordinator.store()),
+        Point::AfterListSnapshot,
+    );
+    let pass = tokio::spawn({
+        let coordinator = coordinator.clone();
+        async move { sync(&coordinator).await }
+    });
+    wait_for(&pause).await;
+    coordinator.unregister_wallet(FIRST).await;
+    pause.resume.add_permits(1);
+    let outcome = pass.await.unwrap();
+    assert_eq!(outcome.success_count(), 1, "{outcome:?}");
+
+    let values = |id| {
+        let coordinator = coordinator.clone();
+        async move {
+            let mut values: Vec<u64> = coordinator
+                .store()
+                .read()
+                .await
+                .get_all_notes(id)
+                .unwrap()
+                .into_iter()
+                .map(|note| note.value)
+                .collect();
+            values.sort_unstable();
+            values
+        }
+    };
+    assert_eq!(
+        values(second).await,
+        vec![222],
+        "the kept wallet's own note"
+    );
+    assert!(values(first).await.is_empty());
+    let host_values: Vec<u64> = host
+        .saved
+        .lock()
+        .unwrap()
+        .iter()
+        .flat_map(|changeset| {
+            changeset
+                .notes_saved
+                .get(&second)
+                .cloned()
+                .unwrap_or_default()
+        })
+        .map(|note| note.value)
+        .collect();
+    assert_eq!(
+        host_values,
+        vec![222],
+        "the kept wallet's host takes its note"
+    );
+    drop(coordinator);
+    remove_store_files(&path);
+}

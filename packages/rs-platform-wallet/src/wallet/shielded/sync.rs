@@ -162,9 +162,9 @@ pub struct MultiSyncNotesResult {
     /// `total_count` is the highest seen). `None` when no batch shows that:
     /// a proof of a longer tree than the run reached.
     pub covered_height: Option<u64>,
-    /// Wallets the pass skipped because they were removed after the caller
-    /// took its subwallet list. Nothing was saved for them.
-    pub removed_wallets: BTreeSet<crate::wallet::platform_wallet::WalletId>,
+    /// Subwallets the pass skipped because they were removed after the
+    /// caller took its subwallet list. Nothing was saved for them.
+    pub removed_subwallets: BTreeSet<SubwalletId>,
 }
 
 impl MultiSyncNotesResult {
@@ -192,7 +192,8 @@ impl MultiSyncNotesResult {
 /// of registered subwallets — the Phase 2b primitive that
 /// collapses N per-wallet SDK calls into one.
 ///
-/// The first subwallet's IVK drives the SDK call; the SDK's
+/// The first subwallet not removed since the list drives the SDK call
+/// with its IVK; the SDK's
 /// `result.all_notes` is then locally trial-decrypted against
 /// every other subwallet's IVK. Commitments are appended to the
 /// shared tree exactly once per global position with `marked =
@@ -204,10 +205,10 @@ impl MultiSyncNotesResult {
 /// returns an empty result without contacting Platform.
 ///
 /// `removed_since_list` tells, under the pass's store write guard, whether a
-/// wallet was removed after the caller took `subwallets`. The pass skips such
-/// a wallet whole: it saves no note and advances no watermark for it, never
+/// subwallet was removed after the caller took `subwallets`. The pass skips
+/// such a subwallet: it saves no note and advances no watermark for it, never
 /// drives the stream with its key, and lists it in
-/// [`MultiSyncNotesResult::removed_wallets`].
+/// [`MultiSyncNotesResult::removed_subwallets`].
 ///
 /// Privilege boundary: only the viewing-key half is required
 /// (FVK for nullifier derivation, IVK for trial decryption).
@@ -230,7 +231,7 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
     subwallets: &[(SubwalletId, AccountViewingKeys)],
-    removed_since_list: &(dyn Fn(crate::wallet::platform_wallet::WalletId) -> bool + Sync),
+    removed_since_list: &(dyn Fn(SubwalletId) -> bool + Sync),
     on_progress: Option<&super::coordinator::ShieldedProgressCallback>,
     on_tree_progress: Option<&super::coordinator::ShieldedTreeProgressCallback>,
     cancel: &CancellationToken,
@@ -298,7 +299,7 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
 }
 
 /// The consumer half of [`sync_notes_across`]: takes the store write lock,
-/// drops the subwallets of wallets removed since the list, snapshots the
+/// drops the subwallets removed since the list, snapshots the
 /// watermarks, drains the batch stream `make_stream` builds for
 /// `(aligned_start, tree_size, driver)` (`driver` indexes `subwallets`), and
 /// finalizes the store.
@@ -308,7 +309,7 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
 pub(super) async fn sync_notes_from_stream<S, St, F>(
     store: &Arc<RwLock<S>>,
     subwallets: &[(SubwalletId, AccountViewingKeys)],
-    removed_since_list: &(dyn Fn(crate::wallet::platform_wallet::WalletId) -> bool + Sync),
+    removed_since_list: &(dyn Fn(SubwalletId) -> bool + Sync),
     on_tree_progress: Option<&super::coordinator::ShieldedTreeProgressCallback>,
     cancel: &CancellationToken,
     make_stream: F,
@@ -350,24 +351,24 @@ where
     };
 
     // A removal purges under this guard, so from here on the set of removed
-    // wallets can only grow by removals whose purge waits for this pass.
-    let removed_wallets: BTreeSet<_> = subwallets
+    // subwallets can only grow by removals whose purge waits for this pass.
+    let removed_subwallets: BTreeSet<SubwalletId> = subwallets
         .iter()
-        .map(|(id, _)| id.wallet_id)
-        .filter(|wallet_id| removed_since_list(*wallet_id))
+        .map(|(id, _)| *id)
+        .filter(|id| removed_since_list(*id))
         .collect();
     let Some(driver) = subwallets
         .iter()
-        .position(|(id, _)| !removed_wallets.contains(&id.wallet_id))
+        .position(|(id, _)| !removed_subwallets.contains(id))
     else {
         return Ok(MultiSyncNotesResult {
-            removed_wallets,
+            removed_subwallets,
             ..Default::default()
         });
     };
     let retained: Vec<(SubwalletId, AccountViewingKeys)> = subwallets
         .iter()
-        .filter(|(id, _)| !removed_wallets.contains(&id.wallet_id))
+        .filter(|(id, _)| !removed_subwallets.contains(id))
         .cloned()
         .collect();
     let subwallets = retained.as_slice();
@@ -389,7 +390,7 @@ where
     // it already stored, while a lagging one still saves from its
     // own start.
     #[cfg(test)]
-    pass_pause::reached(store_key, pass_pause::Point::AfterWatermarkRead).await;
+    pass_pause::reached(store_key, pass_pause::Point::AfterRemovalFilter).await;
     let (watermarks, already_have, tree_size) = {
         let mut watermarks: BTreeMap<SubwalletId, u64> = BTreeMap::new();
         let mut min_idx: Option<u64> = None;
@@ -911,7 +912,7 @@ where
         total_scanned: scanned_volume,
         changeset,
         covered_height,
-        removed_wallets,
+        removed_subwallets,
     })
 }
 
@@ -1266,9 +1267,6 @@ mod ovk_builder_roundtrip_tests;
 #[cfg(test)]
 mod memo_roundtrip_tests;
 
-/// Cancellation of a note-sync pass: a scan cut short keeps only its tree
-/// progress and publishes nothing, a pre-scan cancel touches nothing, and
-/// a later pass re-walks the prefix without re-appending it.
 /// Test-only pause points in a sync pass, so a test can interleave a
 /// removal, re-bind or Clear there.
 #[cfg(test)]
@@ -1290,8 +1288,9 @@ pub(super) mod pass_pause {
     pub(crate) enum Point {
         /// `sync()` has taken its subwallet list, not yet the store guard.
         AfterListSnapshot,
-        /// The pass holds the store guard and dropped removed wallets.
-        AfterWatermarkRead,
+        /// The pass holds the store guard and dropped the removed subwallets,
+        /// and has not read the watermarks yet.
+        AfterRemovalFilter,
         /// `sync()` scanned and released the store guard, and has not handed
         /// the hosts their changesets yet.
         BeforeHostSave,
@@ -1313,9 +1312,36 @@ pub(super) mod pass_pause {
         Arc::as_ptr(store) as *const () as usize
     }
 
+    /// An armed pause, disarmed on drop if no pass reached it, so a test that
+    /// fails first leaves nothing armed for a later store at the same address.
+    pub(crate) struct ArmedPause {
+        pause: Arc<Pause>,
+        at: (usize, Point),
+    }
+
+    impl std::ops::Deref for ArmedPause {
+        type Target = Pause;
+
+        fn deref(&self) -> &Pause {
+            &self.pause
+        }
+    }
+
+    impl Drop for ArmedPause {
+        fn drop(&mut self) {
+            let mut armed = armed().lock().unwrap_or_else(|p| p.into_inner());
+            if armed
+                .get(&self.at)
+                .is_some_and(|pause| Arc::ptr_eq(pause, &self.pause))
+            {
+                armed.remove(&self.at);
+            }
+        }
+    }
+
     /// Stop the next pass over the store keyed `key` at `point`, until the
     /// test adds a permit to `resume`.
-    pub(crate) fn arm_at(key: usize, point: Point) -> Arc<Pause> {
+    pub(crate) fn arm_at(key: usize, point: Point) -> ArmedPause {
         let pause = Arc::new(Pause {
             reached: Semaphore::new(0),
             resume: Semaphore::new(0),
@@ -1324,7 +1350,10 @@ pub(super) mod pass_pause {
             .lock()
             .expect("pass pause registry")
             .insert((key, point), pause.clone());
-        pause
+        ArmedPause {
+            pause,
+            at: (key, point),
+        }
     }
 
     pub(crate) async fn reached(key: usize, point: Point) {
@@ -1344,6 +1373,9 @@ pub(super) mod pass_pause {
     }
 }
 
+/// Cancellation of a note-sync pass: a scan cut short keeps only its tree
+/// progress and publishes nothing, a pre-scan cancel touches nothing, and
+/// a later pass re-walks the prefix without re-appending it.
 #[cfg(test)]
 mod cancel_tests;
 
