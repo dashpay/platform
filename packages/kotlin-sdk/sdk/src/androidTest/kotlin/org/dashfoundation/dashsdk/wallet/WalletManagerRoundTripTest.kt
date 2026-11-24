@@ -177,6 +177,12 @@ class WalletManagerRoundTripTest {
                     avatarHash = ByteArray(32) { 23 },
                     avatarFingerprint = null,
                     checkedAtMs = 1_700_000_111_000,
+                    // A P2PKH Core address in storage form restores; a
+                    // shielded value that is not an Orchard address is
+                    // dropped by the wallet at restore.
+                    corePaymentAddress = byteArrayOf(0x00) + ByteArray(20) { 0x22 },
+                    // pk_d of all 0xff is not a canonical Pallas point.
+                    shieldedAddress = ByteArray(43) { 0xff.toByte() },
                 ),
             )
             db.dashpayDao().upsertIgnoredSender(
@@ -215,6 +221,13 @@ class WalletManagerRoundTripTest {
             assertEquals("https://x/bob.png", profile.getString("avatarUrl"))
             assertEquals("17".repeat(32), profile.getString("avatarHash")) // 23 = 0x17
             assertTrue("fingerprint stays absent", !profile.has("avatarFingerprint"))
+            assertEquals(
+                "Core payment address restored into Rust cache",
+                "00" + "22".repeat(20),
+                profile.getString("corePaymentAddress"),
+            )
+            assertTrue("no Platform address stored", !profile.has("platformPaymentAddress"))
+            assertTrue("invalid shielded bytes dropped at restore", !profile.has("shieldedAddress"))
 
             val stateJson = managed.dashpay.syncState(identityId)
             assertNotNull("sync state readable", stateJson)

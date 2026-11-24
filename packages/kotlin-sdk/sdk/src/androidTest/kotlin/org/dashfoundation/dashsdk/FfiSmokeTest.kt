@@ -24,6 +24,9 @@ import org.dashfoundation.dashsdk.ffi.SignerNative
 import org.dashfoundation.dashsdk.ffi.WalletManagerNative
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.PlatformWalletPersistenceHandler
+import org.dashfoundation.dashsdk.tokens.DashPayPaymentAddressKind
+import org.dashfoundation.dashsdk.tokens.DashPayPaymentAddresses
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -716,6 +719,52 @@ class FfiSmokeTest {
      * live, funded `create_invitation`. Resolving the whole table up front
      * turns a descriptor typo into a CI failure instead.
      */
+    /**
+     * The DashPay profile payment address exports bind with the descriptors
+     * `DashpayNative` declares. The pure conversions answer without a
+     * wallet: stored Core bytes render as a testnet address that converts
+     * back to the same bytes, the same address is refused on mainnet and in
+     * the Platform field, and bytes that are not an address render as null.
+     * The support read and the profile write reach their C functions, which
+     * refuse an unknown wallet and a null signer.
+     */
+    @Test
+    fun profilePaymentAddressSymbolsBindAndConvert() {
+        NativeLoader.ensureLoaded()
+        val stored = byteArrayOf(0x00) + ByteArray(20) { 0x22 }
+        val text = DashPayPaymentAddresses.string(DashPayPaymentAddressKind.CORE, stored, Network.TESTNET)
+        assertNotNull(text)
+        assertArrayEquals(
+            stored,
+            DashPayPaymentAddresses.bytes(DashPayPaymentAddressKind.CORE, text!!, Network.TESTNET),
+        )
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.paymentAddressFromString(0, text, Network.MAINNET.ffiValue)
+        }
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.paymentAddressFromString(1, text, Network.TESTNET.ffiValue)
+        }
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.paymentAddressFromString(0, "not an address", Network.TESTNET.ffiValue)
+        }
+        assertNull(DashpayNative.paymentAddressToString(0, ByteArray(21) { 0x02 }, Network.TESTNET.ffiValue))
+        assertNull(DashpayNative.paymentAddressToString(2, ByteArray(0), Network.TESTNET.ffiValue))
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.paymentAddressToString(3, stored, Network.TESTNET.ffiValue)
+        }
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.paymentAddressSupport(0L)
+        }
+        val noSigner = assertThrows(DashSDKException::class.java) {
+            DashpayNative.createOrUpdateProfileWithAddresses(
+                0L, ByteArray(32), "name", null, null, null,
+                1, stored, 2, null, 0, null,
+                false, 0L,
+            )
+        }
+        assertNotEquals(0, noSigner.code)
+    }
+
     @Test
     fun persistenceBridgeDescriptorsAllResolve() {
         NativeLoader.ensureLoaded()
