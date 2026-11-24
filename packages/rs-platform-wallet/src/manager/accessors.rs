@@ -82,9 +82,11 @@ pub struct PlatformAddressSyncConfigSnapshot {
 #[derive(Debug, Clone, Copy)]
 pub struct AccountBalanceRow {
     pub account_type: AccountType,
-    /// This wallet's coins in the account. Zero for keys-only accounts and
-    /// for a contact's watch-only `DashpayExternalAccount` (those outputs
-    /// are the contact's), so the rows of a wallet sum to its Core balance.
+    /// This wallet's balance in the account, computed from live UTXOs.
+    /// Zero for keys-only accounts and for a contact's watch-only
+    /// `DashpayExternalAccount`, whose outputs belong to the contact.
+    /// The rows sum to the wallet's live Core balance, which can differ
+    /// from the separately published wallet balance until it is refreshed.
     pub balance: WalletCoreBalance,
     pub keys_used: u32,
     pub keys_total: u32,
@@ -310,8 +312,12 @@ impl OutpointClass {
 /// Whether `account_type` is a contact's watch-only chain
 /// (`DashpayExternalAccount`): coins there belong to the contact, so the
 /// inventory omits them and the classifier has no verdict for them.
+///
+/// Delegates to key-wallet's exhaustive [`AccountType::is_contact_owned`],
+/// the predicate `account_balances_blocking` and the persistence seam use,
+/// so a future contact-owned account type is left out everywhere at once.
 pub fn is_watch_only_contact(account_type: &AccountType) -> bool {
-    matches!(account_type, AccountType::DashpayExternalAccount { .. })
+    account_type.is_contact_owned()
 }
 
 /// One page of `wallet_id`'s UTXO inventory across every funds account
@@ -733,7 +739,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
     /// Read per-account balance + key-usage snapshots for a wallet.
     ///
-    /// Returns one [`AccountBalanceSnapshot`] per managed account: the
+    /// Returns one [`AccountBalanceRow`] per managed account: the
     /// wallet's `AccountType`, the live `WalletCoreBalance` (zero on
     /// keys-only variants by construction, and zero on a contact's
     /// watch-only `DashpayExternalAccount`, whose coins are the
