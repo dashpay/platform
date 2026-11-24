@@ -39,6 +39,7 @@ import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.navigation.IdentityDetail
 import org.dashfoundation.example.services.IdentityRegistrationController
 import org.dashfoundation.example.services.IdentityRegistrationController.Phase
+import org.dashfoundation.example.ui.components.ReleasePaymentHoldButton
 import org.dashfoundation.example.ui.wallet.toHexString
 
 /**
@@ -142,11 +143,20 @@ fun RegistrationProgressScreen(
                         navController.navigate(IdentityDetail(p.identityId.toHexString()))
                     }) { Text("View Identity") }
                 }
-                is Phase.Failed -> Text(
-                    p.message,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.testTag("registrationProgress.failed"),
-                )
+                is Phase.Failed -> {
+                    Text(
+                        p.message,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.testTag("registrationProgress.failed"),
+                    )
+                    // A hold without a lock to resume is released only once
+                    // the user confirmed the original payment in the history;
+                    // a held lock stays on the resume path (← Swift).
+                    ReleasePaymentHoldButton(p.failure, testTagPrefix = "registrationProgress") {
+                        container.registrationCoordinator.release(walletId, identityIndex)
+                        navController.popBackStack()
+                    }
+                }
                 is Phase.Unconfirmed -> Text(
                     "Confirmation pending — the identity may already be live. " + p.message,
                     color = Color(0xFFB26A00),
