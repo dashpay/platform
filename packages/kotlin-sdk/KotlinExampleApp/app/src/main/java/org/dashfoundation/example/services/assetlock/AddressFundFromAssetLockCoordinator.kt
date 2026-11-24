@@ -81,7 +81,7 @@ class AddressFundFromAssetLockCoordinator(
         platformAccountIndex: Int,
         recipientHash: ByteArray,
         recipientType: Int,
-        body: suspend () -> Long,
+        body: suspend () -> Long?,
     ): AddressFundFromAssetLockController {
         val key = key(walletId, platformAccountIndex, recipientHash)
         val existing = _controllers.value[key]

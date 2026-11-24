@@ -7,6 +7,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.example.services.assetlock.AddressFundFromAssetLockController.Phase
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -205,5 +206,32 @@ class AddressFundFromAssetLockCoordinatorTest {
 
         gate.complete(1L)
         advanceUntilIdle()
+    }
+
+    /**
+     * A funding whose result carries no update for the picked address
+     * (reconciliation returns an empty changeset when sync already applied
+     * the balance) completes without a balance instead of a false 0.
+     */
+    @Test
+    fun `a funding that reports no balance completes without one`() = runTest {
+        val coordinator = coordinator()
+        val controller = coordinator.startFunding(walletA, 0, recipient0, 0) {
+            AddressFundFromAssetLockController.reportedBalance(recipient0, emptyList())
+        }
+        advanceUntilIdle()
+        assertEquals(Phase.Completed(null), controller.phase.value)
+    }
+
+    @Test
+    fun `the reported balance is the picked address update or none`() {
+        val picked = ManagedPlatformWallet.UpdatedBalance(0, recipient0, 5_000L)
+        val other = ManagedPlatformWallet.UpdatedBalance(0, recipient1, 7L)
+        assertEquals(
+            5_000L,
+            AddressFundFromAssetLockController.reportedBalance(recipient0, listOf(other, picked)),
+        )
+        assertNull(AddressFundFromAssetLockController.reportedBalance(recipient0, listOf(other)))
+        assertNull(AddressFundFromAssetLockController.reportedBalance(recipient0, emptyList()))
     }
 }

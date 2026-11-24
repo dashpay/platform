@@ -242,7 +242,7 @@ fun AddressFundProgressScreen(
 
             when (val p = phase) {
                 is Phase.Completed -> Text(
-                    "Address funded — ${p.newBalance} credits",
+                    p.newBalance?.let { "Address funded — $it credits" } ?: "Address funded",
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.testTag("addressFundProgress.completed"),
                 )

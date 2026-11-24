@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 
 /**
  * Per-slot state for a single "fund a Platform address from an asset lock"
@@ -45,8 +46,13 @@ class AddressFundFromAssetLockController(
         /** FFI funding call in flight; the asset-lock progress is read from Room. */
         data object InFlight : Phase
 
-        /** Address credited; [newBalance] is the proof-attested credit balance. */
-        data class Completed(val newBalance: Long) : Phase
+        /**
+         * Funding done. [newBalance] is the address's proof-attested credit
+         * balance, or null when the result carries no update for it:
+         * reconciliation can return an empty changeset when sync already
+         * applied the balance, and a stand-in 0 would be false.
+         */
+        data class Completed(val newBalance: Long?) : Phase
 
         /** Failure terminal state; the message is shown inline. Stays until dismissed. */
         data class Failed(val message: String) : Phase
@@ -80,10 +86,11 @@ class AddressFundFromAssetLockController(
      * ← Swift `submit`.
      *
      * [body] performs the actual FFI call and returns the new credit
-     * balance, or throws. It runs on its own dispatcher; the terminal
+     * balance (null when the result carries none, see [reportedBalance]),
+     * or throws. It runs on its own dispatcher; the terminal
      * phase flip hops back to [scope].
      */
-    fun submit(body: suspend () -> Long) {
+    fun submit(body: suspend () -> Long?) {
         when (_phase.value) {
             is Phase.Idle, is Phase.Failed -> Unit
             is Phase.InFlight, is Phase.Completed -> return
@@ -101,4 +108,18 @@ class AddressFundFromAssetLockController(
     }
 
     private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
+
+    companion object {
+        /**
+         * The balance a funding reported for [recipientHash], or null when
+         * its result carries no update for that address (reconciliation can
+         * return an empty changeset when sync already applied the balance).
+         * [Phase.Completed] then shows no balance line instead of a false 0.
+         * ← Swift `reportedBalance(of:in:)`.
+         */
+        fun reportedBalance(
+            recipientHash: ByteArray,
+            updates: List<ManagedPlatformWallet.UpdatedBalance>,
+        ): Long? = updates.firstOrNull { it.hash.contentEquals(recipientHash) }?.balance
+    }
 }

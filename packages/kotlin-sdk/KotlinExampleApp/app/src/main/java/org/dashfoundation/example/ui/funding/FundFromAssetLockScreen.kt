@@ -36,6 +36,7 @@ import org.dashfoundation.dashsdk.persistence.entities.AssetLockEntity
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.navigation.AddressFundProgress
+import org.dashfoundation.example.services.assetlock.AddressFundFromAssetLockController
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.SubmitButton
@@ -261,7 +262,7 @@ fun FundFromAssetLockScreen(
                             signerHandle = mgr.signerHandle,
                             coreSignerHandle = mgr.mnemonicResolverHandle,
                         )
-                        updates.firstOrNull { it.hash.contentEquals(recipientHash) }?.balance ?: 0L
+                        AddressFundFromAssetLockController.reportedBalance(recipientHash, updates)
                     }
                 } else {
                     val amt = amount ?: return@SubmitButton
@@ -287,7 +288,7 @@ fun FundFromAssetLockScreen(
                             signerHandle = mgr.signerHandle,
                             coreSignerHandle = mgr.mnemonicResolverHandle,
                         )
-                        updates.firstOrNull { it.hash.contentEquals(recipientHash) }?.balance ?: 0L
+                        AddressFundFromAssetLockController.reportedBalance(recipientHash, updates)
                     }
                 }
 
