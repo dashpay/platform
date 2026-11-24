@@ -671,8 +671,11 @@ public class PlatformWalletManager: ObservableObject {
     /// teardown. Cleared as soon as the last admitted operation finishes.
     private var drainingNativeHandle: Handle = NULL_HANDLE
 
-    /// Async native entrypoints (create, load, and local balance snapshots)
-    /// between admission and the end of their MainActor epilogue.
+    /// Async native entrypoints (create, load, local balance snapshots,
+    /// shielded spends and shields, the resumed pool funding, wallet drains,
+    /// private documents and contact requests) between admission and the end
+    /// of their MainActor epilogue. The fresh asset-lock pool fundings and
+    /// the pool seeding are deliberately not counted (#6003).
     /// [`shutdown()`] waits for this to reach zero before destroying the
     /// captured handle: an admitted op must complete its FULL transaction (FFI +
     /// publish) or fail on its own terms — never be failed retroactively
@@ -741,6 +744,11 @@ public class PlatformWalletManager: ObservableObject {
     /// Test seam for the native calls of the async `loadFromPersistor()`
     /// overload; same contract as [`nativeTeardownCalls`].
     internal var nativeLoadCalls = PlatformWalletNativeLoadCalls.live
+
+    /// Test seam for the native calls of the admitted shielded spend
+    /// wrappers (pool spends, shields, identity-debit abandonment); same
+    /// contract as [`nativeTeardownCalls`].
+    internal var nativeShieldedSpendCalls = PlatformWalletNativeShieldedSpendCalls.live
 
     /// Native snapshot reads and their paired allocation release. Kept
     /// injectable so ownership and shutdown admission are tested together.
@@ -987,7 +995,9 @@ public class PlatformWalletManager: ObservableObject {
     /// Native calls run off-main. A stop that reports an incomplete drain
     /// is recorded in the metrics; shutdown still waits for admitted work
     /// to finish before destroying its handle, so completion is not bounded
-    /// if that work never returns.
+    /// if that work never returns. One such case: an admitted shield-class
+    /// payment queued behind an asset-lock funding that gets no ChainLock
+    /// because SPV was stopped first keeps shutdown waiting (#6003).
     ///
     /// Idempotent: the first caller starts the teardown, every later caller
     /// awaits the same task and receives the same metrics. Cancellation of
