@@ -886,6 +886,15 @@ impl FileBackedShieldedStore {
                 {
                     return Err(corrupted("identity debit contains note-spend nullifiers"));
                 }
+                // The converse: a transition that spends notes with no note
+                // listed. Loaded as it is, it would read as an
+                // identity-funded debit everywhere a record with no
+                // nullifier is taken for one, and reserve nothing. It is
+                // retained without being loaded, like any other damaged
+                // note-spend row.
+                if nullifiers.is_empty() && note_spend_kind.is_some() {
+                    return Err(corrupted("note spend lists none of its nullifiers"));
+                }
                 let (Ok(wallet_id), Ok(activity_id), Ok(anchor)) = (
                     <[u8; 32]>::try_from(wallet_id.as_slice()),
                     <[u8; 32]>::try_from(activity_id.as_slice()),

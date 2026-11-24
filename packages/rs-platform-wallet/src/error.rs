@@ -1192,11 +1192,14 @@ pub enum PlatformWalletError {
     )]
     ShieldedTipPending,
 
-    /// A bounded read of a shielded balance did not get the shielded store
-    /// within its wait, because a scan or a spend holds it. Nothing failed
-    /// and nothing changed: the caller keeps the state it last read and
-    /// reads again later.
-    #[error("The shielded store is busy; the balance was not read. Read it again later")]
+    /// A bounded read of a shielded balance did not finish within its wait:
+    /// the wallet's state or its shielded store was held, by a scan for
+    /// instance. Which of the two is not told. Nothing failed and nothing
+    /// changed: the caller keeps the state it last read and reads again
+    /// later.
+    #[error(
+        "The shielded balance read did not finish in time; nothing was read. Read it again later"
+    )]
     ShieldedBalanceBusy,
 
     /// A shielded tip was reviewed or sent for a username the caller expects

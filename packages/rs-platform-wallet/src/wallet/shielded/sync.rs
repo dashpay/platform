@@ -194,6 +194,31 @@ pub struct MultiSyncNotesResult {
     pub covered_height: Option<u64>,
 }
 
+/// How a pass of the note scan ended ([`sync_notes_across`]).
+#[derive(Debug)]
+pub(super) enum NoteScan {
+    /// It read the pool to its end, or was cancelled, in which case the
+    /// result is empty.
+    Finished(MultiSyncNotesResult),
+    /// It met a gap between two fetched ranges and published nothing. The
+    /// commitments it read up to the gap stay appended to the local tree.
+    /// The pool holds notes this pass did not read, so the pass is not a
+    /// completed one and the next must not be skipped as caught up. See the
+    /// gap note on [`sync_notes_across`].
+    StoppedAtGap,
+}
+
+impl NoteScan {
+    /// The result of a pass that did not stop at a gap.
+    #[cfg(test)]
+    pub(super) fn finished(self) -> MultiSyncNotesResult {
+        match self {
+            NoteScan::Finished(result) => result,
+            NoteScan::StoppedAtGap => panic!("the pass stopped at a gap"),
+        }
+    }
+}
+
 impl MultiSyncNotesResult {
     /// Total new notes across every subwallet.
     pub fn total_new_notes(&self) -> usize {
@@ -247,6 +272,19 @@ impl MultiSyncNotesResult {
 /// skip every append and checkpoint it already made, so what a stop
 /// costs is the download and decryption of the chunks it had consumed.
 /// It is a clean early stop, not an error.
+///
+/// A gap between ranges: ranges are fetched concurrently, each proved at
+/// its own height, so one answered a block earlier can end short of the
+/// next one's start while the next holds notes. The positions between them
+/// were never read. The pass stops there and ends as a cancelled one does:
+/// the commitments it read up to the gap stay appended and checkpointed,
+/// and nothing else is published: it returns [`NoteScan::StoppedAtGap`].
+/// It knows the pool holds
+/// more than it read, so what it read is not a complete scan either: a
+/// receipt in it may be spent by an action past the gap, and the activity
+/// derived from it would be frozen short of a note the next pass finds at
+/// the same proved height. The next pass re-walks from the last completed
+/// watermark.
 pub(super) async fn sync_notes_across<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
@@ -254,9 +292,9 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     on_progress: Option<&super::coordinator::ShieldedProgressCallback>,
     on_tree_progress: Option<&super::coordinator::ShieldedTreeProgressCallback>,
     cancel: &CancellationToken,
-) -> Result<MultiSyncNotesResult, PlatformWalletError> {
+) -> Result<NoteScan, PlatformWalletError> {
     if subwallets.is_empty() {
-        return Ok(MultiSyncNotesResult::default());
+        return Ok(NoteScan::Finished(MultiSyncNotesResult::default()));
     }
 
     // Drive the FIRST subwallet's IVK as the streaming driver. Its hits
@@ -320,21 +358,21 @@ pub(super) async fn sync_notes_from_stream<S, St, F>(
     on_tree_progress: Option<&super::coordinator::ShieldedTreeProgressCallback>,
     cancel: &CancellationToken,
     make_stream: F,
-) -> Result<MultiSyncNotesResult, PlatformWalletError>
+) -> Result<NoteScan, PlatformWalletError>
 where
     S: ShieldedStore,
     St: Stream<Item = Result<ShieldedChunkBatch, dash_sdk::Error>>,
     F: FnOnce(u64, u64) -> St,
 {
     if subwallets.is_empty() {
-        return Ok(MultiSyncNotesResult::default());
+        return Ok(NoteScan::Finished(MultiSyncNotesResult::default()));
     }
 
     // Nothing has been touched yet, so a stop that landed before the scan
     // costs nothing: skip the lock and the fetch entirely.
     if cancel.is_cancelled() {
         debug!("Shielded note sync cancelled before the scan started");
-        return Ok(MultiSyncNotesResult::default());
+        return Ok(NoteScan::Finished(MultiSyncNotesResult::default()));
     }
 
     // Keep the snapshot and streamed consume under one write guard so another
@@ -352,7 +390,7 @@ where
     // of after the unrelated holder is done.
     let Some(mut store) = cancel.run_until_cancelled(store.write()).await else {
         debug!("Shielded note sync cancelled while waiting for the store lock");
-        return Ok(MultiSyncNotesResult::default());
+        return Ok(NoteScan::Finished(MultiSyncNotesResult::default()));
     };
 
     // Snapshot each subwallet's watermark and the shared tree's
@@ -476,14 +514,15 @@ where
     // positions are already in the tree, so they don't advance the
     // commit count beyond `tree_size`).
     let mut leaves_committed: u64 = tree_size;
-    // Cumulative notes scanned across every batch (decrypted + skipped)
-    // — drives the watermark advance and the host-visible scan volume,
-    // exactly as `result.total_notes_scanned` did in the one-shot path.
+    // Cumulative notes scanned across every batch the pass used (decrypted
+    // + skipped): the host-visible scan volume. The watermark is not
+    // computed from it: it is `scanned_to`, the end of the run of positions
+    // read without a gap.
     let mut total_notes_scanned: u64 = 0;
     // Track the last non-empty batch's `(start_index, is_partial)` —
     // diagnostic only. The one-shot path used this to rewind its resume
     // point to the mutable buffer chunk's start; the streaming path's
-    // watermark is `aligned_start + total_notes_scanned` (the partial
+    // watermark is `scanned_to` (the partial
     // chunk is re-fetched via the chunk-boundary realignment at the
     // next pass's start instead), so this value never feeds the
     // watermark — it is surfaced in the completion log for parity with
@@ -526,6 +565,8 @@ where
     // The highest height any batch of this pass was proven at: every spend
     // the pass applies was seen at or below it.
     let mut highest_batch_height: Option<u64> = None;
+    // Set when the pass ends at a gap between two ranges (see the loop).
+    let mut stopped_at_gap = false;
     let cancelled = {
         let stream = make_stream(aligned_start, tree_size);
         futures::pin_mut!(stream);
@@ -555,6 +596,27 @@ where
             // so a late chunk proven at a slightly higher block never lowers
             // it. Stays 0 (indeterminate) only if no batch is ever produced.
             total_target = total_target.max(batch.total_count);
+            // Adjacent ranges are fetched concurrently and each is proved at
+            // its own height. One answered a block earlier comes back short
+            // of the next one's start, while the next, answered after the
+            // tree grew, holds notes: the positions between them were never
+            // read. The pass ends at that gap and uses nothing past it: a
+            // commitment appended from there would sit at the wrong position
+            // in the local tree, and a watermark past it would leave the
+            // skipped positions undecrypted for good. It then ends as a
+            // cancelled pass does (below): its tree progress is kept and
+            // nothing else is published. An empty range past the run holds
+            // nothing to use and is passed over, as before.
+            if batch.start_index > scanned_to && !batch.notes.is_empty() {
+                info!(
+                    scanned_to,
+                    next_range = batch.start_index,
+                    "Shielded note sync read a range that starts past the positions read so \
+                     far; stopping at the gap and publishing nothing, the next pass reads it"
+                );
+                stopped_at_gap = true;
+                break false;
+            }
             total_notes_scanned += batch.notes.len() as u64;
             highest_batch_height = highest_batch_height.max(Some(batch.block_height));
             if batch.start_index <= scanned_to {
@@ -696,7 +758,7 @@ where
 
     // Diagnostic mirror of the SDK's one-shot `next_start_index`
     // (rewinds to the last partial chunk's start). NOT the watermark:
-    // the streaming path persists `aligned_start + total_notes_scanned`
+    // the streaming path persists `scanned_to`
     // below, and re-covers the partial buffer chunk through the
     // chunk-boundary realignment at the next pass's start. The old
     // "next_start_index is 0 — next sync will rescan from the
@@ -749,18 +811,25 @@ where
             .map_err(|e| PlatformWalletError::ShieldedTreeUpdateFailed(e.to_string()))?;
     }
 
-    // A cancelled pass ends here: the appended leaves are checkpointed
-    // (the next pass skips them), and nothing the prefix decrypted is
-    // saved, replayed, watermarked or handed to the caller. See the
-    // cancellation note on `sync_notes_across` for why a consumed prefix
-    // must not reach the ledger.
-    if cancelled {
+    // A cancelled pass, and one that stopped at a gap, ends here: the
+    // appended leaves are checkpointed (the next pass skips them), and
+    // nothing the prefix decrypted is saved, replayed, watermarked or handed
+    // to the caller. See the cancellation and gap notes on
+    // `sync_notes_across` for why a consumed prefix must not reach the
+    // ledger.
+    if cancelled || stopped_at_gap {
         drop(store);
         info!(
             total_scanned = total_notes_scanned,
-            appended, "Shielded note sync stopped; tree progress kept, nothing published"
+            appended,
+            stopped_at_gap,
+            "Shielded note sync stopped; tree progress kept, nothing published"
         );
-        return Ok(MultiSyncNotesResult::default());
+        return Ok(if stopped_at_gap {
+            NoteScan::StoppedAtGap
+        } else {
+            NoteScan::Finished(MultiSyncNotesResult::default())
+        });
     }
 
     // Before any spend is applied: one can drop a saved record, and the
@@ -894,19 +963,21 @@ where
 
     // Advance every subwallet's watermark to the same global
     // tree position so the next sync resumes coherently across
-    // the union. `total_notes_scanned` is accumulated from every
-    // streamed batch's note count — identical to the one-shot path's
-    // `result.total_notes_scanned`.
+    // the union: `scanned_to`, the end of the run of positions this pass
+    // read without a gap from `aligned_start`. A watermark never covers a
+    // position the scan did not read: a pass that met a gap between two
+    // ranges returned above, publishing nothing.
     //
     // Never rewind. `aligned_start` is the MIN watermark across the
     // union, so a pass that re-walks a lagging subwallet's range can
     // end below a subwallet that was already further along; a completed
     // pass reaches the tip, which is at or past every watermark. Only a
-    // completed pass gets here (a cancelled one returned above), so the
+    // completed pass gets here (a cancelled one, and one that stopped at a
+    // gap, returned above), so the
     // write is unconditional: the setter also stamps the scan coverage
     // and the `ScannedThisSession` balance source, which is exactly what
     // reaching the tip means.
-    let new_index = aligned_start + total_notes_scanned;
+    let new_index = scanned_to;
     for (id, _) in subwallets {
         let prior = watermarks.get(id).copied().unwrap_or(0);
         let advanced = prior.max(new_index);
@@ -934,13 +1005,13 @@ where
     // rewind), and the host counter is documented as scan throughput,
     // not tree growth.
     let scanned_volume = (aligned_start + total_notes_scanned).saturating_sub(already_have);
-    Ok(MultiSyncNotesResult {
+    Ok(NoteScan::Finished(MultiSyncNotesResult {
         per_subwallet_new_notes,
         per_subwallet_newly_spent: newly_spent_per_subwallet,
         total_scanned: scanned_volume,
         changeset,
         covered_height,
-    })
+    }))
 }
 
 /// Scan-based spend detection: replay the set of nullifiers seen on
@@ -1528,6 +1599,11 @@ mod cancel_tests;
 
 #[cfg(test)]
 mod concurrent_sync_tests;
+
+/// A pass that meets a gap between two fetched ranges publishes nothing, and
+/// the next pass finds every note.
+#[cfg(test)]
+mod range_gap_tests;
 
 /// A pending spend whose input another transition spent is failed from the
 /// action the scan reads for it, and one that landed is not.

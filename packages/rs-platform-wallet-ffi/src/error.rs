@@ -812,9 +812,10 @@ pub enum PlatformWalletFFIResultCode {
     /// name, with no expected identity.
     ErrorShieldedTipRecipientMismatch = 86,
 
-    /// A local shielded balance read did not get the shielded store within
-    /// its wait budget, because a scan or a spend holds it. Nothing failed
-    /// and nothing changed: keep the last state shown and read again later.
+    /// A local shielded balance read did not finish within its wait budget:
+    /// the wallet's state or its shielded store was held, by a scan for
+    /// instance. Nothing failed and nothing changed: keep the last state
+    /// shown and read again later.
     /// The only code of that read that means retry. Maps
     /// `PlatformWalletError::ShieldedBalanceBusy`, which the wallet's bounded
     /// read (`PlatformWallet::shielded_identity_balance_now`) returns.

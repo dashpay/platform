@@ -553,6 +553,53 @@ fn should_fail_closed_when_a_saved_transfer_does_not_say_whom_it_pays() {
     ));
 }
 
+/// A saved transfer whose row lost its note list is not loaded as a record
+/// with no notes, which is what an identity-funded debit's record is: the
+/// row is kept, no debit is listed for it, and tips fail closed.
+#[test]
+fn should_keep_unloaded_a_transfer_whose_row_lost_its_note_list() {
+    let (mut store, path) = store_at("tip_row_without_nullifiers");
+    let id = SubwalletId::new(WALLET, 0);
+    let payer = keys_of(1, 0);
+    let keys = BTreeMap::from([(0, payer.clone())]);
+    arm_spend(
+        &mut store,
+        id,
+        transfer_paying(&payer, keys_of(2, 0).default_address),
+    );
+    drop(store);
+    let connection = rusqlite::Connection::open(&path).expect("open the store file");
+    connection
+        .execute("UPDATE shielded_pending_spends SET nullifiers = x''", [])
+        .expect("empty the note list");
+
+    let store = FileBackedShieldedStore::open_path(&path, 100).expect("reopen");
+    assert!(store.has_unloaded_note_spends(WALLET));
+    assert!(
+        store
+            .pending_redrives_for_wallet(WALLET)
+            .expect("records")
+            .is_empty(),
+        "not loaded, so not listed as an identity-funded debit"
+    );
+    assert_eq!(
+        connection
+            .query_row("SELECT COUNT(*) FROM shielded_pending_spends", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("count"),
+        1,
+        "the row is kept"
+    );
+    assert!(matches!(
+        unresolved_transfer_recipients(&store, WALLET, &keys),
+        Err(PlatformWalletError::ShieldedRecoveryCorrupted {
+            account_index: None,
+            ..
+        })
+    ));
+}
+
 /// What the user confirmed for a name is kept per wallet, across a restart
 /// and a shielded Clear, and goes with the wallet.
 #[test]
