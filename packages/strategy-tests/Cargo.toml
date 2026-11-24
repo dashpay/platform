@@ -17,7 +17,6 @@ drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
 ] }
 rand = "0.8.5"
-hex = "0.4.3"
 dpp = { path = "../rs-dpp", default-features = false, features = [
   "abci",
   "bls-signatures",

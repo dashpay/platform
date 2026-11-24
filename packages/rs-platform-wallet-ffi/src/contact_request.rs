@@ -436,8 +436,8 @@ mod tests {
             ))
             .expect("a wallet");
         let identity_id = Identifier::from([0xB2; 32]);
-        let key = dpp::secp256k1::PublicKey::from_secret_key(
-            &dpp::secp256k1::SecretKey::from_secret_bytes([4; 32]).expect("a secret key"),
+        let key = secp256k1::PublicKey::from_secret_key(
+            &secp256k1::SecretKey::from_secret_bytes([4; 32]).expect("a secret key"),
         );
         let identity = Identity::V0(IdentityV0 {
             id: identity_id,

@@ -6,7 +6,7 @@ use crate::consensus::signature::{
     InvalidSignaturePublicKeySecurityLevelError, PublicKeyIsDisabledError,
 };
 use anyhow::anyhow;
-use secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
+use dashcore::crypto::ecdsa::{EcdsaError, EcdsaSecretKey};
 
 #[cfg(feature = "state-transition-validation")]
 use crate::state_transition::errors::WrongPublicKeyPurposeError;
@@ -107,11 +107,11 @@ pub trait StateTransitionIdentitySigned: StateTransitionLike {
 
 pub fn get_compressed_public_ec_key(private_key: &[u8]) -> Result<[u8; 33], ProtocolError> {
     let sk = <[u8; 32]>::try_from(private_key)
-        .map_err(|_| secp256k1::Error::InvalidSecretKey)
-        .and_then(RawSecretKey::from_secret_bytes)
+        .map_err(|_| EcdsaError::InvalidSecretKey)
+        .and_then(|bytes| EcdsaSecretKey::from_bytes(&bytes))
         .map_err(|e| anyhow!("Invalid ECDSA private key: {}", e))?;
 
-    let public_key_compressed = RawPublicKey::from_secret_key(&sk).serialize();
+    let public_key_compressed = sk.public_key().to_compressed();
     Ok(public_key_compressed)
 }
 

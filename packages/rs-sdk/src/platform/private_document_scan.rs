@@ -26,13 +26,13 @@ use crate::platform::private_document_entries::{
 use crate::platform::{Fetch, Identifier};
 use crate::{Error, Sdk};
 use dpp::identity::KeyID;
-use dpp::secp256k1::{PublicKey, SecretKey};
 use futures::stream::{self, Stream, StreamExt};
 use platform_encryption::{
     private_document_outgoing_viewing_key, recover_sent_private_document_entry,
     OpenedPrivateDocumentEntry, PrivateDocumentEnvelopeError, PrivateDocumentRecipientKeys,
     PrivateDocumentTarget,
 };
+use secp256k1::{PublicKey, SecretKey};
 use zeroize::{Zeroize, Zeroizing};
 
 /// One identity of the wallet and the keys entries to it may be encrypted to.

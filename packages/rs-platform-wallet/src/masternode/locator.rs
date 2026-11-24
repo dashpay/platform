@@ -45,7 +45,6 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, Purpose};
 use dpp::prelude::Identifier;
-use dpp::secp256k1::SecretKey as SecpSecretKey;
 use zeroize::Zeroizing;
 
 use super::list::{find_in_summaries, MasternodeListQuery, MasternodeListSummary};
@@ -225,7 +224,7 @@ fn is_mainnet(network: Network) -> bool {
 /// only when below the group order; ed25519 accepts any 32 bytes as a seed.
 fn secret_candidates(bytes: &[u8; 32]) -> Vec<MasternodeLocatorInput> {
     let mut out = Vec::with_capacity(3);
-    if SecpSecretKey::from_secret_bytes(*bytes).is_ok() {
+    if EcdsaSecretKey::from_bytes(bytes).is_ok() {
         out.push(MasternodeLocatorInput::Secret(LocatorSecret::Ecdsa {
             secret: Zeroizing::new(*bytes),
             compressed: true,

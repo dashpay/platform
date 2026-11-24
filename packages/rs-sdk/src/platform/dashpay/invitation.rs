@@ -67,8 +67,10 @@
 //!   emit it.
 
 use std::collections::BTreeMap;
+use zeroize::Zeroize;
 
 use dpp::dashcore::consensus::Decodable;
+use dpp::dashcore::crypto::ecdsa::EcdsaSecretKey as SecretKey;
 use dpp::dashcore::transaction::special_transaction::TransactionPayload;
 use dpp::dashcore::{InstantLock, Network, OutPoint, PrivateKey, ScriptBuf, Transaction, TxOut};
 use dpp::identity::accessors::IdentityGettersV0;
@@ -81,7 +83,6 @@ use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, Purpose, SecurityLevel};
 use dpp::prelude::{AssetLockProof, Identifier};
-use dpp::secp256k1::{PublicKey, SecretKey};
 
 use crate::core::FetchedCoreTransaction;
 use crate::platform::transition::asset_lock_submission::{
@@ -253,7 +254,7 @@ impl Drop for ParsedInvitation {
     /// Scrub the voucher scalar on drop — it is literal bearer money. Mirrors
     /// the resolver signer's key hygiene (`WipingSecretKey`).
     fn drop(&mut self) {
-        self.voucher_key.non_secure_erase();
+        self.voucher_key.zeroize();
     }
 }
 
@@ -277,7 +278,7 @@ fn invalid(msg: impl Into<String>) -> InvitationError {
 /// The P2PKH script the voucher key controls (compressed-pubkey hash160). This
 /// is the selector that binds the voucher key to its funded credit output.
 fn voucher_credit_script(voucher_key: &SecretKey) -> ScriptBuf {
-    let pubkey = PublicKey::from_secret_key(voucher_key);
+    let pubkey = voucher_key.public_key();
     let hash = dpp::dashcore::PublicKey::new(pubkey).pubkey_hash();
     ScriptBuf::new_p2pkh(&hash)
 }
@@ -424,7 +425,7 @@ pub fn encode_invitation_uri(
     };
 
     // WIF, compressed (the default for `PrivateKey::new`), network-correct.
-    let private_key = PrivateKey::from_byte_array(&voucher_key.to_secret_bytes(), network)
+    let private_key = PrivateKey::from_byte_array(&voucher_key.to_bytes(), network)
         .map_err(|e| invalid(format!("invalid invitation voucher key: {e}")))?;
     let mut wif = String::with_capacity(52);
     let wif_result = private_key.fmt_wif(&mut wif);
@@ -562,7 +563,7 @@ pub fn parse_invitation_uri(uri: &str) -> Result<ParsedInvitation, InvitationErr
     if !private_key.compressed {
         return Err(invalid("invitation pk must be a compressed WIF key"));
     }
-    let voucher_key = SecretKey::from_secret_bytes(*private_key.inner.to_bytes())
+    let voucher_key = SecretKey::from_bytes(&private_key.inner.to_bytes())
         .map_err(|e| invalid(format!("invalid invitation voucher scalar: {e}")))?;
     let voucher_key_network = private_key.network;
     drop(private_key);
@@ -885,7 +886,7 @@ impl Sdk {
         // the credit-output pubkey hash), scrubbed on every exit path by the
         // native secret-key owner.
         let voucher_priv =
-            PrivateKey::from_byte_array(&invitation.voucher_key.to_secret_bytes(), self.network)
+            PrivateKey::from_byte_array(&invitation.voucher_key.to_bytes(), self.network)
                 .map_err(|e| invalid(format!("invalid invitation voucher scalar: {e}")))?;
 
         // Build the placeholder identity ONCE so both the primary attempt and the
@@ -1350,7 +1351,7 @@ mod tests {
     use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
 
     fn voucher() -> SecretKey {
-        SecretKey::from_secret_bytes([0x11u8; 32]).expect("valid scalar")
+        SecretKey::from_bytes(&[0x11u8; 32]).expect("valid scalar")
     }
 
     fn inviter_info() -> InviterInfo {
@@ -1364,7 +1365,7 @@ mod tests {
     /// Build an asset-lock tx whose credit output at `index` pays the voucher
     /// key (and `index` decoy outputs before it that do not).
     fn asset_lock_tx_paying_voucher_at(key: &SecretKey, index: usize) -> Transaction {
-        let decoy = SecretKey::from_secret_bytes([0x22u8; 32]).unwrap();
+        let decoy = SecretKey::from_bytes(&[0x22u8; 32]).unwrap();
         let mut credit_outputs = Vec::new();
         for _ in 0..index {
             credit_outputs.push(TxOut {
@@ -1398,13 +1399,13 @@ mod tests {
     #[test]
     fn should_round_trip_a_wif_keeping_compression_and_network() {
         for (network, first_byte) in [(Network::Mainnet, 204u8), (Network::Testnet, 239u8)] {
-            let wif = PrivateKey::from_byte_array(&voucher().to_secret_bytes(), network)
+            let wif = PrivateKey::from_byte_array(&voucher().to_bytes(), network)
                 .expect("valid voucher")
                 .to_wif();
             let decoded = PrivateKey::from_wif(&wif).expect("wif decodes");
             assert!(decoded.compressed, "voucher WIF must be compressed");
             assert_eq!(decoded.network, network, "network preserved");
-            assert_eq!(*decoded.inner.to_bytes(), voucher().to_secret_bytes());
+            assert_eq!(decoded.inner.to_bytes(), voucher().to_bytes());
             // Network byte matches bitcoinj/legacy (0xCC mainnet, 0xEF testnet).
             let raw = dpp::dashcore::base58::decode_check(&wif).unwrap();
             assert_eq!(raw[0], first_byte);
@@ -1420,10 +1421,7 @@ mod tests {
         assert!(uri.starts_with("dashpay://invite?"));
 
         let parsed = parse_invitation_uri(&uri).expect("parse");
-        assert_eq!(
-            parsed.voucher_key.to_secret_bytes(),
-            voucher().to_secret_bytes()
-        );
+        assert_eq!(parsed.voucher_key.to_bytes(), voucher().to_bytes());
         assert_eq!(parsed.inviter, Some(info));
         assert!(parsed.islock_hex.is_some());
         // The parsed txid matches the proof's transaction id (big-endian).
@@ -1448,7 +1446,7 @@ mod tests {
     /// byte-level, interop — the two legacy wallets differ in order).
     #[test]
     fn should_parse_a_link_regardless_of_field_order() {
-        let wif = PrivateKey::from_byte_array(&voucher().to_secret_bytes(), Network::Testnet)
+        let wif = PrivateKey::from_byte_array(&voucher().to_bytes(), Network::Testnet)
             .expect("valid voucher")
             .to_wif();
         let uri = format!("dashpay://invite?islock=deadbeef&pk={wif}&du=bob&assetlocktx=aabbcc");
@@ -1465,7 +1463,7 @@ mod tests {
     /// first-class alternative to the custom scheme (iOS emits it).
     #[test]
     fn should_parse_a_link_on_the_applink_host() {
-        let wif = PrivateKey::from_byte_array(&voucher().to_secret_bytes(), Network::Testnet)
+        let wif = PrivateKey::from_byte_array(&voucher().to_bytes(), Network::Testnet)
             .expect("valid voucher")
             .to_wif();
         let uri = format!(
@@ -1483,7 +1481,7 @@ mod tests {
     /// accepted over cleartext `http`. Neither mobile wallet emits an `http` link.
     #[test]
     fn should_reject_an_applink_over_plain_http() {
-        let wif = PrivateKey::from_byte_array(&voucher().to_secret_bytes(), Network::Testnet)
+        let wif = PrivateKey::from_byte_array(&voucher().to_bytes(), Network::Testnet)
             .expect("valid voucher")
             .to_wif();
         let uri =
@@ -1499,7 +1497,7 @@ mod tests {
     /// (a ChainLock-confirmed invite Android's own validator accepts).
     #[test]
     fn should_parse_an_islock_that_is_present_absent_or_null() {
-        let wif = PrivateKey::from_byte_array(&voucher().to_secret_bytes(), Network::Testnet)
+        let wif = PrivateKey::from_byte_array(&voucher().to_bytes(), Network::Testnet)
             .expect("valid voucher")
             .to_wif();
         let present = format!("dashpay://invite?assetlocktx=aa&pk={wif}&islock=00aa11");
@@ -1524,7 +1522,7 @@ mod tests {
     /// A `du`-less link still parses (iOS accepts du-less links).
     #[test]
     fn should_parse_a_link_without_a_du_field() {
-        let wif = PrivateKey::from_byte_array(&voucher().to_secret_bytes(), Network::Testnet)
+        let wif = PrivateKey::from_byte_array(&voucher().to_bytes(), Network::Testnet)
             .expect("valid voucher")
             .to_wif();
         let uri = format!("dashpay://invite?assetlocktx=aa&pk={wif}&islock=bb");
@@ -1534,7 +1532,7 @@ mod tests {
 
     #[test]
     fn should_reject_a_link_missing_pk_or_assetlocktx() {
-        let wif = PrivateKey::from_byte_array(&voucher().to_secret_bytes(), Network::Testnet)
+        let wif = PrivateKey::from_byte_array(&voucher().to_bytes(), Network::Testnet)
             .expect("valid voucher")
             .to_wif();
         // No pk.
@@ -1553,9 +1551,8 @@ mod tests {
 
     #[test]
     fn should_reject_an_uncompressed_wif() {
-        let mut private_key =
-            PrivateKey::from_byte_array(&voucher().to_secret_bytes(), Network::Testnet)
-                .expect("valid voucher");
+        let mut private_key = PrivateKey::from_byte_array(&voucher().to_bytes(), Network::Testnet)
+            .expect("valid voucher");
         private_key.compressed = false;
         let uncompressed = private_key.to_wif();
         let uri = format!("dashpay://invite?assetlocktx=aa&pk={uncompressed}");
@@ -1580,7 +1577,7 @@ mod tests {
     /// display-name + avatar-url) parses to the right fields.
     #[test]
     fn should_parse_an_android_style_link() {
-        let wif = PrivateKey::from_byte_array(&voucher().to_secret_bytes(), Network::Mainnet)
+        let wif = PrivateKey::from_byte_array(&voucher().to_bytes(), Network::Mainnet)
             .expect("valid voucher")
             .to_wif();
         // Android order: du, assetlocktx, pk, islock, display-name, avatar-url.
@@ -1628,7 +1625,7 @@ mod tests {
     #[test]
     fn should_reject_a_funding_tx_with_no_output_paying_the_voucher() {
         let key = voucher();
-        let other = SecretKey::from_secret_bytes([0x33u8; 32]).unwrap();
+        let other = SecretKey::from_bytes(&[0x33u8; 32]).unwrap();
         let tx = asset_lock_tx_paying_voucher_at(&other, 0);
         let err = voucher_output_index(&tx, &key).unwrap_err();
         assert!(err.to_string().contains("does not control"));
@@ -1651,7 +1648,7 @@ mod tests {
     /// surface them (the reference wallets emit those independently of `du`).
     #[test]
     fn should_keep_inviter_metadata_when_the_du_field_is_missing() {
-        let wif = PrivateKey::from_byte_array(&voucher().to_secret_bytes(), Network::Testnet)
+        let wif = PrivateKey::from_byte_array(&voucher().to_bytes(), Network::Testnet)
             .expect("valid voucher")
             .to_wif();
         let uri = format!(
@@ -1668,7 +1665,7 @@ mod tests {
     /// first) — reject rather than claim a wallet-dependent key.
     #[test]
     fn should_reject_a_link_with_duplicate_required_keys() {
-        let wif = PrivateKey::from_byte_array(&voucher().to_secret_bytes(), Network::Testnet)
+        let wif = PrivateKey::from_byte_array(&voucher().to_bytes(), Network::Testnet)
             .expect("valid voucher")
             .to_wif();
         let other = PrivateKey::from_byte_array(&[0x44u8; 32], Network::Testnet)
@@ -1693,7 +1690,7 @@ mod tests {
     /// (with a `pk`/`assetlocktx`) would be parsed.
     #[test]
     fn should_reject_a_link_with_a_decoy_scheme_or_host() {
-        let wif = PrivateKey::from_byte_array(&voucher().to_secret_bytes(), Network::Testnet)
+        let wif = PrivateKey::from_byte_array(&voucher().to_bytes(), Network::Testnet)
             .expect("valid voucher")
             .to_wif();
         // Suffixed authority — not exactly `invite`.
@@ -1844,7 +1841,7 @@ mod tests {
     #[test]
     fn should_derive_the_prospective_id_from_the_selected_credit_output() {
         let key = voucher();
-        let decoy = SecretKey::from_secret_bytes([0x22u8; 32]).unwrap();
+        let decoy = SecretKey::from_bytes(&[0x22u8; 32]).unwrap();
         let payload = AssetLockPayload {
             version: 1,
             credit_outputs: vec![

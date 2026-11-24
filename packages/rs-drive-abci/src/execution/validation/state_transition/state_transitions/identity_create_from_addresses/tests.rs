@@ -9376,23 +9376,23 @@ mod tests {
     mod actual_signature_verification {
         use super::*;
         use dpp::dashcore::hashes::Hash;
-        use dpp::secp256k1::PublicKey as RawSecp256k1PublicKey;
         use dpp::serialization::Signable;
 
         /// Helper to create a properly signed P2PKH witness
         /// Note: Creates a recoverable signature for P2PKH (65 bytes)
         fn create_real_p2pkh_witness(
-            secret_key: &dpp::secp256k1::SecretKey,
+            secret_key: &dpp::dashcore::crypto::ecdsa::EcdsaSecretKey,
             signable_bytes: &[u8],
         ) -> (PlatformAddress, AddressWitness) {
-            let raw_pubkey = RawSecp256k1PublicKey::from_secret_key(secret_key);
+            let raw_pubkey = secret_key.public_key();
             let pubkey = PublicKey::new(raw_pubkey);
-            let pubkey_hash = dpp::dashcore::hashes::hash160::Hash::hash(&pubkey.to_bytes());
+            let pubkey_hash =
+                dpp::dashcore::hashes::hash160::Hash::hash(pubkey.to_bytes().as_ref());
             let address = PlatformAddress::P2pkh(pubkey_hash.to_byte_array());
 
             // Sign using dashcore::signer which creates a recoverable signature
             let signature =
-                dpp::dashcore::signer::sign(signable_bytes, secret_key.as_secret_bytes())
+                dpp::dashcore::signer::sign(signable_bytes, secret_key.to_bytes().as_ref())
                     .expect("signing should succeed");
 
             let witness = AddressWitness::P2pkh {
@@ -9410,16 +9410,17 @@ mod tests {
             let public_keys = create_default_public_keys(&mut rng, platform_version);
 
             // Create a real secret key
-            let secret_key = dpp::secp256k1::SecretKey::from_secret_bytes([
+            let secret_key = dpp::dashcore::crypto::ecdsa::EcdsaSecretKey::from_bytes(&[
                 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
                 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
                 0x1d, 0x1e, 0x1f, 0x20,
             ])
             .expect("valid secret key");
 
-            let raw_pubkey = RawSecp256k1PublicKey::from_secret_key(&secret_key);
+            let raw_pubkey = secret_key.public_key();
             let pubkey = PublicKey::new(raw_pubkey);
-            let pubkey_hash = dpp::dashcore::hashes::hash160::Hash::hash(&pubkey.to_bytes());
+            let pubkey_hash =
+                dpp::dashcore::hashes::hash160::Hash::hash(pubkey.to_bytes().as_ref());
             let address = PlatformAddress::P2pkh(pubkey_hash.to_byte_array());
 
             let mut inputs = BTreeMap::new();
@@ -9446,7 +9447,7 @@ mod tests {
 
             // Now create the signature using recoverable signing
             let signature =
-                dpp::dashcore::signer::sign(&signable_bytes, secret_key.as_secret_bytes())
+                dpp::dashcore::signer::sign(&signable_bytes, secret_key.to_bytes().as_ref())
                     .expect("signing should succeed");
 
             // Create the signed transition
@@ -9487,16 +9488,17 @@ mod tests {
 
             // Create address from one key
             let correct_secret =
-                dpp::secp256k1::SecretKey::from_secret_bytes([1u8; 32]).expect("valid secret key");
-            let raw_correct_pubkey = RawSecp256k1PublicKey::from_secret_key(&correct_secret);
+                dpp::dashcore::crypto::ecdsa::EcdsaSecretKey::from_bytes(&[1u8; 32])
+                    .expect("valid secret key");
+            let raw_correct_pubkey = correct_secret.public_key();
             let correct_pubkey = PublicKey::new(raw_correct_pubkey);
             let pubkey_hash =
-                dpp::dashcore::hashes::hash160::Hash::hash(&correct_pubkey.to_bytes());
+                dpp::dashcore::hashes::hash160::Hash::hash(correct_pubkey.to_bytes().as_ref());
             let address = PlatformAddress::P2pkh(pubkey_hash.to_byte_array());
 
             // But sign with different key
-            let wrong_secret =
-                dpp::secp256k1::SecretKey::from_secret_bytes([2u8; 32]).expect("valid secret key");
+            let wrong_secret = dpp::dashcore::crypto::ecdsa::EcdsaSecretKey::from_bytes(&[2u8; 32])
+                .expect("valid secret key");
 
             let mut inputs = BTreeMap::new();
             inputs.insert(address.clone(), (1 as AddressNonce, dash_to_credits!(1.0)));
@@ -9523,7 +9525,7 @@ mod tests {
             // Sign with WRONG key - this will produce a signature that when recovered
             // will give a different public key than expected
             let wrong_signature =
-                dpp::dashcore::signer::sign(&signable_bytes, wrong_secret.as_secret_bytes())
+                dpp::dashcore::signer::sign(&signable_bytes, wrong_secret.to_bytes().as_ref())
                     .expect("signing should succeed");
 
             // Create transition with mismatched signature (signed by wrong key)
@@ -9557,17 +9559,18 @@ mod tests {
                 .map(|i| {
                     let mut key_bytes = [0u8; 32];
                     key_bytes[0] = i;
-                    dpp::secp256k1::SecretKey::from_secret_bytes(key_bytes).expect("valid")
+                    dpp::dashcore::crypto::ecdsa::EcdsaSecretKey::from_bytes(&key_bytes)
+                        .expect("valid")
                 })
                 .collect();
 
             let addresses: Vec<_> = secrets
                 .iter()
                 .map(|secret| {
-                    let raw_pubkey = RawSecp256k1PublicKey::from_secret_key(secret);
+                    let raw_pubkey = secret.public_key();
                     let pubkey = PublicKey::new(raw_pubkey);
                     let pubkey_hash =
-                        dpp::dashcore::hashes::hash160::Hash::hash(&pubkey.to_bytes());
+                        dpp::dashcore::hashes::hash160::Hash::hash(pubkey.to_bytes().as_ref());
                     PlatformAddress::P2pkh(pubkey_hash.to_byte_array())
                 })
                 .collect();
@@ -9609,7 +9612,7 @@ mod tests {
                     .expect("should find");
                 let secret = &secrets[idx];
                 let signature =
-                    dpp::dashcore::signer::sign(&signable_bytes, secret.as_secret_bytes())
+                    dpp::dashcore::signer::sign(&signable_bytes, secret.to_bytes().as_ref())
                         .expect("signing should succeed");
 
                 witnesses.push(AddressWitness::P2pkh {
@@ -9645,15 +9648,16 @@ mod tests {
                 .map(|i| {
                     let mut key_bytes = [0u8; 32];
                     key_bytes[0] = i + 10;
-                    dpp::secp256k1::SecretKey::from_secret_bytes(key_bytes).expect("valid")
+                    dpp::dashcore::crypto::ecdsa::EcdsaSecretKey::from_bytes(&key_bytes)
+                        .expect("valid")
                 })
                 .collect();
 
             let pubkeys: Vec<[u8; 33]> = secrets
                 .iter()
                 .map(|secret| {
-                    let raw_pubkey = RawSecp256k1PublicKey::from_secret_key(secret);
-                    raw_pubkey.serialize()
+                    let raw_pubkey = secret.public_key();
+                    raw_pubkey.to_compressed()
                 })
                 .collect();
 
@@ -9697,9 +9701,9 @@ mod tests {
                 .expect("should get signable bytes");
 
             // Sign with first 2 keys (2-of-3) using DER signatures for P2SH
-            let sig1 = dpp::dashcore::signer::sign(&signable_bytes, secrets[0].as_secret_bytes())
+            let sig1 = dpp::dashcore::signer::sign(&signable_bytes, secrets[0].to_bytes().as_ref())
                 .expect("signing should succeed");
-            let sig2 = dpp::dashcore::signer::sign(&signable_bytes, secrets[1].as_secret_bytes())
+            let sig2 = dpp::dashcore::signer::sign(&signable_bytes, secrets[1].to_bytes().as_ref())
                 .expect("signing should succeed");
 
             let _signed_transition = IdentityCreateFromAddressesTransition::V0(

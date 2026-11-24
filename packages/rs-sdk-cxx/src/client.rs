@@ -22,7 +22,6 @@ use dash_sdk::dpp::identity::v0::IdentityV0;
 use dash_sdk::dpp::identity::{Identity, IdentityPublicKey};
 use dash_sdk::dpp::key_wallet::bip32::DerivationPath;
 use dash_sdk::dpp::prelude::Identifier;
-use dash_sdk::dpp::secp256k1::{PublicKey, SecretKey};
 use dash_sdk::dpp::ProtocolError;
 use dash_sdk::platform::dashpay::{
     ContactRequestInput, EcdhProvider, RecipientIdentity, SendContactRequestInput,
@@ -34,6 +33,7 @@ use dash_sdk::platform::types::identity::PublicKeyHash;
 use dash_sdk::platform::Fetch;
 use dash_sdk::sdk::{Address, AddressList};
 use dash_sdk::{Error, Sdk, SdkBuilder};
+use secp256k1::{PublicKey, SecretKey};
 
 use crate::context::CoreContextProvider;
 use crate::ffi::{self, Status, StatusKind};

@@ -13,7 +13,6 @@ use dpp::data_contract::document_type::{
 use dpp::data_contract::DataContract;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{platform_value, Identifier, Value};
-use dpp::secp256k1::{PublicKey, SecretKey};
 use dpp::version::PlatformVersion;
 use platform_encryption::{
     open_private_document_entry, private_document_outgoing_viewing_key,
@@ -21,6 +20,7 @@ use platform_encryption::{
     PrivateDocumentTarget, PRIVATE_DOCUMENT_ENVELOPE_BODY_HEADER_LEN,
     PRIVATE_DOCUMENT_ENVELOPE_OVERHEAD_LEN, PRIVATE_DOCUMENT_ENVELOPE_WRAPPER_LEN,
 };
+use secp256k1::{PublicKey, SecretKey};
 use std::collections::BTreeMap;
 
 /// A contract with the private type `request`, shaped as DashPay's `privateContactRequest`, of

@@ -31,6 +31,8 @@ use crate::platform::private_document_scan::{
 };
 use crate::platform::{Fetch, Identifier};
 use crate::{Error, Sdk};
+use dpp::dashcore::key::rand::rngs::StdRng;
+use dpp::dashcore::key::rand::{RngCore, SeedableRng};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
@@ -46,9 +48,6 @@ use dpp::identity::identity_public_key::contract_bounds::DocumentTypeBoundsCheck
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::{BinaryData, Value};
-use dpp::secp256k1::rand::rngs::StdRng;
-use dpp::secp256k1::rand::{RngCore, SeedableRng};
-use dpp::secp256k1::{PublicKey, SecretKey};
 use dpp::util::hash::ripemd160_sha256;
 use dpp::version::PlatformVersion;
 use futures::{StreamExt, TryStreamExt};
@@ -58,6 +57,7 @@ use platform_encryption::{
     PrivateDocumentAuthMode, PrivateDocumentEnvelopeError, PrivateDocumentRecipient,
     PrivateDocumentSender, PrivateDocumentTarget, COMPACT_XPUB_LEN,
 };
+use secp256k1::{PublicKey, SecretKey};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use zeroize::{Zeroize, Zeroizing};
