@@ -277,10 +277,11 @@ sealed class DashSdkError(
 
         /**
          * `ErrorShieldedMerkleWitnessUnavailable` (native code 85). A shielded
-         * spend selected a note the wallet's local commitment tree cannot
-         * witness yet (no checkpoint covers its position). Refused before any
-         * proof or broadcast, with the notes released, so this **is**
-         * retryable once the next shielded sync checkpoints the tree.
+         * spend selected a note no checkpoint of the wallet's local commitment
+         * tree covers yet. Refused before any proof or broadcast, with the
+         * notes released, so this **is** retryable once the next shielded sync
+         * checkpoints the tree. Only that case: a store that cannot produce the
+         * path arrives as the generic wallet failure, not as this.
          * ← Swift `PlatformWalletError.shieldedMerkleWitnessUnavailable`.
          */
         class ShieldedMerkleWitnessUnavailable(message: String, cause: Throwable? = null) :

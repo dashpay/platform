@@ -20,6 +20,7 @@ use std::sync::Mutex;
 use dpp::serialization::{PlatformDeserializableTrusted, PlatformSerializable};
 use dpp::state_transition::StateTransition;
 use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retention};
+use rusqlite::OptionalExtension;
 
 use super::balance::{ShieldedBalanceSource, ShieldedLocalAccountBalance};
 use super::store::{
@@ -1547,6 +1548,40 @@ impl ShieldedStore for FileBackedShieldedStore {
         position: u64,
         depth: usize,
     ) -> Result<Option<grovedb_commitment_tree::MerklePath>, Self::Error> {
+        // No checkpoint at `depth` covers `position`: `Ok(None)`, as the
+        // trait states. shardtree reports a position past the checkpoint as
+        // a `NotContained` query error, which the wrapper flattens into the
+        // same string as a storage failure, so the store reads the
+        // checkpoint's position first and keeps `Err` for failures. The
+        // table is the wrapper's own (`SqliteShardStore`), which
+        // `reset_commitment_tree` also wipes by name; read on the recovery
+        // connection, as the tree's connection is owned by the wrapper. Its
+        // writes commit as they return (WAL), and the caller's lock keeps a
+        // writer out between this read and the witness.
+        let checkpoint: Option<Option<u64>> = {
+            let conn = self.pending_conn.lock().map_err(|e| {
+                FileShieldedStoreError::Storage(format!("recovery connection mutex poisoned: {e}"))
+            })?;
+            conn.query_row(
+                "SELECT position FROM commitment_tree_checkpoints \
+                 ORDER BY checkpoint_id DESC LIMIT 1 OFFSET ?1",
+                [depth as i64],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .optional()
+            .map_err(|e| {
+                FileShieldedStoreError::Storage(format!("read checkpoint at depth {depth}: {e}"))
+            })?
+            .map(|covered| covered.map(|p| p as u64))
+        };
+        match checkpoint {
+            // No checkpoint at this depth, an empty-tree checkpoint, or one
+            // taken before `position` was appended.
+            None | Some(None) => return Ok(None),
+            Some(Some(covered)) if position > covered => return Ok(None),
+            Some(Some(_)) => {}
+        }
+
         let tree = self
             .tree
             .lock()

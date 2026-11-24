@@ -328,11 +328,12 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// lookup failed, which is not Platform's answer that it does not exist,
     /// 7). Nothing was signed, reserved or broadcast: retry as it is.
     case errorIdentityLookupFailed = 80
-    /// A shielded spend selected a note the wallet's local commitment tree
-    /// cannot witness yet (no checkpoint covers its position). Refused while
-    /// the spend was assembled, before any proof or broadcast, and the notes
-    /// were released: nothing was sent. Retryable after the next shielded
-    /// sync, which checkpoints the tree. Distinct from
+    /// A shielded spend selected a note no checkpoint of the wallet's local
+    /// commitment tree covers yet. Refused while the spend was assembled,
+    /// before any proof or broadcast, and the notes were released: nothing was
+    /// sent. Retryable after the next shielded sync, which checkpoints the
+    /// tree. A store that cannot produce the path is not this case: it stays
+    /// `errorWalletOperation`. Distinct from
     /// `errorShieldedSpendUnconfirmed`, which must NOT be retried.
     case errorShieldedMerkleWitnessUnavailable = 85
     /// The named thing does not exist. Besides the handle/lookup failures this
@@ -795,8 +796,8 @@ public enum PlatformWalletError: LocalizedError {
     /// sync reaches a confirmed state. Distinct from `shieldedSpendUnconfirmed`,
     /// which must NOT be retried.
     case shieldedNoRecordedAnchor(String)
-    /// A shielded spend selected a note the local commitment tree cannot
-    /// witness yet (code 85). Nothing was proved or broadcast and the notes
+    /// A shielded spend selected a note no checkpoint of the local commitment
+    /// tree covers yet (code 85). Nothing was proved or broadcast and the notes
     /// were released: retryable once the next shielded sync checkpoints the
     /// tree. Distinct from `shieldedSpendUnconfirmed`, which must NOT be
     /// retried.

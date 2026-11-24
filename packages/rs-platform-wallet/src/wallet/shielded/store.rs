@@ -823,10 +823,15 @@ pub trait ShieldedStore: Send + Sync + 'static {
 
     /// Generate a Merkle authentication path for `position` as of the
     /// checkpoint at `depth` (0 = current tree state, 1 = the previous
-    /// checkpoint, and so on). Returns `Ok(None)` when no witness is
-    /// available at that depth — the position is unmarked/pruned, the
-    /// requested checkpoint depth doesn't exist, or the position was
-    /// appended after that checkpoint.
+    /// checkpoint, and so on). Returns `Ok(None)` when no checkpoint at that
+    /// depth covers the position: the requested checkpoint depth doesn't
+    /// exist, or the position was appended after that checkpoint. A later
+    /// checkpoint covers it, so this is the case a sync resolves.
+    ///
+    /// Every other failure is `Err`: the store could not read, or the tree
+    /// cannot produce a path for a position a checkpoint covers (unmarked or
+    /// pruned). Sync marks every position it appends, so the latter means a
+    /// damaged tree or one an older build wrote, which no sync repairs.
     ///
     /// Building a spend against an older-but-recorded checkpoint is how the
     /// wallet keeps its anchor consistent with a root Platform actually

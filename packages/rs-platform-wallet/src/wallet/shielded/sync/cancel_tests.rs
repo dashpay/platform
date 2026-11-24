@@ -449,7 +449,7 @@ async fn should_checkpoint_leaves_a_failed_pass_appended_on_the_next_pass() {
         let store = store.read().await;
         assert_eq!(store.tree_size().unwrap(), 8, "the appends are persisted");
         assert!(
-            store.witness(7).is_err(),
+            matches!(store.witness(7), Ok(None)),
             "no checkpoint covers the leaves the failed pass appended"
         );
     }

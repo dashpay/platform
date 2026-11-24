@@ -663,16 +663,17 @@ pub(crate) fn map_spend_result(
         // released, so the host may retry after the next shielded sync.
         Err(e @ PlatformWalletError::ShieldedNoRecordedAnchor(_)) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor,
-            format!("Wallet is still syncing to a confirmed state — try again shortly. ({e})"),
+            retry_after_sync_message(&e),
         ),
-        // Retryable: a selected note is not yet covered by a checkpoint of the
-        // local commitment tree. Refused while the spend was assembled, before
-        // the proof and the broadcast, with the notes released; the next
-        // shielded sync checkpoints the tree.
+        // Retryable: no checkpoint of the local commitment tree covers a
+        // selected note yet. Refused while the spend was assembled, before the
+        // proof and the broadcast, with the notes released; the next shielded
+        // sync checkpoints the tree. A store that cannot produce the path is
+        // `ShieldedStoreError` and keeps the generic code below.
         Err(e @ PlatformWalletError::ShieldedMerkleWitnessUnavailable(_)) => {
             PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable,
-                format!("{operation} failed: {e}"),
+                retry_after_sync_message(&e),
             )
         }
         // Definitive failure: the transition never left the wallet (refused
@@ -1074,40 +1075,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
                 ),
             )
         }
-        Err(e) => map_identity_create_from_pool_error(e),
-    }
-}
-
-/// Map a failed identity create from the pool, other than the unconfirmed
-/// broadcast (which also writes the derived id), to a typed FFI result.
-fn map_identity_create_from_pool_error(error: PlatformWalletError) -> PlatformWalletFFIResult {
-    match error {
-        // Retryable: no Platform-recorded anchor covered the selected notes yet
-        // (the commitment tree is mid-block after an index-chunk sync). Nothing
-        // was broadcast and the notes were released, so the host may retry after
-        // the next shielded sync.
-        e @ PlatformWalletError::ShieldedNoRecordedAnchor(_) => PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor,
-            format!("Wallet is still syncing to a confirmed state — try again shortly. ({e})"),
-        ),
-        // Retryable: a selected note is not yet covered by a checkpoint of the
-        // local commitment tree. Refused before the proof and the broadcast,
-        // with the notes released; the next shielded sync checkpoints the tree.
-        e @ PlatformWalletError::ShieldedMerkleWitnessUnavailable(_) => {
-            PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable,
-                format!("shielded identity-create-from-pool failed: {e}"),
-            )
-        }
-        // Definitive failure: the transition was not executed and the spent notes were released.
-        e @ PlatformWalletError::ShieldedBroadcastFailed(_) => PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
-            format!("shielded identity-create-from-pool failed: {e}"),
-        ),
-        e => PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            format!("shielded identity-create-from-pool failed: {e}"),
-        ),
+        // Everything else is a note spend's outcome like any other, so it
+        // takes the spend contract's codes and messages.
+        Err(e) => map_spend_result(Err(e), "shielded identity-create-from-pool"),
     }
 }
 
@@ -3203,61 +3173,52 @@ mod tests {
         );
     }
 
-    /// A note the local tree cannot witness is refused before the proof and
-    /// the broadcast, so every note spend reports it by its own retryable
-    /// code (85), never as the generic failure (6) a host must read as
-    /// possibly sent: every operation the spend contract maps, and the
-    /// identity create from the pool, which has its own mapper.
+    /// A note no checkpoint covers yet is refused before the proof and the
+    /// broadcast, so every note spend reports it by its own retryable code
+    /// (85) and code 19's wording, never as the generic failure (6) a host
+    /// must read as possibly sent: every operation the spend contract maps,
+    /// the identity create from the pool included (it delegates here). A
+    /// store that cannot produce the path keeps the generic code.
     #[test]
     fn should_report_an_unavailable_merkle_witness_as_code_85_on_every_spend() {
-        let witness = || {
-            PlatformWalletError::ShieldedMerkleWitnessUnavailable(
-                "witness(7395, depth 0): Tree does not contain a root".to_string(),
-            )
-        };
         for operation in [
             "shielded transfer",
             "shielded unshield",
             "shielded withdraw",
             "shielded identity top up from pool",
+            "shielded identity-create-from-pool",
             "private contact request",
             "private contact request accept",
             "contact request accept",
         ] {
-            let result = map_spend_result(Err(witness()), operation);
+            let result = map_spend_result(
+                Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(
+                    "no checkpoint covers the note at position 7395 yet".to_string(),
+                )),
+                operation,
+            );
             assert_eq!(
                 result.code,
                 PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable,
                 "{operation}"
             );
-            assert!(message_of(&result).contains("Merkle witness unavailable"));
-        }
-        let result = map_identity_create_from_pool_error(witness());
-        assert_eq!(
-            result.code,
-            PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable
-        );
-        assert_eq!(result.code as u32, 85);
+            assert_eq!(result.code as u32, 85);
+            let message = message_of(&result);
+            assert!(message.contains("try again shortly"), "{message}");
+            assert!(message.contains("position 7395"), "{message}");
 
-        // The identity-create mapper keeps its other codes.
-        assert_eq!(
-            map_identity_create_from_pool_error(PlatformWalletError::ShieldedNoRecordedAnchor(
-                "mid-block".to_string()
-            ))
-            .code,
-            PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor
-        );
-        assert_eq!(
-            map_identity_create_from_pool_error(PlatformWalletError::ShieldedBroadcastFailed(
-                "refused".to_string()
-            ))
-            .code,
-            PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed
-        );
-        assert_eq!(
-            map_identity_create_from_pool_error(PlatformWalletError::ShieldedNoUnspentNotes).code,
-            PlatformWalletFFIResultCode::ErrorWalletOperation
-        );
+            let store_failure = map_spend_result(
+                Err(PlatformWalletError::ShieldedStoreError(
+                    "witness for the note at position 7395: sqlite error".to_string(),
+                )),
+                operation,
+            );
+            assert_eq!(
+                store_failure.code,
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                "{operation}"
+            );
+        }
     }
 
     /// Arguments for `platform_wallet_manager_shielded_shield_from_identity_to_recipient` that
