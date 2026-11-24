@@ -1202,8 +1202,14 @@ mod tests {
             .await
             .expect_err("below protocol version 15");
 
+        // The empty mock has no answer for the epoch request: that failure is returned.
         assert!(
-            !matches!(&error, Error::Generic(message) if message.contains("protocol version 15")),
+            matches!(
+                &error,
+                Error::DapiClientError(rs_dapi_client::DapiClientError::Mock(
+                    rs_dapi_client::mock::MockError::MockExpectationNotFound(_)
+                ))
+            ),
             "the request's own failure, got {error:?}"
         );
     }
