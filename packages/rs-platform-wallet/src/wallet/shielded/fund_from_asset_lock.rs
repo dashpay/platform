@@ -538,7 +538,9 @@ impl PlatformWallet {
         // InstantSend / ChainLock proof is resolving. The lock is already on
         // chain by this point, so do not strand it by rejecting a bundle
         // priced under the earlier snapshot: refresh the fee schedule before
-        // deriving the shield amount and re-prove when the version ratcheted.
+        // deriving the shield amount. A new fee changes the amount, so the
+        // reuse guard below re-proves; a new binding is caught by the first
+        // attempt, which re-proves a bundle no longer bound to the lock.
         let current_platform_version = self.sdk.version();
         let version_changed =
             current_platform_version.protocol_version != platform_version.protocol_version;
@@ -591,8 +593,10 @@ impl PlatformWallet {
         // ever made deterministic, retries need another diversifier.
         let proof_out_point = out_point_from_proof(&proof);
         let proving = match speculative {
+            // Kept across a protocol-version change: only the fee (already in
+            // `shield_amount`) and the binding (checked per attempt) depend on it.
             Some((out_point, amount, proving))
-                if !version_changed && out_point == proof_out_point && amount == shield_amount =>
+                if out_point == proof_out_point && amount == shield_amount =>
             {
                 proving
             }
