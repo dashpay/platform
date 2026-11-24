@@ -28,7 +28,7 @@ use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::tracked::AssetLockStatus;
 use crate::wallet::identity::crypto::ParsedInvitation;
 use crate::wallet::identity::state::{
-    RegistrationIndex, SlotHolder, SlotLease, SlotLeasePhase, SlotState,
+    ClaimLease, RegistrationIndex, SlotHolder, SlotLease, SlotLeasePhase, SlotState,
 };
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
@@ -452,16 +452,18 @@ impl IdentityWallet {
         let mut resolution = ClaimLeaseResolution::default();
         for lease in leases {
             if lease.slot_occupied {
-                if self.end_claim_lease(lease.invitation).await {
+                if self.end_claim_lease(&lease).await {
                     resolution.ended += 1;
                 }
                 continue;
             }
-            // Nothing was sent for a `Reserved` claim, and the operation
-            // that leased it ended with the process that ran it: no claim
-            // can land there, and nothing else would release the lease.
+            // Nothing was sent for a `Reserved` claim restored from the
+            // store, and the operation that leased it ended with the process
+            // that ran it: no claim can land there, and nothing else would
+            // release the lease. One this process leased or retried since is
+            // a live claim's, left to it.
             if lease.phase != SlotLeasePhase::Submitted {
-                if self.end_claim_lease(lease.invitation).await {
+                if lease.restored && self.end_claim_lease(&lease).await {
                     resolution.ended += 1;
                 }
                 continue;
@@ -497,7 +499,7 @@ impl IdentityWallet {
                         // memory, which is stored here; an identity this
                         // wallet held at another slot leaves it to end.
                         Ok(true) => {
-                            if !self.end_claim_lease(lease.invitation).await {
+                            if !self.end_claim_lease(&lease).await {
                                 self.store_claim_lease(lease.invitation).await;
                             }
                             resolution.landed += 1;
@@ -515,7 +517,7 @@ impl IdentityWallet {
                     }
                 }
                 Some(false) => {
-                    if self.end_claim_lease(lease.invitation).await {
+                    if self.end_claim_lease(&lease).await {
                         resolution.ended += 1;
                     } else {
                         resolution.held += 1;
@@ -657,14 +659,13 @@ impl IdentityWallet {
     /// End `invitation`'s claim lease, stored durably. `false` when it
     /// leases nothing, when this handle's wallet is no longer the one the
     /// manager holds, or when the store fails (the lease is put back).
-    async fn end_claim_lease(&self, invitation: OutPoint) -> bool {
+    async fn end_claim_lease(&self, lease: &ClaimLease) -> bool {
         let mut wm = self.wallet_manager.write().await;
         let Ok(info) = self.current_wallet_info_mut(&mut wm) else {
             return false;
         };
         let manager = &mut info.identity_manager;
-        let Some((identity_index, lease, ended)) =
-            manager.end_claim_lease(&self.wallet_id, invitation)
+        let Some((identity_index, lease, ended)) = manager.end_claim_lease(&self.wallet_id, lease)
         else {
             return false;
         };
@@ -2194,6 +2195,42 @@ mod tests {
             assert!(matches!(slot_state(&wallet, 0).await, SlotState::Leased(_)));
         }
 
+        /// Replay `wallet`'s stored claim leases, as a restart restores them.
+        async fn restore_claim_leases(wallet: &PlatformWallet) {
+            let mut wm = wallet.identity().wallet_manager.write().await;
+            let manager = &mut wm
+                .get_wallet_info_mut(&wallet.wallet_id())
+                .unwrap()
+                .identity_manager;
+            let stored = manager.claim_lease_changeset(&wallet.wallet_id(), invitation());
+            manager.apply_claim_lease_changeset(wallet.wallet_id(), stored);
+        }
+
+        /// A `Reserved` claim this process leased is a live claim's: settling
+        /// leaves it, so the claim can still submit.
+        #[tokio::test]
+        async fn should_leave_a_reserved_claim_lease_this_process_took() {
+            let (wallet, slot) =
+                wallet_with_claim(Backend::new(full()), None, SlotLeasePhase::Reserved).await;
+
+            let resolution = wallet
+                .identity()
+                .resolve_submitted_claim_leases(InvitationClaimantKey::Master(&master()))
+                .await
+                .unwrap();
+
+            assert_eq!(resolution, ClaimLeaseResolution::default());
+            assert!(matches!(
+                slot_state(&wallet, slot.identity_index).await,
+                SlotState::Leased(_)
+            ));
+            assert!(wallet
+                .identity()
+                .submit_claim_lease(slot.identity_index, invitation())
+                .await
+                .unwrap());
+        }
+
         /// Nothing was sent for a `Reserved` claim, and the process that
         /// leased it is gone: its lease ends, stored durably.
         #[tokio::test]
@@ -2201,6 +2238,7 @@ mod tests {
             let backend = Backend::new(full());
             let (wallet, slot) =
                 wallet_with_claim(backend.clone(), None, SlotLeasePhase::Reserved).await;
+            restore_claim_leases(&wallet).await;
 
             let resolution = wallet
                 .identity()

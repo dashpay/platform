@@ -9,6 +9,7 @@ pub mod managed_identity;
 pub mod manager;
 
 pub use managed_identity::{BlockTime, DashPayState, ManagedIdentity, PrivateContact};
+pub(crate) use manager::ClaimLease;
 pub use manager::IdentityLocation;
 pub use manager::IdentityManager;
 pub use manager::RegistrationIndex;

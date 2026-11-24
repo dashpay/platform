@@ -31,6 +31,7 @@ mod apply;
 mod lifecycle;
 mod slots;
 
+pub(crate) use slots::ClaimLease;
 pub use slots::{SlotAcquisition, SlotHolder, SlotLease, SlotLeasePhase, SlotPlacement, SlotState};
 
 use super::managed_identity::ManagedIdentity;
@@ -38,6 +39,7 @@ use crate::changeset::{
     IdentityManagerStartState, IdentityScanStateEntry, IdentitySlotLeaseChangeSet,
 };
 use crate::wallet::platform_wallet::WalletId;
+use dashcore::OutPoint;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
 use std::collections::{BTreeMap, BTreeSet};
@@ -135,6 +137,11 @@ pub struct IdentityManager {
     /// keep the index durably, and these mirror them (see
     /// [`Self::hold_for_shielded_create`]).
     shielded_create_holds: BTreeMap<WalletId, BTreeSet<RegistrationIndex>>,
+
+    /// Claim leases as restored from the store and not touched since by an
+    /// operation of this process, `restored_claim_leases[wallet_id]`: only
+    /// those can be ones a previous process abandoned.
+    restored_claim_leases: BTreeMap<WalletId, BTreeSet<OutPoint>>,
 }
 
 impl From<IdentityManagerStartState> for IdentityManager {
@@ -174,6 +181,7 @@ impl From<IdentityManagerStartState> for IdentityManager {
             slot_leases: BTreeMap::new(),
             next_registration_token: 0,
             shielded_create_holds: BTreeMap::new(),
+            restored_claim_leases: BTreeMap::new(),
         };
         for (wallet_id, leases) in claim_leases {
             manager.apply_claim_lease_changeset(

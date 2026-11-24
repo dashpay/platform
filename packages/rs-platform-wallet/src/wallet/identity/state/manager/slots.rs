@@ -90,6 +90,9 @@ pub(crate) struct ClaimLease {
     pub(crate) invitation: OutPoint,
     pub(crate) phase: SlotLeasePhase,
     pub(crate) slot_occupied: bool,
+    /// Restored from the store and not touched since by an operation of
+    /// this process.
+    pub(crate) restored: bool,
 }
 
 /// Result of [`IdentityManager::place_in_slot_unstored`].
@@ -158,6 +161,8 @@ impl IdentityManager {
         funded_registrations: &BTreeSet<RegistrationIndex>,
     ) -> Result<SlotAcquisition, PlatformWalletError> {
         if let Some(existing) = self.leased_slot(&wallet_id, &holder) {
+            // An operation of this process holds it now.
+            self.forget_restored_claim(&wallet_id, &holder);
             return Ok(existing);
         }
         let shielded_creates = self.shielded_create_holds.get(&wallet_id);
@@ -239,6 +244,7 @@ impl IdentityManager {
         holder: &SlotHolder,
         phase: SlotLeasePhase,
     ) -> Option<RegistrationIndex> {
+        self.forget_restored_claim(wallet_id, holder);
         let leases = self.slot_leases.get_mut(wallet_id)?;
         let (index, lease) = leases
             .iter_mut()
@@ -254,6 +260,7 @@ impl IdentityManager {
         wallet_id: &WalletId,
         holder: &SlotHolder,
     ) -> Option<RegistrationIndex> {
+        self.forget_restored_claim(wallet_id, holder);
         let leases = self.slot_leases.get_mut(wallet_id)?;
         let index = leases
             .iter()
@@ -467,9 +474,29 @@ impl IdentityManager {
         let Some(leases) = self.slot_leases.get_mut(wallet_id) else {
             return;
         };
-        leases.remove(&identity_index);
+        let ended = leases.remove(&identity_index);
+        if let Some(ended) = ended {
+            self.forget_restored_claim(wallet_id, &ended.holder);
+        }
+        let Some(leases) = self.slot_leases.get_mut(wallet_id) else {
+            return;
+        };
         if leases.is_empty() {
             self.slot_leases.remove(wallet_id);
+        }
+    }
+
+    /// An operation of this process now holds `holder`'s lease, or it ended:
+    /// it is no longer one only restored from the store.
+    fn forget_restored_claim(&mut self, wallet_id: &WalletId, holder: &SlotHolder) {
+        let SlotHolder::InvitationClaim { invitation } = holder else {
+            return;
+        };
+        if let Some(restored) = self.restored_claim_leases.get_mut(wallet_id) {
+            restored.remove(invitation);
+            if restored.is_empty() {
+                self.restored_claim_leases.remove(wallet_id);
+            }
         }
     }
 
@@ -491,22 +518,32 @@ impl IdentityManager {
                         .wallet_identities
                         .get(wallet_id)
                         .is_some_and(|slots| slots.contains_key(identity_index)),
+                    restored: self
+                        .restored_claim_leases
+                        .get(wallet_id)
+                        .is_some_and(|restored| restored.contains(&invitation)),
                 }),
                 SlotHolder::Registration { .. } => None,
             })
             .collect()
     }
 
-    /// End `invitation`'s claim lease, whatever its phase, and return the
-    /// stored form of its end with the lease as it was (to put back when the
-    /// store fails). `None` when the claim leases nothing in `wallet_id`.
+    /// End `invitation`'s claim lease, when it still stands as `expected`
+    /// (the same slot and phase, as read before the caller's awaits), and
+    /// return the stored form of its end with the lease as it was (to put
+    /// back when the store fails). `None` when the claim leases nothing in
+    /// `wallet_id`, or a live operation has changed its lease since.
     pub(crate) fn end_claim_lease(
         &mut self,
         wallet_id: &WalletId,
-        invitation: OutPoint,
+        expected: &ClaimLease,
     ) -> Option<(RegistrationIndex, SlotLease, IdentitySlotLeaseChangeSet)> {
+        let invitation = expected.invitation;
         let holder = SlotHolder::InvitationClaim { invitation };
         let leased = self.leased_slot(wallet_id, &holder)?;
+        if leased.identity_index != expected.identity_index || leased.phase != expected.phase {
+            return None;
+        }
         self.release_identity_slot(wallet_id, &holder);
         let lease = SlotLease {
             holder,
@@ -571,6 +608,10 @@ impl IdentityManager {
                     phase: entry.phase,
                 },
             );
+            self.restored_claim_leases
+                .entry(wallet_id)
+                .or_default()
+                .insert(invitation);
         }
         for invitation in changeset.released {
             self.release_identity_slot(&wallet_id, &SlotHolder::InvitationClaim { invitation });
@@ -852,6 +893,52 @@ mod tests {
             .acquire_identity_slot(WALLET, SlotHolder::Registration { token: 2 }, &none())
             .unwrap();
         assert_eq!(next.identity_index, 0);
+    }
+
+    /// Settling ends a claim's lease only as it was read: once a live claim
+    /// moved it (submitted it), the read is stale and nothing ends.
+    #[test]
+    fn should_end_a_claim_lease_only_as_it_was_read() {
+        let mut manager = IdentityManager::new();
+        manager
+            .acquire_identity_slot(WALLET, claim(1), &none())
+            .unwrap();
+        let read = manager.claim_leases(&WALLET)[0];
+        assert!(!read.restored, "leased by this process");
+        manager.set_slot_lease_phase(&WALLET, &claim(1), SlotLeasePhase::Submitted);
+
+        assert!(manager.end_claim_lease(&WALLET, &read).is_none());
+        assert!(matches!(
+            manager.slot_state(&WALLET, read.identity_index),
+            SlotState::Leased(SlotLease {
+                phase: SlotLeasePhase::Submitted,
+                ..
+            })
+        ));
+        let current = manager.claim_leases(&WALLET)[0];
+        assert!(manager.end_claim_lease(&WALLET, &current).is_some());
+    }
+
+    /// A lease replayed from the store reads as restored until an operation
+    /// of this process takes it up again.
+    #[test]
+    fn should_read_a_replayed_claim_lease_as_restored_until_retaken() {
+        let mut manager = IdentityManager::new();
+        manager
+            .acquire_identity_slot(WALLET, claim(1), &none())
+            .unwrap();
+        let SlotHolder::InvitationClaim { invitation } = claim(1) else {
+            unreachable!()
+        };
+        let stored = manager.claim_lease_changeset(&WALLET, invitation);
+        let mut restarted = IdentityManager::new();
+        restarted.apply_claim_lease_changeset(WALLET, stored);
+        assert!(restarted.claim_leases(&WALLET)[0].restored);
+
+        restarted
+            .acquire_identity_slot(WALLET, claim(1), &none())
+            .unwrap();
+        assert!(!restarted.claim_leases(&WALLET)[0].restored);
     }
 
     #[test]
