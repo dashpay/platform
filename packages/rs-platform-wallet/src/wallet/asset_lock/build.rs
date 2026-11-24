@@ -261,6 +261,18 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     .to_string(),
             ));
         }
+        // A drained top-up is held to Platform's minimum on the BUILT lock's
+        // value, which only the funded pipeline checks before handing the
+        // transaction on; this form returns it for the caller to broadcast.
+        if matches!(funding_type, AssetLockFundingType::IdentityTopUp)
+            && matches!(amount, AssetLockBuildAmount::DrainAll { .. })
+        {
+            return Err(PlatformWalletError::InvalidParameter(
+                "a drained identity top-up lock must be held to the top-up minimum on its \
+                 built value; build it through the funded top-up, not the build-only API"
+                    .to_string(),
+            ));
+        }
         let (transaction, path, token, accounts, pin, _funding_pools) = self
             .build_asset_lock_transaction_fenced(
                 amount,
@@ -319,6 +331,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         ),
         PlatformWalletError,
     > {
+        // Every top-up lock, whichever entry builds it: the funded pipeline,
+        // the funded-proof export and the build-only (signed-transaction)
+        // export all come through here.
+        let amount = hold_top_up_to_minimum(funding_type, amount)?;
         let (amount_duffs, drain) = match amount {
             AssetLockBuildAmount::Exact(v) => (v, false),
             // The credit-output value is a placeholder — the key-wallet
@@ -3390,6 +3406,70 @@ mod tests {
         assert_eq!(broadcaster.calls(), 0);
         assert!(manager.list_tracked_locks().await.is_empty());
         assert!(persistence.stored.lock().unwrap().is_empty());
+    }
+
+    /// The build-only (signed-transaction) API is held to the same minimum:
+    /// a bound top-up below it is refused before anything is selected, and a
+    /// drained one is refused outright, since only the funded pipeline checks
+    /// a drain's built value. Nothing is reserved, so a funded build of the
+    /// same coins still succeeds.
+    #[tokio::test]
+    async fn should_hold_the_build_only_api_to_the_top_up_minimum() {
+        let below = super::min_top_up_duffs().unwrap() - 1;
+        let broadcaster = Arc::new(CountingOkBroadcaster::default());
+        let persistence = Arc::new(CapturingPersistence {
+            records_identity_recipients: true,
+            commits_inline: true,
+            ..Default::default()
+        });
+        let (manager, signer) = funded_asset_lock_manager_with_persistence(
+            Arc::clone(&broadcaster),
+            Arc::clone(&persistence),
+        )
+        .await;
+
+        for amount in [
+            super::AssetLockBuildAmount::Exact(below),
+            super::AssetLockBuildAmount::DrainAll {
+                minimum_lock_duffs: None,
+            },
+        ] {
+            let result = manager
+                .build_asset_lock_transaction_with_funding(
+                    amount,
+                    &ASSET_LOCK_FUNDING_SOURCES,
+                    0,
+                    AssetLockFundingType::IdentityTopUp,
+                    0,
+                    &signer,
+                )
+                .await;
+            assert!(
+                matches!(&result, Err(PlatformWalletError::InvalidParameter(_))),
+                "{:?}",
+                result.as_ref().err()
+            );
+        }
+        let result = manager
+            .build_asset_lock_transaction(below, 0, AssetLockFundingType::IdentityTopUp, 0, &signer)
+            .await;
+        assert!(
+            matches!(&result, Err(PlatformWalletError::InvalidParameter(message))
+                if message.contains("below the minimum top-up")),
+            "{:?}",
+            result.as_ref().err()
+        );
+        assert_eq!(broadcaster.calls(), 0);
+        manager
+            .build_asset_lock_transaction(
+                super::min_top_up_duffs().unwrap(),
+                0,
+                AssetLockFundingType::IdentityTopUp,
+                0,
+                &signer,
+            )
+            .await
+            .expect("the refused builds reserved nothing");
     }
 
     /// The recipient reaches a host in its own callback beside the lock's
