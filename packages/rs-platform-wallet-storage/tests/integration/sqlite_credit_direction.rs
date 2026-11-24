@@ -2,23 +2,114 @@
 //! lock through the live event adapter, the SQLite store and its repair, and
 //! a reload.
 
+use dashcore::block::{Header, Version};
+use dashcore::hashes::Hash;
+use dashcore::script::{Builder, PushBytesBuf};
+use dashcore::sighash::SighashCache;
 use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dashcore::transaction::TransactionPayload;
-use dashcore::{Network, OutPoint, ScriptBuf, Transaction};
+use dashcore::{
+    Address, Block, BlockHash, CompactTarget, Network, OutPoint, ScriptBuf, Transaction,
+    TxMerkleNode,
+};
 use key_wallet::account::AccountType;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::managed_account::transaction_record::TransactionDirection;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
-use key_wallet::wallet::managed_wallet_info::ManagedAccountOperations;
-use platform_wallet::changeset::{AccountAddressPoolEntry, PlatformWalletPersistence};
-use platform_wallet::key_wallet_manager::{WalletInterface, WalletManager};
+use key_wallet::wallet::managed_wallet_info::{ManagedAccountOperations, ManagedWalletInfo};
+use key_wallet::Wallet;
+use platform_wallet::changeset::{
+    spawn_wallet_event_adapter, AccountAddressPoolEntry, AccountRegistrationEntry,
+    PlatformWalletChangeSet, PlatformWalletPersistence, WalletMetadataEntry,
+};
+use platform_wallet::key_wallet_manager::{WalletEvent, WalletInterface, WalletManager};
 use platform_wallet::test_support::core_fixtures::{foreign_address, outside, pay, spend_of};
 use platform_wallet::wallet::platform_wallet::PlatformWalletInfo;
 use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
+use std::collections::BTreeSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, RwLock};
+use tokio_util::sync::CancellationToken;
 
-use crate::common::{self, mine, persist_events, registration, Manager};
+use crate::common;
+
+type Manager = Arc<RwLock<WalletManager<PlatformWalletInfo>>>;
+
+async fn mine(manager: &Manager, wallet_id: [u8; 32], tx: Transaction, height: u32) {
+    let block = Block {
+        header: Header {
+            version: Version::default(),
+            prev_blockhash: BlockHash::from_byte_array([height as u8; 32]),
+            merkle_root: TxMerkleNode::all_zeros(),
+            time: height,
+            bits: CompactTarget::from_consensus(0x1d00ffff),
+            nonce: 0,
+        },
+        txdata: vec![tx],
+    };
+    manager
+        .write()
+        .await
+        .process_block_for_wallets(
+            &block,
+            block.block_hash(),
+            height,
+            &BTreeSet::from([wallet_id]),
+        )
+        .await;
+}
+
+async fn persist_events(
+    manager: &Manager,
+    persister: &Arc<SqlitePersister>,
+    events: &mut mpsc::UnboundedReceiver<WalletEvent>,
+) {
+    let (sender, receiver) = mpsc::unbounded_channel();
+    while let Ok(event) = events.try_recv() {
+        sender.send(event).unwrap();
+    }
+    drop(sender);
+    let fault = Arc::new(AtomicBool::new(false));
+    spawn_wallet_event_adapter(
+        Arc::clone(manager),
+        Arc::downgrade(persister),
+        receiver,
+        Arc::clone(&fault),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert!(!fault.load(Ordering::Relaxed));
+}
+
+fn authorize_funding_spend(
+    wallet: &Wallet,
+    info: &ManagedWalletInfo,
+    address: &Address,
+    transaction: &mut Transaction,
+) {
+    assert_eq!(transaction.input.len(), 1);
+    let path = info
+        .accounts
+        .all_funding_accounts()
+        .into_iter()
+        .find_map(|account| account.address_derivation_path(address))
+        .expect("wallet owns the funding address");
+    let key = wallet.derive_private_key(&path).unwrap();
+    let sighash_all = 1;
+    let digest = SighashCache::new(&*transaction)
+        .legacy_signature_hash(0, &address.script_pubkey(), u32::from(sighash_all))
+        .unwrap();
+    let mut signature = key
+        .sign(&digest.to_byte_array())
+        .with_der(|der| der.to_vec());
+    signature.push(sighash_all);
+    transaction.input[0].script_sig = Builder::new()
+        .push_slice(PushBytesBuf::try_from(signature).unwrap())
+        .push_slice(PushBytesBuf::try_from(key.public_key().to_compressed().to_vec()).unwrap())
+        .into_script();
+}
 
 struct Fixture {
     persister: Arc<SqlitePersister>,
@@ -135,8 +226,24 @@ async fn observed_lock(case: &str, deep: bool) -> Fixture {
         "mixed" => vec![last.clone(), foreign_address(92)],
         _ => vec![foreign_address(92)],
     };
-    let mut registered = registration(&wallet, None);
-    registered.account_address_pools = initial_pools;
+    let registered = PlatformWalletChangeSet {
+        wallet_metadata: Some(WalletMetadataEntry {
+            network: Network::Testnet,
+            wallet_group_id: [0; 32],
+            birth_height: 0,
+        }),
+        account_registrations: wallet
+            .accounts
+            .all_accounts()
+            .into_iter()
+            .map(|account| AccountRegistrationEntry {
+                account_type: account.account_type,
+                account_xpub: account.account_xpub,
+            })
+            .collect(),
+        account_address_pools: initial_pools,
+        ..Default::default()
+    };
     persister.store(wallet_id, registered).unwrap();
     let initial_pool_rows = pool_rows(&persister);
     let funding = spend_of(&[outside(31)], vec![pay(100_000, &address)]);
@@ -164,11 +271,11 @@ async fn observed_lock(case: &str, deep: bool) -> Fixture {
     ));
     {
         let wm = manager.read().await;
-        transaction = common::authorize(
+        authorize_funding_spend(
             wm.get_wallet(&wallet_id).unwrap(),
             &wm.get_wallet_info(&wallet_id).unwrap().core_wallet,
             &address,
-            transaction,
+            &mut transaction,
         );
     }
     assert!(
