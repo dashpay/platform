@@ -260,6 +260,9 @@ jobs:
           cargo check -p drive-proof-verifier --locked
           cargo check -p dash-platform-queries --locked
           cargo check -p dash-core-proof --locked
+          # Selecting dash-sdk turns on its default mocks but not wasm-sdk's, so
+          # wasm-sdk must still map every SdkError variant with its mocks off.
+          cargo check -p wasm-sdk -p dash-sdk --lib --locked
           # Native graphs: assert the networking transport stack stays out.
           # `tonic` itself is present (dapi-grpc's generated client types) but
           # without its transport feature — which is exactly what the absence
@@ -282,13 +285,18 @@ jobs:
               fi
             done
           done
-          # The published wasm-sdk must not ship dash-sdk's mock transport.
+          # The published wasm-sdk must not enable SDK mocks or the mock transport.
           # `-e features,normal` skips the dev-dependency that turns mocks on
           # for wasm-sdk's own tests. Each query is a standalone assignment so a
           # cargo failure stops the step instead of reading as a pass.
           sdk_features=$(cargo tree -p wasm-sdk --target wasm32-unknown-unknown -e features,normal -i dash-sdk --locked)
           if grep -q 'dash-sdk feature "mocks"' <<<"$sdk_features"; then
             echo "::error::dash-sdk/mocks is enabled in wasm-sdk's default wasm32 build"
+            exit 1
+          fi
+          dapi_client_features=$(cargo tree -p wasm-sdk --target wasm32-unknown-unknown -e features,normal -i rs-dapi-client --locked)
+          if grep -q 'rs-dapi-client feature "mocks"' <<<"$dapi_client_features"; then
+            echo "::error::rs-dapi-client/mocks is enabled in wasm-sdk's default wasm32 build"
             exit 1
           fi
           # wasm-sdk turns on secp256k1's lowmemory tables (~1.1 MB of the
