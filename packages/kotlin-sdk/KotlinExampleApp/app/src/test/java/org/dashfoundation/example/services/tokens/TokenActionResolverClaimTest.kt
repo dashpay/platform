@@ -166,7 +166,13 @@ class TokenActionResolverClaimTest {
         // identityType is what the user picked in Load Identity; Drive never
         // reads it, so it must not make a participation claim selectable.
         val evonodeOwner = identity().copy(identityType = "Evonode", masternodeRoleRaw = "owner")
-        val evonodePaid = perpetualJson("""{"${'$'}type":"evonodesByParticipation"}""")
+        // Epoch based: the only schedule Drive pays evonodes by participation on.
+        val evonodePaid = """
+            {"${'$'}formatVersion":"0",
+             "distributionType":{"${'$'}type":"epochBasedDistribution","interval":1,
+                                 "function":{"${'$'}type":"fixedAmount","amount":100}},
+             "distributionRecipient":{"${'$'}type":"evonodesByParticipation"}}
+        """.trimIndent()
         assertEquals(
             TokenActionPermission.Denied(
                 "Distribution pays evonodes by participation; eligibility not evaluated by this app",
