@@ -480,6 +480,7 @@ impl ShieldedSyncManager {
             slot.as_ref().map(Arc::clone)
         };
 
+        let ran_coordinator_pass = coordinator_snapshot.is_some();
         let mut summary = if let Some(coordinator) = coordinator_snapshot {
             coordinator.sync(force, &pass_cancel).await
         } else {
@@ -493,6 +494,16 @@ impl ShieldedSyncManager {
         // scan to the persisters, so it is reported like any other pass
         // and the host applies the deltas.
         if pass_cancel.is_cancelled() && summary.is_empty() {
+            return summary;
+        }
+        // So is a pass whose scan stopped at a gap between two fetched
+        // ranges, with no stop requested: it reconciled no wallet's ledger,
+        // and the coordinator hands back the same summary, with no wallet
+        // results and no timestamp
+        // ([`NetworkShieldedCoordinator::sync`]). A coordinator pass that
+        // completed with nothing to report (no account registered) carries
+        // its timestamp, and is reported.
+        if ran_coordinator_pass && summary.is_empty() && summary.sync_unix_seconds == 0 {
             return summary;
         }
 
@@ -535,8 +546,8 @@ impl ShieldedSyncManager {
     /// coordinator (e.g. shielded support hasn't been configured,
     /// or the wallet has never called `bind_shielded`), if
     /// another sync pass was already in flight, or if the pass's scan
-    /// was cut short by [`stop`](Self::stop) (the coordinator then
-    /// reports no wallets).
+    /// was cut short, by [`stop`](Self::stop) or at a gap between two
+    /// fetched ranges (the coordinator then reports no wallets).
     pub async fn sync_wallet(
         &self,
         wallet_id: &WalletId,
@@ -622,8 +633,13 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
 
     use dash_spv::EventHandler;
+    use drive_proof_verifier::types::{
+        ShieldedEncryptedNote, ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery,
+    };
 
     use crate::events::PlatformEventHandler;
+    use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+    use crate::wallet::shielded::{FileBackedShieldedStore, OrchardKeySet};
 
     /// Counts `on_shielded_sync_completed` dispatches, standing in for the
     /// host's FFI handler.
@@ -656,6 +672,123 @@ mod tests {
             )),
             counter,
         )
+    }
+
+    /// A manager whose coordinator has one wallet registered and scans a
+    /// mock pool of two notes. With `gap`, the pool's second fetched range
+    /// holds a note as well: the first range ends short of the second one's
+    /// start, so the positions between them are in neither.
+    async fn make_manager_over_pool(
+        dir: &std::path::Path,
+        gap: bool,
+    ) -> (Arc<ShieldedSyncManager>, Arc<CompletionCounter>) {
+        let mut sdk = dash_sdk::Sdk::new_mock();
+        let count = 2048
+            * u32::from(
+                sdk.version()
+                    .drive_abci
+                    .query
+                    .shielded_queries
+                    .max_query_chunks,
+            );
+        let opaque = |n: u8| {
+            let mut cmx = [0u8; 32];
+            cmx[0] = n;
+            ShieldedEncryptedNote {
+                cmx: cmx.to_vec(),
+                nullifier: vec![0xAA; 32],
+                cv_net: vec![],
+                encrypted_note: vec![],
+            }
+        };
+        let total_count = if gap { u64::from(count) + 1 } else { 2 };
+        // The scan's window of 16 range fetches.
+        for range in 0..16u64 {
+            let notes = match range {
+                0 => vec![opaque(1), opaque(2)],
+                1 if gap => vec![opaque(3)],
+                _ => Vec::new(),
+            };
+            sdk.mock()
+                .expect_fetch(
+                    ShieldedEncryptedNotesQuery {
+                        start_index: u64::from(count) * range,
+                        count,
+                    },
+                    Some(ShieldedEncryptedNotes { notes, total_count }),
+                )
+                .await
+                .expect("a pool range");
+        }
+        let db_path = dir.join("tree.sqlite");
+        let coordinator = NetworkShieldedCoordinator::new(
+            Arc::new(sdk),
+            dashcore::Network::Testnet,
+            db_path.clone(),
+            FileBackedShieldedStore::open_path(&db_path, 100).expect("open the store"),
+        );
+        let wallet_id: WalletId = [0x11; 32];
+        let views = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+            .expect("derive viewing keys")
+            .viewing_keys();
+        coordinator
+            .register_wallet(
+                wallet_id,
+                BTreeMap::from([(0u32, views)]),
+                WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence)),
+            )
+            .await
+            .expect("register the wallet");
+
+        let counter = Arc::new(CompletionCounter {
+            completions: AtomicUsize::new(0),
+        });
+        let event_manager = Arc::new(PlatformEventManager::new(vec![
+            Arc::clone(&counter) as Arc<dyn PlatformEventHandler>
+        ]));
+        (
+            Arc::new(ShieldedSyncManager::new(
+                event_manager,
+                Arc::new(RwLock::new(Some(Arc::new(coordinator)))),
+                ThreadRegistry::<WalletWorker>::new(),
+            )),
+            counter,
+        )
+    }
+
+    /// A pass whose scan stops at a gap between two fetched ranges
+    /// (dashpay/platform#6109) reconciled no wallet's ledger: it sets no
+    /// last-sync time and dispatches no completion, so a host does not read
+    /// an unchanged ledger as freshly scanned. A pass over a pool without
+    /// the gap sets and dispatches both.
+    #[tokio::test]
+    async fn should_report_no_completion_for_a_pass_whose_scan_stops_at_a_gap() {
+        let dir = tempfile::tempdir().expect("a directory");
+        let (mgr, counter) = make_manager_over_pool(dir.path(), true).await;
+
+        let summary = mgr.sync_now(true).await;
+
+        assert!(summary.is_empty(), "{summary:?}");
+        assert_eq!(summary.sync_unix_seconds, 0);
+        assert_eq!(mgr.last_sync_unix_seconds(), None);
+        assert_eq!(counter.completions.load(AtomicOrdering::SeqCst), 0);
+        assert!(!mgr.is_syncing(), "the pass released its slot");
+        assert!(
+            mgr.sync_wallet(&[0x11; 32], true)
+                .await
+                .expect("the pass does not fail")
+                .is_none(),
+            "a single wallet's pass reports nothing either"
+        );
+
+        let dir = tempfile::tempdir().expect("a directory");
+        let (mgr, counter) = make_manager_over_pool(dir.path(), false).await;
+
+        let summary = mgr.sync_now(true).await;
+
+        assert_eq!(summary.success_count(), 1, "{summary:?}");
+        assert!(mgr.last_sync_unix_seconds().is_some());
+        assert_eq!(counter.completions.load(AtomicOrdering::SeqCst), 1);
     }
 
     fn wedge_sync_slot(mgr: &ShieldedSyncManager) {
