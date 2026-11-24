@@ -1,3 +1,57 @@
+## [5.1.0-dev.4](https://github.com/dashpay/platform/compare/v5.1.0-dev.3...v5.1.0-dev.4) (2026-11-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* set, change and remove DashPay profile payment addresses in SwiftExampleApp (#6094)
+* **swift-example-app:** unshield tokens from a token shielded pool to an identity (type 27) (#6133)
+* **swift-example-app:** send tokens within a token shielded pool (type 26) (#6132)
+
+### Features
+
+* **contract:** let listed admins record QA test runs ([#6097](https://github.com/dashpay/platform/issues/6097))
+* create an entry of any private document type from the shielded pool in KotlinExampleApp (type 29) ([#6169](https://github.com/dashpay/platform/issues/6169))
+* **kotlin-example-app:** send DashPay contact requests privately from Add Contact ([#6168](https://github.com/dashpay/platform/issues/6168))
+* **kotlin-example-app:** send shielded tips to a DashPay username ([#6197](https://github.com/dashpay/platform/issues/6197))
+* **kotlin-sdk:** check a masternode voting key against Platform when it is loaded ([#6149](https://github.com/dashpay/platform/issues/6149))
+* **kotlin-sdk:** keep the shielded recipient of an asset lock across restarts ([#6170](https://github.com/dashpay/platform/issues/6170))
+* **kotlin-sdk:** load a shared masternode for voting through its voter identity ([#6150](https://github.com/dashpay/platform/issues/6150))
+* load a masternode without an owner identity (a shared masternode) for voting in SwiftExampleApp ([#6145](https://github.com/dashpay/platform/issues/6145))
+* **platform-wallet:** shielded tips to a DashPay username, decided by the wallet ([#6191](https://github.com/dashpay/platform/issues/6191))
+* raise an identity key's budget or expiry from KotlinExampleApp ([#6148](https://github.com/dashpay/platform/issues/6148))
+* **sdk:** add Swift, JNI and Kotlin wrappers for shielded tips ([#6192](https://github.com/dashpay/platform/issues/6192))
+* set, change and remove DashPay profile payment addresses in KotlinExampleApp ([#6146](https://github.com/dashpay/platform/issues/6146))
+* set, change and remove DashPay profile payment addresses in SwiftExampleApp ([#6094](https://github.com/dashpay/platform/issues/6094))
+* shield from an identity and top up an identity from the shielded pool in KotlinExampleApp ([#6147](https://github.com/dashpay/platform/issues/6147))
+* show, send and unshield shielded pool tokens in KotlinExampleApp ([#6173](https://github.com/dashpay/platform/issues/6173))
+* **swift-example-app:** send tokens within a token shielded pool (type 26) ([#6132](https://github.com/dashpay/platform/issues/6132))
+* **swift-example-app:** shielded tips to a DashPay contact or username ([#6198](https://github.com/dashpay/platform/issues/6198))
+* **swift-example-app:** unshield tokens from a token shielded pool to an identity (type 27) ([#6133](https://github.com/dashpay/platform/issues/6133))
+
+
+### Bug Fixes
+
+* keep each wallet's shielded accounts when an Android Clear registers it again ([#6171](https://github.com/dashpay/platform/issues/6171))
+* **platform-wallet:** fail a pending shielded spend whose note another transition spent ([#6151](https://github.com/dashpay/platform/issues/6151))
+* **platform-wallet:** hold the Clear admission across the remaining shielded pool payments ([#6203](https://github.com/dashpay/platform/issues/6203))
+* **platform-wallet:** hold the lifecycle gate and Clear admission across credit pool spends ([#6178](https://github.com/dashpay/platform/issues/6178))
+* **platform-wallet:** keep a shielded spend failed when its snapshot result arrives after proof it did not execute ([#6183](https://github.com/dashpay/platform/issues/6183))
+* **platform-wallet:** refuse a shielded Clear while a shielded operation runs ([#6182](https://github.com/dashpay/platform/issues/6182))
+* **platform-wallet:** stop a shielded note scan at a gap between fetched ranges ([#6172](https://github.com/dashpay/platform/issues/6172))
+* **platform-wallet:** stop reporting a shielded balance as known after a Clear that failed ([#6186](https://github.com/dashpay/platform/issues/6186))
+* **sdk:** three JS SDK fixes from the 5.1 testnet compatibility check ([#6156](https://github.com/dashpay/platform/issues/6156))
+* **swift-sdk:** admit shielded spend wrappers as native operations ([#6179](https://github.com/dashpay/platform/issues/6179))
+
+
+### Tests
+
+* **swift-example-app:** line up the shielded tip rows and ids with KotlinExampleApp ([#6205](https://github.com/dashpay/platform/issues/6205))
+
+
+### Miscellaneous Chores
+
+* **platform:** update `rust-dashcore` to `v0.46.1` ([#6153](https://github.com/dashpay/platform/issues/6153))
+
 ## [5.1.0-dev.3](https://github.com/dashpay/platform/compare/v5.1.0-dev.2...v5.1.0-dev.3) (2026-11-23)
 
 
