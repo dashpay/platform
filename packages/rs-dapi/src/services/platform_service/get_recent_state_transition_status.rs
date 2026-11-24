@@ -241,7 +241,7 @@ fn tenderdash_method_error(error: &DapiError) -> Option<&str> {
 /// cause is a missing hash: Go formats the absent cause as `%!w(<nil>)`. A failed read must
 /// fail the call, or a committed transition whose entry could not be read would be reported
 /// unknown.
-fn is_missing_from_index(error: &DapiError) -> bool {
+pub(super) fn is_missing_from_index(error: &DapiError) -> bool {
     tenderdash_method_error(error).is_some_and(|message| {
         message
             .strip_prefix("tx (")
