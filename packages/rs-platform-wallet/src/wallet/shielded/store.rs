@@ -896,6 +896,15 @@ pub trait ShieldedStore: Send + Sync + 'static {
     /// rather than resuming behind the stale watermark.
     fn purge_wallet(&mut self, wallet_id: WalletId) -> Result<(), Self::Error>;
 
+    /// Drop the scan results held in memory for every subwallet of
+    /// `wallet_id` (notes, outgoing notes, activity and the sync watermark),
+    /// keeping its note reservations, its saved recovery records and the
+    /// shared commitment tree, as a process exit leaves them. For a wallet
+    /// whose registration went away while a sync pass ran: the host never
+    /// received what that pass scanned for it, so a later bind hydrates from
+    /// the host and rescans it rather than resuming past it.
+    fn forget_wallet_scan(&mut self, wallet_id: WalletId) -> Result<(), Self::Error>;
+
     /// Drop the account-scoped state and nullifier-backed redrives for exactly
     /// one subwallet, leaving every other subwallet and the shared commitment
     /// tree intact. Empty-nullifier identity-debit guards are wallet-wide and
@@ -1230,6 +1239,31 @@ impl SubwalletState {
 
     pub(super) fn pending_redrives(&self) -> Vec<PendingRedrive> {
         self.redrives.values().cloned().collect()
+    }
+
+    /// Drop the scan results ([`ShieldedStore::forget_wallet_scan`]), keeping
+    /// the reservations and redrive records.
+    pub(super) fn forget_scan(&mut self) {
+        let Self {
+            notes,
+            nullifier_index,
+            last_synced_index,
+            last_scanned_index,
+            balance_source,
+            pending_nullifiers: _,
+            redrives: _,
+            outgoing_notes,
+            outgoing_cmx_index,
+            activity,
+        } = self;
+        notes.clear();
+        nullifier_index.clear();
+        *last_synced_index = 0;
+        *last_scanned_index = None;
+        *balance_source = ShieldedBalanceSource::default();
+        outgoing_notes.clear();
+        outgoing_cmx_index.clear();
+        activity.clear();
     }
 
     pub(super) fn identity_redrives(&self) -> Vec<PendingRedrive> {
@@ -1777,6 +1811,14 @@ impl ShieldedStore for InMemoryShieldedStore {
         self.subwallets.retain(|id, _| id.wallet_id != wallet_id);
         self.private_contact_payments
             .retain(|(id, _), _| id.wallet_id != wallet_id);
+        Ok(())
+    }
+
+    fn forget_wallet_scan(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
+        self.subwallets
+            .iter_mut()
+            .filter(|(id, _)| id.wallet_id == wallet_id)
+            .for_each(|(_, state)| state.forget_scan());
         Ok(())
     }
 

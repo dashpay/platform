@@ -1672,6 +1672,16 @@ impl ShieldedStore for FileBackedShieldedStore {
         Ok(())
     }
 
+    fn forget_wallet_scan(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
+        // Scan results are in-memory only; the durable redrive rows and the
+        // in-memory reservations and records they back are kept.
+        self.subwallets
+            .iter_mut()
+            .filter(|(id, _)| id.wallet_id == wallet_id)
+            .for_each(|(_, state)| state.forget_scan());
+        Ok(())
+    }
+
     fn purge_subwallet(&mut self, id: SubwalletId) -> Result<(), Self::Error> {
         // Note-spend redrives are account-scoped and go with the account.
         // Empty-nullifier ShieldFromIdentity guards are wallet-wide: the signed

@@ -95,7 +95,7 @@ use super::store::{
     StalePendingSpend, SubwalletId,
 };
 use super::CAUGHT_UP_COOLDOWN;
-use crate::changeset::PlatformWalletPersistence;
+use crate::changeset::{PlatformWalletChangeSet, PlatformWalletPersistence, ShieldedChangeSet};
 use crate::error::PlatformWalletError;
 use crate::manager::shielded_sync::{ShieldedSyncPassSummary, WalletShieldedOutcome};
 use crate::manager::COORDINATOR_DRAIN_BUDGET;
@@ -1142,6 +1142,52 @@ impl NetworkShieldedCoordinator {
         self.release_registration(wallet_id).await;
     }
 
+    /// Hand a completed sync pass's `changeset` to each wallet's registered
+    /// persister, split per wallet so each sees only its own deltas.
+    ///
+    /// A wallet with no persister had its registration released or removed
+    /// while the pass ran, so the host will never receive what the pass
+    /// scanned for it. Its scan results are dropped from the store instead
+    /// ([`ShieldedStore::forget_wallet_scan`]): a later bind hydrates from the
+    /// host and rescans those notes rather than resuming past them, and its
+    /// signed recovery records stay. The persister map is read-locked across
+    /// the whole handoff, so a release or a new registration lands either
+    /// before a wallet's decision or after it.
+    async fn hand_off_scan_changeset(&self, changeset: ShieldedChangeSet) {
+        if Merge::is_empty(&changeset) {
+            return;
+        }
+        let persisters = self.persisters.read().await;
+        for (wallet_id, cs) in changeset.split_by_wallet_id() {
+            let Some(persister) = persisters.get(&wallet_id) else {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    "Shielded sync changeset dropped: the wallet's registration went away during \
+                     the pass; dropping its scan results so a later bind rescans them"
+                );
+                if let Err(e) = self.store.write().await.forget_wallet_scan(wallet_id) {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        error = %e,
+                        "Failed to drop the scan results of a released wallet"
+                    );
+                }
+                continue;
+            };
+            let full = PlatformWalletChangeSet {
+                shielded: Some(cs),
+                ..Default::default()
+            };
+            if let Err(e) = persister.store(full) {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error = %e,
+                    "Failed to queue shielded changeset from coordinator"
+                );
+            }
+        }
+    }
+
     async fn release_registration(&self, wallet_id: WalletId) {
         self.accounts
             .write()
@@ -1900,35 +1946,7 @@ impl NetworkShieldedCoordinator {
             .await;
         }
 
-        // The note-side changeset already carries saves, synced
-        // indices, AND the scan-detected spends, so split it per
-        // WalletId directly — each per-wallet `WalletPersister.store`
-        // only sees its own wallet's deltas.
-        let consolidated = notes.changeset.clone();
-        if !Merge::is_empty(&consolidated) {
-            let per_wallet = consolidated.split_by_wallet_id();
-            let persisters = self.persisters.read().await;
-            for (wallet_id, cs) in per_wallet {
-                let Some(persister) = persisters.get(&wallet_id) else {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(wallet_id),
-                        "Shielded sync changeset dropped: no persister registered (host inconsistency)"
-                    );
-                    continue;
-                };
-                let full = crate::changeset::PlatformWalletChangeSet {
-                    shielded: Some(cs),
-                    ..Default::default()
-                };
-                if let Err(e) = persister.store(full) {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(wallet_id),
-                        error = %e,
-                        "Failed to queue shielded changeset from coordinator"
-                    );
-                }
-            }
-        }
+        self.hand_off_scan_changeset(notes.changeset.clone()).await;
 
         // Cooldown decision based on aggregate activity across
         // every subwallet — any new commitment scanned or
@@ -3905,6 +3923,79 @@ mod tests {
             value: 1_000,
             note_data: vec![0u8; 115],
         }
+    }
+
+    /// A sync pass's scan results for one wallet, with a saved recovery
+    /// record beside them: the notes and watermark the pass saved, the
+    /// changeset it would hand off, and the record.
+    async fn scanned_by_a_pass(
+        coordinator: &NetworkShieldedCoordinator,
+        id: SubwalletId,
+    ) -> ShieldedChangeSet {
+        let note = test_note([0x31; 32], 4, false);
+        let mut store = coordinator.store().write().await;
+        store
+            .arm_redrive(
+                id,
+                PendingRedrive {
+                    activity_id: [0x32; 32],
+                    anchor: [0x33; 32],
+                    nullifiers: vec![[0x34; 32]],
+                    st_bytes: vec![0xAB; 96],
+                    attempts: 0,
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                    anchor_height: None,
+                },
+            )
+            .unwrap();
+        store.save_note(id, &note).unwrap();
+        store.set_last_synced_note_index(id, 5).unwrap();
+        let mut changeset = ShieldedChangeSet::default();
+        changeset.record_note(id, note);
+        changeset.record_synced_index(id, 5);
+        changeset
+    }
+
+    /// A pass whose wallet was released before its handoff drops what it
+    /// scanned for that wallet and keeps its saved recovery record, so a
+    /// later bind hydrates from the host and rescans the notes the host
+    /// never received instead of resuming past them.
+    #[tokio::test]
+    async fn should_drop_the_scan_results_of_a_wallet_released_before_the_handoff() {
+        let dir = temp_dir("handoff_released");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let changeset = scanned_by_a_pass(&coordinator, id).await;
+
+        coordinator.release_wallet(id.wallet_id).await;
+        coordinator.hand_off_scan_changeset(changeset).await;
+
+        let store = coordinator.store().read().await;
+        assert_eq!(store.last_synced_note_index(id).unwrap(), 0);
+        assert!(store.get_all_notes(id).unwrap().is_empty());
+        assert_eq!(store.pending_redrives(id).unwrap().len(), 1);
+        drop(store);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A wallet still registered at the handoff gets the changeset and keeps
+    /// its scan results.
+    #[tokio::test]
+    async fn should_keep_the_scan_results_of_a_wallet_registered_at_the_handoff() {
+        let dir = temp_dir("handoff_registered");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let changeset = scanned_by_a_pass(&coordinator, id).await;
+
+        coordinator.hand_off_scan_changeset(changeset).await;
+
+        let store = coordinator.store().read().await;
+        assert_eq!(store.last_synced_note_index(id).unwrap(), 5);
+        assert_eq!(store.get_all_notes(id).unwrap().len(), 1);
+        assert_eq!(store.pending_redrives(id).unwrap().len(), 1);
+        drop(store);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Regression guard for the mid-session re-bind stomp: a
