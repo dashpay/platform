@@ -163,10 +163,15 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_set_interval(
 /// Synchronous from the FFI caller's point of view — blocks the
 /// calling thread until the pass completes. If a pass is already in
 /// flight (e.g. fired by the background loop), returns `Success`
-/// immediately and the pass in flight runs once more after it
-/// finishes, so registrations made before this call are still synced.
-/// A panic inside the pass is returned as `ErrorWalletOperation`
-/// instead of unwinding through this export.
+/// immediately without scheduling extra work; check `is_syncing` if
+/// the caller needs to distinguish.
+///
+/// The manager registry's lock is held only to clone the coordinator,
+/// not across the pass, so a slow pass does not hold up other managers'
+/// calls or this manager's destruction (whose quiesce drains the pass).
+/// On builds where panics unwind (including Android), a panic inside the
+/// pass is returned as `ErrorWalletOperation`. Abort-on-panic builds
+/// (the iOS profiles) still abort.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_identity_sync_sync_now(
     handle: Handle,
@@ -176,15 +181,14 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_sync_now(
         PlatformWalletFFIResultCode::ErrorWalletOperation,
         "Balances read before the failure may already be stored; run the sync again.",
         || {
-            let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-                // `block_on_worker`, NOT `runtime().block_on`: the pass
-                // verifies GroveDB proofs whose recursion blows the ~512 KB
-                // stack of the host's dispatch/concurrency calling thread
-                // (same SIGBUS as the shielded/dashpay Sync Now buttons).
-                let mgr = manager.identity_sync_arc();
-                block_on_worker(async move { mgr.sync_now().await });
-            });
-            unwrap_option_or_return!(option);
+            let option = PLATFORM_WALLET_MANAGER_STORAGE
+                .with_item(handle, |manager| manager.identity_sync_arc());
+            let mgr = unwrap_option_or_return!(option);
+            // `block_on_worker`, NOT `runtime().block_on`: the pass
+            // verifies GroveDB proofs whose recursion blows the ~512 KB
+            // stack of the host's dispatch/concurrency calling thread
+            // (same SIGBUS as the shielded/dashpay Sync Now buttons).
+            block_on_worker(async move { mgr.sync_now().await });
             PlatformWalletFFIResult::ok()
         },
     )

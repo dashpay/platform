@@ -1817,9 +1817,7 @@ class PlatformWalletManager(
 
     /**
      * Run one identity-token sync pass across every registered identity now,
-     * returning when it completes. When a pass is already running it returns
-     * at once, and the running pass runs again after it finishes, so
-     * registrations made before this call are synced.
+     * returning when it completes (at once when a pass is already running).
      *
      * Port of Swift's `PlatformWalletManager.syncIdentityTokensNow()`
      * (`PlatformWalletManagerIdentitySync.swift`).

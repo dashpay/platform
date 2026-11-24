@@ -415,12 +415,24 @@ class PlatformWalletPersistenceHandlerTest {
 
     @Test
     fun shouldLabelAnIdentityScopedRowWithTheManagersNetwork() = runTest {
-        saveDevnetToken()
         val identityId = ByteArray(32) { 0x64 }
-        // A row an earlier build stored under the Testnet fallback.
+
+        devnetSyncHandler().onPersistTokenBalanceUpsert(
+            identitySyncSentinel, identityId, canonicalTokenId, 7L,
+        )
+
+        val stored = db.tokenDao().getBalance(canonicalTokenId.toBase58String(), identityId)!!
+        assertEquals(Network.DEVNET.ffiValue, stored.networkRaw)
+    }
+
+    @Test
+    fun shouldKeepAnotherNetworksRowForTheSameIdentityAndToken() = runTest {
+        val identityId = ByteArray(32) { 0x67 }
+        val tokenBase58 = canonicalTokenId.toBase58String()
+        // The same identity and token ids synced on Testnet into a shared database.
         db.tokenDao().insertBalance(
             TokenBalanceEntity(
-                tokenId = canonicalTokenId.toBase58String(),
+                tokenId = tokenBase58,
                 identityId = identityId,
                 balance = org.dashfoundation.dashsdk.persistence.UInt64Value(5uL),
                 networkRaw = testnet,
@@ -429,17 +441,17 @@ class PlatformWalletPersistenceHandlerTest {
         val handler = devnetSyncHandler()
 
         handler.onPersistTokenBalanceUpsert(identitySyncSentinel, identityId, canonicalTokenId, 7L)
+
+        assertEquals(5uL, db.tokenDao().getBalanceOnNetwork(tokenBase58, identityId, testnet)!!.balance.value)
         assertEquals(
-            Network.DEVNET.ffiValue,
-            db.tokenDao().getBalance(canonicalTokenId.toBase58String(), identityId)!!.networkRaw,
+            7uL,
+            db.tokenDao().getBalanceOnNetwork(tokenBase58, identityId, Network.DEVNET.ffiValue)!!.balance.value,
         )
 
-        val fresh = ByteArray(32) { 0x65 }
-        handler.onPersistTokenBalanceUpsert(identitySyncSentinel, fresh, canonicalTokenId, 9L)
-        assertEquals(
-            Network.DEVNET.ffiValue,
-            db.tokenDao().getBalance(canonicalTokenId.toBase58String(), fresh)!!.networkRaw,
-        )
+        handler.onPersistTokenBalanceRemoval(identitySyncSentinel, identityId, canonicalTokenId)
+
+        assertNull(db.tokenDao().getBalanceOnNetwork(tokenBase58, identityId, Network.DEVNET.ffiValue))
+        assertNotNull("the Testnet row is untouched", db.tokenDao().getBalanceOnNetwork(tokenBase58, identityId, testnet))
     }
 
     @Test

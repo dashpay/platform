@@ -152,9 +152,8 @@ pub struct IdentityTokenSyncState {
 /// `WalletManager`.
 ///
 /// `sync_now` is re-entrant-safe: if a pass is already running,
-/// calling `sync_now` again returns immediately, and the running pass
-/// runs once more after it finishes so the call's request (and any
-/// registration made before it) is still covered.
+/// calling `sync_now` again returns immediately without doing any
+/// work (the caller can check `is_syncing()` to distinguish).
 pub struct IdentitySyncManager<P>
 where
     P: PlatformWalletPersistence + 'static,
@@ -175,12 +174,6 @@ where
     registry: Arc<ThreadRegistry<WalletWorker>>,
     interval_secs: AtomicU64,
     is_syncing: AtomicBool,
-    /// Set by every [`sync_now`](Self::sync_now) call. The pass holding
-    /// the `is_syncing` slot runs again while it is set, so a call that
-    /// arrives during a pass (for example right after a new
-    /// registration the running pass already snapshotted past) is
-    /// covered by a follow-up pass instead of being dropped.
-    pass_requested: AtomicBool,
     /// Gates new passes while a [`quiesce`](Self::quiesce) drains an
     /// in-flight one, while a [`QuiesceGuard`] holder mutates state, and
     /// terminally once shutdown seals it. `sync_now` bails (after taking the
@@ -226,7 +219,6 @@ where
             registry,
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
-            pass_requested: AtomicBool::new(false),
             quiescing: QuiesceGate::default(),
             last_sync_unix: AtomicU64::new(0),
             state: RwLock::new(BTreeMap::new()),
@@ -570,9 +562,8 @@ where
 
     /// Run one sync pass across every registered identity.
     ///
-    /// If a pass is already in flight, returns immediately; the pass in
-    /// flight then runs once more after it finishes, so registrations
-    /// made before this call are synced without a caller-side retry.
+    /// If a pass is already in flight, returns immediately without
+    /// doing any work (re-entrant safe).
     ///
     /// Iteration order: identities in `Identifier` order, batches in
     /// token-id order. Sequential — no parallelism across batches or
@@ -580,52 +571,32 @@ where
     /// `!Send` (no `tokio::spawn`) and because the design brief
     /// explicitly forbids it.
     pub async fn sync_now(&self) {
-        self.pass_requested.store(true, Ordering::Release);
-        loop {
-            // A drained timeout latch is cleared here as well as in `start()`:
-            // with no loop running, a one-shot pass after a timed-out drain
-            // would otherwise bail on the stale latch until something
-            // restarted the loop. Safe before the CAS — a false `is_syncing`
-            // means no pass is in flight — and the gate check after the CAS
-            // still honors a live hold or the seal.
-            self.quiescing.reopen_if_drained(&self.is_syncing);
-            if self
-                .is_syncing
-                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                .is_err()
-            {
-                // The slot holder sees `pass_requested` and runs again.
-                return;
-            }
-            {
-                // Clears `is_syncing` on every exit path — including panic
-                // unwind — so a failed pass can never wedge `quiesce()`'s
-                // drain.
-                let _slot = SyncSlotGuard(&self.is_syncing);
-                while self.pass_requested.swap(false, Ordering::AcqRel) {
-                    // A `quiesce()` may have raised the gate between our CAS
-                    // and here; if so, release the slot and bail without
-                    // running a pass so the drain can complete and shutdown
-                    // gets a true barrier (no further `persister.store(...)`
-                    // after quiesce returns).
-                    if self.quiescing.is_closed() {
-                        return;
-                    }
-                    self.run_pass().await;
-                }
-            }
-            // A request that arrived after the last check but before the
-            // slot was released found the slot taken and returned; take the
-            // slot again for it.
-            if !self.pass_requested.load(Ordering::Acquire) {
-                return;
-            }
+        // A drained timeout latch is cleared here as well as in `start()`:
+        // with no loop running, a one-shot pass after a timed-out drain
+        // would otherwise bail on the stale latch until something
+        // restarted the loop. Safe before the CAS — a false `is_syncing`
+        // means no pass is in flight — and the gate check after the CAS
+        // still honors a live hold or the seal.
+        self.quiescing.reopen_if_drained(&self.is_syncing);
+        if self
+            .is_syncing
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return;
         }
-    }
+        // Clears `is_syncing` on every exit path — including panic unwind —
+        // so a failed pass can never wedge `quiesce()`'s drain.
+        let _slot = SyncSlotGuard(&self.is_syncing);
 
-    /// One pass over every registered identity's watched tokens. Runs
-    /// only while the caller holds the `is_syncing` slot.
-    async fn run_pass(&self) {
+        // A `quiesce()` may have raised the gate between our CAS and
+        // here; if so, release the slot and bail without running a pass
+        // so the drain can complete and shutdown gets a true barrier
+        // (no further `persister.store(...)` after quiesce returns).
+        if self.quiescing.is_closed() {
+            return;
+        }
+
         // Snapshot the per-identity watch list under a short read
         // lock and release it before any network call. We keep
         // `Vec<Identifier>` in token-id order so each batch chunk is
@@ -714,19 +685,6 @@ where
         identity_id: Identifier,
         fresh_balances: BTreeMap<Identifier, Option<TokenAmount>>,
     ) {
-        let mut cs = TokenBalanceChangeSet::default();
-        for (token_id, maybe_balance) in &fresh_balances {
-            let key = (identity_id, *token_id);
-            match maybe_balance {
-                Some(amount) => {
-                    cs.balances.insert(key, *amount);
-                }
-                None => {
-                    cs.removed_balances.insert(key);
-                }
-            }
-        }
-
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -736,6 +694,28 @@ where
         let Some(existing_row) = state.get(&identity_id).cloned() else {
             return;
         };
+
+        // Persist only tokens still watched now: a registration that
+        // replaced the watch list while this pass was reading (for example
+        // after the host deleted the token's contract) must not have a
+        // stale result written back. Checked under the same write lock
+        // the registration takes.
+        let mut cs = TokenBalanceChangeSet::default();
+        for prior in &existing_row.tokens {
+            let key = (identity_id, prior.token_id);
+            match fresh_balances.get(&prior.token_id) {
+                Some(Some(amount)) => {
+                    cs.balances.insert(key, *amount);
+                }
+                Some(None) => {
+                    cs.removed_balances.insert(key);
+                }
+                None => {}
+            }
+        }
+        if cs.balances.is_empty() && cs.removed_balances.is_empty() {
+            return;
+        }
 
         // The persister API is wallet-scoped (`store(wallet_id, ..)`)
         // but this manager is identity-scoped. Use the zero-byte
@@ -1212,6 +1192,30 @@ mod tests {
         assert_eq!(ids, vec![token_y]);
     }
 
+    /// A result for a token that left the watch list while the pass was
+    /// reading is not persisted, so a deleted contract's balance is not
+    /// written back after the host replaced the watch list.
+    #[tokio::test]
+    async fn should_not_persist_a_result_for_a_token_no_longer_watched() {
+        let (mgr, persister) = make_recording_manager();
+        let id_a = Identifier::from([1u8; 32]);
+        let token_x = Identifier::from([10u8; 32]);
+        let token_y = Identifier::from([11u8; 32]);
+        mgr.register_identity(id_a, [token_x]).await;
+        // The watch list changed after the pass snapshotted [token_x].
+        mgr.register_identity(id_a, [token_y]).await;
+
+        let mut fresh = BTreeMap::new();
+        fresh.insert(token_x, Some(5u64));
+        mgr.apply_fresh_balances(id_a, fresh).await;
+
+        assert_eq!(persister.stores.load(AtomicOrdering::SeqCst), 0);
+        let row = mgr.state_for_identity(&id_a).await.unwrap();
+        assert_eq!(row.tokens.len(), 1);
+        assert_eq!(row.tokens[0].token_id, token_y);
+        assert_eq!(row.tokens[0].balance, 0);
+    }
+
     /// A token proved absent (the identity holds none yet) has its stored
     /// row removed but stays watched, so a later pass sees it arrive
     /// without the caller registering it again.
@@ -1242,32 +1246,5 @@ mod tests {
         let row = mgr.state_for_identity(&id_a).await.unwrap();
         let x = row.tokens.iter().find(|t| t.token_id == token_x).unwrap();
         assert_eq!(x.balance, 7);
-    }
-
-    /// A `sync_now` that finds a pass in flight returns at once but
-    /// leaves a request the slot holder acts on, so a registration made
-    /// just before it is not skipped until the next timer tick.
-    #[tokio::test]
-    async fn should_leave_a_pass_request_when_a_pass_is_in_flight() {
-        let mgr = make_manager();
-        mgr.is_syncing.store(true, Ordering::Release);
-
-        mgr.sync_now().await;
-
-        assert!(mgr.pass_requested.load(Ordering::Acquire));
-        mgr.is_syncing.store(false, Ordering::Release);
-    }
-
-    /// A `sync_now` that takes the slot consumes its own request and
-    /// releases the slot when no further request arrived.
-    #[tokio::test]
-    async fn should_consume_the_request_and_release_the_slot() {
-        let mgr = make_manager();
-
-        mgr.sync_now().await;
-
-        assert!(!mgr.pass_requested.load(Ordering::Acquire));
-        assert!(!mgr.is_syncing());
-        assert!(mgr.last_sync_unix_seconds().is_some());
     }
 }

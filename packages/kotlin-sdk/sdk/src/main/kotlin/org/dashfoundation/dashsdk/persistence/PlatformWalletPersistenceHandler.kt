@@ -2263,14 +2263,15 @@ class PlatformWalletPersistenceHandler(
     ): Int = guarded {
         stage(walletId) { db ->
             val tokenBase58 = tokenId.toBase58String()
-            val existing = db.tokenDao().getBalance(tokenBase58, identityId)
-            // The identity-token sync sends its rows under the all-zero
-            // wallet id, which names no wallet; the manager's own network
-            // labels them then.
-            val networkRaw = db.walletDao().getByWalletId(walletId)?.networkRaw
-                ?: network?.ffiValue
-                ?: existing?.networkRaw
-                ?: NETWORK_TESTNET
+            val knownNetwork = balanceNetwork(db, walletId)
+            // Scoped to the network when it is known, so the same identity
+            // and token ids on another network keep their own row.
+            val existing = if (knownNetwork != null) {
+                db.tokenDao().getBalanceOnNetwork(tokenBase58, identityId, knownNetwork)
+            } else {
+                db.tokenDao().getBalance(tokenBase58, identityId)
+            }
+            val networkRaw = knownNetwork ?: existing?.networkRaw ?: NETWORK_TESTNET
             val row = TokenBalanceEntity(
                 id = existing?.id ?: 0,
                 tokenId = tokenBase58,
@@ -2291,6 +2292,15 @@ class PlatformWalletPersistenceHandler(
         }
         0
     }
+
+    /**
+     * Network a token balance callback writes to: the wallet's, else this
+     * handler's manager network. The identity-token sync sends its rows under
+     * the all-zero wallet id, which names no wallet. Null only for an
+     * unscoped handler (tests) on an unknown wallet.
+     */
+    private suspend fun balanceNetwork(db: DashDatabase, walletId: ByteArray): Int? =
+        db.walletDao().getByWalletId(walletId)?.networkRaw ?: network?.ffiValue
 
     /** Canonical base58 token id per saved token key; a pure function, so cached. */
     private val canonicalTokenIdCache = java.util.concurrent.ConcurrentHashMap<String, String>()
@@ -2326,7 +2336,12 @@ class PlatformWalletPersistenceHandler(
         tokenId: ByteArray,
     ): Int = guarded {
         stage(walletId) { db ->
-            db.tokenDao().deleteBalance(tokenId.toBase58String(), identityId)
+            val knownNetwork = balanceNetwork(db, walletId)
+            if (knownNetwork != null) {
+                db.tokenDao().deleteBalanceOnNetwork(tokenId.toBase58String(), identityId, knownNetwork)
+            } else {
+                db.tokenDao().deleteBalance(tokenId.toBase58String(), identityId)
+            }
         }
         0
     }
