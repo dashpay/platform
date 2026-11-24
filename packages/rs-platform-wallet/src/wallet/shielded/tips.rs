@@ -413,6 +413,18 @@ impl PlatformWallet {
         self.verified_tip_account_in(&wm, seed, identity_id)
     }
 
+    /// The shielded account of the slot the seed proves `identity_id` holds
+    /// now ([`Self::verified_tip_account`]), for a spend from it.
+    pub(crate) async fn verified_identity_account(
+        &self,
+        seed: &[u8],
+        identity_id: &Identifier,
+    ) -> Result<u32, PlatformWalletError> {
+        self.verified_tip_account(seed, identity_id)
+            .await
+            .map(|(account, _)| account)
+    }
+
     /// [`Self::verified_tip_account`] under a wallet-manager lock the caller
     /// holds.
     fn verified_tip_account_in(

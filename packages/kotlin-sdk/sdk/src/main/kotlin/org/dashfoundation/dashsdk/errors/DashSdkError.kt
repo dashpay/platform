@@ -844,6 +844,47 @@ sealed class DashSdkError(
         }
 
         /**
+         * `ErrorShieldedTipPending` (native code 85). A shielded tip was
+         * refused before anything was built or sent: another tip from this
+         * wallet is being sent, or an earlier shielded payment to the same
+         * recipient may still execute. This call sent nothing. Not
+         * retryable: the earlier payment may be the same tip and may pay
+         * the recipient. A shielded sync resolves it as executed or as
+         * unable to execute, and the refusal ends either way, so send again
+         * only once that payment is known to have failed. Distinct from
+         * [ShieldedSpendUnconfirmed] (18), which says this payment itself
+         * may have left the wallet.
+         * ← Swift `PlatformWalletError.shieldedTipPending`.
+         */
+        class ShieldedTipPending(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorShieldedTipRecipientMismatch` (native code 86). A shielded
+         * tip was started from a saved contact, and the contact's username
+         * now belongs to another identity. Nothing was sent. Not retryable:
+         * the user picks the recipient again, and a tip to the name's new
+         * owner is started from the name, not from the contact.
+         * ← Swift `PlatformWalletError.shieldedTipRecipientMismatch`.
+         */
+        class ShieldedTipRecipientMismatch(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorShieldedBalanceBusy` (native code 87). A local shielded
+         * balance read did not finish within its wait budget (the wallet's
+         * state or its shielded store was held, by a scan for instance), or
+         * a shielded Clear was running. Nothing failed and nothing changed:
+         * keep the last state shown and read again later.
+         * The only error of `shieldedIdentityBalance` that means retry.
+         * ← Swift `PlatformWalletError.shieldedBalanceBusy`.
+         */
+        class ShieldedBalanceBusy(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -1055,6 +1096,9 @@ sealed class DashSdkError(
             76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
             83 -> PlatformWallet.BalanceHistoryInconsistentHeights(message, cause) // ErrorBalanceHistoryInconsistentHeights
             84 -> PlatformWallet.ShieldedOperationInProgress(message, cause) // ErrorShieldedOperationInProgress
+            85 -> PlatformWallet.ShieldedTipPending(message, cause) // ErrorShieldedTipPending
+            86 -> PlatformWallet.ShieldedTipRecipientMismatch(message, cause) // ErrorShieldedTipRecipientMismatch
+            87 -> PlatformWallet.ShieldedBalanceBusy(message, cause) // ErrorShieldedBalanceBusy
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

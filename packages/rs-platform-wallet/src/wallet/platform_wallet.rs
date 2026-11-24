@@ -1,6 +1,8 @@
 //! The main PlatformWallet struct combining core, identity (+DashPay), and platform sub-wallets.
 
 use std::collections::BTreeMap;
+#[cfg(feature = "shielded")]
+use std::future::Future;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
@@ -470,6 +472,12 @@ pub struct PlatformWallet {
     #[cfg(feature = "shielded")]
     pub(crate) prepared_tip_accounts:
         Arc<std::sync::Mutex<BTreeMap<Identifier, PreparedTipAccount>>>,
+    /// Held by a shielded tip from its admission until it returns, and only
+    /// ever tried, never waited for: a second tip requested meanwhile is
+    /// refused instead of paying again after the first. `Arc` so cloned
+    /// wallet handles share it.
+    #[cfg(feature = "shielded")]
+    pub(crate) tip_send_in_progress: Arc<tokio::sync::Mutex<()>>,
     /// Set once this wallet has been removed from the manager, to stop
     /// a handle that outlives the removal from binding shielded state
     /// back onto the coordinator. Callers resolve an
@@ -935,6 +943,8 @@ impl PlatformWallet {
             shielded_config_lock: Arc::new(tokio::sync::Mutex::new(())),
             #[cfg(feature = "shielded")]
             prepared_tip_accounts,
+            #[cfg(feature = "shielded")]
+            tip_send_in_progress: Arc::new(tokio::sync::Mutex::new(())),
             #[cfg(feature = "shielded")]
             shielded_detached: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             #[cfg(feature = "shielded")]
@@ -1864,14 +1874,18 @@ impl PlatformWallet {
     /// `shielded_add_account` hold the generation's lifecycle gate from
     /// this check through their host write, and the removal sets the flag
     /// under the gate's exclusive side, so it cannot complete in between.
+    ///
+    /// A tip review asks too, after it read the wallet's confirmed
+    /// recipients under the store guard: the removal sets the flag before
+    /// it purges them, so a review that read purged rows sees it.
     #[cfg(feature = "shielded")]
-    fn ensure_shielded_attached(&self) -> Result<(), PlatformWalletError> {
+    pub(crate) fn ensure_shielded_attached(&self) -> Result<(), PlatformWalletError> {
         if self
             .shielded_detached
             .load(std::sync::atomic::Ordering::Acquire)
         {
             return Err(PlatformWalletError::WalletNotFound(format!(
-                "{} was removed from the manager; shielded bind refused",
+                "{} was removed from the manager; the shielded call was refused",
                 hex::encode(self.wallet_id)
             )));
         }
@@ -2042,7 +2056,7 @@ impl PlatformWallet {
     ///   loudly here instead of burning a ~30 s Halo 2 proof on a
     ///   spend the chain would reject.
     #[cfg(feature = "shielded")]
-    async fn derive_spend_keyset(
+    pub(crate) async fn derive_spend_keyset(
         &self,
         seed: &[u8],
         account: u32,
@@ -2114,6 +2128,46 @@ impl PlatformWallet {
         // for it and a Clear does not purge the store under it.
         let _admission = self.admit_shielded_spend(coordinator).await?;
         let keyset = self.derive_spend_keyset(seed, account).await?;
+        self.shielded_transfer_once_claimed(
+            coordinator,
+            &keyset,
+            account,
+            recipient_raw_43,
+            amount,
+            memo,
+            prover,
+            || async { Ok(()) },
+        )
+        .await
+    }
+
+    /// The transfer behind [`Self::shielded_transfer_to`], for a caller that
+    /// is admitted already (a tip holds the lifecycle gate, the
+    /// coordinator's operation admission and the account-set lock through
+    /// its spend, and none of them is reentrant). `keyset` is `account`'s,
+    /// from [`Self::derive_spend_keyset`]: the caller derives it once, a tip
+    /// before it records anything. `once_claimed` runs right after the
+    /// transfer's notes are reserved and before anything is built or sent
+    /// (`operations::transfer_once_claimed`): an `Err` from it releases the
+    /// notes and is returned, with nothing sent.
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn shielded_transfer_once_claimed<P, C, CFut>(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+        keyset: &OrchardKeySet,
+        account: u32,
+        recipient_raw_43: &[u8; 43],
+        amount: u64,
+        memo: [u8; 36],
+        prover: P,
+        once_claimed: C,
+    ) -> Result<(), PlatformWalletError>
+    where
+        P: OrchardProver,
+        C: FnOnce() -> CFut,
+        CFut: Future<Output = Result<(), PlatformWalletError>>,
+    {
         let recipient = Option::<grovedb_commitment_tree::PaymentAddress>::from(
             grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(recipient_raw_43),
         )
@@ -2122,17 +2176,18 @@ impl PlatformWallet {
                 "invalid Orchard payment address bytes".to_string(),
             )
         })?;
-        super::shielded::operations::transfer(
+        super::shielded::operations::transfer_once_claimed(
             &self.sdk,
             coordinator.store(),
             Some(&self.persister),
             self.wallet_id,
-            &keyset,
+            keyset,
             account,
             &recipient,
             amount,
             memo,
             &prover,
+            once_claimed,
         )
         .await
     }
@@ -3777,6 +3832,8 @@ impl Clone for PlatformWallet {
             shielded_config_lock: self.shielded_config_lock.clone(),
             #[cfg(feature = "shielded")]
             prepared_tip_accounts: self.prepared_tip_accounts.clone(),
+            #[cfg(feature = "shielded")]
+            tip_send_in_progress: self.tip_send_in_progress.clone(),
             #[cfg(feature = "shielded")]
             shielded_detached: self.shielded_detached.clone(),
             #[cfg(feature = "shielded")]

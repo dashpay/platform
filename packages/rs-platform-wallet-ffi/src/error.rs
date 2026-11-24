@@ -785,13 +785,44 @@ pub enum PlatformWalletFFIResultCode {
     /// Maps `PlatformWalletError::ShieldedOperationInProgress`: a shielded
     /// Clear was refused because a shielded operation (a bind, an account
     /// being added, a token pool transfer or unshield, a DashPay profile
-    /// write or a tip address preparation, or another Clear) is in flight.
+    /// write, a tip address preparation or a shielded tip being sent, or
+    /// another Clear) is in flight.
     /// Clear does not wait for it: it returned at once and changed nothing,
     /// so the sync loop keeps running and the host must not wipe its own
     /// rows. Retryable once the operation has finished. Returned by
     /// `platform_wallet_manager_shielded_clear`. Not the reverse case, an
     /// operation refused because a Clear holds the wallet.
     ErrorShieldedOperationInProgress = 84,
+
+    /// Maps `PlatformWalletError::ShieldedTipPending`: a shielded tip was
+    /// refused before anything was selected, built or sent, because another
+    /// tip from this wallet is being sent or an earlier shielded payment to
+    /// the same recipient may still execute. This call sent nothing. The
+    /// earlier payment may be the same tip and may pay the recipient: a
+    /// shielded sync resolves it as executed or as unable to execute, so the
+    /// refusal ending is not a reason to send again. Not the "may have left
+    /// the wallet" code ([`Self::ErrorShieldedSpendUnconfirmed`], 18).
+    ErrorShieldedTipPending = 85,
+
+    /// Maps `PlatformWalletError::ShieldedTipRecipientMismatch`: a shielded
+    /// tip started from a saved contact names the identity the username is
+    /// expected to belong to, and the name resolves to another identity: it
+    /// moved since the contact was saved. Nothing was sent. The user picks
+    /// the recipient again; a tip to the name's new owner starts from the
+    /// name, with no expected identity.
+    ErrorShieldedTipRecipientMismatch = 86,
+
+    /// A local shielded balance read did not finish within its wait budget
+    /// (the wallet's state or its shielded store was held, by a scan for
+    /// instance), or a shielded Clear was running. Nothing failed and
+    /// nothing changed: keep the last state shown and read again later.
+    /// The only code of that read that means retry. Maps
+    /// `PlatformWalletError::ShieldedBalanceBusy`, which the wallet's bounded
+    /// read (`PlatformWallet::shielded_identity_balance_now`) returns.
+    /// Returned by `platform_wallet_manager_shielded_identity_balance`;
+    /// `platform_wallet_manager_local_shielded_balance_snapshot` still
+    /// reports its busy case as [`Self::ErrorWalletOperation`] (6).
+    ErrorShieldedBalanceBusy = 87,
 
     /// The named thing does not exist.
     ///
@@ -1285,6 +1316,22 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // nothing: the host keeps its rows and offers the Clear again.
             PlatformWalletError::ShieldedOperationInProgress => {
                 PlatformWalletFFIResultCode::ErrorShieldedOperationInProgress
+            }
+            // A shielded tip refused with nothing sent while an earlier
+            // payment to the recipient is unresolved: pending, not failed and
+            // not unconfirmed.
+            PlatformWalletError::ShieldedTipPending => {
+                PlatformWalletFFIResultCode::ErrorShieldedTipPending
+            }
+            // A shielded tip refused, nothing sent, because the name belongs
+            // to another identity than the contact it was started from.
+            PlatformWalletError::ShieldedTipRecipientMismatch { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedTipRecipientMismatch
+            }
+            // A bounded balance read that found the shielded store held:
+            // nothing failed, and the host reads again later.
+            PlatformWalletError::ShieldedBalanceBusy => {
+                PlatformWalletFFIResultCode::ErrorShieldedBalanceBusy
             }
             // The wallet's private payments from an earlier process are not
             // restored yet: wallet readiness, not one contact's pending request.
@@ -3092,6 +3139,7 @@ mod private_contact_request_error_tests {
     use super::*;
     #[cfg(feature = "shielded")]
     use crate::shielded_send::map_spend_result;
+    use dpp::prelude::Identifier;
 
     /// A store the network does not serve yet (DashPay's private contact
     /// requests before protocol version 15) is told apart from a failure, so
@@ -3258,6 +3306,62 @@ mod private_contact_request_error_tests {
             .expect("UTF-8 message")
             .to_owned();
         assert!(message.contains("in progress"), "{message}");
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    /// A shielded tip refused while an earlier payment to its recipient is
+    /// unresolved reaches the host by its own code, through the blanket
+    /// conversion and the spend contract alike, never as unconfirmed.
+    #[test]
+    fn should_report_a_pending_shielded_tip_by_its_own_code() {
+        let mut result = PlatformWalletFFIResult::from(PlatformWalletError::ShieldedTipPending);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedTipPending
+        );
+        assert_eq!(result.code as u32, 85);
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+        #[cfg(feature = "shielded")]
+        {
+            assert_eq!(
+                map_spend_result(Err(PlatformWalletError::ShieldedTipPending), "shielded tip").code
+                    as u32,
+                85
+            );
+        }
+    }
+
+    /// A shielded tip refused because the name belongs to another identity
+    /// than the contact it was started from reaches the host by its own
+    /// code, naming both identities.
+    #[test]
+    fn should_report_a_shielded_tip_recipient_mismatch_by_its_own_code() {
+        let mut result =
+            PlatformWalletFFIResult::from(PlatformWalletError::ShieldedTipRecipientMismatch {
+                expected: Identifier::from([1; 32]),
+                resolved: Identifier::from([2; 32]),
+            });
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedTipRecipientMismatch
+        );
+        assert_eq!(result.code as u32, 86);
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    /// The busy code of a local shielded balance read keeps its raw value:
+    /// hosts match on 87 to keep the last state and read again.
+    #[test]
+    fn should_pin_the_shielded_balance_busy_code() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorShieldedBalanceBusy as u32,
+            87
+        );
+        let mut result = PlatformWalletFFIResult::from(PlatformWalletError::ShieldedBalanceBusy);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedBalanceBusy
+        );
         unsafe { platform_wallet_ffi_result_free(&mut result) };
     }
 
