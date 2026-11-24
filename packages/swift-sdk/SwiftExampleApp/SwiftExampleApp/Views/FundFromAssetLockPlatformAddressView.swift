@@ -20,6 +20,41 @@ import SwiftUI
 import SwiftDashSDK
 import SwiftData
 
+/// The states of the read of an external lock's recorded payees, kept
+/// apart so a failed read is shown neither as a lock without recipients nor
+/// as a load that never ends.
+enum RecordedPayeesLoad {
+    /// The wallet is not loaded in the manager yet; the read starts when
+    /// it is.
+    case waitingForWallet
+    case loading
+    case loaded([ManagedPlatformAddressWallet.FundFromAssetLockRecipient])
+    /// The read succeeded and the lock records no recipients.
+    case notFound
+    /// The read failed; the form offers a retry.
+    case failed(String)
+
+    /// The state a finished read of
+    /// `ManagedPlatformWallet.assetLockPlatformAddressRecipients` leads to.
+    init(readResult: Result<[ManagedPlatformAddressWallet.FundFromAssetLockRecipient]?, Error>) {
+        switch readResult {
+        case .success(let payees?) where !payees.isEmpty:
+            self = .loaded(payees)
+        case .success:
+            self = .notFound
+        case .failure(let error):
+            self = .failed(error.localizedDescription)
+        }
+    }
+
+    /// The payees once loaded, `nil` in every other state: submission is
+    /// enabled only with them.
+    var loadedPayees: [ManagedPlatformAddressWallet.FundFromAssetLockRecipient]? {
+        if case .loaded(let payees) = self { return payees }
+        return nil
+    }
+}
+
 struct FundFromAssetLockPlatformAddressView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -76,13 +111,11 @@ struct FundFromAssetLockPlatformAddressView: View {
     /// so view dismissal mid-flight doesn't lose the work.
     @State private var activeController: AddressFundFromAssetLockController? = nil
 
-    /// The recipients an external lock
+    /// Where the read of the recipients an external lock
     /// (`resumeFromLock.platformAddressRecipients != nil`) recorded when it
-    /// was built, loaded before submission is
-    /// enabled so the form shows exactly what the resume pays. `nil`
-    /// while not loaded, for an owned lock, or when the lock no longer
-    /// carries them.
-    @State private var recordedPayees: [ManagedPlatformAddressWallet.FundFromAssetLockRecipient]? = nil
+    /// was built stands. Submission stays disabled until they are
+    /// `.loaded`, so the form shows exactly what the resume pays.
+    @State private var recordedPayees: RecordedPayeesLoad = .waitingForWallet
 
     /// 1 DASH = 1e8 duffs (Core side). The asset-lock builder takes
     /// duffs; we convert here for display ergonomics only.
@@ -153,6 +186,10 @@ struct FundFromAssetLockPlatformAddressView: View {
             .onAppear {
                 autoSelectDefaults()
                 loadRecordedPayees()
+            }
+            .onChange(of: walletManager.wallet(for: wallet.walletId) != nil) { _, available in
+                // The wallet can finish loading after the form appears.
+                if available { loadRecordedPayees() }
             }
             .onChange(of: activeController?.phase) { _, newPhase in
                 // On successful funding, stamp the recipient hash
@@ -355,7 +392,22 @@ struct FundFromAssetLockPlatformAddressView: View {
     @ViewBuilder
     private var recordedPayeesSection: some View {
         Section {
-            if let payees = recordedPayees, !payees.isEmpty {
+            switch recordedPayees {
+            case .waitingForWallet:
+                HStack {
+                    ProgressView()
+                    Text("Waiting for the wallet to load…")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            case .loading:
+                HStack {
+                    ProgressView()
+                    Text("Loading the recipients this asset lock recorded…")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            case .loaded(let payees):
                 ForEach(Array(payees.enumerated()), id: \.offset) { _, payee in
                     HStack {
                         Text(hexShort(payee.hash))
@@ -365,10 +417,17 @@ struct FundFromAssetLockPlatformAddressView: View {
                             .foregroundColor(.secondary)
                     }
                 }
-            } else {
-                Text("This asset lock no longer carries its recorded recipients.")
+            case .notFound:
+                Text("This asset lock no longer records its recipients, so it cannot be completed here.")
                     .font(.caption)
                     .foregroundColor(.secondary)
+            case .failed(let message):
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Could not read the recorded payees: \(message)")
+                        .font(.caption)
+                        .foregroundColor(.red)
+                    Button("Retry") { loadRecordedPayees() }
+                }
             }
         } header: {
             Text("Recorded Payees")
@@ -540,7 +599,7 @@ struct FundFromAssetLockPlatformAddressView: View {
             return platformAccountIndex != nil
                 && selectedRecipientHash != nil
                 && activeController == nil
-                && (!isExternalResume || !(recordedPayees ?? []).isEmpty)
+                && (!isExternalResume || recordedPayees.loadedPayees != nil)
         }
         let amount = parsedDuffs ?? 0
         return fundingCoreAccountIndex != nil
@@ -565,16 +624,36 @@ struct FundFromAssetLockPlatformAddressView: View {
         autoSelectRecipient()
     }
 
+    /// Read the recorded payees of an external lock. Waits for the wallet
+    /// when the manager has not loaded it yet (the `.onChange` on its
+    /// availability calls back in), and is a no-op while a read runs or
+    /// once the payees are loaded. A failed read lands in `.failed`, whose
+    /// Retry calls back in.
     private func loadRecordedPayees() {
-        guard isExternalResume, recordedPayees == nil,
-              let lock = resumeFromLock,
-              let parsed = parseOutPoint(lock.outPointHex),
-              let managed = walletManager.wallet(for: wallet.walletId),
-              let recipients = try? managed.assetLockPlatformAddressRecipients(
-                  txid: parsed.txid, vout: parsed.vout
-              )
-        else { return }
-        recordedPayees = recipients
+        guard isExternalResume, let lock = resumeFromLock else { return }
+        switch recordedPayees {
+        case .loading, .loaded: return
+        case .waitingForWallet, .notFound, .failed: break
+        }
+        guard let parsed = parseOutPoint(lock.outPointHex) else {
+            recordedPayees = .failed("could not parse the asset lock outpoint \(lock.outPointHex)")
+            return
+        }
+        guard let managed = walletManager.wallet(for: wallet.walletId) else {
+            recordedPayees = .waitingForWallet
+            return
+        }
+        recordedPayees = .loading
+        Task {
+            let result = await Task.detached(priority: .userInitiated) {
+                Result {
+                    try managed.assetLockPlatformAddressRecipients(
+                        txid: parsed.txid, vout: parsed.vout
+                    )
+                }
+            }.value
+            recordedPayees = RecordedPayeesLoad(readResult: result)
+        }
     }
 
     private func autoSelectRecipient() {
@@ -639,9 +718,9 @@ struct FundFromAssetLockPlatformAddressView: View {
                 // which the SDK reads from the lock itself. An owned resume
                 // (the picked address below) would be refused by the SDK —
                 // it must never return the payment to this wallet.
-                guard let recipients = recordedPayees, !recipients.isEmpty else {
+                guard recordedPayees.loadedPayees != nil else {
                     submitError = SubmitError(
-                        message: "The asset lock no longer carries its recorded recipients."
+                        message: "The recorded payees of this asset lock are not loaded."
                     )
                     return
                 }
