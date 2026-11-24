@@ -1,3 +1,4 @@
+use super::public_note_for_signer;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
@@ -175,7 +176,7 @@ impl TokenUnfreezeTransitionBuilder {
             self.data_contract.id(),
             self.token_position,
             self.unfreeze_identity_id,
-            self.public_note.clone(),
+            public_note_for_signer(self.public_note, self.using_group_info.as_ref()),
             self.using_group_info,
             identity_public_key,
             identity_contract_nonce,

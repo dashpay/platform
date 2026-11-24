@@ -385,7 +385,8 @@ struct CoSignProposalView: View {
 
     /// Route to the right `tokenXxx` wrapper based on the proposal's
     /// payload. Each branch passes the original proposal's params
-    /// straight through — the co-signer doesn't get to edit them.
+    /// straight through, except the note, which is not sent back. The
+    /// co-signer doesn't get to edit them.
     private func dispatch(
         wallet: ManagedPlatformWallet,
         mode: GroupActionMode,
@@ -394,8 +395,11 @@ struct CoSignProposalView: View {
         contractId: Data,
         tokenPosition: UInt16
     ) async throws {
+        // The proposal's note is shown above but never sent back: only the
+        // proposer writes a note, and Platform refuses one from a co-signer
+        // (the Rust SDK leaves it off a co-sign either way).
         switch proposal.params {
-        case .mint(let amount, let recipient, let note):
+        case .mint(let amount, let recipient, _):
             // A co-signature that CLOSES the group mint returns the
             // recipient's proof-verified post-mint balance (empty while the
             // action is still awaiting signatures). Persist it so the
@@ -407,7 +411,7 @@ struct CoSignProposalView: View {
                 tokenPosition: tokenPosition,
                 recipient: recipient,
                 amount: amount,
-                publicNote: note,
+                publicNote: nil,
                 groupAction: mode,
                 signer: signer
             )
@@ -416,7 +420,7 @@ struct CoSignProposalView: View {
                 contractId: contractId,
                 tokenPosition: tokenPosition
             )
-        case .burn(let amount, _, let note):
+        case .burn(let amount, _, _):
             // The burn proposal carries `burnFrom` (the account being
             // debited), but the FFI burns from `identityId` — which
             // for a co-signer is themselves. Platform validates that
@@ -434,7 +438,7 @@ struct CoSignProposalView: View {
                 contractId: contractId,
                 tokenPosition: tokenPosition,
                 amount: amount,
-                publicNote: note,
+                publicNote: nil,
                 groupAction: mode,
                 signer: signer
             )
@@ -443,61 +447,61 @@ struct CoSignProposalView: View {
                 contractId: contractId,
                 tokenPosition: tokenPosition
             )
-        case .freeze(let target, let note):
+        case .freeze(let target, _):
             try await wallet.tokenFreeze(
                 identityId: identityId,
                 contractId: contractId,
                 tokenPosition: tokenPosition,
                 frozenIdentityId: target,
-                publicNote: note,
+                publicNote: nil,
                 groupAction: mode,
                 signer: signer
             )
-        case .unfreeze(let target, let note):
+        case .unfreeze(let target, _):
             try await wallet.tokenUnfreeze(
                 identityId: identityId,
                 contractId: contractId,
                 tokenPosition: tokenPosition,
                 frozenIdentityId: target,
-                publicNote: note,
+                publicNote: nil,
                 groupAction: mode,
                 signer: signer
             )
-        case .destroyFrozenFunds(let target, _, let note):
+        case .destroyFrozenFunds(let target, _, _):
             try await wallet.tokenDestroyFrozenFunds(
                 identityId: identityId,
                 contractId: contractId,
                 tokenPosition: tokenPosition,
                 frozenIdentityId: target,
-                publicNote: note,
+                publicNote: nil,
                 groupAction: mode,
                 signer: signer
             )
-        case .pause(let note):
+        case .pause(_):
             try await wallet.tokenPause(
                 identityId: identityId,
                 contractId: contractId,
                 tokenPosition: tokenPosition,
-                publicNote: note,
+                publicNote: nil,
                 groupAction: mode,
                 signer: signer
             )
-        case .resume(let note):
+        case .resume(_):
             try await wallet.tokenResume(
                 identityId: identityId,
                 contractId: contractId,
                 tokenPosition: tokenPosition,
-                publicNote: note,
+                publicNote: nil,
                 groupAction: mode,
                 signer: signer
             )
-        case .setPrice(let price, let note):
+        case .setPrice(let price, _):
             try await wallet.tokenSetPrice(
                 identityId: identityId,
                 contractId: contractId,
                 tokenPosition: tokenPosition,
                 pricePerToken: price ?? 0,
-                publicNote: note,
+                publicNote: nil,
                 groupAction: mode,
                 signer: signer
             )
