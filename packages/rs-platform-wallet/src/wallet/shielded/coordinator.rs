@@ -875,7 +875,25 @@ impl NetworkShieldedCoordinator {
                 .pending_redrives_for_wallet(wallet_id)
                 .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
             for (id, redrive) in guards {
-                if !redrive.nullifiers.is_empty() || redrive.identity_user_abandoned {
+                if redrive.identity_user_abandoned {
+                    continue;
+                }
+                if !redrive.nullifiers.is_empty() {
+                    // A note spend's record goes with its account when the
+                    // registration drops or re-keys it (the purge below).
+                    // Its transition may still execute, and the record is
+                    // all that says so: what refuses a second payment to
+                    // the same recipient (a shielded tip) reads it. So the
+                    // account stays as it is until the spend resolves.
+                    if stale.iter().any(|(stale_id, _)| *stale_id == id) {
+                        return Err(PlatformWalletError::ShieldedRecoveryKeysRequired {
+                            account_index: id.account_index,
+                            reason: "an unresolved shielded spend was paid from it, and dropping \
+                                     or re-keying the account would drop the spend's record; a \
+                                     shielded sync resolves the spend"
+                                .to_owned(),
+                        });
+                    }
                     continue;
                 }
                 let Some(views) = account_views.get(&id.account_index) else {
