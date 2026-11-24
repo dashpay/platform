@@ -106,6 +106,14 @@ data class PlatformWalletPersistenceCapabilities(
          */
         const val ASSET_LOCK_IDENTITY_RECIPIENTS: Long =
             NativePersistenceBridge.CAPABILITY_ASSET_LOCK_IDENTITY_RECIPIENTS
+
+        /**
+         * Mirrors `PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS`
+         * (bit 18): required before native builds an external Platform-address
+         * funding ([ManagedPlatformWallet.fundFromAssetLockExternal]).
+         */
+        const val ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS: Long =
+            NativePersistenceBridge.CAPABILITY_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS
     }
 }
 

@@ -280,6 +280,17 @@ pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> Persistence
             bridge,
             &ASSET_LOCK_SIDECARS[IDENTITY_RECIPIENT],
         ),
+        asset_lock_platform_address_recipients: bridge_overrides(
+            env,
+            bridge,
+            PERSIST_PLATFORM_ADDRESS_RECIPIENTS_METHOD,
+            ASSET_LOCK_SIDECAR_PERSIST_DESCRIPTOR,
+        ) && bridge_overrides(
+            env,
+            bridge,
+            LOAD_PLATFORM_ADDRESS_RECIPIENTS_METHOD,
+            ASSET_LOCK_SIDECAR_LOAD_DESCRIPTOR,
+        ),
     })
 }
 
@@ -368,6 +379,9 @@ struct BridgeOverrides {
     /// `onPersistAssetLockIdentityRecipient` and
     /// `onLoadAssetLockIdentityRecipient`.
     asset_lock_identity_recipients: bool,
+    /// `onPersistAssetLockPlatformAddressRecipients` and
+    /// `onLoadAssetLockPlatformAddressRecipients`.
+    asset_lock_platform_address_recipients: bool,
 }
 
 /// The extension slots wired for a bridge with `overrides` (see
@@ -424,6 +438,12 @@ fn extension_for(overrides: BridgeOverrides) -> PersistenceCallbacksExtension {
         on_load_asset_lock_identity_recipient_fn: overrides
             .asset_lock_identity_recipients
             .then_some(tramp_load_asset_lock_sidecar::<IDENTITY_RECIPIENT>),
+        on_persist_asset_lock_platform_address_recipients_fn: overrides
+            .asset_lock_platform_address_recipients
+            .then_some(tramp_persist_asset_lock_platform_address_recipients),
+        on_load_asset_lock_platform_address_recipients_fn: overrides
+            .asset_lock_platform_address_recipients
+            .then_some(tramp_load_asset_lock_platform_address_recipients),
         ..Default::default()
     }
 }
@@ -2397,6 +2417,137 @@ fn sidecar_value(loaded: Option<Vec<u8>>, len: usize) -> Result<Option<Vec<u8>>,
     match loaded {
         Some(value) if value.len() != len => Err(()),
         loaded => Ok(loaded),
+    }
+}
+
+// ── Asset-lock Platform-address recipients ────────────────────────────
+//
+// The fourth asset-lock sidecar (`PersistAssetLockPlatformAddressRecipientsFn`
+// / `LoadAssetLockPlatformAddressRecipientsFn`): the Platform addresses an
+// external Platform-address funding pays, as opaque bytes of variable length
+// (1..=`PLATFORM_WALLET_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS_MAX_LEN`), so
+// it has its own trampolines rather than a fixed-width slot in
+// [`ASSET_LOCK_SIDECARS`]. Same bridge descriptors as the other sidecars.
+
+/// `NativePersistenceBridge` method that stores the recipients.
+const PERSIST_PLATFORM_ADDRESS_RECIPIENTS_METHOD: &str =
+    "onPersistAssetLockPlatformAddressRecipients";
+
+/// `NativePersistenceBridge` method that loads the recipients.
+const LOAD_PLATFORM_ADDRESS_RECIPIENTS_METHOD: &str = "onLoadAssetLockPlatformAddressRecipients";
+
+/// `PersistAssetLockPlatformAddressRecipientsFn`: hand the wallet's opaque
+/// bytes to the bridge, which stores them as given. The bridge's return is
+/// the callback's: non-zero (different bytes already stored, no row, no open
+/// round) fails the round.
+///
+/// # Safety
+/// `wallet_id` points to 32 readable bytes, `out_point` to 36 and
+/// `recipients` to `recipients_len`, for the duration of the call.
+unsafe extern "C" fn tramp_persist_asset_lock_platform_address_recipients(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    out_point: *const u8,
+    recipients: *const u8,
+    recipients_len: usize,
+) -> i32 {
+    if wallet_id.is_null()
+        || out_point.is_null()
+        || recipients.is_null()
+        || platform_address_recipients_value(Some(recipients_len), recipients_len).is_err()
+    {
+        return ERR_JNI;
+    }
+    with_bridge(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        let outpoint = bytes(env, out_point, 36)?;
+        let recipients = bytes(env, recipients, recipients_len)?;
+        env.call_method(
+            bridge,
+            PERSIST_PLATFORM_ADDRESS_RECIPIENTS_METHOD,
+            ASSET_LOCK_SIDECAR_PERSIST_DESCRIPTOR,
+            &[(&wid).into(), (&outpoint).into(), (&recipients).into()],
+        )?
+        .i()
+    })
+}
+
+/// `LoadAssetLockPlatformAddressRecipientsFn`: ask the bridge for the stored
+/// bytes and copy them out. A JVM `null` is a row recording none
+/// (`*out_found = false`, success). An exception (a missing or unreadable
+/// row), an empty value or one longer than `recipients_capacity` returns
+/// `ERR_JNI`, which fails the whole native load rather than reading as a
+/// lock without recipients, which a resume could consume into the wallet.
+///
+/// # Safety
+/// `wallet_id` points to 32 readable bytes and `out_point` to 36;
+/// `out_found` and `out_recipients_len` are writable and `out_recipients`
+/// points to `recipients_capacity` writable bytes.
+unsafe extern "C" fn tramp_load_asset_lock_platform_address_recipients(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    out_point: *const u8,
+    out_found: *mut bool,
+    out_recipients: *mut u8,
+    recipients_capacity: usize,
+    out_recipients_len: *mut usize,
+) -> i32 {
+    if wallet_id.is_null()
+        || out_point.is_null()
+        || out_found.is_null()
+        || out_recipients.is_null()
+        || out_recipients_len.is_null()
+    {
+        return ERR_JNI;
+    }
+    *out_found = false;
+    *out_recipients_len = 0;
+    let loaded = with_bridge_load(context, |env, bridge| {
+        let wid = id32(env, wallet_id)?;
+        let outpoint = bytes(env, out_point, 36)?;
+        let value = env
+            .call_method(
+                bridge,
+                LOAD_PLATFORM_ADDRESS_RECIPIENTS_METHOD,
+                ASSET_LOCK_SIDECAR_LOAD_DESCRIPTOR,
+                &[(&wid).into(), (&outpoint).into()],
+            )?
+            .l()?;
+        if value.is_null() {
+            return Ok(None);
+        }
+        env.convert_byte_array(JByteArray::from(value)).map(Some)
+    });
+    let Some(loaded) = loaded else {
+        return ERR_JNI;
+    };
+    let Ok(()) =
+        platform_address_recipients_value(loaded.as_ref().map(Vec::len), recipients_capacity)
+    else {
+        return ERR_JNI;
+    };
+    if let Some(value) = loaded {
+        ptr::copy_nonoverlapping(value.as_ptr(), out_recipients, value.len());
+        *out_recipients_len = value.len();
+        *out_found = true;
+    }
+    0
+}
+
+/// Whether a recipients value of length `len` (`None`: the row records none)
+/// fits: non-empty and at most `capacity` bytes, never more than
+/// `PLATFORM_WALLET_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS_MAX_LEN`.
+fn platform_address_recipients_value(len: Option<usize>, capacity: usize) -> Result<(), ()> {
+    match len {
+        None => Ok(()),
+        Some(len)
+            if len > 0
+                && len <= capacity
+                && len <= platform_wallet_ffi::PLATFORM_WALLET_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS_MAX_LEN =>
+        {
+            Ok(())
+        }
+        Some(_) => Err(()),
     }
 }
 
@@ -5506,6 +5657,14 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
         ASSET_LOCK_SIDECARS[IDENTITY_RECIPIENT].load_method,
         ASSET_LOCK_SIDECAR_LOAD_DESCRIPTOR,
     ),
+    (
+        PERSIST_PLATFORM_ADDRESS_RECIPIENTS_METHOD,
+        ASSET_LOCK_SIDECAR_PERSIST_DESCRIPTOR,
+    ),
+    (
+        LOAD_PLATFORM_ADDRESS_RECIPIENTS_METHOD,
+        ASSET_LOCK_SIDECAR_LOAD_DESCRIPTOR,
+    ),
     ("onPersistInvitationUpsert", "([B[BIJIIZI)I"),
     ("onPersistInvitationRemoval", "([B[B)I"),
     #[cfg(feature = "shielded")]
@@ -5904,6 +6063,21 @@ mod tests {
                 );
             }
         }
+        for (name, descriptor) in [
+            (
+                PERSIST_PLATFORM_ADDRESS_RECIPIENTS_METHOD,
+                ASSET_LOCK_SIDECAR_PERSIST_DESCRIPTOR,
+            ),
+            (
+                LOAD_PLATFORM_ADDRESS_RECIPIENTS_METHOD,
+                ASSET_LOCK_SIDECAR_LOAD_DESCRIPTOR,
+            ),
+        ] {
+            assert!(
+                BRIDGE_METHOD_TABLE.contains(&(name, descriptor)),
+                "{name} {descriptor} is checked by the descriptor smoke test"
+            );
+        }
     }
 
     /// A sidecar load reads a JVM `null` as "the row records none" and
@@ -5951,6 +6125,133 @@ mod tests {
                     out_point.as_ptr(),
                     &mut found,
                     value.as_mut_ptr(),
+                ),
+                ERR_JNI
+            );
+        }
+    }
+
+    /// The Platform-address recipient pair is wired only for a bridge that
+    /// overrides both of its methods, and `FFIPersister` attests
+    /// `ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS` (bit 18) only with the pair
+    /// wired and an atomic round declared: the row and its recipients arrive
+    /// in separate callbacks.
+    #[test]
+    fn should_wire_the_platform_address_recipient_pair_only_for_a_bridge_that_overrides_both() {
+        use platform_wallet_ffi::manager::effective_persistence_capabilities;
+        use platform_wallet_ffi::{
+            PersistenceCapabilitiesFFI, PLATFORM_WALLET_PERSISTENCE_CAPABILITIES_VERSION,
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_FUNDING_INDICES,
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS as RECIPIENTS,
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ATOMIC_CHANGESETS as ATOMIC,
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_TRACKED_ASSET_LOCKS,
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_WALLET_RESTORE,
+        };
+        let declared = |bits: u64| PersistenceCapabilitiesFFI {
+            version: PLATFORM_WALLET_PERSISTENCE_CAPABILITIES_VERSION,
+            reserved: 0,
+            bits: bits
+                | PLATFORM_WALLET_PERSISTENCE_CAPABILITY_WALLET_RESTORE
+                | PLATFORM_WALLET_PERSISTENCE_CAPABILITY_TRACKED_ASSET_LOCKS
+                | PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_FUNDING_INDICES,
+        };
+        for (wired, bits, attested) in [
+            (false, ATOMIC | RECIPIENTS, false),
+            (true, ATOMIC | RECIPIENTS, true),
+            (true, RECIPIENTS, false),
+            (true, ATOMIC, false),
+        ] {
+            let extension = extension_for(BridgeOverrides {
+                asset_lock_platform_address_recipients: wired,
+                ..BridgeOverrides::default()
+            });
+            assert_eq!(
+                extension
+                    .on_persist_asset_lock_platform_address_recipients_fn
+                    .is_some(),
+                wired
+            );
+            assert_eq!(
+                extension
+                    .on_load_asset_lock_platform_address_recipients_fn
+                    .is_some(),
+                wired
+            );
+            let mut vtable = build_vtable(ptr::null_mut());
+            // `release_fn` must not run on the null context.
+            vtable.release_fn = None;
+            let effective =
+                unsafe { effective_persistence_capabilities(vtable, &declared(bits), &extension) }
+                    .bits();
+            assert_eq!(
+                effective & RECIPIENTS != 0,
+                attested,
+                "wired {wired}, declared {bits:#x}"
+            );
+        }
+    }
+
+    /// A recipients load reads a JVM `null` as "the row records none" and
+    /// refuses an empty value or one longer than the buffer, which fails the
+    /// native load.
+    #[test]
+    fn should_accept_only_a_null_or_a_fitting_platform_address_recipients_value() {
+        use platform_wallet_ffi::PLATFORM_WALLET_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS_MAX_LEN as MAX;
+        assert_eq!(platform_address_recipients_value(None, MAX), Ok(()));
+        assert_eq!(platform_address_recipients_value(Some(1), MAX), Ok(()));
+        assert_eq!(platform_address_recipients_value(Some(MAX), MAX), Ok(()));
+        assert_eq!(platform_address_recipients_value(Some(0), MAX), Err(()));
+        assert_eq!(
+            platform_address_recipients_value(Some(MAX + 1), MAX + 1),
+            Err(())
+        );
+        assert_eq!(platform_address_recipients_value(Some(30), 29), Err(()));
+    }
+
+    /// Null pointers and an out-of-range length from native are refused
+    /// before the JVM is reached.
+    #[test]
+    fn should_refuse_a_platform_address_recipients_callback_with_a_null_pointer() {
+        let id = [0u8; 32];
+        let out_point = [0u8; 36];
+        let recipients = [1u8; 30];
+        let mut found = true;
+        let mut buffer = [0u8; 64];
+        let mut len = 7usize;
+        unsafe {
+            for (value, value_len) in [(ptr::null(), 30), (recipients.as_ptr(), 0)] {
+                assert_eq!(
+                    tramp_persist_asset_lock_platform_address_recipients(
+                        ptr::null_mut(),
+                        id.as_ptr(),
+                        out_point.as_ptr(),
+                        value,
+                        value_len,
+                    ),
+                    ERR_JNI
+                );
+            }
+            assert_eq!(
+                tramp_load_asset_lock_platform_address_recipients(
+                    ptr::null_mut(),
+                    id.as_ptr(),
+                    out_point.as_ptr(),
+                    &mut found,
+                    ptr::null_mut(),
+                    buffer.len(),
+                    &mut len,
+                ),
+                ERR_JNI
+            );
+            assert_eq!(
+                tramp_load_asset_lock_platform_address_recipients(
+                    ptr::null_mut(),
+                    ptr::null(),
+                    out_point.as_ptr(),
+                    &mut found,
+                    buffer.as_mut_ptr(),
+                    buffer.len(),
+                    &mut len,
                 ),
                 ERR_JNI
             );

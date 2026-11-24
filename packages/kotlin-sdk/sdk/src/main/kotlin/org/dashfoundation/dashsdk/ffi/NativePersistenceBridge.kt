@@ -144,6 +144,27 @@ abstract class NativePersistenceBridge {
          */
         const val CAPABILITY_ASSET_LOCK_IDENTITY_RECIPIENTS: Long = 1L shl 17
 
+        /**
+         * `PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS`
+         * (bit 18): the Platform addresses an external Platform-address
+         * funding pays survive store and load with its row, so a resume after
+         * restart pays those recipients or is refused, and never consumes the
+         * lock into the wallet. Required: native builds no external
+         * Platform-address funding for a host without it. Attested only for a
+         * bridge that also declares `ATOMIC_CHANGESETS` (the row and its
+         * recipients arrive in separate callbacks of one round) and overrides
+         * both [onPersistAssetLockPlatformAddressRecipients] and
+         * [onLoadAssetLockPlatformAddressRecipients].
+         */
+        const val CAPABILITY_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS: Long = 1L shl 18
+
+        /**
+         * Largest Platform-address recipient record native hands to
+         * [onPersistAssetLockPlatformAddressRecipients]
+         * (`PLATFORM_WALLET_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS_MAX_LEN`).
+         */
+        const val ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS_MAX_LEN: Int = 4096
+
         /** Width of an asset-lock operation UUID. */
         const val ASSET_LOCK_OPERATION_ID_SIZE: Int = 16
 
@@ -846,7 +867,7 @@ abstract class NativePersistenceBridge {
     /** One 36-byte outpoint removal. Descriptor `([B[B)I`. */
     open fun onPersistAssetLockRemoval(walletId: ByteArray, outPoint: ByteArray): Int = 0
 
-    // The three asset-lock sidecars (`PersistAssetLock*Fn` / `LoadAssetLock*Fn`
+    // The four asset-lock sidecars (`PersistAssetLock*Fn` / `LoadAssetLock*Fn`
     // in `packages/rs-platform-wallet-ffi/src/persistence.rs`). Each persist
     // fires after the row's [onPersistAssetLockUpsert], in the same round, and
     // must refuse (non-zero) a value different from one already stored; the
@@ -910,6 +931,28 @@ abstract class NativePersistenceBridge {
      * for the lock at [outPoint], or null. Descriptor `([B[B)[B`.
      */
     open fun onLoadAssetLockIdentityRecipient(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+        null
+
+    /**
+     * `on_persist_asset_lock_platform_address_recipients_fn`: associate the
+     * Platform addresses an external Platform-address funding pays with the
+     * lock at [outPoint]. [recipients] is the wallet's opaque record, 1 to
+     * [ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS_MAX_LEN] bytes: store it as
+     * given; only native reads it. Same rules as the sidecars above.
+     * Descriptor `([B[B[B)I`. See
+     * [CAPABILITY_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS].
+     */
+    open fun onPersistAssetLockPlatformAddressRecipients(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        recipients: ByteArray,
+    ): Int = 0
+
+    /**
+     * `on_load_asset_lock_platform_address_recipients_fn`: the record stored
+     * for the lock at [outPoint], or null. Descriptor `([B[B)[B`.
+     */
+    open fun onLoadAssetLockPlatformAddressRecipients(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
         null
 
     // ── Invitations (DIP-13) ──────────────────────────────────────────

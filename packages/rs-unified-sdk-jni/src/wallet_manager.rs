@@ -2466,8 +2466,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
 /// `onAssetLockBuilt` is a Kotlin `AssetLockBuiltBridge` (or null). Rust calls
 /// its `onAssetLockBuilt(byte[36])` at most once, with the new lock's raw
 /// outpoint, before the lock is persisted or broadcast (see
-/// [`asset_lock_built_trampoline`]); it lets the host bind the recipients it
-/// persisted to the lock it must later resume.
+/// [`asset_lock_built_trampoline`]). It is informational: the wallet records
+/// the recipients with the lock itself (read them with
+/// [`walletAssetLockPlatformAddressRecipients`], resume with
+/// [`walletResumeFundFromAssetLockToRecordedRecipients`]).
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletFundFromAssetLockExternal(
@@ -2528,6 +2530,143 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
             signer_handle,
             core_signer_handle,
         )
+    })
+}
+
+/// Encode the recipients an external Platform-address funding recorded in the
+/// funding-recipients blob shape [`decode_funding_recipients`] reads and
+/// `ManagedPlatformWallet.encodeRecipients` writes: `u32 rowCount` then per
+/// row `u8 addressType, u8[20] hash, u8 hasBalance (0/1), u64 balance`
+/// (big-endian), in the order the wallet stores them.
+fn encode_platform_address_recipients(
+    rows: &[platform_wallet_ffi::AssetLockPlatformAddressRecipientFFI],
+) -> Vec<u8> {
+    let mut blob = Vec::with_capacity(4 + rows.len() * 30);
+    blob.extend_from_slice(&(rows.len() as u32).to_be_bytes());
+    for row in rows {
+        // `address` is the 21-byte storage form: type byte, then the hash.
+        blob.extend_from_slice(&row.address);
+        blob.push(u8::from(row.has_amount));
+        blob.extend_from_slice(&row.amount_credits.to_be_bytes());
+    }
+    blob
+}
+
+/// The Platform addresses a tracked asset lock recorded when an external
+/// Platform-address funding built it
+/// (`platform_wallet_get_asset_lock_platform_address_recipients`), in the
+/// recipients blob shape of [`encode_platform_address_recipients`], or null
+/// when the lock records none (an owned funding) or is not tracked.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletAssetLockPlatformAddressRecipients(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    out_point_txid: JByteArray,
+    out_point_vout: jni::sys::jint,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(out_point) = read_out_point(env, &out_point_txid, out_point_vout) else {
+            return ptr::null_mut();
+        };
+        let mut found = false;
+        let mut recipients: *mut platform_wallet_ffi::AssetLockPlatformAddressRecipientFFI =
+            ptr::null_mut();
+        let mut count = 0usize;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_get_asset_lock_platform_address_recipients(
+                wallet_handle as Handle,
+                &out_point.txid,
+                out_point.vout,
+                &mut found,
+                &mut recipients,
+                &mut count,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        let blob = if recipients.is_null() || count == 0 {
+            encode_platform_address_recipients(&[])
+        } else {
+            encode_platform_address_recipients(unsafe {
+                std::slice::from_raw_parts(recipients, count)
+            })
+        };
+        unsafe {
+            platform_wallet_ffi::platform_wallet_free_asset_lock_platform_address_recipients(
+                recipients, count,
+            )
+        };
+        if !found {
+            return ptr::null_mut();
+        }
+        env.byte_array_from_slice(&blob)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// Resume an interrupted external Platform-address funding to the
+/// recipients its tracked lock recorded, without Kotlin naming them. Same
+/// get/fund/free composite and changeset blob as
+/// [`walletResumeFundFromAssetLock`]; calls
+/// `platform_address_wallet_resume_fund_from_asset_lock_to_recorded_recipients_signer`,
+/// which refuses a lock that records no recipients (an owned funding).
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_walletResumeFundFromAssetLockToRecordedRecipients(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    out_point_txid: JByteArray,
+    out_point_vout: jni::sys::jint,
+    signer_handle: jlong,
+    core_signer_handle: jlong,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(out_point) = read_out_point(env, &out_point_txid, out_point_vout) else {
+            return ptr::null_mut();
+        };
+        run_address_funding(env, wallet_handle, |addr_handle, changeset| unsafe {
+            platform_wallet_ffi::platform_address_wallet_resume_fund_from_asset_lock_to_recorded_recipients_signer(
+                addr_handle,
+                &out_point as *const platform_wallet_ffi::OutPointFFI,
+                signer_handle as *mut rs_sdk_ffi::SignerHandle,
+                core_signer_handle as *mut rs_sdk_ffi::MnemonicResolverHandle,
+                changeset,
+            )
+        })
+    })
+}
+
+/// Read a 32-byte wire-order txid and a non-negative vout into an
+/// `OutPointFFI`, or throw and return `None`.
+fn read_out_point(
+    env: &mut JNIEnv,
+    out_point_txid: &JByteArray,
+    out_point_vout: jni::sys::jint,
+) -> Option<platform_wallet_ffi::OutPointFFI> {
+    if out_point_vout < 0 {
+        throw_sdk_exception(env, 1, "outPointVout must be non-negative");
+        return None;
+    }
+    let txid = match env.convert_byte_array(out_point_txid) {
+        Ok(b) if b.len() == 32 => b,
+        Ok(_) => {
+            throw_sdk_exception(env, 1, "outPointTxid must be exactly 32 bytes");
+            return None;
+        }
+        Err(_) => {
+            let _ = env.exception_clear();
+            throw_sdk_exception(env, 1, "outPointTxid was null/invalid");
+            return None;
+        }
+    };
+    let mut txid_arr = [0u8; 32];
+    txid_arr.copy_from_slice(&txid);
+    Some(platform_wallet_ffi::OutPointFFI {
+        txid: txid_arr,
+        vout: out_point_vout as u32,
     })
 }
 
@@ -4497,6 +4636,38 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The recorded recipients cross in the funding-recipients blob shape,
+    /// in the wallet's order: the remainder with no amount, a payee with its
+    /// credits.
+    #[test]
+    fn should_encode_recorded_recipients_in_the_funding_recipients_blob_shape() {
+        let mut payee = [0x44u8; 21];
+        payee[0] = 0;
+        let mut remainder = [0x01u8; 21];
+        remainder[0] = 1;
+        let blob = encode_platform_address_recipients(&[
+            platform_wallet_ffi::AssetLockPlatformAddressRecipientFFI {
+                address: payee,
+                has_amount: true,
+                amount_credits: 1_000_000,
+            },
+            platform_wallet_ffi::AssetLockPlatformAddressRecipientFFI {
+                address: remainder,
+                has_amount: false,
+                amount_credits: 0,
+            },
+        ]);
+        let mut expected = 2u32.to_be_bytes().to_vec();
+        expected.extend_from_slice(&payee);
+        expected.push(1);
+        expected.extend_from_slice(&1_000_000u64.to_be_bytes());
+        expected.extend_from_slice(&remainder);
+        expected.push(0);
+        expected.extend_from_slice(&0u64.to_be_bytes());
+        assert_eq!(blob, expected);
+        assert_eq!(encode_platform_address_recipients(&[]), 0u32.to_be_bytes());
+    }
 
     #[test]
     fn should_route_each_fund_scope_to_its_own_ffi() {

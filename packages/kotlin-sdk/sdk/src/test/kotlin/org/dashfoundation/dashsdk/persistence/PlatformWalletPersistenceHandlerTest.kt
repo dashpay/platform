@@ -221,8 +221,9 @@ class PlatformWalletPersistenceHandlerTest {
 
         assertEquals(1, handler.persistenceCapabilitiesVersion())
         // The private contact request scan state is bit 15 (0x8000); the
-        // asset-lock sidecars are bits 13, 14 and 17 (0x2000, 0x4000, 0x20000).
-        assertEquals(0x2ebbfL, handler.persistenceCapabilitiesBits())
+        // asset-lock sidecars are bits 13, 14, 17 and 18 (0x2000, 0x4000,
+        // 0x20000, 0x40000).
+        assertEquals(0x6ebbfL, handler.persistenceCapabilitiesBits())
         // Android has no pending-contact-crypto callback, so it must not
         // attest that semantic contract.
         assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x40L)
@@ -244,6 +245,9 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.ASSET_LOCK_OPERATION_IDS))
         assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.ASSET_LOCK_SHIELDED_RECIPIENTS))
         assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.ASSET_LOCK_IDENTITY_RECIPIENTS))
+        assertTrue(
+            diagnostic.contains(PlatformWalletPersistenceCapabilities.ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS),
+        )
     }
 
     @Test

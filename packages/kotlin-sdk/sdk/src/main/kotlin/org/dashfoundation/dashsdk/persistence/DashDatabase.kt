@@ -199,9 +199,18 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * three `asset_locks_*_immutable` triggers ([createAssetLockSidecarTriggers]).
  * NULL for every pre-existing row, which reads back as a lock built without a
  * UUID or a recorded recipient, as it was.
+ *
+ * Version 18 (Platform-address recipients, dashpay/platform#5930): adds the
+ * nullable `asset_locks.platformAddressRecipients` column (the wallet's opaque
+ * record of the Platform addresses an external Platform-address funding pays,
+ * 1 to 4096 bytes) that the SQLite store keeps since its V024 migration and
+ * Swift keeps on `PersistentAssetLock`, and its
+ * `asset_locks_platformAddressRecipients_immutable` trigger
+ * ([createAssetLockPlatformAddressRecipientsTrigger]). NULL for every
+ * pre-existing row, which reads back as the wallet's own funding, as it was.
  */
 @Database(
-    version = 17,
+    version = 18,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -798,19 +807,54 @@ abstract class DashDatabase : RoomDatabase() {
                 "shieldedRecipientRaw43" to "shielded recipient",
                 "identityRecipientId" to "identity recipient",
             )) {
-                db.execSQL(
-                    "CREATE TRIGGER IF NOT EXISTS `asset_locks_${column}_immutable` " +
-                        "BEFORE UPDATE OF `$column` ON `asset_locks` " +
-                        "WHEN OLD.`$column` IS NOT NULL AND NEW.`$column` IS NOT OLD.`$column` " +
-                        "BEGIN SELECT RAISE(ABORT, 'asset lock $label cannot change'); END",
-                )
+                createImmutableAssetLockColumnTrigger(db, column, label)
             }
         }
 
-        /** Installs [createAssetLockSidecarTriggers] on a newly created database. */
+        /**
+         * v17 -> v18: the nullable `platformAddressRecipients` column and its
+         * immutability trigger, see the version-18 class doc above. NULL for
+         * every pre-existing row.
+         */
+        val MIGRATION_17_18: Migration = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `asset_locks` ADD COLUMN `platformAddressRecipients` BLOB")
+                createAssetLockPlatformAddressRecipientsTrigger(db)
+            }
+        }
+
+        /**
+         * The Platform-address recipients are immutable once stored, as the
+         * SQLite store's `V024__asset_lock_platform_address_recipients`
+         * trigger makes them. Created by [MIGRATION_17_18] for an upgraded
+         * database and by [sidecarTriggerCallback] for a new one.
+         */
+        internal fun createAssetLockPlatformAddressRecipientsTrigger(db: SupportSQLiteDatabase) {
+            createImmutableAssetLockColumnTrigger(
+                db,
+                "platformAddressRecipients",
+                "platform address recipients",
+            )
+        }
+
+        private fun createImmutableAssetLockColumnTrigger(
+            db: SupportSQLiteDatabase,
+            column: String,
+            label: String,
+        ) {
+            db.execSQL(
+                "CREATE TRIGGER IF NOT EXISTS `asset_locks_${column}_immutable` " +
+                    "BEFORE UPDATE OF `$column` ON `asset_locks` " +
+                    "WHEN OLD.`$column` IS NOT NULL AND NEW.`$column` IS NOT OLD.`$column` " +
+                    "BEGIN SELECT RAISE(ABORT, 'asset lock $label cannot change'); END",
+            )
+        }
+
+        /** Installs every asset-lock sidecar trigger on a newly created database. */
         private val sidecarTriggerCallback = object : RoomDatabase.Callback() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 createAssetLockSidecarTriggers(db)
+                createAssetLockPlatformAddressRecipientsTrigger(db)
             }
         }
 
@@ -846,6 +890,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_14_15,
                     MIGRATION_15_16,
                     MIGRATION_16_17,
+                    MIGRATION_17_18,
                 )
                 .addCallback(sidecarTriggerCallback)
                 .build()

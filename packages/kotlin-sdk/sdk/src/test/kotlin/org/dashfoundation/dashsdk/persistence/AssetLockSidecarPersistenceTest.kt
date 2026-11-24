@@ -19,16 +19,17 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 /**
- * The three asset-lock sidecars [PlatformWalletPersistenceHandler] keeps on
- * `asset_locks` — operation UUID (16 bytes), shielded recipient (43) and
- * identity recipient (32) — against the contract of the `PersistAssetLock*Fn`
+ * The four asset-lock sidecars [PlatformWalletPersistenceHandler] keeps on
+ * `asset_locks` — operation UUID (16 bytes), shielded recipient (43),
+ * identity recipient (32) and the opaque Platform-address recipient record
+ * (1 to 4096 bytes) — against the contract of the `PersistAssetLock*Fn`
  * / `LoadAssetLock*Fn` typedefs in
  * `packages/rs-platform-wallet-ffi/src/persistence.rs`: written after the
  * row's upsert in the same round, immutable once stored, kept through later
  * upserts, and a load of a missing or malformed row fails instead of reading
  * as "none". Parity with Swift `PlatformWalletPersistenceHandler`'s
  * `persistAssetLockOperationId` / `persistAssetLockShieldedRecipient` and the
- * SQLite store's V019, V020 and V023 triggers.
+ * SQLite store's V019, V020, V023 and V024 triggers.
  */
 @RunWith(RobolectricTestRunner::class)
 class AssetLockSidecarPersistenceTest {
@@ -40,6 +41,7 @@ class AssetLockSidecarPersistenceTest {
     private val operationId = ByteArray(16) { 0x0A }
     private val shieldedRecipient = ByteArray(43) { 0x0B }
     private val identityRecipient = ByteArray(32) { 0x0C }
+    private val platformAddressRecipients = ByteArray(61) { 0x0F }
 
     @Before
     fun setUp() {
@@ -345,5 +347,136 @@ class AssetLockSidecarPersistenceTest {
         round { upsert(consumed, status = 4) }
         round { upsert(consumed, status = 6) }
         assertEquals(6, requireNotNull(row(consumed)).statusRaw)
+    }
+
+    // ── Platform-address recipients (bit 18) ──────────────────────────
+
+    /**
+     * The recipient record of an external Platform-address funding (type 4)
+     * is stored with its row in the same round, loads back as given, and is
+     * kept through the status advances native sends later without it.
+     */
+    @Test
+    fun shouldStorePlatformAddressRecipientsWithTheirRowAndKeepThemThroughLaterUpserts() = runTest {
+        val op = outpoint(30)
+        assertEquals(
+            0,
+            round {
+                assertEquals(0, upsert(op, fundingType = 4))
+                assertEquals(
+                    0,
+                    handler.onPersistAssetLockPlatformAddressRecipients(walletId, op, platformAddressRecipients),
+                )
+            },
+        )
+        assertEquals(0, round { upsert(op, status = 3, fundingType = 4) })
+
+        assertArrayEquals(
+            platformAddressRecipients,
+            handler.onLoadAssetLockPlatformAddressRecipients(walletId, op),
+        )
+        assertEquals(3, requireNotNull(row(op)).statusRaw)
+    }
+
+    @Test
+    fun shouldLoadNoPlatformAddressRecipientsForAnOwnedFundingAndFailForAMissingRow() {
+        val owned = outpoint(31)
+        round { upsert(owned, fundingType = 4) }
+        assertNull(handler.onLoadAssetLockPlatformAddressRecipients(walletId, owned))
+
+        assertThrows(IllegalStateException::class.java) {
+            handler.onLoadAssetLockPlatformAddressRecipients(walletId, outpoint(32))
+        }
+        assertThrows(IllegalStateException::class.java) {
+            handler.onLoadAssetLockPlatformAddressRecipients(ByteArray(32) { 9 }, owned)
+        }
+    }
+
+    /**
+     * Recorded recipients never change: the same record again is accepted, a
+     * different one is refused, a consumed row included (unlike the identity
+     * recipient, no stale write is skipped), and the SQL trigger refuses a
+     * change from any other writer.
+     */
+    @Test
+    fun shouldAcceptTheSamePlatformAddressRecipientsAgainAndRefuseDifferentOnes() = runTest {
+        for (status in listOf<Byte>(1, 4)) {
+            val op = outpoint(33 + status)
+            round {
+                upsert(op, status = status, fundingType = 4)
+                handler.onPersistAssetLockPlatformAddressRecipients(walletId, op, platformAddressRecipients)
+            }
+
+            assertEquals(
+                0,
+                round {
+                    assertEquals(
+                        0,
+                        handler.onPersistAssetLockPlatformAddressRecipients(
+                            walletId,
+                            op,
+                            platformAddressRecipients.copyOf(),
+                        ),
+                    )
+                },
+            )
+            handler.onChangesetBegin(walletId)
+            val refused = handler.onPersistAssetLockPlatformAddressRecipients(walletId, op, ByteArray(61) { 0x10 })
+            handler.onChangesetEnd(walletId, success = false)
+            assertEquals(NativePersistenceBridge.PERSIST_RC_CONSTRAINT, refused)
+
+            val stored = requireNotNull(row(op))
+            assertArrayEquals(platformAddressRecipients, stored.platformAddressRecipients)
+            for (changed in listOf(
+                stored.copy(platformAddressRecipients = ByteArray(30) { 0x10 }),
+                stored.copy(platformAddressRecipients = null),
+            )) {
+                assertThrows(SQLiteException::class.java) {
+                    runBlocking { db.assetLockDao().upsert(changed) }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun shouldRefusePlatformAddressRecipientsOutsideARoundOrOfAnInvalidLength() = runTest {
+        val op = outpoint(40)
+        round { upsert(op, fundingType = 4) }
+
+        assertNotEquals(
+            0,
+            handler.onPersistAssetLockPlatformAddressRecipients(walletId, op, platformAddressRecipients),
+        )
+        assertNull(requireNotNull(row(op)).platformAddressRecipients)
+
+        handler.onChangesetBegin(walletId)
+        for (length in listOf(0, NativePersistenceBridge.ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS_MAX_LEN + 1)) {
+            assertEquals(
+                NativePersistenceBridge.PERSIST_RC_CONSTRAINT,
+                handler.onPersistAssetLockPlatformAddressRecipients(walletId, op, ByteArray(length)),
+            )
+        }
+        handler.onChangesetEnd(walletId, success = false)
+
+        val largest = ByteArray(NativePersistenceBridge.ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS_MAX_LEN) { 0x11 }
+        assertEquals(
+            0,
+            round { handler.onPersistAssetLockPlatformAddressRecipients(walletId, op, largest) },
+        )
+        assertArrayEquals(largest, handler.onLoadAssetLockPlatformAddressRecipients(walletId, op))
+    }
+
+    @Test
+    fun shouldFailTheRoundWhenPlatformAddressRecipientsHaveNoRow() = runTest {
+        val op = outpoint(41)
+        val end = round {
+            assertEquals(
+                0,
+                handler.onPersistAssetLockPlatformAddressRecipients(walletId, op, platformAddressRecipients),
+            )
+        }
+
+        assertNotEquals(0, end)
+        assertNull(row(op))
     }
 }

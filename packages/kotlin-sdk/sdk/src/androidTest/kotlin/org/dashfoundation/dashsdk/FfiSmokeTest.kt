@@ -273,6 +273,42 @@ class FfiSmokeTest {
     }
 
     /**
+     * The Platform-address recipient capability (bit 18) is attested only for
+     * a bridge that declares it with `ATOMIC_CHANGESETS` AND overrides both
+     * the persist and the load of its pair; the Room handler attests it.
+     */
+    @Test
+    fun platformAddressRecipientsCapabilityNeedsBothOverridesAndAnAtomicRound() {
+        NativeLoader.ensureLoaded()
+        val recipients = NativePersistenceBridge.CAPABILITY_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS
+        fun effective(bridge: NativePersistenceBridge): Long =
+            WalletManagerNative.nativeEffectivePersistenceCapabilityBits(bridge) and recipients
+
+        assertEquals("both", recipients, effective(RecipientsBridge.Both()))
+        assertEquals("persist only", 0L, effective(RecipientsBridge.PersistOnly()))
+        assertEquals("load only", 0L, effective(RecipientsBridge.LoadOnly()))
+        assertEquals(
+            "both, no atomic round",
+            0L,
+            effective(object : RecipientsBridge.Both() {
+                override fun persistenceCapabilitiesBits(): Long =
+                    super.persistenceCapabilitiesBits() and ATOMIC_CHANGESETS.inv()
+            }),
+        )
+
+        val db = DashDatabase.createInMemory(ApplicationProvider.getApplicationContext())
+        try {
+            assertEquals(
+                "the Room handler",
+                recipients,
+                effective(PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined)),
+            )
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
      * Rust↔Kotlin persistence-descriptor lockstep. The trampolines resolve
      * each bridge method by (name, descriptor) only when its slot first
      * fires — for the invitation upsert that would be mid-way through a
@@ -535,6 +571,46 @@ private abstract class SidecarBridge : NativePersistenceBridge() {
         override fun onLoadAssetLockOperationId(walletId: ByteArray, outPoint: ByteArray): ByteArray? = null
     }
 }
+
+/**
+ * Bridges declaring the Platform-address recipient capability with some of
+ * the overrides it depends on, for
+ * [FfiSmokeTest.platformAddressRecipientsCapabilityNeedsBothOverridesAndAnAtomicRound].
+ */
+private abstract class RecipientsBridge : NativePersistenceBridge() {
+    override fun persistenceCapabilitiesVersion(): Int = 1
+
+    override fun persistenceCapabilitiesBits(): Long =
+        ATOMIC_CHANGESETS or WALLET_RESTORE or TRACKED_ASSET_LOCKS or ASSET_LOCK_FUNDING_INDICES or
+            CAPABILITY_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS
+
+    open class Both : RecipientsBridge() {
+        override fun onPersistAssetLockPlatformAddressRecipients(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            recipients: ByteArray,
+        ): Int = 0
+
+        override fun onLoadAssetLockPlatformAddressRecipients(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+            null
+    }
+
+    class PersistOnly : RecipientsBridge() {
+        override fun onPersistAssetLockPlatformAddressRecipients(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            recipients: ByteArray,
+        ): Int = 0
+    }
+
+    class LoadOnly : RecipientsBridge() {
+        override fun onLoadAssetLockPlatformAddressRecipients(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+            null
+    }
+}
+
+/** `PersistenceCapabilities::ASSET_LOCK_FUNDING_INDICES` (bit 2). */
+private const val ASSET_LOCK_FUNDING_INDICES: Long = 1L shl 2
 
 /** `PersistenceCapabilities::WALLET_RESTORE` (bit 7). */
 private const val WALLET_RESTORE: Long = 1L shl 7

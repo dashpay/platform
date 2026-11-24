@@ -448,6 +448,32 @@ internal object WalletManagerNative {
         coreSignerHandle: Long,
     ): ByteArray
 
+    /**
+     * The Platform addresses a tracked asset lock recorded when an external
+     * funding built it, in the funding-recipients blob shape, or null when it
+     * records none or is not tracked. Binds
+     * `platform_wallet_get_asset_lock_platform_address_recipients`.
+     */
+    external fun walletAssetLockPlatformAddressRecipients(
+        walletHandle: Long,
+        outPointTxid: ByteArray,
+        outPointVout: Int,
+    ): ByteArray?
+
+    /**
+     * Resume an external Platform-address funding to the recipients its
+     * tracked lock recorded. Binds
+     * `platform_address_wallet_resume_fund_from_asset_lock_to_recorded_recipients_signer`;
+     * returns the changeset blob of [walletResumeFundFromAssetLock].
+     */
+    external fun walletResumeFundFromAssetLockToRecordedRecipients(
+        walletHandle: Long,
+        outPointTxid: ByteArray,
+        outPointVout: Int,
+        signerHandle: Long,
+        coreSignerHandle: Long,
+    ): ByteArray
+
     // ── Wallet-signed Platform-address credit movement (ADDR-02/04) ───
 
     /**

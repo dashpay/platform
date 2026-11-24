@@ -790,13 +790,48 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
+    /**
+     * v17 → v18 adds the nullable `asset_locks.platformAddressRecipients`
+     * column and its immutability trigger. A pre-existing row reads back with
+     * none (the wallet's own funding); the record can then be set once, the
+     * same bytes again are not a change, and changing or clearing it aborts,
+     * as the SQLite store's V024 trigger makes it.
+     */
+    @Test
+    fun shouldAddThePlatformAddressRecipientsColumnAndTriggerFrom17To18() {
+        helper.createDatabase(dbName, 17).apply {
+            execSQL(
+                "INSERT INTO asset_locks (outPointHex, walletId, transactionBytes, fundingTypeRaw, " +
+                    "identityIndexRaw, accountIndexRaw, amountDuffs, statusRaw, createdAt, updatedAt) " +
+                    "VALUES ('aa:0', x'01', x'02', 4, 0, 0, 100000, 1, 0, 0)",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 18, true, DashDatabase.MIGRATION_17_18)
+
+        db.query("SELECT platformAddressRecipients FROM asset_locks WHERE outPointHex = 'aa:0'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue(c.isNull(0))
+        }
+        db.execSQL("UPDATE asset_locks SET platformAddressRecipients = x'0102' WHERE outPointHex = 'aa:0'")
+        db.execSQL("UPDATE asset_locks SET platformAddressRecipients = x'0102' WHERE outPointHex = 'aa:0'")
+        assertThrows(SQLiteException::class.java) {
+            db.execSQL("UPDATE asset_locks SET platformAddressRecipients = x'0103' WHERE outPointHex = 'aa:0'")
+        }
+        assertThrows(SQLiteException::class.java) {
+            db.execSQL("UPDATE asset_locks SET platformAddressRecipients = NULL WHERE outPointHex = 'aa:0'")
+        }
+        db.close()
+    }
+
     /** The requested contiguous path from the pre-u64 v4 schema to latest. */
     @Test
     fun migrate4ToLatest() {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            17,
+            18,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
@@ -811,16 +846,17 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_14_15,
             DashDatabase.MIGRATION_15_16,
             DashDatabase.MIGRATION_16_17,
+            DashDatabase.MIGRATION_17_18,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v17 schema. */
+    /** The full chain from v1 must also land on a valid v18 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            17,
+            18,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -838,6 +874,7 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_14_15,
             DashDatabase.MIGRATION_15_16,
             DashDatabase.MIGRATION_16_17,
+            DashDatabase.MIGRATION_17_18,
         ).close()
     }
 }

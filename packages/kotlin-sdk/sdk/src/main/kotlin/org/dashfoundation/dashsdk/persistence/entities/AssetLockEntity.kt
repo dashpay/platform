@@ -16,14 +16,15 @@ import java.util.Date
  * deleted manually by wallet teardown (`deleteWalletData`), which the
  * `AssetLockDao.deleteByWallet` mirror covers.
  *
- * The three sidecar columns ([operationId], [shieldedRecipientRaw43],
- * [identityRecipientId]) are written by their own persistence callbacks,
+ * The four sidecar columns ([operationId], [shieldedRecipientRaw43],
+ * [identityRecipientId], [platformAddressRecipients]) are written by their own
+ * persistence callbacks,
  * which native fires after the row's upsert in the same changeset (see the
  * `PersistAssetLock*Fn` typedefs in
  * `packages/rs-platform-wallet-ffi/src/persistence.rs`). Each is immutable
  * once stored: the handler refuses a different value, and the
  * `asset_locks_*_immutable` triggers [DashDatabase] installs refuse one at
- * the SQL layer too, as the SQLite store's V019, V020 and V023 triggers do. A later
+ * the SQL layer too, as the SQLite store's V019, V020, V023 and V024 triggers do. A later
  * upsert of the row carries them forward rather than clearing them.
  * `(walletId, operationId)` is unique, as SQLite's
  * `asset_locks_wallet_operation_id` index is (NULLs never collide).
@@ -103,4 +104,18 @@ data class AssetLockEntity(
      * for an unbound lock rebuilt from the chain until the user assigns one.
      */
     val identityRecipientId: ByteArray? = null,
+    /**
+     * The Platform addresses an external Platform-address funding
+     * (`fundingTypeRaw == 4`, built by
+     * `ManagedPlatformWallet.fundFromAssetLockExternal`) pays, in the
+     * wallet's opaque form (1 to 4096 bytes), so a resume after restart pays
+     * them or is refused and never consumes the lock into this wallet
+     * (`ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS`, bit 18; SQLite
+     * `V024__asset_lock_platform_address_recipients`, Swift
+     * `PersistentAssetLock.platformAddressRecipients`). Read the recipients
+     * with `ManagedPlatformWallet.assetLockPlatformAddressRecipients`, never
+     * by parsing these bytes. Null for an owned funding, every other lock,
+     * and rows stored before recipients were recorded.
+     */
+    val platformAddressRecipients: ByteArray? = null,
 )

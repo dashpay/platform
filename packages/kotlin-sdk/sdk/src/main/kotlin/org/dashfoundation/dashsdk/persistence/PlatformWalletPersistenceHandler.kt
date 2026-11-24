@@ -161,7 +161,8 @@ class PlatformWalletPersistenceHandler(
             CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE or
             CAPABILITY_ASSET_LOCK_OPERATION_IDS or
             CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS or
-            CAPABILITY_ASSET_LOCK_IDENTITY_RECIPIENTS
+            CAPABILITY_ASSET_LOCK_IDENTITY_RECIPIENTS or
+            CAPABILITY_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS
 
     /**
      * The single-thread executor created when no [dispatcher] is injected.
@@ -2450,6 +2451,7 @@ class PlatformWalletPersistenceHandler(
                     operationId = existing?.operationId,
                     shieldedRecipientRaw43 = existing?.shieldedRecipientRaw43,
                     identityRecipientId = existing?.identityRecipientId,
+                    platformAddressRecipients = existing?.platformAddressRecipients,
                 ),
             )
             // Spend-visibility reconcile: an asset-lock tx burns its value
@@ -2530,6 +2532,27 @@ class PlatformWalletPersistenceHandler(
     override fun onLoadAssetLockIdentityRecipient(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
         loadAssetLockSidecar(walletId, outPoint, AssetLockSidecar.IDENTITY_RECIPIENT)
 
+    // The Platform-address recipients of an external Platform-address
+    // funding (dashpay/platform#5930): Swift's
+    // `persistAssetLockPlatformAddressRecipients` /
+    // `loadAssetLockPlatformAddressRecipients`. Native attests
+    // `ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS` only with the atomic round this
+    // handler declares, so the record commits with its row.
+
+    override fun onPersistAssetLockPlatformAddressRecipients(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        recipients: ByteArray,
+    ): Int = persistAssetLockSidecar(
+        walletId,
+        outPoint,
+        recipients,
+        AssetLockSidecar.PLATFORM_ADDRESS_RECIPIENTS,
+    )
+
+    override fun onLoadAssetLockPlatformAddressRecipients(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+        loadAssetLockSidecar(walletId, outPoint, AssetLockSidecar.PLATFORM_ADDRESS_RECIPIENTS)
+
     /**
      * Record [value] as [sidecar] of the asset lock at [outPoint], in the open
      * round, after that round's upsert of the row (native fires the sidecars
@@ -2558,7 +2581,7 @@ class PlatformWalletPersistenceHandler(
         value: ByteArray,
         sidecar: AssetLockSidecar,
     ): Int = guarded {
-        if (walletId.size != 32 || outPoint.size != 36 || value.size != sidecar.size) {
+        if (walletId.size != 32 || outPoint.size != 36 || value.size !in sidecar.sizes) {
             Log.e(TAG, "asset-lock ${sidecar.label}: malformed callback arguments")
             return@guarded NativePersistenceBridge.PERSIST_RC_CONSTRAINT
         }
@@ -2620,36 +2643,47 @@ class PlatformWalletPersistenceHandler(
         }
         checkNotNull(row) { "asset-lock ${sidecar.label}: no row for $outPointHex" }
         sidecar.read(row)?.also { value ->
-            check(value.size == sidecar.size) {
-                "asset-lock ${sidecar.label} for $outPointHex is ${value.size} bytes, not ${sidecar.size}"
+            check(value.size in sidecar.sizes) {
+                "asset-lock ${sidecar.label} for $outPointHex is ${value.size} bytes, not ${sidecar.sizes}"
             }
         }
     }
 
-    /** One immutable `asset_locks` sidecar column and its fixed width. */
+    /**
+     * One immutable `asset_locks` sidecar column and the widths it accepts:
+     * fixed for the operation UUID and the recipient ids, 1 to
+     * [NativePersistenceBridge.ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS_MAX_LEN]
+     * for the opaque Platform-address recipient record.
+     */
     private enum class AssetLockSidecar(
         val label: String,
-        val size: Int,
+        val sizes: IntRange,
         val read: (AssetLockSidecars) -> ByteArray?,
         val write: (AssetLockEntity, ByteArray) -> AssetLockEntity,
     ) {
         OPERATION_ID(
             "operation ID",
-            NativePersistenceBridge.ASSET_LOCK_OPERATION_ID_SIZE,
+            NativePersistenceBridge.ASSET_LOCK_OPERATION_ID_SIZE.let { it..it },
             { it.operationId },
             { row, value -> row.copy(operationId = value) },
         ),
         SHIELDED_RECIPIENT(
             "shielded recipient",
-            NativePersistenceBridge.ASSET_LOCK_SHIELDED_RECIPIENT_SIZE,
+            NativePersistenceBridge.ASSET_LOCK_SHIELDED_RECIPIENT_SIZE.let { it..it },
             { it.shieldedRecipientRaw43 },
             { row, value -> row.copy(shieldedRecipientRaw43 = value) },
         ),
         IDENTITY_RECIPIENT(
             "identity recipient",
-            NativePersistenceBridge.ASSET_LOCK_IDENTITY_RECIPIENT_SIZE,
+            NativePersistenceBridge.ASSET_LOCK_IDENTITY_RECIPIENT_SIZE.let { it..it },
             { it.identityRecipientId },
             { row, value -> row.copy(identityRecipientId = value) },
+        ),
+        PLATFORM_ADDRESS_RECIPIENTS(
+            "platform address recipients",
+            1..NativePersistenceBridge.ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS_MAX_LEN,
+            { it.platformAddressRecipients },
+            { row, value -> row.copy(platformAddressRecipients = value) },
         ),
         ;
 
@@ -2666,7 +2700,13 @@ class PlatformWalletPersistenceHandler(
     }
 
     private fun AssetLockEntity.sidecars() =
-        AssetLockSidecars(operationId, shieldedRecipientRaw43, identityRecipientId, statusRaw)
+        AssetLockSidecars(
+            operationId,
+            shieldedRecipientRaw43,
+            identityRecipientId,
+            platformAddressRecipients,
+            statusRaw,
+        )
 
     // ── Invitations (DIP-13) ──────────────────────────────────────────
 
@@ -4417,6 +4457,9 @@ class PlatformWalletPersistenceHandler(
 
         internal const val CAPABILITY_ASSET_LOCK_IDENTITY_RECIPIENTS: Long =
             NativePersistenceBridge.CAPABILITY_ASSET_LOCK_IDENTITY_RECIPIENTS
+
+        internal const val CAPABILITY_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS: Long =
+            NativePersistenceBridge.CAPABILITY_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS
 
         private const val TAG = "DashPersistence"
 

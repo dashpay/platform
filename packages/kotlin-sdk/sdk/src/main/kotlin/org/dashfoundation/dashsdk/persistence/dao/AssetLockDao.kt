@@ -175,7 +175,8 @@ interface AssetLockDao {
      * its transaction and proof blobs; null when there is no such row.
      */
     @Query(
-        "SELECT operationId, shieldedRecipientRaw43, identityRecipientId, statusRaw FROM asset_locks " +
+        "SELECT operationId, shieldedRecipientRaw43, identityRecipientId, platformAddressRecipients, " +
+            "statusRaw FROM asset_locks " +
             "WHERE walletId = :walletId AND outPointHex = :outPointHex"
     )
     suspend fun getSidecarsByWalletAndOutPointHex(
@@ -242,5 +243,6 @@ class AssetLockSidecars(
     val operationId: ByteArray?,
     val shieldedRecipientRaw43: ByteArray?,
     val identityRecipientId: ByteArray?,
+    val platformAddressRecipients: ByteArray?,
     val statusRaw: Int,
 )
