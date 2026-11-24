@@ -58,7 +58,7 @@ data class ShieldedTipContact(val identityIdHex: String, val username: String)
  * The paying identity's shielded balance as last read from the wallet.
  * A busy read ([DashSdkError.PlatformWallet.ShieldedBalanceBusy]: a scan or
  * spend holds the store) keeps the last state for the next trigger to read
- * again; any other failure is shown, with no retry.
+ * again; any other failure replaces the state, is shown, and is not retried.
  */
 internal data class ShieldedIdentityBalanceRead(
     val balance: ShieldedIdentityBalance? = null,
@@ -70,7 +70,9 @@ internal data class ShieldedIdentityBalanceRead(
         if (error is DashSdkError.PlatformWallet.ShieldedBalanceBusy) {
             this
         } else {
-            copy(failure = error.message ?: "unknown error")
+            // Error only: an earlier state must not drive the form (for
+            // example a stale Unverified offering Prepare).
+            ShieldedIdentityBalanceRead(failure = error.message ?: "unknown error")
         }
 
     val text: String

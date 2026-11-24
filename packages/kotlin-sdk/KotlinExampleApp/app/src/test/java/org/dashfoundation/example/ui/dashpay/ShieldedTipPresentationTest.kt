@@ -132,6 +132,12 @@ class ShieldedTipPresentationTest {
         assertEquals(known, known.applyFailure(DashSdkError.PlatformWallet.ShieldedBalanceBusy("store held")))
         val failed = known.applyFailure(DashSdkError.PlatformWallet.WalletOperation("not bound"))
         assertEquals("Could not read: not bound", failed.text)
+        assertNull("a failure replaces the last state", failed.balance)
+        // An earlier Unverified cannot keep offering Prepare after a failed read.
+        val unverifiedThenFailed = ShieldedIdentityBalanceRead()
+            .applySuccess(ShieldedIdentityBalance.Unverified)
+            .applyFailure(DashSdkError.NotFound("no identity"))
+        assertNull(unverifiedThenFailed.balance)
         assertEquals(
             "Could not read: no identity",
             ShieldedIdentityBalanceRead().applyFailure(DashSdkError.NotFound("no identity")).text,
