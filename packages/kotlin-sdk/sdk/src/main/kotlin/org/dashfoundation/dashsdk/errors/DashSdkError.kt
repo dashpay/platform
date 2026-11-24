@@ -830,11 +830,13 @@ sealed class DashSdkError(
          * `ErrorShieldedTipPending` (native code 84). A shielded tip was
          * refused before anything was built or sent: another tip from this
          * wallet is being sent, or an earlier shielded payment to the same
-         * recipient may still execute. Nothing was sent. Not retryable as it
-         * is: a shielded sync resolves the earlier payment (seen executed,
-         * or proven unable to execute), after which the tip can be reviewed
-         * and sent again. Distinct from [ShieldedSpendUnconfirmed] (18),
-         * which says this payment itself may have left the wallet.
+         * recipient may still execute. This call sent nothing. Not
+         * retryable: the earlier payment may be the same tip and may pay
+         * the recipient. A shielded sync resolves it as executed or as
+         * unable to execute, and the refusal ends either way, so send again
+         * only once that payment is known to have failed. Distinct from
+         * [ShieldedSpendUnconfirmed] (18), which says this payment itself
+         * may have left the wallet.
          * ← Swift `PlatformWalletError.shieldedTipPending`.
          */
         class ShieldedTipPending(message: String, cause: Throwable? = null) :

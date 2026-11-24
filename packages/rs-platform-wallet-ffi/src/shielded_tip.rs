@@ -40,7 +40,9 @@ const IDENTITY_BALANCE_WAIT_BUDGET: Duration = Duration::from_millis(100);
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum ShieldedTipRecipientChangeFFI {
-    /// This wallet has not sent a tip to the name before.
+    /// No recipient was confirmed for the name from this wallet before. A
+    /// recipient is confirmed when a send to it is admitted, so none of
+    /// these cases says a tip was paid.
     #[default]
     New = 0,
     /// The same identity and address as last confirmed.
@@ -322,13 +324,17 @@ pub unsafe extern "C" fn platform_wallet_manager_review_shielded_tip(
 /// - `ErrorShieldedTipPending` (84): refused, nothing sent. Another tip from
 ///   this wallet is being sent (whoever it pays; the review does not report
 ///   this), or an earlier shielded transfer to the recipient may still
-///   execute; a shielded sync resolves it, after which review and send
-///   again. The wallet admits the tip before the mnemonic is resolved, so a
-///   second call made while the first runs is refused however long its
-///   resolver takes.
+///   execute. This call sent nothing, but the earlier payment may be this
+///   same tip and may pay the recipient: a shielded sync resolves it as
+///   executed or as unable to execute, and the refusal ends either way. Do
+///   not send the tip again because the refusal ended; send it again only
+///   once the earlier payment is known to have failed (its shielded
+///   activity entry reads failed, not confirmed). The wallet admits the tip
+///   before the mnemonic is resolved, so a second call made while the first
+///   runs is refused however long its resolver takes.
 /// - `ErrorIdentityNotFound` (7): the wallet holds no identity
 ///   `source_identity_id`. Nothing sent.
-/// - Every other code: the tip was not sent (for example
+/// - Every other code: this call sent nothing (for example
 ///   `ErrorWalletOperation` for a recipient that changed since the review
 ///   or for a call made from a callback this library invokes,
 ///   `ErrorInvalidParameter` for a tip to the account it is paid from,
