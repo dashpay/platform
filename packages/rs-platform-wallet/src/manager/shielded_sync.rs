@@ -863,10 +863,11 @@ mod tests {
         assert_eq!(completions(&counter), 2);
     }
 
-    /// The manager keeps the coordinator's own completion stamp instead
-    /// of replacing it with its own clock.
+    /// A pass run by a configured coordinator is stamped, recorded and
+    /// reported like any other. (Both the coordinator and the manager
+    /// read the wall clock, so this cannot tell whose stamp was kept.)
     #[tokio::test]
-    async fn should_keep_the_coordinators_stamp_on_a_completed_pass() {
+    async fn should_stamp_and_report_a_pass_run_by_the_coordinator() {
         let parts = make_manager_parts();
         let dir = tempfile::tempdir().expect("tempdir");
         *parts.coordinator_slot.write().await = Some(empty_coordinator(dir.path()));
@@ -1032,6 +1033,27 @@ mod tests {
         assert!(!mgr.is_syncing());
     }
 
+    /// A sealed drain that times out still seals, and reports non-drained:
+    /// once the wedged pass is gone, a direct pass can neither reopen
+    /// admission nor stamp nor dispatch a completion.
+    #[tokio::test]
+    async fn should_seal_admission_even_when_the_sealed_quiesce_times_out() {
+        let (mgr, counter) = make_manager();
+        wedge_sync_slot(&mgr);
+
+        assert!(!mgr.quiesce_sealed_within(Duration::from_millis(50)).await);
+
+        mgr.release_sync_slot_for_test();
+        assert!(mgr.sync_now(true).await.is_empty());
+        assert!(
+            mgr.sync_admission_closed(),
+            "a sealed gate survives the drained-latch reopen"
+        );
+        assert_eq!(completions(&counter), 0);
+        assert_eq!(mgr.last_sync_unix_seconds(), None);
+        assert!(!mgr.is_syncing());
+    }
+
     /// A drain cancels the pass token before it waits, so a pass that
     /// took its token before the drain is on the cancelled lineage.
     #[tokio::test]
@@ -1051,24 +1073,31 @@ mod tests {
     /// The pass is parked on the coordinator-slot read (after it took its
     /// token and the slot), stopped there, then released: with no
     /// coordinator it yields the empty summary under a cancelled token.
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    /// Polling the pass by hand makes that order an assertion: a pass that
+    /// read the coordinator before claiming the slot fails here instead
+    /// of waiting on the lock this test holds.
+    #[tokio::test]
     async fn should_not_stamp_or_dispatch_when_cancelled_pass_is_empty() {
         let parts = make_manager_parts();
         let mgr = Arc::clone(&parts.manager);
 
         let slot_writer = parts.coordinator_slot.write().await;
-        let runner = Arc::clone(&mgr);
-        let pass = tokio::spawn(async move { runner.sync_now(true).await });
-        while !mgr.is_syncing() {
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
+        let pass = mgr.sync_now(true);
+        tokio::pin!(pass);
+        assert!(
+            futures::poll!(pass.as_mut()).is_pending(),
+            "the pass must wait for the coordinator read lock"
+        );
+        assert!(
+            mgr.is_syncing(),
+            "the pass must claim the sync slot before reading the coordinator"
+        );
 
         mgr.stop();
         drop(slot_writer);
         let summary = tokio::time::timeout(Duration::from_secs(5), pass)
             .await
-            .expect("the pass must finish once the slot lock is released")
-            .expect("pass task");
+            .expect("the pass must finish once the slot lock is released");
 
         assert!(summary.is_empty());
         assert_eq!(

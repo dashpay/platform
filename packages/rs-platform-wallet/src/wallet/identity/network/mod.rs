@@ -54,6 +54,7 @@ mod registration;
 mod state_transition_summary;
 mod top_up;
 mod top_up_from_addresses;
+pub(crate) use top_up_from_addresses::TopUpScope;
 mod transfer;
 mod transfer_to_addresses;
 mod update;

@@ -538,45 +538,41 @@ mod tests {
     /// `quiesce()` must not return while a pass is in flight, and must
     /// return promptly once the pass drains.
     ///
-    /// Drives the real `is_syncing` lifecycle: a background task takes
-    /// the slot via the same `compare_exchange` the real `sync_now`
-    /// uses, holds it across a sleep (standing in for the pass body +
-    /// completion-event dispatch, which `sync_now` keeps the flag set
-    /// across), then clears it.
+    /// Drives the real `is_syncing` lifecycle: the test takes the slot
+    /// via the same `compare_exchange` the real `sync_now` uses and holds
+    /// it (standing in for the pass body + completion-event dispatch,
+    /// which `sync_now` keeps the flag set across), then clears it.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn quiesce_blocks_until_in_flight_pass_drains() {
         let (mgr, _counter) = make_manager();
 
-        let holder = Arc::clone(&mgr);
-        let pass = tokio::spawn(async move {
-            assert!(
-                holder.wedge_sync_slot_for_test(),
-                "test should own the is_syncing slot"
-            );
-            tokio::time::sleep(Duration::from_millis(200)).await;
-            holder.release_sync_slot_for_test();
-        });
-
-        while !mgr.is_syncing() {
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
+        // Hold the slot as an in-flight pass would, for exactly as long as
+        // the test decides — no timer the test could miss on a loaded runner.
+        assert!(
+            mgr.wedge_sync_slot_for_test(),
+            "test should own the is_syncing slot"
+        );
 
         let quiesce_fut = mgr.quiesce();
         tokio::pin!(quiesce_fut);
 
-        tokio::select! {
-            _ = &mut quiesce_fut => panic!("quiesce returned while a pass was in flight"),
-            _ = tokio::time::sleep(Duration::from_millis(50)) => {}
-        }
+        // While the pass holds the slot, quiesce must stay pending, with
+        // admission already shut.
+        assert!(
+            futures::poll!(quiesce_fut.as_mut()).is_pending(),
+            "quiesce returned while a pass was in flight"
+        );
+        assert!(mgr.sync_admission_closed());
         assert!(mgr.is_syncing(), "pass should still be in flight");
 
-        tokio::time::timeout(Duration::from_secs(2), &mut quiesce_fut)
+        // Once the pass drains, quiesce must return, with admission reopened.
+        mgr.release_sync_slot_for_test();
+        let drained = tokio::time::timeout(Duration::from_secs(2), quiesce_fut)
             .await
             .expect("quiesce did not return after the pass drained");
-
+        assert!(drained);
         assert!(!mgr.sync_admission_closed());
         assert!(!mgr.is_syncing());
-        pass.await.unwrap();
     }
 
     /// A pass that never drains must NOT hang `quiesce_within` forever:
