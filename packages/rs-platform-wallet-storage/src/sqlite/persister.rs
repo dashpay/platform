@@ -640,7 +640,8 @@ impl SqlitePersister {
     /// (consumption is sticky) and *adds* one `AssetLockStatusDrift` to
     /// [`last_load_degradation`](Self::last_load_degradation). The tally
     /// counts reads, not rows: reading the same drifted lock again counts it
-    /// again.
+    /// again. A conflicting `Conflicted` status is rejected under either policy;
+    /// it cannot be reconciled from consumption alone.
     pub fn asset_lock_status(
         &self,
         wallet_id: &WalletId,

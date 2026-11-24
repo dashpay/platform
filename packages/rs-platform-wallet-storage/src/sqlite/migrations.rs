@@ -434,10 +434,17 @@ pub fn embedded_migrations_sql() -> Vec<String> {
         .collect()
 }
 
-/// Undo V021 and the migrations after it, so the next [`run`] replays them
-/// over the current rows.
+/// Rewind Core migrations from V021 in fixtures without asset locks.
+/// Reapplying the asset-lock migration cannot preserve newer revision data.
 #[cfg(test)]
 pub(crate) fn rewind_v021(conn: &rusqlite::Connection) {
+    assert_eq!(
+        conn.query_row("SELECT count(*) FROM asset_locks", [], |row| row
+            .get::<_, i64>(0))
+            .unwrap(),
+        0,
+        "Core migration fixtures must not contain asset locks"
+    );
     conn.execute_batch(
         "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
          DROP TABLE core_locked_outpoints; \
