@@ -27,7 +27,7 @@
 //!     post-broadcast GroveDB proof-verification recursion. The owner's
 //!     balance the proof carries (from protocol version 14) is kept.
 
-use super::key_selection::usable_authentication_key;
+use super::key_selection::usable_authentication_key_for_types;
 use super::signing_key::require_available;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -168,10 +168,11 @@ impl IdentityWallet {
     ///      `(contract, owner, type, entropy)` there — the placeholder
     ///      id this build step assigns is overwritten.
     ///   3. Selects the signing `IdentityPublicKey` with
-    ///      [`Self::select_document_signing_key`]: the owner's
+    ///      [`Self::select_document_create_signing_key`]: the owner's
     ///      AUTHENTICATION key (ECDSA_SECP256K1, else ECDSA_HASH160) that
-    ///      the document type's security level allows, the key's contract
-    ///      bounds admit and `signer` can sign with. Returns a clear error
+    ///      the document type's security level allows, whose contract
+    ///      bounds cover the type and every type its create may consume,
+    ///      and that `signer` can sign with. Returns a clear error
     ///      if the owner identity isn't loaded or carries no qualifying
     ///      key.
     ///   4. Broadcasts via
@@ -263,7 +264,7 @@ impl IdentityWallet {
         //    the document type's requirement (NOT a fixed CRITICAL like
         //    the contract-create path).
         let signing_key = self
-            .select_document_signing_key(owner_identity_id, &document_type, signer)
+            .select_document_create_signing_key(owner_identity_id, &document_type, signer)
             .await?;
 
         // 4. Broadcast via `PutDocument` on the platform-wallet 8 MB
@@ -298,30 +299,88 @@ impl IdentityWallet {
         })
     }
 
-    /// The key a `document_type` state transition of `signing_identity_id`
-    /// is signed with: the one automatic selector every document write of
-    /// this wallet uses (create, replace, delete, transfer, set price,
-    /// purchase, decision and multiple-choice proposals).
-    ///
-    /// `signing_identity_id` must be an identity this wallet holds and can
-    /// sign for. The key is its first AUTHENTICATION key, ECDSA_SECP256K1
-    /// preferred over ECDSA_HASH160, at a security level the document
-    /// type's requirement admits (`SecurityLevel::document_signing_levels`),
-    /// that can sign a `document_type` document of its contract now and
-    /// that `signer` can sign with. See [`usable_authentication_key`]: a key
-    /// bound to another contract or document type, a group-bound key (group
-    /// membership is not wallet state), a disabled key and an expired key
-    /// are skipped, and a key without limits is preferred, so an ineligible
-    /// key with a lower id never shadows a usable later one.
-    ///
-    /// The wallet manager lock is released before `signer` is asked. An
-    /// eligible key the signer cannot use keeps the structured
-    /// key-unavailable failure; no eligible key at all is refused as
-    /// `InvalidIdentityData`.
+    /// The key a replace, delete, transfer, set-price or purchase of a
+    /// `document_type` document by `signing_identity_id` is signed with,
+    /// and a decision or multiple-choice proposal edit: see
+    /// [`Self::select_document_key_covering`], over `document_type` alone.
     pub(super) async fn select_document_signing_key<S>(
         &self,
         signing_identity_id: &Identifier,
         document_type: &DocumentType,
+        signer: &S,
+    ) -> Result<IdentityPublicKey, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey>,
+    {
+        self.select_document_key_covering(
+            signing_identity_id,
+            document_type.data_contract_id(),
+            &[document_type.name()],
+            document_type.security_level_requirement(),
+            signer,
+        )
+        .await
+    }
+
+    /// The key a create of a `document_type` document by
+    /// `signing_identity_id` is signed with (a generic document, a decision
+    /// or multiple-choice proposal, a choice): see
+    /// [`Self::select_document_key_covering`], over `document_type` and every
+    /// type a create of it may consume. Platform checks the signing key's
+    /// contract bounds against each of those types, since a create deletes
+    /// the document it consumes along with its own write.
+    pub(super) async fn select_document_create_signing_key<S>(
+        &self,
+        signing_identity_id: &Identifier,
+        document_type: &DocumentType,
+        signer: &S,
+    ) -> Result<IdentityPublicKey, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey>,
+    {
+        let document_type_names: Vec<&str> = std::iter::once(document_type.name().as_str())
+            .chain(document_type.as_ref().consumable_document_type_names())
+            .collect();
+        self.select_document_key_covering(
+            signing_identity_id,
+            document_type.data_contract_id(),
+            &document_type_names,
+            document_type.security_level_requirement(),
+            signer,
+        )
+        .await
+    }
+
+    /// The one automatic document key policy of this wallet, behind
+    /// [`Self::select_document_signing_key`] and
+    /// [`Self::select_document_create_signing_key`].
+    ///
+    /// `signing_identity_id` must be an identity this wallet holds and can
+    /// sign for. The key is its first AUTHENTICATION key at a security
+    /// level `required_level` admits (`SecurityLevel::document_signing_levels`),
+    /// whose contract bounds cover every one of `document_type_names` of
+    /// `contract_id`, and that `signer` can sign with. See
+    /// [`usable_authentication_key_for_types`]: a key bound to another
+    /// contract or document type, a group-bound key (group membership is not
+    /// wallet state), a disabled key and an expired key are skipped, and a
+    /// key without limits is preferred, so an ineligible key with a lower id
+    /// never shadows a usable later one.
+    ///
+    /// ECDSA_HASH160 is a strict fallback: an ECDSA_SECP256K1 key is chosen
+    /// whenever one qualifies, and a HASH160 key only when none does.
+    /// Before HASH160 keys were accepted here, document writes signed only
+    /// with SECP256K1 keys, so this never picks a different key than that
+    /// did when a SECP256K1 key qualifies; it only adds a key where none
+    /// was found. The wallet manager lock is released before `signer` is
+    /// asked. An eligible key the signer cannot use keeps the structured
+    /// key-unavailable failure (a SECP256K1 one first); no eligible key at
+    /// all is refused as `InvalidIdentityData`.
+    async fn select_document_key_covering<S>(
+        &self,
+        signing_identity_id: &Identifier,
+        contract_id: Identifier,
+        document_type_names: &[&str],
+        required_level: SecurityLevel,
         signer: &S,
     ) -> Result<IdentityPublicKey, PlatformWalletError>
     where
@@ -335,26 +394,33 @@ impl IdentityWallet {
                 .map(|managed| managed.identity.clone())
                 .ok_or(PlatformWalletError::IdentityNotFound(*signing_identity_id))?
         };
-        let contract_id = document_type.data_contract_id();
-        let document_type_name = document_type.name();
-        let required_level = document_type.security_level_requirement();
-        usable_authentication_key(
-            &identity,
-            signer,
-            contract_id,
-            document_type_name,
-            &required_level.document_signing_levels(),
-            // Both ECDSA representations sign a document batch
-            &[KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160],
-        )?
-        .cloned()
-        .ok_or_else(|| {
-            PlatformWalletError::InvalidIdentityData(format!(
-                "No ECDSA (or ECDSA_HASH160) authentication key at a security level satisfying \
-                 {required_level}, with contract bounds allowing the {document_type_name} type \
-                 of contract {contract_id}, found on identity {signing_identity_id}"
-            ))
-        })
+        let levels = required_level.document_signing_levels();
+        let select = |key_type: KeyType| {
+            usable_authentication_key_for_types(
+                &identity,
+                signer,
+                contract_id,
+                document_type_names,
+                &levels,
+                &[key_type],
+            )
+        };
+        let secp256k1 = match select(KeyType::ECDSA_SECP256K1) {
+            Ok(Some(key)) => return Ok(key.clone()),
+            other => other,
+        };
+        let hash160 = match select(KeyType::ECDSA_HASH160) {
+            Ok(Some(key)) => return Ok(key.clone()),
+            other => other,
+        };
+        secp256k1?;
+        hash160?;
+        Err(PlatformWalletError::InvalidIdentityData(format!(
+            "No ECDSA (or ECDSA_HASH160) authentication key at a security level satisfying \
+             {required_level}, with contract bounds allowing the {} type of contract \
+             {contract_id}, found on identity {signing_identity_id}",
+            document_type_names.join(" + ")
+        )))
     }
 
     /// Put `document` (a create at revision 1, a replace above it),
@@ -654,7 +720,7 @@ impl IdentityWallet {
         let signing_key = self
             .select_document_signing_key(
                 owner_identity_id,
-                &owned_document_type(&data_contract, document_type_name)?,
+                document_type_of(&data_contract, document_type_name)?,
                 signer,
             )
             .await?;
@@ -739,7 +805,7 @@ impl IdentityWallet {
         let signing_key = self
             .select_document_signing_key(
                 owner_identity_id,
-                &owned_document_type(&data_contract, document_type_name)?,
+                document_type_of(&data_contract, document_type_name)?,
                 signer,
             )
             .await?;
@@ -868,7 +934,7 @@ impl IdentityWallet {
         let signing_key = self
             .select_document_signing_key(
                 owner_identity_id,
-                &owned_document_type(&data_contract, document_type_name)?,
+                document_type_of(&data_contract, document_type_name)?,
                 signer,
             )
             .await?;
@@ -937,7 +1003,7 @@ impl IdentityWallet {
         let signing_key = self
             .select_document_signing_key(
                 owner_identity_id,
-                &owned_document_type(&data_contract, document_type_name)?,
+                document_type_of(&data_contract, document_type_name)?,
                 signer,
             )
             .await?;
@@ -1007,7 +1073,7 @@ impl IdentityWallet {
         let signing_key = self
             .select_document_signing_key(
                 purchaser_identity_id,
-                &owned_document_type(&data_contract, document_type_name)?,
+                document_type_of(&data_contract, document_type_name)?,
                 signer,
             )
             .await?;
@@ -1093,15 +1159,15 @@ fn values_from_json(
     Ok((properties, created_at))
 }
 
-/// The owned `document_type_name` type of `data_contract`, which
+/// The `document_type_name` type of `data_contract`, which
 /// [`IdentityWallet::select_document_signing_key`] reads the signing rules
 /// from.
-fn owned_document_type(
-    data_contract: &DataContract,
+fn document_type_of<'a>(
+    data_contract: &'a DataContract,
     document_type_name: &str,
-) -> Result<DocumentType, PlatformWalletError> {
+) -> Result<&'a DocumentType, PlatformWalletError> {
     data_contract
-        .document_type_cloned_for_name(document_type_name)
+        .document_type_borrowed_for_name(document_type_name)
         .map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!(
                 "Document type {document_type_name:?} not found on contract {}: {e}",
@@ -1293,6 +1359,134 @@ mod tests {
         )
         .await;
         assert_eq!(automatic_key(&wallet, identity_id).await, 1);
+    }
+
+    /// ECDSA_HASH160 is a strict fallback: among limited keys, a later
+    /// SECP256K1 key is still taken over an earlier HASH160 key.
+    #[tokio::test]
+    async fn should_prefer_a_later_secp256k1_key_over_an_earlier_hash160_key() {
+        let wallet = wallet_with_signing_keys().await;
+        let identity_id = Identifier::from([0x33; 32]);
+        hold_identity(
+            &wallet,
+            identity_id,
+            1,
+            vec![
+                auth_key(1, SecurityLevel::HIGH, KeyType::ECDSA_HASH160)
+                    .with_limits(Some(1_000), None),
+                auth_key(2, SecurityLevel::HIGH, KeyType::ECDSA_SECP256K1)
+                    .with_limits(Some(1_000), None),
+            ],
+        )
+        .await;
+        assert_eq!(automatic_key(&wallet, identity_id).await, 2);
+    }
+
+    /// A SECP256K1 key the signer cannot use does not block the fallback:
+    /// an eligible HASH160 key the signer holds signs.
+    #[tokio::test]
+    async fn should_fall_back_to_a_hash160_key_past_an_unavailable_secp256k1_key() {
+        let wallet = wallet_with_signing_keys().await;
+        let identity_id = Identifier::from([0x34; 32]);
+        hold_identity(
+            &wallet,
+            identity_id,
+            1,
+            vec![
+                auth_key(1, SecurityLevel::HIGH, KeyType::ECDSA_SECP256K1),
+                auth_key(2, SecurityLevel::HIGH, KeyType::ECDSA_HASH160),
+            ],
+        )
+        .await;
+        let key = wallet
+            .identity()
+            .select_document_signing_key(
+                &identity_id,
+                &note_type(SecurityLevel::HIGH),
+                &available(&[2]),
+            )
+            .await
+            .unwrap();
+        assert_eq!(key.id(), 2);
+    }
+
+    /// A create is signed with a key whose contract bounds cover the type it
+    /// creates and every type that create may consume, as Platform checks: a
+    /// lower-id key bound to the created type alone is skipped for a later
+    /// key bound to the whole contract, and with only the narrowly bound
+    /// key the create is refused. A replace of the same type, which consumes
+    /// nothing, may use the narrowly bound key.
+    #[tokio::test]
+    async fn should_sign_a_create_with_a_key_covering_every_type_it_consumes() {
+        let contract = dpp::system_data_contracts::load_system_data_contract(
+            dpp::data_contracts::SystemDataContract::DPNS,
+            PlatformVersion::latest(),
+        )
+        .expect("bundled DPNS contract");
+        let tombstone = contract
+            .document_type_borrowed_for_name("tombstone")
+            .expect("the tombstone type");
+        assert!(
+            !tombstone
+                .as_ref()
+                .consumable_document_type_names()
+                .is_empty(),
+            "the fixture needs a type whose create consumes another type"
+        );
+        let bound = |id, bounds| {
+            let mut key = auth_key(id, SecurityLevel::CRITICAL, KeyType::ECDSA_SECP256K1);
+            if let IdentityPublicKey::V0(key) = &mut key {
+                key.contract_bounds = Some(bounds);
+            }
+            key
+        };
+        let tombstone_only = || {
+            bound(
+                1,
+                ContractBounds::SingleContractDocumentType {
+                    id: contract.id(),
+                    document_type_name: "tombstone".to_string(),
+                },
+            )
+        };
+        let wallet = wallet_with_signing_keys().await;
+        let creator = Identifier::from([0x35; 32]);
+        hold_identity(
+            &wallet,
+            creator,
+            1,
+            vec![
+                tombstone_only(),
+                bound(2, ContractBounds::SingleContract { id: contract.id() }),
+            ],
+        )
+        .await;
+        let signer = KeyFilter(|_| true);
+        let create = wallet
+            .identity()
+            .select_document_create_signing_key(&creator, tombstone, &signer)
+            .await
+            .unwrap();
+        assert_eq!(create.id(), 2);
+        let replace = wallet
+            .identity()
+            .select_document_signing_key(&creator, tombstone, &signer)
+            .await
+            .unwrap();
+        assert_eq!(replace.id(), 1);
+
+        let narrow = Identifier::from([0x36; 32]);
+        hold_identity(&wallet, narrow, 2, vec![tombstone_only()]).await;
+        let error = wallet
+            .identity()
+            .select_document_create_signing_key(&narrow, tombstone, &signer)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, PlatformWalletError::InvalidIdentityData(ref message)
+                if message.contains("No ECDSA (or ECDSA_HASH160) authentication key")),
+            "{error:?}"
+        );
     }
 
     /// Records the keys it is asked to sign with, signing with a fixed

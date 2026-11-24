@@ -43,11 +43,11 @@ impl IdentityWallet {
     /// Platform charges the owner the multiple choice proposal processing
     /// fee (0.2 Dash, `Sdk::multiple_choice_proposal_processing_fee`) on
     /// top of the fees; the create does not state it. The transition is
-    /// signed with the owner's key that `select_document_signing_key`
+    /// signed with the owner's key that `select_document_create_signing_key`
     /// picks for the `multipleChoiceProposal` type: the first
     /// AUTHENTICATION key (ECDSA_SECP256K1, else ECDSA_HASH160) at a
-    /// security level the type accepts, whose contract bounds allow it,
-    /// that `signer` can sign with. The owner's balance the proof carries
+    /// security level the type accepts, whose contract bounds allow it and
+    /// any type its create consumes, that `signer` can sign with. The owner's balance the proof carries
     /// is kept. Platform refuses a proposal that gives neither a
     /// description document nor a url. The proposal's id is the id of the
     /// returned document.
@@ -72,7 +72,7 @@ impl IdentityWallet {
             .build_multiple_choice_proposal(*owner_identity_id, input)
             .await?;
         let signing_key = self
-            .select_document_signing_key(owner_identity_id, &document_type, signer)
+            .select_document_create_signing_key(owner_identity_id, &document_type, signer)
             .await?;
         Ok(self
             .put_document_keeping_owner_balance(
@@ -177,7 +177,7 @@ impl IdentityWallet {
         let DecisionProposalDocument { document, entropy } =
             self.sdk.build_choice(*owner_identity_id, input).await?;
         let signing_key = self
-            .select_document_signing_key(owner_identity_id, &document_type, signer)
+            .select_document_create_signing_key(owner_identity_id, &document_type, signer)
             .await?;
         Ok(self
             .put_document_keeping_owner_balance(
