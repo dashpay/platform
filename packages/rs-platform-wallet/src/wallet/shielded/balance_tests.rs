@@ -32,6 +32,30 @@ fn tree_path() -> PathBuf {
     ))
 }
 
+/// Run a Clear on `coordinator`, whose store is the file at `path`, that
+/// resets the commitment tree and then fails in the purge: a real SQLite
+/// schema error (the pending-spends table renamed away) for the length of
+/// the Clear. Requires that the purge is the step that failed.
+pub(super) async fn clear_failing_at_the_purge(
+    coordinator: &NetworkShieldedCoordinator,
+    path: &std::path::Path,
+) {
+    let conn = rusqlite::Connection::open(path).expect("open db");
+    conn.execute_batch("ALTER TABLE shielded_pending_spends RENAME TO unavailable_pending_spends;")
+        .expect("break schema");
+    let cleared = coordinator.clear().await;
+    conn.execute_batch("ALTER TABLE unavailable_pending_spends RENAME TO shielded_pending_spends;")
+        .expect("restore schema");
+    assert!(
+        matches!(
+            cleared,
+            Err(PlatformWalletError::ShieldedStoreError(ref message))
+                if message.contains("purge_all_subwallets failed")
+        ),
+        "the Clear must fail in the purge: {cleared:?}"
+    );
+}
+
 fn coordinator(path: &std::path::Path) -> NetworkShieldedCoordinator {
     NetworkShieldedCoordinator::new(
         Arc::new(dash_sdk::Sdk::new_mock()),
@@ -287,15 +311,9 @@ async fn local_balance_recovers_after_failed_clear_and_completed_scan() {
         900
     );
 
-    // A real SQLite schema error makes FileBacked's purge fail. Its SQL-first
-    // ordering keeps the live subwallet ledger intact; the host keeps its rows.
-    let conn = rusqlite::Connection::open(&path).unwrap();
-    conn.execute_batch("ALTER TABLE shielded_pending_spends RENAME TO unavailable_pending_spends;")
-        .unwrap();
-    assert!(coordinator.clear().await.is_err());
-    conn.execute_batch("ALTER TABLE unavailable_pending_spends RENAME TO shielded_pending_spends;")
-        .unwrap();
-    drop(conn);
+    // FileBacked's SQL-first ordering keeps the live subwallet ledger intact
+    // when its purge fails; the host keeps its rows.
+    clear_failing_at_the_purge(&coordinator, &path).await;
     assert!(!coordinator.is_hydrated(wallet).await);
     assert_eq!(coordinator.registered_subwallets().await, vec![id]);
     assert_eq!(
@@ -336,14 +354,7 @@ async fn should_forget_scan_evidence_when_a_clear_resets_the_tree_but_fails_to_p
     assert_eq!(scanned.spendable_credits, 900);
     assert_eq!(scanned.source, ShieldedBalanceSource::ScannedThisSession);
 
-    // A real SQLite schema error makes the purge fail after the tree reset.
-    let conn = rusqlite::Connection::open(&path).unwrap();
-    conn.execute_batch("ALTER TABLE shielded_pending_spends RENAME TO unavailable_pending_spends;")
-        .unwrap();
-    assert!(coordinator.clear().await.is_err());
-    conn.execute_batch("ALTER TABLE unavailable_pending_spends RENAME TO shielded_pending_spends;")
-        .unwrap();
-    drop(conn);
+    clear_failing_at_the_purge(&coordinator, &path).await;
 
     assert_eq!(
         coordinator.local_balance_snapshot(wallet).await.unwrap(),

@@ -20,6 +20,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::balance::{ShieldedBalanceUpdate, ShieldedLocalBalanceState};
 use super::balance_emitter::spawn_balance_emitter;
+use super::balance_tests::clear_failing_at_the_purge;
 use super::cancelled_scan_tests::{chunked_pool, coordinator_over, note_to, opaque_note, WALLET};
 use super::operations::mark_notes_pending;
 use super::{
@@ -599,14 +600,7 @@ async fn should_emit_restore_incomplete_after_a_clear_that_fails() {
     let mut emitter = Emitter::start(&coordinator);
     assert_eq!(ordinary_credits(&emitter.next().await), 900);
 
-    // A real SQLite schema error makes the purge fail after the tree reset.
-    let conn = rusqlite::Connection::open(&path).expect("open db");
-    conn.execute_batch("ALTER TABLE shielded_pending_spends RENAME TO unavailable_pending_spends;")
-        .expect("break schema");
-    assert!(coordinator.clear().await.is_err());
-    conn.execute_batch("ALTER TABLE unavailable_pending_spends RENAME TO shielded_pending_spends;")
-        .expect("restore schema");
-    drop(conn);
+    clear_failing_at_the_purge(&coordinator, &path).await;
 
     let update = emitter.next().await;
     assert_eq!(update.revision, 2);
@@ -634,14 +628,7 @@ async fn should_emit_restore_incomplete_after_a_failed_clear_of_a_scanned_wallet
     let mut emitter = Emitter::start(&coordinator);
     assert_eq!(ordinary_credits(&emitter.next().await), 900);
 
-    // A real SQLite schema error makes the purge fail after the tree reset.
-    let conn = rusqlite::Connection::open(&path).expect("open db");
-    conn.execute_batch("ALTER TABLE shielded_pending_spends RENAME TO unavailable_pending_spends;")
-        .expect("break schema");
-    assert!(coordinator.clear().await.is_err());
-    conn.execute_batch("ALTER TABLE unavailable_pending_spends RENAME TO shielded_pending_spends;")
-        .expect("restore schema");
-    drop(conn);
+    clear_failing_at_the_purge(&coordinator, &path).await;
 
     let update = emitter.next().await;
     assert_eq!(update.state, ShieldedLocalBalanceState::RestoreIncomplete);
