@@ -532,8 +532,13 @@ where
     /// gate is left closed and the caller must fail closed.
     #[must_use = "None means the pass did NOT drain; the caller must fail closed"]
     pub(crate) async fn quiesce_held_within(&self, budget: Duration) -> Option<QuiesceGuard<'_>> {
+        // One deadline for both waits: a store stalled inside the persister
+        // holds the slot and the registry lock, and must not use the budget
+        // twice.
+        let deadline = tokio::time::Instant::now() + budget;
         let guard = drain_pass(&self.quiescing, &self.is_syncing, || self.stop(), budget).await;
-        if !self.persistence_barrier(budget).await {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if !self.persistence_barrier(remaining).await {
             // A store admitted before the gate closed is still running (a
             // stalled persister): report the drain as incomplete and keep
             // admission shut until that pass releases `is_syncing`.
@@ -561,7 +566,7 @@ where
         drained
     }
 
-    /// Wait, at most `budget`, for a result application already past its
+    /// Wait, at most `budget` (the quiesce's remaining time), for a result application already past its
     /// gate check. Results are applied under the `state` write lock after
     /// checking the gate, so once the gate is closed and this lock has been
     /// taken once, no pass (including one whose drain timed out) stores
@@ -592,6 +597,13 @@ where
     /// `!Send` (no `tokio::spawn`) and because the design brief
     /// explicitly forbids it.
     pub async fn sync_now(&self) {
+        let _ = self.try_sync_pass().await;
+    }
+
+    /// One attempt at a pass: [`SyncAttempt::Busy`] when another pass holds
+    /// the slot, [`SyncAttempt::Closed`] when the quiesce gate is shut,
+    /// [`SyncAttempt::Ran`] after this call ran the pass itself.
+    async fn try_sync_pass(&self) -> SyncAttempt {
         // A drained timeout latch is cleared here as well as in `start()`:
         // with no loop running, a one-shot pass after a timed-out drain
         // would otherwise bail on the stale latch until something
@@ -604,7 +616,7 @@ where
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
-            return;
+            return SyncAttempt::Busy;
         }
         // Clears `is_syncing` on every exit path — including panic unwind —
         // so a failed pass can never wedge `quiesce()`'s drain.
@@ -615,7 +627,7 @@ where
         // so the drain can complete and shutdown gets a true barrier
         // (no further `persister.store(...)` after quiesce returns).
         if self.quiescing.is_closed() {
-            return;
+            return SyncAttempt::Closed;
         }
 
         // Snapshot the per-identity watch list under a short read
@@ -640,24 +652,34 @@ where
             .map(|d| d.as_secs())
             .unwrap_or(0);
         self.last_sync_unix.store(now, Ordering::Release);
+        SyncAttempt::Ran
     }
 
     /// [`sync_now`](Self::sync_now) for a manual caller that has just
-    /// registered identities or tokens: when a pass is in flight it waits
-    /// for that pass to finish first, since that pass may have snapshotted
-    /// the watch list before the registration. Any pass that starts after
-    /// the wait (this call's own, or a timer tick that took the slot first)
-    /// starts after the registration and covers it. Returns early, without a
-    /// pass, if the quiesce gate closes while it waits. Timer ticks keep
-    /// using `sync_now`, so they never wait.
+    /// registered identities or tokens and reads the stored balances once it
+    /// returns: it runs a pass of its own, waiting out any pass in flight
+    /// (which may have read the watch list before the registration, and
+    /// whose results may not be stored yet) and retrying when another caller
+    /// takes the slot first. Returns without a pass when the quiesce gate
+    /// closes, or when other passes keep the slot past
+    /// [`COORDINATOR_DRAIN_BUDGET`] (a wedged pass must not hold the caller,
+    /// and through the FFI the manager registry, indefinitely). Timer ticks
+    /// keep using `sync_now`, so they never wait.
     pub async fn sync_now_after_in_flight(&self) {
-        while self.is_syncing.load(Ordering::Acquire) {
-            if self.quiescing.is_closed() {
-                return;
+        let deadline = tokio::time::Instant::now() + COORDINATOR_DRAIN_BUDGET;
+        loop {
+            match self.try_sync_pass().await {
+                SyncAttempt::Ran | SyncAttempt::Closed => return,
+                SyncAttempt::Busy => {
+                    while self.is_syncing.load(Ordering::Acquire) {
+                        if self.quiescing.is_closed() || tokio::time::Instant::now() >= deadline {
+                            return;
+                        }
+                        tokio::time::sleep(Duration::from_millis(20)).await;
+                    }
+                }
             }
-            tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        self.sync_now().await;
     }
 
     /// Sync a single identity's watched tokens against Platform.
@@ -811,6 +833,17 @@ where
             },
         );
     }
+}
+
+/// Outcome of one [`IdentitySyncManager`] pass attempt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SyncAttempt {
+    /// This call held the slot and ran the pass.
+    Ran,
+    /// Another pass held the slot.
+    Busy,
+    /// The quiesce gate was shut; no pass ran.
+    Closed,
 }
 
 /// `token_ids` with repeats removed, in first-seen order. A balance batch
@@ -1318,6 +1351,50 @@ mod tests {
         releaser.await.unwrap();
         assert!(mgr.last_sync_unix_seconds().is_some(), "its own pass ran");
         assert!(!mgr.is_syncing());
+    }
+
+    /// When another caller takes the slot the moment it frees, the manual
+    /// sync waits again and runs its own pass instead of returning while the
+    /// other pass is still under way.
+    #[tokio::test]
+    async fn should_retry_when_another_caller_takes_the_slot_first() {
+        let mgr = make_manager();
+        mgr.is_syncing.store(true, Ordering::Release);
+        let other = {
+            let mgr = Arc::clone(&mgr);
+            tokio::spawn(async move {
+                // Release, then immediately hold the slot again as a second
+                // caller would, for another stretch.
+                tokio::time::sleep(Duration::from_millis(40)).await;
+                mgr.is_syncing.store(false, Ordering::Release);
+                mgr.is_syncing.store(true, Ordering::Release);
+                tokio::time::sleep(Duration::from_millis(60)).await;
+                mgr.is_syncing.store(false, Ordering::Release);
+            })
+        };
+
+        assert_eq!(mgr.try_sync_pass().await, SyncAttempt::Busy);
+        mgr.sync_now_after_in_flight().await;
+
+        other.await.unwrap();
+        assert!(mgr.last_sync_unix_seconds().is_some(), "its own pass ran");
+    }
+
+    /// A store stalled inside the persister holds both the slot and the
+    /// registry lock; the quiesce still reports within one budget.
+    #[tokio::test]
+    async fn should_report_within_one_budget_while_a_store_holds_slot_and_lock() {
+        let mgr = make_manager();
+        mgr.is_syncing.store(true, Ordering::Release);
+        let stalled_store = mgr.state.write().await;
+
+        let started = tokio::time::Instant::now();
+        let drained = mgr.quiesce_within(Duration::from_millis(100)).await;
+
+        assert!(!drained);
+        assert!(started.elapsed() < Duration::from_millis(180));
+        drop(stalled_store);
+        mgr.is_syncing.store(false, Ordering::Release);
     }
 
     /// A token proved absent (the identity holds none yet) has its stored

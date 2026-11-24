@@ -166,9 +166,9 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_set_interval(
 /// pass to finish, since it may have read the watch list before the
 /// caller's latest registration, and then runs a pass that covers it.
 ///
-/// The manager registry's lock is held only to clone the coordinator,
-/// not across the pass, so a slow pass does not hold up other managers'
-/// calls or this manager's destruction (whose quiesce drains the pass).
+/// The pass runs under the manager registry's read guard, as every other
+/// sync-now export does, so the manager cannot be destroyed (and its store
+/// handed to a replacement) while this pass can still write.
 /// On builds where panics unwind (including Android), a panic inside the
 /// pass is returned as `ErrorWalletOperation`. Abort-on-panic builds
 /// (the iOS profiles) still abort.
@@ -181,14 +181,15 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_sync_now(
         PlatformWalletFFIResultCode::ErrorWalletOperation,
         "Balances read before the failure may already be stored; run the sync again.",
         || {
-            let option = PLATFORM_WALLET_MANAGER_STORAGE
-                .with_item(handle, |manager| manager.identity_sync_arc());
-            let mgr = unwrap_option_or_return!(option);
-            // `block_on_worker`, NOT `runtime().block_on`: the pass
-            // verifies GroveDB proofs whose recursion blows the ~512 KB
-            // stack of the host's dispatch/concurrency calling thread
-            // (same SIGBUS as the shielded/dashpay Sync Now buttons).
-            block_on_worker(async move { mgr.sync_now_after_in_flight().await });
+            let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+                // `block_on_worker`, NOT `runtime().block_on`: the pass
+                // verifies GroveDB proofs whose recursion blows the ~512 KB
+                // stack of the host's dispatch/concurrency calling thread
+                // (same SIGBUS as the shielded/dashpay Sync Now buttons).
+                let mgr = manager.identity_sync_arc();
+                block_on_worker(async move { mgr.sync_now_after_in_flight().await });
+            });
+            unwrap_option_or_return!(option);
             PlatformWalletFFIResult::ok()
         },
     )

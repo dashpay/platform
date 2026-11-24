@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import org.dashfoundation.dashsdk.wallet.IdentityDeviceRemovalResult
 import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
+import org.dashfoundation.example.services.tokens.IdentityTokenSync
 
 /**
  * An identity row that asks to be removed when swiped from the end: port of
@@ -134,7 +135,9 @@ internal suspend fun removeIdentityFromDeviceMessage(
         return "The identity was not removed from this device: the wallet manager is not ready."
     }
     val result = try {
-        manager.removeIdentityFromDevice(identityId)
+        // Under the token-watch lock, so a Tokens refresh queued for this
+        // identity runs after the removal and sees it gone.
+        IdentityTokenSync.withWatchLock { manager.removeIdentityFromDevice(identityId) }
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {

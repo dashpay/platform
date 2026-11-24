@@ -35,7 +35,6 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.dashfoundation.dashsdk.persistence.entities.DataContractEntity
-import org.dashfoundation.dashsdk.persistence.entities.TokenEntity
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.PendingGroupActions
@@ -104,40 +103,36 @@ fun TokenActionPermissionsScreen(
     val resolvedIdentity = identities.firstOrNull { it.identityId.toHex() == pickedIdentityHex }
         ?: identities.firstOrNull()
 
-    // Watch the acting identity's tokens in the Rust identity-token sync, so
-    // Transfer and Burn (which read `token_balances`) see its balance even
-    // when this screen was reached without the Tokens screen (Contracts >
-    // Token Search). Same refresh as the Tokens screen; the other wallet
-    // identities are registered with none.
+    // Watch the displayed token for the acting identity in the Rust
+    // identity-token sync, so Transfer and Burn (which read
+    // `token_balances`) see its balance even when this screen was reached
+    // without the Tokens screen (Contracts > Token Search). Only this token
+    // is watched, so the request carries no more than the live read below;
+    // the other wallet identities are registered with none.
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
-    val networkTokensFlow = remember(networkRaw) {
-        networkRaw?.let { container.database.tokenDao().observeTokensByNetwork(it) }
-    }
-    val networkTokens by (networkTokensFlow
-        ?: remember { kotlinx.coroutines.flow.flowOf(emptyList<TokenEntity>()) })
-        .collectAsStateWithLifecycle(initialValue = emptyList())
     LaunchedEffect(
         manager,
         sdk,
         resolvedIdentity?.identityId?.toHex(),
         identities.joinToString(",") { it.identityId.toHex() },
-        networkTokens.joinToString(",") { it.id.toHex() },
+        token?.id?.toHex(),
     ) {
         val activeManager = manager ?: return@LaunchedEffect
         val activeSdk = sdk ?: return@LaunchedEffect
         val identity = resolvedIdentity ?: return@LaunchedEffect
-        if (networkRaw == null) return@LaunchedEffect
+        val displayed = token ?: return@LaunchedEffect
         val otherIds = identities.map { it.identityId }
-        val catalog = networkTokens
+        val identityDao = container.database.identityDao()
         // Application scope: leaving the screen must not cancel the pass.
         container.applicationScope.launch {
             IdentityTokenSync.refresh(
                 identityId = identity.identityId,
                 otherIdentityIds = otherIds,
-                tokens = catalog,
+                tokens = listOf(displayed),
                 calculateTokenId = activeSdk.tokenQueries::calculateTokenId,
                 register = activeManager::registerIdentityForTokenSync,
                 syncNow = activeManager::syncIdentityTokensNow,
+                isStillStored = { identityDao.getByIdentityId(identity.identityId) != null },
             )
         }
     }

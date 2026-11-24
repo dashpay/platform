@@ -113,6 +113,7 @@ fun TokensScreen(navController: NavHostController) {
         val identity = selectedIdentity ?: return@LaunchedEffect
         val otherIds = identities.map { it.identityId }
         val catalog = tokens
+        val identityDao = container.database.identityDao()
         // Application scope: leaving the screen must not cancel the pass.
         container.applicationScope.launch {
             IdentityTokenSync.refresh(
@@ -122,6 +123,7 @@ fun TokensScreen(navController: NavHostController) {
                 calculateTokenId = activeSdk.tokenQueries::calculateTokenId,
                 register = activeManager::registerIdentityForTokenSync,
                 syncNow = activeManager::syncIdentityTokensNow,
+                isStillStored = { identityDao.getByIdentityId(identity.identityId) != null },
             )
         }
     }

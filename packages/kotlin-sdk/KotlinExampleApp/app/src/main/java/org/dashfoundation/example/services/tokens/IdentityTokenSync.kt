@@ -27,7 +27,10 @@ import org.dashfoundation.example.util.Base58
  * Screens launch it in the application scope, so leaving the screen (for
  * example opening Transfer) does not cancel it before its sync pass. Calls
  * run one at a time in call order, so the latest screen's registration is
- * the one left in place.
+ * the one left in place. Removing an identity from the device runs under the
+ * same lock ([withWatchLock]), and a queued refresh checks that its identity
+ * is still stored before registering it, so a removed identity is not
+ * watched again.
  */
 object IdentityTokenSync {
 
@@ -64,7 +67,8 @@ object IdentityTokenSync {
     /**
      * Register [identityId] with the watched ids of [tokens], register each of
      * [otherIdentityIds] with none (stopping their watches), and, when a token
-     * is watched, run one sync pass. Returns true when a sync pass ran; false
+     * is watched, run one sync pass. Does nothing when [isStillStored] says
+     * the identity was removed while this call was queued. Returns true when a sync pass ran; false
      * when there was nothing to sync or the native calls failed. Never throws
      * except on cancellation.
      */
@@ -75,9 +79,11 @@ object IdentityTokenSync {
         calculateTokenId: suspend (contractIdBase58: String, position: Int) -> String?,
         register: suspend (identityId: ByteArray, tokenIds: List<ByteArray>) -> Unit,
         syncNow: suspend () -> Unit,
+        isStillStored: suspend () -> Boolean = { true },
     ): Boolean = mutex.withLock {
         val tokenIds = watchedTokenIds(tokens, calculateTokenId)
         try {
+            if (!isStillStored()) return@withLock false
             for (other in otherIdentityIds) {
                 if (!other.contentEquals(identityId)) register(other, emptyList())
             }
@@ -115,4 +121,11 @@ object IdentityTokenSync {
             false
         }
     }
+
+    /**
+     * Run [block] under the lock refreshes take, so it is ordered against
+     * them: identity removal runs here, and a refresh queued behind it then
+     * sees the identity gone.
+     */
+    suspend fun <T> withWatchLock(block: suspend () -> T): T = mutex.withLock { block() }
 }

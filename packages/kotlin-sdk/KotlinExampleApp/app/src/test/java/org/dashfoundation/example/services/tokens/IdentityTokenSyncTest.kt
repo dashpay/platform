@@ -99,6 +99,20 @@ class IdentityTokenSyncTest {
     }
 
     @Test
+    fun shouldNotWatchAnIdentityRemovedWhileItsRefreshWasQueued() = runTest {
+        val recorder = Recorder()
+
+        val done = IdentityTokenSync.refresh(
+            identityId, listOf(identityId, otherIdentityId), listOf(token(1, 0)), calculate,
+            recorder.register, recorder.syncNow,
+            isStillStored = { false },
+        )
+
+        assertFalse(done)
+        assertTrue("nothing registered, no pass", recorder.calls.isEmpty())
+    }
+
+    @Test
     fun shouldClearEveryIdentityWithoutASyncPassBeforeAContractIsDeleted() = runTest {
         val recorder = Recorder()
 
