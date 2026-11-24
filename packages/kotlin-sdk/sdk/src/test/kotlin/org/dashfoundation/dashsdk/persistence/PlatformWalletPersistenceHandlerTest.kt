@@ -9829,88 +9829,18 @@ class PlatformWalletPersistenceHandlerTest {
     }
 
     @Test
-    fun shouldKeepALockedAssetLockSpendersLinkAgainstAnInBlockConflict() = runTest {
-        // The link guard: an in-block arrival claiming the same coin does
-        // not take the link from a spender whose asset lock is locked.
-        val fundingTxid = asymmetricTxid(0x12)
-        val spender = asymmetricTxid(0x42)
-        val coin = seedCoinSpentByAnAssetLock(fundingTxid, spender, lockStatus = 2)
-
-        recordMempoolSpend(asymmetricTxid(0x62), coin, context = 2)
-
-        assertTrue(
-            "an in-block conflict does not take a locked asset lock's link",
-            spender.contentEquals(db.txoDao().getByOutpoint(coin)!!.spendingTxid),
-        )
-    }
-
-    @Test
-    fun shouldLetAChainLockedArrivalTakeTheLinkFromAnAssetLockThatIsOnlyInstantSendLocked() = runTest {
-        // DIP-10 precedence, as for a stored IS-locked spender row: a
-        // chainlocked conflict outranks a lock that is only IS-locked.
-        val fundingTxid = asymmetricTxid(0x13)
-        val spender = asymmetricTxid(0x43)
-        val chainlocked = asymmetricTxid(0x63)
-        val coin = seedCoinSpentByAnAssetLock(fundingTxid, spender, lockStatus = 2)
-
-        recordMempoolSpend(chainlocked, coin, context = 3)
-
-        assertTrue(
-            "a chainlocked arrival takes the link from an IS-locked asset lock",
-            chainlocked.contentEquals(db.txoDao().getByOutpoint(coin)!!.spendingTxid),
-        )
-    }
-
-    @Test
-    fun shouldKeepAChainLockedAssetLockSpendersLinkAgainstAChainLockedArrival() = runTest {
-        // Only a ChainLocked lock is settled at chainlock level, so no
-        // takeover applies.
-        val fundingTxid = asymmetricTxid(0x14)
-        val spender = asymmetricTxid(0x44)
-        val coin = seedCoinSpentByAnAssetLock(fundingTxid, spender, lockStatus = 3)
-
-        recordMempoolSpend(asymmetricTxid(0x64), coin, context = 3)
-
-        assertTrue(
-            "a chainlocked asset lock keeps its link",
-            spender.contentEquals(db.txoDao().getByOutpoint(coin)!!.spendingTxid),
-        )
-    }
-
-    @Test
-    fun shouldLetAChainLockedArrivalTakeTheLinkFromAnAssetLockConsumedOnAnInstantSendProof() = runTest {
-        // Consumed and RecoveredFromChain are lifecycle steps, not Core
-        // finality: a lock can be consumed on an InstantSend proof alone,
-        // so a chainlocked conflict still takes the link (DIP-10).
-        for ((seed, status) in listOf(0x15 to 4, 0x16 to 5)) {
-            val fundingTxid = asymmetricTxid(seed)
-            val spender = asymmetricTxid(seed + 0x30)
-            val chainlocked = asymmetricTxid(seed + 0x50)
-            val coin = seedCoinSpentByAnAssetLock(fundingTxid, spender, lockStatus = status)
-
-            recordMempoolSpend(chainlocked, coin, context = 3)
-
-            assertTrue(
-                "a chainlocked arrival takes the link from a lock at status $status",
-                chainlocked.contentEquals(db.txoDao().getByOutpoint(coin)!!.spendingTxid),
-            )
-        }
-    }
-
-    @Test
     fun shouldRefuseAReleaseOfACoinWhoseMempoolSpenderFundsAConsumedAssetLock() = runTest {
-        // Mapping Consumed to IS level keeps it settled: the release veto
-        // and the in-block link guard still hold for a consumed lock.
+        // Every status from InstantSendLocked on is settled for the veto,
+        // including a lock already consumed on Platform.
         val fundingTxid = asymmetricTxid(0x17)
         val spender = asymmetricTxid(0x47)
         val coin = seedCoinSpentByAnAssetLock(fundingTxid, spender, lockStatus = 4)
 
-        recordMempoolSpend(asymmetricTxid(0x67), coin, context = 2)
         sweepRound(walletId, losers = listOf(asymmetricTxid(0x69)), winner = asymmetricTxid(0x87), released = listOf(coin))
 
         val kept = db.txoDao().getByOutpoint(coin)!!
         assertTrue("a consumed asset lock vetoes the release", kept.isSpent)
-        assertTrue("an in-block conflict does not take the link", spender.contentEquals(kept.spendingTxid))
+        assertTrue(spender.contentEquals(kept.spendingTxid))
     }
 
     @Test

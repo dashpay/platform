@@ -2696,10 +2696,10 @@ class PlatformWalletPersistenceHandler(
      * plain block against a signed lock. A re-emit of the same spender is
      * never a takeover. An unlinked row (stamped or not) keeps nothing —
      * the stamp is not a link, and adoption is what attributes the coin.
-     * The existing spender's finality is read through
-     * [settledSpenderContext], so an asset-lock spender whose row is
-     * missing or still at mempool context counts as settled once its lock
-     * is.
+     * Only the spender row's own context is read, as in Swift: the
+     * asset-lock status is a yes/no settledness signal ([isSettledSpender])
+     * and does not rank one spender against another. Moving this
+     * precedence into `rs-platform-wallet` is tracked in #5977.
      */
     private suspend fun keepSettledSpenderLink(
         db: DashDatabase,
@@ -2709,64 +2709,50 @@ class PlatformWalletPersistenceHandler(
     ): Boolean {
         val existingTxid = txo.spendingTxid ?: return false
         if (existingTxid.contentEquals(newSpendingTxid)) return false
-        val existing = db.transactionDao().getByTxid(existingTxid)
-        val existingContext = settledSpenderContext(db, existingTxid, existing) ?: return false
+        val existing = db.transactionDao().getByTxid(existingTxid) ?: return false
+        if (existing.context < CONTEXT_INSTANT_SEND) return false
         val chainlockOverIsLock =
-            newContext >= CONTEXT_CHAIN_LOCKED && existingContext == CONTEXT_INSTANT_SEND
+            newContext >= CONTEXT_CHAIN_LOCKED && existing.context == CONTEXT_INSTANT_SEND
         return !chainlockOverIsLock
     }
 
     /**
      * Whether [txo] is linked to a settled spender
-     * ([settledSpenderContext]). The recovery clear in [upsertUtxoRow]
+     * ([isSettledSpender]). The recovery clear in [upsertUtxoRow]
      * refuses only for such a spender, the check Swift's `upsertUtxo`
      * makes.
      */
     private suspend fun hasSettledSpender(db: DashDatabase, txo: TxoEntity): Boolean {
         val link = txo.spendingTxid ?: return false
-        return settledSpenderContext(db, link, db.transactionDao().getByTxid(link)) != null
+        return isSettledSpender(db, link, db.transactionDao().getByTxid(link))
     }
 
     /**
-     * The network finality of the spender [spendingTxid], or null when it
-     * is not settled. [spender] is its stored row, if any.
+     * Whether the spender [spendingTxid] is settled. [spender] is its
+     * stored row, if any.
      *
      * A row at IS-locked, in-block or chainlocked context
-     * (>= [CONTEXT_INSTANT_SEND]) is settled at that context. A row that
-     * is missing, or below that, is settled only when the spender funds an
-     * asset lock the network has locked ([spendByFinalizedAssetLock]): an
-     * asset-lock spender's row often never leaves mempool context, and the
-     * lock's own status is the signal that arrives, as in the restore
-     * guard (#4336). Only a lock at ChainLocked counts as
-     * [CONTEXT_CHAIN_LOCKED]. Every other locked status (InstantSendLocked,
-     * Consumed, RecoveredFromChain) counts as [CONTEXT_INSTANT_SEND]:
-     * Consumed and RecoveredFromChain are lifecycle steps, not Core
-     * finality, and a lock can be consumed on an InstantSend proof alone.
-     * So the DIP-10 chainlock-over-IS-lock takeover in
-     * [keepSettledSpenderLink] still applies to them; only a ChainLocked
-     * lock is proof the conflicting chainlock cannot exist.
+     * (>= [CONTEXT_INSTANT_SEND]) is settled. A row that is missing, or
+     * below that, is settled only when the spender funds an asset lock the
+     * network has locked ([spendByFinalizedAssetLock]): an asset-lock
+     * spender's row often never leaves mempool context, and the lock's own
+     * status is the signal that arrives, as in the restore guard (#4336).
      *
-     * Shared by the re-delivery clear ([hasSettledSpender]), the link
-     * guard ([keepSettledSpenderLink]) and the sweep-release veto
-     * ([releaseVetoed]), so the three agree on what "settled" means. An
-     * unreadable asset-lock table throws and fails the round rather than
-     * treating the spender as unsettled.
+     * Shared by the re-delivery clear ([hasSettledSpender]) and the
+     * sweep-release veto ([releaseVetoed]), which only ask whether the
+     * spend is settled. The link guard ([keepSettledSpenderLink]) ranks
+     * two spenders and reads only row context. An unreadable asset-lock
+     * table throws and fails the round rather than treating the spender
+     * as unsettled.
      */
-    private suspend fun settledSpenderContext(
+    private suspend fun isSettledSpender(
         db: DashDatabase,
         spendingTxid: ByteArray,
         spender: TransactionEntity?,
-    ): Int? {
+    ): Boolean {
         val stored = spender?.context
-        if (stored != null && stored >= CONTEXT_INSTANT_SEND) return stored
-        val lockStatus = db.assetLockDao()
-            .maxStatusForTxid(spendingTxid.reversedArray().toHex())
-            ?: return null
-        return when {
-            lockStatus == ASSET_LOCK_STATUS_CHAIN_LOCKED -> CONTEXT_CHAIN_LOCKED
-            lockStatus >= ASSET_LOCK_STATUS_INSTANT_SEND_LOCKED -> CONTEXT_INSTANT_SEND
-            else -> null
-        }
+        if (stored != null && stored >= CONTEXT_INSTANT_SEND) return true
+        return spendByFinalizedAssetLock(db, spendingTxid)
     }
 
     // ── Sweeps ────────────────────────────────────────────────────────
@@ -3061,7 +3047,7 @@ class PlatformWalletPersistenceHandler(
      * The release veto — the mirror of the SQLite store's
      * `surviving_stored_input_claims`: a release of [row]'s outpoint is
      * refused when the row is linked to a settled spender
-     * ([settledSpenderContext]: a stored row at context >= InstantSend-locked,
+     * ([isSettledSpender]: a stored row at context >= InstantSend-locked,
      * or a spender whose asset lock the network has locked) that is not
      * swept in this round, or when its stamp names a stored transaction at
      * context >= InstantSend-locked AND that transaction's stored bytes
@@ -3086,7 +3072,7 @@ class PlatformWalletPersistenceHandler(
         val link = row.spendingTxid
         if (link != null && !sweptTxidKeys.contains(link.toHex())) {
             val spender = db.transactionDao().getByTxid(link)
-            if (settledSpenderContext(db, link, spender) != null) return true
+            if (isSettledSpender(db, link, spender)) return true
         }
         val stamp = row.supersededByTxid ?: return false
         val stampKey = stamp.toHex()
@@ -4916,8 +4902,11 @@ class PlatformWalletPersistenceHandler(
      * apparent-data-loss this load path must never produce. Mirror of
      * the Swift loader's `finalizedAssetLockFundingTxids` bail.
      */
-    private suspend fun spendByFinalizedAssetLock(db: DashDatabase, spendingTxid: ByteArray): Boolean =
-        settledSpenderContext(db, spendingTxid, spender = null) != null
+    private suspend fun spendByFinalizedAssetLock(db: DashDatabase, spendingTxid: ByteArray): Boolean {
+        val status = db.assetLockDao()
+            .maxStatusForTxid(spendingTxid.reversedArray().toHex())
+        return status != null && status >= ASSET_LOCK_STATUS_INSTANT_SEND_LOCKED
+    }
 
     /**
      * Assemble the [UtxoRestoreData] rows for one wallet: every unspent
@@ -6065,9 +6054,6 @@ class PlatformWalletPersistenceHandler(
          * reconcile treats the linked TXOs as spent from there on.
          */
         private const val ASSET_LOCK_STATUS_INSTANT_SEND_LOCKED = 2
-
-        /** `AssetLockStatus::ChainLocked` — the only status that proves Core finality. */
-        private const val ASSET_LOCK_STATUS_CHAIN_LOCKED = 3
 
         /** `TransactionContext::InChainLockedBlock` — outranks an IS lock. */
         private const val CONTEXT_CHAIN_LOCKED = 3
