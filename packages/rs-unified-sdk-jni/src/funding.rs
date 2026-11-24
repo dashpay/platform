@@ -1323,10 +1323,11 @@ const TIP_REVIEW_BLOB_LEN: usize = 32 + 43 + 1 + 32 + 43 + 1;
 /// Bytes of the balance BLOB: the fields of [`ShieldedIdentityBalanceFFI`].
 const IDENTITY_BALANCE_BLOB_LEN: usize = 1 + 4 + 8;
 
-/// Read a non-null Java `String` exactly as the caller built it, into an
-/// owned `CString`, the empty string included; throws and returns `None`
-/// for a string that cannot cross intact: one that does not read, holds an
-/// unpaired surrogate, or holds a NUL (a C string ends at its first).
+/// Read a Java `String` exactly as the caller built it, into an owned
+/// `CString`, the empty string included; throws and returns `None` for JVM
+/// null and for a string that cannot cross intact: one that does not read,
+/// holds an unpaired surrogate, or holds a NUL (a C string ends at its
+/// first). A caller for which null is a value checks for it first.
 ///
 /// The code units are read as UTF-16 and decoded strictly. The modified
 /// UTF-8 view `get_string` reads is not used here: for a string holding
@@ -1335,10 +1336,16 @@ const IDENTITY_BALANCE_BLOB_LEN: usize = 1 + 4 + 8;
 /// instead of refusing it. Unlike [`read_cstring_required`] an empty string
 /// passes, for Rust to judge.
 fn read_cstring_exact(env: &mut JNIEnv, s: &JString, field: &str) -> Option<std::ffi::CString> {
+    // `GetStringLength` requires a non-null string: checked here, at the raw
+    // call, whatever the caller checked.
+    if s.is_null() {
+        throw_sdk_exception(env, 1, &format!("{field} was null"));
+        return None;
+    }
     let raw = env.get_raw();
-    // SAFETY: `raw` is this thread's live `JNIEnv`, and `s` a live, non-null
-    // string reference (the callers check for null). `GetStringRegion`
-    // writes exactly `length` code units into a buffer of that length.
+    // SAFETY: `raw` is this thread's live `JNIEnv`, and `s` a live string
+    // reference, non-null as checked above. `GetStringRegion` writes
+    // exactly `length` code units into a buffer of that length.
     let units = unsafe {
         match ((**raw).GetStringLength, (**raw).GetStringRegion) {
             (Some(string_length), Some(string_region)) => {
@@ -1373,15 +1380,6 @@ fn read_cstring_exact(env: &mut JNIEnv, s: &JString, field: &str) -> Option<std:
             None
         }
     }
-}
-
-/// [`read_cstring_exact`] for a required argument: JVM null throws too.
-fn read_cstring(env: &mut JNIEnv, s: &JString, field: &str) -> Option<std::ffi::CString> {
-    if s.is_null() {
-        throw_sdk_exception(env, 1, &format!("{field} was null"));
-        return None;
-    }
-    read_cstring_exact(env, s, field)
 }
 
 /// The review as one BLOB, its fields in the struct's order:
@@ -1434,7 +1432,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_parseSh
     amount_text: JString,
 ) -> jlong {
     guard(&mut env, 0i64, |env| {
-        let Some(text) = read_cstring(env, &amount_text, "amountText") else {
+        let Some(text) = read_cstring_exact(env, &amount_text, "amountText") else {
             return 0;
         };
         let mut credits: u64 = 0;
@@ -1469,7 +1467,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_reviewS
         let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
             return ptr::null_mut();
         };
-        let Some(name) = read_cstring(env, &username, "username") else {
+        let Some(name) = read_cstring_exact(env, &username, "username") else {
             return ptr::null_mut();
         };
         let mut review = ShieldedTipReviewFFI::default();
@@ -1546,7 +1544,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_sendShi
         let source_identity_ptr = source_identity
             .as_ref()
             .map_or(ptr::null(), |id| id.as_ptr());
-        let Some(name) = read_cstring(env, &username, "username") else {
+        let Some(name) = read_cstring_exact(env, &username, "username") else {
             return;
         };
         let Some(expected_id) = read_id32(env, &expected_identity_id, "expectedIdentityId") else {

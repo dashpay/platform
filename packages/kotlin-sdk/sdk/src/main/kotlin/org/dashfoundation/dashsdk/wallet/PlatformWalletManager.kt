@@ -2424,6 +2424,9 @@ class PlatformWalletManager(
      *   refusal ends either way. Do not send again because the refusal
      *   ended; send again only once the earlier payment is known to have
      *   failed (its shielded activity entry reads failed, not confirmed).
+     *   This call returns no id for that entry, so when the exact attempt
+     *   cannot be identified, treat its outcome as unknown and do not send
+     *   again.
      * - [DashSdkError.NotFound]: the wallet holds no identity
      *   [ShieldedTipSource.Identity.identityId]. Nothing was sent.
      * - any other error: this call sent nothing (for example
