@@ -3911,20 +3911,25 @@ struct UtxoPageRow {
 
 impl UtxoPageRow {
     /// The row for one heal-page entry, carrying the engine's own address,
-    /// flags and verdict.
+    /// flags and verdict, or `None` when the entry's script is a null
+    /// pointer with a non-zero length: healing that row with an empty
+    /// script would store a coin nothing can spend.
     ///
     /// # Safety
     ///
     /// `r.utxo.address` must be null or a valid NUL-terminated string, and
     /// `r.utxo.script_pubkey` null or valid for `r.utxo.script_pubkey_len`
     /// bytes — the heal page's contract for every row it returns.
-    unsafe fn from_heal_row(r: &platform_wallet_ffi::TxoHealRowFFI) -> Self {
+    unsafe fn from_heal_row(r: &platform_wallet_ffi::TxoHealRowFFI) -> Option<Self> {
         let e = &r.utxo;
+        if e.script_pubkey.is_null() && e.script_pubkey_len > 0 {
+            return None;
+        }
         let script = slice_or_empty(e.script_pubkey, e.script_pubkey_len);
         // Never null per the accessor's contract; treated as empty if it
         // ever is (the engine's verdict on such a row is `invalid`).
         let address = cstr_opt(e.address).unwrap_or_default();
-        UtxoPageRow {
+        Some(UtxoPageRow {
             account: UtxoAccountTuple::from_entry(e),
             txid: hex::encode(e.outpoint.txid),
             vout: e.outpoint.vout,
@@ -3937,7 +3942,7 @@ impl UtxoPageRow {
             is_coinbase: e.is_coinbase,
             is_locked: e.is_locked,
             heal_verdict: r.verdict,
-        }
+        })
     }
 }
 
@@ -4274,9 +4279,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_t
 }
 
 /// The rows of one heal page, or `None` when the engine handed back a null
-/// pointer with a non-zero count: those rows must not read as an empty
-/// page while `hasMore` / `budgetSpent` are still trusted, or the page
-/// would be reported applied without them.
+/// pointer with a non-zero count, or a row whose script is one: those rows
+/// must not be dropped or emptied while `hasMore` / `budgetSpent` are
+/// still trusted, or the page would be reported applied without them.
 ///
 /// # Safety
 ///
@@ -4289,12 +4294,10 @@ unsafe fn heal_page_rows(
     if entries.is_null() && count > 0 {
         return None;
     }
-    Some(
-        slice_or_empty(entries, count)
-            .iter()
-            .map(|r| UtxoPageRow::from_heal_row(r))
-            .collect(),
-    )
+    slice_or_empty(entries, count)
+        .iter()
+        .map(|r| UtxoPageRow::from_heal_row(r))
+        .collect()
 }
 
 /// One bounded page of the engine's UTXO inventory across every funds
@@ -4391,7 +4394,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
             throw_sdk_exception(
                 env,
                 99,
-                "txo heal page returned a null pointer with a non-zero count",
+                "txo heal page returned a null pointer with a non-zero count, for the page or a row's script",
             );
             return ptr::null_mut();
         };
@@ -5690,7 +5693,9 @@ mod tests {
             .iter()
             // SAFETY: every pointer in a `Coin` entry points into that coin's
             // own live buffers.
-            .map(|c| unsafe { UtxoPageRow::from_heal_row(&c.row) })
+            .map(|c| {
+                unsafe { UtxoPageRow::from_heal_row(&c.row) }.expect("golden rows have scripts")
+            })
             .collect()
     }
 
@@ -5716,6 +5721,22 @@ mod tests {
         let read =
             unsafe { heal_page_rows(page.as_ptr(), page.len()) }.expect("a non-null page is read");
         assert_eq!(read.len(), page.len());
+    }
+
+    #[test]
+    fn should_fail_the_heal_page_when_a_row_has_a_null_script_with_a_length() {
+        let (mut page, _buffers): (Vec<TxoHealRowFFI>, Vec<_>) = golden_coins()
+            .into_iter()
+            .map(|c| (c.row, (c._address, c.script)))
+            .unzip();
+        page[1].utxo.script_pubkey = ptr::null_mut();
+        assert!(page[1].utxo.script_pubkey_len > 0);
+        // SAFETY: every other pointer points into `_buffers`, alive for the
+        // call; the null script is never dereferenced.
+        assert!(
+            unsafe { heal_page_rows(page.as_ptr(), page.len()) }.is_none(),
+            "a row with a null script and a non-zero length must not heal with an empty script"
+        );
     }
 
     #[test]
