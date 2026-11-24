@@ -10,6 +10,7 @@ use crate::changeset::changeset::{AssetLockEntry, PlatformWalletChangeSet};
 use crate::changeset::PersistenceCapabilities;
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletGeneration;
+use crate::wallet::persister::NotDurable;
 use dpp::prelude::Identifier;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
@@ -170,9 +171,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// serialized, so two of the same lock cannot interleave. A failure
     /// leaves the lock unassigned in memory, whatever it left in the backend:
     /// a retry with the same identity stores it again (the backend accepts the
-    /// identity it already records), and one with another identity is refused
-    /// by the backend if the first one committed. Either way nothing pays a
-    /// recipient that is not durable.
+    /// identity it already records). Until that retry succeeds, another
+    /// identity is refused with
+    /// [`PlatformWalletError::AssetLockIdentityRecipientMismatch`] naming the
+    /// failed one: the backend may still commit it from its buffer, which
+    /// keeps the first recipient it was given, so a different identity could
+    /// be published here while the store holds the first. Either way nothing
+    /// pays a recipient that is not durable.
     ///
     /// `generation` is the caller's handle's wallet generation. A wallet
     /// removed, or re-created under its id, since the handle was taken is
@@ -193,7 +198,19 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // the publication, taken before the manager lock as teardown takes
         // them, so a removal cannot land between them.
         let _lifecycle = generation.payment_guard().await;
-        let _serial = self.recipient_assignment_serial.lock().await;
+        let mut unsettled = self.recipient_assignment_serial.lock().await;
+        // A recipient whose store failed may still be committed from the
+        // backend's buffer, and the buffered row keeps it over any later
+        // recipient: only that one may be assigned until it is stored durably.
+        if let Some(&attempted) = unsettled.get(out_point) {
+            if attempted != identity {
+                return Err(PlatformWalletError::AssetLockIdentityRecipientMismatch {
+                    out_point: *out_point,
+                    recorded: attempted,
+                    requested: identity,
+                });
+            }
+        }
         let entry = {
             let wm = self.wallet_manager.read().await;
             let lock = wm
@@ -210,20 +227,24 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             entry.identity_recipient = Some(identity);
             entry
         };
-        self.persister
-            .store_durably(PlatformWalletChangeSet {
-                asset_locks: Some(AssetLockChangeSet {
-                    asset_locks: [(*out_point, entry)].into(),
-                    ..Default::default()
-                }),
+        if let Err(error) = self.persister.store_durably(PlatformWalletChangeSet {
+            asset_locks: Some(AssetLockChangeSet {
+                asset_locks: [(*out_point, entry)].into(),
                 ..Default::default()
-            })
-            .map_err(|error| {
-                PlatformWalletError::Persistence(format!(
-                    "asset-lock identity recipient was not made durable, so it is not \
-                     assigned; assigning the same identity again retries: {error}"
-                ))
-            })?;
+            }),
+            ..Default::default()
+        }) {
+            if may_still_commit(&error) {
+                unsettled.insert(*out_point, identity);
+            } else {
+                unsettled.remove(out_point);
+            }
+            return Err(PlatformWalletError::Persistence(format!(
+                "asset-lock identity recipient was not made durable, so it is not \
+                 assigned; assigning the same identity again retries: {error}"
+            )));
+        }
+        unsettled.remove(out_point);
         // Still under the lifecycle gate, so the generation checked above is
         // still the wallet's; the serial gate keeps any other assignment out,
         // and nothing else sets a recipient on a tracked lock.
@@ -826,6 +847,18 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
 /// Whether `lock` may be assigned `identity` as its recipient: an unconsumed
 /// unbound top-up lock recording no identity, or this one already.
+/// Whether records a failed durable store left behind may still be
+/// committed by a later flush: a transient store or flush failure keeps what
+/// the backend buffered, as does another flush that has not settled. A failure
+/// for good drops it, and nothing of the store remains to commit.
+fn may_still_commit(error: &NotDurable) -> bool {
+    match error {
+        NotDurable::Store(error) | NotDurable::Flush(error) => error.is_transient(),
+        NotDurable::OtherFlushUnsettled => true,
+        NotDurable::Lost => false,
+    }
+}
+
 fn check_identity_recipient_assignable(
     lock: &TrackedAssetLock,
     identity: Identifier,

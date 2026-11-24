@@ -1533,6 +1533,31 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 if let Some(operation) = operation {
                     operation.set(AssetLockOperationState::NotSent, None);
                 }
+                let mut in_broadcast_pin = in_broadcast_pin;
+                if identity_recipient.is_some() {
+                    // Except for an unbound top-up: its key never left the
+                    // device and nothing was sent, so the index is handed back,
+                    // as the drain-floor branch does. Kept, every failed store
+                    // would use up one of the pool's few pre-generated
+                    // addresses, and nothing on chain would ever mark them, so
+                    // repeated failures would leave no address to build the
+                    // next top-up on. The released verdict is recorded before
+                    // the manager lock's await, and the index goes back before
+                    // the build→persist gate is dropped (see the drain-floor
+                    // branch).
+                    in_broadcast_pin.settle_released_on_drop();
+                    let mut wm = self.wallet_manager.write().await;
+                    if let Some((_, info)) = wm.get_wallet_mut_and_info_mut(&self.wallet_id) {
+                        if in_broadcast_pin.is_on(&info.generation) {
+                            Self::release_discarded_funding_index(
+                                &mut info.core_wallet,
+                                funding_type,
+                                identity_index,
+                                &path,
+                            );
+                        }
+                    }
+                }
                 // The pooled build reserved every selected input across its
                 // contributing accounts under `reservation_token`. Nothing
                 // was broadcast, so abandon like the drain-floor branch
@@ -2252,6 +2277,9 @@ mod tests {
         lock_store_failure_is_transient: std::sync::atomic::AtomicBool,
         /// Fail flushes from now on, without touching `fail_flush`.
         fail_flushes: std::sync::atomic::AtomicBool,
+        /// With `fail_flushes`: fail them as transient (the backend keeps
+        /// what it buffered) rather than fatal.
+        flush_failure_is_transient: std::sync::atomic::AtomicBool,
         failed_lock_stores: Mutex<Vec<PlatformWalletChangeSet>>,
         records_identity_recipients: bool,
         /// Declare exactly these capabilities instead of the fixture's.
@@ -2379,6 +2407,15 @@ mod tests {
                 || self.fail_on_flush == Some(count)
                 || self.fail_flushes.load(std::sync::atomic::Ordering::SeqCst)
             {
+                if self
+                    .flush_failure_is_transient
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                {
+                    return Err(PersistenceError::backend_with_kind(
+                        crate::changeset::PersistenceErrorKind::Transient,
+                        "simulated busy flush",
+                    ));
+                }
                 return Err(PersistenceError::backend("simulated flush failure"));
             }
             self.committed_stores.store(
@@ -3262,6 +3299,59 @@ mod tests {
         assert_eq!(broadcaster.calls(), 1);
     }
 
+    /// A refused unbound top-up hands its funding index back: nothing was
+    /// sent and nothing on chain would ever mark the index used, so kept, each
+    /// failed pool store would use up one of the account's few pre-generated
+    /// addresses. However many fail, the next build signs with the first one.
+    #[tokio::test]
+    async fn should_hand_back_the_funding_index_of_an_unbound_top_up_whose_pool_was_not_stored() {
+        use crate::changeset::AssetLockRecipient;
+        use key_wallet::bip32::ChildNumber;
+
+        let identity = dpp::prelude::Identifier::from([0x45; 32]);
+        let broadcaster = Arc::new(CountingOkBroadcaster::default());
+        let persistence = Arc::new(CapturingPersistence {
+            records_identity_recipients: true,
+            commits_inline: true,
+            ..Default::default()
+        });
+        let (manager, signer) = funded_asset_lock_manager_with_persistence(
+            Arc::clone(&broadcaster),
+            Arc::clone(&persistence),
+        )
+        .await;
+
+        for _ in 0..8 {
+            persistence
+                .fail_next_pool_store
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            let result = fund_unbound_top_up(
+                &manager,
+                &signer,
+                Some(AssetLockRecipient::Identity(identity)),
+            )
+            .await;
+            assert!(
+                matches!(&result, Err(PlatformWalletError::Persistence(_))),
+                "{result:?}"
+            );
+        }
+
+        let (path, _) = fund_unbound_top_up(
+            &manager,
+            &signer,
+            Some(AssetLockRecipient::Identity(identity)),
+        )
+        .await
+        .expect("the refused builds left the pool's addresses unused");
+        assert_eq!(
+            path.into_iter().last(),
+            Some(&ChildNumber::Normal { index: 0 }),
+            "the build signs with the first funding address: {path}"
+        );
+        assert_eq!(broadcaster.calls(), 1);
+    }
+
     /// The builder holds every top-up lock to Platform's top-up minimum, on
     /// every entry, not only the identity routes: an exact amount below it is
     /// refused before anything is selected, stored or broadcast, for a bound
@@ -3866,6 +3956,70 @@ mod tests {
                 ..
             }) if recorded == first && requested == second
         ));
+    }
+
+    /// A store that fails transiently on a buffered backend may still commit
+    /// the recipient from the buffer, and the buffered row keeps the first
+    /// recipient it was given: a different identity is refused until the
+    /// failed one is stored durably, so memory can never publish an identity
+    /// the backend did not commit. Retrying the same identity succeeds and
+    /// publishes it.
+    #[tokio::test]
+    async fn should_refuse_another_identity_while_a_failed_assignment_may_still_commit() {
+        let first = dpp::prelude::Identifier::from([0x56; 32]);
+        let second = dpp::prelude::Identifier::from([0x57; 32]);
+        let persistence = Arc::new(CapturingPersistence {
+            records_identity_recipients: true,
+            commits_inline: false,
+            ..Default::default()
+        });
+        let (manager, out_point) =
+            unassigned_top_up_lock(Arc::clone(&persistence), AssetLockStatus::Broadcast).await;
+        persistence
+            .flush_failure_is_transient
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        persistence
+            .fail_flushes
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+
+        let result = assign_on_current_generation(&manager, &out_point, first).await;
+        assert!(
+            matches!(result, Err(PlatformWalletError::Persistence(_))),
+            "{result:?}"
+        );
+        assert_eq!(
+            manager.list_tracked_locks().await[0].identity_recipient,
+            None
+        );
+
+        persistence
+            .fail_flushes
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        let result = assign_on_current_generation(&manager, &out_point, second).await;
+        assert!(
+            matches!(
+                result,
+                Err(PlatformWalletError::AssetLockIdentityRecipientMismatch {
+                    recorded,
+                    requested,
+                    ..
+                }) if recorded == first && requested == second
+            ),
+            "{result:?}"
+        );
+        assert_eq!(
+            manager.list_tracked_locks().await[0].identity_recipient,
+            None,
+            "the refused identity is not published"
+        );
+
+        assign_on_current_generation(&manager, &out_point, first)
+            .await
+            .expect("the failed identity is stored again and made durable");
+        assert_eq!(
+            manager.list_tracked_locks().await[0].identity_recipient,
+            Some(first)
+        );
     }
 
     /// Builds an unbound top-up lock for `built_for` on a backend that records

@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use dashcore::OutPoint;
+use dpp::prelude::Identifier;
 use tokio::sync::{Notify, RwLock};
 
 use crate::broadcaster::TransactionBroadcaster;
@@ -91,7 +92,15 @@ pub struct AssetLockManager<B: TransactionBroadcaster + ?Sized> {
     /// publication, so two assignments of one lock cannot interleave their
     /// stores and publications. Taken after the generation's lifecycle gate
     /// and never while holding the wallet manager's lock.
-    pub(super) recipient_assignment_serial: Arc<tokio::sync::Mutex<()>>,
+    ///
+    /// It holds the recipients whose durable store failed in a way that keeps
+    /// the backend's buffer (a transient failure, or another flush not yet
+    /// settled), by outpoint. Such a recipient may still be committed by a
+    /// later flush, and a buffered row keeps the recipient it was first given,
+    /// so until the same recipient is stored durably no other one may be
+    /// assigned to that lock: it could be published in memory while the
+    /// backend commits the first.
+    pub(super) recipient_assignment_serial: Arc<tokio::sync::Mutex<BTreeMap<OutPoint, Identifier>>>,
     /// Outpoints whose `Built` row is excluded from rejected-build cleanup,
     /// counted so concurrent resumes of the same lock each hold their own
     /// claim. A live resume releases its claim on pre-dispatch exit. Once a
@@ -184,7 +193,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             broadcaster,
             persister,
             build_persist_serial: Arc::new(tokio::sync::Mutex::new(())),
-            recipient_assignment_serial: Arc::new(tokio::sync::Mutex::new(())),
+            recipient_assignment_serial: Arc::new(tokio::sync::Mutex::new(BTreeMap::new())),
             resume_dispatch_claims: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
             drain_operations: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
             deferred_resumes: Arc::new(std::sync::Mutex::new(BTreeSet::new())),
