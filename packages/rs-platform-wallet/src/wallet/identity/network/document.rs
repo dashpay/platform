@@ -27,7 +27,7 @@
 //!     post-broadcast GroveDB proof-verification recursion. The owner's
 //!     balance the proof carries (from protocol version 14) is kept.
 
-use super::key_selection::usable_authentication_key_for_types;
+use super::key_selection::usable_authentication_key_preferring_types;
 use super::signing_key::require_available;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -360,21 +360,21 @@ impl IdentityWallet {
     /// level `required_level` admits (`SecurityLevel::document_signing_levels`),
     /// whose contract bounds cover every one of `document_type_names` of
     /// `contract_id`, and that `signer` can sign with. See
-    /// [`usable_authentication_key_for_types`]: a key bound to another
+    /// [`usable_authentication_key_preferring_types`]: a key bound to another
     /// contract or document type, a group-bound key (group membership is not
     /// wallet state), a disabled key and an expired key are skipped, and a
     /// key without limits is preferred, so an ineligible key with a lower id
     /// never shadows a usable later one.
     ///
-    /// ECDSA_HASH160 is a strict fallback: an ECDSA_SECP256K1 key is chosen
-    /// whenever one qualifies, and a HASH160 key only when none does.
-    /// Before HASH160 keys were accepted here, document writes signed only
-    /// with SECP256K1 keys, so this never picks a different key than that
-    /// did when a SECP256K1 key qualifies; it only adds a key where none
-    /// was found. The wallet manager lock is released before `signer` is
-    /// asked. An eligible key the signer cannot use keeps the structured
-    /// key-unavailable failure (a SECP256K1 one first); no eligible key at
-    /// all is refused as `InvalidIdentityData`.
+    /// Order: keys without limits first, then limited ones (whose budget may
+    /// be spent, which the wallet cannot see offline); within each tier
+    /// ECDSA_SECP256K1 keys before ECDSA_HASH160 keys, each in key-id order.
+    /// So an unlimited HASH160 key is taken before a limited SECP256K1 one,
+    /// and a HASH160 key never shadows a SECP256K1 key of the same tier.
+    /// The wallet manager lock is released before `signer` is asked. An
+    /// eligible key the signer cannot use keeps the structured
+    /// key-unavailable failure; no eligible key at all is refused as
+    /// `InvalidIdentityData`.
     async fn select_document_key_covering<S>(
         &self,
         signing_identity_id: &Identifier,
@@ -395,32 +395,23 @@ impl IdentityWallet {
                 .ok_or(PlatformWalletError::IdentityNotFound(*signing_identity_id))?
         };
         let levels = required_level.document_signing_levels();
-        let select = |key_type: KeyType| {
-            usable_authentication_key_for_types(
-                &identity,
-                signer,
-                contract_id,
-                document_type_names,
-                &levels,
-                &[key_type],
-            )
-        };
-        let secp256k1 = match select(KeyType::ECDSA_SECP256K1) {
-            Ok(Some(key)) => return Ok(key.clone()),
-            other => other,
-        };
-        let hash160 = match select(KeyType::ECDSA_HASH160) {
-            Ok(Some(key)) => return Ok(key.clone()),
-            other => other,
-        };
-        secp256k1?;
-        hash160?;
-        Err(PlatformWalletError::InvalidIdentityData(format!(
-            "No ECDSA (or ECDSA_HASH160) authentication key at a security level satisfying \
-             {required_level}, with contract bounds allowing the {} type of contract \
-             {contract_id}, found on identity {signing_identity_id}",
-            document_type_names.join(" + ")
-        )))
+        usable_authentication_key_preferring_types(
+            &identity,
+            signer,
+            contract_id,
+            document_type_names,
+            &levels,
+            &[KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160],
+        )?
+        .cloned()
+        .ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "No ECDSA (or ECDSA_HASH160) authentication key at a security level satisfying \
+                 {required_level}, with contract bounds allowing the {} type of contract \
+                 {contract_id}, found on identity {signing_identity_id}",
+                document_type_names.join(" + ")
+            ))
+        })
     }
 
     /// Put `document` (a create at revision 1, a replace above it),
@@ -1379,6 +1370,26 @@ mod tests {
                     .with_limits(Some(1_000), None),
                 auth_key(2, SecurityLevel::HIGH, KeyType::ECDSA_SECP256K1)
                     .with_limits(Some(1_000), None),
+            ],
+        )
+        .await;
+        assert_eq!(automatic_key(&wallet, identity_id).await, 2);
+    }
+
+    /// An unlimited HASH160 key is taken before a limited SECP256K1 key,
+    /// whose budget may already be spent: the tier decides before the type.
+    #[tokio::test]
+    async fn should_prefer_an_unlimited_hash160_key_over_a_limited_secp256k1_key() {
+        let wallet = wallet_with_signing_keys().await;
+        let identity_id = Identifier::from([0x35; 32]);
+        hold_identity(
+            &wallet,
+            identity_id,
+            1,
+            vec![
+                auth_key(1, SecurityLevel::HIGH, KeyType::ECDSA_SECP256K1)
+                    .with_limits(Some(1_000), None),
+                auth_key(2, SecurityLevel::HIGH, KeyType::ECDSA_HASH160),
             ],
         )
         .await;
