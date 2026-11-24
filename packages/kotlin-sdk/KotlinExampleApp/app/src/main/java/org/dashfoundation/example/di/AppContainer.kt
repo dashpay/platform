@@ -456,6 +456,7 @@ class AppContainer(private val context: Context) {
             appState.initializeSdk()
             loadKnownContractsIntoSdk()
             backfillOncePerIdentityDistributions()
+            rederiveTokenRules()
             activateManager()
             _bootstrapState.value = BootstrapState.Ready
         } catch (e: Exception) {
@@ -480,6 +481,27 @@ class AppContainer(private val context: Context) {
             android.util.Log.i(TAG, "Backfilled $filled once-per-identity token blocks")
         } catch (e: Exception) {
             android.util.Log.w(TAG, "Failed to backfill once-per-identity token blocks", e)
+        }
+    }
+
+    /**
+     * One-time pass for installs whose token rows were written before the
+     * rules parser read rs-dpp's `$type` action-taker maps: those rows hold
+     * "NoOne" for every rule, so Mint, Burn, Freeze and the other rule-gated
+     * actions show as locked. Rewrites the rule columns from each stored
+     * contract (`TokenMaterializer.rederiveRules`). Best-effort and
+     * non-fatal, and it only marks itself done when it ran to the end.
+     */
+    private suspend fun rederiveTokenRules() {
+        try {
+            if (dataStore.data.first()[TOKEN_RULES_REDERIVED] == true) return
+            val contracts = database.dataContractDao().observeWithTokens().first()
+            val rewritten = org.dashfoundation.example.services.tokens.TokenMaterializer
+                .rederiveRules(contracts, database.tokenDao())
+            dataStore.edit { it[TOKEN_RULES_REDERIVED] = true }
+            android.util.Log.i(TAG, "Re-derived the rules of $rewritten token rows")
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "Failed to re-derive token rules", e)
         }
     }
 
@@ -530,5 +552,7 @@ class AppContainer(private val context: Context) {
         const val TAG = "AppContainer"
         val ONCE_PER_IDENTITY_BACKFILL_DONE =
             booleanPreferencesKey("once_per_identity_backfill_done")
+        val TOKEN_RULES_REDERIVED =
+            booleanPreferencesKey("token_rules_rederived_type_tagged_takers")
     }
 }

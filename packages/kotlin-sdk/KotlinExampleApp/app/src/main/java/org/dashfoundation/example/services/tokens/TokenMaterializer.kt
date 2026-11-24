@@ -64,6 +64,38 @@ object TokenMaterializer {
         return filled
     }
 
+    /**
+     * Rewrite the rule columns of every stored token from its stored
+     * contract. Builds before this one read the `$type` action-taker maps
+     * rs-dpp writes as "NoOne", so their rows show every rule-gated action
+     * as locked; the contract JSON stored beside them is intact. Like
+     * [backfillOncePerIdentityDistributions] it leaves the rest of the row
+     * alone, so live columns such as `isPaused` keep their value. Returns the
+     * rows rewritten.
+     */
+    suspend fun rederiveRules(contracts: List<DataContractEntity>, dao: TokenDao): Int {
+        var rewritten = 0
+        for (contract in contracts) {
+            for (token in parse(contract)) {
+                rewritten += dao.rewriteRules(
+                    id = token.id,
+                    conventionsChangeRules = token.conventionsChangeRules,
+                    maxSupplyChangeRules = token.maxSupplyChangeRules,
+                    manualMintingRules = token.manualMintingRules,
+                    manualBurningRules = token.manualBurningRules,
+                    freezeRules = token.freezeRules,
+                    unfreezeRules = token.unfreezeRules,
+                    destroyFrozenFundsRules = token.destroyFrozenFundsRules,
+                    emergencyActionRules = token.emergencyActionRules,
+                    distributionChangeRules = token.distributionChangeRules,
+                    tradeModeChangeRules = token.tradeModeChangeRules,
+                    mainControlGroupCanBeModified = token.mainControlGroupCanBeModified,
+                )
+            }
+        }
+        return rewritten
+    }
+
     /** Pure parse of [contract]'s tokens map into entity rows. */
     fun parse(contract: DataContractEntity): List<TokenEntity> {
         val root = try {
@@ -173,7 +205,8 @@ object TokenMaterializer {
             tradeMode = tradeMode,
             tradeModeChangeRules = tradeModeChange?.toJson(),
             mainControlGroupPosition = dict.int("mainControlGroup"),
-            mainControlGroupCanBeModified = dict.str("mainControlGroupCanBeModified"),
+            mainControlGroupCanBeModified = dict["mainControlGroupCanBeModified"]
+                ?.let(AuthorizedActionTakers::parse),
             tokenDescription = dict.str("description"),
             createdAt = now,
             lastUpdatedAt = now,

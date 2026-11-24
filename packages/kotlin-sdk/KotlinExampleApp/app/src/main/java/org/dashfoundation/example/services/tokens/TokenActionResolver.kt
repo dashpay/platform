@@ -149,6 +149,13 @@ object TokenActionEvaluator {
             return TokenActionPermission.Denied("$feature: no one is authorized")
         }
 
+        if (authorized.startsWith(AuthorizedActionTakers.UNKNOWN_PREFIX)) {
+            val what = authorized.removePrefix(AuthorizedActionTakers.UNKNOWN_PREFIX)
+            return TokenActionPermission.Denied(
+                "$feature: authorization rule '$what' not recognised by this app",
+            )
+        }
+
         if (authorized == AuthorizedActionTakers.CONTRACT_OWNER) {
             val ownerId = contract?.ownerId
                 ?: return TokenActionPermission.Denied("$feature: contract owner unknown locally")
@@ -355,7 +362,7 @@ object TokenActionResolver {
         // Claim.
         rows += ResolvedTokenAction(
             TokenActionKind.CLAIM,
-            resolveClaim(token, identity, oncePerIdentityClaimed),
+            resolveClaim(token, identity, contract, oncePerIdentityClaimed),
         )
 
         // Direct purchase — allowed whenever pricing rules exist and the
@@ -433,27 +440,29 @@ object TokenActionResolver {
     private fun resolveClaim(
         token: TokenEntity,
         identity: IdentityEntity,
+        contract: DataContractEntity?,
         oncePerIdentityClaimed: Boolean,
     ): TokenActionPermission {
-        val hasPerpetual = token.perpetualDistribution != null
         val hasPreProgrammed = token.preProgrammedDistribution != null
         val hasOncePerIdentity = token.oncePerIdentityDistribution != null
-        if (!hasPerpetual && !hasPreProgrammed && !hasOncePerIdentity) {
+        val perpetual = perpetualClaim(token, identity, contract)
+        if (perpetual == null && !hasPreProgrammed && !hasOncePerIdentity) {
             return TokenActionPermission.Denied("Token has no distribution schedule")
+        }
+        // A kind the token's own recipient rules make this identity eligible
+        // for wins: it stays claimable however the once-per-identity claim
+        // stands. Pre-programmed maturity and already-claimed are enforced
+        // on-chain at submit time.
+        if (perpetual?.isAllowed == true) {
+            return TokenActionPermission.Allowed
+        }
+        if (hasPreProgrammed && isPreProgrammedRecipient(token, identity)) {
+            return TokenActionPermission.Allowed
         }
         // Once per identity: every identity may claim the fixed amount once.
         // An identity this device does not know about is still rejected
         // on-chain at submit time if it already claimed.
         if (hasOncePerIdentity && !oncePerIdentityClaimed) {
-            return TokenActionPermission.Allowed
-        }
-
-        if (isDesignatedRecipient(token, identity)) {
-            return TokenActionPermission.Allowed
-        }
-        // Pre-programmed releases name their recipients in the contract;
-        // maturity and already-claimed are enforced on-chain at submit time.
-        if (hasPreProgrammed && isPreProgrammedRecipient(token, identity)) {
             return TokenActionPermission.Allowed
         }
 
@@ -464,29 +473,69 @@ object TokenActionResolver {
                 "Already claimed the once-per-identity distribution",
             )
         }
-        if (!hasPerpetual) {
-            return TokenActionPermission.Denied("Not a recipient of any pre-programmed release")
+        return perpetual
+            ?: TokenActionPermission.Denied("Not a recipient of any pre-programmed release")
+    }
+
+    /**
+     * Whether [identity] may claim the token's perpetual distribution, or
+     * null when the token has none. Mirrors Drive's wrong-claimant check
+     * (`token_claim_transition_action/v0/transformer.rs`): only the
+     * distribution's `distributionRecipient` may claim it. A recipient this
+     * app cannot evaluate (evonodes by participation, or a variant it does
+     * not recognise) is denied with a reason that names it, because a wrong
+     * claim costs a fee.
+     */
+    private fun perpetualClaim(
+        token: TokenEntity,
+        identity: IdentityEntity,
+        contract: DataContractEntity?,
+    ): TokenActionPermission? {
+        val json = token.perpetualDistribution ?: return null
+        return when (val recipient = TokenDistributionRecipient.fromPerpetualDistribution(json)) {
+            is TokenDistributionRecipient.Identity -> {
+                val target = Base58.decodeIdentifier(recipient.base58)
+                if (target != null && target.contentEquals(identity.identityId)) {
+                    TokenActionPermission.Allowed
+                } else {
+                    TokenActionPermission.Denied("Not the designated distribution recipient")
+                }
+            }
+            TokenDistributionRecipient.ContractOwner -> {
+                val ownerId = contract?.ownerId
+                when {
+                    ownerId == null -> TokenActionPermission.Denied(
+                        "Distribution recipient (contract owner) unknown locally",
+                    )
+                    ownerId.contentEquals(identity.identityId) -> TokenActionPermission.Allowed
+                    else -> TokenActionPermission.Denied("Not the designated distribution recipient")
+                }
+            }
+            TokenDistributionRecipient.EvonodesByParticipation -> TokenActionPermission.Denied(
+                "Distribution pays evonodes by participation; eligibility not evaluated by this app",
+            )
+            is TokenDistributionRecipient.Unknown -> TokenActionPermission.Denied(
+                "Distribution recipient '${recipient.what}' not recognised by this app",
+            )
         }
-        if (!token.mintingAllowChoosingDestination) {
-            return TokenActionPermission.Denied("Not the designated distribution recipient")
-        }
-        return TokenActionPermission.Denied("Distribution eligibility not yet evaluated")
     }
 
     /**
      * The distribution kinds [identity] can claim under [resolveClaim]'s
      * rules, in the order the claim form shows them. A kind the token merely
      * declares is not enough: perpetual is listed only for the identity it
-     * pays, pre-programmed only for a listed recipient, and once-per-identity
-     * only while the identity's single claim is not known to be spent.
-     * Offering anything else enables a claim Drive rejects for a fee.
+     * pays (its `distributionRecipient`), pre-programmed only for a listed
+     * recipient, and once-per-identity only while the identity's single
+     * claim is not known to be spent. Offering anything else enables a claim
+     * Drive rejects for a fee.
      */
     fun claimableDistributions(
         token: TokenEntity,
         identity: IdentityEntity,
+        contract: DataContractEntity?,
         oncePerIdentityClaimed: Boolean,
     ): List<TokenDistributionType> = buildList {
-        if (token.perpetualDistribution != null && isDesignatedRecipient(token, identity)) {
+        if (perpetualClaim(token, identity, contract)?.isAllowed == true) {
             add(TokenDistributionType.PERPETUAL)
         }
         if (token.preProgrammedDistribution != null && isPreProgrammedRecipient(token, identity)) {
@@ -507,12 +556,10 @@ object TokenActionResolver {
     fun preferredClaimDistribution(
         token: TokenEntity,
         identity: IdentityEntity,
+        contract: DataContractEntity?,
         oncePerIdentityClaimed: Boolean,
     ): TokenDistributionType? =
-        claimableDistributions(token, identity, oncePerIdentityClaimed).firstOrNull()
-
-    private fun isDesignatedRecipient(token: TokenEntity, identity: IdentityEntity): Boolean =
-        token.newTokensDestinationIdentity?.contentEquals(identity.identityId) == true
+        claimableDistributions(token, identity, contract, oncePerIdentityClaimed).firstOrNull()
 
     /**
      * True when [identity] is named as a recipient in ANY release of the

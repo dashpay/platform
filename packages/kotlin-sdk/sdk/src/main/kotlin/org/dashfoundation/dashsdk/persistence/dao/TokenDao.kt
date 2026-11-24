@@ -102,6 +102,43 @@ interface TokenDao {
     )
     suspend fun backfillOncePerIdentityDistribution(id: ByteArray, block: String): Int
 
+    /**
+     * Replace the rule columns of one row, re-derived from its stored
+     * contract by the app. Only the rule JSON changes: the capability flags
+     * (`canManuallyMint`, …) already match because a rule's presence does
+     * not depend on how its action takers are read, and live columns such as
+     * `isPaused` are left alone. Returns the rows changed.
+     */
+    @Query(
+        "UPDATE tokens SET " +
+            "conventionsChangeRules = :conventionsChangeRules, " +
+            "maxSupplyChangeRules = :maxSupplyChangeRules, " +
+            "manualMintingRules = :manualMintingRules, " +
+            "manualBurningRules = :manualBurningRules, " +
+            "freezeRules = :freezeRules, " +
+            "unfreezeRules = :unfreezeRules, " +
+            "destroyFrozenFundsRules = :destroyFrozenFundsRules, " +
+            "emergencyActionRules = :emergencyActionRules, " +
+            "distributionChangeRules = :distributionChangeRules, " +
+            "tradeModeChangeRules = :tradeModeChangeRules, " +
+            "mainControlGroupCanBeModified = :mainControlGroupCanBeModified " +
+            "WHERE id = :id",
+    )
+    suspend fun rewriteRules(
+        id: ByteArray,
+        conventionsChangeRules: String?,
+        maxSupplyChangeRules: String?,
+        manualMintingRules: String?,
+        manualBurningRules: String?,
+        freezeRules: String?,
+        unfreezeRules: String?,
+        destroyFrozenFundsRules: String?,
+        emergencyActionRules: String?,
+        distributionChangeRules: String?,
+        tradeModeChangeRules: String?,
+        mainControlGroupCanBeModified: String?,
+    ): Int
+
     @Delete
     suspend fun deleteToken(token: TokenEntity)
 

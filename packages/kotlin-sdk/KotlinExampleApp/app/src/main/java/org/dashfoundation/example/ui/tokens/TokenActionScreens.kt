@@ -617,14 +617,17 @@ private fun ClaimForm(
         claimStore.observe(identity.networkRaw, token.id, identity.identityId)
     }.collectAsStateWithLifecycle(initialValue = null)
     val claimed = oncePerIdentityClaimed ?: false
-    val available = TokenActionResolver.claimableDistributions(token, identity, claimed)
+    val available =
+        TokenActionResolver.claimableDistributions(token, identity, context.contract, claimed)
     // The user's pick once made; until then the first kind this identity is
     // eligible for (`preferredClaimDistribution`). With none, the fallback
     // only keeps the value valid: `canSubmit` stays false.
     var pickedOrdinal by rememberSaveable { mutableStateOf<Int?>(null) }
     val selected = pickedOrdinal?.let { TokenDistributionType.entries[it] }
         ?.takeIf { it in available }
-        ?: TokenActionResolver.preferredClaimDistribution(token, identity, claimed)
+        ?: TokenActionResolver.preferredClaimDistribution(
+            token, identity, context.contract, claimed,
+        )
         ?: TokenDistributionType.PERPETUAL
     var note by rememberSaveable { mutableStateOf("") }
     val canSubmit = oncePerIdentityClaimed != null && available.contains(selected)

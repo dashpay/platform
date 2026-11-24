@@ -1,5 +1,6 @@
 package org.dashfoundation.example.services.tokens
 
+import org.dashfoundation.dashsdk.persistence.entities.DataContractEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.TokenEntity
 import org.dashfoundation.dashsdk.tokens.TokenDistributionType
@@ -10,8 +11,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Claim-row eligibility tests for [TokenActionResolver] — the designated
- * `newTokensDestinationIdentity` (perpetual) path plus pre-programmed
+ * Claim-row eligibility tests for [TokenActionResolver] — the perpetual
+ * distribution's `distributionRecipient` (what Drive's wrong-claimant check
+ * reads; the minting destination plays no part) plus pre-programmed
  * recipients named in the contract's `distributions` map
  * (`{"$formatVersion":"0","distributions":{"<timestampMs>":{"<base58>":amount}}}`,
  * the shape [TokenMaterializer] persists), and the once-per-identity kind
@@ -50,8 +52,9 @@ class TokenActionResolverClaimTest {
         token: TokenEntity,
         identity: IdentityEntity,
         oncePerIdentityClaimed: Boolean = false,
+        contract: DataContractEntity? = null,
     ): TokenActionPermission =
-        TokenActionResolver.resolve(token, identity, contract = null, oncePerIdentityClaimed)
+        TokenActionResolver.resolve(token, identity, contract, oncePerIdentityClaimed)
             .first { it.kind == TokenActionKind.CLAIM }
             .permission
 
@@ -60,10 +63,18 @@ class TokenActionResolverClaimTest {
         identity: IdentityEntity,
         oncePerIdentityClaimed: Boolean = false,
     ): TokenDistributionType? =
-        TokenActionResolver.preferredClaimDistribution(token, identity, oncePerIdentityClaimed)
+        TokenActionResolver.preferredClaimDistribution(token, identity, null, oncePerIdentityClaimed)
 
     private fun preProgrammedJson(recipient: String = recipientBase58): String =
         """{"${'$'}formatVersion":"0","distributions":{"1750000000000":{"$recipient":5000}}}"""
+
+    /** A stored perpetual block in rs-dpp's shape, paid to [recipient]. */
+    private fun perpetualJson(
+        recipient: String = """{"${'$'}type":"identity","identity":"$recipientBase58"}""",
+    ): String =
+        """{"${'$'}formatVersion":"0","distributionType":{"${'$'}type":"blockBasedDistribution",""" +
+            """"interval":10,"function":{"${'$'}type":"fixedAmount","amount":100}},""" +
+            """"distributionRecipient":$recipient}"""
 
     private fun oncePerIdentityJson(amount: String = "5000"): String =
         """{"${'$'}formatVersion":"0","amount":$amount}"""
@@ -77,12 +88,78 @@ class TokenActionResolverClaimTest {
     }
 
     @Test
-    fun `designated destination identity is allowed`() {
+    fun `perpetual distribution paid to the identity is allowed`() {
+        assertTrue(claim(token(perpetual = perpetualJson()), identity()).isAllowed)
+        assertEquals(
+            listOf(TokenDistributionType.PERPETUAL),
+            claimable(token(perpetual = perpetualJson()), identity()),
+        )
+    }
+
+    @Test
+    fun `perpetual distribution paid to the identity is allowed whatever the minting destination`() {
+        // QA case TOK-07: the recipient is the acting identity while new
+        // tokens go elsewhere (or nowhere), which Drive does not look at.
         assertTrue(
             claim(
-                token(perpetual = "{}", destination = recipientId),
+                token(perpetual = perpetualJson(), destination = strangerId, mintingAllowChoosing = false),
                 identity(),
             ).isAllowed,
+        )
+    }
+
+    @Test
+    fun `minting destination alone does not make a perpetual distribution claimable`() {
+        val paidToStranger = perpetualJson(
+            """{"${'$'}type":"identity","identity":"${Base58.encode(strangerId)}"}""",
+        )
+        assertEquals(
+            TokenActionPermission.Denied("Not the designated distribution recipient"),
+            claim(token(perpetual = paidToStranger, destination = recipientId), identity()),
+        )
+    }
+
+    @Test
+    fun `perpetual distribution paid to the contract owner is allowed only for the owner`() {
+        val ownerPaid = token(perpetual = perpetualJson("""{"${'$'}type":"contractOwner"}"""))
+        val contract = DataContractEntity(
+            id = ByteArray(32),
+            name = "C",
+            serializedContract = ByteArray(0),
+            networkRaw = 0,
+            ownerId = recipientId,
+        )
+        assertTrue(claim(ownerPaid, identity(), contract = contract).isAllowed)
+        assertEquals(
+            TokenActionPermission.Denied("Not the designated distribution recipient"),
+            claim(ownerPaid, identity(strangerId), contract = contract),
+        )
+        assertEquals(
+            TokenActionPermission.Denied("Distribution recipient (contract owner) unknown locally"),
+            claim(ownerPaid, identity()),
+        )
+    }
+
+    @Test
+    fun `perpetual recipients the app cannot evaluate say so`() {
+        assertEquals(
+            TokenActionPermission.Denied(
+                "Distribution pays evonodes by participation; eligibility not evaluated by this app",
+            ),
+            claim(
+                token(perpetual = perpetualJson("""{"${'$'}type":"evonodesByParticipation"}""")),
+                identity(),
+            ),
+        )
+        assertEquals(
+            TokenActionPermission.Denied("Distribution recipient 'someoneNew' not recognised by this app"),
+            claim(token(perpetual = perpetualJson("""{"${'$'}type":"someoneNew"}""")), identity()),
+        )
+        assertEquals(
+            TokenActionPermission.Denied(
+                "Distribution recipient 'missing distributionRecipient' not recognised by this app",
+            ),
+            claim(token(perpetual = "{}"), identity()),
         )
     }
 
@@ -178,8 +255,7 @@ class TokenActionResolverClaimTest {
             TokenActionPermission.Denied("Already claimed the once-per-identity distribution"),
             claim(
                 token(
-                    perpetual = "{}",
-                    destination = recipientId,
+                    perpetual = perpetualJson(),
                     oncePerIdentity = oncePerIdentityJson(),
                 ),
                 identity(strangerId),
@@ -193,8 +269,7 @@ class TokenActionResolverClaimTest {
         assertTrue(
             claim(
                 token(
-                    perpetual = "{}",
-                    destination = recipientId,
+                    perpetual = perpetualJson(),
                     oncePerIdentity = oncePerIdentityJson(),
                 ),
                 identity(),
@@ -215,13 +290,12 @@ class TokenActionResolverClaimTest {
         identity: IdentityEntity,
         oncePerIdentityClaimed: Boolean = false,
     ): List<TokenDistributionType> =
-        TokenActionResolver.claimableDistributions(token, identity, oncePerIdentityClaimed)
+        TokenActionResolver.claimableDistributions(token, identity, null, oncePerIdentityClaimed)
 
     @Test
     fun `only the kinds the identity is eligible for are offered`() {
         val perpetualAndOnce = token(
-            perpetual = "{}",
-            destination = recipientId,
+            perpetual = perpetualJson(),
             oncePerIdentity = oncePerIdentityJson(),
         )
         // A stranger is only eligible through the once-per-identity kind:
@@ -260,8 +334,7 @@ class TokenActionResolverClaimTest {
     @Test
     fun `a spent once-per-identity claim leaves a stranger nothing to claim`() {
         val perpetualAndOnce = token(
-            perpetual = "{}",
-            destination = recipientId,
+            perpetual = perpetualJson(),
             oncePerIdentity = oncePerIdentityJson(),
         )
         // The perpetual distribution pays someone else, so it is not a fallback.
@@ -281,24 +354,6 @@ class TokenActionResolverClaimTest {
         assertEquals(
             listOf(TokenDistributionType.PERPETUAL),
             claimable(perpetualAndOnce, identity(), oncePerIdentityClaimed = true),
-        )
-    }
-
-    @Test
-    fun `perpetual-only non-designated identity keeps the existing denials`() {
-        assertEquals(
-            TokenActionPermission.Denied("Not the designated distribution recipient"),
-            claim(
-                token(perpetual = "{}", destination = strangerId, mintingAllowChoosing = false),
-                identity(),
-            ),
-        )
-        assertEquals(
-            TokenActionPermission.Denied("Distribution eligibility not yet evaluated"),
-            claim(
-                token(perpetual = "{}", destination = strangerId),
-                identity(),
-            ),
         )
     }
 }
