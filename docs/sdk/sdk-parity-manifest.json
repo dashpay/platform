@@ -4596,8 +4596,8 @@
           "host": "shared",
           "kind": "unit",
           "file": "packages/rs-platform-wallet/src/wallet/shielded/tip_payment_tests.rs",
-          "id": "should_refuse_a_second_tip_while_one_is_being_sent",
-          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::tip_payment_tests::should_refuse_a_second_tip_while_one_is_being_sent",
+          "id": "should_admit_one_tip_at_a_time_and_only_on_its_own_wallet",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::tip_payment_tests::should_admit_one_tip_at_a_time_and_only_on_its_own_wallet",
           "covers_restart": false
         },
         {
