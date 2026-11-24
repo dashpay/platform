@@ -58,9 +58,18 @@ pub mod prover;
 pub mod seed_pool;
 pub mod store;
 pub mod sync;
+pub mod tip_payment;
+#[cfg(test)]
+mod tip_payment_tests;
+mod tip_recipients;
 pub mod tips;
 pub mod token_pool;
 pub mod wallet_drain_recovery;
+pub use tip_payment::{
+    parse_shielded_tip_amount, ShieldedIdentityBalance, ShieldedTipAdmission, ShieldedTipRecipient,
+    ShieldedTipRecipientChange, ShieldedTipReview, ShieldedTipSource,
+    SHIELDED_IDENTITY_BALANCE_WAIT,
+};
 pub use tips::{
     is_shielded_identity_account, shielded_identity_account_index, SHIELDED_IDENTITY_ACCOUNT_BASE,
 };

@@ -683,7 +683,8 @@ extension PlatformWalletManager {
     /// Throws `PlatformWalletError.shieldedOperationInProgress` at once,
     /// without waiting, while a shielded operation is in flight (a bind, an
     /// account being added, a token pool transfer or unshield, a DashPay
-    /// profile write or a tip address preparation, or another Clear). Rust
+    /// profile write, a tip address preparation or a shielded tip being
+    /// sent, or another Clear). Rust
     /// decides that and changed nothing: the sync loop keeps running, and
     /// this manager keeps its sync generation, progress mirrors and any
     /// local balance read in flight. The host must not wipe its own rows;

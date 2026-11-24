@@ -283,7 +283,9 @@ pub unsafe extern "C" fn platform_wallet_shielded_estimate_fee(
 ///
 /// Factored out as a pure function so the text→bytes rules are unit
 /// testable without a live wallet handle.
-fn encode_memo_text(memo_text: Option<&str>) -> Result<[u8; 36], PlatformWalletFFIResult> {
+pub(crate) fn encode_memo_text(
+    memo_text: Option<&str>,
+) -> Result<[u8; 36], PlatformWalletFFIResult> {
     match memo_text {
         None | Some("") => Ok(ShieldedMemo::Empty.to_bytes()),
         Some(text) => ShieldedMemo::text(text)
@@ -669,6 +671,11 @@ pub(crate) fn map_spend_result(
         | Err(e @ PlatformWalletError::PrivateContactPaymentsNotRestored)
         | Err(e @ PlatformWalletError::PrivateContactRecoveryUnsupported)
         | Err(e @ PlatformWalletError::WalletRemovedBeforeSend(..))
+        // A shielded tip refused before anything was selected, built or
+        // sent, while another tip is being sent or an earlier payment to the
+        // recipient may still execute: its own code, never the unconfirmed
+        // one.
+        | Err(e @ PlatformWalletError::ShieldedTipPending)
         | Err(e @ PlatformWalletError::Sdk(dash_sdk::Error::ProtocolVersionNotActive { .. })) => {
             e.into()
         }

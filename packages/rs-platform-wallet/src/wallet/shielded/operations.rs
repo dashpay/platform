@@ -3655,6 +3655,51 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     memo: [u8; 36],
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
+    transfer_once_claimed(
+        sdk,
+        store,
+        persister,
+        wallet_id,
+        keys,
+        account,
+        to_address,
+        amount,
+        memo,
+        prover,
+        || async { Ok(()) },
+    )
+    .await
+}
+
+/// [`transfer`], with `once_claimed` run right after the notes are reserved
+/// and before anything is built, recorded or sent. The wait for the store
+/// that reserving takes can be as long as a scan, so a caller whose
+/// permission to spend the account can lapse meanwhile (a tip paid from an
+/// identity's account, [`PlatformWallet::send_shielded_tip`]) checks it
+/// here, with the notes already its own: an `Err` releases them and is
+/// returned, with nothing sent.
+///
+/// [`PlatformWallet::send_shielded_tip`]: crate::wallet::platform_wallet::PlatformWallet::send_shielded_tip
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn transfer_once_claimed<S, P, C, CFut>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    to_address: &PaymentAddress,
+    amount: u64,
+    memo: [u8; 36],
+    prover: &P,
+    once_claimed: C,
+) -> Result<(), PlatformWalletError>
+where
+    S: ShieldedStore,
+    P: OrchardProver,
+    C: FnOnce() -> CFut,
+    CFut: Future<Output = Result<(), PlatformWalletError>>,
+{
     let recipient_addr = payment_address_to_orchard(to_address)?;
     let views = keys.viewing_keys();
     let change_addr = default_orchard_address(&views)?;
@@ -3664,6 +3709,11 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     // against `ShieldedFeeKind::Base`.
     let (selected_notes, total_input, exact_fee, mut reservation) =
         reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Base).await?;
+    // Nothing is built or recorded yet: a refusal only gives the notes back.
+    if let Err(refusal) = once_claimed().await {
+        reservation.cancel().await;
+        return Err(refusal);
+    }
 
     info!(
         account,

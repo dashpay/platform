@@ -90,6 +90,8 @@ pub mod shielded_send;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
 #[cfg(feature = "shielded")]
+pub mod shielded_tip;
+#[cfg(feature = "shielded")]
 pub mod shielded_token_pools;
 pub mod shielded_types;
 #[cfg(feature = "shielded")]
@@ -183,6 +185,8 @@ pub use secp256k1_primitives::*;
 pub use shielded_send::*;
 #[cfg(feature = "shielded")]
 pub use shielded_sync::*;
+#[cfg(feature = "shielded")]
+pub use shielded_tip::*;
 #[cfg(feature = "shielded")]
 pub use shielded_token_pools::*;
 pub use shielded_types::*;
