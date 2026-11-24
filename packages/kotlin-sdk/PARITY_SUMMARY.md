@@ -8,9 +8,9 @@ Capabilities tracked: **52**
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 31 | 19 | 1 | 1 |
-| Swift | Example app | 6 | 35 | 2 | 9 |
-| Kotlin | SDK | 26 | 23 | 2 | 1 |
+| Swift | SDK | 32 | 18 | 1 | 1 |
+| Swift | Example app | 6 | 36 | 1 | 9 |
+| Kotlin | SDK | 27 | 22 | 2 | 1 |
 | Kotlin | Example app | 7 | 33 | 2 | 10 |
 
 ## Restart coverage
@@ -75,7 +75,7 @@ Capabilities tracked: **52**
 | `shielded.token_shielded_transfer` | partial / partial / required | partial / partial / required |
 | `shielded.token_unshield` | partial / partial / required | partial / partial / required |
 | `dashpay.profile_payment_addresses` | partial / partial / not_applicable | partial / partial / tested |
-| `dashpay.shielded_tips` | partial / unsupported / required | partial / partial / required |
+| `dashpay.shielded_tips` | supported / partial / required | supported / partial / required |
 
 Source: [`docs/sdk/sdk-parity-manifest.json`](../../docs/sdk/sdk-parity-manifest.json).
 Detailed legacy view mapping remains in [`PARITY.md`](PARITY.md), but its manual totals are not authoritative.

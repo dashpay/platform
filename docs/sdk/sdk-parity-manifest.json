@@ -4754,27 +4754,27 @@
     },
     {
       "id": "dashpay.shielded_tips",
-      "title": "Shielded tips to a DashPay username: wallet-parsed amount, reviewed recipient and its change, send from an identity's own account or account 0, unresolved earlier payment (code 85), contact whose name moved (code 86), identity shielded balance",
+      "title": "Send a shielded tip to a DashPay username from an identity's own shielded account",
       "area": "shared_policy",
       "shared_apis": [
-        "platform_wallet_parse_shielded_tip_amount",
         "platform_wallet_manager_review_shielded_tip",
         "platform_wallet_manager_send_shielded_tip",
-        "platform_wallet_manager_shielded_identity_balance"
+        "platform_wallet_manager_shielded_identity_balance",
+        "platform_wallet_parse_shielded_tip_amount"
       ],
       "required_persistence_capabilities": [],
       "hosts": {
         "swift": {
-          "sdk": "partial",
-          "example_app": "unsupported",
-          "restart": "required",
-          "reason": "PlatformWalletManagerShieldedTips.swift wraps the four FFI calls (parse, review, send, identity balance) and ShieldedTipDecodingTests pins the decoding, but the tests have not run on a simulator and no build links the new symbols yet. SwiftExampleApp has no tip screens on this base; the Swift tip screens pull request adds them."
-        },
-        "kotlin": {
-          "sdk": "partial",
+          "sdk": "supported",
           "example_app": "partial",
           "restart": "required",
-          "reason": "PlatformWalletManager.parseShieldedTipAmount / reviewShieldedTip / sendShieldedTip / shieldedIdentityBalance bridge the FFI through four FundingNative calls; ShieldedTipTest pins the review and balance decoding, FfiSmokeTest calls the four natives through the loaded library, and the send keeps the result of a native call that completed after its caller was cancelled. Partial because no funded tip has been sent through the bridge. KotlinExampleApp's SendShieldedTipScreen (from the DashPay tab, and from a contact with its saved DPNS name fixed and its identity passed to the review and the send, so Rust refuses a name that moved with code 86, worded as nothing sent, at review and at send, whatever the new owner's profile holds) has the wallet parse the amount and review the name, locks the name and amount while it reviews, shows the recipient, its change since the recipient last confirmed for the name (a changed one only after a confirmation dialog) and an unresolved earlier payment (send off; each shielded sync reviews again, and when it no longer reports the hold the review is dropped with a notice that this says nothing about the earlier payment, so another tip starts from a new review), and sends the reviewed recipient from the identity's own account or account 0 on the app-scoped ShieldedIdentityPaymentCoordinator, so a rotation or tab switch can neither drop the outcome nor send twice; a returned tip reads submitted, codes 18 and 20 read may have gone through with no resend, code 85 reads refused with nothing sent (TEST_PLAN DP-33 to DP-39, DP-33 to DP-38 mirroring Swift's, DP-39 the Kotlin-only rotation case; ShieldedTipPresentationTest). The identity balance is shown as the wallet reports it, never unknown as zero, with a prepare action while unverified; a busy read (code 87) keeps the last state and any other read failure is shown. Restart is required: the wallet refuses a repeat after a relaunch from its saved spend record (Rust should_refuse_a_tip_while_an_earlier_payment_to_its_recipient_is_unresolved), but no host test or emulator run kills the app with a tip unresolved (DP-35), and none of the rows has been driven on an emulator."
+          "reason": "PlatformWalletManager.parseShieldedTipAmount, reviewShieldedTip, sendShieldedTip and shieldedIdentityBalance (PlatformWalletManagerShieldedTips.swift) marshal the four exports and decode the review and balance blobs, unit-tested in ShieldedTipDecodingTests; the wallet decides the amount, the recipient, its change and every refusal. SwiftExampleApp tips a contact from its detail screen (the username this device knows for it) and any username from the own profile's Shielded tips section (ShieldedTipSheet): the amount parsed by the wallet, an optional memo, a review showing the recipient identity and address, the change (a changed recipient as a warning with the previous one) and an unresolved earlier payment (Send off, with a caution that it may pay the recipient and a shielded sync), then a send from .identity of the acting identity; a tip from a contact passes the contact's identity id to the review and the send, and a name that now belongs to another identity (86) is refused with an explanation that a tip to the new owner starts from the name; sends that may have gone through (18, 20) or met an unresolved earlier payment (85) are never offered again and offer only a shielded sync, since the app cannot tell what became of that payment, and every other error reads not sent with the wallet's message. The paying identity's balance shows unverified (with Prepare through prepareShieldedIdentityAddress), unavailable and available; a busy store (shieldedBalanceBusy, code 87) keeps the last balance with a busy note and reads again every 2 seconds, every other read error (walletOperation included) shows as a failure without a retry, and only the latest read applies. ShieldedTipFlowTests pin that mapping with closures in place of the native calls. The app is partial and restart is required because none of TEST_PLAN DP-33 to DP-38 has been driven on a simulator: the unresolved tip that survives a relaunch (DP-35) is read from the wallet's saved payment, which only the Rust tests exercise, and the app keeps no record of its own."
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PlatformWalletManager.parseShieldedTipAmount, reviewShieldedTip, sendShieldedTip and shieldedIdentityBalance (ShieldedTip.kt, through the JNI bridge in funding.rs) wrap the four exports, with the review and balance blob decoders unit-tested in ShieldedTipTest. FfiSmokeTest calls the four natives through the loaded library, and the send keeps the result of a native call that completed after its caller was cancelled. KotlinExampleApp's SendShieldedTipScreen (from the DashPay tab, and from a contact with its saved DPNS name fixed and its identity passed to the review and the send, so Rust refuses a name that moved with code 86, worded as nothing sent, at review and at send, whatever the new owner's profile holds) has the wallet parse the amount and review the name, locks the name and amount while it reviews, shows the recipient, its change since the recipient last confirmed for the name (a changed one only after a confirmation dialog) and an unresolved earlier payment (send off; each shielded sync reviews again, and when it no longer reports the hold the review is dropped with a notice that this says nothing about the earlier payment, so another tip starts from a new review), and sends the reviewed recipient from the identity's own account or account 0 on the app-scoped ShieldedIdentityPaymentCoordinator, so a rotation or tab switch can neither drop the outcome nor send twice; a returned tip reads submitted, codes 18 and 20 read may have gone through with no resend, code 85 reads refused with nothing sent (TEST_PLAN DP-33 to DP-39, DP-33 to DP-38 mirroring Swift's, DP-39 the Kotlin-only rotation case; ShieldedTipPresentationTest). The identity balance is shown as the wallet reports it, never unknown as zero, with a prepare action while unverified; a busy read (code 87) keeps the last state and any other read failure is shown. Restart is required: the wallet refuses a repeat after a relaunch from its saved spend record (Rust should_refuse_a_tip_while_an_earlier_payment_to_its_recipient_is_unresolved), but no host test or emulator run kills the app with a tip unresolved (DP-35), and none of the rows has been driven on an emulator."
         }
       },
       "verification": [
@@ -4782,8 +4782,72 @@
           "host": "shared",
           "kind": "unit",
           "file": "packages/rs-platform-wallet/src/wallet/shielded/tip_payment_tests.rs",
-          "id": "should_refuse_a_tip_while_an_earlier_payment_to_its_recipient_is_unresolved",
-          "command": "cargo test -p platform-wallet --features shielded --lib should_refuse_a_tip_while_an_earlier_payment_to_its_recipient_is_unresolved",
+          "id": "should_parse_exact_tip_amounts_and_refuse_ambiguous_input",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::tip_payment_tests::should_parse_exact_tip_amounts_and_refuse_ambiguous_input",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/tip_payment_tests.rs",
+          "id": "should_tell_a_new_an_unchanged_and_a_changed_recipient",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::tip_payment_tests::should_tell_a_new_an_unchanged_and_a_changed_recipient",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/tip_payment_tests.rs",
+          "id": "should_key_confirmed_recipients_by_the_resolved_dpns_label",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::tip_payment_tests::should_key_confirmed_recipients_by_the_resolved_dpns_label",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/tip_payment_tests.rs",
+          "id": "should_count_an_unresolved_payment_to_the_address_last_confirmed_for_the_name",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::tip_payment_tests::should_count_an_unresolved_payment_to_the_address_last_confirmed_for_the_name",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/tip_payment_tests.rs",
+          "id": "should_read_whom_an_unresolved_transfer_pays_from_its_saved_transition",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::tip_payment_tests::should_read_whom_an_unresolved_transfer_pays_from_its_saved_transition",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/tip_payment_tests.rs",
+          "id": "should_stop_counting_a_transfer_released_as_unable_to_execute",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::tip_payment_tests::should_stop_counting_a_transfer_released_as_unable_to_execute",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/tip_payment_tests.rs",
+          "id": "should_fail_closed_when_a_saved_transfer_does_not_say_whom_it_pays",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::tip_payment_tests::should_fail_closed_when_a_saved_transfer_does_not_say_whom_it_pays",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/tip_payment_tests.rs",
+          "id": "should_keep_confirmed_recipients_across_a_restart_and_a_clear_until_the_wallet_is_removed",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::tip_payment_tests::should_keep_confirmed_recipients_across_a_restart_and_a_clear_until_the_wallet_is_removed",
+          "covers_restart": true
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/tip_payment_tests.rs",
+          "id": "should_admit_one_tip_at_a_time_and_only_on_its_own_wallet",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::tip_payment_tests::should_admit_one_tip_at_a_time_and_only_on_its_own_wallet",
           "covers_restart": false
         },
         {
@@ -4791,15 +4855,55 @@
           "kind": "unit",
           "file": "packages/rs-platform-wallet/src/wallet/shielded/tip_payment_tests.rs",
           "id": "should_pay_an_identitys_tip_from_the_account_the_seed_proves",
-          "command": "cargo test -p platform-wallet --features shielded --lib should_pay_an_identitys_tip_from_the_account_the_seed_proves",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::tip_payment_tests::should_pay_an_identitys_tip_from_the_account_the_seed_proves",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/tip_payment_tests.rs",
+          "id": "should_refuse_a_tip_while_an_earlier_payment_to_its_recipient_is_unresolved",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::tip_payment_tests::should_refuse_a_tip_while_an_earlier_payment_to_its_recipient_is_unresolved",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/tip_payment_tests.rs",
+          "id": "should_report_an_identitys_shielded_balance_only_once_it_is_known",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::tip_payment_tests::should_report_an_identitys_shielded_balance_only_once_it_is_known",
           "covers_restart": false
         },
         {
           "host": "shared",
           "kind": "unit",
           "file": "packages/rs-platform-wallet-ffi/src/shielded_tip.rs",
-          "id": "should_report_a_tip_send_outcome_by_its_own_code",
-          "command": "cargo test -p platform-wallet-ffi --features shielded --lib should_report_a_tip_send_outcome_by_its_own_code",
+          "id": "should_parse_a_tip_amount_through_the_c_function",
+          "command": "cargo test -p platform-wallet-ffi --features shielded --lib shielded_tip",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/shielded_tip.rs",
+          "id": "should_refuse_a_tip_amount_and_leave_the_output_zero",
+          "command": "cargo test -p platform-wallet-ffi --features shielded --lib shielded_tip",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/shielded_tip.rs",
+          "id": "should_report_null_pointers_and_bad_utf8_when_sending_a_tip",
+          "command": "cargo test -p platform-wallet-ffi --features shielded --lib shielded_tip",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/shielded_tip.rs",
+          "id": "should_zero_the_identity_balance_and_report_null_pointers",
+          "command": "cargo test -p platform-wallet-ffi --features shielded --lib shielded_tip",
           "covers_restart": false
         },
         {
@@ -4807,7 +4911,225 @@
           "kind": "unit",
           "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ShieldedTipDecodingTests.swift",
           "id": "testShouldExposeThePreviousRecipientOnlyWhenTheRecipientChanged",
-          "command": "swift test --package-path packages/swift-sdk --filter ShieldedTipDecodingTests",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/ShieldedTipDecodingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ShieldedTipDecodingTests.swift",
+          "id": "testShouldDecodeEachIdentityBalanceState",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/ShieldedTipDecodingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ShieldedTipDecodingTests.swift",
+          "id": "testShouldRefuseTextThatCannotCrossAsACString",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/ShieldedTipDecodingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
+          "id": "testShouldNeverOfferAResendAfterAnUnconfirmedShieldedSpend",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
+          "id": "testShouldNeverOfferAResendAfterAnUnconfirmedBroadcast",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
+          "id": "testShouldOfferOnlyASyncAfterAnEarlierTipIsPending",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
+          "id": "testShouldShowAMissingIdentityAsNotSent",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
+          "id": "testShouldShowARecipientThatChangedSinceTheReviewAsNotSent",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
+          "id": "testShouldShowAnyOtherErrorAsNotSentWithItsMessage",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
+          "id": "testShouldSendTheReviewedRecipientAmountAndMemoFromTheReview",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
+          "id": "testShouldWarnOfAChangedRecipientAndShowThePreviousOne",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
+          "id": "testShouldKeepSendOffWhileTheReviewIsUnresolved",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
+          "id": "testShouldShowTheWalletsReasonForARefusedAmount",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
+          "id": "testShouldShowEachIdentityBalanceState",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
+          "id": "testShouldKeepTheLastBalanceAndReadAgainWhileTheStoreIsBusy",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
+          "id": "testShouldKeepTheInputsAndOfferNoReviewAfterAnEarlierTipIsPending",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
+          "id": "testShouldShowAWalletOperationBalanceErrorAsAFailureWithoutRetrying",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
+          "id": "testShouldIgnoreABalanceReadThatFinishesAfterANewerOne",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
+          "id": "testShouldKeepPrepareOffAfterASuccessfulPrepareUntilAReadThatIsNotBusy",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
+          "id": "testShouldPassTheContactsIdentityIdToTheReviewAndTheSend",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
+          "id": "testShouldExplainANameThatMovedAwayFromTheContactWhenReviewing",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
+          "id": "testShouldExplainANameThatMovedAwayFromTheContactWhenSending",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DP-33",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DP-34",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DP-35",
+          "covers_restart": true
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DP-36",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DP-37",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DP-38",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/ShieldedTipTest.kt",
+          "id": "shouldReadANewRecipient",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*ShieldedTipTest*'",
           "covers_restart": false
         },
         {
@@ -4815,7 +5137,23 @@
           "kind": "unit",
           "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/ShieldedTipTest.kt",
           "id": "shouldReadAChangedRecipientWithThePreviousOne",
-          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*ShieldedTipTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/ShieldedTipTest.kt",
+          "id": "shouldReadTheUnresolvedFlagForEveryChange",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*ShieldedTipTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/ShieldedTipTest.kt",
+          "id": "shouldRefuseAReviewItCannotReadExactly",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*ShieldedTipTest*'",
           "covers_restart": false
         },
         {
