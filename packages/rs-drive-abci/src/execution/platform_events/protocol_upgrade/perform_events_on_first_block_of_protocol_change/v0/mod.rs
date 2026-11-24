@@ -4724,10 +4724,19 @@ mod tests {
             }
         }
 
+        // Through the dispatcher a block runs on the first block of a version, so the test
+        // fails if the ladder stops reaching the rung for 16.
         let txn_b = platform_b.drive.grove.start_transaction();
         platform_b
-            .transition_to_version_16(&BlockInfo::default(), &txn_b, platform_version_16)
-            .expect("upgrade: transition_to_version_16 should succeed");
+            .perform_events_on_first_block_of_protocol_change(
+                &platform_b.state.load(),
+                &mut PlatformState::clone(&platform_b.state.load()),
+                &BlockInfo::default(),
+                &txn_b,
+                15,
+                platform_version_16,
+            )
+            .expect("upgrade: the protocol change from 15 to 16 should succeed");
 
         let roots = [
             RootTree::Tokens as u8,
@@ -4852,8 +4861,15 @@ mod tests {
         );
 
         platform
-            .transition_to_version_16(&BlockInfo::default(), &transaction, platform_version)
-            .expect("expected the transition to succeed");
+            .perform_events_on_first_block_of_protocol_change(
+                &platform.state.load(),
+                &mut PlatformState::clone(&platform.state.load()),
+                &BlockInfo::default(),
+                &transaction,
+                15,
+                platform_version,
+            )
+            .expect("expected the protocol change from 15 to 16 to succeed");
 
         let stored = platform
             .drive

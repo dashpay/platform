@@ -39,8 +39,8 @@ mod dpns_tests {
             // DPNS contract's node is billed fewer bytes to reach (-287_760). The decision
             // proposals contract adds a third at protocol 15, which reshapes it back to as
             // many bytes as with the app-connect contract alone (+287_760, 95_920 a create).
-            // The token market contract adds a fourth at protocol 16, and the DPNS node is
-            // billed more bytes to reach again (-150_000).
+            // The token market contract adds a fourth at protocol 16, which reshapes it so the
+            // DPNS node is billed fewer bytes to reach (-150_000).
             5_899_360,
         )
         .await;

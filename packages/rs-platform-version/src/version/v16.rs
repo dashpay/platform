@@ -15,11 +15,11 @@ pub const PROTOCOL_VERSION_16: ProtocolVersion = 16;
 ///
 /// v16 hosts these consensus changes:
 ///
-/// 1. **The token marketplace**: holders of a tradeable token
-///    (`marketplaceRules.tradeMode` `Tradeable`) sell it to each other through escrowed
-///    listings and offers. The marketplace starts with this version
-///    (`TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION`); protocol v15 and earlier hold none of
-///    it (v15 note 17).
+/// 1. **Token marketplace state**: the token marketplace starts with this version
+///    (`TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION`). This version admits tradeable tokens
+///    (`marketplaceRules.tradeMode` `Tradeable`) and creates the escrow trees and the token
+///    market contract that listings and offers will use; the transitions that place and fill
+///    orders come in follow-ups. Protocol v15 and earlier hold none of it (v15 note 17).
 ///    - A token configuration, or a configuration update, that makes a token tradeable is
 ///      admitted; before this version it is refused unpaid as not active.
 ///    - `create_initial_state_structure` 5 (`DRIVE_VERSION_V11`) creates the two escrow trees at
