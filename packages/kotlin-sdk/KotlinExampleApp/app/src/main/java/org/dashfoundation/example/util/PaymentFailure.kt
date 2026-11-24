@@ -104,6 +104,16 @@ data class PaymentFailure(
     fun permitsRestart(resuming: AssetLockBuiltOutPoint?): Boolean =
         !holdsSlot || (heldLock != null && resuming == heldLock)
 
+    /**
+     * Whether the failure may have left the wallet with no lock to resume
+     * ([holdsSlot] without [heldLock]), so the user releases its slot once
+     * they confirmed the original payment in the history. Never released
+     * automatically: only the history shows whether the payment went
+     * through. ← Swift `PaymentFailure.releasableAfterReconciliation`.
+     */
+    val releasableAfterReconciliation: Boolean
+        get() = holdsSlot && heldLock == null
+
     companion object {
         /**
          * The failure [error] stands for, with its display text as the detail.

@@ -119,13 +119,33 @@ class RegistrationCoordinator(
      * restart only on a slot it still holds, so dropping a failure that may
      * have left, holds a lock, or has no class would let a fresh
      * registration pay again on the same index. Such a slot stays until its
-     * lock is resumed or the app restarts. Returns whether the controller
-     * was dropped.
+     * lock is resumed, the user releases it after reconciling ([release]),
+     * or the app restarts. Returns whether the controller was dropped.
      */
     fun dismiss(walletId: ByteArray, identityIndex: Int): Boolean {
         val key = SlotKey(walletId.toHex(), identityIndex)
         val phase = _controllers.value[key]?.phase?.value
         if (phase is IdentityRegistrationController.Phase.Failed && phase.failure.holdsSlot) return false
+        _controllers.update { it - key }
+        return true
+    }
+
+    /**
+     * The exit of a hold [dismiss] refuses, once the user reconciled the
+     * original payment from the history: drops a [Phase.Failed] controller
+     * only when its failure holds the slot without a held lock
+     * (`PaymentFailure.releasableAfterReconciliation`). A held lock is
+     * resumed instead. Returns whether the controller was dropped.
+     * ← Swift `release`.
+     */
+    fun release(walletId: ByteArray, identityIndex: Int): Boolean {
+        val key = SlotKey(walletId.toHex(), identityIndex)
+        val phase = _controllers.value[key]?.phase?.value
+        if (phase !is IdentityRegistrationController.Phase.Failed ||
+            !phase.failure.releasableAfterReconciliation
+        ) {
+            return false
+        }
         _controllers.update { it - key }
         return true
     }

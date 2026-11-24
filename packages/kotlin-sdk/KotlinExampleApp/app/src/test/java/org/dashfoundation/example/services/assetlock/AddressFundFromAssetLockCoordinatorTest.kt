@@ -10,6 +10,7 @@ import kotlinx.coroutines.test.runTest
 import org.dashfoundation.example.services.assetlock.AddressFundFromAssetLockController.Phase
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.dashfoundation.dashsdk.errors.DashSdkError
@@ -250,6 +251,40 @@ class AddressFundFromAssetLockCoordinatorTest {
             advanceUntilIdle()
             assertEquals("a fresh funding runs only after a released slot", dismissable, ran)
             if (!dismissable) assertSame(controller, again)
+        }
+    }
+
+    /**
+     * Release drops a failed controller only when its failure holds the slot
+     * without a lock (may have left, or no class), after which a fresh
+     * payment runs; it refuses a held lock (resumed instead) and a NOT_SENT
+     * failure, keeping the controller (← Swift
+     * `testCoordinatorsReleaseOnlyAHoldWithoutALock`).
+     */
+    @Test
+    fun `release removes a failed controller only when it holds its slot without a lock`() = runTest {
+        val coordinator = coordinator()
+        listOf<Pair<Throwable, Boolean>>(
+            walletError(delivery = 1, retryable = true) to false,
+            walletError(delivery = 3, retryable = false, held = heldRaw) to false,
+            walletError(delivery = 2, retryable = false) to true,
+            RuntimeException("unclassified") to true,
+        ).forEachIndexed { index, (error, releasable) ->
+            val recipient = ByteArray(20) { index.toByte() }
+            val controller = coordinator.startFunding(walletA, 0, recipient, 0) { throw error }
+            advanceUntilIdle()
+            assertTrue(controller.phase.value is Phase.Failed)
+
+            assertEquals(error.toString(), releasable, coordinator.release(walletA, 0, recipient))
+            if (!releasable) {
+                assertSame(controller, coordinator.controller(walletA, 0, recipient))
+                return@forEachIndexed
+            }
+            assertNull(coordinator.controller(walletA, 0, recipient))
+            var ran = false
+            coordinator.startFunding(walletA, 0, recipient, 0) { ran = true; 1L }
+            advanceUntilIdle()
+            assertTrue("a fresh funding runs after a release", ran)
         }
     }
 

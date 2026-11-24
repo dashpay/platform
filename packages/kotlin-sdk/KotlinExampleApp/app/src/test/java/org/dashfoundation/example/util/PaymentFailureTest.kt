@@ -104,6 +104,27 @@ class PaymentFailureTest {
         }
     }
 
+    /**
+     * Only a hold without a lock to resume (MAYBE_SENT, no class) is released
+     * after the user reconciled it; a held lock is resumed and a NOT_SENT
+     * failure never held its slot (← Swift
+     * `testShouldReleaseAfterReconciliationOnlyAHoldWithoutALock`).
+     */
+    @Test
+    fun shouldReleaseAfterReconciliationOnlyAHoldWithoutALock() {
+        listOf<Pair<Throwable, Boolean>>(
+            walletError(6, 1, true) to false,
+            walletError(6, 1, false) to false,
+            walletError(6, 3, false, heldRaw) to false,
+            walletError(6, 2, false) to true,
+            walletError(6, 4, false) to true,
+            RuntimeException("unclassified") to true,
+        ).forEach { (error, releasable) ->
+            assertEquals(error.toString(), releasable, PaymentFailure.of(error).releasableAfterReconciliation)
+            assertEquals(releasable, PaymentFailure.of(error, invitationVoucher = true).releasableAfterReconciliation)
+        }
+    }
+
     @Test
     fun shouldRestartOnlyAsTheClassAllows() {
         // Nothing left the wallet: any new request, retryable or not.
