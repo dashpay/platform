@@ -321,7 +321,8 @@ class WalletManagerRoundTripTest {
      * the coordinator, not the keys Rust holds for it. Bound again with the
      * list read back, the wallet has the accounts it had before.
      *
-     * Offline: nothing here contacts the network.
+     * Starts no shielded sync. It uses this class's SDK fixture like the
+     * tests around it.
      */
     @Test
     fun shieldedOrdinaryAccountsOutliveAClearAndBindAgain() = runBlocking {
@@ -365,13 +366,15 @@ class WalletManagerRoundTripTest {
      * default account 0 only (dashpay/platform#5989).
      *
      * Two things are checked for the other wallet: that it is registered
-     * again (Rust announces its balance state as no longer unbound; the
-     * accounts alone would not show that, since the keys outlive the reset),
-     * and that it has the accounts it had.
+     * again with its ledger restored (Rust announces its balance state as
+     * ready; the keys alone would not show that, since they outlive the
+     * reset), and that the accounts of that registration are the ones it
+     * had.
      *
-     * Offline: the reset is run directly and then the service's fleet pass,
-     * which is what a Clear runs between its Room wipe and its sync restart.
-     * Nothing here starts the sync loop, so nothing contacts the network.
+     * The reset is run directly and then the service's fleet pass, which is
+     * what a Clear runs between its Room wipe and its sync restart, so no
+     * shielded sync loop is started. It uses this class's SDK fixture like
+     * the tests around it.
      */
     @Test
     fun shieldedClearRegistersAnotherWalletAgainWithItsOwnAccounts() = runBlocking {
@@ -421,17 +424,19 @@ class WalletManagerRoundTripTest {
 
                 assertTrue(service.registerOtherWalletsAgain(manager, storePath))
 
-                withTimeout(stateWaitMs) {
+                // Ready, not just no longer unbound: a registration whose
+                // ledger failed to restore reads as incomplete.
+                val rebound = withTimeout(stateWaitMs) {
                     manager.shieldedBalances.first {
-                        val state = it[otherKey]?.state
-                        state != null && state != ShieldedLocalBalanceState.Unbound
+                        it[otherKey]?.state is ShieldedLocalBalanceState.Ready
                     }
-                }
+                }.getValue(otherKey).state as ShieldedLocalBalanceState.Ready
                 assertEquals(
-                    "the other wallet is registered with the accounts it had",
-                    listOf(1, 2),
-                    manager.shieldedOrdinaryAccounts(other),
+                    "the coordinator registers the other wallet with the accounts it had",
+                    setOf(1, 2),
+                    rebound.snapshot.accounts.keys,
                 )
+                assertEquals(listOf(1, 2), manager.shieldedOrdinaryAccounts(other))
             }
         } finally {
             service.close()
