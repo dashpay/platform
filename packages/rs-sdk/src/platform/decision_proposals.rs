@@ -1189,7 +1189,9 @@ mod tests {
     }
 
     /// An SDK below protocol version 15 whose request for the network's version fails returns
-    /// that failure, not a claim that the network has no decision proposals.
+    /// that failure, not a claim that the network has no decision proposals. Needs `mocks`:
+    /// the failure is the mock client's.
+    #[cfg(feature = "mocks")]
     #[tokio::test]
     async fn should_return_why_the_network_version_could_not_be_learned() {
         let sdk = crate::SdkBuilder::new_mock()
