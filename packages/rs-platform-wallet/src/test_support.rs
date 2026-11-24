@@ -1025,7 +1025,10 @@ pub async fn test_platform_wallet_manager_with<P>(
 where
     P: crate::changeset::PlatformWalletPersistence + 'static,
 {
-    let sdk = dash_sdk::SdkBuilder::new_mock().with_network(Network::Testnet).build().expect("mock sdk");
+    let sdk = dash_sdk::SdkBuilder::new_mock()
+        .with_network(Network::Testnet)
+        .build()
+        .expect("mock sdk");
     platform_wallet_manager_over(sdk, persister).await
 }
 
