@@ -869,6 +869,12 @@ private fun PurchaseForm(
                     signingKeyId = TokenActionContext.SIGNING_KEY_ID,
                     signerHandle = signer,
                 )
+                // A purchase spends credits: say it went through before the
+                // form closes, as the shielded path does, so the buyer is
+                // not left guessing and buying again.
+                viewModel.showNoticeUntilDismissed(
+                    identityPurchaseMessage(TokenAmounts.format(amount, token.decimals), totalCost),
+                )
             }
         },
     ) {
@@ -937,16 +943,30 @@ private fun PurchaseForm(
     }
 
     viewModel.notice?.let { message ->
+        // The funding choice is locked while a purchase runs, so this is
+        // the source the shown purchase used.
         AlertDialog(
             onDismissRequest = { viewModel.dismissNotice() },
-            title = { Text("Shielded purchase") },
-            text = { Text(message, modifier = Modifier.testTag("tokenPurchase.shieldedOutcome")) },
+            title = { Text(if (isShielded) "Shielded purchase" else "Purchase complete") },
+            text = {
+                Text(
+                    message,
+                    modifier = Modifier.testTag(
+                        if (isShielded) "tokenPurchase.shieldedOutcome" else "tokenPurchase.outcome",
+                    ),
+                )
+            },
             confirmButton = {
                 TextButton(onClick = { viewModel.dismissNotice() }) { Text("OK") }
             },
         )
     }
 }
+
+/** What the buyer reads after Platform accepted an identity-funded purchase. */
+internal fun identityPurchaseMessage(amountText: String, totalCost: ULong): String =
+    "Bought $amountText for $totalCost credits from this identity's balance. " +
+        "Do not buy again unless you want more."
 
 /** The shielded account a purchase spends from, as on iOS. */
 private const val SHIELDED_PURCHASE_ACCOUNT = 0

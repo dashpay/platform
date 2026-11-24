@@ -13,7 +13,7 @@ use std::ffi::{c_char, c_void, CStr, CString};
 /// * `group_contract_position` - Position of the group in the contract
 /// * `status` - Action status (0=Pending, 1=Completed, 2=Expired)
 /// * `start_at_action_id` - Optional starting action ID (Base58-encoded)
-/// * `limit` - Maximum number of actions to return
+/// * `limit` - Maximum number of actions to return; 0 lets Platform use its default
 ///
 /// # Returns
 /// * JSON array of group actions or null if not found
@@ -142,7 +142,9 @@ fn get_group_actions(
             group_contract_position,
             status,
             start_at_action_id,
-            limit: Some(limit),
+            // 0 means "not set", as in the other query entry points: Platform
+            // refuses an explicit limit of 0.
+            limit: if limit == 0 { None } else { Some(limit) },
         };
 
         match GroupAction::fetch_many(&sdk, query).await {
@@ -150,34 +152,32 @@ fn get_group_actions(
                 if actions.is_empty() {
                     return Ok(None);
                 }
-                let actions_json: Vec<String> = actions
+                let actions_json = actions
                     .iter()
                     .map(|(id, action_opt)| {
-                        if let Some(action) = action_opt {
-                            // Manually create JSON for GroupAction
-                            let event_str = format!("{:?}", action.event()); // Using Debug format for now
-                            let action_json = format!(
-                                r#"{{"contract_id":"{}","proposer_id":"{}","token_contract_position":{},"event":"{}"}}"#,
-                                bs58::encode(action.contract_id().as_bytes()).into_string(),
-                                bs58::encode(action.proposer_id().as_bytes()).into_string(),
-                                action.token_contract_position(),
-                                event_str
-                            );
-                            format!(
-                                r#"{{"id":"{}","action":{}}}"#,
-                                bs58::encode(id.as_bytes()).into_string(),
-                                action_json
-                            )
-                        } else {
-                            format!(
-                                r#"{{"id":"{}","action":null}}"#,
-                                bs58::encode(id.as_bytes()).into_string()
-                            )
-                        }
+                        let action_json = match action_opt {
+                            Some(action) => {
+                                // The event in its serde wire shape, e.g.
+                                // {"$kind":"tokenEvent","$type":"mint",...}.
+                                let event = serde_json::to_value(action.event())
+                                    .map_err(|e| format!("Failed to encode group action event: {}", e))?;
+                                serde_json::json!({
+                                    "contract_id": bs58::encode(action.contract_id().as_bytes()).into_string(),
+                                    "proposer_id": bs58::encode(action.proposer_id().as_bytes()).into_string(),
+                                    "token_contract_position": action.token_contract_position(),
+                                    "event": event,
+                                })
+                            }
+                            None => serde_json::Value::Null,
+                        };
+                        Ok(serde_json::json!({
+                            "id": bs58::encode(id.as_bytes()).into_string(),
+                            "action": action_json,
+                        }))
                     })
-                    .collect();
+                    .collect::<Result<Vec<_>, String>>()?;
 
-                Ok(Some(format!("[{}]", actions_json.join(","))))
+                Ok(Some(serde_json::Value::Array(actions_json).to_string()))
             }
             Err(e) => Err(format!("Failed to fetch group actions: {}", e)),
         }

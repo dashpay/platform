@@ -146,4 +146,12 @@ class ShieldedTokenPurchaseTest {
         assertNotNull(supportingText(KIND_TOKEN_PURCHASE, 1))
         assertEquals("another kind keeps its bare status", "Pending", supportingText(3, 0))
     }
+
+    @Test
+    fun `should confirm an identity-funded purchase with the amount and price`() {
+        // The QA tester bought three times because the form closed silently.
+        val message = identityPurchaseMessage("2.5", totalCost = 1_500_000uL)
+        assertTrue(message.startsWith("Bought 2.5 for 1500000 credits"))
+        assertTrue(message.contains("Do not buy again"))
+    }
 }

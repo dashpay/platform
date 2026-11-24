@@ -253,7 +253,7 @@ All token actions support single-signer **and** group (propose / co-sign) modes 
 |---|---|---|---|---|---|---|
 | TOK-01 | View token balances / details / search | Platform | Common | ✅ | | `TokenDetailsScreen`, `TokensScreen`, `TokenSearchScreen`. |
 | TOK-02 | Transfer token | Platform | Common | ✅ | | `TokenActionScreens(transfer)` → `wallet.tokenTransfer`. |
-| TOK-03 | Direct purchase token | Platform | Common | ✅ | | `TokenActionScreens(directPurchase)` → `wallet.tokenPurchase`. |
+| TOK-03 | Direct purchase token | Platform | Common | ✅ | | `TokenActionScreens(directPurchase)` → `wallet.tokenPurchase`. After Platform accepts the purchase the form shows **Purchase complete** (`tokenPurchase.outcome`) with the amount bought and the credits paid, and closes when the buyer taps OK, so a buyer is not left wondering whether to buy again. Swift closes the form without a message. *`identityPurchaseMessage` in `ShieldedTokenPurchaseTest`.* |
 | TOK-04 | Token queries (statuses / prices / contract info / supply / distributions) | Platform | Common | ✅ | | `QueriesListScreen` token category → `dash_sdk_token_get_*`. |
 | TOK-05 | Mint (issuance) | Platform | Thorough | ✅ | | `TokenActionScreens(mint)` → `wallet.tokenMint`. |
 | TOK-06 | Burn | Platform | Thorough | ✅ | | `TokenActionScreens(burn)` → `wallet.tokenBurn`. |
