@@ -383,6 +383,10 @@ final class ShieldedTipFlowTests: XCTestCase {
     }
 
     func testShouldNotStartASecondReviewOrSendWhileOneRuns() async {
+        // Each gate holds open only the one call the test starts on purpose
+        // (it is armed for it); any other call counts and returns at once,
+        // so a flow that admits a duplicate fails the count instead of
+        // hanging on a second continuation.
         let reviewGate = ReviewGate()
         let sendGate = ReviewGate()
         let flow = ShieldedTipFlow(
@@ -390,17 +394,16 @@ final class ShieldedTipFlowTests: XCTestCase {
             actions: ShieldedTipFlow.Actions(
                 parseAmount: { _ in 1 },
                 review: { [recipient, reviewGate] _, _ in
-                    reviewGate.calls += 1
-                    await withCheckedContinuation { reviewGate.pending = $0 }
+                    await reviewGate.enter()
                     return ShieldedTipReview(recipient: recipient, change: .new, unresolved: false)
                 },
                 send: { [sendGate] _ in
-                    sendGate.calls += 1
-                    await withCheckedContinuation { sendGate.pending = $0 }
+                    await sendGate.enter()
                 }
             )
         )
         flow.amountText = "1"
+        reviewGate.armed = true
 
         // While the review runs: no second review, no send, and the sheet
         // cannot be closed (`isBusy` disables Done and swipe-to-dismiss).
@@ -420,6 +423,7 @@ final class ShieldedTipFlowTests: XCTestCase {
 
         // While the send runs: inputs locked, nothing can be reviewed or
         // sent again, and the sheet cannot be closed.
+        sendGate.armed = true
         let sending = Task { await flow.send() }
         while sendGate.pending == nil { await Task.yield() }
         XCTAssertTrue(flow.isBusy)
@@ -608,6 +612,17 @@ final class ShieldedTipFlowTests: XCTestCase {
 @MainActor
 private final class ReviewGate {
     var pending: CheckedContinuation<Void, Never>?
-    /// How many times the gated action was called.
+    /// How many times `enter()` was called.
     var calls = 0
+    /// Whether the next `enter()` suspends until the test resumes it.
+    var armed = false
+
+    /// Count the call. Suspend it only when armed, which the gate then
+    /// disarms; every other call returns at once.
+    func enter() async {
+        calls += 1
+        guard armed else { return }
+        armed = false
+        await withCheckedContinuation { pending = $0 }
+    }
 }

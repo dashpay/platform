@@ -405,7 +405,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Essential | 22 | yes |
 | Common | 53 | yes |
 | Thorough | 57 | yes |
-| Uncommon | 62 | yes |
+| Uncommon | 66 | yes |
 | Manual | 2 (`CORE-08`, `DP-10`) | no — physical device |
 
 **By layer (automatable only):**
@@ -413,7 +413,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Layer | Count (approx.) |
 |---|---|
 | Core | 19 |
-| Platform | 117 |
+| Platform | 121 |
 | Cross | 20 |
 | Shielded | 37 |
 
