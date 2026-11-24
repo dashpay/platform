@@ -200,4 +200,22 @@ class ShieldedTipTest {
         assertTrue(recipient.address.contentEquals(ByteArray(43) { 2 }))
         assertNotEquals(ShieldedTipRecipient(ByteArray(32) { 1 }, ByteArray(43) { 3 }), recipient)
     }
+
+    /**
+     * A recipient, and a review that carries the previous one, print without
+     * the identity or the address.
+     */
+    @Test
+    fun aRecipientPrintsRedacted() {
+        val previous = ShieldedTipRecipient(ByteArray(32) { 0x1a }, ByteArray(43) { 0x2b })
+        val review = ShieldedTipReview(
+            recipient = ShieldedTipRecipient(ByteArray(32) { 0x3c }, ByteArray(43) { 0x4d }),
+            change = ShieldedTipRecipientChange.Changed(previous),
+            unresolved = false,
+        )
+        assertEquals("ShieldedTipRecipient(<redacted>)", previous.toString())
+        for (bytes in listOf("1a1a", "2b2b", "3c3c", "4d4d")) {
+            assertFalse(review.toString().contains(bytes))
+        }
+    }
 }

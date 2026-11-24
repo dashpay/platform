@@ -40,11 +40,12 @@ class ShieldedTipRecipient(
     override fun hashCode(): Int =
         31 * identityIdBytes.contentHashCode() + addressBytes.contentHashCode()
 
-    override fun toString(): String =
-        "ShieldedTipRecipient(identityId=${identityIdBytes.toHex()}, " +
-            "address=${addressBytes.toHex()})"
-
-    private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
+    /**
+     * Redacted: a review that changed carries the recipient this wallet
+     * confirmed before, and a log line must not tie the wallet to it. Read
+     * [identityId] and [address] to show or compare a recipient.
+     */
+    override fun toString(): String = "ShieldedTipRecipient(<redacted>)"
 }
 
 /**

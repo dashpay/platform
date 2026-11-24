@@ -175,7 +175,9 @@ extension PlatformWalletManager {
     ///   payment may be this same tip and may pay the recipient: a shielded
     ///   sync resolves it as executed or as unable to execute, and the
     ///   refusal ends either way. Send again only once it is known to have
-    ///   failed, never because the refusal ended.
+    ///   failed, never because the refusal ended; when the exact attempt
+    ///   cannot be identified, treat its outcome as unknown and do not send
+    ///   again.
     /// - `identityNotFound`: the wallet holds no identity `source` names.
     ///   Nothing sent.
     /// - Anything else: this call sent nothing.

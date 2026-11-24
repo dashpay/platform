@@ -601,6 +601,13 @@ class FfiSmokeTest {
         // A NUL beside a supplementary character, and an unpaired surrogate.
         assertEquals(1, code { FundingNative.parseShieldedTipAmount("\uD83D\uDE00\u00001") })
         assertEquals(1, code { FundingNative.parseShieldedTipAmount("1\uD83D") })
+        // A valid surrogate pair crosses intact; Rust refuses it as an amount.
+        val emoji = "\uD83D\uDE00"
+        val refusal = assertThrows(DashSDKException::class.java) {
+            FundingNative.parseShieldedTipAmount(emoji)
+        }
+        assertEquals(1000 + 2, refusal.code)
+        assertTrue(refusal.message?.contains(emoji) == true)
 
         assertEquals(1, code { FundingNative.reviewShieldedTip(1L, shortId, "alice") })
         assertEquals(1, code { FundingNative.reviewShieldedTip(1L, id, "ali\u0000ce") })

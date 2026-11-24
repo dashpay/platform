@@ -694,7 +694,11 @@ pay the recipient. A shielded sync resolves it as executed or as unable to
 execute, and the refusal ends either way, so do not send the tip again because
 the refusal ended or a new review says `unresolved == false`. Send it again
 only once the earlier payment is known to have failed: its shielded activity
-entry reads failed, not confirmed.
+entry reads failed, not confirmed. The send returns no id for that entry, and
+entries with the same account, recipient, amount and memo can have different
+outcomes, so an entry that merely looks like the payment is not that evidence.
+When the exact attempt cannot be identified, treat its outcome as unknown and
+do not send again.
 
 Any error other than these means the call sent nothing.
 
