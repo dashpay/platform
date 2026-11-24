@@ -124,6 +124,7 @@ fun SendShieldedTipScreen(
     var formError by remember { mutableStateOf<String?>(null) }
     var preparing by remember { mutableStateOf(false) }
     var checkStatus by remember { mutableStateOf<CheckNowStatus>(CheckNowStatus.Idle) }
+    var holdEnded by remember { mutableStateOf(false) }
 
     val paymentCoordinator = container.shieldedIdentityPaymentCoordinator
     val paymentStates by paymentCoordinator.states.collectAsStateWithLifecycle()
@@ -170,28 +171,41 @@ fun SendShieldedTipScreen(
         }
     }.collectAsStateWithLifecycle(initialValue = null)
 
-    fun review() {
+    // A review is for the draft it started from: the fields are locked while
+    // it runs, and a result for a draft that changed meanwhile is dropped.
+    // [recheck] is the automatic read again of a review that said an earlier
+    // payment is unresolved.
+    fun review(recheck: Boolean = false) {
         val m = manager ?: return
         val wid = walletId ?: return
         if (reviewing) return
+        val draft = ShieldedTipDraft(username, amountText)
         reviewing = true
         formError = null
+        if (!recheck) holdEnded = false
         scope.launch {
             try {
-                val credits = m.parseShieldedTipAmount(amountText)
-                val name = username
-                val tip = ReviewedShieldedTip(name, credits, m.reviewShieldedTip(wid, name))
-                if (tip.review.change is ShieldedTipRecipientChange.Changed) {
-                    reviewed = null
-                    changedReview = tip
-                } else {
-                    reviewed = tip
+                val credits = m.parseShieldedTipAmount(draft.amountText)
+                val tip = ReviewedShieldedTip(draft.username, credits, m.reviewShieldedTip(wid, draft.username))
+                when (val step = shieldedTipReviewStep(draft, ShieldedTipDraft(username, amountText), recheck, tip)) {
+                    ShieldedTipReviewStep.Discard -> Unit
+                    ShieldedTipReviewStep.HoldEnded -> {
+                        reviewed = null
+                        holdEnded = true
+                    }
+                    is ShieldedTipReviewStep.ConfirmChange -> {
+                        reviewed = null
+                        changedReview = step.tip
+                    }
+                    is ShieldedTipReviewStep.Show -> reviewed = step.tip
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                reviewed = null
-                formError = e.message ?: "Could not review the tip."
+                if (draft == ShieldedTipDraft(username, amountText)) {
+                    reviewed = null
+                    formError = e.message ?: "Could not review the tip."
+                }
             } finally {
                 reviewing = false
             }
@@ -199,9 +213,11 @@ fun SendShieldedTipScreen(
     }
 
     // While the review says an earlier payment is unresolved, each finished
-    // shielded sync asks the wallet again, so Send returns once it resolves.
+    // shielded sync asks the wallet again. When the hold ends the review is
+    // dropped with a notice, not turned into an enabled Send: the earlier
+    // payment may have executed, and another tip is a new payment.
     LaunchedEffect(syncPasses) {
-        if (reviewed?.review?.unresolved == true) review()
+        if (reviewed?.review?.unresolved == true) review(recheck = true)
     }
 
     fun syncNow() {
@@ -217,7 +233,7 @@ fun SendShieldedTipScreen(
                 CheckNowStatus.Failed(e.message ?: "unknown error")
             }
             balanceEpoch++
-            if (reviewed?.review?.unresolved == true) review()
+            if (reviewed?.review?.unresolved == true) review(recheck = true)
         }
     }
 
@@ -330,19 +346,19 @@ fun SendShieldedTipScreen(
             FormSection(title = "Tip") {
                 OutlinedTextField(
                     value = username,
-                    onValueChange = { username = it; reviewed = null },
+                    onValueChange = { username = it; reviewed = null; changedReview = null; holdEnded = false },
                     label = { Text("Username") },
                     singleLine = true,
                     readOnly = contactUsername != null,
-                    enabled = !sending,
+                    enabled = !sending && !reviewing,
                     modifier = Modifier.fillMaxWidth().testTag("dashpay.tip.username"),
                 )
                 OutlinedTextField(
                     value = amountText,
-                    onValueChange = { amountText = it; reviewed = null },
+                    onValueChange = { amountText = it; reviewed = null; changedReview = null; holdEnded = false },
                     label = { Text("Amount (DASH)") },
                     singleLine = true,
-                    enabled = !sending,
+                    enabled = !sending && !reviewing,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth().testTag("dashpay.tip.amount"),
                 )
@@ -407,6 +423,15 @@ fun SendShieldedTipScreen(
                     checkStatus = checkStatus,
                     onSyncNow = ::syncNow,
                     syncEnabled = !busy,
+                )
+            }
+
+            if (holdEnded) {
+                Text(
+                    ShieldedTipMessages.HOLD_ENDED,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.testTag("dashpay.tip.holdEnded"),
                 )
             }
 

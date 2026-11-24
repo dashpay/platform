@@ -51,6 +51,44 @@ internal data class ReviewedShieldedTip(
     val review: ShieldedTipReview,
 )
 
+/** The fields a review reads, as they were when it started. */
+internal data class ShieldedTipDraft(val username: String, val amountText: String)
+
+/** What the screen does with a review the wallet returned. */
+internal sealed interface ShieldedTipReviewStep {
+    /** The draft changed while the wallet reviewed it: drop the result. */
+    data object Discard : ShieldedTipReviewStep
+
+    /**
+     * A re-check of a review that said an earlier payment is unresolved found
+     * it resolved. The review is dropped, not turned into an enabled Send:
+     * the earlier payment may have executed, and another tip is a new one.
+     */
+    data object HoldEnded : ShieldedTipReviewStep
+
+    /** The recipient changed since the last confirmation: ask before showing it. */
+    data class ConfirmChange(val tip: ReviewedShieldedTip) : ShieldedTipReviewStep
+
+    data class Show(val tip: ReviewedShieldedTip) : ShieldedTipReviewStep
+}
+
+/**
+ * Route a review the wallet returned for [started], with the form now at
+ * [now]. [recheck] marks the automatic read again of a review that was
+ * unresolved.
+ */
+internal fun shieldedTipReviewStep(
+    started: ShieldedTipDraft,
+    now: ShieldedTipDraft,
+    recheck: Boolean,
+    tip: ReviewedShieldedTip,
+): ShieldedTipReviewStep = when {
+    started != now -> ShieldedTipReviewStep.Discard
+    recheck && !tip.review.unresolved -> ShieldedTipReviewStep.HoldEnded
+    tip.review.change is ShieldedTipRecipientChange.Changed -> ShieldedTipReviewStep.ConfirmChange(tip)
+    else -> ShieldedTipReviewStep.Show(tip)
+}
+
 /** Wording for a shielded tip. */
 internal object ShieldedTipMessages {
     const val SENDING =
@@ -58,14 +96,21 @@ internal object ShieldedTipMessages {
             "screen does not stop it, and its outcome is shown when you come back."
 
     const val PENDING =
-        "Nothing was sent. Another tip from this wallet is being sent, or an earlier " +
-            "payment to this recipient is not resolved yet. A shielded sync resolves it; " +
-            "then review the tip again."
+        "This attempt sent nothing. Another tip from this wallet is being sent, or an " +
+            "earlier payment to this recipient may still execute. A shielded sync resolves " +
+            "it either way, so the refusal ending does not mean that payment failed: check " +
+            "Shielded Activity before you tip again."
 
     const val UNRESOLVED =
-        "An earlier payment from this wallet to this recipient is not resolved yet, so " +
+        "An earlier payment from this wallet to this recipient may still execute, so " +
             "the wallet refuses another one. It clears once a shielded sync sees that " +
             "payment executed or proves it cannot execute."
+
+    /** Shown when a re-check finds the hold of [UNRESOLVED] ended; the review is dropped. */
+    const val HOLD_ENDED =
+        "The earlier payment to this recipient is resolved: it either executed or can no " +
+            "longer execute. Check Shielded Activity to see which before you tip again. " +
+            "Reviewing again starts a new tip, which is a new payment."
 
     const val IDENTITY_NOT_HELD =
         "This wallet does not hold the paying identity. Nothing was sent."
@@ -73,8 +118,9 @@ internal object ShieldedTipMessages {
     const val RECIPIENT_CHANGED_TITLE = "Tip recipient changed"
 
     const val RECIPIENT_CHANGED =
-        "This username now pays a different identity or shielded address than the one " +
-            "this wallet last tipped. Check the change with the recipient before you send."
+        "This username now pays a different identity or shielded address than the " +
+            "recipient this wallet last confirmed for it. Check the change with the " +
+            "recipient before you send."
 
     const val NO_USERNAME =
         "No DashPay username is known for this contact. A tip is paid to the shielded " +
@@ -93,15 +139,22 @@ internal object ShieldedTipMessages {
     fun mayHaveGoneThroughText(credits: Long): String =
         "The tip of ${formatCreditsExact(credits)} may have gone through. Do not send it " +
             "again. A shielded sync resolves it; until then the wallet refuses another tip " +
-            "to this recipient."
+            "to this recipient, and the refusal ending does not mean the tip failed."
 
-    /** The review line for how the recipient compares with the one last tipped. */
+    /**
+     * The review line for how the recipient compares with the one this
+     * wallet last confirmed for the name. A recipient is confirmed when a
+     * send to it is admitted, before anything is built, so none of these
+     * says a tip was paid.
+     */
     fun changeText(change: ShieldedTipRecipientChange): String = when (change) {
-        ShieldedTipRecipientChange.New -> "First tip from this wallet to this username."
-        ShieldedTipRecipientChange.Unchanged -> "Same recipient as your last tip to this username."
+        ShieldedTipRecipientChange.New ->
+            "No recipient was confirmed for this username from this wallet before."
+        ShieldedTipRecipientChange.Unchanged ->
+            "Same recipient as the one last confirmed for this username."
         is ShieldedTipRecipientChange.Changed ->
-            "Changed since your last tip to this username. Previously: identity " +
-                "${change.previous.identityId.toBase58Short()}."
+            "Differs from the recipient last confirmed for this username. Previously: " +
+                "identity ${change.previous.identityId.toBase58Short()}."
     }
 
     /**

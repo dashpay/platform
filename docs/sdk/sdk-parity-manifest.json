@@ -4524,7 +4524,7 @@
           "sdk": "partial",
           "example_app": "partial",
           "restart": "required",
-          "reason": "PlatformWalletManager.parseShieldedTipAmount / reviewShieldedTip / sendShieldedTip / shieldedIdentityBalance bridge the FFI through four FundingNative calls; ShieldedTipTest pins the review and balance decoding, and the send keeps the result of a native call that completed after its caller was cancelled. Partial because no instrumented test loads the new JNI symbols yet. KotlinExampleApp's SendShieldedTipScreen (from the DashPay tab, and from a contact with its DPNS name filled in) has the wallet parse the amount and review the name, shows the recipient, its change since the last tip (a changed one only after a confirmation dialog) and an unresolved earlier payment (send off, a shielded sync reviews again), and sends the reviewed recipient from the identity's own account or account 0 on the app-scoped ShieldedIdentityPaymentCoordinator, so a rotation or tab switch can neither drop the outcome nor send twice; a returned tip reads submitted, codes 18 and 20 read may have gone through with no resend, code 84 reads refused with nothing sent (TEST_PLAN DP-33 to DP-38; ShieldedTipPresentationTest). The identity balance is shown as the wallet reports it, never unknown as zero, with a prepare action while unverified. Restart is required: the wallet refuses a repeat after a relaunch from its saved spend record (Rust should_refuse_a_tip_while_an_earlier_payment_to_its_recipient_is_unresolved), but no host test or emulator run kills the app with a tip unresolved (DP-36), and none of the rows has been driven on an emulator."
+          "reason": "PlatformWalletManager.parseShieldedTipAmount / reviewShieldedTip / sendShieldedTip / shieldedIdentityBalance bridge the FFI through four FundingNative calls; ShieldedTipTest pins the review and balance decoding, FfiSmokeTest calls the four natives through the loaded library, and the send keeps the result of a native call that completed after its caller was cancelled. Partial because no funded tip has been sent through the bridge. KotlinExampleApp's SendShieldedTipScreen (from the DashPay tab, and from a contact with its DPNS name filled in) has the wallet parse the amount and review the name, locks the name and amount while it reviews, shows the recipient, its change since the recipient last confirmed for the name (a changed one only after a confirmation dialog) and an unresolved earlier payment (send off; each shielded sync reviews again, and when the hold ends the review is dropped with a notice that the earlier payment either executed or can no longer execute, so another tip starts from a new review), and sends the reviewed recipient from the identity's own account or account 0 on the app-scoped ShieldedIdentityPaymentCoordinator, so a rotation or tab switch can neither drop the outcome nor send twice; a returned tip reads submitted, codes 18 and 20 read may have gone through with no resend, code 84 reads refused with nothing sent (TEST_PLAN DP-33 to DP-38; ShieldedTipPresentationTest). The identity balance is shown as the wallet reports it, never unknown as zero, with a prepare action while unverified. Restart is required: the wallet refuses a repeat after a relaunch from its saved spend record (Rust should_refuse_a_tip_while_an_earlier_payment_to_its_recipient_is_unresolved), but no host test or emulator run kills the app with a tip unresolved (DP-36), and none of the rows has been driven on an emulator."
         }
       },
       "verification": [
@@ -4574,6 +4574,14 @@
           "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/dashpay/ShieldedTipPresentationTest.kt",
           "id": "should refuse a second tip from a recreated screen while the first is proving",
           "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "shieldedTipSymbolsBindAndRejectInvalidInput",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
           "covers_restart": false
         },
         {

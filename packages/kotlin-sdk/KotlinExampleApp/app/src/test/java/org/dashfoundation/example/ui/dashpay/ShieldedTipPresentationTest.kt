@@ -10,6 +10,7 @@ import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.wallet.ShieldedIdentityBalance
 import org.dashfoundation.dashsdk.wallet.ShieldedTipRecipient
 import org.dashfoundation.dashsdk.wallet.ShieldedTipRecipientChange
+import org.dashfoundation.dashsdk.wallet.ShieldedTipReview
 import org.dashfoundation.dashsdk.wallet.ShieldedTipSource
 import org.dashfoundation.example.services.shielded.ShieldedIdentityPaymentCoordinator
 import org.dashfoundation.example.services.shielded.ShieldedIdentityPaymentCoordinator.Key
@@ -59,7 +60,10 @@ class ShieldedTipPresentationTest {
     fun `should word a tip the wallet refused as pending, with nothing sent`() {
         val outcome = ShieldedTipMessages.outcome(DashSdkError.PlatformWallet.ShieldedTipPending("held"))
         assertEquals(ShieldedPaymentOutcome.Failed(ShieldedTipMessages.PENDING), outcome)
-        assertTrue(ShieldedTipMessages.PENDING.startsWith("Nothing was sent"))
+        assertTrue(ShieldedTipMessages.PENDING.startsWith("This attempt sent nothing"))
+        // The refusal ends when the earlier payment executed too: never an invitation to resend.
+        assertFalse(ShieldedTipMessages.PENDING.contains("review the tip again"))
+        assertTrue(ShieldedTipMessages.PENDING.contains("does not mean that payment failed"))
     }
 
     @Test
@@ -111,12 +115,54 @@ class ShieldedTipPresentationTest {
     }
 
     @Test
-    fun `should word each recipient change the wallet reports`() {
-        assertTrue(ShieldedTipMessages.changeText(ShieldedTipRecipientChange.New).contains("First tip"))
-        assertTrue(ShieldedTipMessages.changeText(ShieldedTipRecipientChange.Unchanged).contains("Same recipient"))
-        val changed = ShieldedTipMessages.changeText(ShieldedTipRecipientChange.Changed(recipient))
-        assertTrue(changed.contains("Changed"))
-        assertTrue(changed.contains("Previously"))
+    fun `should word each recipient change as a confirmation, never as a paid tip`() {
+        val texts = listOf(
+            ShieldedTipMessages.changeText(ShieldedTipRecipientChange.New),
+            ShieldedTipMessages.changeText(ShieldedTipRecipientChange.Unchanged),
+            ShieldedTipMessages.changeText(ShieldedTipRecipientChange.Changed(recipient)),
+        )
+        for (text in texts) {
+            assertTrue(text, text.contains("confirmed"))
+            assertFalse(text, text.contains("last tip"))
+        }
+        assertTrue(texts[2].contains("Previously"))
+        assertTrue(ShieldedTipMessages.RECIPIENT_CHANGED.contains("last confirmed"))
+    }
+
+    private fun reviewed(unresolved: Boolean, change: ShieldedTipRecipientChange = ShieldedTipRecipientChange.Unchanged) =
+        ReviewedShieldedTip("alice", 5, ShieldedTipReview(recipient, change, unresolved))
+
+    @Test
+    fun `should drop a review whose draft was edited while the wallet looked it up`() {
+        val started = ShieldedTipDraft("alice", "1")
+        for (now in listOf(ShieldedTipDraft("alicia", "1"), ShieldedTipDraft("alice", "2"))) {
+            for (recheck in listOf(false, true)) {
+                assertEquals(ShieldedTipReviewStep.Discard, shieldedTipReviewStep(started, now, recheck, reviewed(false)))
+                assertEquals(
+                    ShieldedTipReviewStep.Discard,
+                    shieldedTipReviewStep(started, now, recheck, reviewed(false, ShieldedTipRecipientChange.Changed(recipient))),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `should not turn a cleared hold into an enabled send`() {
+        val draft = ShieldedTipDraft("alice", "1")
+        assertEquals(ShieldedTipReviewStep.HoldEnded, shieldedTipReviewStep(draft, draft, true, reviewed(false)))
+        val stillHeld = reviewed(true)
+        assertEquals(ShieldedTipReviewStep.Show(stillHeld), shieldedTipReviewStep(draft, draft, true, stillHeld))
+        assertTrue(ShieldedTipMessages.HOLD_ENDED.contains("either executed or can no longer execute"))
+        assertTrue(ShieldedTipMessages.HOLD_ENDED.contains("new payment"))
+    }
+
+    @Test
+    fun `should show a first review, asking first when the recipient changed`() {
+        val draft = ShieldedTipDraft("alice", "1")
+        val plain = reviewed(false)
+        assertEquals(ShieldedTipReviewStep.Show(plain), shieldedTipReviewStep(draft, draft, false, plain))
+        val changed = reviewed(false, ShieldedTipRecipientChange.Changed(recipient))
+        assertEquals(ShieldedTipReviewStep.ConfirmChange(changed), shieldedTipReviewStep(draft, draft, false, changed))
     }
 
     @Test
