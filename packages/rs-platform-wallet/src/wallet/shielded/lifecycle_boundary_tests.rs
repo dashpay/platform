@@ -13,6 +13,14 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
 use dashcore::Network;
+use dpp::address_funds::{AddressWitness, PlatformAddress};
+use dpp::identity::signer::Signer;
+use dpp::identity::IdentityPublicKey;
+use dpp::platform_value::BinaryData;
+use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::ProtocolError;
+use drive_proof_verifier::types::{NoParamQuery, ShieldedAnchors};
+use grovedb_commitment_tree::{ExtractedNoteCommitment, Note, NoteValue, RandomSeed, Rho};
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
 use crate::changeset::{
@@ -22,6 +30,8 @@ use crate::changeset::{
 use crate::error::PlatformWalletError;
 use crate::events::{EventHandler, PlatformEventHandler};
 use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
+use crate::wallet::shielded::keys::OrchardKeySet;
+use crate::wallet::shielded::prover::CachedOrchardProver;
 use crate::wallet::shielded::store::ShieldedStore;
 use crate::wallet::shielded::{NetworkShieldedCoordinator, ShieldedNote, SubwalletId};
 use crate::PlatformWalletManager;
@@ -1202,28 +1212,34 @@ async fn should_refuse_every_shielded_spend_on_a_handle_kept_past_its_removal() 
         .expect("the removal completes");
 
     let prover = super::prover::CachedOrchardProver::new();
+    let unsent = |result: Result<(), PlatformWalletError>| {
+        assert!(
+            matches!(result, Err(PlatformWalletError::WalletRemovedBeforeSend(_))),
+            "{result:?}"
+        );
+    };
     let removed = |result: Result<(), PlatformWalletError>| {
         assert!(
             matches!(result, Err(PlatformWalletError::WalletNotFound(_))),
             "{result:?}"
         );
     };
-    removed(
+    unsent(
         wallet
             .shielded_transfer_to(&SEED, 0, &[0; 43], 1, [0; 36], &prover)
             .await,
     );
-    removed(
+    unsent(
         wallet
             .shielded_unshield_to(&SEED, 0, "tdash1invalid", 1, &prover)
             .await,
     );
-    removed(
+    unsent(
         wallet
             .shielded_withdraw_to(&SEED, 0, "yinvalid", 1, 1, &prover)
             .await,
     );
-    removed(
+    unsent(
         wallet
             .shielded_identity_top_up_from_pool(&SEED, 0, &[7; 32].into(), 1, &prover)
             .await
@@ -1235,4 +1251,160 @@ async fn should_refuse_every_shielded_spend_on_a_handle_kept_past_its_removal() 
             .await,
     );
     removed(wallet.bind_shielded_from_persisted(&[0]).await.map(drop));
+}
+
+/// An identity signer that parks each proof-of-possession signature until
+/// the test releases it, as a host's signing prompt does.
+#[derive(Debug, Default)]
+struct ParkedSigner {
+    reached: tokio::sync::Notify,
+    release: tokio::sync::Notify,
+}
+
+#[async_trait::async_trait]
+impl Signer<IdentityPublicKey> for ParkedSigner {
+    async fn sign(
+        &self,
+        _key: &IdentityPublicKey,
+        _data: &[u8],
+    ) -> Result<BinaryData, ProtocolError> {
+        self.reached.notify_one();
+        self.release.notified().await;
+        Ok(BinaryData::new(vec![0u8; 65]))
+    }
+
+    async fn sign_create_witness(
+        &self,
+        _key: &IdentityPublicKey,
+        _data: &[u8],
+    ) -> Result<AddressWitness, ProtocolError> {
+        Err(ProtocolError::Generic(
+            "identity PoP signer never creates address witnesses".to_string(),
+        ))
+    }
+
+    fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+        true
+    }
+}
+
+/// A real spendable note of `value` to `keys`' default address at tree
+/// position `position`.
+fn spendable_note(keys: &OrchardKeySet, position: u64, value: u64) -> ShieldedNote {
+    let rho = (1u16..=u16::MAX)
+        .find_map(|n| {
+            let mut b = [0u8; 32];
+            b[0..2].copy_from_slice(&n.to_le_bytes());
+            Rho::from_bytes(&b).into_option()
+        })
+        .unwrap();
+    let rseed = (1u16..=u16::MAX)
+        .find_map(|m| {
+            let mut b = [0u8; 32];
+            b[2..4].copy_from_slice(&m.to_le_bytes());
+            RandomSeed::from_bytes(b, &rho).into_option()
+        })
+        .unwrap();
+    let note = Note::from_parts(keys.default_address, NoteValue::from_raw(value), rho, rseed)
+        .into_option()
+        .unwrap();
+    let mut note_data = Vec::with_capacity(115);
+    note_data.extend_from_slice(&note.recipient().to_raw_address_bytes());
+    note_data.extend_from_slice(&note.value().inner().to_le_bytes());
+    note_data.extend_from_slice(&note.rho().to_bytes());
+    note_data.extend_from_slice(note.rseed().as_bytes());
+    ShieldedNote {
+        position,
+        cmx: ExtractedNoteCommitment::from(note.commitment()).to_bytes(),
+        nullifier: note.nullifier(&keys.full_viewing_key).to_bytes(),
+        block_height: 1,
+        is_spent: false,
+        value,
+        note_data,
+    }
+}
+
+/// An identity create parked in its signer holds no lock a removal takes:
+/// the removal completes while the signing prompt is open, and the create,
+/// released, refuses to broadcast, records nothing and frees its notes.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_complete_a_removal_while_an_identity_create_waits_for_its_signer() {
+    const DENOMINATION: u64 = 10_000_000_000;
+    let dir = tempfile::tempdir().unwrap();
+    let host = BoundaryHost::new();
+    let (manager, wallet, coordinator) = configured(&host, &dir).await;
+    wallet.bind_shielded(&SEED, &[0]).await.unwrap();
+    let id = SubwalletId::new(wallet.wallet_id(), 0);
+    let keys = OrchardKeySet::from_seed(&SEED, wallet.sdk.network, 0).unwrap();
+    let note = spendable_note(&keys, 0, DENOMINATION);
+    let anchor = {
+        let mut store = coordinator.store().write().await;
+        store.append_commitment(&note.cmx, true).unwrap();
+        store.checkpoint_tree(1).unwrap();
+        store.save_note(id, &note).unwrap();
+        store.tree_anchor().unwrap()
+    };
+    let mut sdk = wallet.sdk.as_ref().clone();
+    sdk.mock()
+        .expect_fetch(NoParamQuery {}, Some(ShieldedAnchors(vec![anchor])))
+        .await
+        .unwrap();
+    let (identity_key, _) = IdentityPublicKey::random_ecdsa_master_authentication_key(
+        0,
+        Some(1),
+        dpp::version::PlatformVersion::latest(),
+    )
+    .unwrap();
+    let rows_before = host.activity_rows.load(Ordering::SeqCst);
+
+    let signer = Arc::new(ParkedSigner::default());
+    let create = {
+        let wallet = Arc::clone(&wallet);
+        let signer = Arc::clone(&signer);
+        tokio::spawn(async move {
+            let prover = CachedOrchardProver::new();
+            wallet
+                .shielded_identity_create_from_pool(
+                    &SEED,
+                    0,
+                    0,
+                    vec![(
+                        identity_key.clone(),
+                        IdentityPublicKeyInCreation::from(&identity_key),
+                    )],
+                    DENOMINATION,
+                    PlatformAddress::P2pkh([0x11; 20]),
+                    &signer,
+                    &prover,
+                )
+                .await
+        })
+    };
+    tokio::time::timeout(Duration::from_secs(900), signer.reached.notified())
+        .await
+        .expect("the build reaches the identity signer");
+
+    tokio::time::timeout(
+        Duration::from_secs(30),
+        manager.remove_wallet(&wallet.wallet_id()),
+    )
+    .await
+    .expect("the removal does not wait for the open signing prompt")
+    .expect("the removal completes");
+
+    signer.release.notify_one();
+    let result = tokio::time::timeout(Duration::from_secs(60), create)
+        .await
+        .expect("the create returns once signed")
+        .unwrap();
+    assert!(
+        matches!(result, Err(PlatformWalletError::WalletRemovedBeforeSend(_))),
+        "{result:?}"
+    );
+    let _ = wallet.persister().flush();
+    assert_eq!(host.activity_rows.load(Ordering::SeqCst), rows_before);
+    let store = coordinator.store().read().await;
+    assert!(store.get_activity_ids(id).unwrap().is_empty());
+    assert!(store.pending_redrives(id).unwrap().is_empty());
+    assert!(store.stale_pending_spends(id).unwrap().is_empty());
 }
