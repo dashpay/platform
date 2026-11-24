@@ -19,6 +19,7 @@ struct DashPayProfileView: View {
     @State private var qrImage: UIImage?
     @State private var qrURI: String?
     @State private var qrError: String?
+    @State private var showTipSheet = false
 
     private var displayName: String {
         if let name = profile?.displayName?
@@ -78,6 +79,20 @@ struct DashPayProfileView: View {
                     showsUnpublished: true
                 )
 
+                Section {
+                    ShieldedTipBalanceRow(identity: identity)
+                    Button {
+                        showTipSheet = true
+                    } label: {
+                        Label("Tip a username", systemImage: "eye.slash.fill")
+                    }
+                    .accessibilityIdentifier("dashpay.tip.profileEntry")
+                } header: {
+                    Text("Shielded tips")
+                } footer: {
+                    Text("Tips are paid from this identity's own shielded account, to the shielded address a username's DashPay profile publishes.")
+                }
+
                 Section("Add me (DIP-15 QR)") {
                     if let qrImage {
                         VStack(spacing: 8) {
@@ -130,6 +145,10 @@ struct DashPayProfileView: View {
                             .truncationMode(.middle)
                     }
                 }
+            }
+            .sheet(isPresented: $showTipSheet) {
+                ShieldedTipSheet(identity: identity, username: nil)
+                    .environmentObject(walletManager)
             }
             .navigationTitle("Your Profile")
             .navigationBarTitleDisplayMode(.inline)

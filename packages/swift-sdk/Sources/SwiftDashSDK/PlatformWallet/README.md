@@ -663,6 +663,63 @@ meets unusable persisted shielded state, and `walletOperation` for every other
 failure, such as a wallet that was not bound or a seed that does not derive the
 identity's key.
 
+## Shielded tips
+
+A shielded tip pays a DashPay username at the shielded address its profile
+publishes. Rust decides everything; the screen only shows what it returns.
+
+1. Parse the typed amount with
+   `PlatformWalletManager.parseShieldedTipAmount(_:)`, which returns credits.
+   Show the parsed amount in the confirmation, not the typed text.
+2. Call `await manager.reviewShieldedTip(walletId:username:)`. Show the
+   recipient and the change: `.new` when no recipient was confirmed for the
+   name from this wallet before, `.unchanged`, or `.changed(previous:)` when
+   the name now pays another identity or address. A recipient is confirmed when
+   a send to it is admitted, so none of these says a tip was paid. `unresolved` means an earlier payment to the recipient
+   may still execute, so a send would be refused.
+3. Send with `await manager.sendShieldedTip(walletId:source:username:expectedRecipient:amount:memo:resolver:)`,
+   passing the review's `recipient` back unchanged. `source` is
+   `.identity(id)` to pay from an identity's own shielded account, or
+   `.account(n)` for an account by number. Rust resolves the name again and
+   refuses a recipient that changed, so the user reviews again.
+
+`shieldedSpendUnconfirmed` means the tip may have left the wallet and may still
+execute: never send it again; a shielded sync resolves it. Read
+`transactionBroadcastUnconfirmed` the same way.
+
+`shieldedTipPending` means this call sent nothing, because another tip is being
+sent or an earlier payment to the recipient is unresolved. It says nothing
+about that earlier payment, which may be this same tip submitted twice and may
+pay the recipient. A shielded sync resolves it as executed or as unable to
+execute, and the refusal ends either way, so do not send the tip again because
+the refusal ended or a new review says `unresolved == false`. Send it again
+only once the earlier payment is known to have failed: its shielded activity
+entry reads failed, not confirmed. The send returns no id for that entry, and
+entries with the same account, recipient, amount and memo can have different
+outcomes, so an entry that merely looks like the payment is not that evidence.
+When the exact attempt cannot be identified, treat its outcome as unknown and
+do not send again.
+
+A tip started from a saved contact passes the contact's identity id as
+`contactIdentityId` to both `reviewShieldedTip` and `sendShieldedTip`. When
+the contact's name now belongs to another identity, Rust refuses with
+`shieldedTipRecipientMismatch` and nothing is sent: the user picks the
+recipient again, and a tip to the name's new owner starts from the name. Pass
+`nil` when the user typed the name.
+
+Any error other than these means the call sent nothing.
+
+To show what an identity can tip from, call
+`await manager.shieldedIdentityBalance(walletId:identityId:)` and show its
+state instead of summing notes: `.unverified` until
+`prepareShieldedIdentityAddress` proves the identity's account in this session,
+`.unavailable(account:)` while the account's ledger is not established (not
+known, which is not zero), and `.available(account:credits:)`. The read is
+local and is given 100 ms as a whole. `shieldedBalanceBusy` means it did not
+finish in that time (the wallet's state or its shielded store was held), or a
+shielded Clear was running: it is the only error that means keep the last state
+and read again later. Any other error is a failure to show.
+
 ## Identity-funded shield recovery
 
 An unresolved identity-funded shield blocks another debit from the same identity

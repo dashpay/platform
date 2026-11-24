@@ -554,7 +554,7 @@ const QUERY_PANIC_GUIDANCE: &str = "No funds were moved; the call may be retried
 /// profiles. The iOS profiles (`dev-ios` / `release-ios`) build with
 /// `panic = "abort"`, so on iOS a panic still ends the process before this
 /// guard sees it.
-fn catch_query_panic(
+pub(crate) fn catch_query_panic(
     operation: &str,
     body: impl FnOnce() -> PlatformWalletFFIResult,
 ) -> PlatformWalletFFIResult {

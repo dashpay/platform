@@ -28,6 +28,26 @@ use crate::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
 /// affecting memory footprint (we spin up a small number of workers).
 const WORKER_STACK_BYTES: usize = 8 * 1024 * 1024;
 
+/// Refuse `operation` when the calling thread is already inside a tokio
+/// runtime, as it is in a callback the wallet invokes (the shielded
+/// balance, sync progress and persistence callbacks run on this crate's
+/// runtime). An export that blocks on the runtime would panic there, and
+/// the iOS profiles build with `panic = "abort"`. The caller moves the call
+/// to another thread.
+#[cfg(feature = "shielded")]
+pub(crate) fn ensure_not_on_runtime(operation: &str) -> Result<(), PlatformWalletFFIResult> {
+    if tokio::runtime::Handle::try_current().is_ok() {
+        return Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!(
+                "{operation} was called from inside a wallet callback; call it from another \
+                 thread"
+            ),
+        ));
+    }
+    Ok(())
+}
+
 /// Get the shared tokio runtime.
 ///
 /// All async FFI functions use this runtime. Prefer

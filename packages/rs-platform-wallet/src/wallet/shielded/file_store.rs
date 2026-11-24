@@ -28,6 +28,7 @@ use super::store::{
     PendingRedrive, PrivateContactPayment, PrivatePaymentEntry, PrivatePaymentRecord, ShieldedNote,
     ShieldedOutgoingNote, ShieldedStore, StalePendingSpend, SubwalletId, SubwalletState,
 };
+use super::tip_recipients::{self, ConfirmedTipRecipient};
 use crate::error::PlatformWalletError;
 use crate::wallet::platform_wallet::WalletId;
 
@@ -435,6 +436,56 @@ impl FileBackedShieldedStore {
         Ok(())
     }
 
+    /// The recipient `wallet_id` last confirmed for the normalized DPNS
+    /// `label` it tipped: the identity the name resolved to and the shielded
+    /// address its profile published. `None` when none was confirmed. A
+    /// shielded Clear keeps it; [`ShieldedStore::purge_wallet`] drops it.
+    ///
+    /// Fails for a row that does not read back, rather than reporting it
+    /// absent: a tip review would then show a changed recipient as a new one.
+    pub(crate) fn confirmed_tip_recipient(
+        &self,
+        wallet_id: WalletId,
+        label: &str,
+    ) -> Result<Option<ConfirmedTipRecipient>, FileShieldedStoreError> {
+        let conn = self
+            .pending_conn
+            .lock()
+            .map_err(|e| FileShieldedStoreError::Storage(format!("pending_conn mutex: {e}")))?;
+        let Some((identity_id, address)) = tip_recipients::confirmed(&conn, wallet_id, label)
+            .map_err(|e| FileShieldedStoreError::Storage(format!("read tip recipient: {e}")))?
+        else {
+            return Ok(None);
+        };
+        match (
+            <[u8; 32]>::try_from(identity_id.as_slice()),
+            <[u8; 43]>::try_from(address.as_slice()),
+        ) {
+            (Ok(identity_id), Ok(address)) => Ok(Some((identity_id, address))),
+            _ => Err(FileShieldedStoreError::RecoveryCorrupted {
+                account_index: None,
+                reason: "a confirmed tip recipient does not read back".to_owned(),
+            }),
+        }
+    }
+
+    /// Keep `recipient` as the one `wallet_id` confirmed for the normalized
+    /// DPNS `label`, replacing an earlier one
+    /// ([`Self::confirmed_tip_recipient`]). Durable once this returns.
+    pub(crate) fn confirm_tip_recipient(
+        &mut self,
+        wallet_id: WalletId,
+        label: &str,
+        recipient: &ConfirmedTipRecipient,
+    ) -> Result<(), FileShieldedStoreError> {
+        let conn = self
+            .pending_conn
+            .lock()
+            .map_err(|e| FileShieldedStoreError::Storage(format!("pending_conn mutex: {e}")))?;
+        tip_recipients::confirm(&conn, wallet_id, label, recipient)
+            .map_err(|e| FileShieldedStoreError::Storage(format!("save tip recipient: {e}")))
+    }
+
     /// Whether a damaged note-spend recovery row of `wallet_id`, or of a wallet
     /// that does not read, was retained without being loaded: a spend it
     /// records may still land, but nothing here holds its activity id, so
@@ -630,6 +681,11 @@ impl FileBackedShieldedStore {
             .map_err(|e| FileShieldedStoreError::Storage(format!("create store meta: {e}")))?;
         super::token_pool::create_tables(&pending_conn).map_err(|e| {
             FileShieldedStoreError::Storage(format!("create token pool tables: {e}"))
+        })?;
+        // The recipient each wallet last confirmed for a name it tipped.
+        // Dropped with its wallet, kept by a Clear.
+        tip_recipients::create_table(&pending_conn).map_err(|e| {
+            FileShieldedStoreError::Storage(format!("create tip recipients table: {e}"))
         })?;
         let mut store = Self {
             tree: Mutex::new(tree),
@@ -829,6 +885,15 @@ impl FileBackedShieldedStore {
                     )
                 {
                     return Err(corrupted("identity debit contains note-spend nullifiers"));
+                }
+                // The converse: a transition that spends notes with no note
+                // listed. Loaded as it is, it would read as an
+                // identity-funded debit everywhere a record with no
+                // nullifier is taken for one, and reserve nothing. It is
+                // retained without being loaded, like any other damaged
+                // note-spend row.
+                if nullifiers.is_empty() && note_spend_kind.is_some() {
+                    return Err(corrupted("note spend lists none of its nullifiers"));
                 }
                 let (Ok(wallet_id), Ok(activity_id), Ok(anchor)) = (
                     <[u8; 32]>::try_from(wallet_id.as_slice()),
@@ -1746,14 +1811,26 @@ impl ShieldedStore for FileBackedShieldedStore {
         // wallet_id — SQL before memory, so an Err return means neither
         // store was touched (fail-atomic) rather than a memory purge
         // the caller can't distinguish from a no-op.
+        // The wallet's saved spends and the recipients it confirmed for its
+        // tips go in one transaction: a failure leaves both, never the
+        // recipients of a wallet whose spend records are gone.
         {
-            let conn = self.pending_conn.lock().expect("pending_conn mutex");
-            conn.execute(
+            let mut conn = self.pending_conn.lock().expect("pending_conn mutex");
+            let tx = conn
+                .transaction()
+                .map_err(|e| FileShieldedStoreError::Storage(format!("begin wallet purge: {e}")))?;
+            tx.execute(
                 "DELETE FROM shielded_pending_spends WHERE wallet_id = ?1",
                 rusqlite::params![wallet_id.as_slice()],
             )
             .map_err(|e| {
                 FileShieldedStoreError::Storage(format!("purge pending spends for wallet: {e}"))
+            })?;
+            tip_recipients::purge_wallet(&tx, wallet_id).map_err(|e| {
+                FileShieldedStoreError::Storage(format!("purge tip recipients for wallet: {e}"))
+            })?;
+            tx.commit().map_err(|e| {
+                FileShieldedStoreError::Storage(format!("commit wallet purge: {e}"))
             })?;
         }
         {

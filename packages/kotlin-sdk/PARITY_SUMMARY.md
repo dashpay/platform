@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **51**
+Capabilities tracked: **52**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 31 | 18 | 1 | 1 |
-| Swift | Example app | 6 | 35 | 1 | 9 |
-| Kotlin | SDK | 26 | 22 | 2 | 1 |
-| Kotlin | Example app | 7 | 32 | 2 | 10 |
+| Swift | SDK | 32 | 18 | 1 | 1 |
+| Swift | Example app | 6 | 36 | 1 | 9 |
+| Kotlin | SDK | 27 | 22 | 2 | 1 |
+| Kotlin | Example app | 7 | 32 | 3 | 10 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 2 | 19 | 30 |
-| Kotlin | 9 | 17 | 25 |
+| Swift | 2 | 20 | 30 |
+| Kotlin | 9 | 18 | 25 |
 
 ## Capability status
 
@@ -75,6 +75,7 @@ Capabilities tracked: **51**
 | `shielded.token_shielded_transfer` | partial / partial / required | partial / partial / required |
 | `shielded.token_unshield` | partial / partial / required | partial / partial / required |
 | `dashpay.profile_payment_addresses` | partial / partial / not_applicable | partial / partial / tested |
+| `dashpay.shielded_tips` | supported / partial / required | supported / unsupported / required |
 
 Source: [`docs/sdk/sdk-parity-manifest.json`](../../docs/sdk/sdk-parity-manifest.json).
 Detailed legacy view mapping remains in [`PARITY.md`](PARITY.md), but its manual totals are not authoritative.

@@ -1915,7 +1915,8 @@ class PlatformWalletManager(
      *
      * Does not wait for a shielded operation in flight (a bind, an added
      * account, a token pool transfer or unshield, a profile write, a tip
-     * address preparation): while one runs this throws
+     * address preparation, a shielded tip being sent): while one runs this
+     * throws
      * [DashSdkError.PlatformWallet.ShieldedOperationInProgress] at once,
      * with nothing changed and the sync loop still running. Keep the Room
      * rows and call it again once the operation has finished.
@@ -2374,6 +2375,208 @@ class PlatformWalletManager(
                 identityId,
             )
         }
+    }
+
+    // ── Shielded tips to a DashPay username ────────────────────────────
+    //
+    // A tip is an ordinary shielded transfer to the shielded address a
+    // name's DashPay profile publishes. Rust
+    // (`platform-wallet`'s `wallet/shielded/tip_payment.rs`) decides
+    // everything a payment screen would otherwise decide for itself: what
+    // the typed amount is, whom the name pays, whether that changed, whether
+    // an earlier payment is unresolved, which account pays, whether the tip
+    // may be sent now and whether an identity's balance is known. These
+    // wrappers pass the arguments in and the results out, as the Swift
+    // ones in `PlatformWalletManagerShieldedTips.swift` do.
+
+    /**
+     * Parse a tip amount the user typed in DASH into exact credits. Port of
+     * Swift's `PlatformWalletManager.parseShieldedTipAmount`. A pure parse:
+     * no wallet, no network, and it does not wait.
+     *
+     * Rust accepts ASCII digits with one optional decimal separator, `.` or
+     * `,`, ignoring surrounding whitespace, and refuses everything else (a
+     * sign, digit grouping, an exponent, zero, digits finer than one
+     * credit). Show the returned amount in the confirmation, not the typed
+     * text: `1,000` is one DASH. Do not parse the text on the host.
+     *
+     * Throws [DashSdkError.PlatformWallet.Generic] with native code 2
+     * (`ErrorInvalidParameter`) and Rust's reason for a text it refuses, and
+     * [DashSdkError.InvalidParameter] for an amount past what a `Long` of
+     * credits carries.
+     */
+    fun parseShieldedTipAmount(text: String): Long =
+        mapNativeErrors { FundingNative.parseShieldedTipAmount(text) }
+
+    /**
+     * Resolve [username] for the user to confirm a shielded tip from
+     * [walletId]: whom it pays now (the identity the DPNS name resolves to
+     * and the shielded address its DashPay profile publishes, both fetched
+     * with proof), how that compares with the recipient this wallet last
+     * confirmed for the name, and whether an earlier shielded payment to
+     * that recipient is still unresolved. Port of Swift's
+     * `PlatformWalletManager.reviewShieldedTip`. Changes nothing and moves
+     * no funds. Accepts `alice` and `alice.dash`.
+     *
+     * Show [ShieldedTipReview.recipient] and [ShieldedTipReview.change],
+     * then pass the recipient back to [sendShieldedTip] unchanged. While
+     * [ShieldedTipReview.unresolved] is set a send is refused. Requires a
+     * prior [bindShielded] of [walletId].
+     *
+     * When the tip starts from a saved contact, pass the contact's 32-byte
+     * identity id as [contactIdentityId]: Rust refuses the review with
+     * [DashSdkError.PlatformWallet.ShieldedTipRecipientMismatch] when the
+     * name now belongs to another identity, instead of showing that
+     * identity as a first tip to the contact. Leave it null when the user
+     * typed the name. Do not compare the ids on the host.
+     *
+     * Throws [DashSdkError.PlatformWallet.ShieldedRecoveryCorrupted] or
+     * [DashSdkError.PlatformWallet.ShieldedRecoveryKeysRequired] when the
+     * wallet cannot tell whom a saved shielded spend pays, and
+     * [DashSdkError.PlatformWallet.WalletOperation] for every other failure
+     * (a name that does not exist, a profile that publishes no valid
+     * shielded address, an unbound wallet), with the wallet's reason in the
+     * message.
+     */
+    suspend fun reviewShieldedTip(
+        walletId: ByteArray,
+        username: String,
+        contactIdentityId: ByteArray? = null,
+    ): ShieldedTipReview = teardownGate.op {
+        decodeShieldedTipReview(
+            mapNativeErrors {
+                FundingNative.reviewShieldedTip(
+                    managerHandle,
+                    walletId,
+                    username,
+                    contactIdentityId,
+                )
+            },
+        )
+    }
+
+    /**
+     * Send a shielded tip of [amount] credits from [walletId] to [username],
+     * paid from [source], with [memo] on the recipient's note. Port of
+     * Swift's `PlatformWalletManager.sendShieldedTip`. Blocks for the Halo 2
+     * proof.
+     *
+     * The tip pays [expectedRecipient], the [ShieldedTipReview.recipient]
+     * the user confirmed, and nothing else: Rust resolves the name and its
+     * profile again and refuses a recipient that differs, for the user to
+     * review again. There is no fallback to a transparent address.
+     *
+     * Throws:
+     * - [DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed]: the tip may
+     *   have left the wallet and may still execute. Never send it again; a
+     *   shielded sync resolves it. Read
+     *   [DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed] and
+     *   [DashSdkError.StateTransitionResultUnconfirmed] the same way, as
+     *   for [shieldedTransfer].
+     * - [DashSdkError.PlatformWallet.ShieldedTipPending]: this call sent
+     *   nothing. Another tip from this wallet is being sent, or an earlier
+     *   shielded payment to the recipient may still execute. That earlier
+     *   payment may be this same tip and may pay the recipient: a shielded
+     *   sync resolves it as executed or as unable to execute, and the
+     *   refusal ends either way. Do not send again because the refusal
+     *   ended; send again only once the earlier payment is known to have
+     *   failed (its shielded activity entry reads failed, not confirmed).
+     *   This call returns no id for that entry, so when the exact attempt
+     *   cannot be identified, treat its outcome as unknown and do not send
+     *   again.
+     * - [DashSdkError.NotFound]: the wallet holds no identity
+     *   [ShieldedTipSource.Identity.identityId]. Nothing was sent.
+     * - [DashSdkError.PlatformWallet.ShieldedTipRecipientMismatch]:
+     *   [contactIdentityId] was given and the reviewed recipient is another
+     *   identity. Nothing was sent.
+     * - any other error: this call sent nothing (for example
+     *   [DashSdkError.PlatformWallet.WalletOperation] for a recipient that
+     *   changed since the review).
+     *
+     * A caller cancelled while the native call runs still gets its outcome
+     * when the call completes ([opReturningCompletedResult]): native code
+     * cannot see the cancellation, so the tip can be sent after it, and a
+     * sent tip must never read as a cancelled one. Handle the result before
+     * suspending again.
+     *
+     * @param amount credits to send, as [parseShieldedTipAmount] returned
+     *   them.
+     * @param memo optional UTF-8 memo on the recipient's note (null or
+     *   empty: no memo; Rust refuses more than 32 UTF-8 bytes).
+     * @param contactIdentityId the saved contact's 32-byte identity id when
+     *   the tip starts from a contact, as for [reviewShieldedTip]; null when
+     *   the user typed the name.
+     */
+    suspend fun sendShieldedTip(
+        walletId: ByteArray,
+        source: ShieldedTipSource,
+        username: String,
+        expectedRecipient: ShieldedTipRecipient,
+        amount: Long,
+        memo: String? = null,
+        contactIdentityId: ByteArray? = null,
+    ): Unit = teardownGate.opReturningCompletedResult {
+        // The C call takes the source as a nullable identity id beside an
+        // account number that it ignores when the id is present.
+        val sourceIdentityId: ByteArray?
+        val sourceAccount: Int
+        when (source) {
+            is ShieldedTipSource.Identity -> {
+                sourceIdentityId = source.identityId
+                sourceAccount = 0
+            }
+            is ShieldedTipSource.Account -> {
+                sourceIdentityId = null
+                sourceAccount = source.account
+            }
+        }
+        mapNativeErrors {
+            FundingNative.sendShieldedTip(
+                managerHandle,
+                walletId,
+                mnemonicResolver.nativeHandle,
+                sourceIdentityId,
+                sourceAccount,
+                username,
+                expectedRecipient.identityId,
+                expectedRecipient.address,
+                contactIdentityId,
+                amount,
+                memo,
+            )
+        }
+    }
+
+    /**
+     * The shielded balance of the wallet identity [identityId]'s own account
+     * on [walletId], with what the wallet knows about it. Port of Swift's
+     * `PlatformWalletManager.shieldedIdentityBalance`. Reads local state
+     * only.
+     *
+     * Show the returned state; do not add up stored notes, which cannot
+     * tell an empty account from one whose ledger was cleared.
+     * [ShieldedIdentityBalance.Unverified] stands until
+     * [prepareShieldedIdentityAddress] has proved the identity's account in
+     * this session.
+     *
+     * Throws [DashSdkError.PlatformWallet.ShieldedBalanceBusy] when the read
+     * did not finish within its wait budget, because the wallet's state or
+     * its shielded store was held, and while a shielded Clear is running:
+     * the only error of this call that means keep the last state and read
+     * again later. Any other error is a
+     * failure to show: [DashSdkError.NotFound] when the wallet holds no
+     * identity [identityId], [DashSdkError.PlatformWallet.WalletOperation]
+     * with the reason in the message otherwise.
+     */
+    suspend fun shieldedIdentityBalance(
+        walletId: ByteArray,
+        identityId: ByteArray,
+    ): ShieldedIdentityBalance = teardownGate.op {
+        decodeShieldedIdentityBalance(
+            mapNativeErrors {
+                FundingNative.shieldedIdentityBalance(managerHandle, walletId, identityId)
+            },
+        )
     }
 
     // ── Shielded outgoing spends (types 16/17/19) ──────────────────────
