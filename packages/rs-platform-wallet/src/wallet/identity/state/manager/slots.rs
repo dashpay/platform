@@ -356,9 +356,11 @@ impl IdentityManager {
     /// fetch) folded by revision onto the identity as a load or discovery
     /// folds them, stored durably as one changeset: the identity, `keys` with
     /// their breadcrumbs and, when the slot was a claim's, the end of its
-    /// lease. Memory keeps the placement only once the store is durable; on a
-    /// failed store it is undone and the store's error returned, so no caller
-    /// reports an identity as placed that a restart would not find.
+    /// lease. Memory keeps the placement only once the store is durable, or
+    /// while a later flush may still write it
+    /// ([`NotDurable::may_still_be_written`](crate::wallet::persister::NotDurable::may_still_be_written));
+    /// otherwise it is undone. The store's error is returned either way, so no
+    /// caller reports an identity as placed that a restart may not find.
     pub(crate) fn place_in_slot(
         &mut self,
         identity: Identity,
@@ -404,7 +406,10 @@ impl IdentityManager {
         }
 
         if let Err(not_durable) = persister.store_durably(changeset) {
-            self.undo_placement(identity_id, wallet_id, identity_index, undo);
+            // Rows a later flush may still write stay placed in memory too.
+            if !not_durable.may_still_be_written() {
+                self.undo_placement(identity_id, wallet_id, identity_index, undo);
+            }
             return Err(persister.classify_not_durable(not_durable));
         }
         Ok(placement)

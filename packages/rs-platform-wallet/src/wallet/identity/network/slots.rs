@@ -90,7 +90,9 @@ impl IdentityWallet {
     /// is refused with a persister that cannot keep it
     /// ([`PersistenceCapabilities::IDENTITY_SLOT_LEASE_RESTART`]): a claim
     /// retried after a restart would otherwise derive at another index than
-    /// the one its earlier attempt may have landed at.
+    /// the one its earlier attempt may have landed at. On a failed store the
+    /// index is free again, unless a later flush may still write the lease
+    /// ([`NotDurable::may_still_be_written`](crate::wallet::persister::NotDurable::may_still_be_written)): then the claim keeps it.
     ///
     /// A claim costs one funding-tx fetch: its lease is keyed by the
     /// invitation's funding outpoint, which the link does not carry.
@@ -141,7 +143,11 @@ impl IdentityWallet {
                         ..Default::default()
                     };
                     if let Err(not_durable) = self.persister.store_durably(changeset) {
-                        manager.release_identity_slot(&self.wallet_id, &holder);
+                        // A lease row a later flush may still write keeps
+                        // its index: no other holder may lease it meanwhile.
+                        if !not_durable.may_still_be_written() {
+                            manager.release_identity_slot(&self.wallet_id, &holder);
+                        }
                         return Err(self.persister.classify_not_durable(not_durable));
                     }
                 }
@@ -160,7 +166,10 @@ impl IdentityWallet {
     ///
     /// A claim whose lease is `Submitted` is refused: its claim may have
     /// reached Platform, and only its outcome frees the slot. A claim's
-    /// release is stored durably; on a failed store the lease stays.
+    /// release is stored durably; on a failed store the lease stays, unless a
+    /// later flush may still write the release
+    /// ([`NotDurable::may_still_be_written`](crate::wallet::persister::NotDurable::may_still_be_written)): then the slot stays free and
+    /// the error is returned.
     pub async fn release_identity_slot(
         &self,
         holder: SlotHolder,
@@ -185,14 +194,16 @@ impl IdentityWallet {
             ..Default::default()
         };
         if let Err(not_durable) = self.persister.store_durably(changeset) {
-            manager.restore_slot_lease(
-                self.wallet_id,
-                leased.identity_index,
-                SlotLease {
-                    holder,
-                    phase: leased.phase,
-                },
-            );
+            if !not_durable.may_still_be_written() {
+                manager.restore_slot_lease(
+                    self.wallet_id,
+                    leased.identity_index,
+                    SlotLease {
+                        holder,
+                        phase: leased.phase,
+                    },
+                );
+            }
             return Err(self.persister.classify_not_durable(not_durable));
         }
         Ok(Some(leased.identity_index))
@@ -222,7 +233,9 @@ impl IdentityWallet {
     /// `Submitted`, stored durably, before its claim is sent: from then on
     /// only the claim's outcome frees the slot. Refused with
     /// [`PlatformWalletError::IdentitySlotNotHeld`] unless the claim leases
-    /// that slot; on a failed store the lease keeps its phase.
+    /// that slot; on a failed store the lease keeps its phase, unless a later
+    /// flush may still write the new one ([`NotDurable::may_still_be_written`](crate::wallet::persister::NotDurable::may_still_be_written)),
+    /// which memory then keeps.
     pub(crate) async fn submit_claim_lease(
         &self,
         identity_index: RegistrationIndex,
@@ -236,7 +249,7 @@ impl IdentityWallet {
     /// `Reserved`, stored durably: its claim was refused in a way that can
     /// never execute, so the host may retry or release it. Refused like
     /// [`Self::submit_claim_lease`]; on a failed store the lease stays
-    /// `Submitted`.
+    /// `Submitted`, unless a later flush may still write `Reserved`.
     pub(crate) async fn unsubmit_claim_lease(
         &self,
         identity_index: RegistrationIndex,
@@ -271,7 +284,9 @@ impl IdentityWallet {
             ..Default::default()
         };
         if let Err(not_durable) = self.persister.store_durably(changeset) {
-            manager.set_slot_lease_phase(&self.wallet_id, &holder, lease.phase);
+            if !not_durable.may_still_be_written() {
+                manager.set_slot_lease_phase(&self.wallet_id, &holder, lease.phase);
+            }
             return Err(self.persister.classify_not_durable(not_durable));
         }
         Ok(())
@@ -654,6 +669,14 @@ impl IdentityWallet {
             ..Default::default()
         };
         if let Err(not_durable) = self.persister.store_durably(changeset) {
+            if not_durable.may_still_be_written() {
+                tracing::warn!(
+                    identity_index,
+                    "the end of an invitation claim's lease is not stored yet; a later flush \
+                     writes it"
+                );
+                return true;
+            }
             manager.restore_slot_lease(self.wallet_id, identity_index, lease);
             tracing::warn!(
                 identity_index,
@@ -740,6 +763,9 @@ mod tests {
     struct Backend {
         capabilities: PersistenceCapabilities,
         fail: Mutex<bool>,
+        /// While set, stores buffer and every flush fails transiently,
+        /// keeping the buffer.
+        flush_fails_transiently: Mutex<bool>,
         stores: Mutex<Vec<PlatformWalletChangeSet>>,
     }
 
@@ -748,6 +774,7 @@ mod tests {
             Arc::new(Self {
                 capabilities,
                 fail: Mutex::new(false),
+                flush_fails_transiently: Mutex::new(false),
                 stores: Mutex::new(Vec::new()),
             })
         }
@@ -764,7 +791,7 @@ mod tests {
 
     impl PlatformWalletPersistence for Backend {
         fn store_commits_inline(&self) -> bool {
-            true
+            !*self.flush_fails_transiently.lock().unwrap()
         }
         fn persistence_capabilities(&self) -> PersistenceCapabilities {
             self.capabilities
@@ -781,6 +808,12 @@ mod tests {
             Ok(())
         }
         fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            if *self.flush_fails_transiently.lock().unwrap() {
+                return Err(PersistenceError::backend_with_kind(
+                    crate::changeset::PersistenceErrorKind::Transient,
+                    "the host is busy",
+                ));
+            }
             Ok(())
         }
         fn load(&self) -> Result<ClientStartState, PersistenceError> {
@@ -1341,6 +1374,57 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(retried.phase, SlotLeasePhase::Reserved);
+    }
+
+    /// A lease change whose flush failed transiently may still be written
+    /// by a later flush, so memory keeps it: a new claim keeps its index, a
+    /// submission stays `Submitted`, and a release leaves the slot free.
+    #[tokio::test]
+    async fn should_keep_a_lease_change_a_later_flush_may_still_write() {
+        let backend = Backend::new(full());
+        let wallet = wallet(backend.clone()).await;
+        *backend.flush_fails_transiently.lock().unwrap() = true;
+
+        let refused = wallet.identity().acquire_resolved_slot(claim(1)).await;
+        assert!(refused.is_err(), "{refused:?}");
+        let next = wallet
+            .identity()
+            .acquire_identity_slot(SlotRequest::Registration)
+            .await
+            .unwrap();
+        assert_eq!(next.identity_index, 1, "the claim's buffered lease keeps 0");
+
+        let ResolvedSlotRequest::InvitationClaim { invitation } = claim(1) else {
+            unreachable!()
+        };
+        assert!(wallet
+            .identity()
+            .submit_claim_lease(0, invitation)
+            .await
+            .is_err());
+        let held = wallet
+            .identity()
+            .acquire_resolved_slot(claim(1))
+            .await
+            .unwrap();
+        assert_eq!(held.phase, SlotLeasePhase::Submitted);
+
+        let reserved = wallet.identity().acquire_resolved_slot(claim(2)).await;
+        assert!(reserved.is_err());
+        let holder = SlotHolder::InvitationClaim {
+            invitation: OutPoint::new(Txid::from_byte_array([2; 32]), 0),
+        };
+        assert!(wallet
+            .identity()
+            .release_identity_slot(holder)
+            .await
+            .is_err());
+        let wm = wallet.identity().wallet_manager.read().await;
+        let manager = &wm
+            .get_wallet_info(&wallet.wallet_id())
+            .unwrap()
+            .identity_manager;
+        assert_eq!(manager.slot_state(&wallet.wallet_id(), 2), SlotState::Free);
     }
 
     #[tokio::test]

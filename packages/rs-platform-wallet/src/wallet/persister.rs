@@ -222,6 +222,21 @@ pub(crate) enum NotDurable {
     OtherFlushUnsettled,
 }
 
+impl NotDurable {
+    /// Whether what the call stored may still be written by a later flush: a
+    /// transient failure of its flush keeps the buffer, and an unsettled
+    /// other flush may hold it. Memory that mirrors those records keeps them
+    /// then, so it never disagrees with what a restart would load; only a
+    /// store that failed, or a buffer dropped, lets memory roll back.
+    pub(crate) fn may_still_be_written(&self) -> bool {
+        match self {
+            Self::Flush(error) => error.is_transient(),
+            Self::OtherFlushUnsettled => true,
+            Self::Store(_) | Self::Lost => false,
+        }
+    }
+}
+
 impl WalletPersister {
     /// A handle for `wallet_id`'s records on `inner`. It counts its flushes
     /// in the ledger of that backend instance and wallet id
