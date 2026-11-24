@@ -430,9 +430,6 @@ object TokenActionResolver {
         return rows
     }
 
-    private const val EVONODE_IDENTITY_TYPE = "Evonode"
-    private const val VOTER_ROLE = "voter"
-
     /**
      * A group-gated max-supply change that the proposer cannot complete
      * alone needs a second signature, and the co-sign screen cannot replay a
@@ -547,18 +544,11 @@ object TokenActionResolver {
                 }
             }
             // Drive works out an evonode's share from chain state at submit
-            // time; the app can only tell whether this identity is an evonode
-            // identity (a voter identity holds no claim).
-            TokenDistributionRecipient.EvonodesByParticipation ->
-                if (identity.identityType == EVONODE_IDENTITY_TYPE &&
-                    identity.masternodeRoleRaw != VOTER_ROLE
-                ) {
-                    TokenActionPermission.Allowed
-                } else {
-                    TokenActionPermission.Denied(
-                        "Distribution pays evonodes by participation; this identity is not an evonode",
-                    )
-                }
+            // time, and this app has no proof of which identities are evonodes
+            // (nor their signing keys), so it does not offer the claim.
+            TokenDistributionRecipient.EvonodesByParticipation -> TokenActionPermission.Denied(
+                "Distribution pays evonodes by participation; eligibility not evaluated by this app",
+            )
             is TokenDistributionRecipient.Unknown -> TokenActionPermission.Denied(
                 "Distribution recipient '${recipient.what}' not recognised by this app",
             )
