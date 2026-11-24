@@ -3913,6 +3913,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_w
     })
 }
 
+/// Constructor of `TrackedAssetLockNativeData`: outpoint txid and vout, lock
+/// type, status, registration index, instant-lock flag, chain-lock height, the
+/// recorded identity recipient (`null` when the row has none) and whether the
+/// lock is an unassigned unbound top-up.
+const TRACKED_ASSET_LOCK_ROW_CONSTRUCTOR: &str = "([BIIBIZI[BZ)V";
+
 /// Copy the manager-owned tracked-asset-lock snapshot into Kotlin value
 /// objects. No Rust pointer escapes this call; the paired list allocation is
 /// freed by [`TrackedAssetLockListGuard`] on success and every failure path.
@@ -3980,9 +3986,16 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_t
         for (index, row) in native_rows.iter().enumerate() {
             let built = env.with_local_frame(8, |env| -> Result<(), jni::errors::Error> {
                 let txid = env.byte_array_from_slice(&row.outpoint_txid)?;
+                // The recorded recipient crosses only when the row has one;
+                // its zero-filled bytes otherwise mean nothing.
+                let identity_recipient: JObject = if row.has_identity_recipient {
+                    env.byte_array_from_slice(&row.identity_recipient)?.into()
+                } else {
+                    JObject::null()
+                };
                 let object = env.new_object(
                     &row_class,
-                    "([BIIBIZI)V",
+                    TRACKED_ASSET_LOCK_ROW_CONSTRUCTOR,
                     &[
                         JValue::Object(txid.as_ref()),
                         JValue::Int(row.outpoint_vout as jint),
@@ -3991,6 +4004,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_t
                         JValue::Int(row.registration_index as jint),
                         JValue::Bool(row.instant_lock_present as u8),
                         JValue::Int(row.chain_lock_height as jint),
+                        JValue::Object(&identity_recipient),
+                        JValue::Bool(row.identity_recipient_unassigned as u8),
                     ],
                 )?;
                 env.set_object_array_element(&rows, index as i32, object)

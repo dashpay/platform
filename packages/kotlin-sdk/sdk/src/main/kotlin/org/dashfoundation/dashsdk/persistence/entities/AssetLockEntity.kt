@@ -15,10 +15,25 @@ import java.util.Date
  * No FK to `wallets`: the Swift model declares no relationship — rows are
  * deleted manually by wallet teardown (`deleteWalletData`), which the
  * `AssetLockDao.deleteByWallet` mirror covers.
+ *
+ * The three sidecar columns ([operationId], [shieldedRecipientRaw43],
+ * [identityRecipientId]) are written by their own persistence callbacks,
+ * which native fires after the row's upsert in the same changeset (see the
+ * `PersistAssetLock*Fn` typedefs in
+ * `packages/rs-platform-wallet-ffi/src/persistence.rs`). Each is immutable
+ * once stored: the handler refuses a different value, and the
+ * `asset_locks_*_immutable` triggers [DashDatabase] installs refuse one at
+ * the SQL layer too, as the SQLite store's V019, V020 and V023 triggers do. A later
+ * upsert of the row carries them forward rather than clearing them.
+ * `(walletId, operationId)` is unique, as SQLite's
+ * `asset_locks_wallet_operation_id` index is (NULLs never collide).
  */
 @Entity(
     tableName = "asset_locks",
-    indices = [Index(value = ["walletId"])],
+    indices = [
+        Index(value = ["walletId"]),
+        Index(value = ["walletId", "operationId"], unique = true),
+    ],
 )
 data class AssetLockEntity(
     @PrimaryKey val outPointHex: String,
@@ -41,9 +56,10 @@ data class AssetLockEntity(
     /**
      * `AssetLockStatus` discriminant: 0 Built, 1 Broadcast,
      * 2 InstantSendLocked, 3 ChainLocked, 4 Consumed,
-     * 5 RecoveredFromChain.
+     * 5 RecoveredFromChain, 6 DrainCompleted.
      *
-     * `4` is terminal; `5` is NOT, its higher discriminant
+     * `4` and `6` are terminal (`6`, a proven wallet-drain consumption, is
+     * the stronger: only another `6` overwrites it); `5` is NOT, its higher discriminant
      * notwithstanding. `5` means Core finality is proven while
      * Platform-side consumption is unknown — what the restore scan and the
      * chainlock-promotion path write — so it belongs in every "still
@@ -63,4 +79,28 @@ data class AssetLockEntity(
     val createdAt: Date = Date(),
     /** Swift names this `updatedAt` (not `lastUpdated`). */
     val updatedAt: Date = Date(),
+    /**
+     * 16-byte operation UUID native correlates a wallet drain with
+     * (`PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS`, bit 13; SQLite
+     * `V019__asset_lock_operation_id`, Swift
+     * `PersistentAssetLock.operationId`). Null for a lock built without one.
+     */
+    val operationId: ByteArray? = null,
+    /**
+     * Raw 43-byte Orchard address a shielded funding (`fundingTypeRaw == 5`)
+     * was built to pay, so a resume after restart pays the recipient the user
+     * confirmed (`ASSET_LOCK_SHIELDED_RECIPIENTS`, bit 14; SQLite
+     * `V020__asset_lock_shielded_recipient`, Swift
+     * `PersistentAssetLock.shieldedRecipientRaw43`).
+     */
+    val shieldedRecipientRaw43: ByteArray? = null,
+    /**
+     * 32-byte id of the identity an unbound identity top-up
+     * (`fundingTypeRaw == 2`) was built or assigned to pay, so a resume after
+     * restart pays that identity and refuses another
+     * (`ASSET_LOCK_IDENTITY_RECIPIENTS`, bit 17; SQLite
+     * `V023__asset_lock_identity_recipient`). Null for every other lock, and
+     * for an unbound lock rebuilt from the chain until the user assigns one.
+     */
+    val identityRecipientId: ByteArray? = null,
 )

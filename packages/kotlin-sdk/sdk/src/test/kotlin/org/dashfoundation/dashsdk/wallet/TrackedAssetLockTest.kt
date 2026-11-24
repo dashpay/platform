@@ -2,7 +2,10 @@ package org.dashfoundation.dashsdk.wallet
 
 import org.dashfoundation.dashsdk.ffi.TrackedAssetLockNativeData
 import org.dashfoundation.dashsdk.ffi.TrackedAssetLocksNativeResult
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -18,6 +21,8 @@ class TrackedAssetLockTest {
             registrationIndex = 7,
             instantLockPresent = status >= 2,
             chainLockHeight = if (status == 3) 500 else 0,
+            identityRecipient = null,
+            identityRecipientUnassigned = false,
         )
         val native = TrackedAssetLocksNativeResult(
             arrayOf(
@@ -42,5 +47,39 @@ class TrackedAssetLockTest {
         // Mapper owns its Kotlin copy; callers can't mutate the JNI row.
         native.entries[0].outpointTxid[0] = 99
         assertEquals(0, eligible[0].outpointTxid[0].toInt())
+    }
+
+    @Test
+    fun shouldCarryTheRecordedIdentityRecipientAndTheUnassignedFlag() {
+        fun row(vout: Int, recipient: ByteArray?, unassigned: Boolean) = TrackedAssetLockNativeData(
+            outpointTxid = ByteArray(32) { 1 },
+            outpointVout = vout,
+            fundingType = TrackedAssetLock.FundingType.IDENTITY_TOP_UP_NOT_BOUND.raw,
+            status = 3,
+            registrationIndex = 0,
+            instantLockPresent = true,
+            chainLockHeight = 500,
+            identityRecipient = recipient,
+            identityRecipientUnassigned = unassigned,
+        )
+        val recipient = ByteArray(32) { 0x2A }
+        val native = TrackedAssetLocksNativeResult(
+            arrayOf(
+                row(0, recipient, unassigned = false),
+                row(1, null, unassigned = true),
+                row(2, ByteArray(31), unassigned = false), // malformed: dropped
+            ),
+        )
+
+        val eligible = TrackedAssetLock.eligibleFromNative(native)
+
+        assertEquals(listOf(0, 1), eligible.map { it.outpointVout })
+        assertArrayEquals(recipient, eligible[0].identityRecipient)
+        assertFalse(eligible[0].identityRecipientUnassigned)
+        assertNull(eligible[1].identityRecipient)
+        assertTrue(eligible[1].identityRecipientUnassigned)
+        // The model owns its copy of the recipient too.
+        recipient[0] = 0
+        assertEquals(0x2A, eligible[0].identityRecipient?.get(0)?.toInt())
     }
 }

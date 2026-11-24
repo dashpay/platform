@@ -13,9 +13,18 @@ class IdentityTopUpRecoveryTest {
     fun `topup resume accepts types one and two and always refuses voucher consumption`() = runTest {
         val calls = mutableListOf<Triple<Int, Int, Boolean>>()
         val credits = IdentityCredits(
-            resumeTopUpNative = ResumeTopUpNativeCall { _, _, vout, _, _, consume ->
-                calls += Triple(vout, calls.size + 1, consume)
-                123L
+            native = object : UnexpectedTopUpNative() {
+                override fun topUpIdentityWithExistingAssetLock(
+                    walletHandle: Long,
+                    outpointTxid: ByteArray,
+                    outpointVout: Int,
+                    identityId: ByteArray,
+                    coreSignerHandle: Long,
+                    consumeInvitationVoucher: Boolean,
+                ): Long {
+                    calls += Triple(outpointVout, calls.size + 1, consumeInvitationVoucher)
+                    return 123L
+                }
             },
         )
         for (type in listOf(
@@ -36,9 +45,18 @@ class IdentityTopUpRecoveryTest {
     fun `topup rejects registration lock before JNI`() = runTest {
         var called = false
         val credits = IdentityCredits(
-            resumeTopUpNative = ResumeTopUpNativeCall { _, _, _, _, _, _ ->
-                called = true
-                0
+            native = object : UnexpectedTopUpNative() {
+                override fun topUpIdentityWithExistingAssetLock(
+                    walletHandle: Long,
+                    outpointTxid: ByteArray,
+                    outpointVout: Int,
+                    identityId: ByteArray,
+                    coreSignerHandle: Long,
+                    consumeInvitationVoucher: Boolean,
+                ): Long {
+                    called = true
+                    return 0
+                }
             },
         )
         val failure = runCatching {

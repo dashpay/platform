@@ -2,7 +2,7 @@ package org.dashfoundation.dashsdk.identity
 
 import kotlinx.coroutines.test.runTest
 import org.dashfoundation.dashsdk.credits.IdentityCredits
-import org.dashfoundation.dashsdk.credits.ResumeTopUpNativeCall
+import org.dashfoundation.dashsdk.credits.UnexpectedTopUpNative
 import org.dashfoundation.dashsdk.ffi.IdentityRegistrationNativeResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -23,11 +23,20 @@ class InvitationReclaimTest {
         var capturedVout = -1
         var capturedConsume = false
         val credits = IdentityCredits(
-            resumeTopUpNative = ResumeTopUpNativeCall { _, txid, vout, _, _, consume ->
-                capturedTxid = txid.copyOf()
-                capturedVout = vout
-                capturedConsume = consume
-                777_000L
+            native = object : UnexpectedTopUpNative() {
+                override fun topUpIdentityWithExistingAssetLock(
+                    walletHandle: Long,
+                    outpointTxid: ByteArray,
+                    outpointVout: Int,
+                    identityId: ByteArray,
+                    coreSignerHandle: Long,
+                    consumeInvitationVoucher: Boolean,
+                ): Long {
+                    capturedTxid = outpointTxid.copyOf()
+                    capturedVout = outpointVout
+                    capturedConsume = consumeInvitationVoucher
+                    return 777_000L
+                }
             },
         )
 
