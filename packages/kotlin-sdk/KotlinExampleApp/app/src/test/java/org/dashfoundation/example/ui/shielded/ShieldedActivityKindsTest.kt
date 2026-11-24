@@ -1,12 +1,9 @@
 package org.dashfoundation.example.ui.shielded
 
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Before
 import org.junit.Test
-import java.util.Locale
 
 /**
  * The Shielded Activity row of a private document entry or a DashPay private
@@ -14,25 +11,6 @@ import java.util.Locale
  * Rust records, with Rust's amount, which is the fee.
  */
 class ShieldedActivityKindsTest {
-    private lateinit var formatLocale: Locale
-
-    /**
-     * The row's amount is formatted in the device's formatting locale, so the
-     * expected text below is pinned to one: under a decimal-comma locale the
-     * same amount reads "−0,0015 DASH". Only the FORMAT category is set and
-     * restored, so a JVM run with its own display locale keeps it.
-     */
-    @Before
-    fun pinTheFormattingLocale() {
-        formatLocale = Locale.getDefault(Locale.Category.FORMAT)
-        Locale.setDefault(Locale.Category.FORMAT, Locale.US)
-    }
-
-    @After
-    fun restoreTheFormattingLocale() {
-        Locale.setDefault(Locale.Category.FORMAT, formatLocale)
-    }
-
     @Test
     fun `should name a private document entry and a private contact request`() {
         assertEquals(13, KIND_PRIVATE_DOCUMENT_CREATE)
@@ -46,10 +24,10 @@ class ShieldedActivityKindsTest {
 
     @Test
     fun `should show the fee Rust records as the amount of a fee-only spend`() {
-        // 0.0015 DASH, the fee Rust stores as the row's amount.
+        // The fee Rust stores as the row's amount, shown exactly as every credit amount is.
         val fee = 153_074_400L
         for (kind in listOf(KIND_PRIVATE_DOCUMENT_CREATE, KIND_PRIVATE_CONTACT_REQUEST)) {
-            assertEquals("−0.0015 DASH", signedAmount(kind, direction = 1, amount = fee))
+            assertEquals("−0.001530744 DASH", signedAmount(kind, direction = 1, amount = fee))
             assertFalse(amountIsTokens(kind))
             assertEquals("153074400 credits", storedActivityAmountText(kind, fee))
         }
