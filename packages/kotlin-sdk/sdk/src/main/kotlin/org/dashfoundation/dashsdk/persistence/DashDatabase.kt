@@ -220,9 +220,29 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * identities the load rule returned (`"owner"` or `"voter"`). Both NULL for
  * every pre-existing row: such a row is resolved through the load rule when
  * it is next picked to vote.
+ *
+ * Version 20 (shielded asset-lock recipients): adds the nullable
+ * `asset_locks.shieldedRecipientRaw43` column, the Orchard recipient a
+ * shielded funding was built to pay, which native writes through
+ * `onPersistAssetLockShieldedRecipient` and reads back through
+ * `onLoadAssetLockShieldedRecipient` (Swift
+ * `PersistentAssetLock.shieldedRecipientRaw43`). NULL for every
+ * pre-existing lock: such a lock was tracked before its recipient was
+ * recorded, and a resume of it names the recipient, as before.
+ *
+ * Version 21 (DashPay profile payment addresses): adds the nullable
+ * `corePaymentAddress`, `platformPaymentAddress` and `shieldedAddress`
+ * columns to `dashpay_profiles` and `dashpay_contact_profiles`, the payment
+ * addresses an own or cached contact profile publishes, in their stored
+ * form. Swift keeps them in the `PersistentDashpayPaymentAddresses` sidecar;
+ * here they ride the profile row and commit with it. NULL for every
+ * pre-existing row: the profile publishes none until the next profile sync
+ * rewrites it. Each cached contact profile's `checkedAtMs` is reset to 0, so
+ * that sync fetches every contact profile again instead of treating a row
+ * that never stored addresses as fresh for up to an hour.
  */
 @Database(
-    version = 19,
+    version = 21,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -837,6 +857,33 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v19 -> v20: the nullable `asset_locks.shieldedRecipientRaw43`
+         * column, see the version-20 class doc above. NULL for every
+         * pre-existing lock.
+         */
+        val MIGRATION_19_20: Migration = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `asset_locks` ADD COLUMN `shieldedRecipientRaw43` BLOB")
+            }
+        }
+
+        /**
+         * v20 -> v21: the three nullable payment address columns on both
+         * DashPay profile tables, see the version-21 class doc above.
+         */
+        val MIGRATION_20_21: Migration = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                for (table in listOf("dashpay_profiles", "dashpay_contact_profiles")) {
+                    db.execSQL("ALTER TABLE `$table` ADD COLUMN `corePaymentAddress` BLOB")
+                    db.execSQL("ALTER TABLE `$table` ADD COLUMN `platformPaymentAddress` BLOB")
+                    db.execSQL("ALTER TABLE `$table` ADD COLUMN `shieldedAddress` BLOB")
+                }
+                // Names and avatars stay; only the fetch backoff is cleared.
+                db.execSQL("UPDATE `dashpay_contact_profiles` SET `checkedAtMs` = 0")
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -870,6 +917,8 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_16_17,
                     MIGRATION_17_18,
                     MIGRATION_18_19,
+                    MIGRATION_19_20,
+                    MIGRATION_20_21,
                 )
                 .build()
 

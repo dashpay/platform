@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use dashcore::Network;
 use dpp::address_funds::OrchardAddress;
@@ -34,12 +35,13 @@ use super::operations::shielded_actions;
 use super::prover::CachedOrchardProver;
 use super::store::{PendingRedrive, ShieldedNote, ShieldedStore, SubwalletId};
 use super::tip_payment::{
-    parse_shielded_tip_amount, pays_unresolved, recipient_change, tip_recipient_label,
-    unresolved_transfer_recipients, ShieldedIdentityBalance, ShieldedTipRecipient,
-    ShieldedTipRecipientChange, ShieldedTipSource,
+    ensure_expected_identity, parse_shielded_tip_amount, pays_unresolved, recipient_change,
+    tip_recipient_label, unresolved_transfer_recipients, ShieldedIdentityBalance,
+    ShieldedTipRecipient, ShieldedTipRecipientChange, ShieldedTipSource,
 };
 use super::viewing_key_bind_tests::{
-    add_identity_at_slot, coordinator_at, seed_master_key, temp_dir, tip_race_fixture,
+    add_identity_at_slot, coordinator_at, platform_wallet_with, seed_master_key, temp_dir,
+    tip_race_fixture, CapturingPersistence, BIND_SEED,
 };
 use super::{shielded_identity_account_index, FileBackedShieldedStore};
 use crate::PlatformWalletError;
@@ -594,6 +596,7 @@ async fn should_admit_one_tip_at_a_time_and_only_on_its_own_wallet() {
             ShieldedTipSource::Identity(id),
             "alice",
             &recipient(1, [4; 43]),
+            None,
             1_000,
             [0; 36],
             &CachedOrchardProver::new(),
@@ -601,6 +604,70 @@ async fn should_admit_one_tip_at_a_time_and_only_on_its_own_wallet() {
         .await;
     assert!(
         matches!(result, Err(PlatformWalletError::InvalidParameter(_))),
+        "{result:?}"
+    );
+}
+
+/// A tip started from a saved contact names the identity the name is
+/// expected to belong to. A name that resolves to another identity is
+/// refused, at the review and, before any wait or lookup, at the send. A
+/// typed name expects nothing.
+#[tokio::test]
+async fn should_refuse_a_name_that_belongs_to_another_identity_than_expected() {
+    let (contact, moved_to) = (Identifier::from([1; 32]), Identifier::from([2; 32]));
+    assert!(ensure_expected_identity(None, &moved_to).is_ok());
+    assert!(ensure_expected_identity(Some(&contact), &contact).is_ok());
+    assert!(matches!(
+        ensure_expected_identity(Some(&contact), &moved_to),
+        Err(PlatformWalletError::ShieldedTipRecipientMismatch { expected, resolved })
+            if expected == contact && resolved == moved_to
+    ));
+
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tip_expected_identity").await;
+    let reviewed = recipient(2, [4; 43]);
+    let prover = CachedOrchardProver::new();
+    let result = wallet
+        .send_shielded_tip(
+            wallet.admit_shielded_tip().expect("admit"),
+            &coordinator,
+            &seed[..],
+            ShieldedTipSource::Identity(id),
+            "alice",
+            &reviewed,
+            Some(&contact),
+            1_000,
+            [0; 36],
+            &prover,
+        )
+        .await;
+    assert!(
+        matches!(
+            result,
+            Err(PlatformWalletError::ShieldedTipRecipientMismatch { .. })
+        ),
+        "{result:?}"
+    );
+    // The expected identity is the reviewed one: the send goes on to its
+    // lookups, which the test's SDK does not answer.
+    let result = wallet
+        .send_shielded_tip(
+            wallet.admit_shielded_tip().expect("admitted again"),
+            &coordinator,
+            &seed[..],
+            ShieldedTipSource::Identity(id),
+            "alice",
+            &reviewed,
+            Some(&moved_to),
+            1_000,
+            [0; 36],
+            &prover,
+        )
+        .await;
+    assert!(
+        !matches!(
+            result,
+            Ok(()) | Err(PlatformWalletError::ShieldedTipRecipientMismatch { .. })
+        ),
         "{result:?}"
     );
 }
@@ -627,6 +694,7 @@ async fn should_refuse_a_tip_to_the_account_it_is_paid_from() {
         .send_resolved_shielded_tip(
             &coordinator,
             &seed[..],
+            ShieldedTipSource::Identity(id),
             identity_account,
             "me",
             &own,
@@ -653,7 +721,17 @@ async fn should_refuse_a_tip_to_the_account_it_is_paid_from() {
     // Paid from another account of the wallet it is a payment like any
     // other: admitted, and the spend then finds no notes to pay with.
     let result = wallet
-        .send_resolved_shielded_tip(&coordinator, &seed[..], 0, "me", &own, 1, [0; 36], &prover)
+        .send_resolved_shielded_tip(
+            &coordinator,
+            &seed[..],
+            ShieldedTipSource::Account(0),
+            0,
+            "me",
+            &own,
+            1,
+            [0; 36],
+            &prover,
+        )
         .await;
     assert!(
         !matches!(
@@ -677,7 +755,7 @@ async fn should_refuse_a_review_and_a_balance_on_a_coordinator_the_wallet_is_not
         .expect("prepare");
     let other = coordinator_at(&temp_dir("tip_other_coordinator_second"));
     assert!(matches!(
-        wallet.review_shielded_tip(&other, "alice").await,
+        wallet.review_shielded_tip(&other, "alice", None).await,
         Err(PlatformWalletError::ShieldedNotBound)
     ));
     assert!(matches!(
@@ -748,6 +826,180 @@ async fn should_refuse_a_bind_that_drops_the_account_of_an_unresolved_spend() {
         .bind_shielded(&seed[..], &[0], &coordinator)
         .await
         .expect("bind without the account once its spend resolved");
+}
+
+/// An identity's tip is paid only if the identity still holds its slot once
+/// the tip's notes are claimed: claiming them can wait for a scan, and the
+/// identity can be removed meanwhile. The notes are then released and
+/// nothing is built or sent.
+#[tokio::test]
+async fn should_release_the_claimed_notes_when_the_tips_source_no_longer_stands() {
+    let (wallet, seed, _id, coordinator) = tip_race_fixture("tip_source_after_claim").await;
+    let identity_account = shielded_identity_account_index(2).unwrap();
+    let payer = SubwalletId::new(wallet.wallet_id(), identity_account);
+    let paid = recipient(2, keys_of(3, 0).default_address.to_raw_address_bytes());
+    let gone = ShieldedTipSource::Identity(Identifier::from([0x01; 32]));
+    let prover = CachedOrchardProver::new();
+
+    // With nothing to claim the transfer ends before the check.
+    let result = wallet
+        .send_resolved_shielded_tip(
+            &coordinator,
+            &seed[..],
+            gone,
+            identity_account,
+            "b0b",
+            &paid,
+            1_000,
+            [0; 36],
+            &prover,
+        )
+        .await;
+    assert!(
+        !matches!(result, Err(PlatformWalletError::IdentityNotFound(_))),
+        "{result:?}"
+    );
+
+    coordinator
+        .store()
+        .write()
+        .await
+        .save_note(
+            payer,
+            &ShieldedNote {
+                value: 1_000_000_000_000,
+                ..input_note([5; 32])
+            },
+        )
+        .expect("save a note");
+    let result = wallet
+        .send_resolved_shielded_tip(
+            &coordinator,
+            &seed[..],
+            gone,
+            identity_account,
+            "b0b",
+            &paid,
+            1_000,
+            [0; 36],
+            &prover,
+        )
+        .await;
+    assert!(
+        matches!(result, Err(PlatformWalletError::IdentityNotFound(_))),
+        "{result:?}"
+    );
+    let store = coordinator.store().read().await;
+    assert_eq!(
+        store.get_unspent_notes(payer).expect("unspent").len(),
+        1,
+        "the claimed note is released"
+    );
+    assert!(
+        store.pending_redrives(payer).expect("records").is_empty(),
+        "nothing was built or saved"
+    );
+}
+
+/// The store of an earlier process holds a spend paid from account 1 that
+/// is unresolved. The first bind of a new process must carry that account:
+/// only its scan resolves the spend, and what reads the record needs its
+/// keys.
+#[tokio::test]
+async fn should_refuse_a_first_bind_without_the_account_of_an_unresolved_spend() {
+    let wallet = platform_wallet_with(Arc::new(CapturingPersistence::default())).await;
+    let dir = temp_dir("tip_first_bind_without_payer");
+    std::fs::create_dir_all(&dir).expect("create temp dir");
+    let payer = OrchardKeySet::from_seed(&BIND_SEED, Network::Testnet, 1)
+        .expect("derive keys")
+        .viewing_keys();
+    {
+        let mut store =
+            FileBackedShieldedStore::open_path(dir.join("tree.sqlite"), 100).expect("open");
+        arm_spend(
+            &mut store,
+            SubwalletId::new(wallet.wallet_id(), 1),
+            transfer_paying(&payer, keys_of(2, 0).default_address),
+        );
+    }
+    let coordinator = coordinator_at(&dir);
+
+    let result = wallet.bind_shielded(&BIND_SEED, &[0], &coordinator).await;
+    assert!(
+        matches!(
+            result,
+            Err(PlatformWalletError::ShieldedRecoveryKeysRequired {
+                account_index: 1,
+                ..
+            })
+        ),
+        "{result:?}"
+    );
+    wallet
+        .bind_shielded(&BIND_SEED, &[0, 1], &coordinator)
+        .await
+        .expect("bind with the paying account");
+}
+
+/// A damaged record of an unresolved spend is kept in the store without
+/// being loaded, so nothing says which account paid it. A bind that drops
+/// an account is refused while one is kept: the account's purge would
+/// delete it, and after another restart nothing would hold back a second
+/// payment.
+#[tokio::test]
+async fn should_refuse_a_bind_that_drops_an_account_while_a_damaged_spend_record_is_kept() {
+    let wallet = platform_wallet_with(Arc::new(CapturingPersistence::default())).await;
+    let dir = temp_dir("tip_bind_with_damaged_record");
+    std::fs::create_dir_all(&dir).expect("create temp dir");
+    let path = dir.join("tree.sqlite");
+    let payer = OrchardKeySet::from_seed(&BIND_SEED, Network::Testnet, 1)
+        .expect("derive keys")
+        .viewing_keys();
+    {
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+        arm_spend(
+            &mut store,
+            SubwalletId::new(wallet.wallet_id(), 1),
+            transfer_paying(&payer, keys_of(2, 0).default_address),
+        );
+    }
+    let saved_rows = || {
+        rusqlite::Connection::open(&path)
+            .expect("open the store file")
+            .query_row("SELECT COUNT(*) FROM shielded_pending_spends", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("count")
+    };
+    // An anchor of the wrong width: the row no longer loads.
+    rusqlite::Connection::open(&path)
+        .expect("open the store file")
+        .execute("UPDATE shielded_pending_spends SET anchor = x'00'", [])
+        .expect("damage the record");
+    let coordinator = coordinator_at(&dir);
+    assert!(coordinator
+        .store()
+        .read()
+        .await
+        .has_unloaded_note_spends(wallet.wallet_id()));
+
+    wallet
+        .bind_shielded(&BIND_SEED, &[0, 1], &coordinator)
+        .await
+        .expect("a bind that drops nothing");
+    let result = wallet.bind_shielded(&BIND_SEED, &[0], &coordinator).await;
+    assert!(
+        matches!(
+            result,
+            Err(PlatformWalletError::ShieldedRecoveryCorrupted {
+                account_index: None,
+                ..
+            })
+        ),
+        "{result:?}"
+    );
+    assert_eq!(saved_rows(), 1, "the damaged record is kept");
+    assert_eq!(wallet.shielded_account_indices().await, vec![0, 1]);
 }
 
 /// The transfer builder keys the recipient's output and the change to the
@@ -928,6 +1180,7 @@ async fn should_refuse_a_tip_while_an_earlier_payment_to_its_recipient_is_unreso
         .send_resolved_shielded_tip(
             &coordinator,
             &seed[..],
+            ShieldedTipSource::Account(0),
             0,
             "a11ce",
             &paid,
@@ -956,6 +1209,7 @@ async fn should_refuse_a_tip_while_an_earlier_payment_to_its_recipient_is_unreso
         .send_resolved_shielded_tip(
             &coordinator,
             &seed[..],
+            ShieldedTipSource::Account(0),
             0,
             "a11ce",
             &rotated,
@@ -985,6 +1239,7 @@ async fn should_refuse_a_tip_while_an_earlier_payment_to_its_recipient_is_unreso
         .send_resolved_shielded_tip(
             &coordinator,
             &seed[..],
+            ShieldedTipSource::Account(0),
             0,
             "b0b",
             &other,

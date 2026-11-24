@@ -539,6 +539,23 @@ impl FileBackedShieldedStore {
         }
     }
 
+    /// Forget every subwallet's scan evidence: its completed-scan coverage
+    /// and the balance source that rests on it. Notes, sync watermarks and
+    /// pending spends are kept.
+    ///
+    /// For a Clear that failed. Such a Clear may already have reset the
+    /// commitment tree, and evidence gathered against the tree as it was
+    /// says nothing about the tree as it is. A subwallet left at
+    /// `ScannedThisSession` would keep its amount reported as known with no
+    /// hydration behind it. A completed scan or a restore from the host
+    /// establishes the ledger again.
+    pub(super) fn forget_scan_evidence(&mut self) {
+        for state in self.subwallets.values_mut() {
+            state.last_scanned_index = None;
+            state.balance_source = ShieldedBalanceSource::NoHistory;
+        }
+    }
+
     /// Open or create a shielded store at `path`.
     ///
     /// SQLite is opened with **WAL journal + synchronous=NORMAL + temp_store=MEMORY**

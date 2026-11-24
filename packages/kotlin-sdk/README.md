@@ -77,6 +77,12 @@ publishes. Rust decides everything; a screen shows what it returns.
    account by number. Rust resolves the name again and refuses a recipient that
    changed, so the user reviews again.
 
+When the tip starts from a saved contact, pass the contact's identity id as
+`contactIdentityId` to the review and the send. Rust refuses with
+`ShieldedTipRecipientMismatch` when the contact's name now belongs to another
+identity, with nothing sent; the user picks the recipient again. Leave it out
+when the user typed the name, and do not compare the ids on the host.
+
 `DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed` means the tip may have
 left the wallet and may still execute: never send it again; a shielded sync
 resolves it. Read `TransactionBroadcastUnconfirmed` and

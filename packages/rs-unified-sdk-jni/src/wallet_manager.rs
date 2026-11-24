@@ -73,6 +73,8 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
 
 #[cfg(feature = "shielded")]
+use jni::sys::jintArray;
+#[cfg(feature = "shielded")]
 use rs_sdk_ffi::MnemonicResolverHandle;
 use rs_sdk_ffi::{FFINetwork, SDKHandle};
 
@@ -3321,8 +3323,10 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
 /// disk but its contents are reset so the next `shieldedBind` +
 /// sync cold-rebuilds from index 0. Throws `DashSDKException` on a
 /// store-reset failure — the host must NOT wipe its own persistence
-/// unless this succeeds. Mirrors Swift's
-/// `PlatformWalletManager.clearShieldedStorage()`.
+/// unless this succeeds. While a shielded operation is in flight it
+/// throws at once with code 1084 (`ErrorShieldedOperationInProgress`),
+/// nothing changed. Mirrors Swift's
+/// `PlatformWalletManager.clearShielded()`.
 #[cfg(feature = "shielded")]
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_shieldedClear(
@@ -3335,6 +3339,61 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
             platform_wallet_ffi::platform_wallet_manager_shielded_clear(manager_handle as Handle)
         };
         let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// The ordinary (non-identity) shielded accounts bound on `walletId`, in
+/// ascending order, as an `int[]`: the list a host passes back to
+/// `shieldedBind` after `shieldedClear`, which keeps the keys the wallet
+/// handle holds. Empty for a wallet never bound; throws `DashSDKException`
+/// for an unknown wallet. Bridges
+/// `platform_wallet_manager_shielded_ordinary_accounts`.
+#[cfg(feature = "shielded")]
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_shieldedOrdinaryAccounts(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+) -> jintArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(id) = read_id32(env, &wallet_id) else {
+            return ptr::null_mut();
+        };
+        // A bind takes at most 64 accounts, so 64 holds every list.
+        let mut accounts = [0u32; 64];
+        let mut count = 0usize;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_shielded_ordinary_accounts(
+                manager_handle as Handle,
+                id.as_ptr(),
+                accounts.as_mut_ptr(),
+                accounts.len(),
+                &mut count,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        // `shieldedBind` takes only non-negative ints, so an account it
+        // bound fits one. Refuse instead of bit-casting one that does not:
+        // the negative int would be refused when passed back to the bind.
+        let Ok(values) = accounts[..count]
+            .iter()
+            .map(|&account| i32::try_from(account))
+            .collect::<Result<Vec<i32>, _>>()
+        else {
+            throw_sdk_exception(env, 1, "a shielded account index does not fit a JVM int");
+            return ptr::null_mut();
+        };
+        let array = match env.new_int_array(values.len() as i32) {
+            Ok(array) => array,
+            Err(_) => return ptr::null_mut(),
+        };
+        if env.set_int_array_region(&array, 0, &values).is_err() {
+            return ptr::null_mut();
+        }
+        array.into_raw()
     })
 }
 

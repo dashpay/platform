@@ -700,6 +700,13 @@ outcomes, so an entry that merely looks like the payment is not that evidence.
 When the exact attempt cannot be identified, treat its outcome as unknown and
 do not send again.
 
+A tip started from a saved contact passes the contact's identity id as
+`contactIdentityId` to both `reviewShieldedTip` and `sendShieldedTip`. When
+the contact's name now belongs to another identity, Rust refuses with
+`shieldedTipRecipientMismatch` and nothing is sent: the user picks the
+recipient again, and a tip to the name's new owner starts from the name. Pass
+`nil` when the user typed the name.
+
 Any error other than these means the call sent nothing.
 
 To show what an identity can tip from, call

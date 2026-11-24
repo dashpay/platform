@@ -224,13 +224,12 @@ class PlatformWalletPersistenceHandlerTest {
 
         assertEquals(1, handler.persistenceCapabilitiesVersion())
         // The private contact request scan state is bit 15 (0x8000), the
-        // asset-lock operation ids bit 13 (0x2000).
-        assertEquals(0xabbfL, handler.persistenceCapabilitiesBits())
+        // asset-lock shielded recipients bit 14 (0x4000), the asset-lock
+        // operation ids bit 13 (0x2000).
+        assertEquals(0xebbfL, handler.persistenceCapabilitiesBits())
         // Android has no pending-contact-crypto callback, so it must not
         // attest that semantic contract.
         assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x40L)
-        // Nor does it keep the shielded recipient of an asset lock (bit 14).
-        assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x4000L)
 
         val diagnostic = PlatformWalletPersistenceCapabilities(
             handler.persistenceCapabilitiesVersion(),
@@ -243,6 +242,9 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.CORE_SWEEP_REMOVAL))
         assertTrue(
             diagnostic.contains(PlatformWalletPersistenceCapabilities.PRIVATE_CONTACT_REQUEST_SCAN_STATE),
+        )
+        assertTrue(
+            diagnostic.contains(PlatformWalletPersistenceCapabilities.ASSET_LOCK_SHIELDED_RECIPIENTS),
         )
     }
 
@@ -936,6 +938,92 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals("hi", profile.publicMessage)
         assertNotNull(profile.avatarHash)
         assertNull(profile.avatarFingerprint)
+    }
+
+    /** Upsert [identityId] with a present own profile carrying the given addresses. */
+    private suspend fun persistOwnProfile(
+        identityId: ByteArray,
+        core: ByteArray?,
+        platform: ByteArray?,
+        shielded: ByteArray?,
+        success: Boolean = true,
+    ) {
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityUpsert(
+            walletId = walletId,
+            identityId = identityId,
+            balance = 1,
+            revision = 0,
+            identityIndexIsSome = true,
+            identityIndex = 0,
+            status = 2,
+            walletIdIsSome = true,
+            identityWalletId = walletId,
+            dpnsNames = emptyArray(),
+            dpnsNamesAcquiredAt = longArrayOf(),
+            dashpayProfilePresent = true,
+            dashpayDisplayName = "Alice",
+            dashpayBio = null,
+            dashpayAvatarUrl = null,
+            dashpayAvatarHash = ByteArray(32),
+            dashpayAvatarHashPresent = false,
+            dashpayAvatarFingerprint = ByteArray(8),
+            dashpayAvatarFingerprintPresent = false,
+            dashpayPublicMessage = null,
+            dashpayCorePaymentAddress = core,
+            dashpayPlatformPaymentAddress = platform,
+            dashpayShieldedAddress = shielded,
+        )
+        handler.onChangesetEnd(walletId, success = success)
+    }
+
+    @Test
+    fun shouldPersistTheOwnProfilePaymentAddressesWithTheProfile() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val identityId = ByteArray(32) { 13 }
+        val core = byteArrayOf(0x00) + ByteArray(20) { 1 }
+        val shielded = ByteArray(43) { 3 }
+
+        persistOwnProfile(identityId, core, null, shielded)
+
+        val profile = db.dashpayDao().getProfile(testnet, identityId)!!
+        assertTrue(core.contentEquals(profile.corePaymentAddress!!))
+        assertNull(profile.platformPaymentAddress)
+        assertTrue(shielded.contentEquals(profile.shieldedAddress!!))
+    }
+
+    @Test
+    fun shouldClearAStoredOwnAddressTheNextProfileNoLongerPublishes() = runTest {
+        // The identity entry carries the whole profile document, so an
+        // address it no longer carries was removed on chain (Swift
+        // `PersistentDashpayPaymentAddresses.replace`).
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val identityId = ByteArray(32) { 14 }
+        val core = byteArrayOf(0x00) + ByteArray(20) { 1 }
+        val platform = byteArrayOf(0x01) + ByteArray(20) { 2 }
+        persistOwnProfile(identityId, core, platform, null)
+
+        persistOwnProfile(identityId, null, platform, null)
+
+        val profile = db.dashpayDao().getProfile(testnet, identityId)!!
+        assertNull(profile.corePaymentAddress)
+        assertTrue(platform.contentEquals(profile.platformPaymentAddress!!))
+    }
+
+    @Test
+    fun shouldKeepTheStoredOwnAddressesWhenTheProfileRoundRollsBack() = runTest {
+        // The addresses ride the profile row, so a round that fails leaves
+        // the profile and its addresses as they were, never half applied.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val identityId = ByteArray(32) { 15 }
+        val core = byteArrayOf(0x00) + ByteArray(20) { 1 }
+        persistOwnProfile(identityId, core, null, null)
+
+        persistOwnProfile(identityId, null, byteArrayOf(0x01) + ByteArray(20) { 2 }, null, success = false)
+
+        val profile = db.dashpayDao().getProfile(testnet, identityId)!!
+        assertTrue(core.contentEquals(profile.corePaymentAddress!!))
+        assertNull(profile.platformPaymentAddress)
     }
 
     @Test
@@ -5136,7 +5224,13 @@ class PlatformWalletPersistenceHandlerTest {
     // ── DashPay contact profiles: delta upsert / tombstone, restore ───
 
     /** Persist one present contact-profile delta for [contactId] owned by [ownerId]. */
-    private suspend fun persistContactProfile(ownerId: ByteArray, contactId: ByteArray) {
+    private suspend fun persistContactProfile(
+        ownerId: ByteArray,
+        contactId: ByteArray,
+        corePaymentAddress: ByteArray? = null,
+        platformPaymentAddress: ByteArray? = null,
+        shieldedAddress: ByteArray? = null,
+    ) {
         handler.onChangesetBegin(walletId)
         handler.onPersistContactProfileDelta(
             walletId = walletId,
@@ -5152,8 +5246,38 @@ class PlatformWalletPersistenceHandlerTest {
             avatarFingerprintPresent = false,
             publicMessage = "yo",
             checkedAtMs = 1_700_000_111_000,
+            corePaymentAddress = corePaymentAddress,
+            platformPaymentAddress = platformPaymentAddress,
+            shieldedAddress = shieldedAddress,
         )
         handler.onChangesetEnd(walletId, success = true)
+    }
+
+    @Test
+    fun shouldPersistAndRestoreAContactsPublishedPaymentAddresses() = runTest {
+        // A contact's addresses ride its cached profile row and come back on
+        // the restore row, so the contact screen shows them after a relaunch
+        // without waiting for the next profile sweep.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), ByteArray(78) { 30 },
+        )
+        val ownerId = ByteArray(32) { 34 }
+        val contactId = ByteArray(32) { 35 }
+        val platform = byteArrayOf(0x01) + ByteArray(20) { 7 }
+        val shielded = ByteArray(43) { 8 }
+        seedIdentity(ownerId)
+        persistContactProfile(ownerId, contactId, platformPaymentAddress = platform, shieldedAddress = shielded)
+
+        val row = db.dashpayDao().getContactProfilesByOwner(ownerId).single()
+        assertNull(row.corePaymentAddress)
+        assertTrue(platform.contentEquals(row.platformPaymentAddress!!))
+        assertTrue(shielded.contentEquals(row.shieldedAddress!!))
+
+        val restored = handler.onLoadWalletList().single().identities.single().contactProfiles.single()
+        assertNull(restored.corePaymentAddress)
+        assertTrue(platform.contentEquals(restored.platformPaymentAddress!!))
+        assertTrue(shielded.contentEquals(restored.shieldedAddress!!))
     }
 
     @Test

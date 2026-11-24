@@ -880,13 +880,102 @@ class DashDatabaseMigrationTest {
         db.close()
     }
 
+    /**
+     * v19 -> v20 (shielded asset-lock recipients): the nullable
+     * `asset_locks.shieldedRecipientRaw43` column. A shielded lock stored
+     * before the migration keeps its operation id and records no recipient,
+     * so a resume of it names the recipient, as before.
+     */
+    @Test
+    fun migrate19To20AddsTheAssetLockShieldedRecipientColumn() {
+        helper.createDatabase(dbName, 19).apply {
+            execSQL(
+                "INSERT INTO asset_locks (outPointHex, walletId, transactionBytes, fundingTypeRaw, " +
+                    "identityIndexRaw, accountIndexRaw, amountDuffs, statusRaw, operationId, " +
+                    "createdAt, updatedAt) " +
+                    "VALUES ('aa:0', x'01', x'0102', 5, 0, 0, 100000, 1, x'0A', 0, 0)",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 20, true, DashDatabase.MIGRATION_19_20)
+
+        db.query(
+            "SELECT amountDuffs, operationId, shieldedRecipientRaw43 FROM asset_locks " +
+                "WHERE outPointHex = 'aa:0'",
+        ).use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals(100_000L, c.getLong(0))
+            assertTrue(byteArrayOf(0x0A).contentEquals(c.getBlob(1)))
+            assertTrue("no recipient is recorded before the migration", c.isNull(2))
+        }
+        db.execSQL(
+            "UPDATE asset_locks SET shieldedRecipientRaw43 = x'09' WHERE outPointHex = 'aa:0'",
+        )
+        db.query("SELECT shieldedRecipientRaw43 FROM asset_locks WHERE outPointHex = 'aa:0'").use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue(byteArrayOf(9).contentEquals(c.getBlob(0)))
+        }
+        db.close()
+    }
+
+    /**
+     * v20 -> v21 (DashPay profile payment addresses): the own and the cached
+     * contact profile tables gain three nullable address columns. A profile
+     * stored before the migration keeps every column and publishes no
+     * address until the next profile sync rewrites it; a recently checked
+     * contact profile has its `checkedAtMs` cleared so that sync fetches it.
+     */
+    @Test
+    fun migrate20To21AddsProfilePaymentAddressColumns() {
+        helper.createDatabase(dbName, 20).apply {
+            execSQL(
+                "INSERT INTO identities (identityId, networkRaw, balance, revision, identityIndex, " +
+                    "isLocal, identityType, createdAt, lastUpdated) " +
+                    "VALUES (x'01', 1, 0, 0, 0, 1, 'user', 0, 0)",
+            )
+            execSQL(
+                "INSERT INTO dashpay_profiles (networkRaw, identityId, displayName, createdAt, lastUpdated) " +
+                    "VALUES (1, x'01', 'Alice', 0, 0)",
+            )
+            execSQL(
+                "INSERT INTO dashpay_contact_profiles (networkRaw, ownerIdentityId, contactIdentityId, " +
+                    "displayName, checkedAtMs, createdAt, lastUpdated) " +
+                    "VALUES (1, x'01', x'02', 'Bob', 1700000000000, 0, 0)",
+            )
+            close()
+        }
+
+        val db = helper.runMigrationsAndValidate(dbName, 21, true, DashDatabase.MIGRATION_20_21)
+
+        for ((table, name) in listOf("dashpay_profiles" to "Alice", "dashpay_contact_profiles" to "Bob")) {
+            db.query(
+                "SELECT displayName, corePaymentAddress, platformPaymentAddress, shieldedAddress FROM $table",
+            ).use { c ->
+                assertTrue(c.moveToFirst())
+                assertEquals(name, c.getString(0))
+                assertTrue("$table: no address before the next sync", c.isNull(1) && c.isNull(2) && c.isNull(3))
+            }
+        }
+        db.query("SELECT checkedAtMs FROM dashpay_contact_profiles").use { c ->
+            assertTrue(c.moveToFirst())
+            assertEquals("the next sync fetches the contact profile again", 0L, c.getLong(0))
+        }
+        db.execSQL("UPDATE dashpay_contact_profiles SET shieldedAddress = x'0303'")
+        db.query("SELECT shieldedAddress FROM dashpay_contact_profiles").use { c ->
+            assertTrue(c.moveToFirst())
+            assertTrue(byteArrayOf(3, 3).contentEquals(c.getBlob(0)))
+        }
+        db.close()
+    }
+
     /** The requested contiguous path from the pre-u64 v4 schema to latest. */
     @Test
     fun migrate4ToLatest() {
         helper.createDatabase(dbName, 4).close()
         helper.runMigrationsAndValidate(
             dbName,
-            19,
+            21,
             true,
             DashDatabase.MIGRATION_4_5,
             DashDatabase.MIGRATION_5_6,
@@ -903,16 +992,18 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_16_17,
             DashDatabase.MIGRATION_17_18,
             DashDatabase.MIGRATION_18_19,
+            DashDatabase.MIGRATION_19_20,
+            DashDatabase.MIGRATION_20_21,
         ).close()
     }
 
-    /** The full chain from v1 must also land on a valid v19 schema. */
+    /** The full chain from v1 must also land on a valid v21 schema. */
     @Test
     fun migrateAllTheWayFrom1() {
         helper.createDatabase(dbName, 1).close()
         helper.runMigrationsAndValidate(
             dbName,
-            19,
+            21,
             true,
             DashDatabase.MIGRATION_1_2,
             DashDatabase.MIGRATION_2_3,
@@ -932,6 +1023,8 @@ class DashDatabaseMigrationTest {
             DashDatabase.MIGRATION_16_17,
             DashDatabase.MIGRATION_17_18,
             DashDatabase.MIGRATION_18_19,
+            DashDatabase.MIGRATION_19_20,
+            DashDatabase.MIGRATION_20_21,
         ).close()
     }
 }

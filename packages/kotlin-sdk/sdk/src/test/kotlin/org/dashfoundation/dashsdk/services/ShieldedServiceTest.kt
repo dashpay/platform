@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedNoteEntity
 import org.dashfoundation.dashsdk.wallet.ShieldedBalanceSource
@@ -341,7 +342,7 @@ class ShieldedServiceTest {
         val wipeMayFinish = CompletableDeferred<Unit>()
         // A Clear: the Rust reset is done, the Room wipe is still running.
         val clear = launch(UnconfinedTestDispatcher(testScheduler)) {
-            service.withLedgerLifecycle {
+            service.withLedgerLifecycleForClear {
                 order += "reset"
                 resetDone.complete(Unit)
                 wipeMayFinish.await()
@@ -359,6 +360,42 @@ class ShieldedServiceTest {
         clear.join()
         bind.join()
         assertEquals(listOf("reset", "wiped", "bind restores"), order)
+    }
+
+    @Test
+    fun shouldRefuseAClearWhileABindHoldsTheLedgerAndRunItAfterwards() = runTest {
+        val bindRunning = CompletableDeferred<Unit>()
+        val bindMayFinish = CompletableDeferred<Unit>()
+        // A bind is inside its native calls.
+        val bind = launch(UnconfinedTestDispatcher(testScheduler)) {
+            service.withLedgerLifecycle {
+                bindRunning.complete(Unit)
+                bindMayFinish.await()
+            }
+        }
+        bindRunning.await()
+
+        // A Clear tapped now does not queue behind the bind: it is refused
+        // and neither resets nor wipes.
+        var cleared = false
+        val refused = runCatching {
+            service.withLedgerLifecycleForClear { cleared = true }
+        }.exceptionOrNull()
+        assertTrue(
+            "expected the typed refusal, got $refused",
+            refused is DashSdkError.PlatformWallet.ShieldedOperationInProgress,
+        )
+        assertTrue("Clear can be requested again", (refused as DashSdkError).isRetryable)
+        assertFalse(cleared)
+
+        // The bind finishing does not run the refused Clear after all.
+        bindMayFinish.complete(Unit)
+        bind.join()
+        assertFalse(cleared)
+
+        // Tapped again, it goes through.
+        service.withLedgerLifecycleForClear { cleared = true }
+        assertTrue(cleared)
     }
 
     @Test

@@ -225,8 +225,16 @@ pub unsafe extern "C" fn platform_wallet_parse_shielded_tip_amount(
 /// `recipient_identity_id` and `recipient_address` back to
 /// [`platform_wallet_manager_send_shielded_tip`] exactly as returned.
 ///
+/// `contact_identity_id` is the identity the host expects the name to belong
+/// to, when the tip starts from a saved contact: pass the contact's identity
+/// id, and a name that now resolves to another identity is refused with
+/// `ErrorShieldedTipRecipientMismatch`. Pass null when the user typed the
+/// name: the wallet then expects nothing.
+///
 /// Result codes:
 /// - `ErrorUtf8Conversion`: `username` is not valid UTF-8.
+/// - `ErrorShieldedTipRecipientMismatch` (86): `contact_identity_id` is
+///   non-null and the name resolves to another identity; nothing changed.
 /// - `ErrorShieldedRecoveryCorrupted` / `ErrorShieldedRecoveryKeysRequired`:
 ///   the wallet cannot tell whom a saved shielded spend pays.
 /// - `ErrorWalletOperation`: every other failure, including a name that does
@@ -251,12 +259,14 @@ pub unsafe extern "C" fn platform_wallet_parse_shielded_tip_amount(
 /// - `wallet_id_bytes` must point to 32 readable bytes.
 /// - `username` must be a valid NUL-terminated C string for the duration of
 ///   the call.
+/// - `contact_identity_id` must be null or point to 32 readable bytes.
 /// - `out_review` must point to a writable `ShieldedTipReviewFFI`.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_review_shielded_tip(
     handle: Handle,
     wallet_id_bytes: *const u8,
     username: *const c_char,
+    contact_identity_id: *const u8,
     out_review: *mut ShieldedTipReviewFFI,
 ) -> PlatformWalletFFIResult {
     check_ptr!(out_review);
@@ -267,6 +277,10 @@ pub unsafe extern "C" fn platform_wallet_manager_review_shielded_tip(
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
     let username = match read_utf8(username, "username") {
         Ok(username) => username.to_owned(),
+        Err(result) => return result,
+    };
+    let contact_identity = match read_optional_identifier(contact_identity_id) {
+        Ok(id) => id,
         Err(result) => return result,
     };
     if let Err(result) = ensure_not_on_runtime("shielded tip review") {
@@ -280,20 +294,45 @@ pub unsafe extern "C" fn platform_wallet_manager_review_shielded_tip(
             Ok(value) => value,
             Err(result) => return result,
         };
-        match block_on_worker(
-            async move { wallet.review_shielded_tip(&coordinator, &username).await },
-        ) {
+        match block_on_worker(async move {
+            wallet
+                .review_shielded_tip(&coordinator, &username, contact_identity.as_ref())
+                .await
+        }) {
             Ok(value) => {
                 review = value.into();
                 PlatformWalletFFIResult::ok()
             }
-            Err(e) => map_shielded_error(e, "review shielded tip"),
+            Err(e) => map_tip_review_error(e),
         }
     });
     if result.code == PlatformWalletFFIResultCode::Success {
         *out_review = review;
     }
     result
+}
+
+/// Map a failed tip review as the shielded reads map theirs
+/// ([`map_shielded_error`]), keeping one more code typed: a name that belongs
+/// to another identity than the contact the tip was started from.
+fn map_tip_review_error(error: PlatformWalletError) -> PlatformWalletFFIResult {
+    match error {
+        e @ PlatformWalletError::ShieldedTipRecipientMismatch { .. } => e.into(),
+        other => map_shielded_error(other, "review shielded tip"),
+    }
+}
+
+/// Read an optional 32-byte identifier: null is `None`.
+///
+/// # Safety
+/// `ptr` must be null or point to 32 readable bytes.
+unsafe fn read_optional_identifier(
+    ptr: *const u8,
+) -> Result<Option<Identifier>, PlatformWalletFFIResult> {
+    if ptr.is_null() {
+        return Ok(None);
+    }
+    read_identifier(ptr).map(Some).map_err(Into::into)
 }
 
 /// Send a shielded tip of `amount` credits to `username`, with
@@ -303,6 +342,14 @@ pub unsafe extern "C" fn platform_wallet_manager_review_shielded_tip(
 /// `expected_identity_id` and `expected_address` back exactly as
 /// [`platform_wallet_manager_review_shielded_tip`] returned them. The wallet
 /// resolves the name again and refuses a recipient that differs.
+///
+/// `contact_identity_id` is a different thing from `expected_identity_id`:
+/// the identity the host expects the name to belong to, when the tip starts
+/// from a saved contact. Pass the contact's identity id, and a reviewed
+/// recipient of another identity is refused with
+/// `ErrorShieldedTipRecipientMismatch`, also when the review was not given
+/// it. Pass null when the user typed the name: the wallet then expects
+/// nothing.
 ///
 /// The paying account: a non-null `source_identity_id` pays from that wallet
 /// identity's own shielded account (`ShieldedTipSource::Identity`, proved
@@ -321,7 +368,7 @@ pub unsafe extern "C" fn platform_wallet_manager_review_shielded_tip(
 ///   unwinds. `ErrorTransactionBroadcastUnconfirmed` (20), which the shielded
 ///   spend contract keeps for an SDK outcome it reports unconfirmed, means
 ///   the same.
-/// - `ErrorShieldedTipPending` (84): refused, nothing sent. Another tip from
+/// - `ErrorShieldedTipPending` (85): refused, nothing sent. Another tip from
 ///   this wallet is being sent (whoever it pays; the review does not report
 ///   this), or an earlier shielded transfer to the recipient may still
 ///   execute. This call sent nothing, but the earlier payment may be this
@@ -332,6 +379,10 @@ pub unsafe extern "C" fn platform_wallet_manager_review_shielded_tip(
 ///   activity entry reads failed, not confirmed). The wallet admits the tip
 ///   before the mnemonic is resolved, so a second call made while the first
 ///   runs is refused however long its resolver takes.
+/// - `ErrorShieldedTipRecipientMismatch` (86): `contact_identity_id` is
+///   non-null and the reviewed recipient is another identity: the name moved
+///   since the contact was saved. Nothing sent; the user picks the recipient
+///   again.
 /// - `ErrorIdentityNotFound` (7): the wallet holds no identity
 ///   `source_identity_id`. Nothing sent.
 /// - Every other code: this call sent nothing (for example
@@ -345,7 +396,8 @@ pub unsafe extern "C" fn platform_wallet_manager_review_shielded_tip(
 /// # Safety
 /// - `wallet_id_bytes` and `expected_identity_id` must point to 32 readable
 ///   bytes; `expected_address` to 43.
-/// - `source_identity_id` must be null or point to 32 readable bytes.
+/// - `source_identity_id` and `contact_identity_id` must each be null or
+///   point to 32 readable bytes.
 /// - `mnemonic_resolver_handle` must come from
 ///   `dash_sdk_mnemonic_resolver_create` and outlive this call; the caller
 ///   retains ownership.
@@ -362,6 +414,7 @@ pub unsafe extern "C" fn platform_wallet_manager_send_shielded_tip(
     username: *const c_char,
     expected_identity_id: *const u8,
     expected_address: *const u8,
+    contact_identity_id: *const u8,
     amount: u64,
     memo_text: *const c_char,
 ) -> PlatformWalletFFIResult {
@@ -377,6 +430,7 @@ pub unsafe extern "C" fn platform_wallet_manager_send_shielded_tip(
             username,
             expected_identity_id,
             expected_address,
+            contact_identity_id,
             amount,
             memo_text,
         )
@@ -402,6 +456,7 @@ unsafe fn send_shielded_tip_inner(
     username: *const c_char,
     expected_identity_id: *const u8,
     expected_address: *const u8,
+    contact_identity_id: *const u8,
     amount: u64,
     memo_text: *const c_char,
 ) -> PlatformWalletFFIResult {
@@ -431,6 +486,10 @@ unsafe fn send_shielded_tip_inner(
             std::ptr::copy_nonoverlapping(expected_address, address.as_mut_ptr(), 43);
             address
         },
+    };
+    let contact_identity = match read_optional_identifier(contact_identity_id) {
+        Ok(id) => id,
+        Err(result) => return result,
     };
     let username = match read_utf8(username, "username") {
         Ok(username) => username.to_owned(),
@@ -488,6 +547,7 @@ unsafe fn send_shielded_tip_inner(
                 source,
                 &username,
                 &expected,
+                contact_identity.as_ref(),
                 amount,
                 memo,
                 &prover,
@@ -498,11 +558,16 @@ unsafe fn send_shielded_tip_inner(
 }
 
 /// Map the outcome of a tip send as the shielded spends map theirs
-/// ([`map_spend_result`]), keeping one more code typed: an identity the
-/// wallet does not hold, named as the paying identity. Nothing was sent.
+/// ([`map_spend_result`]), keeping three more codes typed: an identity the
+/// wallet does not hold, named as the paying identity; a reviewed recipient
+/// of another identity than the contact the tip was started from; and an
+/// argument the wallet refuses, a tip to the account it is paid from among
+/// them. Nothing was sent in any of these.
 fn map_tip_send_result(result: Result<(), PlatformWalletError>) -> PlatformWalletFFIResult {
     match result {
-        Err(e @ PlatformWalletError::IdentityNotFound(..)) => e.into(),
+        Err(e @ PlatformWalletError::IdentityNotFound(..))
+        | Err(e @ PlatformWalletError::ShieldedTipRecipientMismatch { .. })
+        | Err(e @ PlatformWalletError::InvalidParameter(..)) => e.into(),
         other => map_spend_result(other, SEND_TIP_OPERATION),
     }
 }
@@ -690,6 +755,7 @@ mod tests {
                 INVALID_HANDLE,
                 std::ptr::null(),
                 c"alice".as_ptr(),
+                std::ptr::null(),
                 &mut review,
             )
         };
@@ -703,6 +769,7 @@ mod tests {
                 INVALID_HANDLE,
                 wallet_id.as_ptr(),
                 BAD_UTF8.as_ptr().cast(),
+                std::ptr::null(),
                 &mut review,
             )
         };
@@ -718,6 +785,7 @@ mod tests {
                 INVALID_HANDLE,
                 wallet_id.as_ptr(),
                 c"alice".as_ptr(),
+                std::ptr::null(),
                 std::ptr::null_mut(),
             )
         };
@@ -734,6 +802,7 @@ mod tests {
                 INVALID_HANDLE,
                 wallet_id.as_ptr(),
                 c"alice".as_ptr(),
+                std::ptr::null(),
                 &mut review,
             )
         };
@@ -762,6 +831,7 @@ mod tests {
                 username,
                 identity.as_ptr(),
                 expected_address,
+                std::ptr::null(),
                 1,
                 memo,
             )
@@ -849,10 +919,82 @@ mod tests {
                 c"alice".as_ptr(),
                 identity.as_ptr(),
                 address.as_ptr(),
+                std::ptr::null(),
                 1,
                 std::ptr::null(),
             )
         };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
+        free(result);
+    }
+
+    /// A contact identity changes nothing about the local checks: a null
+    /// argument and an invalid handle fail as before, with the review left
+    /// zeroed.
+    #[test]
+    fn should_fail_locally_with_a_contact_identity_and_leave_the_review_zeroed() {
+        let wallet_id = [0u8; 32];
+        let contact = [9u8; 32];
+        let mut review = dirty_review();
+        let result = unsafe {
+            platform_wallet_manager_review_shielded_tip(
+                INVALID_HANDLE,
+                std::ptr::null(),
+                c"alice".as_ptr(),
+                contact.as_ptr(),
+                &mut review,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        assert_eq!(review, ShieldedTipReviewFFI::default());
+        free(result);
+
+        let mut review = dirty_review();
+        let result = unsafe {
+            platform_wallet_manager_review_shielded_tip(
+                INVALID_HANDLE,
+                wallet_id.as_ptr(),
+                c"alice".as_ptr(),
+                contact.as_ptr(),
+                &mut review,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
+        assert_eq!(review, ShieldedTipReviewFFI::default());
+        free(result);
+    }
+
+    /// A contact identity changes nothing about the local checks of a send:
+    /// a null argument and an invalid handle fail as before.
+    #[test]
+    fn should_fail_locally_with_a_contact_identity_when_sending_a_tip() {
+        let wallet_id = [0u8; 32];
+        let identity = [0u8; 32];
+        let address = [0u8; 43];
+        let contact = [9u8; 32];
+        // Not dereferenced: both calls fail before the resolver is used.
+        let resolver = std::ptr::NonNull::<MnemonicResolverHandle>::dangling().as_ptr();
+        let send = |expected_address: *const u8| unsafe {
+            platform_wallet_manager_send_shielded_tip(
+                INVALID_HANDLE,
+                wallet_id.as_ptr(),
+                resolver,
+                std::ptr::null(),
+                0,
+                c"alice".as_ptr(),
+                identity.as_ptr(),
+                expected_address,
+                contact.as_ptr(),
+                1,
+                std::ptr::null(),
+            )
+        };
+
+        let result = send(std::ptr::null());
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        free(result);
+
+        let result = send(address.as_ptr());
         assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
         free(result);
     }
@@ -979,6 +1121,7 @@ mod tests {
                         INVALID_HANDLE,
                         wallet_id.as_ptr(),
                         c"alice".as_ptr(),
+                        std::ptr::null(),
                         &mut review,
                     )
                 };
@@ -1001,6 +1144,7 @@ mod tests {
                         c"alice".as_ptr(),
                         identity_id.as_ptr(),
                         address.as_ptr(),
+                        std::ptr::null(),
                         1,
                         std::ptr::null(),
                     )
@@ -1023,9 +1167,38 @@ mod tests {
         }
     }
 
-    /// A refused tip and an unknown source identity keep their own codes in
-    /// what the send export reports, and a tip that may have left the wallet
-    /// keeps the unconfirmed code: neither of the first two is that code.
+    fn recipient_mismatch() -> PlatformWalletError {
+        PlatformWalletError::ShieldedTipRecipientMismatch {
+            expected: Identifier::from([1; 32]),
+            resolved: Identifier::from([2; 32]),
+        }
+    }
+
+    /// A review refused because the name belongs to another identity than
+    /// the contact keeps its own code; other failures map as the shielded
+    /// reads map theirs.
+    #[test]
+    fn should_report_a_review_recipient_mismatch_by_its_own_code() {
+        let mismatch = map_tip_review_error(recipient_mismatch());
+        assert_eq!(
+            mismatch.code,
+            PlatformWalletFFIResultCode::ErrorShieldedTipRecipientMismatch
+        );
+        assert_eq!(mismatch.code as u32, 86);
+        free(mismatch);
+
+        let other = map_tip_review_error(PlatformWalletError::ShieldedNotBound);
+        assert_eq!(
+            other.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        free(other);
+    }
+
+    /// A refused tip, a recipient of another identity than the contact and
+    /// an unknown source identity keep their own codes in what the send
+    /// export reports, and a tip that may have left the wallet keeps the
+    /// unconfirmed code: none of the first three is that code.
     #[test]
     fn should_report_a_tip_send_outcome_by_its_own_code() {
         let pending = map_tip_send_result(Err(PlatformWalletError::ShieldedTipPending));
@@ -1033,8 +1206,16 @@ mod tests {
             pending.code,
             PlatformWalletFFIResultCode::ErrorShieldedTipPending
         );
-        assert_eq!(pending.code as u32, 84);
+        assert_eq!(pending.code as u32, 85);
         free(pending);
+
+        let mismatch = map_tip_send_result(Err(recipient_mismatch()));
+        assert_eq!(
+            mismatch.code,
+            PlatformWalletFFIResultCode::ErrorShieldedTipRecipientMismatch
+        );
+        assert_eq!(mismatch.code as u32, 86);
+        free(mismatch);
 
         let unknown =
             map_tip_send_result(Err(PlatformWalletError::IdentityNotFound([7; 32].into())));
@@ -1054,6 +1235,16 @@ mod tests {
             PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed
         );
         free(unconfirmed);
+
+        // A tip to the account it is paid from: the documented code 2.
+        let refused = map_tip_send_result(Err(PlatformWalletError::InvalidParameter(
+            "A tip cannot pay the shielded account it is paid from".to_string(),
+        )));
+        assert_eq!(
+            refused.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        free(refused);
 
         let sent = map_tip_send_result(Ok(()));
         assert_eq!(sent.code, PlatformWalletFFIResultCode::Success);

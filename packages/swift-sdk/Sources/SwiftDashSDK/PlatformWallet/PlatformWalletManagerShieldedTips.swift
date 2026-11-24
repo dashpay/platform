@@ -132,24 +132,37 @@ extension PlatformWalletManager {
     /// Throws `walletOperation` with Rust's reason for a name that does not
     /// exist, a profile that publishes no valid shielded address, or a
     /// wallet whose shielded accounts are not bound;
+    /// `shieldedTipRecipientMismatch` when `contactIdentityId` is set and the
+    /// name now belongs to another identity;
     /// `shieldedRecoveryCorrupted` / `shieldedRecoveryKeysRequired` when the
     /// wallet cannot tell whom a saved shielded spend pays.
-    public func reviewShieldedTip(walletId: Data, username: String) async throws -> ShieldedTipReview {
+    ///
+    /// `contactIdentityId`: when the tip starts from a saved contact, pass the
+    /// contact's 32-byte identity id. Rust refuses with
+    /// `shieldedTipRecipientMismatch` when the name now belongs to another
+    /// identity. Pass `nil` when the user typed the name.
+    public func reviewShieldedTip(
+        walletId: Data,
+        username: String,
+        contactIdentityId: Data? = nil
+    ) async throws -> ShieldedTipReview {
         try ensureConfigured()
         guard walletId.count == 32 else {
             throw PlatformWalletError.invalidParameter("walletId must be exactly 32 bytes")
         }
+        if let contactIdentityId, contactIdentityId.count != 32 {
+            throw PlatformWalletError.invalidParameter("contactIdentityId must be exactly 32 bytes")
+        }
         try PlatformWalletManager.requireCString(username, "username")
         return try await withAdmittedNativeOperation("reviewShieldedTip") { handle in
             var out = ShieldedTipReviewFFI()
-            try walletId.withUnsafeBytes { widRaw in
-                guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
-                    throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
-                }
-                try username.withCString { usernamePtr in
-                    try platform_wallet_manager_review_shielded_tip(
-                        handle, widPtr, usernamePtr, &out
-                    ).check()
+            try PlatformWalletManager.withBytes(walletId) { widPtr in
+                try PlatformWalletManager.withBytes(contactIdentityId) { contactPtr in
+                    try username.withCString { usernamePtr in
+                        try platform_wallet_manager_review_shielded_tip(
+                            handle, widPtr, usernamePtr, contactPtr, &out
+                        ).check()
+                    }
                 }
             }
             return try ShieldedTipReview(ffi: out)
@@ -162,6 +175,12 @@ extension PlatformWalletManager {
     /// name again and refuses a recipient that changed. `memo` is an
     /// optional UTF-8 text on the recipient's note, encoded and checked
     /// (at most 32 bytes) by Rust.
+    ///
+    /// `contactIdentityId`: when the tip starts from a saved contact, pass the
+    /// contact's 32-byte identity id. Rust refuses with
+    /// `shieldedTipRecipientMismatch` when the name now belongs to another
+    /// identity (also when the review was not given it). Pass `nil` when the
+    /// user typed the name.
     ///
     /// `resolver` supplies the Orchard spend authority for this one call,
     /// as for `shieldedTransfer`. The proof runs on a detached task.
@@ -178,6 +197,9 @@ extension PlatformWalletManager {
     ///   failed, never because the refusal ended; when the exact attempt
     ///   cannot be identified, treat its outcome as unknown and do not send
     ///   again.
+    /// - `shieldedTipRecipientMismatch`: `contactIdentityId` is set and the
+    ///   name now belongs to another identity. Nothing sent; the user picks
+    ///   the recipient again.
     /// - `identityNotFound`: the wallet holds no identity `source` names.
     ///   Nothing sent.
     /// - Anything else: this call sent nothing.
@@ -186,6 +208,7 @@ extension PlatformWalletManager {
         source: ShieldedTipSource,
         username: String,
         expectedRecipient: ShieldedTipRecipient,
+        contactIdentityId: Data? = nil,
         amount: UInt64,
         memo: String? = nil,
         resolver: MnemonicResolver
@@ -199,6 +222,9 @@ extension PlatformWalletManager {
         }
         guard expectedRecipient.address.count == 43 else {
             throw PlatformWalletError.invalidParameter("expectedRecipient.address must be exactly 43 bytes")
+        }
+        if let contactIdentityId, contactIdentityId.count != 32 {
+            throw PlatformWalletError.invalidParameter("contactIdentityId must be exactly 32 bytes")
         }
         // `.identity` crosses as a non-null id and `.account` as a null id
         // with the account number, which is how the C export reads them.
@@ -236,18 +262,20 @@ extension PlatformWalletManager {
                     try PlatformWalletManager.withBytes(sourceIdentity) { sourcePtr in
                         try PlatformWalletManager.withBytes(expectedRecipient.identityId) { expectedIdPtr in
                             try PlatformWalletManager.withBytes(expectedRecipient.address) { expectedAddressPtr in
-                                try username.withCString { usernamePtr in
-                                    let send: (UnsafePointer<CChar>?) throws -> Void = { memoPtr in
-                                        try platform_wallet_manager_send_shielded_tip(
-                                            handle, widPtr, resolverHandle, sourcePtr,
-                                            sourceAccount, usernamePtr, expectedIdPtr,
-                                            expectedAddressPtr, amount, memoPtr
-                                        ).check()
-                                    }
-                                    if let memo {
-                                        try memo.withCString { try send($0) }
-                                    } else {
-                                        try send(nil)
+                                try PlatformWalletManager.withBytes(contactIdentityId) { contactPtr in
+                                    try username.withCString { usernamePtr in
+                                        let send: (UnsafePointer<CChar>?) throws -> Void = { memoPtr in
+                                            try platform_wallet_manager_send_shielded_tip(
+                                                handle, widPtr, resolverHandle, sourcePtr,
+                                                sourceAccount, usernamePtr, expectedIdPtr,
+                                                expectedAddressPtr, contactPtr, amount, memoPtr
+                                            ).check()
+                                        }
+                                        if let memo {
+                                            try memo.withCString { try send($0) }
+                                        } else {
+                                            try send(nil)
+                                        }
                                     }
                                 }
                             }

@@ -24,6 +24,9 @@ import org.dashfoundation.dashsdk.ffi.SignerNative
 import org.dashfoundation.dashsdk.ffi.WalletManagerNative
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.PlatformWalletPersistenceHandler
+import org.dashfoundation.dashsdk.tokens.DashPayPaymentAddressKind
+import org.dashfoundation.dashsdk.tokens.DashPayPaymentAddresses
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -609,36 +612,41 @@ class FfiSmokeTest {
         assertEquals(1000 + 2, refusal.code)
         assertTrue(refusal.message?.contains(emoji) == true)
 
-        assertEquals(1, code { FundingNative.reviewShieldedTip(1L, shortId, "alice") })
-        assertEquals(1, code { FundingNative.reviewShieldedTip(1L, id, "ali\u0000ce") })
+        assertEquals(1, code { FundingNative.reviewShieldedTip(1L, shortId, "alice", null) })
+        assertEquals(1, code { FundingNative.reviewShieldedTip(1L, id, "ali\u0000ce", null) })
         assertEquals(1, code { FundingNative.shieldedIdentityBalance(1L, id, shortId) })
+        // A contact identity of the wrong size is refused at the boundary too.
+        assertEquals(1, code { FundingNative.reviewShieldedTip(1L, id, "alice", shortId) })
         assertEquals(1, code {
-            FundingNative.sendShieldedTip(1L, id, 1L, null, 0, "alice", id, ByteArray(42), 1L, null)
+            FundingNative.sendShieldedTip(1L, id, 1L, null, 0, "alice", id, address, shortId, 1L, null)
         })
         assertEquals(1, code {
-            FundingNative.sendShieldedTip(1L, id, 1L, shortId, 0, "alice", id, address, 1L, null)
+            FundingNative.sendShieldedTip(1L, id, 1L, null, 0, "alice", id, ByteArray(42), null, 1L, null)
         })
         assertEquals(1, code {
-            FundingNative.sendShieldedTip(1L, id, 1L, null, 0, "alice", id, address, -1L, null)
+            FundingNative.sendShieldedTip(1L, id, 1L, shortId, 0, "alice", id, address, null, 1L, null)
         })
         assertEquals(1, code {
-            FundingNative.sendShieldedTip(1L, id, 1L, null, -1, "alice", id, address, 1L, null)
+            FundingNative.sendShieldedTip(1L, id, 1L, null, 0, "alice", id, address, null, -1L, null)
+        })
+        assertEquals(1, code {
+            FundingNative.sendShieldedTip(1L, id, 1L, null, -1, "alice", id, address, null, 1L, null)
         })
         // A memo that cannot cross intact is refused, not sent rewritten or dropped.
         assertEquals(1, code {
             FundingNative.sendShieldedTip(
-                1L, id, 1L, null, 0, "alice", id, address, 1L, "\uD83D\uDE00\u0000",
+                1L, id, 1L, null, 0, "alice", id, address, null, 1L, "\uD83D\uDE00\u0000",
             )
         })
 
         // Valid arguments on an unknown manager reach Rust, which refuses
         // them before any lookup, proof or resolver call. The send is given
         // a null resolver, which Rust refuses first.
-        assertTrue(code { FundingNative.reviewShieldedTip(unknownManager, id, "alice") } >= 1000)
+        assertTrue(code { FundingNative.reviewShieldedTip(unknownManager, id, "alice", id) } >= 1000)
         assertTrue(code { FundingNative.shieldedIdentityBalance(unknownManager, id, id) } >= 1000)
         assertTrue(code {
             FundingNative.sendShieldedTip(
-                unknownManager, id, 0L, id, 0, "alice", id, address, 1L, "thanks",
+                unknownManager, id, 0L, id, 0, "alice", id, address, id, 1L, "thanks",
             )
         } >= 1000)
     }
@@ -745,12 +753,95 @@ class FfiSmokeTest {
     }
 
     /**
+     * The asset-lock shielded recipients need every override they depend on,
+     * the same way as the operation ids: JNI wires the two slots only for a
+     * bridge that overrides the recipient store, the recipient load and the
+     * asset lock upsert, and Rust attests the capability only when the
+     * bridge declares it. An inherited no-op load would answer "no
+     * recipient" for a lock built to pay one, and a resume would accept any.
+     */
+    @Test
+    fun assetLockShieldedRecipientCapabilityNeedsEveryOverride() {
+        NativeLoader.ensureLoaded()
+        val bit = NativePersistenceBridge.CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS
+        fun effective(bridge: NativePersistenceBridge): Boolean =
+            WalletManagerNative.nativeEffectivePersistenceCapabilityBits(bridge) and bit == bit
+
+        assertTrue("every override", effective(ShieldedRecipientBridge.Full()))
+        assertFalse("no recipient store", effective(ShieldedRecipientBridge.WithoutStore()))
+        assertFalse("no recipient load", effective(ShieldedRecipientBridge.WithoutLoad()))
+        assertFalse("no asset lock upsert", effective(ShieldedRecipientBridge.WithoutUpsert()))
+        assertFalse(
+            "every override, not declared",
+            effective(object : ShieldedRecipientBridge.Full() {
+                override fun persistenceCapabilitiesBits(): Long = TRACKED_ASSET_LOCKS or WALLET_RESTORE
+            }),
+        )
+
+        val db = DashDatabase.createInMemory(ApplicationProvider.getApplicationContext())
+        try {
+            val handlerBits = WalletManagerNative.nativeEffectivePersistenceCapabilityBits(
+                PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined),
+            )
+            assertEquals("the Room handler attests it", bit, handlerBits and bit)
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
      * Rust↔Kotlin persistence-descriptor lockstep. The trampolines resolve
      * each bridge method by (name, descriptor) only when its slot first
      * fires — for the invitation upsert that would be mid-way through a
      * live, funded `create_invitation`. Resolving the whole table up front
      * turns a descriptor typo into a CI failure instead.
      */
+    /**
+     * The DashPay profile payment address exports bind with the descriptors
+     * `DashpayNative` declares. The pure conversions answer without a
+     * wallet: stored Core bytes render as a testnet address that converts
+     * back to the same bytes, the same address is refused on mainnet and in
+     * the Platform field, and bytes that are not an address render as null.
+     * The support read and the profile write reach their C functions, which
+     * refuse an unknown wallet and a null signer.
+     */
+    @Test
+    fun profilePaymentAddressSymbolsBindAndConvert() {
+        NativeLoader.ensureLoaded()
+        val stored = byteArrayOf(0x00) + ByteArray(20) { 0x22 }
+        val text = DashPayPaymentAddresses.string(DashPayPaymentAddressKind.CORE, stored, Network.TESTNET)
+        assertNotNull(text)
+        assertArrayEquals(
+            stored,
+            DashPayPaymentAddresses.bytes(DashPayPaymentAddressKind.CORE, text!!, Network.TESTNET),
+        )
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.paymentAddressFromString(0, text, Network.MAINNET.ffiValue)
+        }
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.paymentAddressFromString(1, text, Network.TESTNET.ffiValue)
+        }
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.paymentAddressFromString(0, "not an address", Network.TESTNET.ffiValue)
+        }
+        assertNull(DashpayNative.paymentAddressToString(0, ByteArray(21) { 0x02 }, Network.TESTNET.ffiValue))
+        assertNull(DashpayNative.paymentAddressToString(2, ByteArray(0), Network.TESTNET.ffiValue))
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.paymentAddressToString(3, stored, Network.TESTNET.ffiValue)
+        }
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.paymentAddressSupport(0L)
+        }
+        val noSigner = assertThrows(DashSDKException::class.java) {
+            DashpayNative.createOrUpdateProfileWithAddresses(
+                0L, ByteArray(32), "name", null, null, null,
+                1, stored, 2, null, 0, null,
+                false, 0L,
+            )
+        }
+        assertNotEquals(0, noSigner.code)
+    }
+
     @Test
     fun persistenceBridgeDescriptorsAllResolve() {
         NativeLoader.ensureLoaded()
@@ -865,6 +956,93 @@ private abstract class OperationIdBridge : NativePersistenceBridge() {
         ): Int = 0
 
         override fun onLoadAssetLockOperationId(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+            null
+    }
+}
+
+/**
+ * Bridges declaring the asset-lock shielded recipients with some of the
+ * overrides they depend on, for
+ * [FfiSmokeTest.assetLockShieldedRecipientCapabilityNeedsEveryOverride].
+ * Each concrete class declares exactly the overrides its name says.
+ */
+private abstract class ShieldedRecipientBridge : NativePersistenceBridge() {
+    override fun persistenceCapabilitiesVersion(): Int = 1
+
+    override fun persistenceCapabilitiesBits(): Long =
+        CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS or TRACKED_ASSET_LOCKS or WALLET_RESTORE
+
+    open class Full : ShieldedRecipientBridge() {
+        @Suppress("LongParameterList")
+        override fun onPersistAssetLockUpsert(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            transactionBytes: ByteArray,
+            accountIndex: Int,
+            fundingType: Byte,
+            identityIndex: Int,
+            amountDuffs: Long,
+            status: Byte,
+            proofBytes: ByteArray?,
+        ): Int = 0
+
+        override fun onPersistAssetLockShieldedRecipient(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            recipientRaw43: ByteArray,
+        ): Int = 0
+
+        override fun onLoadAssetLockShieldedRecipient(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+            null
+    }
+
+    class WithoutStore : ShieldedRecipientBridge() {
+        @Suppress("LongParameterList")
+        override fun onPersistAssetLockUpsert(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            transactionBytes: ByteArray,
+            accountIndex: Int,
+            fundingType: Byte,
+            identityIndex: Int,
+            amountDuffs: Long,
+            status: Byte,
+            proofBytes: ByteArray?,
+        ): Int = 0
+
+        override fun onLoadAssetLockShieldedRecipient(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+            null
+    }
+
+    class WithoutLoad : ShieldedRecipientBridge() {
+        @Suppress("LongParameterList")
+        override fun onPersistAssetLockUpsert(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            transactionBytes: ByteArray,
+            accountIndex: Int,
+            fundingType: Byte,
+            identityIndex: Int,
+            amountDuffs: Long,
+            status: Byte,
+            proofBytes: ByteArray?,
+        ): Int = 0
+
+        override fun onPersistAssetLockShieldedRecipient(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            recipientRaw43: ByteArray,
+        ): Int = 0
+    }
+
+    class WithoutUpsert : ShieldedRecipientBridge() {
+        override fun onPersistAssetLockShieldedRecipient(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            recipientRaw43: ByteArray,
+        ): Int = 0
+
+        override fun onLoadAssetLockShieldedRecipient(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
             null
     }
 }
