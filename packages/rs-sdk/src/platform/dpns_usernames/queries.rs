@@ -184,8 +184,11 @@ impl Sdk {
     ///
     /// # Arguments
     ///
-    /// * `name` - The full name as `label.parent` (e.g., "alice.dash"), in any case. Any
-    ///   other shape is refused ([`Error::InvalidRequest`]) before anything is read.
+    /// * `name` - The full name as `label.parent` (e.g., "alice.dash"), in any case. A name
+    ///   without exactly one dot is refused ([`Error::InvalidRequest`]) before anything is
+    ///   read. Only that shape is checked, not the label: a name with an empty label
+    ///   (".dash") or an empty parent ("dash.", how DPNS keeps a top-level domain) is looked
+    ///   up as written.
     ///
     /// # Returns
     ///
@@ -314,7 +317,8 @@ impl Sdk {
 
 /// The parent domain and the label of `name`, a full DPNS name `label.parent`, each in the
 /// homograph-safe form DPNS stores and indexes it in: `Alice.DASH` is kept as `a11ce` under
-/// `dash`. A name that is not exactly a label and a parent domain is refused.
+/// `dash`. A name without exactly one dot is refused. Either part may be empty: this checks
+/// the shape of the name, not whether its label is one DPNS would register.
 fn full_dpns_name_parts(name: &str) -> Result<(String, String), Error> {
     let mut parts = name.split('.');
     let (Some(label), Some(parent_domain_name), None) = (parts.next(), parts.next(), parts.next())

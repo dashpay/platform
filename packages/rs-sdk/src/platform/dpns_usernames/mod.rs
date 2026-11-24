@@ -1460,6 +1460,78 @@ mod tests {
         assert_eq!(found, None);
     }
 
+    /// The parent domain is stored in homograph-safe form too, which lowercasing alone does
+    /// not give: `Alice.Orbit` is kept as `a11ce` under `0rb1t`. The expected query is spelled
+    /// out here, apart from the builder the lookup uses.
+    #[tokio::test]
+    async fn should_look_a_name_up_under_its_homograph_safe_parent_domain() {
+        let owner = Identifier::new([1u8; 32]);
+        let provider = DpnsV2ContextProvider::default();
+        let mut sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
+        let domain = stored_domain("Alice", owner);
+        let stored_name_query = DocumentQuery {
+            select: SelectProjection::documents(),
+            data_contract: Arc::new(dpns_v2()),
+            document_type_name: "domain".to_string(),
+            where_clauses: vec![
+                WhereClause {
+                    field: "normalizedParentDomainName".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Text("0rb1t".to_string()),
+                },
+                WhereClause {
+                    field: "normalizedLabel".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Text("a11ce".to_string()),
+                },
+            ],
+            time_range_clauses: vec![],
+            integer_range_clauses: vec![],
+            sub_queries: vec![],
+            group_by: vec![],
+            having: vec![],
+            order_by_clauses: vec![],
+            limit: 1,
+            offset: None,
+            start: None,
+        };
+        sdk.mock()
+            .expect_fetch_many::<Identifier, Document, _, Documents>(
+                stored_name_query,
+                Some([(domain.id(), Some(domain))].into_iter().collect()),
+            )
+            .await
+            .expect("the domain query is expected");
+
+        let found = sdk
+            .get_dpns_domain_document_by_name("Alice.Orbit")
+            .await
+            .expect("the lookup answers")
+            .expect("the name is found");
+        assert_eq!(found.owner_id(), owner);
+    }
+
+    /// Only the shape of the name is checked, not its label: `.dash` has one dot, so it is
+    /// looked up as written, with an empty label, and nobody holds it.
+    #[tokio::test]
+    async fn should_look_up_a_name_with_an_empty_label_and_find_nothing() {
+        let provider = DpnsV2ContextProvider::default();
+        let mut sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
+        sdk.mock()
+            .expect_fetch_many::<Identifier, Document, _, Documents>(
+                give_up::dpns_name_query(Arc::new(dpns_v2()), "domain", String::new()),
+                Some([(Identifier::new([9u8; 32]), None)].into_iter().collect()),
+            )
+            .await
+            .expect("the domain query is expected");
+
+        let found = sdk
+            .get_dpns_domain_document_by_name(".dash")
+            .await
+            .expect("the lookup answers");
+        assert_eq!(found, None);
+    }
+
     /// The lookup takes a label and a parent domain. Anything else is refused before the SDK
     /// reads anything: the mock SDK holds no expectation.
     #[tokio::test]
