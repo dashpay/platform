@@ -50,7 +50,8 @@ pub use manager::dashpay_sync::{
     DEFAULT_SYNC_INTERVAL_SECS as DASHPAY_SYNC_DEFAULT_INTERVAL_SECS,
 };
 pub use manager::identity_sync::{
-    IdentitySyncManager, IdentityTokenSyncInfo, IdentityTokenSyncState,
+    IdentitySyncManager, IdentitySyncPassSummary, IdentityTokenSyncInfo, IdentityTokenSyncOutcome,
+    IdentityTokenSyncState, TokenBalanceBatchOutcome, TokenBalanceReadError,
     DEFAULT_SYNC_INTERVAL_SECS as IDENTITY_SYNC_DEFAULT_INTERVAL_SECS,
     MAX_TOKENS_PER_BALANCE_BATCH as IDENTITY_SYNC_MAX_TOKENS_PER_BATCH,
 };
