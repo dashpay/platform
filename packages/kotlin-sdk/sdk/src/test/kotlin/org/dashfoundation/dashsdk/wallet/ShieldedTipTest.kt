@@ -177,4 +177,27 @@ class ShieldedTipTest {
             }
         }
     }
+
+    /**
+     * A recipient is a snapshot of what the review returned: the caller's
+     * arrays, and the arrays it reads back, are not its storage.
+     */
+    @Test
+    fun aRecipientKeepsTheBytesItWasBuiltWith() {
+        val identityId = ByteArray(32) { 1 }
+        val address = ByteArray(43) { 2 }
+        val recipient = ShieldedTipRecipient(identityId, address)
+        val same = ShieldedTipRecipient(ByteArray(32) { 1 }, ByteArray(43) { 2 })
+
+        identityId.fill(9)
+        address.fill(9)
+        recipient.identityId.fill(8)
+        recipient.address.fill(8)
+
+        assertEquals(same, recipient)
+        assertEquals(same.hashCode(), recipient.hashCode())
+        assertTrue(recipient.identityId.contentEquals(ByteArray(32) { 1 }))
+        assertTrue(recipient.address.contentEquals(ByteArray(43) { 2 }))
+        assertNotEquals(ShieldedTipRecipient(ByteArray(32) { 1 }, ByteArray(43) { 3 }), recipient)
+    }
 }

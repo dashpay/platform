@@ -11,29 +11,51 @@ import org.dashfoundation.dashsdk.ffi.BlobReader
  * ([PlatformWalletManager.sendShieldedTip]) takes it back unchanged, so a
  * name or a profile that changed in between cannot redirect the payment.
  *
+ * A snapshot: the bytes are copied in at construction and copied out on
+ * every read, so what a send passes to Rust is what the review returned,
+ * whatever the caller did with its own arrays since.
+ *
  * @param identityId the 32-byte id of the identity the username resolves to.
  * @param address the raw 43-byte Orchard address (11-byte diversifier,
  *   32-byte `pk_d`) that identity's profile publishes.
  */
-data class ShieldedTipRecipient(
-    val identityId: ByteArray,
-    val address: ByteArray,
+class ShieldedTipRecipient(
+    identityId: ByteArray,
+    address: ByteArray,
 ) {
+    private val identityIdBytes: ByteArray = identityId.copyOf()
+    private val addressBytes: ByteArray = address.copyOf()
+
+    /** A copy of the 32-byte identity id. */
+    val identityId: ByteArray get() = identityIdBytes.copyOf()
+
+    /** A copy of the raw 43-byte Orchard address. */
+    val address: ByteArray get() = addressBytes.copyOf()
+
     override fun equals(other: Any?): Boolean =
         other is ShieldedTipRecipient &&
-            identityId.contentEquals(other.identityId) &&
-            address.contentEquals(other.address)
+            identityIdBytes.contentEquals(other.identityIdBytes) &&
+            addressBytes.contentEquals(other.addressBytes)
 
     override fun hashCode(): Int =
-        31 * identityId.contentHashCode() + address.contentHashCode()
+        31 * identityIdBytes.contentHashCode() + addressBytes.contentHashCode()
+
+    override fun toString(): String =
+        "ShieldedTipRecipient(identityId=${identityIdBytes.toHex()}, " +
+            "address=${addressBytes.toHex()})"
+
+    private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 }
 
 /**
  * How a tip recipient compares with the one this wallet last confirmed for
  * the same name. Rust makes the comparison; nothing here compares recipients.
+ *
+ * A recipient is confirmed when a send to it is admitted, before the
+ * transfer is built: none of these says a tip was paid.
  */
 sealed interface ShieldedTipRecipientChange {
-    /** This wallet has not sent a tip to the name before. */
+    /** No recipient was confirmed for the name from this wallet before. */
     data object New : ShieldedTipRecipientChange
 
     /** The same identity and address as last confirmed. */
