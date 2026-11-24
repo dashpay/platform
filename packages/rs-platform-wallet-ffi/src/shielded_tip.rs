@@ -24,10 +24,9 @@ use crate::check_ptr;
 use crate::error::*;
 use crate::handle::*;
 use crate::identity_keys_from_mnemonic::resolve_seed_from_resolver;
-use crate::runtime::{block_on_worker, runtime};
+use crate::runtime::{block_on_worker, ensure_not_on_runtime, runtime};
 use crate::shielded_send::{
-    catch_spend_panic, encode_memo_text, map_spend_result, poke_sync_on_unconfirmed,
-    resolve_wallet_and_coordinator,
+    catch_spend_panic, encode_memo_text, map_spend_result, resolve_wallet_and_coordinator,
 };
 use crate::shielded_sync::{catch_query_panic, map_shielded_error};
 use crate::types::read_identifier;
@@ -41,7 +40,9 @@ const IDENTITY_BALANCE_WAIT_BUDGET: Duration = Duration::from_millis(100);
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum ShieldedTipRecipientChangeFFI {
-    /// This wallet has not sent a tip to the name before.
+    /// No recipient was confirmed for the name from this wallet before. A
+    /// recipient is confirmed when a send to it is admitted, so none of
+    /// these cases says a tip was paid.
     #[default]
     New = 0,
     /// The same identity and address as last confirmed.
@@ -234,6 +235,14 @@ pub unsafe extern "C" fn platform_wallet_parse_shielded_tip_amount(
 ///   coordinator that is not configured. The message carries the wallet's
 ///   reason.
 ///
+/// `unresolved` reports a saved transfer to the recipient. It does not
+/// report another tip being sent, so a send can still return
+/// `ErrorShieldedTipPending` after a review that said `false`.
+///
+/// Blocks, so call it off the UI thread, and not from a callback this
+/// library invokes (the shielded balance, sync progress and persistence
+/// callbacks): from there it returns `ErrorWalletOperation` at once.
+///
 /// In a build that unwinds (Android and the host tests), a panic inside the
 /// call is returned as `ErrorWalletOperation`; the iOS profiles build with
 /// `panic = "abort"`.
@@ -260,9 +269,11 @@ pub unsafe extern "C" fn platform_wallet_manager_review_shielded_tip(
         Ok(username) => username.to_owned(),
         Err(result) => return result,
     };
-    // Resolution blocks on the runtime, which panics when the host calls from
-    // inside one, so it sits inside the boundary with the call. The raw
-    // output write happens outside it and only on success.
+    if let Err(result) = ensure_not_on_runtime("shielded tip review") {
+        return result;
+    }
+    // Resolution blocks on the runtime, so it sits inside the boundary with
+    // the call. The raw output write happens outside it and only on success.
     let mut review = ShieldedTipReviewFFI::default();
     let result = catch_query_panic("shielded tip review", || {
         let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
@@ -311,13 +322,22 @@ pub unsafe extern "C" fn platform_wallet_manager_review_shielded_tip(
 ///   spend contract keeps for an SDK outcome it reports unconfirmed, means
 ///   the same.
 /// - `ErrorShieldedTipPending` (84): refused, nothing sent. Another tip from
-///   this wallet is being sent, or an earlier shielded payment to the
-///   recipient may still execute; a shielded sync resolves it, after which
-///   review and send again.
+///   this wallet is being sent (whoever it pays; the review does not report
+///   this), or an earlier shielded transfer to the recipient may still
+///   execute. This call sent nothing, but the earlier payment may be this
+///   same tip and may pay the recipient: a shielded sync resolves it as
+///   executed or as unable to execute, and the refusal ends either way. Do
+///   not send the tip again because the refusal ended; send it again only
+///   once the earlier payment is known to have failed (its shielded
+///   activity entry reads failed, not confirmed). The wallet admits the tip
+///   before the mnemonic is resolved, so a second call made while the first
+///   runs is refused however long its resolver takes.
 /// - `ErrorIdentityNotFound` (7): the wallet holds no identity
 ///   `source_identity_id`. Nothing sent.
-/// - Every other code: the tip was not sent (for example
-///   `ErrorWalletOperation` for a recipient that changed since the review,
+/// - Every other code: this call sent nothing (for example
+///   `ErrorWalletOperation` for a recipient that changed since the review
+///   or for a call made from a callback this library invokes,
+///   `ErrorInvalidParameter` for a tip to the account it is paid from,
 ///   `ErrorUtf8Conversion` for a bad string, `ErrorInvalidParameter` for an
 ///   over-long memo, `ErrorShieldedNoRecordedAnchor` while the tree catches
 ///   up).
@@ -429,9 +449,28 @@ unsafe fn send_shielded_tip_inner(
         Err(result) => return result,
     };
 
-    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
-        Ok(value) => value,
-        Err(result) => return result,
+    if let Err(result) = ensure_not_on_runtime(SEND_TIP_OPERATION) {
+        return result;
+    }
+    let Some(sender) = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(manager.shielded_tip_sender(&wallet_id))
+    }) else {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidHandle,
+            format!("invalid manager handle: {handle}"),
+        );
+    };
+    let sender = match sender {
+        Ok(sender) => sender,
+        Err(e) => return map_tip_send_result(Err(e)),
+    };
+    // Admitted before the mnemonic is resolved: the resolver is the host's
+    // and can take as long as a prompt stays open. A second call would
+    // otherwise wait in it past the first tip's whole send, and then find
+    // neither a tip in flight nor an unresolved transfer.
+    let admission = match sender.admit() {
+        Ok(admission) => admission,
+        Err(e) => return map_tip_send_result(Err(e)),
     };
     let seed = match resolve_seed_from_resolver(mnemonic_resolver_handle, &wallet_id) {
         Ok(seed) => seed,
@@ -442,9 +481,9 @@ unsafe fn send_shielded_tip_inner(
     // past the iOS dispatch-thread stack.
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
-        let r = wallet
-            .send_shielded_tip(
-                &coordinator,
+        sender
+            .send(
+                admission,
                 seed.as_ref(),
                 source,
                 &username,
@@ -453,9 +492,7 @@ unsafe fn send_shielded_tip_inner(
                 memo,
                 &prover,
             )
-            .await;
-        poke_sync_on_unconfirmed(&r, handle);
-        r
+            .await
     });
     map_tip_send_result(result)
 }
@@ -489,8 +526,10 @@ fn map_tip_send_result(result: Result<(), PlatformWalletError>) -> PlatformWalle
 /// - `ErrorIdentityNotFound`: the wallet holds no identity with that id.
 /// - `ErrorWalletOperation`: the read was busy (a scan holds the store; keep
 ///   the last state and retry later), the wallet is unknown, no shielded
-///   coordinator is configured, or another failure, with the reason in the
-///   message.
+///   coordinator is configured, the call was made from a callback this
+///   library invokes (the shielded balance callback among them: read the
+///   balance from another thread), or another failure, with the reason in
+///   the message.
 /// - `ErrorShieldedRecoveryCorrupted` / `ErrorShieldedRecoveryKeysRequired`:
 ///   the wallet's persisted shielded state is unusable.
 ///
@@ -517,6 +556,9 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_balance(
         Ok(id) => id,
         Err(e) => return e.into(),
     };
+    if let Err(result) = ensure_not_on_runtime("shielded identity balance") {
+        return result;
+    }
     let mut balance = ShieldedIdentityBalanceFFI::default();
     let result = catch_query_panic("shielded identity balance", || {
         // Only the owned Arcs cross the wait: the registry guard is released
@@ -918,6 +960,67 @@ mod tests {
                 credits: 42,
             }
         );
+    }
+
+    /// Called from a callback this library invokes, the caller is inside the
+    /// runtime the exports block on. They refuse instead of panicking there
+    /// (the iOS profiles abort on a panic), with the outputs left zeroed.
+    #[test]
+    fn should_refuse_a_call_made_from_inside_the_runtime() {
+        let wallet_id = [0u8; 32];
+        let identity_id = [1u8; 32];
+        let address = [2u8; 43];
+        let resolver = std::ptr::NonNull::<MnemonicResolverHandle>::dangling().as_ptr();
+        let (review_result, review, balance_result, balance, send_result) =
+            runtime().block_on(async {
+                let mut review = dirty_review();
+                let review_result = unsafe {
+                    platform_wallet_manager_review_shielded_tip(
+                        INVALID_HANDLE,
+                        wallet_id.as_ptr(),
+                        c"alice".as_ptr(),
+                        &mut review,
+                    )
+                };
+                let mut balance = dirty_balance();
+                let balance_result = unsafe {
+                    platform_wallet_manager_shielded_identity_balance(
+                        INVALID_HANDLE,
+                        wallet_id.as_ptr(),
+                        identity_id.as_ptr(),
+                        &mut balance,
+                    )
+                };
+                let send_result = unsafe {
+                    platform_wallet_manager_send_shielded_tip(
+                        INVALID_HANDLE,
+                        wallet_id.as_ptr(),
+                        resolver,
+                        std::ptr::null(),
+                        0,
+                        c"alice".as_ptr(),
+                        identity_id.as_ptr(),
+                        address.as_ptr(),
+                        1,
+                        std::ptr::null(),
+                    )
+                };
+                (review_result, review, balance_result, balance, send_result)
+            });
+        assert_eq!(review, ShieldedTipReviewFFI::default());
+        assert_eq!(balance, ShieldedIdentityBalanceFFI::default());
+        for result in [review_result, balance_result, send_result] {
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorWalletOperation
+            );
+            assert!(
+                message(&result).contains("from inside a wallet callback"),
+                "{}",
+                message(&result)
+            );
+            free(result);
+        }
     }
 
     /// A refused tip and an unknown source identity keep their own codes in

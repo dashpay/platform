@@ -64,8 +64,10 @@ publishes. Rust decides everything; a screen shows what it returns.
    returns credits. Show the parsed amount in the confirmation, not the typed
    text.
 2. Call `manager.reviewShieldedTip(walletId, username)`. Show the recipient and
-   the change: `New` for a name never tipped from this wallet, `Unchanged`, or
-   `Changed(previous)` when the name now pays another identity or address.
+   the change: `New` when no recipient was confirmed for the name from this
+   wallet before, `Unchanged`, or `Changed(previous)` when the name now pays
+   another identity or address. A recipient is confirmed when a send to it is
+   admitted, so none of these says a tip was paid.
    `unresolved` means an earlier payment to the recipient may still execute, so
    a send would be refused.
 3. Send with `manager.sendShieldedTip(walletId, source, username,
@@ -77,10 +79,19 @@ publishes. Rust decides everything; a screen shows what it returns.
 
 `DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed` means the tip may have
 left the wallet and may still execute: never send it again; a shielded sync
-resolves it. `ShieldedTipPending` means nothing was sent because an earlier
-payment to the recipient is unresolved, or another tip is being sent; a
-shielded sync resolves it, after which review and send again. Every other error
-means the tip was not sent.
+resolves it. Read `TransactionBroadcastUnconfirmed` and
+`DashSdkError.StateTransitionResultUnconfirmed` the same way.
+
+`ShieldedTipPending` means this call sent nothing, because another tip is being
+sent or an earlier payment to the recipient is unresolved. It says nothing
+about that earlier payment, which may be this same tip submitted twice and may
+pay the recipient. A shielded sync resolves it as executed or as unable to
+execute, and the refusal ends either way, so do not send the tip again because
+the refusal ended or a new review says `unresolved == false`. Send it again
+only once the earlier payment is known to have failed: its shielded activity
+entry reads failed, not confirmed.
+
+Any error other than these means the call sent nothing.
 
 To show what an identity can tip from, call
 `manager.shieldedIdentityBalance(walletId, identityId)` and show its state

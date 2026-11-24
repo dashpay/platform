@@ -1174,12 +1174,18 @@ pub enum PlatformWalletError {
 
     /// A shielded tip was refused before anything was built or sent: another
     /// tip from this wallet is being sent, or an earlier shielded payment to
-    /// the same recipient may still execute. A shielded sync resolves the
-    /// earlier payment (seen executed, or proven unable to execute), after
-    /// which the tip can be reviewed and sent again.
+    /// the same recipient may still execute. This call sent nothing.
+    ///
+    /// It says nothing about the earlier payment, which may be this same tip
+    /// requested twice and may pay the recipient. A shielded sync resolves
+    /// it either way: seen executed, or proven unable to execute. The
+    /// refusal ending is therefore not a reason to send the tip again. Send
+    /// it again only once the earlier payment is known to have failed (its
+    /// shielded activity entry reads failed, not confirmed).
     #[error(
         "A shielded payment to this recipient is still being sent or is unresolved; this tip \
-         was not sent. Wait for shielded sync before sending it again"
+         was not sent. Wait for shielded sync, then check whether the earlier payment was made \
+         before sending again"
     )]
     ShieldedTipPending,
 

@@ -150,7 +150,7 @@ pub use wallet::identity::types::dashpay::payment_address::{
 
 #[cfg(feature = "shielded")]
 pub use wallet::shielded::tip_payment::{
-    parse_shielded_tip_amount, ShieldedIdentityBalance, ShieldedTipRecipient,
+    parse_shielded_tip_amount, ShieldedIdentityBalance, ShieldedTipAdmission, ShieldedTipRecipient,
     ShieldedTipRecipientChange, ShieldedTipReview, ShieldedTipSource,
 };
 #[cfg(feature = "shielded")]

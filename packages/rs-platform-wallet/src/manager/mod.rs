@@ -13,6 +13,8 @@ pub mod platform_address_sync;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
 #[cfg(feature = "shielded")]
+pub mod shielded_tip;
+#[cfg(feature = "shielded")]
 pub mod shielded_token_purchase;
 #[cfg(feature = "spv-context")]
 mod spv_quorums;

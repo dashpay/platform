@@ -66,7 +66,7 @@ pub mod tips;
 pub mod token_pool;
 pub mod wallet_drain_recovery;
 pub use tip_payment::{
-    parse_shielded_tip_amount, ShieldedIdentityBalance, ShieldedTipRecipient,
+    parse_shielded_tip_amount, ShieldedIdentityBalance, ShieldedTipAdmission, ShieldedTipRecipient,
     ShieldedTipRecipientChange, ShieldedTipReview, ShieldedTipSource,
 };
 pub use tips::{

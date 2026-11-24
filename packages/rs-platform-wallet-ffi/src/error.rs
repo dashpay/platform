@@ -785,10 +785,11 @@ pub enum PlatformWalletFFIResultCode {
     /// Maps `PlatformWalletError::ShieldedTipPending`: a shielded tip was
     /// refused before anything was selected, built or sent, because another
     /// tip from this wallet is being sent or an earlier shielded payment to
-    /// the same recipient may still execute. Nothing was sent. A shielded
-    /// sync resolves the earlier payment, after which the tip can be reviewed
-    /// and sent again. Not the "may have left the wallet" code
-    /// ([`Self::ErrorShieldedSpendUnconfirmed`], 18).
+    /// the same recipient may still execute. This call sent nothing. The
+    /// earlier payment may be the same tip and may pay the recipient: a
+    /// shielded sync resolves it as executed or as unable to execute, so the
+    /// refusal ending is not a reason to send again. Not the "may have left
+    /// the wallet" code ([`Self::ErrorShieldedSpendUnconfirmed`], 18).
     ErrorShieldedTipPending = 84,
 
     /// The named thing does not exist.
