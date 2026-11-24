@@ -46,6 +46,7 @@ use std::ffi::CStr;
 use std::os::raw::{c_char, c_void};
 
 use dpp::address_funds::{OrchardAddress, PlatformAddress};
+use dpp::prelude::Identifier;
 use dpp::shielded::{
     compute_minimum_shielded_fee, compute_shielded_identity_balance_write_fee,
     compute_shielded_identity_top_up_fee, compute_shielded_unshield_fee,
@@ -1056,27 +1057,49 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
         r
     });
 
-    match result {
+    let (ffi_result, identity_id) = map_identity_create_result(result);
+    // Written through the raw pointer, and only when the result code promises
+    // an id: the caller may pass an uninitialised buffer, so no reference to
+    // it is formed, and every other code leaves it untouched.
+    if let Some(identity_id) = identity_id {
+        *out_identity_id = identity_id;
+    }
+    ffi_result
+}
+
+/// Operation name the identity-create-from-pool export reports in the
+/// messages `map_spend_result` builds.
+const IDENTITY_CREATE_FROM_POOL_OPERATION: &str = "shielded identity-create-from-pool";
+
+/// Map the identity-create-from-pool outcome to its FFI result and the
+/// identity id the export writes to `out_identity_id`. The id is present on
+/// success and on an unconfirmed broadcast only; every other outcome returns
+/// `None`, so the caller's buffer stays untouched.
+fn map_identity_create_result(
+    result: Result<Identifier, PlatformWalletError>,
+) -> (PlatformWalletFFIResult, Option<[u8; 32]>) {
+    let ffi_result = match result {
         Ok(identity_id) => {
-            *out_identity_id = identity_id.to_buffer();
-            PlatformWalletFFIResult::ok()
+            return (PlatformWalletFFIResult::ok(), Some(identity_id.to_buffer()));
         }
         // Broadcast accepted but its execution result couldn't be confirmed and a direct fetch came
-        // back empty. The identity MAY exist on chain, so — unlike every other error arm — we still
-        // write the derived id to `out_identity_id` (see the `# Safety` note) so the caller can hold
+        // back empty. The identity MAY exist on chain, so, unlike every other error arm, the derived
+        // id is still returned for `out_identity_id` (see the `# Safety` note) so the caller can hold
         // the slot against re-submission and surface the pending identity. The notes' reservations
         // were intentionally NOT released wallet-side.
         Err(PlatformWalletError::ShieldedBroadcastUnconfirmed {
             identity_id,
             ref reason,
         }) => {
-            *out_identity_id = identity_id.to_buffer();
-            PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed,
-                format!(
-                    "shielded identity-create-from-pool broadcast unconfirmed (identity {identity_id} may exist on chain): {reason}"
+            return (
+                PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed,
+                    format!(
+                        "shielded identity-create-from-pool broadcast unconfirmed (identity {identity_id} may exist on chain): {reason}"
+                    ),
                 ),
-            )
+                Some(identity_id.to_buffer()),
+            );
         }
         // Retryable: no Platform-recorded anchor covered the selected notes yet
         // (the commitment tree is mid-block after an index-chunk sync). Nothing
@@ -1091,11 +1114,20 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
             PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
             format!("shielded identity-create-from-pool failed: {e}"),
         ),
+        // The spend admission's refusals (a wallet removed before the spend
+        // started, keys not bound since the last Clear): nothing was read,
+        // signed or sent. Converted as every other credit-pool spend converts
+        // them, so a removed wallet keeps `NotFound` here too.
+        Err(e @ PlatformWalletError::WalletRemovedBeforeSend(_))
+        | Err(e @ PlatformWalletError::ShieldedNotBound) => {
+            map_spend_result(Err(e), IDENTITY_CREATE_FROM_POOL_OPERATION)
+        }
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("shielded identity-create-from-pool failed: {e}"),
         ),
-    }
+    };
+    (ffi_result, None)
 }
 
 /// Preflight the maximum credits the cached state can shield from one Platform
@@ -4178,6 +4210,66 @@ mod tests {
         assert_eq!(result.code, PlatformWalletFFIResultCode::NotFound);
         assert_eq!(result.code as i32, 98);
         assert!(message_of(&result).contains("wallet removed"));
+    }
+
+    /// The spend admission's two refusals leave identity create from the pool
+    /// with the codes every other credit-pool spend gives them (a removed
+    /// wallet is `NotFound`, not the generic operation failure), and write no
+    /// identity id.
+    #[test]
+    fn should_map_spend_admission_refusals_in_identity_create_as_other_spends() {
+        let refusals: [(fn() -> PlatformWalletError, PlatformWalletFFIResultCode); 2] = [
+            (
+                || PlatformWalletError::WalletRemovedBeforeSend("wallet removed".to_string()),
+                PlatformWalletFFIResultCode::NotFound,
+            ),
+            (
+                || PlatformWalletError::ShieldedNotBound,
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+            ),
+        ];
+        for (make, code) in refusals {
+            let rendered = make().to_string();
+            let spend = map_spend_result(Err(make()), "shielded transfer");
+            assert_eq!(spend.code, code, "{rendered}: other spends");
+
+            let (create, identity_id) = map_identity_create_result(Err(make()));
+            assert_eq!(create.code, code, "{rendered}: identity create");
+            assert_eq!(identity_id, None, "{rendered}: no identity id to write");
+            assert!(message_of(&create).contains(&rendered));
+        }
+    }
+
+    /// Identity create from the pool hands back an id to write only on success
+    /// and on an unconfirmed broadcast, the two codes that promise one.
+    #[test]
+    fn should_return_an_identity_id_only_on_success_and_unconfirmed_create() {
+        let identity_id = dpp::prelude::Identifier::from([7; 32]);
+
+        let (created, written) = map_identity_create_result(Ok(identity_id));
+        assert_eq!(created.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(written, Some([7; 32]));
+
+        let (unconfirmed, written) =
+            map_identity_create_result(Err(PlatformWalletError::ShieldedBroadcastUnconfirmed {
+                identity_id,
+                reason: "no proof".to_string(),
+            }));
+        assert_eq!(
+            unconfirmed.code,
+            PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed
+        );
+        assert_eq!(written, Some([7; 32]));
+        assert!(message_of(&unconfirmed).contains("no proof"));
+
+        let (failed, written) = map_identity_create_result(Err(
+            PlatformWalletError::ShieldedBroadcastFailed("refused".to_string()),
+        ));
+        assert_eq!(
+            failed.code,
+            PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed
+        );
+        assert_eq!(written, None);
     }
 
     /// A key-unavailable signer completion preserved under `Sdk` by the wallet

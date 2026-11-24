@@ -895,6 +895,12 @@ impl NetworkShieldedCoordinator {
         self.operation_admission.read().await
     }
 
+    /// Whether any operation holds [`Self::operation_guard`] right now.
+    #[cfg(test)]
+    pub(crate) fn has_admitted_operation(&self) -> bool {
+        self.operation_admission.try_write().is_err()
+    }
+
     /// Admit a Clear, or refuse it at once with
     /// [`PlatformWalletError::ShieldedOperationInProgress`] while a shielded
     /// operation holds [`operation_guard`](Self::operation_guard) (or another

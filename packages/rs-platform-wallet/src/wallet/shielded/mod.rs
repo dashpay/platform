@@ -65,6 +65,8 @@ pub use tips::{
     is_shielded_identity_account, shielded_identity_account_index, SHIELDED_IDENTITY_ACCOUNT_BASE,
 };
 #[cfg(test)]
+mod spend_admission_tests;
+#[cfg(test)]
 mod viewing_key_bind_tests;
 #[cfg(test)]
 mod wallet_drain_tests;
