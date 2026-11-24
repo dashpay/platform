@@ -293,9 +293,10 @@ extension PlatformWalletManager {
     ///
     /// Rust gives the read a wait budget of 100 ms. It throws
     /// `shieldedBalanceBusy` when the read did not finish within it, because
-    /// the wallet's state or its shielded store was held: the only error of
-    /// this call that means keep the last state and read again later. Any
-    /// other error is a failure to show. Throws
+    /// the wallet's state or its shielded store was held, and while a
+    /// shielded Clear is running: the only error of this call that means
+    /// keep the last state and read again later. Any other error is a
+    /// failure to show. Throws
     /// `identityNotFound` when the wallet holds no identity `identityId`.
     public func shieldedIdentityBalance(walletId: Data, identityId: Data) async throws -> ShieldedIdentityBalance {
         try ensureConfigured()
