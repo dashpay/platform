@@ -8,6 +8,9 @@ import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.config.SdkConfig
 import org.dashfoundation.dashsdk.persistence.DashDatabase
+import org.dashfoundation.dashsdk.persistence.encodeOutPointHex
+import org.dashfoundation.dashsdk.persistence.entities.AssetLockEntity
+import org.dashfoundation.dashsdk.persistence.makeOutpoint
 import org.dashfoundation.dashsdk.security.WalletStorage
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -99,6 +102,59 @@ class WalletManagerRoundTripTest {
             val match = reloaded.wallet(forWalletId = walletId)
             assertNotNull("the created wallet is restored by id", match)
             assertTrue(walletId.contentEquals(match!!.walletId))
+        }
+    }
+
+    /**
+     * The asset-lock sidecars through the REAL native load path: a manager
+     * over the Room handler attests bits 13, 14 and 17, and a reload hands
+     * each stored row's operation UUID and identity recipient to Rust through
+     * the `onLoadAssetLock*` trampolines, so the tracked-lock list reports
+     * the recorded recipient — and an unbound top-up recording none as
+     * unassigned. A malformed trampoline (wrong width, wrong descriptor, a
+     * missing row read as "none") fails the load or loses the recipient here.
+     */
+    @Test
+    fun assetLockSidecarsRoundTripThroughAReload() = runBlocking {
+        val walletId: ByteArray
+        PlatformWalletManager(sdk, Network.TESTNET, db, walletStorage).use { manager ->
+            walletId = manager.createWallet(
+                mnemonic = testMnemonic,
+                name = "sidecar-round-trip",
+                createDefaultAccounts = true,
+            ).walletId
+            val capabilities = manager.persistenceCapabilities
+            assertTrue(capabilities.contains(PlatformWalletPersistenceCapabilities.ASSET_LOCK_OPERATION_IDS))
+            assertTrue(capabilities.contains(PlatformWalletPersistenceCapabilities.ASSET_LOCK_SHIELDED_RECIPIENTS))
+            assertTrue(capabilities.contains(PlatformWalletPersistenceCapabilities.ASSET_LOCK_IDENTITY_RECIPIENTS))
+        }
+
+        val lockTxid = ByteArray(32) { 0x22 }
+        val recipient = ByteArray(32) { 0x33 }
+        fun row(vout: Int, identityRecipient: ByteArray?, operationId: ByteArray?) = AssetLockEntity(
+            outPointHex = encodeOutPointHex(makeOutpoint(lockTxid, vout)),
+            walletId = walletId,
+            transactionBytes = MINIMAL_TRANSACTION,
+            fundingTypeRaw = TrackedAssetLock.FundingType.IDENTITY_TOP_UP_NOT_BOUND.raw,
+            identityIndexRaw = 0,
+            amountDuffs = 100_000,
+            statusRaw = TrackedAssetLock.Status.BROADCAST.raw,
+            operationId = operationId,
+            identityRecipientId = identityRecipient,
+        )
+        db.assetLockDao().upsert(row(0, recipient, ByteArray(16) { 0x44 }))
+        db.assetLockDao().upsert(row(1, null, null))
+
+        PlatformWalletManager(sdk, Network.TESTNET, db, walletStorage).use { reloaded ->
+            reloaded.loadPersistedWallets()
+            val locks = reloaded.trackedIdentityRecoveryAssetLocks(walletId)
+                .filter { it.outpointTxid.contentEquals(lockTxid) }
+                .sortedBy { it.outpointVout }
+            assertEquals(listOf(0, 1), locks.map { it.outpointVout })
+            assertTrue(recipient.contentEquals(locks[0].identityRecipient))
+            assertEquals(false, locks[0].identityRecipientUnassigned)
+            assertNull(locks[1].identityRecipient)
+            assertTrue(locks[1].identityRecipientUnassigned)
         }
     }
 
@@ -260,3 +316,13 @@ class WalletManagerRoundTripTest {
         }
     }
 }
+
+/**
+ * A consensus-decodable classic transaction (version 1, one input, one
+ * OP_RETURN output, lock time 0): the load path decodes a tracked lock's
+ * transaction and fails on bytes it cannot parse.
+ */
+private val MINIMAL_TRANSACTION: ByteArray = byteArrayOf(1, 0, 0, 0, 1) +
+    ByteArray(32) { 0x11 } + byteArrayOf(0, 0, 0, 0, 0, -1, -1, -1, -1) +
+    byteArrayOf(1) + byteArrayOf(-96, -122, 1, 0, 0, 0, 0, 0) + byteArrayOf(1, 0x6a) +
+    byteArrayOf(0, 0, 0, 0)
