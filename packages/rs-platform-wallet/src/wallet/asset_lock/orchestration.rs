@@ -31,6 +31,7 @@
 //! on their CL fallback or retry-budget windows.
 
 use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -557,6 +558,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Platform places the transaction outside of comes off the row
     /// ([`invalidate_rejected_chain_proof`](Self::invalidate_rejected_chain_proof)).
     ///
+    /// Once any submission in this call may have reached a node (it failed
+    /// with an error the SDK does not class as never sent: the InstantSend
+    /// attempt the fallback replaces, or a ChainLock attempt Platform refused
+    /// for its height), no later failure proves the lock unspent: a final
+    /// refusal the SDK classes as never sent (a signer key missing for the
+    /// re-signed transition) is reported as the unconfirmed outcome of that
+    /// earlier attempt, so the funded-lock seam names no held lock.
+    ///
     /// `flow` names the operation in the log.
     pub(crate) async fn submit_with_chain_lock_fallback<F, Fut, R>(
         &self,
@@ -571,8 +580,22 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         Fut: Future<Output = Result<R, dash_sdk::Error>>,
     {
         let out_point = out_point_from_proof(&proof);
+        let maybe_dispatched = AtomicBool::new(false);
+        let attempt = |proof: AssetLockProof, settings: Option<PutSettings>| {
+            let submitted = submit(proof, settings);
+            let maybe_dispatched = &maybe_dispatched;
+            async move {
+                let result = submitted.await;
+                if let Err(e) = &result {
+                    if !matches!(sdk_payment_delivery(e), PaymentDelivery::NotSent) {
+                        maybe_dispatched.store(true, Ordering::Relaxed);
+                    }
+                }
+                result
+            }
+        };
         let (result, effective_proof) =
-            match submit_with_cl_height_retry(settings, |s| submit(proof.clone(), s)).await {
+            match submit_with_cl_height_retry(settings, |s| attempt(proof.clone(), s)).await {
                 Ok(submitted) => (Ok(submitted), proof),
                 Err(e) if needs_chain_lock_proof(&e, &proof) => {
                     tracing::warn!(
@@ -583,22 +606,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     );
                     // The InstantSend attempt may have reached a node: from
                     // here no failure proves the lock unspent, so none names
-                    // it as held, and a refusal the SDK classes as never sent
-                    // (a signer key missing for the resubmit) is reported as
-                    // the unconfirmed outcome of the earlier attempt.
+                    // it as held.
                     let chain_proof = self
                         .upgrade_to_persisted_chain_lock_proof(&out_point, cl_wait)
                         .await
                         .map_err(|e| e.after_dispatch().without_held_lock())?;
                     let result =
-                        submit_with_cl_height_retry(settings, |s| submit(chain_proof.clone(), s))
-                            .await
-                            .map_err(|e| match sdk_payment_delivery(&e) {
-                                PaymentDelivery::NotSent => {
-                                    dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(e))
-                                }
-                                PaymentDelivery::MaybeSent | PaymentDelivery::LockHeld(_) => e,
-                            });
+                        submit_with_cl_height_retry(settings, |s| attempt(chain_proof.clone(), s))
+                            .await;
                     (result, chain_proof)
                 }
                 Err(e) => (Err(e), proof),
@@ -607,6 +622,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             self.invalidate_rejected_chain_proof(&out_point, &effective_proof, e)
                 .await;
         }
+        let result = result.map_err(|e| {
+            if maybe_dispatched.load(Ordering::Relaxed)
+                && matches!(sdk_payment_delivery(&e), PaymentDelivery::NotSent)
+            {
+                dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(e))
+            } else {
+                e
+            }
+        });
         Ok((result, effective_proof))
     }
 
