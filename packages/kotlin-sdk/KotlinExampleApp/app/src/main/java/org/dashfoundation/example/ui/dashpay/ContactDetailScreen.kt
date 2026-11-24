@@ -49,7 +49,6 @@ import org.dashfoundation.dashsdk.persistence.entities.DashpayPaymentEntity
 import org.dashfoundation.dashsdk.tokens.ContactInfoPublishOutcome
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
-import org.dashfoundation.example.navigation.DashPaySendShieldedTip
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.theme.appStatusColors
@@ -259,35 +258,6 @@ fun ContactDetailScreen(
                         )
                     },
                 )
-                if (container.shieldedService.isAvailable) {
-                    val tipUsername = dpnsHint
-                    ListItem(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(enabled = tipUsername != null) {
-                                if (tipUsername != null) {
-                                    navController.navigate(DashPaySendShieldedTip(identityIdHex, tipUsername))
-                                }
-                            }
-                            .testTag("dashpay.detail.sendShieldedTip"),
-                        leadingContent = { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null) },
-                        headlineContent = {
-                            Text(
-                                "Send Shielded Tip",
-                                color = if (tipUsername == null) {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface
-                                },
-                            )
-                        },
-                        supportingContent = if (tipUsername == null) {
-                            { Text(ShieldedTipMessages.NO_USERNAME, style = MaterialTheme.typography.bodySmall) }
-                        } else {
-                            null
-                        },
-                    )
-                }
                 if (channelBroken) {
                     Text(
                         "Payment channel broken — ask the contact to send a new request",

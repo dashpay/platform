@@ -93,14 +93,14 @@ import org.dashfoundation.example.util.toHex
  * [org.dashfoundation.dashsdk.wallet.ShieldedTipReview.unresolved] on review
  * and as `ShieldedTipPending` on send, until a shielded sync resolves it.
  *
- * @param contactUsername the contact's DPNS name when opened from a contact;
- *   the name is then fixed. Null when opened from the DashPay tab.
+ * There is no shortcut from a contact yet: a contact's saved DPNS name can
+ * have moved to another identity, and checking that the name still pays
+ * the contact is a wallet rule that does not exist yet (#6200).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SendShieldedTipScreen(
     identityIdHex: String,
-    contactUsername: String?,
     navController: NavHostController,
 ) {
     val container = LocalAppContainer.current
@@ -114,7 +114,7 @@ fun SendShieldedTipScreen(
     }.collectAsStateWithLifecycle(initialValue = null)
     val walletId = remember(walletIdHex) { walletIdHex?.hexToBytes() }
 
-    var username by rememberSaveable { mutableStateOf(contactUsername.orEmpty()) }
+    var username by rememberSaveable { mutableStateOf("") }
     var amountText by rememberSaveable { mutableStateOf("") }
     var memo by rememberSaveable { mutableStateOf("") }
     var sourceChoice by rememberSaveable { mutableStateOf(ShieldedTipSourceChoice.IDENTITY) }
@@ -349,7 +349,6 @@ fun SendShieldedTipScreen(
                     onValueChange = { username = it; reviewed = null; changedReview = null; holdEnded = false },
                     label = { Text("Username") },
                     singleLine = true,
-                    readOnly = contactUsername != null,
                     enabled = !sending && !reviewing,
                     modifier = Modifier.fillMaxWidth().testTag("dashpay.tip.username"),
                 )

@@ -106,11 +106,15 @@ internal object ShieldedTipMessages {
             "the wallet refuses another one. It clears once a shielded sync sees that " +
             "payment executed or proves it cannot execute."
 
-    /** Shown when a re-check finds the hold of [UNRESOLVED] ended; the review is dropped. */
+    /**
+     * Shown when a re-check no longer reports the hold of [UNRESOLVED]; the
+     * review is dropped. The review answers for the recipient as it is now,
+     * not for the earlier payment, so this claims nothing about that payment.
+     */
     const val HOLD_ENDED =
-        "The earlier payment to this recipient is resolved: it either executed or can no " +
-            "longer execute. Check Shielded Activity to see which before you tip again. " +
-            "Reviewing again starts a new tip, which is a new payment."
+        "The refreshed review no longer reports a hold on this recipient. That does not " +
+            "say what became of the earlier payment: check it in Shielded Activity before " +
+            "you tip again. Reviewing again starts a new tip, which is a new payment."
 
     const val IDENTITY_NOT_HELD =
         "This wallet does not hold the paying identity. Nothing was sent."
@@ -121,10 +125,6 @@ internal object ShieldedTipMessages {
         "This username now pays a different identity or shielded address than the " +
             "recipient this wallet last confirmed for it. Check the change with the " +
             "recipient before you send."
-
-    const val NO_USERNAME =
-        "No DashPay username is known for this contact. A tip is paid to the shielded " +
-            "address a username's profile publishes."
 
     const val ALREADY_RUNNING =
         "A tip from this identity is still being sent, or its outcome was not shown yet. " +

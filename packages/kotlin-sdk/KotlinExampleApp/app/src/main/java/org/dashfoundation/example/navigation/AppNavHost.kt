@@ -489,8 +489,7 @@ fun AppNavHost(
         }
 
         composable<DashPaySendShieldedTip> { entry ->
-            val route = entry.toRoute<DashPaySendShieldedTip>()
-            SendShieldedTipScreen(route.identityIdHex, route.contactUsername, navController)
+            SendShieldedTipScreen(entry.toRoute<DashPaySendShieldedTip>().identityIdHex, navController)
         }
 
         composable<DashPayProfile> { entry ->

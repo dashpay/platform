@@ -152,7 +152,9 @@ class ShieldedTipPresentationTest {
         assertEquals(ShieldedTipReviewStep.HoldEnded, shieldedTipReviewStep(draft, draft, true, reviewed(false)))
         val stillHeld = reviewed(true)
         assertEquals(ShieldedTipReviewStep.Show(stillHeld), shieldedTipReviewStep(draft, draft, true, stillHeld))
-        assertTrue(ShieldedTipMessages.HOLD_ENDED.contains("either executed or can no longer execute"))
+        // The review answers for the recipient as it is now, not for the earlier payment.
+        assertTrue(ShieldedTipMessages.HOLD_ENDED.contains("does not say what became of the earlier payment"))
+        assertFalse(ShieldedTipMessages.HOLD_ENDED.contains("resolved"))
         assertTrue(ShieldedTipMessages.HOLD_ENDED.contains("new payment"))
     }
 
