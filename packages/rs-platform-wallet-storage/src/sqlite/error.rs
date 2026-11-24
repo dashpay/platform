@@ -622,10 +622,12 @@ pub enum WalletStorageError {
     /// `core_address_pool` says one, `core_utxos` another. The store cannot
     /// tell which account may re-issue the address, so it fails closed
     /// rather than letting one source silently win.
+    ///
+    /// The message names neither the address nor the accounts, since it is
+    /// logged; the fields carry them for a caller that has to repair the row.
     #[error(
-        "used address {address} resolves to different owning accounts \
-         (core_address_pool={pool_owner}, core_utxos={utxo_owner}) — neither is trusted, so \
-         repair whichever row is wrong before loading again"
+        "a used address resolves to different owning accounts in core_address_pool and \
+         core_utxos — neither is trusted, so repair whichever row is wrong before loading again"
     )]
     UsedAddressOwnerConflict {
         address: String,
