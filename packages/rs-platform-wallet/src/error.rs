@@ -1364,9 +1364,11 @@ pub enum PlatformWalletError {
     TokenShieldedPoolSpendPending { token_id: Identifier },
 
     /// A shielded Clear was refused because a shielded operation is admitted
-    /// on the coordinator: a bind, an account being added, a token pool
-    /// transfer or unshield, a DashPay profile write or a tip address
-    /// preparation, from its first step to its result, or another Clear.
+    /// on the coordinator: a bind, an account being added, a payment from a
+    /// shielded pool (a credit pool spend, a token pool transfer, unshield or
+    /// purchase, the payment for a private contact request or a private
+    /// document), a DashPay profile write or a tip address preparation, from
+    /// its first step to its result, or another Clear.
     /// Clear does not wait for it. It returned at once and changed nothing:
     /// the sync loop keeps running, and no registration, note, watermark or
     /// tree leaf was touched, so the host must not wipe its own rows.

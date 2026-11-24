@@ -67,7 +67,7 @@ pub use tips::{
 #[cfg(test)]
 mod spend_admission_tests;
 #[cfg(test)]
-mod viewing_key_bind_tests;
+pub(crate) mod viewing_key_bind_tests;
 #[cfg(test)]
 mod wallet_drain_tests;
 

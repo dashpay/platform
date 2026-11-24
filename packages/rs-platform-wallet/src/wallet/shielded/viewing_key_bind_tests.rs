@@ -37,7 +37,7 @@ use crate::wallet::shielded::{
 ///   counted so the test can assert the seedless path actually read
 ///   persistence rather than short-circuiting.
 #[derive(Default)]
-pub(super) struct CapturingPersistence {
+pub(crate) struct CapturingPersistence {
     stored: Mutex<Vec<PlatformWalletChangeSet>>,
     durability_events: Mutex<Vec<&'static str>>,
     fail_flush: std::sync::atomic::AtomicBool,
@@ -168,7 +168,7 @@ pub(super) fn temp_dir(tag: &str) -> PathBuf {
     std::env::temp_dir().join(format!("viewing_key_bind_test_{tag}_{nanos}"))
 }
 
-pub(super) fn coordinator_at(dir: &std::path::Path) -> Arc<NetworkShieldedCoordinator> {
+pub(crate) fn coordinator_at(dir: &std::path::Path) -> Arc<NetworkShieldedCoordinator> {
     coordinator_for(dir, Network::Testnet)
 }
 
