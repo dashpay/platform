@@ -692,6 +692,32 @@ fn bytes_opt<'l>(
     Ok(bytes(env, ptr, len)?.into())
 }
 
+/// A profile payment address as an optional JVM `byte[]`: the fixed buffer
+/// when `present`, JVM null otherwise.
+fn address_opt<'l>(
+    env: &JNIEnv<'l>,
+    present: bool,
+    address: &[u8],
+) -> Result<JObject<'l>, jni::errors::Error> {
+    if !present {
+        return Ok(JObject::null());
+    }
+    Ok(env.byte_array_from_slice(address)?.into())
+}
+
+/// `NativePersistenceBridge.onPersistIdentityUpsert`. The own DashPay
+/// profile's three payment addresses ride last as nullable `byte[]`s
+/// (Core, Platform, shielded); null means the profile publishes none.
+const IDENTITY_UPSERT_DESCRIPTOR: &str =
+    "([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;\
+     Ljava/lang/String;[BZ[BZLjava/lang/String;[B[B[B)I";
+
+/// `NativePersistenceBridge.onPersistContactProfileDelta`. The contact
+/// profile's three payment addresses ride last as nullable `byte[]`s.
+const CONTACT_PROFILE_DELTA_DESCRIPTOR: &str =
+    "([B[B[BZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;\
+     [BZ[BZLjava/lang/String;J[B[B[B)I";
+
 // ── Bracketing + notification slots ───────────────────────────────────
 
 unsafe extern "C" fn tramp_changeset_begin(context: *mut c_void, wallet_id: *const u8) -> i32 {
@@ -1810,13 +1836,27 @@ unsafe fn persist_identity_upsert(
     let public_message = cstr_opt(env, e.dashpay_profile_public_message)?;
     let avatar_hash = env.byte_array_from_slice(&e.dashpay_profile_avatar_hash)?;
     let avatar_fp = env.byte_array_from_slice(&e.dashpay_profile_avatar_fingerprint)?;
+    let core_address = address_opt(
+        env,
+        e.dashpay_profile_core_payment_address_present,
+        &e.dashpay_profile_core_payment_address,
+    )?;
+    let platform_address = address_opt(
+        env,
+        e.dashpay_profile_platform_payment_address_present,
+        &e.dashpay_profile_platform_payment_address,
+    )?;
+    let shielded_address = address_opt(
+        env,
+        e.dashpay_profile_shielded_address_present,
+        &e.dashpay_profile_shielded_address,
+    )?;
 
     let code = env
         .call_method(
             bridge,
             "onPersistIdentityUpsert",
-            "([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;\
-             Ljava/lang/String;[BZ[BZLjava/lang/String;)I",
+            IDENTITY_UPSERT_DESCRIPTOR,
             &[
                 wid.into(),
                 (&identity_id).into(),
@@ -1838,6 +1878,9 @@ unsafe fn persist_identity_upsert(
                 (&avatar_fp).into(),
                 JValue::Bool(e.dashpay_profile_avatar_fingerprint_present as u8),
                 (&public_message).into(),
+                (&core_address).into(),
+                (&platform_address).into(),
+                (&shielded_address).into(),
             ],
         )?
         .i()?;
@@ -1861,11 +1904,22 @@ unsafe fn persist_identity_upsert(
             let public_message = cstr_opt(env, row.public_message)?;
             let avatar_hash = env.byte_array_from_slice(&row.avatar_hash)?;
             let avatar_fp = env.byte_array_from_slice(&row.avatar_fingerprint)?;
+            let core_address = address_opt(
+                env,
+                row.core_payment_address_present,
+                &row.core_payment_address,
+            )?;
+            let platform_address = address_opt(
+                env,
+                row.platform_payment_address_present,
+                &row.platform_payment_address,
+            )?;
+            let shielded_address =
+                address_opt(env, row.shielded_address_present, &row.shielded_address)?;
             env.call_method(
                 bridge,
                 "onPersistContactProfileDelta",
-                "([B[B[BZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;\
-                 [BZ[BZLjava/lang/String;J)I",
+                CONTACT_PROFILE_DELTA_DESCRIPTOR,
                 &[
                     wid.into(),
                     (&identity_id).into(),
@@ -1880,6 +1934,9 @@ unsafe fn persist_identity_upsert(
                     JValue::Bool(row.avatar_fingerprint_present as u8),
                     (&public_message).into(),
                     JValue::Long(row.checked_at_ms as i64),
+                    (&core_address).into(),
+                    (&platform_address).into(),
+                    (&shielded_address).into(),
                 ],
             )?
             .i()
@@ -4199,6 +4256,16 @@ fn build_contact_profile_restore(
             Ok(f) => (f, true),
             Err(_) => ([0u8; 8], false),
         };
+    // A stored address of any other length restores as absent; the wallet
+    // decides at restore whether the bytes it gets are an address
+    // (`normalize_persisted_profile`).
+    let (core_payment_address, core_payment_address_present) =
+        fixed_bytes::<21>(&read_bytes_field_vec(env, holder, "corePaymentAddress")?);
+    let (platform_payment_address, platform_payment_address_present) = fixed_bytes::<21>(
+        &read_bytes_field_vec(env, holder, "platformPaymentAddress")?,
+    );
+    let (shielded_address, shielded_address_present) =
+        fixed_bytes::<43>(&read_bytes_field_vec(env, holder, "shieldedAddress")?);
 
     Ok(ContactProfileRestoreStaged {
         row: ContactProfileRestoreEntryFFI {
@@ -4210,13 +4277,12 @@ fn build_contact_profile_restore(
             avatar_hash_present,
             avatar_fingerprint,
             avatar_fingerprint_present,
-            // Kotlin does not persist payment addresses yet; restore none.
-            core_payment_address: [0; 21],
-            core_payment_address_present: false,
-            platform_payment_address: [0; 21],
-            platform_payment_address_present: false,
-            shielded_address: [0; 43],
-            shielded_address_present: false,
+            core_payment_address,
+            core_payment_address_present,
+            platform_payment_address,
+            platform_payment_address_present,
+            shielded_address,
+            shielded_address_present,
             public_message: ptr::null(),
             checked_at_ms,
         },
@@ -4225,6 +4291,16 @@ fn build_contact_profile_restore(
         avatar_url,
         public_message,
     })
+}
+
+/// Copy `bytes` into a fixed `N`-byte buffer with its presence flag; any
+/// other length is absent with a zeroed buffer, the shape the restore FFI
+/// struct carries.
+fn fixed_bytes<const N: usize>(bytes: &[u8]) -> ([u8; N], bool) {
+    match <[u8; N]>::try_from(bytes) {
+        Ok(buffer) => (buffer, true),
+        Err(_) => ([0; N], false),
+    }
 }
 
 /// Rebuild one DashPay contact row from a Kotlin `ContactRequestRestoreData`
@@ -5516,16 +5592,11 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
         "onLoadPrivateContactScanStateWallets",
         LOAD_PRIVATE_CONTACT_SCAN_STATE_WALLETS_DESCRIPTOR,
     ),
-    (
-        "onPersistIdentityUpsert",
-        "([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;\
-         Ljava/lang/String;[BZ[BZLjava/lang/String;)I",
-    ),
+    ("onPersistIdentityUpsert", IDENTITY_UPSERT_DESCRIPTOR),
     ("onPersistIdentityRemoval", "([B[B)I"),
     (
         "onPersistContactProfileDelta",
-        "([B[B[BZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;\
-         [BZ[BZLjava/lang/String;J)I",
+        CONTACT_PROFILE_DELTA_DESCRIPTOR,
     ),
     ("onPersistIdentityKeyUpsert", IDENTITY_KEY_UPSERT_DESCRIPTOR),
     ("onPersistIdentityKeyRemoval", "([B[BI)I"),
@@ -5650,6 +5721,24 @@ mod tests {
     use dashcore::{ScriptBuf, Transaction, Txid};
 
     use super::*;
+
+    #[test]
+    fn should_restore_only_exact_length_profile_addresses() {
+        assert_eq!(fixed_bytes::<21>(&[0x11; 21]), ([0x11; 21], true));
+        assert_eq!(fixed_bytes::<43>(&[0x22; 43]), ([0x22; 43], true));
+        assert_eq!(fixed_bytes::<21>(&[]), ([0; 21], false));
+        assert_eq!(fixed_bytes::<21>(&[0x33; 20]), ([0; 21], false));
+        assert_eq!(fixed_bytes::<43>(&[0x33; 21]), ([0; 43], false));
+    }
+
+    #[test]
+    fn should_append_the_three_payment_addresses_to_the_profile_descriptors() {
+        let compact = |d: &str| d.split_whitespace().collect::<String>();
+        assert!(compact(IDENTITY_UPSERT_DESCRIPTOR).ends_with("Ljava/lang/String;[B[B[B)I"));
+        assert!(compact(CONTACT_PROFILE_DELTA_DESCRIPTOR).ends_with("Ljava/lang/String;J[B[B[B)I"));
+        assert!(!IDENTITY_UPSERT_DESCRIPTOR.contains(' '));
+        assert!(!CONTACT_PROFILE_DELTA_DESCRIPTOR.contains(' '));
+    }
 
     fn valid_provider_transaction() -> Transaction {
         let payload = ProviderUpdateServicePayload {

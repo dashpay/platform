@@ -561,8 +561,11 @@ abstract class NativePersistenceBridge {
 
     /**
      * One `IdentityEntryFFI` upsert. DPNS labels + acquired-at timestamps
-     * ride as parallel arrays. Descriptor
-     * `([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;[BZ[BZLjava/lang/String;)I`.
+     * ride as parallel arrays. The own DashPay profile's payment addresses
+     * ([dashpayCorePaymentAddress] and [dashpayPlatformPaymentAddress], 21
+     * bytes each; [dashpayShieldedAddress], 43 bytes) are null when the
+     * profile publishes none. Descriptor
+     * `([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;[BZ[BZLjava/lang/String;[B[B[B)I`.
      */
     @Suppress("LongParameterList")
     open fun onPersistIdentityUpsert(
@@ -586,6 +589,9 @@ abstract class NativePersistenceBridge {
         dashpayAvatarFingerprint: ByteArray,
         dashpayAvatarFingerprintPresent: Boolean,
         dashpayPublicMessage: String?,
+        dashpayCorePaymentAddress: ByteArray? = null,
+        dashpayPlatformPaymentAddress: ByteArray? = null,
+        dashpayShieldedAddress: ByteArray? = null,
     ): Int = 0
 
     /** One identity-id removal. Descriptor `([B[B)I`. */
@@ -796,14 +802,15 @@ abstract class NativePersistenceBridge {
     /**
      * One `ContactProfileRowFFI` delta riding an identity upsert
      * (`IdentityEntryFFI.contact_profiles`). Descriptor
-     * `([B[B[BZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;[BZ[BZLjava/lang/String;J)I`.
+     * `([B[B[BZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;[BZ[BZLjava/lang/String;J[B[B[B)I`.
      *
      * [isPresent] `true` ⇒ upsert the cached contact-profile row for
      * `(ownerId, contactId)`; `false` ⇒ tombstone — the contact removed
      * their on-chain profile and any persisted row must be DELETED (an
      * upsert-only pipeline would show the stale name/avatar forever).
      * Gate [avatarHash] / [avatarFingerprint] on their paired `_present`
-     * flags — all-zero is a valid hash value.
+     * flags — all-zero is a valid hash value. The contact's payment
+     * addresses are null when its profile publishes none.
      */
     @Suppress("LongParameterList")
     open fun onPersistContactProfileDelta(
@@ -820,6 +827,9 @@ abstract class NativePersistenceBridge {
         avatarFingerprintPresent: Boolean,
         publicMessage: String?,
         checkedAtMs: Long,
+        corePaymentAddress: ByteArray? = null,
+        platformPaymentAddress: ByteArray? = null,
+        shieldedAddress: ByteArray? = null,
     ): Int = 0
 
     // ── Asset locks ───────────────────────────────────────────────────
@@ -1524,7 +1534,10 @@ class PaymentRestoreData(
  * One flat cached contact-profile restore row — mirror of
  * `ContactProfileRestoreEntryFFI`. [avatarHash] / [avatarFingerprint]
  * are null when absent (the trampoline derives the FFI `_present` flags
- * from nullability + length: 32 / 8 bytes respectively).
+ * from nullability + length: 32 / 8 bytes respectively). The payment
+ * addresses follow the same rule: 21 bytes for [corePaymentAddress] and
+ * [platformPaymentAddress], 43 for [shieldedAddress]; the wallet decides
+ * at restore whether the bytes are an address.
  */
 class ContactProfileRestoreData(
     @JvmField val contactId: ByteArray,
@@ -1535,6 +1548,9 @@ class ContactProfileRestoreData(
     @JvmField val avatarFingerprint: ByteArray?,
     @JvmField val publicMessage: String?,
     @JvmField val checkedAtMs: Long,
+    @JvmField val corePaymentAddress: ByteArray? = null,
+    @JvmField val platformPaymentAddress: ByteArray? = null,
+    @JvmField val shieldedAddress: ByteArray? = null,
 )
 
 /**
