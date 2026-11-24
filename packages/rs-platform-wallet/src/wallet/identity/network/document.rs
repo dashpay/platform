@@ -1334,7 +1334,10 @@ mod tests {
                 bound_elsewhere,
                 auth_key(2, SecurityLevel::CRITICAL, KeyType::ECDSA_SECP256K1)
                     .with_limits(None, Some(1)),
-                auth_key(3, SecurityLevel::HIGH, KeyType::ECDSA_SECP256K1),
+                // Limited too, but unexpired: it sits in the same tier as the
+                // expired key 2, so only the expiry check puts it first.
+                auth_key(3, SecurityLevel::HIGH, KeyType::ECDSA_SECP256K1)
+                    .with_limits(None, Some(u64::MAX)),
             ],
         )
         .await;
