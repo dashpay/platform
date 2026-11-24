@@ -131,7 +131,9 @@ abstract class NativePersistenceBridge {
          * `PersistenceCapabilities::IDENTITY_SLOT_LEASES` (bit 17,
          * `0x20000`): the invitation-claim slot leases are stored on their
          * round and restored at load ([onPersistIdentitySlotLeases],
-         * [onLoadIdentitySlotLeases]). Without it an invitation claim is
+         * [onLoadIdentitySlotLeases]); JNI also requires [onPersistIdentityUpsert]
+         * and [onPersistIdentityKeyUpsert] overridden, since a placement ends a
+         * claim's lease in the same write. Without it an invitation claim is
          * refused before it takes a slot. The one Kotlin home of this bit,
          * aliased by the public diagnostic mirror.
          */

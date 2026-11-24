@@ -234,9 +234,11 @@ class FfiSmokeTest {
      * The invitation-claim slot leases need their store and their load: JNI
      * wires the three lease slots only for a bridge that overrides both (an
      * inherited no-op store would acknowledge a lease it never kept, an
-     * inherited empty load would free a slot a claim already took), and Rust
-     * attests the bit only where it is also declared. The Room handler keeps
-     * it.
+     * inherited empty load would free a slot a claim already took), and the
+     * identity and key upserts (a placement ends a claim's lease in the same
+     * write as the identity and its keys, so an inherited no-op would commit
+     * just the end). Rust attests the bit only where it is also declared. The
+     * Room handler keeps it.
      */
     @Test
     fun identitySlotLeaseCapabilityNeedsBothOverrides() {
@@ -248,6 +250,10 @@ class FfiSmokeTest {
         assertTrue("both overrides", effective(SlotLeaseBridge.Full()))
         assertFalse("no lease store", effective(SlotLeaseBridge.WithoutStore()))
         assertFalse("no lease load", effective(SlotLeaseBridge.WithoutLoad()))
+        assertFalse(
+            "no identity writers",
+            effective(SlotLeaseBridge.WithoutIdentityWriters()),
+        )
         assertFalse(
             "both overrides, not declared",
             effective(object : SlotLeaseBridge.Full() {
@@ -474,7 +480,59 @@ private abstract class SlotLeaseBridge : NativePersistenceBridge() {
     override fun persistenceCapabilitiesBits(): Long =
         CAPABILITY_IDENTITY_SLOT_LEASES or ATOMIC_CHANGESETS
 
-    open class Full : SlotLeaseBridge() {
+    open class Full : WithoutIdentityWriters() {
+        override fun onPersistIdentityUpsert(
+            walletId: ByteArray,
+            identityId: ByteArray,
+            balance: Long,
+            revision: Long,
+            identityIndexIsSome: Boolean,
+            identityIndex: Int,
+            status: Byte,
+            walletIdIsSome: Boolean,
+            identityWalletId: ByteArray,
+            dpnsNames: Array<String>,
+            dpnsNamesAcquiredAt: LongArray,
+            dashpayProfilePresent: Boolean,
+            dashpayDisplayName: String?,
+            dashpayBio: String?,
+            dashpayAvatarUrl: String?,
+            dashpayAvatarHash: ByteArray,
+            dashpayAvatarHashPresent: Boolean,
+            dashpayAvatarFingerprint: ByteArray,
+            dashpayAvatarFingerprintPresent: Boolean,
+            dashpayPublicMessage: String?,
+        ): Int = 0
+
+        override fun onPersistIdentityKeyUpsert(
+            walletId: ByteArray,
+            identityId: ByteArray,
+            keyId: Int,
+            purpose: Byte,
+            securityLevel: Byte,
+            keyType: Byte,
+            readOnly: Boolean,
+            disabledAtIsSome: Boolean,
+            disabledAt: Long,
+            publicKeyData: ByteArray,
+            publicKeyHash: ByteArray,
+            walletIdIsSome: Boolean,
+            keyWalletId: ByteArray,
+            derivationIndicesIsSome: Boolean,
+            identityIndex: Int,
+            keyIndex: Int,
+            contractBoundsKind: Byte,
+            contractBoundsId: ByteArray,
+            contractBoundsDocumentType: String?,
+            totalBudgetIsSome: Boolean,
+            totalBudget: Long,
+            expiresAtIsSome: Boolean,
+            expiresAt: Long,
+        ): Int = 0
+    }
+
+    /** Both lease overrides, inheriting the identity and key upserts. */
+    open class WithoutIdentityWriters : SlotLeaseBridge() {
         override fun onPersistIdentitySlotLeases(
             walletId: ByteArray,
             leases: ByteArray,

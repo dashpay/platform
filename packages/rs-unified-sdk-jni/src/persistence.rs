@@ -266,6 +266,9 @@ pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> Persistence
             "onPersistContactUpsert",
             CONTACT_UPSERT_DESCRIPTOR,
         ),
+        // A placement ends a claim's lease in the same write as the
+        // identity and its keys, so the lease bit also needs real identity
+        // and key writers: an inherited no-op would commit just the end.
         identity_slot_leases: bridge_overrides(
             env,
             bridge,
@@ -276,6 +279,16 @@ pub(crate) fn build_extension(env: &mut JNIEnv, bridge: &JObject) -> Persistence
             bridge,
             "onLoadIdentitySlotLeases",
             LOAD_IDENTITY_SLOT_LEASES_DESCRIPTOR,
+        ) && bridge_overrides(
+            env,
+            bridge,
+            "onPersistIdentityUpsert",
+            IDENTITY_UPSERT_DESCRIPTOR,
+        ) && bridge_overrides(
+            env,
+            bridge,
+            "onPersistIdentityKeyUpsert",
+            IDENTITY_KEY_UPSERT_DESCRIPTOR,
         ),
     })
 }
@@ -1898,8 +1911,7 @@ unsafe fn persist_identity_upsert(
         .call_method(
             bridge,
             "onPersistIdentityUpsert",
-            "([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;\
-             Ljava/lang/String;[BZ[BZLjava/lang/String;)I",
+            IDENTITY_UPSERT_DESCRIPTOR,
             &[
                 wid.into(),
                 (&identity_id).into(),
@@ -2011,6 +2023,11 @@ unsafe extern "C" fn tramp_persist_identity_keys(
         Ok(0)
     })
 }
+
+/// `onPersistIdentityUpsert`'s JNI descriptor.
+const IDENTITY_UPSERT_DESCRIPTOR: &str =
+    "([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;\
+     Ljava/lang/String;[BZ[BZLjava/lang/String;)I";
 
 /// `onPersistIdentityKeyUpsert`'s JNI descriptor. The trailing `ZJZJ` is the
 /// key usage limits pair (`hasTotalBudget`, `totalBudget`, `hasExpiresAt`,
@@ -5413,11 +5430,7 @@ const BRIDGE_METHOD_TABLE: &[(&str, &str)] = &[
         "onLoadIdentitySlotLeases",
         LOAD_IDENTITY_SLOT_LEASES_DESCRIPTOR,
     ),
-    (
-        "onPersistIdentityUpsert",
-        "([B[BJJZIBZ[B[Ljava/lang/String;[JZLjava/lang/String;Ljava/lang/String;\
-         Ljava/lang/String;[BZ[BZLjava/lang/String;)I",
-    ),
+    ("onPersistIdentityUpsert", IDENTITY_UPSERT_DESCRIPTOR),
     ("onPersistIdentityRemoval", "([B[B)I"),
     (
         "onPersistContactProfileDelta",

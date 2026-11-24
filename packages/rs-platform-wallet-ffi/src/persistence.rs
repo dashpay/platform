@@ -206,7 +206,10 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_ST
 /// Invitation-claim slot leases are persisted AND restored across restarts.
 /// Requires the extension slots `on_persist_identity_slot_leases_fn` +
 /// `on_load_identity_slot_leases_fn` + `on_load_identity_slot_leases_free_fn`,
-/// the wallet-list restore callbacks, and the host declaring the bit. The
+/// the wallet-list restore callbacks, the identity and identity-key writers
+/// (`on_persist_identities_fn`, `on_persist_identity_keys_fn`: a placement
+/// ends a claim's lease in the same write as the identity and its keys), and
+/// the host declaring the bit. The
 /// wallet uses it only together with
 /// [`PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ATOMIC_CHANGESETS`]
 /// (`PersistenceCapabilities::IDENTITY_SLOT_LEASE_RESTART`); without that set
@@ -2178,8 +2181,13 @@ impl FFIPersister {
             capabilities = capabilities.union(PersistenceCapabilities::DASHPAY_PAYMENTS);
         }
         // Claim leases are restored per wallet during the wallet-list load,
-        // so that load is required alongside the three extension slots.
+        // so that load is required alongside the three extension slots. A
+        // placement ends a claim's lease in the same write as the identity
+        // and its keys, so their writers are required too: without them the
+        // host would commit just the lease's end.
         if wallet_restore
+            && self.callbacks.on_persist_identities_fn.is_some()
+            && self.callbacks.on_persist_identity_keys_fn.is_some()
             && self
                 .tracked_masternodes_callbacks
                 .persist_identity_slot_leases
@@ -12130,6 +12138,86 @@ mod tests {
         assert_eq!(capabilities, expected);
         assert!(capabilities.contains(PersistenceCapabilities::INVITATION_CREATION));
         assert!(!capabilities.contains(PersistenceCapabilities::PENDING_CONTACT_CRYPTO));
+    }
+
+    /// The slot-lease bit needs, besides the lease slots and the wallet-list
+    /// restore, the identity and identity-key writers: a placement ends a
+    /// claim's lease in the same write as the identity and its keys.
+    #[test]
+    fn should_attest_slot_leases_only_with_identity_and_key_writers() {
+        unsafe extern "C" fn persist_leases(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const crate::identity_slot_lease_persistence::IdentitySlotLeaseFFI,
+            _: usize,
+            _: *const [u8; 36],
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn load_leases(
+            _: *mut c_void,
+            _: *const u8,
+            _: *mut *const crate::identity_slot_lease_persistence::IdentitySlotLeaseFFI,
+            _: *mut usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn free_leases(
+            _: *mut c_void,
+            _: *const crate::identity_slot_lease_persistence::IdentitySlotLeaseFFI,
+            _: usize,
+        ) {
+        }
+        unsafe extern "C" fn persist_identities(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const IdentityEntryFFI,
+            _: usize,
+            _: *const [u8; 32],
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        unsafe extern "C" fn persist_identity_keys(
+            _: *mut c_void,
+            _: *const u8,
+            _: *const IdentityKeyEntryFFI,
+            _: usize,
+            _: *const IdentityKeyRemovalFFI,
+            _: usize,
+        ) -> i32 {
+            0
+        }
+        let leases_attested = |identities: bool, keys: bool| {
+            let mut cb = PersistenceCallbacks {
+                on_load_wallet_list_fn: Some(noop_load_wallets),
+                on_load_wallet_list_free_fn: Some(noop_free_wallets),
+                ..Default::default()
+            };
+            if identities {
+                cb.on_persist_identities_fn = Some(persist_identities);
+            }
+            if keys {
+                cb.on_persist_identity_keys_fn = Some(persist_identity_keys);
+            }
+            FFIPersister::new_with_persistence_capabilities_and_extensions(
+                cb,
+                PersistenceCapabilities::IDENTITY_SLOT_LEASES,
+                PersistenceExtensionCallbacks {
+                    persist_identity_slot_leases: Some(persist_leases),
+                    load_identity_slot_leases: Some(load_leases),
+                    load_identity_slot_leases_free: Some(free_leases),
+                    ..Default::default()
+                },
+            )
+            .persistence_capabilities()
+            .contains(PersistenceCapabilities::IDENTITY_SLOT_LEASES)
+        };
+
+        assert!(leases_attested(true, true));
+        assert!(!leases_attested(false, true));
+        assert!(!leases_attested(true, false));
     }
 
     #[test]
