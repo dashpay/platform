@@ -231,18 +231,25 @@ pub trait ContextProvider: Send + Sync {
         None
     }
 
-    /// A revision of how this provider verifies proofs, so a caller can tell
-    /// whether results verified earlier came from the policy now in force. It
-    /// never decreases, and increases on every change, such as every
+    /// A revision of which quorum keys this provider accepts to authenticate
+    /// proofs, so a caller can tell whether a proof verified earlier was
+    /// authenticated under the quorum-key policy now in force. It never
+    /// decreases, and increases on every change, such as every
     /// [`set_quorum_mode`](Self::set_quorum_mode) that changes the mode, so
     /// the sum of a provider's and its delegates' revisions is one too. It
     /// never blocks.
+    ///
+    /// It covers quorum keys only. The data contracts and token
+    /// configurations a provider serves can change without it moving, so a
+    /// result read through them must not be reused on its strength.
     ///
     /// The default, `None`, makes no claim, and no earlier result may be
     /// reused. A provider opts in only when it can report every change,
     /// including those of the providers it delegates quorum lookups to. An
     /// SPV client published into an [`SpvSourceSlot`] is not tracked: it must
-    /// serve only SPV-verified keys.
+    /// serve only SPV-verified keys. Neither is a choice between sources
+    /// within one mode, such as Auto moving from the trusted provider to an
+    /// SPV client that became ready.
     fn policy_revision(&self) -> Option<u64> {
         None
     }
@@ -265,6 +272,9 @@ pub trait ContextProvider: Send + Sync {
     }
 }
 
+/// For pointers to a provider, such as `Arc<dyn ContextProvider>`: `as_ref`
+/// must always borrow the same provider, since the SDK checks `network` and
+/// `requires_proofs` once, at install, and `policy_revision` is forwarded.
 impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
     fn get_data_contract(
         &self,

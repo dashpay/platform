@@ -885,7 +885,8 @@ impl TrustedHttpContextProvider {
 
 impl ContextProvider for TrustedHttpContextProvider {
     /// Quorum keys come only from its own service; the fallback provider
-    /// serves contracts and token configurations.
+    /// serves contracts and token configurations, which the revision does not
+    /// cover, so adding or replacing a known contract does not move it.
     fn policy_revision(&self) -> Option<u64> {
         Some(0)
     }
