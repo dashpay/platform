@@ -149,7 +149,9 @@ pub struct NetworkShieldedCoordinator {
 
     /// Most recently fetched Platform recorded-anchor set, reused by the
     /// spend path while fresh so a send can skip that round trip. Filled by
-    /// every fetch: sends and the stranded-reservation release pass. See
+    /// a send's fetch when it read the tree size first (not while a sync
+    /// holds the store), and by the stranded-reservation release pass. A set
+    /// helps only until the next sync appends to the tree. See
     /// [`RecordedAnchorCache`].
     anchor_cache: RecordedAnchorCache,
 
@@ -4926,7 +4928,7 @@ mod tests {
     /// fresh cached set that still lists the reservation's (since pruned)
     /// anchor must not keep it alive.
     #[tokio::test]
-    async fn stranded_release_prefetch_populates_the_spend_cache() {
+    async fn should_populate_the_spend_cache_from_the_stranded_release_fetch() {
         let dir = temp_dir("release_populates_cache");
         let anchor = [0x5Bu8; 32];
         let coordinator =
@@ -5003,7 +5005,7 @@ mod tests {
 
     /// Clear drops the cached set along with the tree it was pinned to.
     #[tokio::test]
-    async fn clear_invalidates_the_recorded_anchor_cache() {
+    async fn should_invalidate_the_recorded_anchor_cache_on_clear() {
         let dir = temp_dir("clear_anchor_cache");
         let coordinator = coordinator_with_one_wallet(&dir).await;
         coordinator.anchor_cache().insert(
