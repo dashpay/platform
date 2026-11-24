@@ -464,7 +464,11 @@ impl Sdk {
     /// that offers "ends in N days" or a date picker, so that a week and four weeks are
     /// accepted; a caller with an exact deadline passes it to the build as it is.
     ///
-    /// A network below protocol version 15 has no decision proposals, which is an error.
+    /// Computed at the SDK's protocol version ([`Sdk::version`]), the same gate the other
+    /// decision proposal calls use: an SDK below protocol version 15 first asks the network for
+    /// its version and is an error when it is still below 15 (or when it cannot learn it), and
+    /// an SDK already at 15 or later (or pinned there) computes without asking. It does not
+    /// confirm that the network can create proposals; the create does.
     pub async fn decision_proposal_end_date(
         &self,
         requested_end_date: TimestampMillis,
@@ -1079,6 +1083,82 @@ mod tests {
                 requested
             );
         }
+    }
+
+    /// A context provider that knows only the decision proposals contract.
+    struct ProposalsContractProvider(Arc<DataContract>);
+    impl dash_context_provider::ContextProvider for ProposalsContractProvider {
+        fn get_data_contract(
+            &self,
+            id: &Identifier,
+            _: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, dash_context_provider::ContextProviderError>
+        {
+            Ok((*id == self.0.id()).then(|| self.0.clone()))
+        }
+        fn get_token_configuration(
+            &self,
+            _: &Identifier,
+        ) -> Result<
+            Option<dpp::data_contract::TokenConfiguration>,
+            dash_context_provider::ContextProviderError,
+        > {
+            Ok(None)
+        }
+        fn get_quorum_public_key(
+            &self,
+            _: u32,
+            _: [u8; 32],
+            _: u32,
+        ) -> Result<[u8; 48], dash_context_provider::ContextProviderError> {
+            Err(dash_context_provider::ContextProviderError::Generic(
+                "no quorum keys in this test".to_string(),
+            ))
+        }
+        fn get_platform_activation_height(
+            &self,
+        ) -> Result<dpp::prelude::CoreBlockHeight, dash_context_provider::ContextProviderError>
+        {
+            Ok(1)
+        }
+    }
+
+    /// The public build puts an end date near an edge of the window as of now as it is: only
+    /// a caller that asks [`Sdk::decision_proposal_end_date`] has it moved.
+    #[tokio::test]
+    async fn should_build_a_proposal_through_the_sdk_with_an_edge_end_date_as_given() {
+        let sdk = crate::SdkBuilder::new_mock()
+            .with_version(PlatformVersion::latest())
+            .with_context_provider(ProposalsContractProvider(proposals_contract()))
+            .build()
+            .expect("a mock sdk");
+        let limits = &PlatformVersion::latest().system_limits;
+        let now_ms = chrono::Utc::now().timestamp_millis() as TimestampMillis;
+        // Within the margin of the latest end date, where the opt-in call would move it.
+        let edge = now_ms + limits.max_yes_no_vote_poll_duration_ms - 30 * 60 * 1000;
+        let input = DecisionProposalInput {
+            end_date: edge,
+            ..input()
+        };
+
+        let built = sdk
+            .build_decision_proposal(Identifier::new([7; 32]), &input)
+            .await
+            .expect("builds");
+
+        let end_date: u64 = built
+            .document
+            .properties()
+            .get_integer(properties::END_DATE)
+            .expect("has an end date");
+        assert_eq!(end_date, edge);
+        assert_ne!(
+            sdk.decision_proposal_end_date(edge)
+                .await
+                .expect("computes"),
+            edge,
+            "the opt-in call moves the same end date"
+        );
     }
 
     #[test]

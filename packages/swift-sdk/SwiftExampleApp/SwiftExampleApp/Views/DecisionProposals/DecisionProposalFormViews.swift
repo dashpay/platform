@@ -157,7 +157,7 @@ struct CreateDecisionProposalView: View {
         } header: {
             Text("Rule")
         } footer: {
-            Text("Yes must be more than the pass percent of yes plus no, and yes plus no must reach the turnout percent of the masternodes' total voting power. Platform accepts a pass percent of 50 to 80, a turnout of 0 to 50, and an end date one to four weeks after the block that creates the proposal; an end exactly one or four weeks out is moved up to an hour inward so that block accepts it. The rule never changes.")
+            Text("Yes must be more than the pass percent of yes plus no, and yes plus no must reach the turnout percent of the masternodes' total voting power. Platform accepts a pass percent of 50 to 80, a turnout of 0 to 50, and an end date one to four weeks after the block that creates the proposal; an end near one or four weeks out is moved up to two hours inward so that block accepts it. The rule never changes.")
         }
         .disabled(isLocked)
     }

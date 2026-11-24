@@ -303,11 +303,11 @@ unsafe fn get_end_date_inner(
     requested_end_date_ms: u64,
 ) -> Result<Option<String>, FFIError> {
     let wrapper = sdk_wrapper(sdk_handle)?;
-    let end_date = wrapper.runtime.block_on(
-        wrapper
-            .sdk
-            .decision_proposal_end_date(requested_end_date_ms),
-    )?;
+    let sdk = &wrapper.sdk;
+    // A worker that cannot start is an error result, not a panic through the C boundary.
+    let end_date = wrapper
+        .runtime
+        .try_block_on(sdk.decision_proposal_end_date(requested_end_date_ms))??;
     Ok(Some(end_date.to_string()))
 }
 
@@ -546,6 +546,8 @@ mod tests {
                         std::ffi::CStr::from_ptr((*result.error).message).to_string_lossy();
                     panic!("error: {message}");
                 }
+                assert_eq!(result.data_type, crate::DashSDKResultDataType::String);
+                assert!(!result.data.is_null(), "end date result has no data");
                 let text = std::ffi::CStr::from_ptr(result.data as *const c_char)
                     .to_str()
                     .expect("UTF-8")
