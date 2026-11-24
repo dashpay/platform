@@ -285,11 +285,11 @@ final class IdentityKeyBreadcrumbTests: XCTestCase {
         )
     }
 
-    /// The stored-scalar branch is key-type independent (the scalar signs via
-    /// `ffiSign` regardless of the declared type), so a row carrying a keychain
-    /// identifier preflights as signable for any key type — the resolver gate
-    /// only governs the breadcrumb-only path. Deterministic: no mnemonic read.
-    func testCanSignAcceptsStoredScalarRegardlessOfKeyType() throws {
+    /// The stored scalar signs via `ffiSign`, which is secp256k1 ECDSA only, so
+    /// a row carrying a keychain identifier preflights as signable for the two
+    /// ECDSA key types and for nothing else: Rust picks signing keys by this
+    /// answer. Deterministic: no mnemonic read.
+    func testCanSignAcceptsStoredScalarOnlyForEcdsaKeyTypes() throws {
         let container = try DashModelContainer.createInMemory()
         let seed = ModelContext(container)
         let pubKey = Data(repeating: 0x99, count: 33)
@@ -305,8 +305,16 @@ final class IdentityKeyBreadcrumbTests: XCTestCase {
             "a stored-scalar row is signable for an ECDSA type"
         )
         XCTAssertTrue(
+            signer.canSign(publicKey: pubKey, keyType: KeyType.ecdsaHash160.rawValue),
+            "a stored-scalar row is signable for a HASH160 ECDSA type"
+        )
+        XCTAssertFalse(
+            signer.canSign(publicKey: pubKey, keyType: KeyType.bls12_381.rawValue),
+            "the stored scalar cannot produce a BLS signature"
+        )
+        XCTAssertFalse(
             signer.canSign(publicKey: pubKey, keyType: KeyType.eddsa25519Hash160.rawValue),
-            "a stored-scalar row is signable regardless of key type"
+            "the stored scalar cannot produce an EdDSA signature"
         )
     }
 

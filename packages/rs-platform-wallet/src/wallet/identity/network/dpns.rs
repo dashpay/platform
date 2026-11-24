@@ -1,7 +1,7 @@
 //! DPNS name registration, resolution, search, and contest queries.
 
 use super::document::{check_document_signing_key, document_signing_key};
-use super::key_selection::{SigningScope, WALLET_SIGNING_KEY_TYPES};
+use super::key_selection::SigningScope;
 
 use dpp::fee::Credits;
 
@@ -20,7 +20,7 @@ use super::{DPNS_USERNAMES_MAX_PAGES, DPNS_USERNAMES_PAGE_LIMIT};
 use super::*;
 
 /// The key that signs both DPNS registration documents, `preorder` then `domain`: an
-/// AUTHENTICATION ECDSA key meeting `requirement` whose bounds cover the whole DPNS contract
+/// AUTHENTICATION key meeting `requirement` whose bounds cover the whole DPNS contract
 /// `dpns_contract_id`. MASTER is reserved for identity operations and refused on document
 /// writes. Both come from the
 /// [`DpnsNameRegistration`](dash_sdk::platform::dpns_usernames::DpnsNameRegistration) the key
@@ -245,7 +245,6 @@ impl IdentityWallet {
             identity_id: *identity_id,
             purpose: Purpose::AUTHENTICATION,
             security_levels: SecurityLevel::accepted_for_requirement(requirement),
-            key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
             transition: "a DPNS name registration".to_string(),
         })?
         .clone();

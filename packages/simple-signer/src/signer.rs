@@ -202,10 +202,13 @@ impl Signer<IdentityPublicKey> for SimpleSigner {
     }
 
     fn can_sign_with(&self, identity_public_key: &IdentityPublicKey) -> bool {
-        self.private_keys
-            .get(identity_public_key)
-            .or_else(|| self.private_keys_in_creation.get(identity_public_key))
-            .is_some()
+        // `sign` refuses a BIP13_SCRIPT_HASH key whatever private key is held.
+        identity_public_key.key_type() != KeyType::BIP13_SCRIPT_HASH
+            && self
+                .private_keys
+                .get(identity_public_key)
+                .or_else(|| self.private_keys_in_creation.get(identity_public_key))
+                .is_some()
     }
 }
 
@@ -257,6 +260,36 @@ impl Signer<PlatformAddress> for SimpleSigner {
                 .or_else(|| self.address_private_keys_in_creation.get(hash))
                 .is_some(),
             PlatformAddress::P2sh(_) => false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+
+    #[test]
+    fn should_claim_only_keys_it_holds_of_a_type_it_signs() {
+        let mut signer = SimpleSigner::default();
+        for key_type in KeyType::all_key_types() {
+            let key: IdentityPublicKey = IdentityPublicKeyV0 {
+                id: key_type as u32,
+                key_type,
+                data: vec![key_type as u8; key_type.default_size()].into(),
+                ..Default::default()
+            }
+            .into();
+            assert!(
+                !signer.can_sign_with(&key),
+                "{key_type:?} without a private key"
+            );
+            signer.add_identity_public_key(key.clone(), [1; 32]);
+            assert_eq!(
+                signer.can_sign_with(&key),
+                key_type != KeyType::BIP13_SCRIPT_HASH,
+                "{key_type:?}"
+            );
         }
     }
 }

@@ -269,6 +269,19 @@ mod tests {
     use dpp::state_transition::errors::PublicKeySecurityLevelNotMetError;
     use dpp::state_transition::errors::WrongPublicKeyPurposeError;
 
+    /// Clients choose and check signing keys by the dpp predicate; it must name exactly the key
+    /// types this validation verifies a signature by.
+    #[test]
+    fn should_agree_with_the_dpp_identity_signing_key_type_predicate_for_every_key_type() {
+        for key_type in KeyType::all_key_types() {
+            assert_eq!(
+                key_type.can_sign_identity_signed_transition(),
+                SUPPORTED_KEY_TYPES.contains(&key_type),
+                "{key_type:?}"
+            );
+        }
+    }
+
     mod convert_to_consensus_signature_error_tests {
         use super::*;
 
