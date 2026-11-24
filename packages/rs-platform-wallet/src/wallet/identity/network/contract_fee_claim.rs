@@ -22,7 +22,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v2::DataContractConfigGettersV2;
 use dpp::data_contract::document_type::action_fees::ContractFeePot;
 use dpp::identity::signer::Signer;
-use dpp::identity::IdentityPublicKey;
+use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::prelude::{DataContract, Identifier};
 
 use crate::error::PlatformWalletError;
@@ -105,18 +105,7 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        let claimant = {
-            let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-                PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
-            info.identity_manager
-                .wallet_identity(&self.wallet_id, claimant_identity_id)
-                .map(|managed| managed.identity.clone())
-                .ok_or(PlatformWalletError::IdentityNotFound(*claimant_identity_id))?
-        };
+        let claimant = self.wallet_signing_identity(claimant_identity_id).await?;
 
         let (claimed, metadata) = claimant
             .claim_contract_fees_with_metadata(
@@ -162,6 +151,61 @@ impl IdentityWallet {
         &self,
         contract_id: &Identifier,
     ) -> Result<ContractFeeClaimEligibility, PlatformWalletError> {
+        let (contract, seated_team) = self.fetch_contract_and_seated_team(contract_id).await?;
+        let wallet_identities = self.wallet_signing_identity_ids().await?;
+        Ok(contract_fee_claim_eligibility(
+            &contract,
+            seated_team.as_ref(),
+            wallet_identities,
+        ))
+    }
+
+    /// The signing identity `identity_id` this wallet holds, cloned out of the wallet manager
+    /// so the lock is released before anything is signed.
+    ///
+    /// # Errors
+    /// [`PlatformWalletError::IdentityNotFound`] when this wallet holds no signing identity
+    /// `identity_id` (an observed one does not count).
+    pub(super) async fn wallet_signing_identity(
+        &self,
+        identity_id: &Identifier,
+    ) -> Result<Identity, PlatformWalletError> {
+        let wm = self.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+            PlatformWalletError::WalletNotFound(
+                "Wallet info not found in wallet manager".to_string(),
+            )
+        })?;
+        info.identity_manager
+            .wallet_identity(&self.wallet_id, identity_id)
+            .map(|managed| managed.identity.clone())
+            .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))
+    }
+
+    /// The ids of the signing identities this wallet holds.
+    pub(super) async fn wallet_signing_identity_ids(
+        &self,
+    ) -> Result<Vec<Identifier>, PlatformWalletError> {
+        let wm = self.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+            PlatformWalletError::WalletNotFound(
+                "Wallet info not found in wallet manager".to_string(),
+            )
+        })?;
+        Ok(info.identity_manager.wallet_identity_ids(&self.wallet_id))
+    }
+
+    /// `contract_id` and, when it declares elected moderation, the team of its seated charter
+    /// (`Sdk::fetch_moderation_team`, `None` while none is seated): what Drive reads to decide
+    /// who moderates the contract and who shares its moderators pot.
+    ///
+    /// # Errors
+    /// * [`PlatformWalletError::ContractNotFound`] when Platform holds no such contract;
+    /// * [`PlatformWalletError::Sdk`] when a read fails.
+    pub(super) async fn fetch_contract_and_seated_team(
+        &self,
+        contract_id: &Identifier,
+    ) -> Result<(DataContract, Option<ModerationTeam>), PlatformWalletError> {
         let contract = DataContract::fetch(&self.sdk, *contract_id).await?.ok_or(
             PlatformWalletError::ContractNotFound {
                 contract_id: *contract_id,
@@ -172,26 +216,29 @@ impl IdentityWallet {
         } else {
             None
         };
-        let wallet_identities = {
-            let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-                PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
-            info.identity_manager.wallet_identity_ids(&self.wallet_id)
-        };
-        Ok(contract_fee_claim_eligibility(
-            &contract,
-            seated_team.as_ref(),
-            wallet_identities,
-        ))
+        Ok((contract, seated_team))
+    }
+}
+
+/// Who moderates `contract` and shares its moderators pot, given the team of its seated
+/// charter (`seated_team`, read only for a contract that declares elected moderation and
+/// ignored for any other): the seated team once an elected contract has one, otherwise the
+/// team its declaration names, or nobody for a contract that declares no moderation.
+pub(super) fn moderators_team(
+    contract: &DataContract,
+    seated_team: Option<&ModerationTeam>,
+) -> ModeratorsPotTeam {
+    match (declares_elected_moderation(contract), seated_team) {
+        (true, Some(_)) => ModeratorsPotTeam::ElectedSeated,
+        (true, None) => ModeratorsPotTeam::ElectedInterim,
+        (false, _) if contract.config().moderation().is_some() => ModeratorsPotTeam::Declared,
+        (false, _) => ModeratorsPotTeam::NoModeration,
     }
 }
 
 /// Whether `contract` declares elected moderation, the case in which Drive reads the seated
-/// charter before it judges a claim of the moderators pot.
-fn declares_elected_moderation(contract: &DataContract) -> bool {
+/// charter before it judges a claim of the moderators pot or a moderation.
+pub(super) fn declares_elected_moderation(contract: &DataContract) -> bool {
     contract
         .config()
         .moderation()
@@ -226,29 +273,16 @@ pub fn contract_fee_claim_eligibility(
         .copied()
         .collect();
 
-    let elected = declares_elected_moderation(contract);
-    let (moderators_pot_team, moderators_pot_claimants) = match (elected, seated_team) {
-        (true, Some(team)) => (
-            ModeratorsPotTeam::ElectedSeated,
-            candidates
-                .iter()
-                .filter(|candidate| team.contains(candidate))
-                .copied()
-                .collect(),
-        ),
+    let moderators_pot_team = moderators_team(contract, seated_team);
+    let moderators_pot_claimants = match (moderators_pot_team, seated_team) {
+        (ModeratorsPotTeam::ElectedSeated, Some(team)) => candidates
+            .iter()
+            .filter(|candidate| team.contains(candidate))
+            .copied()
+            .collect(),
         _ => {
-            let team = if elected {
-                ModeratorsPotTeam::ElectedInterim
-            } else if contract.config().moderation().is_some() {
-                ModeratorsPotTeam::Declared
-            } else {
-                ModeratorsPotTeam::NoModeration
-            };
             let recipients = ContractFeePot::Moderators.recipients(contract);
-            (
-                team,
-                candidates.intersection(&recipients).copied().collect(),
-            )
+            candidates.intersection(&recipients).copied().collect()
         }
     };
 

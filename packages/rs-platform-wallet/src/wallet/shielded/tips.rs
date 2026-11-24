@@ -307,11 +307,13 @@ impl PlatformWallet {
     /// Refuse a profile `shieldedAddress` this wallet must not publish for
     /// `identity_id`. An address of another wallet passes: only its owner
     /// can tell what it is. One of this wallet's own passes only when it is
-    /// an external receiving address of the identity's dedicated account,
-    /// and that account stands prepared for the identity in this session
+    /// the default address of the identity's dedicated account (the one
+    /// [`Self::prepare_shielded_identity_address`] returns), and that account
+    /// stands prepared for the identity in this session
     /// ([`Self::prepared_shielded_identity_account`]). An ordinary account's
-    /// address would tie the wallet's own funds to the identity, and another
-    /// identity's account would tie the two identities together.
+    /// address would tie the wallet's own funds to the identity, another
+    /// identity's account would tie the two identities together, and another
+    /// address of the identity's own account is one it gives to a contact.
     ///
     /// The wallet tells its own addresses by the viewing keys of its bound
     /// shielded accounts. Before the first bind it holds none and could not
@@ -342,10 +344,10 @@ impl PlatformWallet {
                 views
                     .full_viewing_key
                     .scope_for_address(&address)
-                    .map(|scope| (*account, scope))
+                    .map(|scope| (*account, scope, views.default_address == address))
             })
         };
-        let Some((owning_account, scope)) = owning_account else {
+        let Some((owning_account, scope, is_default_address)) = owning_account else {
             return Ok(());
         };
         if !is_shielded_identity_account(owning_account) {
@@ -359,6 +361,16 @@ impl PlatformWallet {
             return Err(PlatformWalletError::InvalidIdentityData(
                 "Only external receiving addresses from this wallet can be published \
                  in an identity profile"
+                    .to_string(),
+            ));
+        }
+        // The account's other external addresses are the ones it hands to
+        // contacts, one each. Published in the profile, such an address
+        // would no longer tell its contact apart.
+        if !is_default_address {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "Only the default address of the identity's shielded account can be \
+                 published in its profile; its other addresses are reserved for contacts"
                     .to_string(),
             ));
         }

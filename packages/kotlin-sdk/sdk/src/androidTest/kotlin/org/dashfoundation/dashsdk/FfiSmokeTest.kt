@@ -4,11 +4,18 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.Dispatchers
 import org.dashfoundation.dashsdk.ffi.AddressHistoryNative
+import org.dashfoundation.dashsdk.ffi.AddressPrivateKeyNative
 import org.dashfoundation.dashsdk.ffi.ContractModerationNative
+import org.dashfoundation.dashsdk.ffi.ContractUpdateNative
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import org.dashfoundation.dashsdk.ffi.DashpayNative
 import org.dashfoundation.dashsdk.ffi.DpnsGiveUpNative
+import org.dashfoundation.dashsdk.ffi.FundingNative
+import org.dashfoundation.dashsdk.ffi.IdentityKeyLimitsNative
+import org.dashfoundation.dashsdk.ffi.IdentityNative
 import org.dashfoundation.dashsdk.ffi.IdentityRemovalNative
+import org.dashfoundation.dashsdk.ffi.IdentityWithdrawalsNative
+import org.dashfoundation.dashsdk.ffi.MasternodeVotingKeyNative
 import org.dashfoundation.dashsdk.ffi.NativePersistenceBridge
 import org.dashfoundation.dashsdk.ffi.NativeLoader
 import org.dashfoundation.dashsdk.ffi.SdkNative
@@ -17,6 +24,9 @@ import org.dashfoundation.dashsdk.ffi.SignerNative
 import org.dashfoundation.dashsdk.ffi.WalletManagerNative
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.PlatformWalletPersistenceHandler
+import org.dashfoundation.dashsdk.tokens.DashPayPaymentAddressKind
+import org.dashfoundation.dashsdk.tokens.DashPayPaymentAddresses
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -24,6 +34,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -285,6 +296,99 @@ class FfiSmokeTest {
     }
 
     /**
+     * The core address private-key reveal binds, and an unknown wallet handle
+     * throws the mapped [DashSDKException] instead of crashing. The reveal on a
+     * real wallet is `CoreAddressPrivateKeyRevealTest`.
+     */
+    @Test
+    fun coreAddressPrivateKeySymbolBindsAndRejectsInvalidHandle() {
+        NativeLoader.ensureLoaded()
+        assertThrows(DashSDKException::class.java) {
+            AddressPrivateKeyNative.revealCoreAddressPrivateKey(
+                0L, 0L, "yMqShkrgjTRuReBGFpQr7FozEF1QcNBBYA",
+            )
+        }
+    }
+
+    /**
+     * The contract update review exports bind with the descriptors
+     * `ContractUpdateNative` declares, and `IdentityNative.updateDataContractAtReviewedVersion`
+     * with its `expectedCurrentVersion` slot. The split needs no wallet, so it
+     * runs for real: a contract JSON object splits into its sections in source
+     * order, and text that is not a JSON object is refused by Rust. The preview
+     * and the update refuse an unknown wallet handle; an expected version that
+     * does not fit a `u32` is refused with code 1 before any C call.
+     */
+    @Test
+    fun contractUpdateReviewSymbolsBindAndSplitASource() {
+        NativeLoader.ensureLoaded()
+        val documents = """{"note":{"type":"object","properties":{"b":{"type":"string","position":0}}}}"""
+        val sections = org.dashfoundation.dashsdk.identity.DataContractUpdateSource.split(
+            """{"documents":$documents,"description":"d"}""",
+        )
+        assertEquals(documents, sections.documents)
+        assertEquals("d", sections.description)
+        assertNull(sections.tokens)
+        assertFalse(sections.carriesSharedDefinitions)
+        assertThrows(DashSDKException::class.java) {
+            ContractUpdateNative.splitContractUpdateSource("[1,2]")
+        }
+        assertThrows(DashSDKException::class.java) {
+            ContractUpdateNative.previewDataContractUpdate(
+                0L, ByteArray(32), ByteArray(32), "{}", null, null, null, null, null,
+            )
+        }
+        val badVersion = assertThrows(DashSDKException::class.java) {
+            IdentityNative.updateDataContractAtReviewedVersion(
+                0L, ByteArray(32), ByteArray(32), "{}", null, null, null, null, null, -1L, 0L,
+            )
+        }
+        assertEquals(1, badVersion.code)
+    }
+
+    /**
+     * The three `IdentityKeyLimitsNative` exports bind with their descriptors and their
+     * arguments arrive in order, without touching the network: an identity id that is not
+     * 32 bytes, a 0 signer handle and a reviewed preview of the wrong shape are refused in
+     * the JNI layer (code 1); a well-formed call on a wallet handle Rust does not know
+     * reaches its `platform-wallet-ffi` function, which answers `NotFound` (98, shifted by
+     * the platform-wallet offset).
+     */
+    @Test
+    fun identityKeyLimitsSymbolsBindAndRejectInvalidInput() {
+        NativeLoader.ensureLoaded()
+        fun code(block: () -> Unit): Int = assertThrows(DashSDKException::class.java) { block() }.code
+        val id = ByteArray(32) { 7 }
+        val unknownWallet = Long.MAX_VALUE
+
+        assertEquals(1, code {
+            IdentityKeyLimitsNative.previewKeyLimitsUpdate(1L, ByteArray(31), 2, false, 0L, false, 0L, 1L)
+        })
+        assertEquals(1, code {
+            IdentityKeyLimitsNative.previewKeyLimitsUpdate(1L, id, 2, false, 0L, false, 0L, 0L)
+        })
+        assertEquals(1000 + 98, code {
+            IdentityKeyLimitsNative.previewKeyLimitsUpdate(unknownWallet, id, 2, true, -1L, true, 1L, 1L)
+        })
+
+        assertEquals(1, code {
+            IdentityKeyLimitsNative.updateKeyLimitsAsReviewed(1L, id, 2, LongArray(5), 1L)
+        })
+        assertEquals(1, code {
+            IdentityKeyLimitsNative.updateKeyLimitsAsReviewed(1L, id, 2, longArrayOf(0, 1 shl 4, 0, 0, 0, 0), 1L)
+        })
+        assertEquals(1, code {
+            IdentityKeyLimitsNative.updateKeyLimitsAsReviewed(1L, id, 2, LongArray(6), 0L)
+        })
+        assertEquals(1000 + 98, code {
+            IdentityKeyLimitsNative.updateKeyLimitsAsReviewed(unknownWallet, id, 2, LongArray(6), 1L)
+        })
+
+        assertEquals(1, code { IdentityKeyLimitsNative.refreshIdentity(1L, ByteArray(33)) })
+        assertEquals(1000 + 98, code { IdentityKeyLimitsNative.refreshIdentity(unknownWallet, id) })
+    }
+
+    /**
      * The live-wallet identity removal binds, and an unknown manager handle
      * throws the mapped [DashSDKException] instead of crashing. The removal
      * itself is covered by the platform-wallet and platform-wallet-ffi tests.
@@ -353,6 +457,121 @@ class FfiSmokeTest {
         } finally {
             SdkNative.destroy(sdk)
         }
+    }
+
+    /**
+     * `identityWithdrawals` binds with the descriptor `(J[B)[B` and its arguments arrive in
+     * order: an identity id that is not 32 bytes is refused in the JNI layer (code 1), and a
+     * 32-byte id on a wallet handle Rust does not know reaches
+     * `platform_wallet_identity_withdrawals`, which answers `NotFound` (98, thrown shifted
+     * by the platform-wallet offset). Nothing reaches the network.
+     */
+    /**
+     * The masternode voting key check exports bind with the descriptors
+     * `MasternodeVotingKeyNative` declares: bad input is refused at the JNI
+     * boundary (code 1), a null SDK handle by the C function
+     * (`InvalidParameter`, code 1), and the two pure rules answer Rust's JSON
+     * without an SDK. The rules themselves are rs-sdk's and tested there.
+     */
+    @Test
+    fun masternodeVotingKeyCheckSymbolsBindAndRejectInvalidInput() {
+        NativeLoader.ensureLoaded()
+        fun code(block: () -> Unit): Int = assertThrows(DashSDKException::class.java) { block() }.code
+        val proTxHash = ByteArray(32) { 1 }
+        val address = ByteArray(20) { 3 }
+
+        assertEquals(1, code { MasternodeVotingKeyNative.checkVotingKey(0L, ByteArray(31), address) })
+        assertEquals(1, code { MasternodeVotingKeyNative.checkVotingKey(0L, proTxHash, ByteArray(19)) })
+        assertEquals(1, code { MasternodeVotingKeyNative.checkVotingKey(0L, proTxHash, address) })
+
+        // Valid, same key with a refusal recorded of it: stored, recorded valid.
+        val outcome = MasternodeVotingKeyNative.votingKeyCheckOutcome(0, address, 1, 2, address)
+        assertNotNull(outcome)
+        assertTrue(outcome!!, outcome.contains("\"storeKey\":true"))
+        assertTrue(outcome, outcome.contains("03".repeat(20)))
+        // Invalid into an empty slot: refused, nothing recorded.
+        val refused = MasternodeVotingKeyNative.votingKeyCheckOutcome(1, address, 0, 0, null)
+        assertTrue(refused!!, refused.contains("\"storeKey\":false"))
+        assertTrue(refused, refused.contains("\"record\":null"))
+        assertEquals(1, code { MasternodeVotingKeyNative.votingKeyCheckOutcome(3, address, 0, 0, null) })
+        assertEquals(1, code { MasternodeVotingKeyNative.votingKeyCheckOutcome(0, address, 3, 0, null) })
+        assertEquals(1, code { MasternodeVotingKeyNative.votingKeyCheckOutcome(0, address, 1, 4, address) })
+        assertEquals(1, code { MasternodeVotingKeyNative.votingKeyCheckOutcome(0, address, 1, 1, null) })
+        assertEquals(1, code { MasternodeVotingKeyNative.votingKeyCheckOutcome(0, address, 1, 0, address) })
+
+        // Nothing recorded, address read: offered and checked before use.
+        val never = MasternodeVotingKeyNative.recordedVotingKeyUse(0, null, address)
+        assertTrue(never!!, never.contains("\"canVote\":true"))
+        assertTrue(never, never.contains("\"checkBeforeUse\":true"))
+        // A refusal of this key: not offered.
+        val refusedUse = MasternodeVotingKeyNative.recordedVotingKeyUse(2, address, address)
+        assertTrue(refusedUse!!, refusedUse.contains("\"canVote\":false"))
+        // A refusal recorded for another key (address A) does not refuse the stored key B: it
+        // is offered and checked first, so the stored address crosses JNI as its own argument.
+        val otherAddress = ByteArray(20) { 4 }
+        val otherKeyUse = MasternodeVotingKeyNative.recordedVotingKeyUse(2, otherAddress, address)
+        assertTrue(otherKeyUse!!, otherKeyUse.contains("\"canVote\":true"))
+        assertTrue(otherKeyUse, otherKeyUse.contains("\"checkBeforeUse\":true"))
+        assertEquals(1, code { MasternodeVotingKeyNative.recordedVotingKeyUse(0, null, ByteArray(21)) })
+
+        // The masternode load for voting (#6099): bad lengths at the JNI boundary, a null SDK
+        // handle in the C function; with or without a voting address.
+        assertEquals(1, code { MasternodeVotingKeyNative.loadForVoting(0L, ByteArray(31), null) })
+        assertEquals(1, code { MasternodeVotingKeyNative.loadForVoting(0L, proTxHash, ByteArray(19)) })
+        assertEquals(1, code { MasternodeVotingKeyNative.loadForVoting(0L, proTxHash, null) })
+        assertEquals(1, code { MasternodeVotingKeyNative.loadForVoting(0L, proTxHash, address) })
+
+        // The sibling rule: a valid record of another key becomes undetermined; nothing else
+        // changes. Bad input is refused at the JNI boundary.
+        val sibling = MasternodeVotingKeyNative.siblingVotingKeyRecord(0, address, 1, otherAddress)
+        assertTrue(sibling!!, sibling.contains("\"check\":3"))
+        assertTrue(sibling, sibling.contains("04".repeat(20)))
+        val unchanged = MasternodeVotingKeyNative.siblingVotingKeyRecord(0, address, 1, address)
+        assertTrue(unchanged!!, unchanged.contains("\"record\":null"))
+        assertEquals(1, code { MasternodeVotingKeyNative.siblingVotingKeyRecord(3, address, 0, null) })
+        assertEquals(1, code { MasternodeVotingKeyNative.siblingVotingKeyRecord(0, ByteArray(19), 0, null) })
+    }
+
+    @Test
+    fun identityWithdrawalsSymbolBindsAndRejectsInvalidInput() {
+        NativeLoader.ensureLoaded()
+        val shortId = assertThrows(DashSDKException::class.java) {
+            IdentityWithdrawalsNative.identityWithdrawals(1L, ByteArray(31))
+        }
+        assertEquals(1, shortId.code)
+        val unknownWallet = assertThrows(DashSDKException::class.java) {
+            IdentityWithdrawalsNative.identityWithdrawals(Long.MAX_VALUE, ByteArray(32) { 7 })
+        }
+        assertEquals(1000 + 98, unknownWallet.code)
+    }
+
+    /**
+     * The exports KotlinExampleApp uses for a shield from an identity's
+     * balance (type 21), its durable records and a top-up from the shielded
+     * pool (type 22) bind with the descriptors `FundingNative` declares: an
+     * id of the wrong size or a non-positive amount is refused at the JNI
+     * boundary (code 1), and an unknown manager handle throws instead of
+     * crashing. Nothing reaches the network.
+     */
+    @Test
+    fun identityShieldAndShieldedTopUpSymbolsBindAndRejectInvalidInput() {
+        NativeLoader.ensureLoaded()
+        // The four exports exist only in a build with shielded support.
+        assumeTrue("the native library has no shielded support", Sdk.hasShielded())
+        val id = ByteArray(32) { 7 }
+        val shortId = ByteArray(31)
+        fun code(block: () -> Unit): Int = assertThrows(DashSDKException::class.java) { block() }.code
+
+        assertEquals(1, code { FundingNative.shieldedShieldFromIdentity(1L, id, 0, shortId, 1L, 1L) })
+        assertEquals(1, code { FundingNative.shieldedShieldFromIdentity(1L, id, 0, id, 0L, 1L) })
+        assertEquals(1, code { FundingNative.shieldedIdentityDebitRecoveryRecords(1L, shortId) })
+        assertEquals(1, code { FundingNative.abandonShieldedIdentityDebit(1L, id, 0, shortId, true) })
+        assertEquals(1, code { FundingNative.shieldedIdentityTopUpFromPool(1L, id, 0L, 0, shortId, 1L) })
+        assertEquals(1, code { FundingNative.shieldedIdentityTopUpFromPool(1L, id, 0L, 0, id, -1L) })
+
+        // Valid arguments on an unknown manager reach Rust, which refuses them.
+        code { FundingNative.shieldedIdentityDebitRecoveryRecords(Long.MAX_VALUE, id) }
+        code { FundingNative.abandonShieldedIdentityDebit(Long.MAX_VALUE, id, 0, id, true) }
     }
 
     /**
@@ -457,12 +676,95 @@ class FfiSmokeTest {
     }
 
     /**
+     * The asset-lock shielded recipients need every override they depend on,
+     * the same way as the operation ids: JNI wires the two slots only for a
+     * bridge that overrides the recipient store, the recipient load and the
+     * asset lock upsert, and Rust attests the capability only when the
+     * bridge declares it. An inherited no-op load would answer "no
+     * recipient" for a lock built to pay one, and a resume would accept any.
+     */
+    @Test
+    fun assetLockShieldedRecipientCapabilityNeedsEveryOverride() {
+        NativeLoader.ensureLoaded()
+        val bit = NativePersistenceBridge.CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS
+        fun effective(bridge: NativePersistenceBridge): Boolean =
+            WalletManagerNative.nativeEffectivePersistenceCapabilityBits(bridge) and bit == bit
+
+        assertTrue("every override", effective(ShieldedRecipientBridge.Full()))
+        assertFalse("no recipient store", effective(ShieldedRecipientBridge.WithoutStore()))
+        assertFalse("no recipient load", effective(ShieldedRecipientBridge.WithoutLoad()))
+        assertFalse("no asset lock upsert", effective(ShieldedRecipientBridge.WithoutUpsert()))
+        assertFalse(
+            "every override, not declared",
+            effective(object : ShieldedRecipientBridge.Full() {
+                override fun persistenceCapabilitiesBits(): Long = TRACKED_ASSET_LOCKS or WALLET_RESTORE
+            }),
+        )
+
+        val db = DashDatabase.createInMemory(ApplicationProvider.getApplicationContext())
+        try {
+            val handlerBits = WalletManagerNative.nativeEffectivePersistenceCapabilityBits(
+                PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined),
+            )
+            assertEquals("the Room handler attests it", bit, handlerBits and bit)
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
      * Rust↔Kotlin persistence-descriptor lockstep. The trampolines resolve
      * each bridge method by (name, descriptor) only when its slot first
      * fires — for the invitation upsert that would be mid-way through a
      * live, funded `create_invitation`. Resolving the whole table up front
      * turns a descriptor typo into a CI failure instead.
      */
+    /**
+     * The DashPay profile payment address exports bind with the descriptors
+     * `DashpayNative` declares. The pure conversions answer without a
+     * wallet: stored Core bytes render as a testnet address that converts
+     * back to the same bytes, the same address is refused on mainnet and in
+     * the Platform field, and bytes that are not an address render as null.
+     * The support read and the profile write reach their C functions, which
+     * refuse an unknown wallet and a null signer.
+     */
+    @Test
+    fun profilePaymentAddressSymbolsBindAndConvert() {
+        NativeLoader.ensureLoaded()
+        val stored = byteArrayOf(0x00) + ByteArray(20) { 0x22 }
+        val text = DashPayPaymentAddresses.string(DashPayPaymentAddressKind.CORE, stored, Network.TESTNET)
+        assertNotNull(text)
+        assertArrayEquals(
+            stored,
+            DashPayPaymentAddresses.bytes(DashPayPaymentAddressKind.CORE, text!!, Network.TESTNET),
+        )
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.paymentAddressFromString(0, text, Network.MAINNET.ffiValue)
+        }
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.paymentAddressFromString(1, text, Network.TESTNET.ffiValue)
+        }
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.paymentAddressFromString(0, "not an address", Network.TESTNET.ffiValue)
+        }
+        assertNull(DashpayNative.paymentAddressToString(0, ByteArray(21) { 0x02 }, Network.TESTNET.ffiValue))
+        assertNull(DashpayNative.paymentAddressToString(2, ByteArray(0), Network.TESTNET.ffiValue))
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.paymentAddressToString(3, stored, Network.TESTNET.ffiValue)
+        }
+        assertThrows(DashSDKException::class.java) {
+            DashpayNative.paymentAddressSupport(0L)
+        }
+        val noSigner = assertThrows(DashSDKException::class.java) {
+            DashpayNative.createOrUpdateProfileWithAddresses(
+                0L, ByteArray(32), "name", null, null, null,
+                1, stored, 2, null, 0, null,
+                false, 0L,
+            )
+        }
+        assertNotEquals(0, noSigner.code)
+    }
+
     @Test
     fun persistenceBridgeDescriptorsAllResolve() {
         NativeLoader.ensureLoaded()
@@ -577,6 +879,93 @@ private abstract class OperationIdBridge : NativePersistenceBridge() {
         ): Int = 0
 
         override fun onLoadAssetLockOperationId(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+            null
+    }
+}
+
+/**
+ * Bridges declaring the asset-lock shielded recipients with some of the
+ * overrides they depend on, for
+ * [FfiSmokeTest.assetLockShieldedRecipientCapabilityNeedsEveryOverride].
+ * Each concrete class declares exactly the overrides its name says.
+ */
+private abstract class ShieldedRecipientBridge : NativePersistenceBridge() {
+    override fun persistenceCapabilitiesVersion(): Int = 1
+
+    override fun persistenceCapabilitiesBits(): Long =
+        CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS or TRACKED_ASSET_LOCKS or WALLET_RESTORE
+
+    open class Full : ShieldedRecipientBridge() {
+        @Suppress("LongParameterList")
+        override fun onPersistAssetLockUpsert(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            transactionBytes: ByteArray,
+            accountIndex: Int,
+            fundingType: Byte,
+            identityIndex: Int,
+            amountDuffs: Long,
+            status: Byte,
+            proofBytes: ByteArray?,
+        ): Int = 0
+
+        override fun onPersistAssetLockShieldedRecipient(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            recipientRaw43: ByteArray,
+        ): Int = 0
+
+        override fun onLoadAssetLockShieldedRecipient(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+            null
+    }
+
+    class WithoutStore : ShieldedRecipientBridge() {
+        @Suppress("LongParameterList")
+        override fun onPersistAssetLockUpsert(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            transactionBytes: ByteArray,
+            accountIndex: Int,
+            fundingType: Byte,
+            identityIndex: Int,
+            amountDuffs: Long,
+            status: Byte,
+            proofBytes: ByteArray?,
+        ): Int = 0
+
+        override fun onLoadAssetLockShieldedRecipient(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+            null
+    }
+
+    class WithoutLoad : ShieldedRecipientBridge() {
+        @Suppress("LongParameterList")
+        override fun onPersistAssetLockUpsert(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            transactionBytes: ByteArray,
+            accountIndex: Int,
+            fundingType: Byte,
+            identityIndex: Int,
+            amountDuffs: Long,
+            status: Byte,
+            proofBytes: ByteArray?,
+        ): Int = 0
+
+        override fun onPersistAssetLockShieldedRecipient(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            recipientRaw43: ByteArray,
+        ): Int = 0
+    }
+
+    class WithoutUpsert : ShieldedRecipientBridge() {
+        override fun onPersistAssetLockShieldedRecipient(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            recipientRaw43: ByteArray,
+        ): Int = 0
+
+        override fun onLoadAssetLockShieldedRecipient(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
             null
     }
 }

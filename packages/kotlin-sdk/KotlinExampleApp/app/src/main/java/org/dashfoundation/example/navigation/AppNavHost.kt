@@ -20,6 +20,7 @@ import org.dashfoundation.example.ui.contracts.GroupDetailScreen
 import org.dashfoundation.example.ui.contracts.LocalDataContractsScreen
 import org.dashfoundation.example.ui.contracts.PlatformBlocksScreen
 import org.dashfoundation.example.ui.contracts.PrivateDocumentEntriesScreen
+import org.dashfoundation.example.ui.contracts.PrivateDocumentEntryCreateScreen
 import org.dashfoundation.example.ui.contracts.RegisterContractSourceScreen
 import org.dashfoundation.example.ui.contracts.QueriesListScreen
 import org.dashfoundation.example.ui.contracts.QueryDetailScreen
@@ -61,6 +62,7 @@ import org.dashfoundation.example.ui.identity.IdentitiesHomeScreen
 import org.dashfoundation.example.ui.identity.IdentityDetailScreen
 import org.dashfoundation.example.ui.identity.KeyDetailScreen
 import org.dashfoundation.example.ui.identity.KeysListScreen
+import org.dashfoundation.example.ui.identity.UpdateKeyLimitsScreen
 import org.dashfoundation.example.ui.identity.LoadIdentityScreen
 import org.dashfoundation.example.ui.identity.RegisterNameScreen
 import org.dashfoundation.example.ui.identity.RegistrationProgressScreen
@@ -73,6 +75,7 @@ import org.dashfoundation.example.ui.credits.TransferCreditsScreen
 import org.dashfoundation.example.ui.credits.TransferIdentityToAddressScreen
 import org.dashfoundation.example.ui.credits.TransferPlatformAddressScreen
 import org.dashfoundation.example.ui.credits.WithdrawCreditsScreen
+import org.dashfoundation.example.ui.identity.IdentityWithdrawalsScreen
 import org.dashfoundation.example.ui.credits.WithdrawPlatformAddressScreen
 import org.dashfoundation.example.ui.transitions.StateTransitionsScreen
 import org.dashfoundation.example.ui.transitions.TransitionCategoryScreen
@@ -81,6 +84,9 @@ import org.dashfoundation.example.ui.funding.AddressFundProgressScreen
 import org.dashfoundation.example.ui.funding.FundFromAssetLockScreen
 import org.dashfoundation.example.ui.shielded.SeedShieldedPoolScreen
 import org.dashfoundation.example.ui.shielded.ShieldedActivityScreen
+import org.dashfoundation.example.ui.shielded.ShieldedTokenPoolsScreen
+import org.dashfoundation.example.ui.shielded.ShieldedTokenSendScreen
+import org.dashfoundation.example.ui.shielded.ShieldedTokenUnshieldScreen
 import org.dashfoundation.example.ui.shielded.ShieldedFundProgressScreen
 import org.dashfoundation.example.ui.shielded.ShieldedFundScreen
 import org.dashfoundation.example.ui.settings.DataManagementScreen
@@ -99,6 +105,7 @@ import org.dashfoundation.example.ui.storage.StorageRecordDetailScreen
 import org.dashfoundation.example.ui.scanner.QrScannerScreen
 import org.dashfoundation.example.ui.sync.SyncStatusScreen
 import org.dashfoundation.example.ui.wallet.AccountDetailScreen
+import org.dashfoundation.example.ui.wallet.CoreAddressDetailScreen
 import org.dashfoundation.example.ui.wallet.CreateWalletScreen
 import org.dashfoundation.example.ui.wallet.SeedBackupScreen
 import org.dashfoundation.example.ui.wallet.SendTransactionScreen
@@ -142,6 +149,11 @@ fun AppNavHost(
         composable<AccountDetail> { entry ->
             val route = entry.toRoute<AccountDetail>()
             AccountDetailScreen(route.walletIdHex, route.accountId, navController)
+        }
+
+        composable<CoreAddressDetail> { entry ->
+            val route = entry.toRoute<CoreAddressDetail>()
+            CoreAddressDetailScreen(route.walletIdHex, route.address, navController)
         }
 
         composable<SendTransaction> { entry ->
@@ -217,6 +229,10 @@ fun AppNavHost(
             val route = entry.toRoute<KeyDetail>()
             KeyDetailScreen(route.identityIdHex, route.keyId, navController)
         }
+        composable<UpdateKeyLimits> { entry ->
+            val route = entry.toRoute<UpdateKeyLimits>()
+            UpdateKeyLimitsScreen(route.identityIdHex, route.keyId, navController)
+        }
 
         composable<AddIdentityKey> { entry ->
             val route = entry.toRoute<AddIdentityKey>()
@@ -249,6 +265,10 @@ fun AppNavHost(
 
         composable<WithdrawCredits> { entry ->
             WithdrawCreditsScreen(entry.toRoute<WithdrawCredits>().identityIdHex, navController)
+        }
+
+        composable<IdentityWithdrawals> { entry ->
+            IdentityWithdrawalsScreen(entry.toRoute<IdentityWithdrawals>().identityIdHex, navController)
         }
 
         // ── State-transition catalog ───────────────────────────────────
@@ -320,6 +340,20 @@ fun AppNavHost(
 
         composable<ShieldedActivity> { entry ->
             ShieldedActivityScreen(entry.toRoute<ShieldedActivity>().walletIdHex, navController)
+        }
+
+        composable<ShieldedTokens> { entry ->
+            ShieldedTokenPoolsScreen(entry.toRoute<ShieldedTokens>().walletIdHex, navController)
+        }
+
+        composable<ShieldedTokenSend> { entry ->
+            val route = entry.toRoute<ShieldedTokenSend>()
+            ShieldedTokenSendScreen(route.walletIdHex, route.tokenIdHex, route.account, navController)
+        }
+
+        composable<ShieldedTokenUnshield> { entry ->
+            val route = entry.toRoute<ShieldedTokenUnshield>()
+            ShieldedTokenUnshieldScreen(route.walletIdHex, route.tokenIdHex, route.account, navController)
         }
 
         // ── Contracts graph ────────────────────────────────────────────
@@ -542,6 +576,11 @@ fun AppNavHost(
         composable<PrivateDocumentEntries> { entry ->
             val route = entry.toRoute<PrivateDocumentEntries>()
             PrivateDocumentEntriesScreen(route.contractIdHex, route.typeName, navController)
+        }
+
+        composable<PrivateDocumentEntryCreate> { entry ->
+            val route = entry.toRoute<PrivateDocumentEntryCreate>()
+            PrivateDocumentEntryCreateScreen(route.contractIdHex, route.typeName, navController)
         }
 
         composable<BlockExplorer> { PlatformBlocksScreen(navController) }

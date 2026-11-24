@@ -55,7 +55,9 @@ import org.dashfoundation.example.util.toHex
  * [KeyDisableGate] pre-flight (master / last-auth / last-transfer refusals)
  * in front of `PlatformWalletManager.identityUpdates.disableKeys` — the
  * same `platform_wallet_update_identity_with_signer` call Swift's
- * `KeyDetailView.disableKey()` makes.
+ * `KeyDetailView.disableKey()` makes. A key with a budget or an expiry also
+ * shows the [KeyLimitsSection] (← `KeyDetailView.limitsSection`), whose
+ * Update Limits opens [UpdateKeyLimitsScreen].
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -128,6 +130,18 @@ fun KeyDetailScreen(identityIdHex: String, keyId: Int, navController: NavHostCon
                 LabeledContent("Type", IdentityKeys.keyTypeName(k.keyType))
                 LabeledContent("Security Level", IdentityKeys.securityLevelName(k.securityLevel))
                 if (k.disabledAt != null) LabeledContent("Status", "Disabled")
+            }
+
+            if (k.hasLimits) {
+                KeyLimitsSection(
+                    identityIdHex = identityIdHex,
+                    identityIdBase58 = idBase58,
+                    identityId = idBytes,
+                    key = k,
+                    manager = manager,
+                    wallet = wallet,
+                    navController = navController,
+                )
             }
 
             FormSection(title = "Public Key") {

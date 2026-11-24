@@ -643,6 +643,17 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorIdentityBalanceUnavailable` (native code 58). The identity's
+         * balance could not be read with a proof, so the operation that needed
+         * it (a shield from the identity's balance, Type 21) was refused
+         * before anything was saved or sent. Mirrors Swift's
+         * `PlatformWalletError.identityBalanceUnavailable` in
+         * `PlatformWalletResult.swift`.
+         */
+        class IdentityBalanceUnavailable(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * `ErrorShutdownIncomplete` (native code 27). A sync pass or an SPV
          * teardown was still running; nothing was wiped. Retry the stop or
          * clear. An SPV start refused with this needs an SPV stop first.
@@ -811,6 +822,23 @@ sealed class DashSdkError(
          * ← Swift `PlatformWalletError.balanceHistoryInconsistentHeights`.
          */
         class BalanceHistoryInconsistentHeights(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
+         * `ErrorShieldedOperationInProgress` (native code 84). A shielded
+         * Clear was refused because a shielded operation is in flight on the
+         * wallet manager: a bind, an account being added, a token pool
+         * transfer or unshield, a DashPay profile write, a tip address
+         * preparation, or another Clear. Rust does not make Clear wait for
+         * it. Clear returned at once and changed nothing (the sync loop keeps
+         * running, no registration, note or tree leaf was touched), so the
+         * host keeps its Room rows and offers Clear again once the operation
+         * has finished.
+         * ← Swift `PlatformWalletError.shieldedOperationInProgress`.
+         */
+        class ShieldedOperationInProgress(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
             override val isRetryable: Boolean get() = true
         }
@@ -1012,6 +1040,7 @@ sealed class DashSdkError(
             55 -> PlatformWallet.ShieldedIdentityDebitPending(message, cause)
             56 -> PlatformWallet.ShieldedRecoveryCorrupted(message, cause)
             57 -> PlatformWallet.ShieldedRecoveryKeysRequired(message, cause)
+            58 -> PlatformWallet.IdentityBalanceUnavailable(message, cause) // ErrorIdentityBalanceUnavailable
             59 -> PlatformWallet.SpvProcessRestartRequired(message, cause) // ErrorSpvProcessRestartRequired
             // ErrorPrivateContactRequestNeedsPrivateReply: the explicitly
             // public accept or send refused a contact that went private.
@@ -1025,6 +1054,7 @@ sealed class DashSdkError(
             75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
             76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
             83 -> PlatformWallet.BalanceHistoryInconsistentHeights(message, cause) // ErrorBalanceHistoryInconsistentHeights
+            84 -> PlatformWallet.ShieldedOperationInProgress(message, cause) // ErrorShieldedOperationInProgress
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

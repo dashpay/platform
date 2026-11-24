@@ -4717,11 +4717,11 @@ mod contact_watch_only_projection_tests {
         );
     }
 
-    /// The order a pooled send with change takes when its lock is late: the
-    /// block confirms the slice that holds the change, the spend-only
-    /// sibling stays unconfirmed, and then the lock arrives. The stored row
-    /// keeps the block, and both slices go out, the mined one with the coin
-    /// that came back.
+    /// A pooled send with change whose lock is late, mined while the
+    /// spend-only sibling stays unconfirmed. Since rust-dashcore v0.46.1 the
+    /// block confirms every slice, but a wallet stored by v0.46.0 can still
+    /// hold such a row when the lock arrives. The stored row keeps the block,
+    /// and both slices go out, the mined one with the coin that came back.
     #[tokio::test]
     async fn should_re_emit_a_partly_mined_send_with_its_block_and_its_change() {
         let (mut ctx, spend) = dual_account_mempool_spend_with_change(1_000_000).await;
@@ -4731,8 +4731,14 @@ mod contact_watch_only_projection_tests {
         let mined = slice_contexts(&info, &txid);
         assert!(
             matches!(mined[&bip44_account_0()], TransactionContext::InBlock(_))
-                && matches!(mined[&bip32_account_0()], TransactionContext::Mempool),
-            "the block reaches only the slice with an output: {mined:?}"
+                && matches!(mined[&bip32_account_0()], TransactionContext::InBlock(_)),
+            "the block reaches every slice: {mined:?}"
+        );
+        set_slice_context(
+            &mut info,
+            bip32_account_0(),
+            &txid,
+            TransactionContext::Mempool,
         );
         let lock = InstantLock::default();
         info.mark_instant_send_utxos(&txid, &lock);

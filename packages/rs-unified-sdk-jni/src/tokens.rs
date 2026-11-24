@@ -1583,6 +1583,31 @@ pub(crate) fn profile_to_json(profile: &DashPayProfileFFI) -> String {
             .collect();
         fields.push(format!("\"avatarFingerprint\":{}", json_string(&hex)));
     }
+    // The published payment addresses, in their stored form as lower hex;
+    // `DashpayNative.paymentAddressToString` renders them for display.
+    let addresses: [(&str, bool, &[u8]); 3] = [
+        (
+            "corePaymentAddress",
+            profile.core_payment_address_is_some,
+            &profile.core_payment_address,
+        ),
+        (
+            "platformPaymentAddress",
+            profile.platform_payment_address_is_some,
+            &profile.platform_payment_address,
+        ),
+        (
+            "shieldedAddress",
+            profile.shielded_address_is_some,
+            &profile.shielded_address,
+        ),
+    ];
+    for (name, present, bytes) in addresses {
+        if present {
+            let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+            fields.push(format!("\"{name}\":{}", json_string(&hex)));
+        }
+    }
     format!("{{{}}}", fields.join(","))
 }
 
@@ -2091,5 +2116,25 @@ mod tests {
             json.contains("\"avatarFingerprint\":\"10200000000000ff\""),
             "got {json}"
         );
+    }
+
+    #[test]
+    fn should_hex_encode_only_the_published_payment_addresses() {
+        let mut profile = DashPayProfileFFI::empty();
+        profile.core_payment_address_is_some = true;
+        profile.core_payment_address = [0x11; 21];
+        profile.platform_payment_address = [0x22; 21];
+        profile.shielded_address_is_some = true;
+        profile.shielded_address = [0x33; 43];
+        let json = profile_to_json(&profile);
+        assert!(
+            json.contains(&format!("\"corePaymentAddress\":\"{}\"", "11".repeat(21))),
+            "got {json}"
+        );
+        assert!(
+            json.contains(&format!("\"shieldedAddress\":\"{}\"", "33".repeat(43))),
+            "got {json}"
+        );
+        assert!(!json.contains("platformPaymentAddress"), "got {json}");
     }
 }

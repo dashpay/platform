@@ -115,7 +115,8 @@ private fun setMain(
     label: String?,
 ) {
     scope.launch {
-        val existing = container.database.identityDao().getByIdentityId(idBytes) ?: return@launch
-        container.database.identityDao().upsert(existing.copy(mainDpnsName = label))
+        // Only the main name is written: a whole-row write of a copy read earlier would put back
+        // fields written in between (a voting key check, its revision).
+        container.database.identityDao().updateMainDpnsName(idBytes, label, System.currentTimeMillis())
     }
 }

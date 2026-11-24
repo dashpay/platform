@@ -190,6 +190,10 @@ struct IdentityStorageDetailView: View {
                 FieldRow(label: "Owner Key", value: record.ownerPrivateKeyIdentifier != nil ? "Present" : "Not set")
                 FieldRow(label: "Voting Key", value: record.votingPrivateKeyIdentifier != nil ? "Present" : "Not set")
                 FieldRow(label: "Payout Key", value: record.payoutPrivateKeyIdentifier != nil ? "Present" : "Not set")
+                FieldRow(
+                    label: "Masternode proTxHash (wire)",
+                    value: record.masternodeProTxHash.map(hexString) ?? "Not recorded"
+                )
             }
             Section("Relationships") {
                 // Owning wallet via the `@Relationship`. Prefer
@@ -2604,7 +2608,15 @@ struct ShieldedActivityStorageDetailView: View {
                 FieldRow(label: "Status", value: statusDisplay(record.status))
             }
             Section("Amounts") {
-                FieldRow(label: "Amount", value: "\(record.amount) credits")
+                // Token kinds record the tokens moved, in the token's smallest
+                // unit; every other kind records credits.
+                FieldRow(
+                    label: "Amount",
+                    value: ShieldedActivityKindDisplay.rawAmountText(
+                        record.amount,
+                        tag: record.kindTag
+                    )
+                )
                 FieldRow(
                     label: "Fee",
                     value: record.hasFee ? "\(record.fee) credits" : "(unknown)"
@@ -2659,6 +2671,8 @@ struct ShieldedActivityStorageDetailView: View {
         case 8: name = "ShieldFromIdentity"
         case 9: name = "IdentityTopUpFromPool"
         case 10: name = "TokenPurchase"
+        case 11: name = "TokenShieldedTransfer"
+        case 12: name = "TokenUnshield"
         default: return "Unknown(\(tag))"
         }
         return "\(name) (\(tag))"

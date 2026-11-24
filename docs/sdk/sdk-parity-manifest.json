@@ -41,6 +41,11 @@
     "dash_sdk_decision_proposal_cast_vote_with_signer": "packages/rs-sdk-ffi/src/decision_proposal/transitions.rs",
     "dash_sdk_get_context_provider_source": "packages/rs-sdk-ffi/src/sdk.rs",
     "dash_sdk_masternode_voting_address_from_private_key": "packages/rs-sdk-ffi/src/voting/masternode_vote.rs",
+    "dash_sdk_masternode_check_voting_key": "packages/rs-sdk-ffi/src/voting/voting_key_check.rs",
+    "dash_sdk_masternode_voting_key_check_outcome": "packages/rs-sdk-ffi/src/voting/voting_key_check.rs",
+    "dash_sdk_masternode_recorded_voting_key_use": "packages/rs-sdk-ffi/src/voting/voting_key_check.rs",
+    "dash_sdk_masternode_load_for_voting": "packages/rs-sdk-ffi/src/voting/masternode_voting_load.rs",
+    "dash_sdk_masternode_sibling_voting_key_record": "packages/rs-sdk-ffi/src/voting/masternode_voting_load.rs",
     "dash_sdk_multiple_choice_proposal_cast_vote_with_signer": "packages/rs-sdk-ffi/src/decision_proposal/multiple_choice/mod.rs",
     "dash_sdk_private_key_bytes_from_text": "packages/rs-sdk-ffi/src/crypto/mod.rs",
     "dash_sdk_set_context_provider_mode": "packages/rs-sdk-ffi/src/sdk.rs",
@@ -68,6 +73,13 @@
     "platform_wallet_claim_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
     "platform_wallet_contract_fee_claim": "packages/rs-platform-wallet-ffi/src/contract_fee_claim.rs",
     "platform_wallet_contract_fee_claim_eligibility": "packages/rs-platform-wallet-ffi/src/contract_fee_claim.rs",
+    "platform_wallet_contract_document_change_fields": "packages/rs-platform-wallet-ffi/src/contract_user_moderation.rs",
+    "platform_wallet_contract_document_delete": "packages/rs-platform-wallet-ffi/src/contract_user_moderation.rs",
+    "platform_wallet_contract_document_propose_settled_deletion": "packages/rs-platform-wallet-ffi/src/contract_user_moderation.rs",
+    "platform_wallet_contract_document_restore": "packages/rs-platform-wallet-ffi/src/contract_user_moderation.rs",
+    "platform_wallet_contract_moderation_offer": "packages/rs-platform-wallet-ffi/src/contract_user_moderation.rs",
+    "platform_wallet_contract_team_action_approve": "packages/rs-platform-wallet-ffi/src/contract_user_moderation.rs",
+    "platform_wallet_contract_user_moderate": "packages/rs-platform-wallet-ffi/src/contract_user_moderation.rs",
     "platform_wallet_create_document_with_signer": "packages/rs-platform-wallet-ffi/src/document.rs",
     "platform_wallet_create_invitation": "packages/rs-platform-wallet-ffi/src/invitation.rs",
     "platform_wallet_dpns_give_up_name": "packages/rs-platform-wallet-ffi/src/dpns_marketplace.rs",
@@ -118,7 +130,25 @@
     "platform_wallet_manager_create_private_document_entry": "packages/rs-platform-wallet-ffi/src/private_document_create.rs",
     "platform_wallet_manager_private_document_create_fee": "packages/rs-platform-wallet-ffi/src/private_document_create.rs",
     "platform_wallet_manager_private_document_recipient_keys": "packages/rs-platform-wallet-ffi/src/private_document_create.rs",
-    "platform_wallet_private_document_recipient_keys_free": "packages/rs-platform-wallet-ffi/src/private_document_create.rs"
+    "platform_wallet_private_document_recipient_keys_free": "packages/rs-platform-wallet-ffi/src/private_document_create.rs",
+    "platform_wallet_manager_shielded_token_pool_watch": "packages/rs-platform-wallet-ffi/src/shielded_token_pools.rs",
+    "platform_wallet_manager_shielded_token_pool_unwatch": "packages/rs-platform-wallet-ffi/src/shielded_token_pools.rs",
+    "platform_wallet_manager_shielded_token_pool_balances": "packages/rs-platform-wallet-ffi/src/shielded_token_pools.rs",
+    "platform_wallet_manager_shielded_token_pool_balances_free": "packages/rs-platform-wallet-ffi/src/shielded_token_pools.rs",
+    "platform_wallet_manager_shielded_token_transfer": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+    "platform_wallet_manager_shielded_shield_from_identity": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+    "platform_wallet_manager_shielded_identity_debit_recovery_records": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+    "platform_wallet_manager_abandon_shielded_identity_debit": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+    "platform_wallet_manager_shielded_identity_top_up_from_pool": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+    "platform_wallet_preview_identity_key_limits_update": "packages/rs-platform-wallet-ffi/src/identity_key_limits.rs",
+    "platform_wallet_update_identity_key_limits_as_reviewed_with_signer": "packages/rs-platform-wallet-ffi/src/identity_key_limits.rs",
+    "platform_wallet_refresh_identity": "packages/rs-platform-wallet-ffi/src/wallet.rs",
+    "platform_wallet_manager_shielded_token_unshield": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+    "platform_wallet_manager_shielded_token_spend_preview": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+    "dashpay_profile_payment_address_from_string": "packages/rs-platform-wallet-ffi/src/dashpay_profile_payment_address.rs",
+    "dashpay_profile_payment_address_to_string": "packages/rs-platform-wallet-ffi/src/dashpay_profile_payment_address.rs",
+    "platform_wallet_create_or_update_dashpay_profile_with_addresses_with_signer": "packages/rs-platform-wallet-ffi/src/dashpay_profile.rs",
+    "platform_wallet_dashpay_profile_payment_address_support": "packages/rs-platform-wallet-ffi/src/dashpay_profile_payment_address.rs"
   },
   "capabilities": [
     {
@@ -862,7 +892,7 @@
           "sdk": "partial",
           "example_app": "partial",
           "restart": "required",
-          "reason": "Dashpay.syncPrivateContactRequests, privateContact, privateRepliesPending (one pair-hold read per contact, as a send decides it, the shielded store's journal included), privateContactReadiness and privatePaymentsRestoreFailure, and PlatformWalletManager.sendPrivateContactRequest / acceptContactRequestReplyingInKind / acceptPrivateContactRequest bridge the same FFI (signed with the manager's identity signer, behind the manager's teardown gate); the in-kind accept is exported in every build, and codes 68 to 76 map to typed PlatformWallet errors (DashSdkErrorTest). JNI descriptors are covered only by the FfiSmokeTest symbol test; the flows need a protocol version 15 network with shielded funds and have no recorded gate, no test covers a restart, and a paid reply's hold survives one only in the shielded store's payment journal, which no host test exercises. The example app accepts with acceptContactRequestReplyingInKind, keeps a held or unconfirmed reply pending by reading the wallet's per-pair hold on its Requests rows and Add Contact (a failed read keeps the last snapshot and the controls off), re-enables a pair only when that read says free, offers a private sync for a pending request a public send or accept meets (code 71), and reports private refresh failures (quiet before protocol version 15); it has no send-privately toggle. Code 72 (unrestored private payments) is typed apart from 71, and the readiness getter and the restore-failure reason are bound; the example app configures the shielded store when it activates the manager, before loading wallets; on each DashPay refresh while the store did not open or the readiness reads not restored it asks the wallet to retry (a repeat configure) and reads the readiness after that, refreshing again on a timer for as long as the screen is shown while it stays unrestored; it shows \"setting up\", why the last restoration failed or why the store did not open, from 72 or the readiness, lifted only by a readiness read that says restored, never by a private sync. Code 73 (a store that cannot keep a private payment's recovery state) is typed and shown as a storage configuration error; the host declares atomic changesets with the scan state (bit 15), so it should not occur. Code 74 (a private store read that did not finish) is a retry with no pending row, and code 75 (an SDK pinned below the protocol version) a developer-facing message. Code 20 (an SDK outcome left unconfirmed after a possible acceptance, which the spend contract now keeps) reads as may have gone through, as 18 does, with no retry offered. A public send or accept that returned 20 is held by the wallet until a DashPay sync settles it, and every later one to the pair is refused with code 76 (typed as PublicContactRequestUnconfirmed): Dashpay.publicContactRequestsUnconfirmed reads that hold per pair, and the example app reads it beside the private one, shows the pair as being checked with no request or accept offered until the read says settled, shows 20 and 76 the same way at once, and runs the DashPay sync on the Requests refresh and Add Contact's Check again, reading again when any sync pass ends; no gate records it against a network."
+          "reason": "Dashpay.syncPrivateContactRequests, privateContact, privateRepliesPending (one pair-hold read per contact, as a send decides it, the shielded store's journal included), privateContactReadiness and privatePaymentsRestoreFailure, and PlatformWalletManager.sendPrivateContactRequest / acceptContactRequestReplyingInKind / acceptPrivateContactRequest bridge the same FFI (signed with the manager's identity signer, behind the manager's teardown gate); the in-kind accept is exported in every build, and codes 68 to 76 map to typed PlatformWallet errors (DashSdkErrorTest). JNI descriptors are covered only by the FfiSmokeTest symbol test; the flows need a protocol version 15 network with shielded funds and have no recorded gate, no test covers a restart, and a paid reply's hold survives one only in the shielded store's payment journal, which no host test exercises. The example app has Add Contact's send-privately toggle (sendPrivateContactRequest; with it on, the collision dialog accepts with acceptPrivateContactRequest, otherwise in kind), accepts with acceptContactRequestReplyingInKind on its Requests rows, keeps a held or unconfirmed private send or reply pending by reading the wallet's per-pair hold on its Requests rows and Add Contact (a failed read keeps the last snapshot and the controls off), re-enables a pair only when that read says free, offers a private sync for a pending request a public send or accept meets (code 71), and reports private refresh failures (quiet before protocol version 15), with Swift's accessibility ids as test tags and TEST_PLAN rows DP-22 to DP-32 mirroring Swift DP-20 to DP-30, none driven on an emulator yet. Code 72 (unrestored private payments) is typed apart from 71, and the readiness getter and the restore-failure reason are bound; the example app configures the shielded store when it activates the manager, before loading wallets; on each DashPay refresh while the store did not open or the readiness reads not restored it asks the wallet to retry (a repeat configure) and reads the readiness after that, refreshing again on a timer for as long as the screen is shown while it stays unrestored; it shows \"setting up\", why the last restoration failed or why the store did not open, from 72 or the readiness, lifted only by a readiness read that says restored, never by a private sync. Code 73 (a store that cannot keep a private payment's recovery state) is typed and shown as a storage configuration error; the host declares atomic changesets with the scan state (bit 15), so it should not occur. Code 74 (a private store read that did not finish) is a retry with no pending row, and code 75 (an SDK pinned below the protocol version) a developer-facing message. Code 20 (an SDK outcome left unconfirmed after a possible acceptance, which the spend contract now keeps) reads as may have gone through, as 18 does, with no retry offered. A public send or accept that returned 20 is held by the wallet until a DashPay sync settles it, and every later one to the pair is refused with code 76 (typed as PublicContactRequestUnconfirmed): Dashpay.publicContactRequestsUnconfirmed reads that hold per pair, and the example app reads it beside the private one, shows the pair as being checked with no request or accept offered until the read says settled, shows 20 and 76 the same way at once, and runs the DashPay sync on the Requests refresh and Add Contact's Check again, reading again when any sync pass ends; no gate records it against a network."
         }
       },
       "verification": [
@@ -1007,6 +1037,14 @@
           "kind": "unit",
           "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/dashpay/ContactRequestOutcomesTest.kt",
           "id": "shouldKeepAPublicAcceptHeldAfterCode20ThroughAnEmptyPrivateReadAndAnUnsettledSync",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*ContactRequestOutcomesTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/dashpay/ContactRequestOutcomesTest.kt",
+          "id": "shouldAcceptACollisionPrivatelyWhenSendPrivatelyIsOn",
           "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*ContactRequestOutcomesTest*'",
           "covers_restart": false
         }
@@ -1824,10 +1862,10 @@
           "reason": "UpdateContractView (Contracts -> contract -> Update Contract) calls previewDataContractUpdate and offers the update only when the preview reports a change, but the flow has not been driven on a device or simulator yet: TEST_PLAN DC-04 is the manual gate still to run."
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
+          "sdk": "supported",
+          "example_app": "partial",
           "restart": "not_applicable",
-          "reason": "Kotlin's UpdateContractScreen broadcasts without a preview, and the JNI bridge (rs-unified-sdk-jni) does not expose platform_wallet_preview_data_contract_update or platform_wallet_split_contract_update_source."
+          "reason": "DataContracts.previewUpdate and DataContractUpdateSource.split bridge platform_wallet_preview_data_contract_update and platform_wallet_split_contract_update_source through ContractUpdateNative, one JNI export each, and DataContracts.update passes the reviewed version as expectedCurrentVersion. KotlinExampleApp's UpdateContractScreen (Contracts -> contract -> Update Contract, contractDetails.updateContract) shows the preview Rust returns and offers the broadcast only when it reports a change, with Swift's updateContract.* identifiers as testTags. Partial until TEST_PLAN DC-04 is run on an emulator. Unlike Swift, a groups list whose entries carry an id is not re-keyed by position before it is sent."
         }
       },
       "verification": [
@@ -1844,6 +1882,30 @@
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
           "id": "DC-04",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/identity/DataContractUpdatePreviewTest.kt",
+          "id": "shouldDecodeAPreviewWithEveryField",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*DataContractUpdatePreviewTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/contracts/UpdateContractFieldsTest.kt",
+          "id": "shouldOfferTheUpdateOnlyForAReviewOfTheFieldsShownThatChangesSomething",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*UpdateContractFieldsTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "contractUpdateReviewSymbolsBindAndSplitASource",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
           "covers_restart": false
         }
       ]
@@ -2004,10 +2066,10 @@
           "reason": "PrivateDocuments.swift wraps the create (PlatformWalletManager.createPrivateDocumentEntry), the recipient key choices and the fee preview; Rust picks the sender's encryption key, checks the recipient key, the properties against the type's schema and the entry's capacity, seals inside the Keychain mnemonic resolver, and pays as a DashPay private contact request is paid (notes reserved, the transition saved for a redrive before the broadcast). The example app creates one entry from the private type's detail screen (TEST_PLAN DOC-19), anonymous or with a deniable MAC; a signed entry is not offered. The Rust preparation, sealing, refusals, fee preview and the seal-then-read round trip and the FFI marshalling are unit-tested; no gate records the Swift call, the screen, or the spend's recovery after a restart against a protocol version 15 network."
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
-          "restart": "not_applicable",
-          "reason": "Not ported: no JNI binding for platform_wallet_manager_create_private_document_entry or its key and fee helpers, and the example app has no create screen for a private document type."
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PlatformWalletManagerPrivateDocuments.kt wraps the create (PlatformWalletManager.createPrivateDocumentEntry), the recipient key choices and the fee preview through rs-unified-sdk-jni's PrivateDocumentCreateNative, which converts the arguments, calls the FFI once and copies the result into a Java array; Kotlin decodes it one to one (JVM decoding tests). Rust picks the sender's encryption key, checks the recipient key, the properties against the type's schema and the entry's capacity, seals inside the manager's mnemonic resolver, and pays as a DashPay private contact request is paid (notes reserved, the transition saved for a redrive before the broadcast). KotlinExampleApp creates one entry from the private type's detail screen (TEST_PLAN DOC-19), anonymous or with a deniable MAC, with the Swift accessibility ids as test tags; a signed entry is not offered. The create runs on the application scope past the screen, under a secure window, and a create that may have gone through is shown as such and that exact request is not sent again in the process (JVM-tested); the link shows only on a build with shielded support. PrivateDocumentsFfiTest gains the symbol, descriptor and refusal checks of the three exports but has not run on a device yet, and no gate records the call, the screen, or the spend's recovery after a restart against a protocol version 15 network."
         }
       },
       "verification": [
@@ -2055,6 +2117,53 @@
           "host": "swift",
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DOC-19",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-unified-sdk-jni/src/private_document_create.rs",
+          "id": "should_write_the_commitment_then_the_sender_key_id_little_endian",
+          "command": "cargo test -p rs-unified-sdk-jni --lib private_document_create",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/PrivateDocumentCreateDecodingTest.kt",
+          "id": "shouldDecodeTheCommitmentAndALittleEndianSenderKeyId",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*PrivateDocumentCreateDecodingTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/PrivateDocumentCreateDecodingTest.kt",
+          "id": "shouldDecodeTheRecipientKeyPairsInOrder",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*PrivateDocumentCreateDecodingTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/contracts/PrivateDocumentEntryCreateTest.kt",
+          "id": "shouldShowACreateThatMayHaveGoneThroughAsUnconfirmedNeverAsFailed",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*PrivateDocumentEntryCreateTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/services/shielded/PrivateDocumentEntryCreateCoordinatorTest.kt",
+          "id": "should never send again a request that may have gone through, even after a refused one",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*PrivateDocumentEntryCreateCoordinatorTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "DOC-19",
           "covers_restart": false
         }
@@ -2357,7 +2466,7 @@
           "sdk": "supported",
           "example_app": "partial",
           "restart": "tested",
-          "reason": "The SDK bridges preview, execution and status by a durable operation UUID, the two asset-lock operation-id persistence slots and the wallet-drain recovery rules; an instrumented test finds a persisted drain lock by its operation UUID from a new manager over the same database and sees a second drain refused. KotlinExampleApp exposes the flow (TEST_PLAN SH-18 to SH-20): a Max switch on the Core to shielded screen shows the preview and runs the drain, the operation UUID is stored in Room before the call, the status is read when the manager is activated, and a saved transfer is listed on the wallet screen and resumed from the exact asset-lock outpoint its status names. An emulator run against testnet killed the app after the asset lock was broadcast and finished the same lock through Resume. The app is partial because Max sweeps only Core account index 0 (the screen has no account picker), the refused second Max (SH-20) has not been run in the app, only through the instrumented test, and the CoinJoin drain has no Max flow there."
+          "reason": "The SDK bridges preview, execution and status by a durable operation UUID, the two asset-lock operation-id persistence slots and the wallet-drain recovery rules. Like Swift, the Room store also keeps the Orchard recipient recorded on a shielded asset lock (the two shielded-recipient slots, attesting ASSET_LOCK_SHIELDED_RECIPIENTS), so a resume after a restart pays that recipient and refuses another; a unit test stores the lock and its recipient, closes and reopens the database and reads the recipient back. An instrumented test finds a persisted drain lock by its operation UUID from a new manager over the same database and sees a second drain refused. KotlinExampleApp exposes the flow (TEST_PLAN SH-18 to SH-20): a Max switch on the Core to shielded screen shows the preview and runs the drain, the operation UUID is stored in Room before the call, the status is read when the manager is activated, and a saved transfer is listed on the wallet screen and resumed from the exact asset-lock outpoint its status names. An emulator run against testnet killed the app after the asset lock was broadcast and finished the same lock through Resume. The app is partial because Max sweeps only Core account index 0 (the screen has no account picker), the refused second Max (SH-20) has not been run in the app, only through the instrumented test, and the CoinJoin drain has no Max flow there."
         }
       },
       "verification": [
@@ -2456,6 +2565,38 @@
           "id": "shouldKeepTheOperationIdThroughLaterStatusUpsertsAndOnTheTerminalRow",
           "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
           "covers_restart": true
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/AssetLockShieldedRecipientPersistenceTest.kt",
+          "id": "shouldRestoreTheRecipientAfterTheDatabaseIsClosedAndReopened",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": true
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/AssetLockShieldedRecipientPersistenceTest.kt",
+          "id": "shouldKeepTheRecipientThroughLaterStatusUpsertsAndOnTheTerminalRow",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "assetLockShieldedRecipientCapabilityNeedsEveryOverride",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/persistence/DashDatabaseMigrationTest.kt",
+          "id": "migrate19To20AddsTheAssetLockShieldedRecipientColumn",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
         },
         {
           "host": "kotlin",
@@ -2740,6 +2881,68 @@
       ]
     },
     {
+      "id": "contracts.moderation_writes",
+      "title": "Moderate a contract's users and documents (protocol version 14)",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_contract_moderation_offer",
+        "platform_wallet_contract_user_moderate",
+        "platform_wallet_contract_document_delete",
+        "platform_wallet_contract_document_restore",
+        "platform_wallet_contract_document_change_fields",
+        "platform_wallet_contract_document_propose_settled_deletion",
+        "platform_wallet_contract_team_action_approve"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "ManagedPlatformWallet.contractModerationOffer, moderateContractUser, deleteContractDocument, restoreContractDocument, changeContractDocumentFields, proposeSettledContractDocumentDeletion and approveContractTeamAction wrap the seven FFI entry points. Rust (IdentityWallet::contract_moderation_offer) names the wallet identities that moderate the contract and what each may do, from dpp's ContractModerationConfig (may_moderate, keeps), ElectedModerators (allows, allows_on_any_type) and document type accessors, and rs-sdk's ModerationTeam for a seated team. SwiftExampleApp offers each moderation only to those identities: identity moderations from the list rows and status screen, document deletion, field changes and settled deletion proposals from Moderate Documents, restores from the removal records of documents it deleted and kept, approvals from the team action detail (TEST_PLAN DC-11a to DC-11d). Partial because no simulator or network run of a moderation has been recorded. Each moderation is one transition with a proved result; the document kept for a restore is stored as it returns; there is nothing to resume."
+        },
+        "kotlin": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "No JNI bridge, Kotlin wrapper or KotlinExampleApp control yet for contract moderation writes. Port from packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/ManagedPlatformWalletContractModeration.swift and the SwiftExampleApp ContractModeration views (ContractModerationOfferStore, ContractUserModerationSheet, ContractDocumentModerationView, the restore and approve controls), reusing their contractModeration.* accessibility identifiers as testTags; the action argument is the byte 0 ban, 1 unban, 2 suspend, 3 unsuspend, 4 warn, 5 clear warnings."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/contract_user_moderation.rs",
+          "id": "should_offer_the_seated_team_only_the_abilities_the_declaration_gives_it",
+          "command": "cargo test -p platform-wallet --lib contract_user_moderation",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/contract_user_moderation.rs",
+          "id": "should_write_who_may_moderate_and_what_each_may_do",
+          "command": "cargo test -p platform-wallet-ffi --lib contract_user_moderation",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/ContractUserModerationDecodingTests.swift",
+          "id": "testShouldDecodeWhoMayModerateAndWhatEachMayDo",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/ContractUserModerationDecodingTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DC-11a",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
       "id": "system.block_and_transition_status_reads",
       "title": "Read blocks with their state transitions, an identity's transitions in a block, and a transition's status by hash (protocol version 15)",
       "area": "example_app",
@@ -2926,7 +3129,10 @@
       "shared_apis": [
         "dash_sdk_contested_resource_cast_vote_with_signer",
         "dash_sdk_decision_proposal_cast_vote_with_signer",
-        "dash_sdk_multiple_choice_proposal_cast_vote_with_signer"
+        "dash_sdk_multiple_choice_proposal_cast_vote_with_signer",
+        "dash_sdk_masternode_check_voting_key",
+        "dash_sdk_masternode_voting_key_check_outcome",
+        "dash_sdk_masternode_recorded_voting_key_use"
       ],
       "required_persistence_capabilities": [],
       "hosts": {
@@ -2939,8 +3145,8 @@
         "kotlin": {
           "sdk": "partial",
           "example_app": "partial",
-          "restart": "not_applicable",
-          "reason": "VoteCasting.castVote, DecisionProposals.castVote and MultipleChoiceProposals.castVote have overloads that take a MasternodeVotingSigner; no public vote takes a bare signer handle. MasternodeVotingKeyStore keeps each identity's voting key in its own WalletStorage entry (mnvoting.<identityIdHex>.<votingAddressHex>), never shared with a wallet's identity keys, and refuses any other name. PlatformWalletManager.withStoredMasternodeVotingKey (port of the per-vote KeychainSigner of MasternodeVoterSection.swift and of KeychainSigner.withStoredMasternodeVotingKey) refuses an identifier that no identity row names or whose key is not readable, and otherwise builds a KeystoreSigner for that one call bound to exactly the voting address with key type ECDSA_HASH160, which reads that entry and refuses every other key (wallet keys and platform addresses included), holding the manager's teardown gate; the manager's own signer never can, so a vote does not change what a concurrent wallet operation signs with, and the vote's signer is freed after votes in flight return. The identifier format, the refusal of bare addresses and the absent-key paths are unit-tested; an instrumented test signs a payload with the stored key through the vote's own signer, matches Rust's signature of the fixture key, shows the vote's signer refuses a wallet key present in the same storage, and shows the manager's signer cannot sign for the address during or after the vote. The JNI marshalling is exercised only by instrumented tests. The example app's three vote dialogs pick a loaded masternode or evonode identity with a stored voting key on the current network (MasternodeVoterSection.kt) and cast inside withStoredMasternodeVotingKey; typed credentials are composed and cast only when BuildConfig.DEBUG, the generic raw-key Masternode Vote transition is listed only in debug builds, and a typed pro_tx_hash without a key reads any masternode's answer in every build (TEST_PLAN VOTE-01, VOTE-12, VOTE-19). The picker, wire-order and publishing logic are unit-tested; no gate records a vote cast with a stored key against a network holding a registered masternode. The vote is one call and the key is read from WalletStorage at vote time, so there is nothing to resume."
+          "restart": "tested",
+          "reason": "VoteCasting.castVote, DecisionProposals.castVote and MultipleChoiceProposals.castVote have overloads that take a MasternodeVotingSigner; no public vote takes a bare signer handle. MasternodeVotingKeyStore keeps each identity's voting key in its own WalletStorage entry (mnvoting.<identityIdHex>.<votingAddressHex>), never shared with a wallet's identity keys, and refuses any other name. PlatformWalletManager.withStoredMasternodeVotingKey (port of the per-vote KeychainSigner of MasternodeVoterSection.swift and of KeychainSigner.withStoredMasternodeVotingKey) refuses an identifier that no identity row names or whose key is not readable, and otherwise builds a KeystoreSigner for that one call bound to exactly the voting address with key type ECDSA_HASH160, which reads that entry and refuses every other key (wallet keys and platform addresses included), holding the manager's teardown gate; the manager's own signer never can, so a vote does not change what a concurrent wallet operation signs with, and the vote's signer is freed after votes in flight return. The identifier format, the refusal of bare addresses and the absent-key paths are unit-tested; an instrumented test signs a payload with the stored key through the vote's own signer, matches Rust's signature of the fixture key, shows the vote's signer refuses a wallet key present in the same storage, and shows the manager's signer cannot sign for the address during or after the vote. The JNI marshalling is exercised only by instrumented tests. The example app's three vote dialogs pick a loaded masternode or evonode identity with a stored voting key on the current network (MasternodeVoterSection.kt) and cast inside withStoredMasternodeVotingKey; typed credentials are composed and cast only when BuildConfig.DEBUG, the generic raw-key Masternode Vote transition is listed only in debug builds, and a typed pro_tx_hash without a key reads any masternode's answer in every build (TEST_PLAN VOTE-01, VOTE-12, VOTE-19). The picker, wire-order and publishing logic are unit-tested; no gate records a vote cast with a stored key against a network holding a registered masternode. Since the port of #6086 the picker asks Rust (dash_sdk_masternode_recorded_voting_key_use) whether each candidate's stored key may vote, with the stored key's address read from its identifier so no key is read: a refused key is labelled, not picked by default and never published; a key never checked, or whose check could not run, is checked once when picked (<prefix>.voterKeyCheck) and Rust's record is written only while the row still names that key (TEST_PLAN VOTE-21). The vote is one call and the key is read from WalletStorage at vote time; a check cut short by process death writes nothing, so the next pick checks again (unit-tested). No gate records the check against a registered masternode."
         }
       },
       "verification": [
@@ -3017,9 +3223,64 @@
         },
         {
           "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/voting/MasternodeVoterKeyCheckTest.kt",
+          "id": "shouldCheckTheWireOrderProTxHashAndRecordRustsAnswer",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/voting/MasternodeVoterKeyCheckTest.kt",
+          "id": "shouldNotPublishARefusedVoter",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/voting/MasternodeVoterKeyCheckTest.kt",
+          "id": "shouldDropAnAnswerAboutAKeyReplacedDuringTheCheck",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/voting/MasternodeVoterKeyCheckTest.kt",
+          "id": "shouldCheckAndRecordOnTheNextPickAfterACheckWasCutShort",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/voting/MasternodeVoterKeyCheckTest.kt",
+          "id": "shouldCheckAReplacedKeyOnTheNextPickAfterALoadDiedBeforeRecording",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": true
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/voting/MasternodeVotingKeyChecksTest.kt",
+          "id": "shouldDropAnAnswerAboutAKeyTheRowNoLongerNames",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests 'org.dashfoundation.dashsdk.voting.MasternodeVotingKeyChecksTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
           "kind": "manual",
           "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "VOTE-01",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "VOTE-21",
           "covers_restart": false
         }
       ]
@@ -3030,7 +3291,9 @@
       "area": "example_app",
       "shared_apis": [
         "dash_sdk_private_key_bytes_from_text",
-        "dash_sdk_masternode_voting_address_from_private_key"
+        "dash_sdk_masternode_voting_address_from_private_key",
+        "dash_sdk_masternode_check_voting_key",
+        "dash_sdk_masternode_voting_key_check_outcome"
       ],
       "required_persistence_capabilities": [],
       "hosts": {
@@ -3043,8 +3306,8 @@
         "kotlin": {
           "sdk": "partial",
           "example_app": "partial",
-          "restart": "not_applicable",
-          "reason": "MasternodeVotingKeyStore reads hex or WIF through Rust, and its one public write, assignToIdentity, stores the voting key in the identity's own WalletStorage entry (mnvoting.<identityIdHex>.<votingAddressHex>, apart from every wallet key) and records it on the identity row only while the row is on the network being loaded and names the expected key (checked before anything is written, and again after), deleting nothing else, so a rolled-back enclosing transaction leaves the row's old key stored (unit-tested with the dispatcher hop a thread check cannot see); removeStaleEntries then deletes the identity's other entries once the change has committed, keeping (and reporting as an incomplete cleanup, which the app shows as a warning) any entry an assignment wrote that no row has been seen to name yet, so a cleanup during an uncommitted enclosing transaction cannot delete the key its commit records (unit-tested on a WAL database with the cleanup running inside the open transaction; a rolled-back leftover is removed by the next process's first cleanup); the JNI marshalling is exercised only by instrumented tests. Load Identity offers the identity type (loadIdentity.identityType, following the typed id's stored type and User for an unseen id until the user picks one; an unpicked type never overwrites a stored one) and, for a masternode or evonode, a masked voting key field (loadIdentity.votingKey); a refused key stops the load with Rust's reason, an identity stored for another network is refused, an existing row changes only in the fields a load owns (a wallet's identity keeps its synced balance), the same key entered again rewrites its entry and a write failure is shown, the key is stored when the row names none, and a different stored key is kept until the user confirms replacing it (loadIdentity.replaceKey.voting / .cancel), which happens only while the row still names the key the question showed; every other entry of the identity is then deleted after each successful load or replacement, a failure there is reported and retried by the next load (TEST_PLAN ID-02). Clearing Identities & Keys, or all data, deletes the imported voting keys before the rows, so an interrupted clear can be finished. Every store-and-record (assignToIdentity), sweep (removeStaleEntries) and clear runs under one process-wide lock (MasternodeVotingKeyStore.withVotingKeyLock), so a reload cannot sweep away a key a replacement is recording and a clear cannot miss a key an import is recording; the interleavings are unit-tested with the public operation as the importer, each waiting until the other operation is seen waiting on the lock. The outcome decision and the Room writes are unit-tested; no gate records a load of a registered masternode with its real voting key. Owner and payout keys are not imported: nothing in the app signs with them. The key is written once at load time; there is no flow to resume."
+          "restart": "tested",
+          "reason": "MasternodeVotingKeyStore reads hex or WIF through Rust, and its one public write, assignToIdentity, stores the voting key in the identity's own WalletStorage entry (mnvoting.<identityIdHex>.<votingAddressHex>, apart from every wallet key) and records it on the identity row only while the row is on the network being loaded and names the expected key (checked before anything is written, and again after), deleting nothing else, so a rolled-back enclosing transaction leaves the row's old key stored (unit-tested with the dispatcher hop a thread check cannot see); removeStaleEntries then deletes the identity's other entries once the change has committed, keeping (and reporting as an incomplete cleanup, which the app shows as a warning) any entry an assignment wrote that no row has been seen to name yet, so a cleanup during an uncommitted enclosing transaction cannot delete the key its commit records (unit-tested on a WAL database with the cleanup running inside the open transaction; a rolled-back leftover is removed by the next process's first cleanup); the JNI marshalling is exercised only by instrumented tests. Load Identity offers the identity type (loadIdentity.identityType, following the typed id's stored type and User for an unseen id until the user picks one; an unpicked type never overwrites a stored one) and, for a masternode or evonode, a masked voting key field (loadIdentity.votingKey); a refused key stops the load with Rust's reason, an identity stored for another network is refused, an existing row changes only in the fields a load owns (a wallet's identity keeps its synced balance), the same key entered again rewrites its entry and a write failure is shown, the key is stored when the row names none, and a different stored key is kept until the user confirms replacing it (loadIdentity.replaceKey.voting / .cancel), which happens only while the row still names the key the question showed; every other entry of the identity is then deleted after each successful load or replacement, a failure there is reported and retried by the next load (TEST_PLAN ID-02). Clearing Identities & Keys, or all data, deletes the imported voting keys before the rows, so an interrupted clear can be finished. Every store-and-record (assignToIdentity), sweep (removeStaleEntries) and clear runs under one process-wide lock (MasternodeVotingKeyStore.withVotingKeyLock), so a reload cannot sweep away a key a replacement is recording and a clear cannot miss a key an import is recording; the interleavings are unit-tested with the public operation as the importer, each waiting until the other operation is seen waiting on the lock. The outcome decision and the Room writes are unit-tested; no gate records a load of a registered masternode with its real voting key. Owner and payout keys are not imported: nothing in the app signs with them. Before anything is saved, an entered voting key is checked against Platform (Voting.checkMasternodeVotingKey over dash_sdk_masternode_check_voting_key, port of Swift SDK.checkMasternodeVotingKey since #6086), and Rust decides from the check and the row's stored key whether the key is stored and what is recorded (MasternodeVotingKeyRules.outcome over dash_sdk_masternode_voting_key_check_outcome): a refused key stops the load with Rust's reason and a refusal of the key already stored is recorded on it; once a key is stored, MasternodeVotingKeyRecords.record writes Rust's record, with the address of the key it was made of, in one Room transaction and only while the row still names that key (identities.votingKeyCheckRaw/Message/Address, Room v18, migration instrumented). Restart: nothing is recorded before the key is in its slot, so a load that dies in between leaves the stored key with no record of its own address, which Rust reads as never checked, and the voter picker checks it (unit-tested). Kotlin and JNI only marshal; the JSON shape is pinned on both sides and the JNI descriptors by FfiSmokeTest."
         }
       },
       "verification": [
@@ -3106,9 +3369,193 @@
         },
         {
           "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/identity/LoadIdentityVotingKeyTest.kt",
+          "id": "shouldRecordARefusalOfTheStoredKeyOnItsRow",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/identity/LoadIdentityVotingKeyTest.kt",
+          "id": "shouldRefuseAKeyRustDoesNotStoreAndSaveNothing",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/identity/LoadIdentityVotingKeyTest.kt",
+          "id": "shouldRecordTheCheckOnceTheNewKeyIsStored",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/voting/MasternodeVoterKeyCheckTest.kt",
+          "id": "shouldCheckAReplacedKeyOnTheNextPickAfterALoadDiedBeforeRecording",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": true
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "masternodeVotingKeyCheckSymbolsBindAndRejectInvalidInput",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
           "kind": "manual",
           "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "ID-02",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "identity.load_shared_masternode_for_voting",
+      "title": "Load a masternode without an owner identity (a shared masternode) for voting through its voter identity",
+      "area": "example_app",
+      "shared_apis": [
+        "dash_sdk_masternode_load_for_voting",
+        "dash_sdk_masternode_sibling_voting_key_record"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "SDK.loadMasternodeForVoting bridges dash_sdk_masternode_load_for_voting, whose rule is rs-sdk's load_masternode_for_voting: the owner identity when Platform holds one, else the voter identity when Platform proves it holds the enabled voting key; a voter identity's id typed as the ProTxHash is refused, and an owner proved absent at an older height than the voter is asked for again (unit and mock-SDK tested in Rust). Load Identity stores a masternode or evonode under the identity the rule returns and records its pro_tx_hash and role apart from the id (PersistentIdentity.masternodeProTxHash / masternodeRole, round-trip tested); a refused key is recorded on a stored row of its voter identity, and Rust's sibling rule (dash_sdk_masternode_sibling_voting_key_record) marks a valid record of another key for the same masternode to be checked again. The vote sheets name the recorded pro_tx_hash, and a row stored before it was recorded votes only once the Rust rule resolves it as the owner identity. Voter-only rows are never offered as recipients. No gate loads a shared masternode on a network: the test network probably has none (TEST_PLAN VOTE-10). The load is one call with nothing to resume."
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "Voting.loadMasternodeForVoting bridges dash_sdk_masternode_load_for_voting and MasternodeVotingKeyRules.siblingRecord bridges dash_sdk_masternode_sibling_voting_key_record, each through one JNI export (MasternodeVotingKeyNative.loadForVoting / siblingVotingKeyRecord, descriptors checked by FfiSmokeTest; the JSON shapes are pinned on both sides). Load Identity loads a masternode or evonode through the rule, resolving a typed id that names a stored row to its recorded pro_tx_hash, stores the row under the identity the rule returns and records the wire-order pro_tx_hash and the role (owner or voter) in the same statement as the row's own fields (IdentityEntity.masternodeProTxHash / masternodeRoleRaw, Room v19, migration instrumented); a voting key refused for a voter identity is recorded on a stored row of it, and once the key is stored (by a load or the replacement dialog), Rust's sibling rule marks a valid record of another key for the same masternode to be checked again (MasternodeVotingKeyRecords.recordSiblings). The vote dialogs and the pick-time key check name the recorded pro_tx_hash only; a row stored before it was recorded is resolved when picked through the rule as the owner identity of its id, and cannot vote until then. A voter-only row on the sender's network is refused at submit as a credit or token transfer recipient, picked or pasted; the recipient picker lists only wallet-owned identities. In the vote dialogs a finished check counts only against the record revision it was made for, so a record written since is checked again. Unit-tested on the JVM; no gate loads a shared masternode on a network: the test network probably has none (TEST_PLAN VOTE-22). The load is one call with nothing to resume."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk/src/platform/transition/masternode_vote_keys.rs",
+          "id": "should_load_a_shared_masternode_through_its_voter_identity",
+          "command": "cargo test -p dash-sdk --lib masternode_vote_keys",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk/src/platform/transition/masternode_vote_keys.rs",
+          "id": "should_refuse_a_shared_masternode_whose_voting_key_is_disabled",
+          "command": "cargo test -p dash-sdk --lib masternode_vote_keys",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-sdk-ffi/src/voting/masternode_voting_load.rs",
+          "id": "should_marshal_a_voter_identity_load_with_a_valid_verdict",
+          "command": "cargo test -p rs-sdk-ffi --lib masternode_voting_load",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/MasternodeVotingLoadTests.swift",
+          "id": "testShouldRoundTripTheProTxHashOfARowStoredUnderItsVoterIdentity",
+          "command": "swift test --package-path packages/swift-sdk --filter MasternodeVotingLoadTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/MasternodeVotingLoadTests.swift",
+          "id": "testShouldNameNoMasternodeForARowStoredBeforeItWasRecorded",
+          "command": "swift test --package-path packages/swift-sdk --filter MasternodeVotingLoadTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "VOTE-10",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/voting/MasternodeVotingKeyChecksTest.kt",
+          "id": "shouldDecodeEachLoadKind",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests 'org.dashfoundation.dashsdk.voting.MasternodeVotingKeyChecksTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/identity/LoadIdentityVotingKeyTest.kt",
+          "id": "shouldRecordTheMasternodesProTxHashBesideTheRow",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/voting/MasternodeVoterSectionTest.kt",
+          "id": "shouldPublishTheRecordedProTxHashOfASharedMasternode",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "masternodeVotingKeyCheckSymbolsBindAndRejectInvalidInput",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/identity/LoadIdentityVotingKeyTest.kt",
+          "id": "shouldMarkAnotherStoredKeyOfTheSameMasternodeToBeCheckedAgain",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/identity/LoadIdentityVotingKeyTest.kt",
+          "id": "shouldRecordWhichIdentityTheLoadRuleReturned",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/voting/MasternodeVoterKeyCheckTest.kt",
+          "id": "shouldResolveALegacyRowAsTheOwnerIdentityOfItsId",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests 'org.dashfoundation.example.ui.voting.*' --tests 'org.dashfoundation.example.ui.identity.LoadIdentityVotingKeyTest' --tests 'org.dashfoundation.example.services.transitions.StateTransitionDefinitionsTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/voting/MasternodeVotingKeyChecksTest.kt",
+          "id": "shouldRecordWhatRustSaysForTheOtherKeysOfTheMasternode",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests 'org.dashfoundation.dashsdk.voting.MasternodeVotingKeyChecksTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "VOTE-22",
           "covers_restart": false
         }
       ]
@@ -3265,6 +3712,202 @@
       ]
     },
     {
+      "id": "shielded.shield_from_identity",
+      "title": "Shield from an identity's credit balance into the wallet's own shielded address (type 21), with its in-progress records after a restart",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_manager_shielded_shield_from_identity",
+        "platform_wallet_manager_shielded_identity_debit_recovery_records",
+        "platform_wallet_manager_abandon_shielded_identity_debit"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PlatformWalletManager.shieldedShieldFromIdentity, shieldedIdentityDebitRecoveryRecords and abandonShieldedIdentityDebit wrap the FFI. The Send flow offers an Identity source for the wallet's own shielded address, reports a returned shield as submitted and one that may have gone through as not confirmed, and Shielded Activity lists In-Progress Identity Shields with Check Now and Stop Retrying (TEST_PLAN SH-21, SH-23), pinned by SendViewModelIdentityShieldTests and ShieldedIdentityFlowsPresentationTests. Partial because no host test or recorded run kills the app with a record pending; that the records survive is covered only by the shared Rust store test."
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PlatformWalletManager.shieldedShieldFromIdentity, shieldedIdentityDebitRecoveryRecords and abandonShieldedIdentityDebit bridge the FFI through JNI (FfiSmokeTest and ShieldedIdentityFlowsFfiTest bind them); code 58 maps to IdentityBalanceUnavailable. KotlinExampleApp's Send flow offers Send From > Identity for the wallet's own shielded address, runs the shield on an application-scoped coordinator so a rotation or tab switch can neither drop its outcome nor start a second one, reports a returned shield as submitted and one that may have gone through as not confirmed, and Shielded Activity lists In-Progress Identity Shields, read from Rust on open, on resume and after each shielded sync of the wallet, with Check Now and Stop Retrying after the warning (TEST_PLAN SH-21, SH-23; ShieldedIdentityFlowsTest). Unlike Swift the Send button does not compare amount plus fee with the identity's local balance; the wallet refuses a shortfall against the proved balance before saving anything. Partial because no emulator, network or process-death run is recorded; the records live only in Rust's store, whose reopen is covered by the shared test."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "SH-21",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "SH-23",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/SendViewModelIdentityShieldTests.swift",
+          "id": "test_orchardRecipient_offersIdentitySourceLast",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -only-testing:SwiftExampleAppTests/SendViewModelIdentityShieldTests",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "SH-21",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "SH-23",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/shielded/ShieldedIdentityFlowsTest.kt",
+          "id": "should report a returned identity shield as submitted, never as complete",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/shielded/ShieldedIdentityFlowsTest.kt",
+          "id": "should label an unreadable record apart and block nothing once stopped",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/errors/DashSdkErrorTest.kt",
+          "id": "shouldMapAnUnreadableIdentityBalanceToItsOwnType",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "identityShieldAndShieldedTopUpSymbolsBindAndRejectInvalidInput",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/ShieldedIdentityFlowsFfiTest.kt",
+          "id": "shouldListNoRecordsAndRefuseAnUnmanagedIdentityWithoutARecord",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/file_store.rs",
+          "id": "identity_debit_guard_with_no_nullifiers_survives_reopen",
+          "command": "cargo test -p platform-wallet --features shielded --lib identity_debit_guard_with_no_nullifiers_survives_reopen",
+          "covers_restart": true
+        }
+      ]
+    },
+    {
+      "id": "shielded.identity_top_up_from_pool",
+      "title": "Top up an identity from the shielded pool (type 22), with its pending top-ups listed after a restart",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_manager_shielded_identity_top_up_from_pool"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PlatformWalletManager.shieldedIdentityTopUpFromPool wraps the FFI. TopUpIdentityView offers a Shielded Balance funding source when account 0's spendable balance is known and above zero, reports a returned top-up as submitted and one that may have gone through without a retry, and lists the identity's pending kind 9 activity rows (TEST_PLAN SH-22, SH-23), pinned by ShieldedIdentityFlowsPresentationTests. Partial because no host test or recorded run restarts the app with a top-up pending."
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PlatformWalletManager.shieldedIdentityTopUpFromPool bridges the FFI through JNI (FfiSmokeTest binds it and refuses arguments it cannot read). KotlinExampleApp's TopUpIdentityScreen offers Shielded Balance when account 0's spendable balance Rust announces is known and above zero, keeps that source selected with submission off while it is unavailable, shows the minimum fee, and runs the payment on an application-scoped coordinator so a rotation or tab switch can neither drop its outcome nor start a second one; a returned top-up reads submitted and one that may have gone through offers no retry (TEST_PLAN SH-22, SH-23; ShieldedIdentityFlowsTest, ShieldedIdentityPaymentCoordinatorTest). Unlike Swift the submit button does not compare amount plus fee with the balance; the wallet refuses a shortfall before building anything. Restart is required: Pending Shielded Top-Ups reads the kind 9 activity projection (ShieldedDao.observePendingIdentityTopUps), not the wallet's retry record, and the two can disagree across a crash at the write boundary (#6058, which also covers Swift's TopUpIdentityView); no test or recorded run reopens both stores. Partial because no emulator or network run is recorded either."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "SH-22",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "SH-23",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedIdentityFlowsPresentationTests.swift",
+          "id": "test_topUpGate_withAffordableAmount_isOpen",
+          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -only-testing:SwiftExampleAppTests/ShieldedIdentityFlowsPresentationTests",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "SH-22",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "SH-23",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/shielded/ShieldedIdentityFlowsTest.kt",
+          "id": "should not offer a retry for a shielded top-up that may have gone through",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/ShieldedIdentityTopUpActivityPersistenceTest.kt",
+          "id": "shouldListAPendingShieldedTopUpOfTheIdentityAfterARestart",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "identityShieldAndShieldedTopUpSymbolsBindAndRejectInvalidInput",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
       "id": "shielded.token_purchase_from_pool",
       "title": "Buy a token at its direct purchase price from the shielded credit pool (type 28)",
       "area": "example_app",
@@ -3278,13 +3921,13 @@
           "sdk": "partial",
           "example_app": "partial",
           "restart": "required",
-          "reason": "PlatformWalletManager.shieldedTokenPurchaseFromPool and shieldedTokenPurchaseAvailability wrap the two FFI entry points; the platform-wallet manager checks the token count, the network's protocol version, the token's shielded pool and the note count, selects the credit pool notes for price plus fee, builds, broadcasts with the shielded spend recovery record, records a TokenPurchase activity row (kind tag 10) and requests a shielded sync. An accepted purchase stays pending until a shielded sync confirms it once it lands, as its result proof does not show it executed. The example app's Direct Purchase form offers a Shielded pool funding choice only on Rust's availability answer (TEST_PLAN SH-24). Partial because no device, simulator or network run has been recorded, and the bought tokens land in the token's shielded pool, which the wallet does not sync yet, so they are not shown and cannot be spent (SH-25 to SH-27). Restart recovery reuses the generic shielded spend record and redrive, with no test specific to this transition."
+          "reason": "PlatformWalletManager.shieldedTokenPurchaseFromPool and shieldedTokenPurchaseAvailability wrap the two FFI entry points; the platform-wallet manager checks the token count, the network's protocol version, the token's shielded pool and the note count, selects the credit pool notes for price plus fee, builds, broadcasts with the shielded spend recovery record, records a TokenPurchase activity row (kind tag 10) and requests a shielded sync. An accepted purchase stays pending until a shielded sync confirms it once it lands, as its result proof does not show it executed. The example app's Direct Purchase form offers a Shielded pool funding choice only on Rust's availability answer (TEST_PLAN SH-24). Partial because no device, simulator or network run has been recorded, The bought tokens land in the token's shielded pool, which the purchase watches for the wallet, so the Shielded Tokens screen shows them after a shielded sync (SH-25) and they can be sent on (SH-26). Restart recovery reuses the generic shielded spend record and redrive, with no test specific to this transition."
         },
         "kotlin": {
           "sdk": "partial",
           "example_app": "partial",
           "restart": "required",
-          "reason": "PlatformWalletManager.shieldedTokenPurchaseFromPool and shieldedTokenPurchaseAvailability wrap the two FFI entry points through JNI, and the fee estimate accepts kind 5. KotlinExampleApp's Direct Purchase form offers a Shielded pool funding choice only on Rust's availability answer and reports an accepted purchase as submitted, never complete (TEST_PLAN SH-24); Shielded Activity lists the TokenPurchase row (kind tag 10) and says the tokens were minted only once it is Confirmed. Partial because no emulator or network run has been recorded, and the bought tokens land in the token's shielded pool, which the wallet does not sync yet, so they are not shown and cannot be spent (SH-25). Restart recovery reuses the generic shielded spend record and redrive in Rust; the Kotlin side is covered only by a unit test that a pending purchase row is restored after a restart, with no process-death run of this transition."
+          "reason": "PlatformWalletManager.shieldedTokenPurchaseFromPool and shieldedTokenPurchaseAvailability wrap the two FFI entry points through JNI, and the fee estimate accepts kind 5. KotlinExampleApp's Direct Purchase form offers a Shielded pool funding choice only on Rust's availability answer and reports an accepted purchase as submitted, never complete (TEST_PLAN SH-24); Shielded Activity lists the TokenPurchase row (kind tag 10) and says the tokens were minted only once it is Confirmed. Partial because no emulator or network run has been recorded. The bought tokens land in the token's shielded pool, which the purchase watches for the wallet, so the Shielded Tokens screen shows them after a shielded sync (SH-25) and they can be sent on (SH-26) or unshielded (SH-27). Restart recovery reuses the generic shielded spend record and redrive in Rust; the Kotlin side is covered only by a unit test that a pending purchase row is restored after a restart, with no process-death run of this transition."
         }
       },
       "verification": [
@@ -3393,10 +4036,10 @@
           "reason": "IdentityWithdrawalsView (IdentityDetailView -> Withdrawals, and View withdrawals after a submit in WithdrawCreditsView) lists the withdrawals Rust reads from the withdrawals contract with their status, finality and asset unlock index. The TEST_PLAN gates ID-19 and ID-20 are written but not yet run on a simulator or device. Nothing is stored locally, so there is no restart state: the list is read from the chain each time."
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
+          "sdk": "supported",
+          "example_app": "partial",
           "restart": "not_applicable",
-          "reason": "No JNI binding in rs-unified-sdk-jni and no Kotlin wrapper or KotlinExampleApp screen for platform_wallet_identity_withdrawals; KotlinExampleApp's withdrawal screens show no status after a submit."
+          "reason": "IdentityWithdrawalsScreen (IdentityDetailScreen -> Withdrawals, and View withdrawals after a submit in WithdrawCreditsScreen) lists the withdrawals Rust reads with platform_wallet_identity_withdrawals, with Rust's status label, finality and asset unlock index; JNI copies the rows into a BLOB that IdentityWithdrawalsDecodingTest pins against the Rust encoder. The TEST_PLAN gates ID-19 and ID-20 are written but not yet run on an emulator. Nothing is stored locally, so there is no restart state: the list is read from the chain each time."
         }
       },
       "verification": [
@@ -3444,6 +4087,663 @@
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
           "id": "ID-20",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-unified-sdk-jni/src/identity_withdrawals.rs",
+          "id": "should_encode_rows_in_the_given_order_with_every_optional_gated_by_its_flag",
+          "command": "cargo test -p rs-unified-sdk-jni --lib identity_withdrawals",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/identity/IdentityWithdrawalsDecodingTest.kt",
+          "id": "should refuse a status code this build does not know",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*IdentityWithdrawalsDecodingTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "identityWithdrawalsSymbolBindsAndRejectsInvalidInput",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "ID-19",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "ID-20",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "identity.key_limits_update",
+      "title": "Show an identity key's budget and expiry and raise them from a reviewed preview",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_preview_identity_key_limits_update",
+        "platform_wallet_update_identity_key_limits_as_reviewed_with_signer",
+        "platform_wallet_refresh_identity"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "UpdateKeyLimitsView (KeyDetailView -> Limits -> Update Limits, the KeysListView Limits swipe, and Settings -> Platform State Transitions) starts from a proved refreshIdentity, asks previewIdentityKeyLimitsUpdate whether the key can be raised and what a change would set, and signs only the reviewed preview with updateIdentityKeyLimits(asReviewed:). TEST_PLAN ID-17 has not been run on a simulator or device. Restart is required: after a submission whose outcome is unknown the sheet locks only until it is closed, and nothing remembers the pending update across reopening or a relaunch (issue #6063). The sheet's KeyLimitsRetryGate (offer the same preview again after a consensus refusal while the wallet shows the reviewed limits) is a decision in the view that #6063 moves to Rust."
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "IdentityUpdates.previewKeyLimitsUpdate, updateKeyLimitsAsReviewed and refreshIdentity bridge the three shared functions through IdentityKeyLimitsNative, one JNI export each; the preview crosses JNI as six long slots whose round trip is pinned on both sides. KotlinExampleApp shows the budget, remaining budget and expiry on KeyDetailScreen and KeysListScreen, and UpdateKeyLimitsScreen (Limits -> Update Limits, or the Limits action on a key row) is the Swift sheet with Swift's keyLimits.update.* identifiers as testTags. Unlike Swift, it does not copy KeyLimitsRetryGate: every failed submission locks the screen until it is reopened. The form and the lock live in SavedStateHandle, so a process killed while the screen is in the back stack comes back locked when it died during a submission (unit-tested); a pending update is still not remembered once the screen is left or the task is removed (issue #6063), so restart stays required. Partial until TEST_PLAN ID-21 is run on an emulator."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/key_limits.rs",
+          "id": "should_submit_only_the_limits_and_signing_key_that_were_reviewed",
+          "command": "cargo test -p platform-wallet --lib key_limits",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/key_limits.rs",
+          "id": "should_refuse_a_change_that_is_not_a_raise",
+          "command": "cargo test -p platform-wallet --lib key_limits",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "unit",
+          "file": "packages/swift-sdk/SwiftTests/SwiftDashSDKTests/IdentityKeyLimitsPersistenceTests.swift",
+          "id": "testUpsertOfTheSameKeyRaisesTheStoredLimits",
+          "command": "cd packages/swift-sdk && xcodebuild test -scheme SwiftDashSDK -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftDashSDKTests/IdentityKeyLimitsPersistenceTests",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "ID-17",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-unified-sdk-jni/src/identity_key_limits.rs",
+          "id": "should_round_trip_a_preview_through_its_slots_unchanged",
+          "command": "cargo test -p rs-unified-sdk-jni --lib identity_key_limits",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/identity/IdentityKeyLimitsUpdatePreviewTest.kt",
+          "id": "shouldRoundTripValuesPastTheSignedRangeUnchanged",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*IdentityKeyLimitsUpdatePreviewTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/identity/UpdateKeyLimitsViewModelTest.kt",
+          "id": "shouldSendExactlyTheReviewedPreviewOnceAndFinish",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*UpdateKeyLimitsViewModelTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/identity/UpdateKeyLimitsViewModelTest.kt",
+          "id": "shouldComeBackLockedWhenTheProcessDiedDuringASubmission",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*UpdateKeyLimitsViewModelTest*'",
+          "covers_restart": true
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "identityKeyLimitsSymbolsBindAndRejectInvalidInput",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "ID-21",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "shielded.token_pool_balances",
+      "title": "Watch token shielded pools and show the tokens a wallet holds in them",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_manager_shielded_token_pool_balances",
+        "platform_wallet_manager_shielded_token_pool_balances_free",
+        "platform_wallet_manager_shielded_token_pool_unwatch",
+        "platform_wallet_manager_shielded_token_pool_watch"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PlatformWalletManager.shieldedTokenPoolWatch, shieldedTokenPoolUnwatch and shieldedTokenPoolBalances wrap the FFI entry points. The platform-wallet shielded coordinator keeps the watched pools, their commitment leaves, the wallet's token notes and each pool's scan state in the shielded store's SQLite file (not the host persister), scans the watched pools inside the ordinary shielded sync pass, and watches a type 28 purchase's token pool by itself. Watching reads the token's configuration with proofs and refuses a token without a shielded pool. The example app's Shielded Tokens screen (WalletDetailView > Shielded Tokens, TEST_PLAN SH-25) lists one row per watched pool and account with Rust's balance, unspent note count, scan progress and last scan error, refreshes with the manual shielded sync, watches one of the app's known tokens and unwatches by swipe. Each row also carries the value of the notes a submitted token transfer still holds (reservedBalance, shown as Pending; the balance excludes it). Partial because no device, simulator or network run has been recorded. Restart keeps the state in the store file, covered by a Rust unit test, with no host restart test."
+        },
+        "kotlin": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PlatformWalletManager.shieldedTokenPoolWatch, shieldedTokenPoolUnwatch and shieldedTokenPoolBalances wrap the FFI entry points through JNI (rs-unified-sdk-jni shielded_token_pools.rs; the balances array is copied and freed inside the JNI call). The wallet keeps the watched pools, token notes and scan state in the shielded store's own SQLite file, so there is no Room change. KotlinExampleApp's Shielded Tokens screen (wallet Shielded Balance menu > Shielded Tokens, TEST_PLAN SH-25) lists one card per watched pool and account with Rust's balance, unspent note count, Pending (reservedBalance), scan progress and last scan error, refreshes with syncShieldedNow, watches one of the app's known tokens and unwatches from a card's menu (Swift uses a swipe). Partial because no emulator or network run has been recorded. Restart keeps the state in the store file, covered by a Rust unit test, with no host restart test."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "SH-25",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/token_pool_tests.rs",
+          "id": "should_find_a_wallet_s_token_notes_and_drop_the_ones_the_pool_shows_spent",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::token_pool::tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/token_pool_tests.rs",
+          "id": "should_keep_a_failed_scan_s_error_until_a_read_succeeds",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::token_pool::tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/token_pool_tests.rs",
+          "id": "should_forget_a_wallet_s_notes_and_an_unwatched_pool_s_leaves_on_unwatch",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::token_pool::tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/token_pool_tests.rs",
+          "id": "should_keep_token_pools_in_the_store_file_until_purged",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::token_pool::tests",
+          "covers_restart": true
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/shielded_token_pools.rs",
+          "id": "should_flatten_a_scanned_row_with_its_last_error",
+          "command": "cargo test -p platform-wallet-ffi --features shielded --lib shielded_token_pools",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/shielded_token_pools.rs",
+          "id": "should_accept_null_and_empty_arrays_in_the_free_function",
+          "command": "cargo test -p platform-wallet-ffi --features shielded --lib shielded_token_pools",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "SH-25",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/ShieldedTokenPoolBalanceTest.kt",
+          "id": "shouldReadAClearedFlagAsNullNotZero",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/ShieldedTokenPoolBalanceTest.kt",
+          "id": "shouldMatchTheConstructorDescriptorTheJniLibraryUses",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/rs-unified-sdk-jni/src/shielded_token_pools.rs",
+          "id": "should_copy_every_field_and_the_error_string_of_a_row",
+          "command": "cargo test -p rs-unified-sdk-jni --lib shielded_token_pools",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/shielded/ShieldedTokenPoolsTest.kt",
+          "id": "groups rows by token in the order Rust listed them",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/ShieldedTokenPoolFfiTest.kt",
+          "id": "shouldListNothingAndRefuseAZeroSpendAsNothingSent",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "shielded.token_shielded_transfer",
+      "title": "Send tokens from a token's shielded pool to an Orchard address in that pool, fee paid from the credit pool (type 26)",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_manager_shielded_token_spend_preview",
+        "platform_wallet_manager_shielded_token_transfer"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PlatformWalletManager.shieldedTokenTransfer wraps the FFI entry point; the platform-wallet manager (ShieldedTokenPurchaser::transfer) refuses a zero amount, a network or token that cannot take the transfer and an SDK whose version is not the network's, reserves the account's token notes for the amount and its credit pool notes for the fee (each bounded by what fits one transition), builds the token bundle against an anchor the token pool records, broadcasts with the shielded spend recovery record, records a TokenShieldedTransfer activity row (kind tag 11, amount in the token's smallest unit) and requests a shielded sync. An accepted transfer stays pending, its notes reserved and reported apart as the balance row's reservedBalance, until a shielded sync confirms it, as its result proof does not show it executed. PlatformWalletManager.shieldedTokenSpendPreview wraps the local fee preview (ShieldedTokenPurchaser::preview_spend: the notes the transfer would take and its fee, or the refusal it would meet, reserving nothing). The example app's Shielded Tokens screen opens a Send form per token row that shows that fee as the amount changes (TEST_PLAN SH-26). Partial because no device, simulator or network run has been recorded. Restart recovery reuses the generic shielded spend record and redrive, with no test specific to this transition."
+        },
+        "kotlin": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PlatformWalletManager.shieldedTokenTransfer and shieldedTokenSpendPreview wrap the FFI entry points through JNI; Rust checks, selects both note sets, builds, broadcasts, records the TokenShieldedTransfer activity row (kind tag 11) and requests a shielded sync. KotlinExampleApp opens a Send form per Shielded Tokens card (TEST_PLAN SH-26) that reads an Orchard recipient and a whole number of the token's smallest unit, shows Rust's fee preview as the amount changes and reports an accepted transfer as submitted, never complete; the call runs in the form's ViewModel so a rotation keeps it, and Back is off while it proves. Shielded Activity labels kind 11 and shows its amount in token units. Partial because no emulator or network run has been recorded. Restart recovery reuses the generic shielded spend record and redrive in Rust, with no test specific to this transition."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "SH-26",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/operations.rs",
+          "id": "should_refuse_a_zero_token_transfer_before_any_request",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::operations::token_shielded_transfer_tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/operations.rs",
+          "id": "should_refuse_a_token_transfer_its_token_notes_cannot_cover_without_reserving",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::operations::token_shielded_transfer_tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/operations.rs",
+          "id": "should_release_the_token_notes_when_the_fee_cannot_be_paid",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::operations::token_shielded_transfer_tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/operations.rs",
+          "id": "should_release_both_reservations_of_a_transfer_that_fails_before_its_broadcast",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::operations::token_shielded_transfer_tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/token_pool_tests.rs",
+          "id": "should_reserve_the_largest_token_notes_and_leave_them_out_of_the_balance",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::token_pool::tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/token_pool_tests.rs",
+          "id": "should_refuse_a_token_spend_its_notes_cannot_cover_or_fit_without_reserving",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::token_pool::tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/token_pool_tests.rs",
+          "id": "should_release_only_orphaned_token_reservations_in_scanned_pools",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::token_pool::tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/token_pool_tests.rs",
+          "id": "should_give_token_notes_paths_to_the_root_of_the_kept_leaves",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::token_pool::tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+          "id": "should_map_a_submitted_token_transfer_to_success_and_its_refusals_apart",
+          "command": "cargo test -p platform-wallet-ffi --features shielded --lib token_transfer",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+          "id": "should_refuse_a_malformed_token_transfer_recipient_before_the_manager",
+          "command": "cargo test -p platform-wallet-ffi --features shielded --lib token_transfer",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/operations.rs",
+          "id": "should_preview_a_token_pool_spend_without_reserving",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::operations::token_shielded_transfer_tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+          "id": "should_refuse_an_unknown_kind_and_an_unknown_manager_in_the_token_spend_preview",
+          "command": "cargo test -p platform-wallet-ffi --features shielded --lib token_spend_preview",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "SH-26",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/shielded/ShieldedTokenPoolsTest.kt",
+          "id": "reports an accepted spend as submitted, never as complete",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/shielded/ShieldedTokenPoolsTest.kt",
+          "id": "reads an Orchard recipient only on its own network",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/ShieldedTokenPoolBalanceTest.kt",
+          "id": "shouldReadThePreviewFeeAndNoteCounts",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/ShieldedTokenPoolFfiTest.kt",
+          "id": "shouldListNothingAndRefuseAZeroSpendAsNothingSent",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "shielded.token_unshield",
+      "title": "Move tokens from a token's shielded pool into an identity's token balance, fee paid from the credit pool (type 27)",
+      "area": "example_app",
+      "shared_apis": [
+        "platform_wallet_manager_shielded_token_spend_preview",
+        "platform_wallet_manager_shielded_token_unshield"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PlatformWalletManager.shieldedTokenUnshield wraps the FFI entry point; the platform-wallet manager (ShieldedTokenPurchaser::unshield) checks and selects as for the type 26 transfer, reserving the account's token notes for the amount and its credit pool notes for the fee, builds the token bundle against an anchor the token pool records, broadcasts with the shielded spend recovery record, records a TokenUnshield activity row (kind tag 12, amount in the token's smallest unit, the credited identity in identityId) and requests a shielded sync. An accepted unshield stays pending, its notes reserved and reported apart as the balance row's reservedBalance, until a shielded sync confirms it, as its result proof (the recipient's token balance) does not bind it. PlatformWalletManager.shieldedTokenSpendPreview gives the form its fee from local state. The example app's Shielded Tokens screen opens an Unshield form per token row with the wallet's identities or a pasted Base58 id as the recipient and Rust's fee preview (TEST_PLAN SH-27). Partial because no device, simulator or network run has been recorded. Restart recovery reuses the generic shielded spend record and redrive, with no test specific to this transition."
+        },
+        "kotlin": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PlatformWalletManager.shieldedTokenUnshield and shieldedTokenSpendPreview wrap the FFI entry points through JNI; Rust checks and selects as for the type 26 transfer and records the TokenUnshield activity row (kind tag 12). KotlinExampleApp opens an Unshield form per Shielded Tokens card (TEST_PLAN SH-27) with the wallet's identities or a typed Base58 id as the recipient, Rust's fee preview, and an accepted unshield reported as submitted, never complete. Partial because no emulator or network run has been recorded. Restart recovery reuses the generic shielded spend record and redrive in Rust, with no test specific to this transition."
+        }
+      },
+      "verification": [
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "SH-27",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/operations.rs",
+          "id": "should_refuse_and_release_a_token_unshield_as_the_transfer_does",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::operations::token_shielded_transfer_tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/shielded/operations.rs",
+          "id": "should_preview_a_token_pool_spend_without_reserving",
+          "command": "cargo test -p platform-wallet --features shielded --lib wallet::shielded::operations::token_shielded_transfer_tests",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+          "id": "should_map_a_submitted_token_unshield_to_success_and_its_refusals_apart",
+          "command": "cargo test -p platform-wallet-ffi --features shielded --lib token_unshield",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/shielded_send.rs",
+          "id": "should_refuse_null_pointers_in_the_token_unshield",
+          "command": "cargo test -p platform-wallet-ffi --features shielded --lib token_unshield",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "SH-27",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/shielded/ShieldedTokenPoolsTest.kt",
+          "id": "reads a Base58 identity id of 32 bytes and nothing else",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/shielded/ShieldedTokenPoolsTest.kt",
+          "id": "reports a spend that may have reached a node without inviting a retry",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/ShieldedTokenPoolFfiTest.kt",
+          "id": "shouldRefuseArgumentsJniCannotReadBeforeAnyWalletCodeRuns",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "dashpay.profile_payment_addresses",
+      "title": "Set, change and remove a DashPay profile's public payment addresses and show a contact's",
+      "area": "shared_policy",
+      "shared_apis": [
+        "dashpay_profile_payment_address_from_string",
+        "dashpay_profile_payment_address_to_string",
+        "platform_wallet_create_or_update_dashpay_profile_with_addresses_with_signer",
+        "platform_wallet_dashpay_profile_payment_address_support"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "ManagedPlatformWallet.dashPayPaymentAddressSupport, DashPayProfile.paymentAddressBytes/paymentAddressString and the profile editor and contact detail screens are in place, but only the Rust FFI unit tests cover them: the Swift wrappers have no unit test and DP-31/DP-32 have not been run against a network."
+        },
+        "kotlin": {
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "tested",
+          "reason": "Dashpay.paymentAddressSupport, DashPayPaymentAddresses.bytes/string and the keep/set/remove updates on Dashpay.createOrUpdateProfile bridge the same FFI; Room keeps each own and cached contact profile's addresses on its profile row (schema 21), and the restore hands a contact's back to Rust. DashPayProfileScreen edits and shows them and ContactDetailScreen shows a contact's. The JNI descriptors are covered only by FfiSmokeTest and WalletManagerRoundTripTest, which have not been run on a device yet, and DP-20/DP-21 have not been run against a network."
+        }
+      },
+      "verification": [
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/dashpay_profile_payment_address.rs",
+          "id": "should_round_trip_a_core_address_through_its_stored_bytes",
+          "command": "cargo test -p platform-wallet-ffi --features shielded --lib should_round_trip_a_core_address_through_its_stored_bytes",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet-ffi/src/dashpay_profile_payment_address.rs",
+          "id": "should_refuse_an_address_of_another_network_with_a_message",
+          "command": "cargo test -p platform-wallet-ffi --features shielded --lib should_refuse_an_address_of_another_network_with_a_message",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-platform-wallet/src/wallet/identity/network/profile.rs",
+          "id": "should_report_each_payment_address_the_network_contract_has",
+          "command": "cargo test -p platform-wallet --lib should_report_each_payment_address_the_network_contract_has",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DP-31",
+          "covers_restart": false
+        },
+        {
+          "host": "swift",
+          "kind": "manual",
+          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DP-32",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/PlatformWalletPersistenceHandlerTest.kt",
+          "id": "shouldPersistAndRestoreAContactsPublishedPaymentAddresses",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": true
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/PlatformWalletPersistenceHandlerTest.kt",
+          "id": "shouldKeepTheStoredOwnAddressesWhenTheProfileRoundRollsBack",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/dashpay/DashPayPaymentAddressEditorModelTest.kt",
+          "id": "shouldShowTheWalletsReasonAndHoldSaveUntilTheAddressIsAccepted",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/rs-unified-sdk-jni/src/tokens.rs",
+          "id": "should_hex_encode_only_the_published_payment_addresses",
+          "command": "cargo test -p rs-unified-sdk-jni --lib should_hex_encode_only_the_published_payment_addresses",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "profilePaymentAddressSymbolsBindAndConvert",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "DP-20",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "DP-21",
           "covers_restart": false
         }
       ]

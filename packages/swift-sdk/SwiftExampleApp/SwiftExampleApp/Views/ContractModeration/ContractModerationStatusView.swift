@@ -6,6 +6,7 @@ import SwiftDashSDK
 /// one the contract keeps, which the node judges.
 struct ContractModerationStatusView: View {
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var offers: ContractModerationOfferStore
     /// The contract and the connection it was opened on: this screen reads
     /// only through that connection, and the hub hides it once replaced.
     let scope: ModerationScope
@@ -19,6 +20,8 @@ struct ContractModerationStatusView: View {
     /// Bumped on every submission and edit, so the completion of a superseded
     /// one is dropped.
     @State private var submission = 0
+    /// The identity a moderation sheet is open for.
+    @State private var moderating: ModerationTarget?
 
     var body: some View {
         Form {
@@ -60,6 +63,15 @@ struct ContractModerationStatusView: View {
                 }
                 .disabled(trimmedIdentityId.isEmpty || isLoading)
                 .accessibilityIdentifier("contractModeration.status.lookup")
+                // Only for an identity of a loaded wallet Rust named a
+                // moderator of this contract's lists
+                if !offers.userModerators.isEmpty {
+                    Button("Moderate This Identity…") {
+                        moderating = ModerationTarget(identityId: trimmedIdentityId)
+                    }
+                    .disabled(trimmedIdentityId.isEmpty)
+                    .accessibilityIdentifier("contractModeration.status.moderate")
+                }
             }
 
             result
@@ -67,6 +79,15 @@ struct ContractModerationStatusView: View {
         // A replaced SDK: the status shown, and one still being read, answered
         // for the old connection
         .onChange(of: appState.sdkGeneration) { _, _ in clearResult() }
+        .sheet(item: $moderating) { target in
+            ContractUserModerationSheet(scope: scope, target: target) {
+                // The status shown predates the moderation: read it again
+                if let lookUp = submitLookUp() {
+                    Task { await run(lookUp) }
+                }
+            }
+            .environmentObject(offers)
+        }
         .navigationTitle("Identity Status")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -196,7 +217,7 @@ struct ContractModerationStatusView: View {
 
 /// The status read: each list read, and what it says. A list not read is
 /// named as such rather than shown as clear.
-private struct ContractModerationStatusResult: View {
+struct ContractModerationStatusResult: View {
     let status: ContractModerationStatus
 
     var body: some View {

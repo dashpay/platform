@@ -1,5 +1,6 @@
 package org.dashfoundation.example.ui.tokens
 
+import org.dashfoundation.example.ui.credits.votingOnlyRecipientRefusal
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -195,6 +196,11 @@ private fun TransferForm(
             val amount = amountRaw ?: return@TokenActionScaffold
             val noteOrNull = note.toPublicNoteOrNull()
             viewModel.submit {
+                // A masternode's voter identity holds only a voting key: tokens sent to it could
+                // not be spent, so a picked or pasted one is refused (Swift, after #6145).
+                votingOnlyRecipientRefusal(
+                    container.database.identityDao().getByIdentityId(recipientId), networkRaw, "tokens",
+                )?.let { throw IllegalArgumentException(it) }
                 val balances = wallet.tokens.transfer(
                     identityId = context.identity.identityId,
                     tokenContractId = context.token.contractId,

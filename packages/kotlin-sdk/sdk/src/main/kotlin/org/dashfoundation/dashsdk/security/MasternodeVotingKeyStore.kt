@@ -402,6 +402,14 @@ class MasternodeVotingKeyStore private constructor(
             return IDENTIFIER_PREFIX + identityId.toHex() + "." + votingAddress.toHex()
         }
 
+        /**
+         * The 20-byte voting address an [identifier] names, read from the identifier alone
+         * with no store, so no key is read: what the voting key check takes for a stored key.
+         *
+         * @throws IllegalArgumentException when [identifier] is not a voting key identifier.
+         */
+        fun votingAddressOfIdentifier(identifier: String): ByteArray = parse(identifier).second
+
         private fun parse(identifier: String): Pair<ByteArray, ByteArray> {
             val parts = identifier.lowercase().split('.')
             require(

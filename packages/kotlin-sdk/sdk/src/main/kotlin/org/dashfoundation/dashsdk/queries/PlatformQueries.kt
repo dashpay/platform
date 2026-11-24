@@ -55,12 +55,13 @@ class Identities internal constructor(private val sdk: Sdk) {
      * object keyed by key id: `{"5": "1000", "6": null}`. A budgeted key maps to
      * the credits left as a decimal string; a key without a budget, or that the
      * identity does not have, maps to null. Raising a budget with
-     * `IdentityUpdates.updateKeyLimits` raises what is left by the same amount.
+     * `IdentityUpdates.updateKeyLimits` raises what is left by the same amount. Each key id
+     * is the bit pattern of its `u32` id, as Room stores it, so an id past [Int.MAX_VALUE]
+     * is passed as the negative [Int] it is stored as; the answer keys it as the `u32`.
      */
     suspend fun fetchKeysRemainingBudgets(identityId: String, keyIds: List<Int>): String? =
         sdk.queryGate.op {
             require(keyIds.isNotEmpty()) { "keyIds must hold at least one key id" }
-            require(keyIds.all { it >= 0 }) { "every key id must be non-negative, got $keyIds" }
             mapNativeErrors {
                 QueriesNative.identityFetchKeysRemainingBudgets(
                     sdk.handle,
@@ -187,6 +188,76 @@ class Addresses internal constructor(private val sdk: Sdk) {
  * sibling module, not this class.
  */
 class Voting internal constructor(private val sdk: Sdk) {
+
+    /**
+     * Load the masternode [wireOrderProTxHash] for voting, with the voting key of
+     * [votingAddress] when one is given (`dash_sdk_masternode_load_for_voting`, rs-sdk's
+     * `load_masternode_for_voting`, which holds the rule): its owner identity when Platform
+     * holds one, or else, for a masternode without an owner identity (a shared masternode),
+     * its voter identity when Platform proves the owner absent and the voter holding the
+     * enabled voting key. Port of Swift `SDK.loadMasternodeForVoting(proTxHash:votingAddress:)`
+     * (`SDK+MasternodeVotingLoad.swift`).
+     *
+     * @param wireOrderProTxHash the masternode's 32-byte pro_tx_hash in **wire order**.
+     * @throws DashSdkError when nothing is proved (the owner identity, or the voter identity
+     *   after a proved-absent owner, could not be fetched), and
+     *   [DashSdkError.InvalidParameter] for a value of the wrong length.
+     */
+    suspend fun loadMasternodeForVoting(
+        wireOrderProTxHash: ByteArray,
+        votingAddress: org.dashfoundation.dashsdk.voting.MasternodeVotingKeyAddress?,
+    ): org.dashfoundation.dashsdk.voting.MasternodeVotingLoad {
+        if (wireOrderProTxHash.size != 32) {
+            throw DashSdkError.InvalidParameter("proTxHash must be exactly 32 bytes")
+        }
+        return sdk.queryGate.op {
+            org.dashfoundation.dashsdk.voting.MasternodeVotingKeyCheckCodec.decodeLoad(
+                mapNativeErrors {
+                    org.dashfoundation.dashsdk.ffi.MasternodeVotingKeyNative.loadForVoting(
+                        sdk.handle,
+                        wireOrderProTxHash,
+                        votingAddress?.bytes,
+                    )
+                },
+            )
+        }
+    }
+
+    /**
+     * Whether the voting key with [votingAddress] can vote for the masternode
+     * [wireOrderProTxHash], as Platform's state proves it
+     * (`dash_sdk_masternode_check_voting_key`, rs-sdk's `check_masternode_voting_key`). Port of
+     * Swift `SDK.checkMasternodeVotingKey(proTxHash:votingAddress:)`
+     * (`SDK+MasternodeVotingKeyCheck.swift`).
+     *
+     * One proof-verified fetch of the masternode's voter identity; no Core or SPV sync. A
+     * failed fetch is [org.dashfoundation.dashsdk.voting.MasternodeVotingKeyCheck.Undetermined],
+     * not a throw. A masternode registered, or a voting key changed, in the last few blocks
+     * reads as Invalid until Platform processes the masternode list update.
+     *
+     * @param wireOrderProTxHash the masternode's 32-byte pro_tx_hash in **wire order**, as the
+     *   vote calls take it, not the byte order of the hex Core displays.
+     * @throws DashSdkError.InvalidParameter for a value of the wrong length.
+     */
+    suspend fun checkMasternodeVotingKey(
+        wireOrderProTxHash: ByteArray,
+        votingAddress: org.dashfoundation.dashsdk.voting.MasternodeVotingKeyAddress,
+    ): org.dashfoundation.dashsdk.voting.MasternodeVotingKeyCheck {
+        if (wireOrderProTxHash.size != 32) {
+            throw DashSdkError.InvalidParameter("proTxHash must be exactly 32 bytes")
+        }
+        return sdk.queryGate.op {
+            org.dashfoundation.dashsdk.voting.MasternodeVotingKeyCheckCodec.decodeCheck(
+                mapNativeErrors {
+                    org.dashfoundation.dashsdk.ffi.MasternodeVotingKeyNative.checkVotingKey(
+                        sdk.handle,
+                        wireOrderProTxHash,
+                        votingAddress.bytes,
+                    )
+                },
+            )
+        }
+    }
 
     /**
      * Contested resources for a contract/document-type/index. The index-value

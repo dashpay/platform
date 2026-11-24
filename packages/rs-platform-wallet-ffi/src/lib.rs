@@ -17,12 +17,14 @@ pub mod contact_info;
 pub mod contact_persistence;
 pub mod contact_request;
 pub mod contract_fee_claim;
+pub mod contract_user_moderation;
 pub mod core_address_types;
 pub mod core_wallet;
 pub mod core_wallet_types;
 pub mod dashpay;
 pub mod dashpay_payment;
 pub mod dashpay_profile;
+pub mod dashpay_profile_payment_address;
 pub mod dashpay_sync;
 pub mod data_contract;
 pub mod decision_proposal;
@@ -87,6 +89,8 @@ pub mod shielded_persistence;
 pub mod shielded_send;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
+#[cfg(feature = "shielded")]
+pub mod shielded_token_pools;
 pub mod shielded_types;
 #[cfg(feature = "shielded")]
 pub mod shielded_wallet_drain;
@@ -115,12 +119,14 @@ pub use contact::*;
 pub use contact_persistence::*;
 pub use contact_request::*;
 pub use contract_fee_claim::*;
+pub use contract_user_moderation::*;
 pub use core_address_types::*;
 pub use core_wallet::*;
 pub use core_wallet_types::*;
 pub use dashpay::*;
 pub use dashpay_payment::*;
 pub use dashpay_profile::*;
+pub use dashpay_profile_payment_address::*;
 pub use dashpay_sync::*;
 pub use data_contract::*;
 pub use decision_proposal::*;
@@ -177,6 +183,8 @@ pub use secp256k1_primitives::*;
 pub use shielded_send::*;
 #[cfg(feature = "shielded")]
 pub use shielded_sync::*;
+#[cfg(feature = "shielded")]
+pub use shielded_token_pools::*;
 pub use shielded_types::*;
 #[cfg(feature = "shielded")]
 pub use shielded_wallet_drain::*;
