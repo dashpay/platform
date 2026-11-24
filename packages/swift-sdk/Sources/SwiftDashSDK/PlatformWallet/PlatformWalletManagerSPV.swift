@@ -91,6 +91,14 @@ public struct PlatformSpvSyncProgress: Sendable, Equatable {
     }
 }
 
+/// One successful native progress read. The uptime is captured before the read,
+/// not when its result is delivered, so hosts can reject reads begun before a lifecycle cutoff.
+public struct PlatformSpvProgressObservation: Sendable, Equatable {
+    public let progress: PlatformSpvSyncProgress
+    /// `ProcessInfo.processInfo.systemUptime` immediately before the native read.
+    public let readStartedAtSystemUptime: TimeInterval
+}
+
 /// Node type of a connected SPV peer, classified against the masternode
 /// list. Mirrors Rust's `SpvPeerNodeType` / the `SPV_PEER_NODE_TYPE_*`
 /// FFI constants.

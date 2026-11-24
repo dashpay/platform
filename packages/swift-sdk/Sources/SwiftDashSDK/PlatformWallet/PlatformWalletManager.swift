@@ -346,6 +346,7 @@ struct PlatformWalletNativeLoadCalls: @unchecked Sendable {
 /// inner one the FFI's in-band "no tip" (`0` seconds), which does publish.
 struct PlatformWalletPollSnapshot: Sendable {
     var spvProgress: PlatformSpvSyncProgress?
+    var spvProgressReadStartedAt: TimeInterval?
     var spvIsRunning: Bool?
     var spvPeers: [PlatformSpvPeerInfo]?
     var platformAddressSyncIsSyncing: Bool?
@@ -468,6 +469,14 @@ public class PlatformWalletManager: ObservableObject {
     /// The current SPV sync progress. Updated by the polling task
     /// started in [`configure`].
     @Published public private(set) var spvProgress: PlatformSpvSyncProgress = .empty
+
+    private let spvProgressObservationSubject = PassthroughSubject<PlatformSpvProgressObservation, Never>()
+
+    /// Emits every accepted native progress read on the main actor, including unchanged values.
+    /// No previous observation is replayed, and emissions do not trigger `objectWillChange`.
+    public var spvProgressObservations: AnyPublisher<PlatformSpvProgressObservation, Never> {
+        spvProgressObservationSubject.eraseToAnyPublisher()
+    }
 
     @Published public private(set) var spvIsRunning: Bool = false
 
@@ -3209,6 +3218,7 @@ public class PlatformWalletManager: ObservableObject {
     nonisolated static func performManagerPoll(
         _ handle: Handle,
         calls: PlatformWalletNativePollCalls = .live,
+        uptime: @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
         isStale: @Sendable () -> Bool = { false }
     ) -> PlatformWalletPollSnapshot {
         let start = ContinuousClock.now
@@ -3218,7 +3228,11 @@ public class PlatformWalletManager: ObservableObject {
         // does — the remaining reads must not fire against a manager whose
         // teardown already started.
         guard !isStale() else { return snapshot }
-        snapshot.spvProgress = try? calls.syncProgress(handle)
+        let readStartedAt = uptime()
+        if let progress = try? calls.syncProgress(handle) {
+            snapshot.spvProgress = progress
+            snapshot.spvProgressReadStartedAt = readStartedAt
+        }
         guard !isStale() else { return snapshot }
         snapshot.spvIsRunning = try? calls.isSpvRunning(handle)
         guard !isStale() else { return snapshot }
@@ -3308,6 +3322,10 @@ public class PlatformWalletManager: ObservableObject {
            spvProgress == baseline.spvProgress {
             if value != spvProgress {
                 spvProgress = value
+            }
+            if let readStartedAt = snapshot.spvProgressReadStartedAt {
+                spvProgressObservationSubject.send(PlatformSpvProgressObservation(
+                    progress: value, readStartedAtSystemUptime: readStartedAt))
             }
         }
         if let value = snapshot.spvIsRunning,
