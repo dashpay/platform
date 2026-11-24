@@ -238,6 +238,26 @@ import kotlinx.serialization.Serializable
 /** Shielded activity timeline for a wallet (← `ShieldedActivityView.swift`). */
 @Serializable data class ShieldedActivity(val walletIdHex: String)
 
+/**
+ * The tokens a wallet holds in the token shielded pools it watches
+ * (← `ShieldedTokenPoolsView.swift`).
+ */
+@Serializable data class ShieldedTokens(val walletIdHex: String)
+
+/** Send one row's tokens within their shielded pool, type 26 (← `ShieldedTokenSendSheet`). */
+@Serializable data class ShieldedTokenSend(
+    val walletIdHex: String,
+    val tokenIdHex: String,
+    val account: Int,
+)
+
+/** Unshield one row's tokens to an identity, type 27 (← `ShieldedTokenUnshieldSheet`). */
+@Serializable data class ShieldedTokenUnshield(
+    val walletIdHex: String,
+    val tokenIdHex: String,
+    val account: Int,
+)
+
 // ── DashPay graph (hosted under the DashPay tab, ← the DashPay/ views) ──
 
 /** Established-contacts list for an identity (← `ContactsView.swift`). */
@@ -515,6 +535,13 @@ import kotlinx.serialization.Serializable
  * ← `PrivateDocumentEntriesView.swift`). Reached from a private type's detail screen.
  */
 @Serializable data class PrivateDocumentEntries(val contractIdHex: String, val typeName: String)
+
+/**
+ * Create one entry of a private document type, paid from the shielded pool (protocol version
+ * 15, type 29, ← `PrivateDocumentEntryCreateView.swift`). Reached from a private type's detail
+ * screen.
+ */
+@Serializable data class PrivateDocumentEntryCreate(val contractIdHex: String, val typeName: String)
 
 /**
  * Block explorer: blocks with their state transitions, and one identity's transitions in a

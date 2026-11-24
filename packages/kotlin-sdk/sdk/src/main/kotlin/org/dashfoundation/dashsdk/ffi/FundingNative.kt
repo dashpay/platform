@@ -251,7 +251,7 @@ internal object FundingNative {
      * [org.dashfoundation.dashsdk.wallet.decodeShieldedTipReview].
      *
      * A non-null [contactIdentityId] (32 bytes) is the identity the caller
-     * expects the name to belong to; Rust refuses another one with code 1085
+     * expects the name to belong to; Rust refuses another one with code 1086
      * (`ErrorShieldedTipRecipientMismatch`). Null when the user typed the
      * name.
      */
@@ -278,10 +278,10 @@ internal object FundingNative {
      *
      * Throws as [shieldedTransfer] does: code 1018
      * (`ErrorShieldedSpendUnconfirmed`) means the tip may have left the
-     * wallet and must never be sent again. Code 1084
+     * wallet and must never be sent again. Code 1085
      * (`ErrorShieldedTipPending`) means it was refused and nothing was sent.
      * A non-null [contactIdentityId] is the identity the caller expects the
-     * name to belong to, as for [reviewShieldedTip]; code 1085 refuses
+     * name to belong to, as for [reviewShieldedTip]; code 1086 refuses
      * another one, with nothing sent.
      */
     @Suppress("LongParameterList")

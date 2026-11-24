@@ -139,6 +139,16 @@ class AppContainer(private val context: Context) {
         )
 
     /**
+     * In-flight creates of private document entries (type 29) and the requests that may have
+     * gone through, held past the screen that started them so going back or a rotation cannot
+     * lose a create's outcome or start the same create again.
+     */
+    val privateDocumentEntryCreateCoordinator =
+        org.dashfoundation.example.services.shielded.PrivateDocumentEntryCreateCoordinator(
+            applicationScope,
+        )
+
+    /**
      * Core to shielded "Max" transfers: the stored operation ids and what
      * Rust last reported for each. Port of the `WalletDrainCoordinator` iOS
      * hosts on `PlatformWalletManager`. App-scoped so a transfer survives

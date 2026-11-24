@@ -1458,7 +1458,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_parseSh
 ///
 /// `contactIdentityId` is the saved contact's identity id (32 bytes) when the
 /// tip starts from a contact: a name that now resolves to another identity is
-/// refused with the recipient-mismatch code (85). JVM null when the user
+/// refused with the recipient-mismatch code (86). JVM null when the user
 /// typed the name; a non-null array of the wrong length throws code 1.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_reviewShieldedTip(
@@ -1517,15 +1517,15 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_reviewS
 /// `sourceAccount`. `contactIdentityId` is not the reviewed recipient: it is
 /// the saved contact's identity id (32 bytes) when the tip starts from a
 /// contact, and a reviewed recipient of another identity is refused with the
-/// recipient-mismatch code (85); JVM null when the user typed the name, and a
+/// recipient-mismatch code (86); JVM null when the user typed the name, and a
 /// non-null array of the wrong length throws code 1. `resolverHandle` is passed as
 /// [`Java_..._shieldedTransfer`] passes it. A null `memoText` is no memo; a
 /// supplied one crosses exactly ([`read_cstring_exact`]) or is refused.
 ///
 /// Errors are thrown as the other note-spending exports throw them: the
 /// spend-unconfirmed code (18) means the tip may have left the wallet and
-/// must never be sent again, and the tip-pending code (84) and the
-/// recipient-mismatch code (85) mean it was refused and nothing was sent.
+/// must never be sent again, and the tip-pending code (85) and the
+/// recipient-mismatch code (86) mean it was refused and nothing was sent.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_sendShieldedTip(
