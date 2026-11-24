@@ -248,7 +248,20 @@ struct ContractFeePotsSection: View {
         var team: ContractModeratorsPotTeam?
         var failures: [String] = []
         for walletId in walletIds.sorted(by: { $0.lexicographicallyPrecedes($1) }) {
-            guard let wallet = walletManager.wallet(for: walletId) else { continue }
+            // A wallet that is not loaded is not asked. The Moderate section
+            // shows the note for it, so this only logs the skip.
+            guard let wallet = walletManager.wallet(for: walletId) else {
+                SDKLogger.event(
+                    "contract_fee_claim_eligibility_wallet_not_loaded",
+                    category: .lifecycle,
+                    severity: .warning,
+                    fields: [
+                        "wallet_reference": .reference(walletId),
+                        "contract_reference": .reference(contractIdBytes),
+                    ]
+                )
+                continue
+            }
             do {
                 let eligibility = try await wallet.contractFeeClaimEligibility(contractId: contractIdBytes)
                 team = team ?? eligibility.moderatorsPotTeam

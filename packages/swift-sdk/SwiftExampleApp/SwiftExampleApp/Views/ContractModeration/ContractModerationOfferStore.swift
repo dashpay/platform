@@ -15,6 +15,10 @@ import SwiftDashSDK
 /// not by key: a named identity whose Keychain holds no usable CRITICAL key
 /// still gets a control, and its moderation fails when sent with that error,
 /// which the screen shows inline.
+///
+/// When no wallet was asked, because none on this network holds an identity
+/// or none of those is loaded, the screen says so rather than that nobody
+/// moderates.
 @MainActor
 final class ContractModerationOfferStore: ObservableObject {
     /// One identity Rust named, with the wallet that holds it. Two wallets
@@ -26,12 +30,26 @@ final class ContractModerationOfferStore: ObservableObject {
         var identityIdBase58: String { offer.identityId }
     }
 
+    /// Asks one loaded wallet what its identities may do on a contract,
+    /// given the contract's 32-byte id. It wraps
+    /// `ManagedPlatformWallet.contractModerationOffer` in the app.
+    typealias AskWallet = @Sendable (Data) async throws -> ContractModerationOffer
+
     @Published private(set) var moderators: [Moderator] = []
     /// Who moderates the contract, as the first wallet answered.
     @Published private(set) var moderatorsTeam: ContractModeratorsPotTeam?
     @Published private(set) var errorMessage: String?
     @Published private(set) var isLoading = false
     @Published private(set) var loadedOnce = false
+    /// Whether the last answer asked no wallet because no wallet on this
+    /// network holds an identity. It says nothing about who moderates.
+    @Published private(set) var noWalletHoldsIdentity = false
+    /// How many wallets holding identities on this network are not loaded,
+    /// so they were not asked in the last answer.
+    @Published private(set) var unloadedWalletCount = 0
+    /// How many loaded wallets were asked in the last answer, whether they
+    /// answered or failed.
+    @Published private(set) var askedWalletCount = 0
 
     /// Bumped on every reload and clear, so an answer to a superseded one is
     /// dropped.
@@ -39,11 +57,34 @@ final class ContractModerationOfferStore: ObservableObject {
     /// The contract the answer shown is for.
     private var answeredContractId: String?
 
+    /// Whether wallets were asked, answered without error and named no
+    /// identity. It is false when no wallet was asked.
+    var nobodyModerates: Bool {
+        loadedOnce && !isLoading && errorMessage == nil && askedWalletCount > 0 && moderators.isEmpty
+    }
+
     /// Ask each wallet of `walletIds` what its identities may do on
     /// `contractId` (base58), and keep the merged answer. A wallet whose
     /// answer fails is skipped and its error shown; the others' answers
-    /// stand. When every wallet fails nothing is offered.
+    /// stand. When every wallet fails nothing is offered. A wallet id with
+    /// no loaded wallet is counted and logged, and the others' answers stand.
     func reload(contractId: String, walletIds: [Data], walletManager: PlatformWalletManager) async {
+        await reload(contractId: contractId, walletIds: walletIds) { walletId in
+            guard let wallet = walletManager.wallet(for: walletId) else { return nil }
+            return { contractIdBytes in
+                try await wallet.contractModerationOffer(contractId: contractIdBytes)
+            }
+        }
+    }
+
+    /// ``reload(contractId:walletIds:walletManager:)`` with the wallet lookup
+    /// passed in, so tests can drive it without a device. `askWallet`
+    /// returns `nil` for a wallet id with no loaded wallet.
+    func reload(
+        contractId: String,
+        walletIds: [Data],
+        askWallet: (Data) -> AskWallet?
+    ) async {
         generation += 1
         let mine = generation
         isLoading = true
@@ -53,22 +94,51 @@ final class ContractModerationOfferStore: ObservableObject {
             moderators = []
             moderatorsTeam = nil
             loadedOnce = false
+            noWalletHoldsIdentity = false
+            unloadedWalletCount = 0
+            askedWalletCount = 0
         }
         answeredContractId = contractId
         guard let contractIdBytes = Data.identifier(fromBase58: contractId) else {
             moderators = []
             moderatorsTeam = nil
+            noWalletHoldsIdentity = false
+            unloadedWalletCount = 0
+            askedWalletCount = 0
+            errorMessage = "The contract id is not a base58 identifier."
             isLoading = false
             loadedOnce = true
             return
         }
+        if walletIds.isEmpty {
+            SDKLogger.event(
+                "contract_moderation_offer_no_wallet",
+                category: .lifecycle,
+                fields: ["contract_reference": .reference(contractIdBytes)]
+            )
+        }
         var named: [Moderator] = []
         var team: ContractModeratorsPotTeam?
         var failures: [String] = []
+        var unloaded = 0
+        var asked = 0
         for walletId in walletIds {
-            guard let wallet = walletManager.wallet(for: walletId) else { continue }
+            guard let ask = askWallet(walletId) else {
+                unloaded += 1
+                SDKLogger.event(
+                    "contract_moderation_offer_wallet_not_loaded",
+                    category: .lifecycle,
+                    severity: .warning,
+                    fields: [
+                        "wallet_reference": .reference(walletId),
+                        "contract_reference": .reference(contractIdBytes),
+                    ]
+                )
+                continue
+            }
+            asked += 1
             do {
-                let offer = try await wallet.contractModerationOffer(contractId: contractIdBytes)
+                let offer = try await ask(contractIdBytes)
                 team = team ?? offer.moderatorsTeam
                 named += offer.identities.map { Moderator(walletId: walletId, offer: $0) }
             } catch {
@@ -78,6 +148,9 @@ final class ContractModerationOfferStore: ObservableObject {
         guard mine == generation else { return }
         moderators = named
         moderatorsTeam = team
+        noWalletHoldsIdentity = walletIds.isEmpty
+        unloadedWalletCount = unloaded
+        askedWalletCount = asked
         if !failures.isEmpty {
             errorMessage = Array(Set(failures)).sorted().joined(separator: "; ")
         }
@@ -94,6 +167,9 @@ final class ContractModerationOfferStore: ObservableObject {
         errorMessage = nil
         isLoading = false
         loadedOnce = false
+        noWalletHoldsIdentity = false
+        unloadedWalletCount = 0
+        askedWalletCount = 0
     }
 
     /// The identities Rust lets moderate an identity on the contract's lists.
