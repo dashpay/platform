@@ -79,6 +79,18 @@ class ShieldedTipPresentationTest {
     }
 
     @Test
+    fun `should word a contact whose name moved to another identity, at review and at send`() {
+        val mismatch = DashSdkError.PlatformWallet.ShieldedTipRecipientMismatch("name moved")
+        assertEquals(ShieldedTipMessages.RECIPIENT_MISMATCH, ShieldedTipMessages.reviewError(mismatch))
+        assertEquals(
+            ShieldedPaymentOutcome.Failed(ShieldedTipMessages.RECIPIENT_MISMATCH),
+            ShieldedTipMessages.outcome(mismatch),
+        )
+        assertTrue(ShieldedTipMessages.RECIPIENT_MISMATCH.contains("nothing was sent"))
+        assertEquals("not bound", ShieldedTipMessages.reviewError(DashSdkError.PlatformWallet.WalletOperation("not bound")))
+    }
+
+    @Test
     fun `should show the wallet's own message for any other refusal`() {
         assertEquals(
             ShieldedPaymentOutcome.Failed("recipient changed since the review"),

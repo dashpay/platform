@@ -51,6 +51,9 @@ internal data class ReviewedShieldedTip(
     val review: ShieldedTipReview,
 )
 
+/** The saved contact a tip was opened from: its identity (lowercase hex) and DPNS name. */
+data class ShieldedTipContact(val identityIdHex: String, val username: String)
+
 /** The fields a review reads, as they were when it started. */
 internal data class ShieldedTipDraft(val username: String, val amountText: String)
 
@@ -126,6 +129,15 @@ internal object ShieldedTipMessages {
             "recipient this wallet last confirmed for it. Check the change with the " +
             "recipient before you send."
 
+    const val NO_USERNAME =
+        "No DashPay username is known for this contact. A tip is paid to the shielded " +
+            "address a username's profile publishes."
+
+    const val RECIPIENT_MISMATCH =
+        "This contact's username now belongs to a different identity, so the tip was " +
+            "refused and nothing was sent. To tip the name's new owner, start a tip from " +
+            "the DashPay tab and type the name."
+
     const val ALREADY_RUNNING =
         "A tip from this identity is still being sent, or its outcome was not shown yet. " +
             "Nothing new was sent."
@@ -181,10 +193,17 @@ internal object ShieldedTipMessages {
      */
     fun refusal(error: Throwable): String? = when (error) {
         is DashSdkError.PlatformWallet.ShieldedTipPending -> PENDING
+        is DashSdkError.PlatformWallet.ShieldedTipRecipientMismatch -> RECIPIENT_MISMATCH
         // `ErrorIdentityNotFound` (7). The wallet's own NotFound (98, a
         // removed wallet) keeps its message.
         is DashSdkError.NotFound -> IDENTITY_NOT_HELD
         else -> null
+    }
+
+    /** The text for a review the wallet refused. */
+    fun reviewError(error: Throwable): String = when (error) {
+        is DashSdkError.PlatformWallet.ShieldedTipRecipientMismatch -> RECIPIENT_MISMATCH
+        else -> error.message ?: "Could not review the tip."
     }
 
     /**

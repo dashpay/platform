@@ -93,14 +93,16 @@ import org.dashfoundation.example.util.toHex
  * [org.dashfoundation.dashsdk.wallet.ShieldedTipReview.unresolved] on review
  * and as `ShieldedTipPending` on send, until a shielded sync resolves it.
  *
- * There is no shortcut from a contact yet: a contact's saved DPNS name can
- * have moved to another identity, and checking that the name still pays
- * the contact is a wallet rule that does not exist yet (#6200).
+ * @param contact set when opened from a saved contact: its DPNS name fixes
+ *   the username, and its identity goes to the wallet with the review and
+ *   the send, so a name that moved to another identity is refused there.
+ *   Null when opened from the DashPay tab.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SendShieldedTipScreen(
     identityIdHex: String,
+    contact: ShieldedTipContact?,
     navController: NavHostController,
 ) {
     val container = LocalAppContainer.current
@@ -114,7 +116,10 @@ fun SendShieldedTipScreen(
     }.collectAsStateWithLifecycle(initialValue = null)
     val walletId = remember(walletIdHex) { walletIdHex?.hexToBytes() }
 
-    var username by rememberSaveable { mutableStateOf("") }
+    var username by rememberSaveable { mutableStateOf(contact?.username.orEmpty()) }
+    // From a contact the wallet also gets the contact's identity, and refuses
+    // a name that now belongs to someone else (ShieldedTipRecipientMismatch).
+    val contactIdentityId = remember(contact) { contact?.identityIdHex?.hexToBytes() }
     var amountText by rememberSaveable { mutableStateOf("") }
     var memo by rememberSaveable { mutableStateOf("") }
     var sourceChoice by rememberSaveable { mutableStateOf(ShieldedTipSourceChoice.IDENTITY) }
@@ -186,7 +191,7 @@ fun SendShieldedTipScreen(
         scope.launch {
             try {
                 val credits = m.parseShieldedTipAmount(draft.amountText)
-                val tip = ReviewedShieldedTip(draft.username, credits, m.reviewShieldedTip(wid, draft.username))
+                val tip = ReviewedShieldedTip(draft.username, credits, m.reviewShieldedTip(wid, draft.username, contactIdentityId))
                 when (val step = shieldedTipReviewStep(draft, ShieldedTipDraft(username, amountText), recheck, tip)) {
                     ShieldedTipReviewStep.Discard -> Unit
                     ShieldedTipReviewStep.HoldEnded -> {
@@ -204,7 +209,7 @@ fun SendShieldedTipScreen(
             } catch (e: Exception) {
                 if (draft == ShieldedTipDraft(username, amountText)) {
                     reviewed = null
-                    formError = e.message ?: "Could not review the tip."
+                    formError = ShieldedTipMessages.reviewError(e)
                 }
             } finally {
                 reviewing = false
@@ -269,7 +274,9 @@ fun SendShieldedTipScreen(
         // The call and its outcome belong to the coordinator, not to this screen.
         val started = paymentCoordinator.start(key, tip.credits) {
             val error = try {
-                m.sendShieldedTip(wid, source, tip.username, tip.review.recipient, tip.credits, memoText)
+                m.sendShieldedTip(
+                    wid, source, tip.username, tip.review.recipient, tip.credits, memoText, contactIdentityId,
+                )
                 null
             } catch (e: CancellationException) {
                 throw e
@@ -349,6 +356,7 @@ fun SendShieldedTipScreen(
                     onValueChange = { username = it; reviewed = null; changedReview = null; holdEnded = false },
                     label = { Text("Username") },
                     singleLine = true,
+                    readOnly = contact != null,
                     enabled = !sending && !reviewing,
                     modifier = Modifier.fillMaxWidth().testTag("dashpay.tip.username"),
                 )
