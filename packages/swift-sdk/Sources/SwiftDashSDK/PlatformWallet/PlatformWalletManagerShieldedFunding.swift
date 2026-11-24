@@ -133,10 +133,9 @@ extension PlatformWalletManager {
     ///     the lock's row is persisted or the lock is broadcast. See
     ///     `AssetLockBuiltHandler`.
     ///
-    /// The call holds the manager's native-operation admission until it
-    /// returns: `deleteWallet` throws `invalidHandle` and `shutdown()` waits
-    /// for it, and a call made once a shutdown has begun throws
-    /// `invalidHandle` before any native work.
+    /// Deliberately not admitted as a native operation: it can wait for a
+    /// ChainLock with no deadline, and `shutdown()` cannot cancel a native
+    /// call, so admitting it would let shutdown hang (#6003).
     public func shieldedFundFromAssetLock(
         walletId: Data,
         fundingAccountIndex: UInt32,
@@ -150,13 +149,7 @@ extension PlatformWalletManager {
             recipients: recipients
         )
 
-        // Admitted through the call and the result delivery, so
-        // `shutdown()` cannot destroy the handle under the funding.
-        // Cancelling the caller does not release it early.
-        try admitNativeOp("shieldedFundFromAssetLock")
-        defer { finishNativeOp() }
         let handle = self.handle
-        let calls = nativeShieldedSpendCalls
         let recipientRaw43 = recipients[0].recipientRaw43
         // Constructed on the calling actor so it lives for the
         // entire detached Task. Released after `withExtendedLifetime`
@@ -188,7 +181,7 @@ extension PlatformWalletManager {
                     try Self.withOptionalSurplusOutput(surplusOutput) { surplusPtr, surplusLen in
                         let result = withExtendedLifetime(coreSigner) {
                             withAssetLockBuiltCallback(onAssetLockBuilt) { builtFn, builtContext in
-                                calls.fundFromAssetLock(
+                                platform_wallet_manager_shielded_fund_from_asset_lock(
                                     handle,
                                     widPtr,
                                     fundingAccountIndex,
@@ -233,7 +226,9 @@ extension PlatformWalletManager {
     ///     the lock's row is persisted or the lock is broadcast. See
     ///     `AssetLockBuiltHandler`.
     ///
-    /// Admitted until it returns, as [`shieldedFundFromAssetLock`] is.
+    /// Deliberately not admitted, for the same reason as
+    /// [`shieldedFundFromAssetLock`]: its ChainLock wait has no deadline and
+    /// `shutdown()` cannot cancel it (#6003).
     public func shieldedFundFromCoinJoinDrain(
         walletId: Data,
         coinJoinAccountIndex: UInt32 = 0,
@@ -245,12 +240,7 @@ extension PlatformWalletManager {
             recipients: recipients
         )
 
-        // Admitted through the call and the result delivery, as in
-        // `shieldedFundFromAssetLock`.
-        try admitNativeOp("shieldedFundFromCoinJoinDrain")
-        defer { finishNativeOp() }
         let handle = self.handle
-        let calls = nativeShieldedSpendCalls
         let recipientRaw43 = recipients[0].recipientRaw43
         // Constructed on the calling actor so it lives for the entire
         // detached Task — see `shieldedFundFromAssetLock` for why
@@ -277,7 +267,7 @@ extension PlatformWalletManager {
                     }
                     let result = withExtendedLifetime(coreSigner) {
                         withAssetLockBuiltCallback(onAssetLockBuilt) { builtFn, builtContext in
-                            calls.fundFromCoinJoinDrain(
+                            platform_wallet_manager_shielded_fund_from_asset_lock_coinjoin_drain(
                                 handle,
                                 widPtr,
                                 coinJoinAccountIndex,
@@ -435,8 +425,9 @@ extension PlatformWalletManager {
     ///     returns to BIP44); it does not restrict DashPay contributions.
     ///   - progress: optional live-progress handler (see above).
     ///
-    /// Admitted until it returns, as [`shieldedFundFromAssetLock`] is, so
-    /// `shutdown()` waits for the whole seeding run.
+    /// Deliberately not admitted as a native operation: a seeding run lasts
+    /// tens of minutes and `shutdown()` cannot cancel a native call, so
+    /// admitting it would let shutdown hang (#6003).
     public func seedShieldedPoolNotes(
         walletId: Data,
         account: UInt32 = 0,
@@ -455,12 +446,7 @@ extension PlatformWalletManager {
             )
         }
 
-        // Admitted through the call and the result delivery, as in
-        // `shieldedFundFromAssetLock`.
-        try admitNativeOp("seedShieldedPoolNotes")
-        defer { finishNativeOp() }
         let handle = self.handle
-        let calls = nativeShieldedSpendCalls
 
         try await Task.detached(priority: .userInitiated) {
             // Constructed inside the detached task so nothing crosses back
@@ -489,7 +475,7 @@ extension PlatformWalletManager {
                 }
 
                 let result = withExtendedLifetime(coreSigner) {
-                    calls.seedPoolNotes(
+                    platform_wallet_manager_shielded_seed_pool_notes(
                         handle,
                         widPtr,
                         account,

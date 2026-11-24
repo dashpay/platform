@@ -1,21 +1,18 @@
 import Foundation
 import DashSDKFFI
 
-/// The C progress callback `platform_wallet_manager_shielded_seed_pool_notes`
-/// takes, as Swift imports it.
-typealias SeedShieldedPoolProgressFn = @convention(c) (
-    UnsafeMutableRawPointer?, UInt64, UInt64, UInt64, UInt64
-) -> Void
-
 /// Native entry points behind the admitted shielded spend wrappers on
-/// [`PlatformWalletManager`] (pool spends, shields, pool funding and the
-/// identity-debit abandonment). Same design as
-/// [`PlatformWalletNativeTeardownCalls`]: injecting the functions keeps each
-/// wrapper's real body, its admission and its result mapping under test
-/// without calling Rust. Every field mirrors its C export's imported Swift
-/// type, so `.live` is the exports themselves. The unchecked conformance is
-/// intentional: the closures are immutable C-entry wrappers, and the whole
-/// value is copied into the wrapper's detached task.
+/// [`PlatformWalletManager`] (pool spends, shields and the identity-debit
+/// abandonment). Same design as [`PlatformWalletNativeTeardownCalls`]:
+/// injecting the functions keeps each wrapper's real body, its admission and
+/// its result mapping under test without calling Rust. Every field mirrors
+/// its C export's imported Swift type, so `.live` is the exports themselves.
+/// The unchecked conformance is intentional: the closures are immutable
+/// C-entry wrappers, and the whole value is copied into the wrapper's
+/// admitted detached task.
+///
+/// The asset-lock pool fundings and the pool seeding are not here: they are
+/// deliberately not admitted until `shutdown()` can cancel them (#6003).
 ///
 /// Tests with a fake manager handle must inject this table: handles come from
 /// a process-global registry, so an arbitrary non-zero test value is not
@@ -66,21 +63,6 @@ struct PlatformWalletNativeShieldedSpendCalls: @unchecked Sendable {
         UInt, UInt64, UnsafePointer<UInt8>?, OpaquePointer?,
         UnsafeMutablePointer<FFIByteTuple32>?
     ) -> PlatformWalletFFIResult
-    /// `platform_wallet_manager_shielded_fund_from_asset_lock`.
-    typealias FundFromAssetLock = @Sendable (
-        Handle, WalletId, UInt32, UInt64, UnsafePointer<UInt8>?, UnsafePointer<UInt8>?,
-        UInt, Resolver, AssetLockBuiltFn?, UnsafeMutableRawPointer?
-    ) -> PlatformWalletFFIResult
-    /// `platform_wallet_manager_shielded_fund_from_asset_lock_coinjoin_drain`.
-    typealias FundFromCoinJoinDrain = @Sendable (
-        Handle, WalletId, UInt32, UnsafePointer<UInt8>?, Resolver, AssetLockBuiltFn?,
-        UnsafeMutableRawPointer?
-    ) -> PlatformWalletFFIResult
-    /// `platform_wallet_manager_shielded_seed_pool_notes`.
-    typealias SeedPoolNotes = @Sendable (
-        Handle, WalletId, UInt32, UInt64, UInt32, Resolver, SeedShieldedPoolProgressFn?,
-        UnsafeMutableRawPointer?
-    ) -> PlatformWalletFFIResult
     /// `platform_wallet_manager_abandon_shielded_identity_debit`.
     typealias AbandonIdentityDebit = @Sendable (
         Handle, WalletId, UInt32, UnsafePointer<UInt8>?, Bool
@@ -95,9 +77,6 @@ struct PlatformWalletNativeShieldedSpendCalls: @unchecked Sendable {
     let tokenPurchaseFromPool: TokenPurchaseFromPool
     let withdraw: Withdraw
     let identityCreateFromPool: IdentityCreateFromPool
-    let fundFromAssetLock: FundFromAssetLock
-    let fundFromCoinJoinDrain: FundFromCoinJoinDrain
-    let seedPoolNotes: SeedPoolNotes
     let abandonIdentityDebit: AbandonIdentityDebit
 
     static let live = PlatformWalletNativeShieldedSpendCalls(
@@ -110,10 +89,6 @@ struct PlatformWalletNativeShieldedSpendCalls: @unchecked Sendable {
         tokenPurchaseFromPool: platform_wallet_manager_shielded_token_purchase_from_pool,
         withdraw: platform_wallet_manager_shielded_withdraw,
         identityCreateFromPool: platform_wallet_manager_shielded_identity_create_from_pool,
-        fundFromAssetLock: platform_wallet_manager_shielded_fund_from_asset_lock,
-        fundFromCoinJoinDrain:
-            platform_wallet_manager_shielded_fund_from_asset_lock_coinjoin_drain,
-        seedPoolNotes: platform_wallet_manager_shielded_seed_pool_notes,
         abandonIdentityDebit: platform_wallet_manager_abandon_shielded_identity_debit
     )
 }

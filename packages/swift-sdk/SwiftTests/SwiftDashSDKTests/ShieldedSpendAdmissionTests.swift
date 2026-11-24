@@ -4,19 +4,27 @@ import DashSDKFFI
 @testable import SwiftDashSDK
 
 /// The shielded spend wrappers on `PlatformWalletManager` (pool spends,
-/// shields, pool funding and the identity-debit abandonment) stay admitted as
-/// native operations from before their FFI call until their result is
-/// delivered. While one is paused inside its native call, `deleteWallet` is
-/// refused and `shutdown()` does not destroy the native manager; a spend
-/// started once shutdown has begun never reaches native code.
+/// shields and the identity-debit abandonment) stay admitted as native
+/// operations from before their FFI call until their result is delivered.
+/// While one is paused inside its native call, `deleteWallet` is refused and
+/// `shutdown()` does not destroy the native manager; a spend started once
+/// shutdown has begun never reaches native code.
 ///
 /// Every wrapper runs through its real public body. Only the native exports
 /// are replaced, through `nativeShieldedSpendCalls`, so the fake manager
 /// handle never reaches Rust.
+///
+/// Every wait is bounded: a wrapper that leaked its admission would leave
+/// `shutdown()` draining forever, and the test must then fail naming that
+/// wrapper instead of hanging until the job times out.
 @MainActor
 final class ShieldedSpendAdmissionTests: XCTestCase {
 
     private static let walletId = Data(repeating: 0x5A, count: 32)
+
+    /// How long a released spend, or the shutdown queued behind it, may take
+    /// to finish before the test fails. Both finish in milliseconds.
+    private static let finishTimeout: TimeInterval = 5
 
     /// Stands in for the shielded spend exports: records which export was
     /// entered with which handle and wallet id, and holds the call until
@@ -61,13 +69,6 @@ final class ShieldedSpendAdmissionTests: XCTestCase {
         var walletIds: [Data?] { lock.withLock { entries.map(\.walletId) } }
     }
 
-    private final class Flag: @unchecked Sendable {
-        private let lock = NSLock()
-        private var raised = false
-        func raise() { lock.withLock { raised = true } }
-        var isRaised: Bool { lock.withLock { raised } }
-    }
-
     private final class DestroyCounter: @unchecked Sendable {
         private let lock = NSLock()
         private var count = 0
@@ -78,6 +79,79 @@ final class ShieldedSpendAdmissionTests: XCTestCase {
             onDestroy()
         }
         var value: Int { lock.withLock { count } }
+    }
+
+    /// Holds the outcome a bounded wait hands back from its watcher task.
+    private final class OutcomeBox<T: Sendable>: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored: T?
+        func set(_ value: T) { lock.withLock { stored = value } }
+        var value: T? { lock.withLock { stored } }
+    }
+
+    /// Polls `box` until it holds a value or `timeout` passes. A deadline
+    /// poll rather than an XCTest expectation: a watcher that finishes after
+    /// an expectation's wait timed out would fulfil it late, which XCTest
+    /// reports as an API violation.
+    private func waitForOutcome<T: Sendable>(
+        _ box: OutcomeBox<T>, timeout: TimeInterval
+    ) async -> T? {
+        let deadline = Date().addingTimeInterval(timeout)
+        while box.value == nil, Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return box.value
+    }
+
+    /// Waits at most `timeout` for a throwing `task`. On a timeout the wait
+    /// records a failure naming `what` and returns `nil` without awaiting the
+    /// unfinished task again.
+    private func boundedResult<T: Sendable>(
+        of task: Task<T, Error>, _ what: String,
+        timeout: TimeInterval = finishTimeout,
+        file: StaticString = #filePath, line: UInt = #line
+    ) async -> Result<T, Error>? {
+        let box = OutcomeBox<Result<T, Error>>()
+        Task { box.set(await task.result) }
+        guard let outcome = await waitForOutcome(box, timeout: timeout) else {
+            XCTFail("\(what) did not finish within \(timeout) s", file: file, line: line)
+            return nil
+        }
+        return outcome
+    }
+
+    /// `boundedResult` for a spend expected to succeed: fails naming `what`
+    /// when it throws or does not finish. True when it succeeded.
+    @discardableResult
+    private func expectSpendSucceeds(
+        _ task: Task<Void, Error>, _ what: String,
+        file: StaticString = #filePath, line: UInt = #line
+    ) async -> Bool {
+        switch await boundedResult(of: task, what, file: file, line: line) {
+        case .success?:
+            return true
+        case .failure(let error)?:
+            XCTFail("\(what) threw \(error)", file: file, line: line)
+            return false
+        case nil:
+            return false
+        }
+    }
+
+    /// Waits at most `timeout` for a shutdown task, failing with `what` when
+    /// it does not finish. Returns its metrics, or `nil` on a timeout.
+    private func boundedShutdown(
+        _ task: Task<PlatformWalletShutdownMetrics, Never>, _ what: String,
+        timeout: TimeInterval = finishTimeout,
+        file: StaticString = #filePath, line: UInt = #line
+    ) async -> PlatformWalletShutdownMetrics? {
+        let box = OutcomeBox<PlatformWalletShutdownMetrics>()
+        Task { box.set(await task.value) }
+        guard let metrics = await waitForOutcome(box, timeout: timeout) else {
+            XCTFail("\(what): shutdown did not finish within \(timeout) s", file: file, line: line)
+            return nil
+        }
+        return metrics
     }
 
     private nonisolated static func makeTeardownCalls(
@@ -127,15 +201,6 @@ final class ShieldedSpendAdmissionTests: XCTestCase {
                 }
                 return result
             },
-            fundFromAssetLock: { h, w, _, _, _, _, _, _, _, _ in
-                r.enter("fundFromAssetLock", handle: h, walletId: w)
-            },
-            fundFromCoinJoinDrain: { h, w, _, _, _, _, _ in
-                r.enter("fundFromCoinJoinDrain", handle: h, walletId: w)
-            },
-            seedPoolNotes: { h, w, _, _, _, _, _, _ in
-                r.enter("seedPoolNotes", handle: h, walletId: w)
-            },
             abandonIdentityDebit: { h, w, _, _, _ in
                 r.enter("abandonIdentityDebit", handle: h, walletId: w)
             }
@@ -167,7 +232,6 @@ final class ShieldedSpendAdmissionTests: XCTestCase {
         let wid = Self.walletId
         let id32 = Data(repeating: 2, count: 32)
         let raw43 = Data(repeating: 3, count: 43)
-        let recipient = ShieldedFundFromAssetLockRecipient(recipientRaw43: raw43)
         let pubkey = ManagedPlatformWallet.IdentityPubkey(
             keyId: 0, keyType: .ecdsaSecp256k1, purpose: .authentication,
             securityLevel: .master, pubkeyBytes: Data(repeating: 2, count: 33))
@@ -211,16 +275,6 @@ final class ShieldedSpendAdmissionTests: XCTestCase {
                     denomination: 1, sendToAddressOnCreationFailure: Data(repeating: 4, count: 21),
                     identitySigner: signer)
                 XCTAssertEqual(identityId, Data(repeating: 9, count: 32), "the new identity id must be returned")
-            },
-            Spend(wrapper: "shieldedFundFromAssetLock", native: "fundFromAssetLock") { m in
-                try await m.shieldedFundFromAssetLock(
-                    walletId: wid, fundingAccountIndex: 0, amountDuffs: 1, recipients: [recipient])
-            },
-            Spend(wrapper: "shieldedFundFromCoinJoinDrain", native: "fundFromCoinJoinDrain") { m in
-                try await m.shieldedFundFromCoinJoinDrain(walletId: wid, recipients: [recipient])
-            },
-            Spend(wrapper: "seedShieldedPoolNotes", native: "seedPoolNotes") { m in
-                try await m.seedShieldedPoolNotes(walletId: wid)
             },
             Spend(wrapper: "abandonShieldedIdentityDebit", native: "abandonIdentityDebit") { m in
                 try await m.abandonShieldedIdentityDebit(
@@ -281,7 +335,7 @@ final class ShieldedSpendAdmissionTests: XCTestCase {
         assertDeleteRefusedAsInFlight(manager, "shieldedTransfer")
 
         recorder.release()
-        try await spend.value
+        guard await expectSpendSucceeds(spend, "shieldedTransfer") else { return }
         XCTAssertEqual(recorder.names, ["transfer"])
         XCTAssertEqual(recorder.handles, [0x5A01])
         XCTAssertEqual(recorder.walletIds, [Self.walletId])
@@ -291,7 +345,8 @@ final class ShieldedSpendAdmissionTests: XCTestCase {
     /// For each spend wrapper, paused in its native call: `deleteWallet` is
     /// refused, `shutdown()` revokes the public handle but neither completes
     /// nor runs the native destroy until the spend is released, and after
-    /// release the spend returns its result and shutdown completes.
+    /// release the spend returns its result and shutdown completes. A wrapper
+    /// that leaked its admission fails here by name within the timeout.
     func testShouldHoldShutdownUntilEveryPausedSpendReturns() async throws {
         for (index, spend) in try allSpends().enumerated() {
             let handle = Handle(0x5B00 + index)
@@ -312,21 +367,15 @@ final class ShieldedSpendAdmissionTests: XCTestCase {
 
             let revoked = expectation(description: "\(spend.wrapper): shutdown revoked the public handle")
             let subscription = manager.$isConfigured.dropFirst().sink { if !$0 { revoked.fulfill() } }
-            let shutdownFinished = Flag()
-            let shutdown = Task {
-                let metrics = await manager.shutdown()
-                shutdownFinished.raise()
-                return metrics
-            }
+            defer { subscription.cancel() }
+            let shutdown = Task { await manager.shutdown() }
             await fulfillment(of: [revoked], timeout: 5)
             await fulfillment(of: [destroyedEarly], timeout: 0.2)
-            XCTAssertFalse(shutdownFinished.isRaised, "\(spend.wrapper): shutdown finished under the spend")
             XCTAssertEqual(destroys.value, 0, "\(spend.wrapper): destroy ran while the spend was admitted")
 
             recorder.release()
-            try await call.value
-            let metrics = await shutdown.value
-            subscription.cancel()
+            guard await expectSpendSucceeds(call, spend.wrapper) else { continue }
+            guard let metrics = await boundedShutdown(shutdown, spend.wrapper) else { continue }
             XCTAssertEqual(destroys.value, 1, "\(spend.wrapper): shutdown must destroy once after the spend")
             XCTAssertEqual(metrics.steps.last?.name, "destroy")
             XCTAssertEqual(recorder.names, [spend.native], "\(spend.wrapper) reached the wrong export")
@@ -359,20 +408,24 @@ final class ShieldedSpendAdmissionTests: XCTestCase {
         XCTAssertTrue(manager.shutdownRequested)
 
         for spend in spends {
-            do {
-                try await spend.run(manager)
+            let rejected = Task { try await spend.run(manager) }
+            switch await boundedResult(of: rejected, "late \(spend.wrapper)") {
+            case .success?:
                 XCTFail("\(spend.wrapper) must be rejected once shutdown has begun")
-            } catch PlatformWalletError.invalidHandle {
-                // expected
-            } catch {
-                XCTFail("\(spend.wrapper): expected invalidHandle, got \(error)")
+            case .failure(let error)?:
+                guard case .invalidHandle = error as? PlatformWalletError else {
+                    XCTFail("\(spend.wrapper): expected invalidHandle, got \(error)")
+                    break
+                }
+            case nil:
+                break
             }
         }
         XCTAssertEqual(recorder.names, ["transfer"], "a rejected spend reached native code")
 
         recorder.release()
-        try await inFlight.value
-        _ = await shutdown.value
+        guard await expectSpendSucceeds(inFlight, "in-flight shieldedTransfer") else { return }
+        guard await boundedShutdown(shutdown, "in-flight shieldedTransfer") != nil else { return }
         XCTAssertEqual(destroys.value, 1)
     }
 
@@ -413,8 +466,8 @@ final class ShieldedSpendAdmissionTests: XCTestCase {
         XCTAssertEqual(destroys.value, 0)
 
         recorder.release()
-        try await spend.value
-        _ = await shutdown.value
+        guard await expectSpendSucceeds(spend, "cancelled shieldedTransfer") else { return }
+        guard await boundedShutdown(shutdown, "cancelled shieldedTransfer") != nil else { return }
         XCTAssertEqual(destroys.value, 1)
     }
 }

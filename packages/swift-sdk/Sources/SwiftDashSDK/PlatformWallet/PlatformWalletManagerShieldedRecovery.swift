@@ -92,11 +92,8 @@ extension PlatformWalletManager {
         }
         // It rewrites the wallet's durable debit record, so it is admitted
         // through the call and the result delivery like the spends.
-        try admitNativeOp("abandonShieldedIdentityDebit")
-        defer { finishNativeOp() }
-        let handle = self.handle
         let calls = nativeShieldedSpendCalls
-        try await Task.detached(priority: .userInitiated) {
+        try await withAdmittedNativeOperation("abandonShieldedIdentityDebit") { handle -> Void in
             try walletId.withUnsafeBytes { wallet in
                 try activityId.withUnsafeBytes { activity in
                     try calls.abandonIdentityDebit(
@@ -108,6 +105,6 @@ extension PlatformWalletManager {
                     ).check()
                 }
             }
-        }.value
+        }
     }
 }

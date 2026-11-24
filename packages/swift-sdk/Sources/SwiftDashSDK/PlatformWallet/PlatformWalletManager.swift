@@ -672,9 +672,10 @@ public class PlatformWalletManager: ObservableObject {
     private var drainingNativeHandle: Handle = NULL_HANDLE
 
     /// Async native entrypoints (create, load, local balance snapshots,
-    /// shielded spends, shields and pool funding, wallet drains, private
-    /// documents and contact requests) between admission and the end of
-    /// their MainActor epilogue.
+    /// shielded spends and shields, the resumed pool funding, wallet drains,
+    /// private documents and contact requests) between admission and the end
+    /// of their MainActor epilogue. The fresh asset-lock pool fundings and
+    /// the pool seeding are deliberately not counted (#6003).
     /// [`shutdown()`] waits for this to reach zero before destroying the
     /// captured handle: an admitted op must complete its FULL transaction (FFI +
     /// publish) or fail on its own terms — never be failed retroactively
@@ -745,8 +746,8 @@ public class PlatformWalletManager: ObservableObject {
     internal var nativeLoadCalls = PlatformWalletNativeLoadCalls.live
 
     /// Test seam for the native calls of the admitted shielded spend
-    /// wrappers (pool spends, shields, pool funding, identity-debit
-    /// abandonment); same contract as [`nativeTeardownCalls`].
+    /// wrappers (pool spends, shields, identity-debit abandonment); same
+    /// contract as [`nativeTeardownCalls`].
     internal var nativeShieldedSpendCalls = PlatformWalletNativeShieldedSpendCalls.live
 
     /// Native snapshot reads and their paired allocation release. Kept
