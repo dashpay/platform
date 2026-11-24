@@ -588,15 +588,20 @@ fn map_tip_send_result(result: Result<(), PlatformWalletError>) -> PlatformWalle
 /// Waits at most 100 ms for the coordinator's locks, as
 /// `platform_wallet_manager_local_shielded_balance_snapshot` does. Result
 /// codes:
+/// - `ErrorShieldedBalanceBusy` (87): the read did not get the shielded store
+///   within its wait budget, because a scan or a spend holds it. Nothing
+///   failed: keep the last state shown and read again later. The only code
+///   of this call that means that.
 /// - `ErrorIdentityNotFound`: the wallet holds no identity with that id.
-/// - `ErrorWalletOperation`: the read was busy (a scan holds the store; keep
-///   the last state and retry later), the wallet is unknown, no shielded
-///   coordinator is configured, the call was made from a callback this
-///   library invokes (the shielded balance callback among them: read the
-///   balance from another thread), or another failure, with the reason in
-///   the message.
+/// - `ErrorWalletOperation`: the wallet is unknown, no shielded coordinator
+///   is configured, the call was made from a callback this library invokes
+///   (the shielded balance callback among them: read the balance from
+///   another thread), or another failure, with the reason in the message.
 /// - `ErrorShieldedRecoveryCorrupted` / `ErrorShieldedRecoveryKeysRequired`:
 ///   the wallet's persisted shielded state is unusable.
+///
+/// Every code other than `Success` and `ErrorShieldedBalanceBusy` is a
+/// failure to show, not a reason to read again.
 ///
 /// In a build that unwinds, a panic inside the call is returned as
 /// `ErrorWalletOperation`; the iOS profiles build with `panic = "abort"`.
@@ -640,10 +645,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_balance(
             .await
         });
         match read {
-            Err(_) => PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
-                "shielded identity balance busy; retry after sync releases its locks",
-            ),
+            Err(_) => identity_balance_busy(),
             Ok(Ok(value)) => {
                 balance = value.into();
                 PlatformWalletFFIResult::ok()
@@ -656,6 +658,15 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_balance(
         *out_balance = balance;
     }
     result
+}
+
+/// What the identity balance read reports when it did not get the shielded
+/// store within `IDENTITY_BALANCE_WAIT_BUDGET`.
+fn identity_balance_busy() -> PlatformWalletFFIResult {
+    PlatformWalletFFIResult::err(
+        PlatformWalletFFIResultCode::ErrorShieldedBalanceBusy,
+        "shielded identity balance busy; retry after sync releases its locks",
+    )
 }
 
 #[cfg(test)]
@@ -1024,6 +1035,10 @@ mod tests {
             )
         };
         assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        assert_ne!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedBalanceBusy
+        );
         free(result);
     }
 
@@ -1040,7 +1055,29 @@ mod tests {
             )
         };
         assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorInvalidHandle);
+        assert_ne!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedBalanceBusy
+        );
         assert_eq!(balance, ShieldedIdentityBalanceFFI::default());
+        free(result);
+    }
+
+    /// A busy identity balance read reports the one code that means "keep
+    /// the last state and read again", with its reason.
+    #[test]
+    fn should_report_a_busy_identity_balance_by_its_own_code() {
+        let result = identity_balance_busy();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedBalanceBusy
+        );
+        assert_eq!(result.code as u32, 87);
+        assert!(
+            message(&result).contains("shielded identity balance busy"),
+            "{}",
+            message(&result)
+        );
         free(result);
     }
 

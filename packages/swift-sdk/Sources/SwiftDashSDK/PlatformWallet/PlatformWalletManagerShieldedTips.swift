@@ -291,10 +291,11 @@ extension PlatformWalletManager {
     /// `prepareShieldedIdentityAddress` proves the identity's account in this
     /// session, `.unavailable` while its ledger is not established.
     ///
-    /// Rust waits at most 100 ms for the shielded store; while a scan holds
-    /// it this throws `walletOperation` (busy): keep the last state and read
-    /// again later. Throws `identityNotFound` when the wallet holds no
-    /// identity `identityId`.
+    /// Rust waits at most 100 ms for the shielded store. It throws
+    /// `shieldedBalanceBusy` while a scan or a spend holds the shielded
+    /// store, the only error of this call that means keep the last state and
+    /// read again later; any other error is a failure to show. Throws
+    /// `identityNotFound` when the wallet holds no identity `identityId`.
     public func shieldedIdentityBalance(walletId: Data, identityId: Data) async throws -> ShieldedIdentityBalance {
         try ensureConfigured()
         guard walletId.count == 32 else {
