@@ -14,22 +14,23 @@ import java.util.Locale
  * Rust records, with Rust's amount, which is the fee.
  */
 class ShieldedActivityKindsTest {
-    private lateinit var defaultLocale: Locale
+    private lateinit var formatLocale: Locale
 
     /**
-     * The row's amount is formatted in the device's locale, so the expected
-     * text below is pinned to one: under a decimal-comma locale the same
-     * amount reads "−0,0015 DASH".
+     * The row's amount is formatted in the device's formatting locale, so the
+     * expected text below is pinned to one: under a decimal-comma locale the
+     * same amount reads "−0,0015 DASH". Only the FORMAT category is set and
+     * restored, so a JVM run with its own display locale keeps it.
      */
     @Before
     fun pinTheFormattingLocale() {
-        defaultLocale = Locale.getDefault()
-        Locale.setDefault(Locale.US)
+        formatLocale = Locale.getDefault(Locale.Category.FORMAT)
+        Locale.setDefault(Locale.Category.FORMAT, Locale.US)
     }
 
     @After
     fun restoreTheFormattingLocale() {
-        Locale.setDefault(defaultLocale)
+        Locale.setDefault(Locale.Category.FORMAT, formatLocale)
     }
 
     @Test
@@ -63,7 +64,7 @@ class ShieldedActivityKindsTest {
             )
             assertTrue(supportingText(kind, 0).startsWith("Pending. Not confirmed yet"))
             assertEquals(
-                "Failed. It did not go through; nothing left the shielded pool.",
+                "Failed. It did not go through; the fee shown was not charged.",
                 supportingText(kind, 2),
             )
             assertTrue(supportingText(kind, 3).startsWith("Unknown. Not confirmed yet"))

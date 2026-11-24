@@ -349,7 +349,7 @@ internal fun tokenUnshieldNote(status: Int): String = when (status) {
  */
 internal fun feeOnlySpendNote(status: Int): String = when (status) {
     1 -> "The amount is the fee, which is all that left the shielded pool."
-    2 -> "It did not go through; nothing left the shielded pool."
+    2 -> "It did not go through; the fee shown was not charged."
     else -> "Not confirmed yet: a shielded sync confirms it once it lands. The amount is the " +
         "fee, which is all that leaves the shielded pool."
 }

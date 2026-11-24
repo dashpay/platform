@@ -72,7 +72,7 @@ enum ShieldedActivityKindDisplay {
         case 1:
             return "The amount is the fee, which is all that left the shielded pool."
         case 2:
-            return "It did not go through; nothing left the shielded pool."
+            return "It did not go through; the fee shown was not charged."
         default:
             return "Not confirmed yet: a shielded sync confirms it once it lands. The amount is the fee, which is all that leaves the shielded pool."
         }

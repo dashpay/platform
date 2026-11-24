@@ -56,10 +56,10 @@ final class ShieldedActivityKindDisplayTests: XCTestCase {
         )
     }
 
-    func testShouldSayNothingLeftThePoolWhenFailed() {
+    func testShouldSayTheFeeWasNotChargedWhenFailed() {
         XCTAssertEqual(
             ShieldedActivityKindDisplay.feeOnlySpendNote(status: 2),
-            "It did not go through; nothing left the shielded pool."
+            "It did not go through; the fee shown was not charged."
         )
     }
 
