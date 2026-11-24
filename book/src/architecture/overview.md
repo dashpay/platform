@@ -199,12 +199,12 @@ Several smaller crates provide cross-cutting infrastructure:
 
 The versioning backbone. Defines `PlatformVersion`, `ProtocolVersion`, and the
 version tables for every consensus-critical method across DPP, Drive, and
-Drive-ABCI. Currently tracks 15 protocol versions (v1 through v15).
+Drive-ABCI. Currently tracks 16 protocol versions (v1 through v16).
 
 ```rust
 // From packages/rs-platform-version/src/version/mod.rs
 pub type ProtocolVersion = u32;
-pub const LATEST_VERSION: ProtocolVersion = PROTOCOL_VERSION_15;
+pub const LATEST_VERSION: ProtocolVersion = PROTOCOL_VERSION_16;
 pub const INITIAL_PROTOCOL_VERSION: ProtocolVersion = 1;
 ```
 
