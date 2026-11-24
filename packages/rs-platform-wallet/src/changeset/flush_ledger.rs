@@ -7,6 +7,8 @@ use std::sync::{Arc, Mutex, PoisonError, Weak};
 use crate::changeset::traits::{PersistenceError, PlatformWalletPersistence};
 use crate::changeset::PlatformWalletChangeSet;
 use crate::wallet::platform_wallet::WalletId;
+use dashcore::OutPoint;
+use dpp::prelude::Identifier;
 
 /// What this process knows of the flushes of one wallet's records.
 ///
@@ -117,6 +119,24 @@ impl FlushLedger {
         let committed = backend.commit_durably(wallet_id, changeset);
         in_flight.record(&committed);
         committed
+    }
+
+    /// Assign an asset lock's identity recipient on `backend`
+    /// ([`PlatformWalletPersistence::assign_asset_lock_identity_recipient`]),
+    /// counted as a flush: a backend writes what it buffered before the
+    /// recipient, so one that fails for good there drops what others stored,
+    /// and their callers must learn of it.
+    pub(crate) fn assign_identity_recipient(
+        &self,
+        backend: &dyn PlatformWalletPersistence,
+        wallet_id: WalletId,
+        out_point: OutPoint,
+        identity: Identifier,
+    ) -> Result<(), PersistenceError> {
+        let mut in_flight = InFlight::enter(self, !backend.store_commits_inline());
+        let assigned = backend.assign_asset_lock_identity_recipient(wallet_id, out_point, identity);
+        in_flight.record(&assigned);
+        assigned
     }
 
     /// Count one flush that failed, `for_good` when the backend dropped what
