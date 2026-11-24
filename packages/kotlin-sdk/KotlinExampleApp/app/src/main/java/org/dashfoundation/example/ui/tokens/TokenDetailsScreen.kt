@@ -39,6 +39,7 @@ import org.dashfoundation.example.services.tokens.TokenDistributionChangeRules
 import org.dashfoundation.example.services.tokens.TokenOncePerIdentityDistribution
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.LenientJson
 import org.dashfoundation.example.util.formatDate
@@ -62,7 +63,8 @@ fun TokenDetailsScreen(tokenIdHex: String, navController: NavHostController) {
     val tokenFlow = remember(tokenIdHex) {
         container.database.tokenDao().observeTokenById(tokenId)
     }
-    val token by tokenFlow.collectAsStateWithLifecycle(initialValue = null)
+    // Every emission: a rewritten row (the paused flag) is equal by id.
+    val token by tokenFlow.collectEachAsStateWithLifecycle(initialValue = null)
 
     val historyFlow = remember(tokenIdHex) {
         container.database.tokenDao().observeHistoryByToken(tokenId)

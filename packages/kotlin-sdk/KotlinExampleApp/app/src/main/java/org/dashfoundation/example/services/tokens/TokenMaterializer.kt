@@ -34,10 +34,16 @@ object TokenMaterializer {
      * Parse every token on [contract] and upsert the rows through [dao].
      * Safe to re-run (upsert by the synthetic id); parse failures on one
      * token skip that token rather than failing the batch.
+     *
+     * `isPaused` comes from the contract's `startAsPaused` only for a new
+     * row. A stored row keeps its flag, which holds the last paused status
+     * read from Platform or set by a pause or resume ([TokenDao.updatePaused]);
+     * re-importing or refreshing the contract says nothing about it.
      */
     suspend fun materialize(contract: DataContractEntity, dao: TokenDao) {
         for (token in parse(contract)) {
-            dao.upsertToken(token)
+            val stored = dao.getTokenById(token.id)
+            dao.upsertToken(if (stored != null) token.copy(isPaused = stored.isPaused) else token)
         }
     }
 

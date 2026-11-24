@@ -6,6 +6,7 @@ import org.dashfoundation.dashsdk.persistence.entities.DataContractEntity
 import org.dashfoundation.example.util.Base58
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -93,5 +94,26 @@ class TokenRulesRepairTest {
             // An older build writes the bad rows again; the next launch repairs them.
             seedOldRow()
             assertEquals(1, TokenMaterializer.rederiveRules(listOf(contract), db.tokenDao()))
+        }
+
+    @Test
+    fun `should keep the stored paused flag when the contract is materialized again`() =
+        runBlocking {
+            db.dataContractDao().upsert(contract)
+            val id = TokenMaterializer.tokenId(contractId, 0)
+
+            // A new row takes the contract's startAsPaused (absent: false).
+            TokenMaterializer.materialize(contract, db.tokenDao())
+            assertFalse(db.tokenDao().getTokenById(id)!!.isPaused)
+
+            // Paused on Platform, then the contract is re-imported or refreshed.
+            db.tokenDao().updatePaused(id, true)
+            TokenMaterializer.materialize(contract, db.tokenDao())
+            assertTrue(db.tokenDao().getTokenById(id)!!.isPaused)
+
+            // Resumed, then refreshed again.
+            db.tokenDao().updatePaused(id, false)
+            TokenMaterializer.materialize(contract, db.tokenDao())
+            assertFalse(db.tokenDao().getTokenById(id)!!.isPaused)
         }
 }

@@ -45,6 +45,7 @@ import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.toHex
 
@@ -170,7 +171,9 @@ fun rememberTokenActionContext(
     val tokenFlow = remember(tokenIdHex) {
         container.database.tokenDao().observeTokenById(tokenId)
     }
-    val token by tokenFlow.collectAsStateWithLifecycle(initialValue = null)
+    // Every emission: rows compare equal by id, and a rewritten row (the
+    // paused flag) must replace the one the form shows.
+    val token by tokenFlow.collectEachAsStateWithLifecycle(initialValue = null)
 
     val identityFlow = remember(identityIdHex) {
         container.database.identityDao().observeByIdentityId(identityId)
@@ -184,7 +187,7 @@ fun rememberTokenActionContext(
     }
     val contract by (contractFlow
         ?: remember { kotlinx.coroutines.flow.flowOf<DataContractEntity?>(null) })
-        .collectAsStateWithLifecycle(initialValue = null)
+        .collectEachAsStateWithLifecycle(initialValue = null)
 
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val walletsMap by (manager?.wallets

@@ -97,10 +97,12 @@ dependencies {
     // The framework's own org.json (android.jar has only stubs), for parsers
     // whose behaviour on JSON null is Android's.
     testImplementation(libs.robolectric)
-    // Compose UI tests under Robolectric; ComponentActivity comes from the
-    // ui-test-manifest debug dependency below.
-    testImplementation(platform(libs.compose.bom))
-    testImplementation(libs.compose.ui.test.junit4)
+    // Compose UI tests under Robolectric (src/testDebug). They launch the
+    // ComponentActivity that only the debug manifest registers, through the
+    // ui-test-manifest debug dependency below, so they run in the debug
+    // variant only.
+    testDebugImplementation(platform(libs.compose.bom))
+    testDebugImplementation(libs.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.espresso.core)
     androidTestImplementation(platform(libs.compose.bom))
