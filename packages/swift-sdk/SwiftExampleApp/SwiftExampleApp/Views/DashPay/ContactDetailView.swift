@@ -152,7 +152,7 @@ struct ContactDetailView: View {
         }
         .sheet(isPresented: $showTipSheet) {
             if let username = dpnsHint {
-                ShieldedTipSheet(identity: identity, username: username)
+                ShieldedTipSheet(identity: identity, username: username, contactIdentityId: contactId)
                     .environmentObject(walletManager)
             }
         }

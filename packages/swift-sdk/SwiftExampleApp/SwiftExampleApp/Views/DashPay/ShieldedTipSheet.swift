@@ -2,12 +2,15 @@ import SwiftDashSDK
 import SwiftUI
 
 /// Send a shielded tip to a username from `identity`'s own shielded account.
-/// With `username` set (a contact) the name is fixed; without it the user
-/// types one. The wallet parses the amount, reviews the recipient, refuses
+/// From a contact, `username` is its name and `contactIdentityId` its
+/// identity id, passed to the review and the send so the wallet refuses a
+/// name that now belongs to another identity; without them the user types a
+/// name. The wallet parses the amount, reviews the recipient, refuses
 /// what it must and sends; `ShieldedTipFlow` maps its answers to this sheet.
 struct ShieldedTipSheet: View {
     let identity: PersistentIdentity
     let username: String?
+    var contactIdentityId: Data? = nil
 
     @EnvironmentObject private var walletManager: PlatformWalletManager
     @Environment(\.dismiss) private var dismiss
@@ -20,7 +23,8 @@ struct ShieldedTipSheet: View {
                     walletManager: walletManager,
                     walletId: walletId,
                     identityId: identity.identityId,
-                    username: username
+                    username: username,
+                    contactIdentityId: contactIdentityId
                 )
             )
         } else {
@@ -46,14 +50,17 @@ struct ShieldedTipSheet: View {
         walletManager: PlatformWalletManager,
         walletId: Data,
         identityId: Data,
-        username: String?
+        username: String?,
+        contactIdentityId: Data?
     ) -> ShieldedTipFlow {
         ShieldedTipFlow(
             username: username,
+            contactIdentityId: contactIdentityId,
             actions: ShieldedTipFlow.Actions(
                 parseAmount: { try PlatformWalletManager.parseShieldedTipAmount($0) },
-                review: { name in
-                    try await walletManager.reviewShieldedTip(walletId: walletId, username: name)
+                review: { name, contactId in
+                    try await walletManager.reviewShieldedTip(
+                        walletId: walletId, username: name, contactIdentityId: contactId)
                 },
                 send: { tip in
                     try await walletManager.sendShieldedTip(
@@ -61,6 +68,7 @@ struct ShieldedTipSheet: View {
                         source: .identity(identityId),
                         username: tip.username,
                         expectedRecipient: tip.review.recipient,
+                        contactIdentityId: tip.contactIdentityId,
                         amount: tip.amount,
                         memo: tip.memo,
                         resolver: MnemonicResolver()
@@ -343,6 +351,7 @@ private struct ShieldedTipSheetContent: View {
         case .submitted: return "checkmark.circle.fill"
         case .mayHaveGoneThrough: return "questionmark.circle.fill"
         case .earlierTipPending: return "hourglass"
+        case .recipientMismatch: return "person.crop.circle.badge.exclamationmark"
         case .notSent: return "xmark.octagon.fill"
         }
     }
@@ -351,7 +360,7 @@ private struct ShieldedTipSheetContent: View {
         switch outcome {
         case .submitted: return .green
         case .mayHaveGoneThrough, .earlierTipPending: return .orange
-        case .notSent: return .red
+        case .recipientMismatch, .notSent: return .red
         }
     }
 

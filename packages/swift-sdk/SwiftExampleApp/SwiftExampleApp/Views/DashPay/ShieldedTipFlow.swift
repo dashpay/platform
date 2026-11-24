@@ -9,10 +9,10 @@ import SwiftDashSDK
 // the screens show and which controls they offer.
 //
 // Restart safety is the wallet's too. After a relaunch an unresolved earlier
-// tip comes back from the review (`unresolved`) and from a send (code 84), so
+// tip comes back from the review (`unresolved`) and from a send (code 85), so
 // the app keeps no record of its own of a tip in flight.
 //
-// Neither code 84 nor `unresolved` says what became of the earlier payment:
+// Neither code 85 nor `unresolved` says what became of the earlier payment:
 // it may be this same tip and may pay the recipient, and the wallet stops
 // refusing once a sync resolves it, whether it executed or was proven unable
 // to. The app cannot tell which attempt that payment was, so its outcome is
@@ -25,10 +25,13 @@ enum ShieldedTipSendOutcome: Equatable {
     /// The tip may have left the wallet and may still execute (code 18 or
     /// 20). Never offered again: a shielded sync resolves it.
     case mayHaveGoneThrough(String)
-    /// Refused with nothing sent by this attempt (code 84): another tip is
+    /// Refused with nothing sent by this attempt (code 85): another tip is
     /// being sent, or an earlier payment to the recipient is unresolved and
     /// may pay them. Never offered again, as for 18 and 20.
     case earlierTipPending(String)
+    /// Not sent because the name of the contact the tip started from now
+    /// belongs to another identity (code 86). The message is the wallet's.
+    case recipientMismatch(String)
     /// Not sent (code 7, a recipient that changed since the review, a memo
     /// the wallet refused, and every other error). The message is the
     /// wallet's.
@@ -42,6 +45,8 @@ enum ShieldedTipSendOutcome: Equatable {
                 return .mayHaveGoneThrough(walletError.localizedDescription)
             case .shieldedTipPending:
                 return .earlierTipPending(walletError.localizedDescription)
+            case .shieldedTipRecipientMismatch:
+                return .recipientMismatch(walletError.localizedDescription)
             default:
                 break
             }
@@ -54,6 +59,7 @@ enum ShieldedTipSendOutcome: Equatable {
         case .submitted: return "Tip sent"
         case .mayHaveGoneThrough: return "This tip may have gone through"
         case .earlierTipPending: return "Not sent: an earlier payment is unresolved"
+        case .recipientMismatch: return "Not sent: this name moved to another identity"
         case .notSent: return "Not sent"
         }
     }
@@ -68,6 +74,8 @@ enum ShieldedTipSendOutcome: Equatable {
         case .earlierTipPending:
             return "Nothing was sent by this attempt. "
                 + ShieldedTipPresentation.unresolvedCaution
+        case .recipientMismatch:
+            return "Nothing was sent. " + ShieldedTipPresentation.recipientMismatchMessage
         case .notSent:
             return "Nothing was sent."
         }
@@ -77,7 +85,8 @@ enum ShieldedTipSendOutcome: Equatable {
     var detail: String? {
         switch self {
         case .submitted: return nil
-        case .mayHaveGoneThrough(let detail), .earlierTipPending(let detail), .notSent(let detail):
+        case .mayHaveGoneThrough(let detail), .earlierTipPending(let detail),
+             .recipientMismatch(let detail), .notSent(let detail):
             return detail
         }
     }
@@ -88,6 +97,7 @@ enum ShieldedTipSendOutcome: Equatable {
         case .submitted: return "dashpay.tip.outcome.submitted"
         case .mayHaveGoneThrough: return "dashpay.tip.outcome.mayHaveGoneThrough"
         case .earlierTipPending: return "dashpay.tip.outcome.pending"
+        case .recipientMismatch: return "dashpay.tip.outcome.recipientMismatch"
         case .notSent: return "dashpay.tip.outcome.notSent"
         }
     }
@@ -143,6 +153,22 @@ enum ShieldedTipPresentation {
     /// The review's notice when the wallet marks it unresolved.
     static let unresolvedMessage = "The wallet refuses a tip to this recipient for now. "
         + unresolvedCaution
+
+    /// Why a tip started from a contact was refused with code 86, and where
+    /// a tip to the name's new owner starts.
+    static let recipientMismatchMessage = "This name now belongs to another identity, not "
+        + "this contact. To tip the name's new owner, start from the name with Tip a "
+        + "username on your profile, not from this contact."
+
+    /// The text a failed review shows: the wallet's message, after the
+    /// explanation for a name that moved away from the contact (code 86).
+    static func reviewFailureText(_ error: Error) -> String {
+        if let walletError = error as? PlatformWalletError,
+           case .shieldedTipRecipientMismatch = walletError {
+            return recipientMismatchMessage + " " + walletError.localizedDescription
+        }
+        return error.localizedDescription
+    }
 
     static let noUsernameMessage = "A shielded tip is sent to a username, and no username "
         + "is known for this contact on this device."
@@ -259,6 +285,10 @@ struct ShieldedTipReviewed: Equatable {
     let amount: UInt64
     let memo: String?
     let review: ShieldedTipReview
+    /// The contact the tip started from, passed to the send as to the
+    /// review so the wallet refuses a name that moved to another identity;
+    /// nil for a typed username.
+    var contactIdentityId: Data? = nil
 }
 
 /// The tip sheet's state: amount, memo, review, send and its outcome. The
@@ -269,8 +299,9 @@ final class ShieldedTipFlow: ObservableObject {
     struct Actions {
         /// `PlatformWalletManager.parseShieldedTipAmount`.
         var parseAmount: @MainActor (String) throws -> UInt64
-        /// `PlatformWalletManager.reviewShieldedTip` for the wallet.
-        var review: @MainActor (String) async throws -> ShieldedTipReview
+        /// `PlatformWalletManager.reviewShieldedTip` for the wallet, with the
+        /// username and the contact's identity id (nil for a typed name).
+        var review: @MainActor (String, Data?) async throws -> ShieldedTipReview
         /// `PlatformWalletManager.sendShieldedTip` from the identity the
         /// user acts as, with the reviewed recipient.
         var send: @MainActor (ShieldedTipReviewed) async throws -> Void
@@ -304,15 +335,20 @@ final class ShieldedTipFlow: ObservableObject {
 
     /// The username came with the entry point (a contact) and is not edited.
     let usernameIsFixed: Bool
+    /// The contact the tip starts from, or nil for a typed username.
+    let contactIdentityId: Data?
 
     private let actions: Actions
     /// Bumped by every input change and review, so a review that finishes
     /// after the inputs changed is dropped.
     private var generation = 0
 
-    init(username: String?, actions: Actions) {
+    /// `contactIdentityId` is the contact's identity id when the tip starts
+    /// from a contact, whose `username` it then carries.
+    init(username: String?, contactIdentityId: Data? = nil, actions: Actions) {
         self.username = username ?? ""
         self.usernameIsFixed = username != nil
+        self.contactIdentityId = contactIdentityId
         self.actions = actions
     }
 
@@ -375,13 +411,14 @@ final class ShieldedTipFlow: ObservableObject {
         let memoText = memo.isEmpty ? nil : memo
         phase = .reviewing
         do {
-            let review = try await actions.review(name)
+            let review = try await actions.review(name, contactIdentityId)
             guard current == generation else { return }
-            phase = .reviewed(
-                ShieldedTipReviewed(username: name, amount: credits, memo: memoText, review: review))
+            phase = .reviewed(ShieldedTipReviewed(
+                username: name, amount: credits, memo: memoText, review: review,
+                contactIdentityId: contactIdentityId))
         } catch {
             guard current == generation else { return }
-            phase = .reviewFailed(error.localizedDescription)
+            phase = .reviewFailed(ShieldedTipPresentation.reviewFailureText(error))
         }
     }
 

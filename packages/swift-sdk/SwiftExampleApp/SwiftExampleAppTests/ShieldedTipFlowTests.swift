@@ -6,10 +6,12 @@ import SwiftDashSDK
 /// parses the amount, reviews the recipient and decides each refusal; these
 /// tests drive `ShieldedTipFlow` with closures in place of the native calls
 /// and check what it shows and offers: a tip that may have gone through (18,
-/// 20) or that met an unresolved earlier payment (84) is never offered
+/// 20) or that met an unresolved earlier payment (85) is never offered
 /// again, and only a shielded sync is offered after it; every other error is
 /// "not sent" with the wallet's message; an unresolved review keeps Send off
-/// and steers nobody to send again; and the paying identity's balance shows
+/// and steers nobody to send again; a tip from a contact passes the
+/// contact's identity id to the review and the send, and a name that moved
+/// to another identity (86) is explained; and the paying identity's balance shows
 /// the wallet's state, keeps the last one through a `walletOperation` with
 /// a backoff, and ignores a read that finishes after a newer one.
 @MainActor
@@ -23,6 +25,7 @@ final class ShieldedTipFlowTests: XCTestCase {
     // XCTest makes a fresh instance for each test, so these start empty.
     private var sent: [ShieldedTipReviewed] = []
     private var reviewedNames: [String] = []
+    private var reviewedContacts: [Data?] = []
     private var parsedTexts: [String] = []
 
     // MARK: - Helpers
@@ -37,6 +40,7 @@ final class ShieldedTipFlowTests: XCTestCase {
     /// anything else with `refusal`.
     private func makeFlow(
         username: String? = "alice",
+        contactIdentityId: Data? = nil,
         refusal: String = "the wallet refused this amount",
         review: ShieldedTipReview? = nil,
         reviewError: Error? = nil,
@@ -45,14 +49,16 @@ final class ShieldedTipFlowTests: XCTestCase {
         let reviewResult = review ?? self.review()
         return ShieldedTipFlow(
             username: username,
+            contactIdentityId: contactIdentityId,
             actions: ShieldedTipFlow.Actions(
                 parseAmount: { [unowned self] text in
                     parsedTexts.append(text)
                     if text == "1" { return 100_000_000_000 }
                     throw PlatformWalletError.invalidParameter(refusal)
                 },
-                review: { [unowned self] name in
+                review: { [unowned self] name, contactId in
                     reviewedNames.append(name)
+                    reviewedContacts.append(contactId)
                     if let reviewError { throw reviewError }
                     return reviewResult
                 },
@@ -178,6 +184,65 @@ final class ShieldedTipFlowTests: XCTestCase {
             var errorDescription: String? { "something else" }
         }
         XCTAssertEqual(ShieldedTipSendOutcome.of(Other()), .notSent("something else"))
+    }
+
+    func testShouldPassTheContactsIdentityIdToTheReviewAndTheSend() async {
+        let contactId = Data(repeating: 9, count: 32)
+        let flow = makeFlow(username: "bob", contactIdentityId: contactId)
+        await reviewAndSend(flow)
+
+        XCTAssertEqual(reviewedNames, ["bob"])
+        XCTAssertEqual(reviewedContacts, [contactId])
+        XCTAssertEqual(sent.count, 1)
+        XCTAssertEqual(sent.first?.contactIdentityId, contactId)
+        XCTAssertEqual(sent.first?.username, "bob")
+    }
+
+    func testShouldPassNoContactForATypedUsername() async {
+        let flow = makeFlow(username: nil)
+        flow.username = "carol"
+        await reviewAndSend(flow)
+
+        XCTAssertEqual(reviewedContacts, [nil])
+        XCTAssertEqual(sent.count, 1)
+        XCTAssertNil(sent.first?.contactIdentityId)
+    }
+
+    func testShouldExplainANameThatMovedAwayFromTheContactWhenSending() async {
+        let error = PlatformWalletError.shieldedTipRecipientMismatch("the name belongs to another identity")
+        let flow = makeFlow(contactIdentityId: Data(repeating: 9, count: 32), sendError: error)
+        await reviewAndSend(flow)
+
+        guard case .finished(let outcome) = flow.phase else {
+            return XCTFail("expected a finished send, got \(flow.phase)")
+        }
+        XCTAssertEqual(outcome, .recipientMismatch(error.localizedDescription))
+        XCTAssertEqual(outcome.identifier, "dashpay.tip.outcome.recipientMismatch")
+        XCTAssertEqual(outcome.detail, error.localizedDescription)
+        XCTAssertEqual(
+            outcome.message,
+            "Nothing was sent. This name now belongs to another identity, not this contact. "
+                + "To tip the name's new owner, start from the name with Tip a username on "
+                + "your profile, not from this contact.")
+        XCTAssertFalse(flow.offersShieldedSync)
+        XCTAssertFalse(flow.offersTipAgain)
+        XCTAssertFalse(flow.canSend)
+    }
+
+    func testShouldExplainANameThatMovedAwayFromTheContactWhenReviewing() async {
+        let error = PlatformWalletError.shieldedTipRecipientMismatch("the name belongs to another identity")
+        let flow = makeFlow(contactIdentityId: Data(repeating: 9, count: 32), reviewError: error)
+        flow.amountText = "1"
+        await flow.review()
+
+        XCTAssertEqual(flow.phase, .reviewFailed(
+            ShieldedTipPresentation.recipientMismatchMessage + " " + error.localizedDescription))
+        XCTAssertTrue(ShieldedTipPresentation.recipientMismatchMessage
+            .contains("now belongs to another identity, not this contact"))
+        XCTAssertTrue(ShieldedTipPresentation.recipientMismatchMessage
+            .contains("start from the name"))
+        XCTAssertFalse(flow.canSend)
+        XCTAssertTrue(sent.isEmpty)
     }
 
     func testShouldSendTheReviewedRecipientAmountAndMemoFromTheReview() async {
@@ -322,7 +387,7 @@ final class ShieldedTipFlowTests: XCTestCase {
             username: "alice",
             actions: ShieldedTipFlow.Actions(
                 parseAmount: { _ in 1 },
-                review: { [recipient, gate] _ in
+                review: { [recipient, gate] _, _ in
                     await withCheckedContinuation { gate.pending = $0 }
                     return ShieldedTipReview(recipient: recipient, change: .new, unresolved: false)
                 },
