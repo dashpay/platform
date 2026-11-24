@@ -64,6 +64,12 @@ public struct ContractPreviewState: Identifiable {
     /// this alive for the lifetime of the preview sheet — dropping it
     /// invalidates the row.
     public let container: ModelContainer
+    /// `AppState.sdkGeneration` of the SDK the contract was fetched
+    /// through. The moderation hub opened from the preview is scoped
+    /// to it, so after an SDK rebuild the hub asks the user to reopen
+    /// rather than act on the new connection for a contract read from
+    /// the old one.
+    public let sdkGeneration: Int
 }
 
 /// Shared download + parse + persist pipeline for data contracts.
@@ -287,9 +293,12 @@ public enum ContractDownloader {
     /// registration that `downloadAndPersistContract` performs is
     /// intentionally skipped here so a previewed-but-not-saved
     /// contract never leaks into transition validation.
+    /// `sdkGeneration` is `AppState.sdkGeneration` of `sdk`, kept on the
+    /// returned preview.
     public static func previewContractInMemory(
         contractId: String,
         sdk: SDK,
+        sdkGeneration: Int,
         network: Network
     ) async throws -> ContractPreviewState {
         let trimmedId = contractId.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -373,7 +382,8 @@ public enum ContractDownloader {
         return ContractPreviewState(
             contractIdBase58: contractIdBase58,
             contract: persistent,
-            container: container
+            container: container,
+            sdkGeneration: sdkGeneration
         )
     }
 
