@@ -11,6 +11,7 @@ use crate::changeset::dashpay_backfill::DashPayBackfillRecord;
 use crate::changeset::identity_manager_start_state::IdentityManagerStartState;
 use crate::wallet::asset_lock::tracked::TrackedAssetLock;
 use dashcore::{OutPoint, Transaction};
+use key_wallet::account::AccountType;
 use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet::Wallet;
 
@@ -68,4 +69,14 @@ pub struct ClientWalletStartState {
     /// rescan sweep then behaves exactly as before and writes one. See
     /// [`DashPayBackfillRecord`].
     pub dashpay_backfill: DashPayBackfillRecord,
+    /// Funding accounts whose restored pool could not reach a persisted row:
+    /// no key at or below the index may fund an asset lock. See
+    /// [`AddressPoolRestoreStats::funding_issuance_floors`](crate::manager::AddressPoolRestoreStats::funding_issuance_floors).
+    ///
+    /// A persister that restores pools with
+    /// [`restore_account_address_pools`](crate::manager::restore_account_address_pools)
+    /// must forward the returned stats' `funding_issuance_floors` here; an
+    /// empty map drops that guard. Leave it empty only when the restore
+    /// reported no floors or no address rows were restored.
+    pub funding_issuance_floors: BTreeMap<AccountType, u32>,
 }

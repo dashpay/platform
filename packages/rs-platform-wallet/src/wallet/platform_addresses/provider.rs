@@ -296,7 +296,7 @@ impl PlatformPaymentAddressProvider {
                     };
 
                     let mut account_state = PerAccountPlatformAddressState::new(account_xpub);
-                    for (&index, addr_info) in &managed.addresses.addresses {
+                    for (&index, addr_info) in managed.addresses.addresses() {
                         let Ok(p2pkh) = PlatformP2PKHAddress::from_address(&addr_info.address)
                         else {
                             continue;
@@ -377,7 +377,7 @@ impl PlatformPaymentAddressProvider {
                     for (&index, &p2pkh) in account_state.addresses.iter() {
                         pending.insert((wallet_id, account_index, index), p2pkh);
                     }
-                    for (&index, addr_info) in &managed.addresses.addresses {
+                    for (&index, addr_info) in managed.addresses.addresses() {
                         let Ok(p2pkh) = PlatformP2PKHAddress::from_address(&addr_info.address)
                         else {
                             continue;
@@ -465,7 +465,7 @@ impl PlatformPaymentAddressProvider {
                     let Some(account_state) = state.get_mut(&account_index) else {
                         continue;
                     };
-                    for (&index, addr_info) in &managed.addresses.addresses {
+                    for (&index, addr_info) in managed.addresses.addresses() {
                         let Ok(p2pkh) = PlatformP2PKHAddress::from_address(&addr_info.address)
                         else {
                             continue;
@@ -697,7 +697,7 @@ impl AddressProvider for PlatformPaymentAddressProvider {
 
             account
                 .addresses
-                .addresses
+                .addresses()
                 .iter()
                 .filter_map(|(&index, addr_info)| {
                     let key = (wallet_id, account_index, index);
