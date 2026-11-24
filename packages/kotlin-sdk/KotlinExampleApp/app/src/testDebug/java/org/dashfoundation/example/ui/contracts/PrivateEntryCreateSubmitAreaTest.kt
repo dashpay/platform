@@ -1,7 +1,5 @@
 package org.dashfoundation.example.ui.contracts
 
-import android.content.ComponentName
-import androidx.activity.ComponentActivity
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -30,11 +28,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.ExternalResource
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.RuntimeEnvironment
-import org.robolectric.Shadows.shadowOf
 
 /**
  * What the Create Entry screen leaves in view after a tap (TEST_PLAN DOC-19). The button is the
@@ -49,18 +44,7 @@ import org.robolectric.Shadows.shadowOf
 @RunWith(RobolectricTestRunner::class)
 class PrivateEntryCreateSubmitAreaTest {
 
-    /** This module's unit tests read no merged manifest, so the host activity is declared here. */
-    @get:Rule(order = 0)
-    val hostActivity = object : ExternalResource() {
-        override fun before() {
-            val app = RuntimeEnvironment.getApplication()
-            shadowOf(app.packageManager).addActivityIfNotPresent(
-                ComponentName(app.packageName, ComponentActivity::class.java.name),
-            )
-        }
-    }
-
-    @get:Rule(order = 1)
+    @get:Rule
     val compose = createComposeRule()
 
     private var isSubmitting by mutableStateOf(false)
