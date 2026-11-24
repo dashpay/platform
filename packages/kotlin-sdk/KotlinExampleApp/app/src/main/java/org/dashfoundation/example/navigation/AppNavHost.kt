@@ -20,6 +20,7 @@ import org.dashfoundation.example.ui.contracts.GroupDetailScreen
 import org.dashfoundation.example.ui.contracts.LocalDataContractsScreen
 import org.dashfoundation.example.ui.contracts.PlatformBlocksScreen
 import org.dashfoundation.example.ui.contracts.PrivateDocumentEntriesScreen
+import org.dashfoundation.example.ui.contracts.PrivateDocumentEntryCreateScreen
 import org.dashfoundation.example.ui.contracts.RegisterContractSourceScreen
 import org.dashfoundation.example.ui.contracts.QueriesListScreen
 import org.dashfoundation.example.ui.contracts.QueryDetailScreen
@@ -575,6 +576,11 @@ fun AppNavHost(
         composable<PrivateDocumentEntries> { entry ->
             val route = entry.toRoute<PrivateDocumentEntries>()
             PrivateDocumentEntriesScreen(route.contractIdHex, route.typeName, navController)
+        }
+
+        composable<PrivateDocumentEntryCreate> { entry ->
+            val route = entry.toRoute<PrivateDocumentEntryCreate>()
+            PrivateDocumentEntryCreateScreen(route.contractIdHex, route.typeName, navController)
         }
 
         composable<BlockExplorer> { PlatformBlocksScreen(navController) }

@@ -525,6 +525,13 @@ import kotlinx.serialization.Serializable
 @Serializable data class PrivateDocumentEntries(val contractIdHex: String, val typeName: String)
 
 /**
+ * Create one entry of a private document type, paid from the shielded pool (protocol version
+ * 15, type 29, ← `PrivateDocumentEntryCreateView.swift`). Reached from a private type's detail
+ * screen.
+ */
+@Serializable data class PrivateDocumentEntryCreate(val contractIdHex: String, val typeName: String)
+
+/**
  * Block explorer: blocks with their state transitions, and one identity's transitions in a
  * block (← `PlatformBlocksView.swift`, protocol version 15). Reached from the Platform Queries
  * list.

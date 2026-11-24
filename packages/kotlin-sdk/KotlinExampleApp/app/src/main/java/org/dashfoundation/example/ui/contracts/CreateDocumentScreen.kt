@@ -628,6 +628,11 @@ internal fun numericHint(prop: JsonObject): String {
  * objects rather than a JSON string. A typed array is built from
  * [listValues] by [typedArrayJson]. Throws on invalid `object` JSON and on a
  * typed array element, count or repeat consensus would refuse.
+ *
+ * With [trimStrings] false a string property is sent exactly as typed, as
+ * Swift's `CreateDocumentView.propertiesJSON` sends it: only an empty field
+ * is left out. The private entry create uses it, as the entry is sealed with
+ * the text the sender sees.
  */
 internal fun buildPropertiesJson(
     properties: JsonObject,
@@ -636,6 +641,7 @@ internal fun buildPropertiesJson(
     boolValues: Map<String, Boolean>,
     touchedBools: Set<String>,
     listValues: Map<String, List<String>> = emptyMap(),
+    trimStrings: Boolean = true,
 ): String = buildJsonObject {
     for ((name, propEl) in properties) {
         val prop = propEl as? JsonObject ?: continue
@@ -693,7 +699,8 @@ internal fun buildPropertiesJson(
             }
 
             else -> {
-                val raw = textValues[name]?.trim().orEmpty()
+                val typed = textValues[name].orEmpty()
+                val raw = if (trimStrings) typed.trim() else typed
                 if (raw.isNotEmpty()) put(name, raw)
             }
         }

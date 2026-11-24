@@ -2066,10 +2066,10 @@
           "reason": "PrivateDocuments.swift wraps the create (PlatformWalletManager.createPrivateDocumentEntry), the recipient key choices and the fee preview; Rust picks the sender's encryption key, checks the recipient key, the properties against the type's schema and the entry's capacity, seals inside the Keychain mnemonic resolver, and pays as a DashPay private contact request is paid (notes reserved, the transition saved for a redrive before the broadcast). The example app creates one entry from the private type's detail screen (TEST_PLAN DOC-19), anonymous or with a deniable MAC; a signed entry is not offered. The Rust preparation, sealing, refusals, fee preview and the seal-then-read round trip and the FFI marshalling are unit-tested; no gate records the Swift call, the screen, or the spend's recovery after a restart against a protocol version 15 network."
         },
         "kotlin": {
-          "sdk": "unsupported",
-          "example_app": "unsupported",
-          "restart": "not_applicable",
-          "reason": "Not ported: no JNI binding for platform_wallet_manager_create_private_document_entry or its key and fee helpers, and the example app has no create screen for a private document type."
+          "sdk": "partial",
+          "example_app": "partial",
+          "restart": "required",
+          "reason": "PlatformWalletManagerPrivateDocuments.kt wraps the create (PlatformWalletManager.createPrivateDocumentEntry), the recipient key choices and the fee preview through rs-unified-sdk-jni's PrivateDocumentCreateNative, which converts the arguments, calls the FFI once and copies the result into a Java array; Kotlin decodes it one to one (JVM decoding tests). Rust picks the sender's encryption key, checks the recipient key, the properties against the type's schema and the entry's capacity, seals inside the manager's mnemonic resolver, and pays as a DashPay private contact request is paid (notes reserved, the transition saved for a redrive before the broadcast). KotlinExampleApp creates one entry from the private type's detail screen (TEST_PLAN DOC-19), anonymous or with a deniable MAC, with the Swift accessibility ids as test tags; a signed entry is not offered. The create runs on the application scope past the screen, under a secure window, and a create that may have gone through is shown as such and that exact request is not sent again in the process (JVM-tested); the link shows only on a build with shielded support. PrivateDocumentsFfiTest gains the symbol, descriptor and refusal checks of the three exports but has not run on a device yet, and no gate records the call, the screen, or the spend's recovery after a restart against a protocol version 15 network."
         }
       },
       "verification": [
@@ -2117,6 +2117,53 @@
           "host": "swift",
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
+          "id": "DOC-19",
+          "covers_restart": false
+        },
+        {
+          "host": "shared",
+          "kind": "unit",
+          "file": "packages/rs-unified-sdk-jni/src/private_document_create.rs",
+          "id": "should_write_the_commitment_then_the_sender_key_id_little_endian",
+          "command": "cargo test -p rs-unified-sdk-jni --lib private_document_create",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/PrivateDocumentCreateDecodingTest.kt",
+          "id": "shouldDecodeTheCommitmentAndALittleEndianSenderKeyId",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*PrivateDocumentCreateDecodingTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/PrivateDocumentCreateDecodingTest.kt",
+          "id": "shouldDecodeTheRecipientKeyPairsInOrder",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*PrivateDocumentCreateDecodingTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/contracts/PrivateDocumentEntryCreateTest.kt",
+          "id": "shouldShowACreateThatMayHaveGoneThroughAsUnconfirmedNeverAsFailed",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*PrivateDocumentEntryCreateTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/services/shielded/PrivateDocumentEntryCreateCoordinatorTest.kt",
+          "id": "should never send again a request that may have gone through, even after a refused one",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest --tests '*PrivateDocumentEntryCreateCoordinatorTest'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "DOC-19",
           "covers_restart": false
         }
