@@ -340,7 +340,7 @@ fun SendShieldedTipScreen(
             if (sending) {
                 FormSection(title = "Sending") {
                     Row(
-                        modifier = Modifier.fillMaxWidth().testTag("dashpay.tip.sending"),
+                        modifier = Modifier.fillMaxWidth().testTag("dashpay.tip.busy"),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -398,13 +398,13 @@ fun SendShieldedTipScreen(
                         LabeledContent(
                             "Identity's shielded balance",
                             identityBalanceRead.text,
-                            modifier = Modifier.testTag("dashpay.tip.identityBalance"),
+                            modifier = Modifier.testTag("dashpay.tip.balance"),
                         )
                         if (identityBalance == ShieldedIdentityBalance.Unverified) {
                             TextButton(
                                 onClick = ::prepareIdentityAccount,
                                 enabled = !busy && manager != null && walletId != null,
-                                modifier = Modifier.testTag("dashpay.tip.prepareIdentityAccount"),
+                                modifier = Modifier.testTag("dashpay.tip.balance.prepare"),
                             ) { Text("Prepare this identity's shielded account") }
                         }
                     }
@@ -448,7 +448,7 @@ fun SendShieldedTipScreen(
                     it,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.testTag("dashpay.tip.error"),
+                    modifier = Modifier.testTag("dashpay.tip.review.error"),
                 )
             }
 
@@ -482,8 +482,10 @@ fun SendShieldedTipScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(ShieldedTipMessages.RECIPIENT_CHANGED)
-                    previous?.let { RecipientLines("Previously", it, manager) }
-                    RecipientLines("Now", changed.review.recipient, manager)
+                    previous?.let {
+                        RecipientLines("Previously", it, manager, tagPrefix = "dashpay.tip.change.previous")
+                    }
+                    RecipientLines("Now", changed.review.recipient, manager, tagPrefix = "dashpay.tip.recipient")
                 }
             },
             confirmButton = {
@@ -528,8 +530,12 @@ private fun TipReviewSection(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             LabeledContent("To", tip.username)
-            RecipientLines("Recipient", tip.review.recipient, manager)
-            LabeledContent("Amount", formatCreditsExact(tip.credits))
+            RecipientLines("Recipient", tip.review.recipient, manager, tagPrefix = "dashpay.tip.recipient")
+            LabeledContent(
+                "Amount",
+                formatCreditsExact(tip.credits),
+                modifier = Modifier.testTag("dashpay.tip.review.amount"),
+            )
             LabeledContent("From", sourceLabel)
             Text(
                 ShieldedTipMessages.changeText(tip.review.change),
@@ -551,7 +557,7 @@ private fun TipReviewSection(
                 OutlinedButton(
                     onClick = onSyncNow,
                     enabled = syncEnabled && manager != null,
-                    modifier = Modifier.fillMaxWidth().testTag("dashpay.tip.syncNow"),
+                    modifier = Modifier.fillMaxWidth().testTag("dashpay.tip.sync"),
                 ) { Text("Sync shielded now") }
                 CheckNowStatusLine(checkStatus)
             }
@@ -559,18 +565,32 @@ private fun TipReviewSection(
     }
 }
 
-/** A recipient's identity id and shielded address, selectable for comparison. */
+/**
+ * A recipient's identity id and shielded address, selectable for comparison,
+ * tagged `<tagPrefix>.identity` and `<tagPrefix>.address` as Swift's
+ * `ShieldedTipSheet` identifies them.
+ */
 @Composable
-private fun RecipientLines(label: String, recipient: ShieldedTipRecipient, manager: PlatformWalletManager?) {
+private fun RecipientLines(
+    label: String,
+    recipient: ShieldedTipRecipient,
+    manager: PlatformWalletManager?,
+    tagPrefix: String,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(label, style = MaterialTheme.typography.labelMedium)
         SelectionContainer {
             Column {
-                Text(Base58.encode(recipient.identityId), style = MaterialTheme.typography.bodySmall)
+                Text(
+                    Base58.encode(recipient.identityId),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag("$tagPrefix.identity"),
+                )
                 Text(
                     manager?.let { DashAddress.encodeOrchard(recipient.address, it.network) }
                         ?: recipient.address.toHex(),
                     style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.testTag("$tagPrefix.address"),
                 )
             }
         }
@@ -599,6 +619,7 @@ private fun TipOutcomeSection(
                         "Tip submitted",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.testTag("dashpay.tip.outcome.submitted"),
                     )
                     Text(ShieldedTipMessages.submittedText(credits))
                 }
@@ -607,19 +628,20 @@ private fun TipOutcomeSection(
                         "May have gone through",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.testTag("dashpay.tip.outcome.mayHaveGoneThrough"),
                     )
                     Text(ShieldedTipMessages.mayHaveGoneThroughText(credits))
                     OutlinedButton(
                         onClick = onCheckNow,
                         enabled = canCheck && checkStatus != CheckNowStatus.Checking,
-                        modifier = Modifier.fillMaxWidth().testTag("dashpay.tip.outcome.syncNow"),
+                        modifier = Modifier.fillMaxWidth().testTag("dashpay.tip.sync"),
                     ) { Text("Sync shielded now") }
                     CheckNowStatusLine(checkStatus)
                 }
             }
             OutlinedButton(
                 onClick = onDone,
-                modifier = Modifier.fillMaxWidth().testTag("dashpay.tip.outcome.done"),
+                modifier = Modifier.fillMaxWidth().testTag("dashpay.tip.done"),
             ) { Text("Done") }
         }
     }

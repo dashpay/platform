@@ -310,7 +310,7 @@ fun ContactDetailScreen(
                                     )
                                 }
                             }
-                            .testTag("dashpay.detail.sendShieldedTip"),
+                            .testTag("dashpay.tip.contactEntry"),
                         leadingContent = { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null) },
                         headlineContent = {
                             Text(
@@ -323,7 +323,13 @@ fun ContactDetailScreen(
                             )
                         },
                         supportingContent = if (tipUsername == null) {
-                            { Text(ShieldedTipMessages.NO_USERNAME, style = MaterialTheme.typography.bodySmall) }
+                            {
+                                Text(
+                                    ShieldedTipMessages.NO_USERNAME,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.testTag("dashpay.tip.contactNoUsername"),
+                                )
+                            }
                         } else {
                             null
                         },
