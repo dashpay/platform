@@ -398,6 +398,24 @@ final class ShieldedTipFlow: ObservableObject {
 
     var offersTipAgain: Bool { phase == .finished(.submitted) }
 
+    /// Accessibility id of the "Sync shielded now" button, which names the
+    /// state it shows in (as the Kotlin tip screen does): beside an
+    /// unresolved review, or with a send outcome. Nil when it is not shown.
+    var syncNowIdentifier: String? {
+        guard offersShieldedSync else { return nil }
+        if case .finished = phase { return "dashpay.tip.outcome.syncNow" }
+        return "dashpay.tip.syncNow"
+    }
+
+    /// Accessibility id of the progress row: a review or a send running.
+    var progressIdentifier: String? {
+        switch phase {
+        case .reviewing: return "dashpay.tip.reviewing"
+        case .sending: return "dashpay.tip.sending"
+        default: return nil
+        }
+    }
+
     // MARK: Actions
 
     func review() async {
