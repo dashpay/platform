@@ -382,7 +382,8 @@ struct ShieldedTokenSpendTarget: Identifiable {
 /// credit pool notes that pay the fee, proves, broadcasts and records the
 /// activity. The form only reads the recipient (a pasted bech32m Orchard
 /// address, or this account's own one) and the amount, and shows Rust's fee
-/// preview and answer.
+/// preview and answer. Send stays off until Rust has quoted the typed amount
+/// (`ShieldedTokenSpendFeeLine`), and stays off on Rust's refusal there.
 ///
 /// The amount is typed in the token's smallest unit, as a whole number, and
 /// passed to Rust unchanged. The app's cached token decimals can be stale or
@@ -407,6 +408,7 @@ struct ShieldedTokenSendSheet: View {
     @State private var resultMessage: String?
     @State private var resultMayHaveGoneThrough = false
     @State private var errorMessage: String?
+    @State private var feeState: ShieldedTokenSpendFeeState = .idle
 
     private var balance: ShieldedTokenPoolBalance { target.balance }
 
@@ -453,6 +455,7 @@ struct ShieldedTokenSendSheet: View {
 
     private var canSubmit: Bool {
         !isSubmitting && resultMessage == nil && recipientRaw != nil && amount != nil
+            && feeState.allowsSubmit(amount: amount)
     }
 
     var body: some View {
@@ -514,7 +517,9 @@ struct ShieldedTokenSendSheet: View {
                         balance: balance,
                         kind: .shieldedTransfer,
                         amount: amount,
-                        accessibilityId: "shieldedTokenSend.fee"
+                        isPaused: isSubmitting || resultMessage != nil,
+                        accessibilityId: "shieldedTokenSend.fee",
+                        state: $feeState
                     )
                 } header: {
                     Text("Amount (smallest unit)")
@@ -607,12 +612,48 @@ struct ShieldedTokenSendSheet: View {
 
 // MARK: - Fee preview
 
+/// What a token pool spend form knows about its fee. Every value is Rust's:
+/// `quoted` holds its preview and `refused` its message, each for the amount
+/// it was asked for.
+enum ShieldedTokenSpendFeeState: Equatable {
+    case idle
+    case loading
+    case quoted(amount: UInt64, preview: ShieldedTokenSpendPreview)
+    case refused(amount: UInt64, message: String)
+
+    /// The state to show when a quote for `amount` starts. An answer already
+    /// held for the same amount is kept, so a re-ask after a shielded sync
+    /// refreshes in place; any other state becomes `loading`, and a `nil`
+    /// amount becomes `idle`.
+    func startingQuote(for amount: UInt64?) -> ShieldedTokenSpendFeeState {
+        guard let amount else { return .idle }
+        switch self {
+        case .quoted(let held, _) where held == amount:
+            return self
+        case .refused(let held, _) where held == amount:
+            return self
+        default:
+            return .loading
+        }
+    }
+
+    /// The form may submit `amount` only once Rust has quoted exactly that
+    /// amount.
+    func allowsSubmit(amount: UInt64?) -> Bool {
+        guard let amount, case .quoted(let quoted, _) = self else { return false }
+        return quoted == amount
+    }
+}
+
 /// The fee line of a token pool spend form, from Rust's local preview
 /// (`walletManager.shieldedTokenSpendPreview`): the fee in credits and the
 /// notes the spend would take, or Rust's refusal when the spend would be
 /// refused on the wallet's notes. Asks again a moment after the amount stops
 /// changing, and after a shielded sync of the wallet or a clear of the local
-/// shielded state (a newer ask cancels the pending one). Never computes a fee.
+/// shielded state (a newer ask cancels the pending one). Writes the answer
+/// to `state`, which the form reads to keep its submit button off until Rust
+/// has quoted the typed amount. While `isPaused` it keeps what it shows and
+/// asks nothing; leaving the pause asks again. Never computes a fee.
 struct ShieldedTokenSpendFeeLine: View {
     let walletId: Data
     let balance: ShieldedTokenPoolBalance
@@ -620,43 +661,46 @@ struct ShieldedTokenSpendFeeLine: View {
     /// The amount in the token's smallest unit; `nil` while the field does
     /// not parse.
     let amount: UInt64?
+    /// A spend is in flight or was sent: it holds the notes, so a preview
+    /// would report them as missing.
+    let isPaused: Bool
     let accessibilityId: String
+    @Binding var state: ShieldedTokenSpendFeeState
 
     @EnvironmentObject private var walletManager: PlatformWalletManager
     @EnvironmentObject private var shieldedService: ShieldedService
-    @State private var state: FeeState = .idle
     /// Bumped by the wallet-scoped shielded sync completions and local-state
     /// clears that also refresh the balance list: the notes Rust prices from
     /// may have changed, so the preview is asked again.
     @State private var localStateRevision: UInt64 = 0
 
-    /// What the preview task is keyed by: a new amount or a new local state
-    /// cancels the pending ask and starts another.
+    /// What the preview task is keyed by: a new amount, a new local state or
+    /// a change of pause cancels the pending ask and starts another.
     private struct QuoteKey: Equatable {
         let amount: UInt64?
         let localStateRevision: UInt64
-    }
-
-    private enum FeeState: Equatable {
-        case idle
-        case loading
-        case quoted(ShieldedTokenSpendPreview)
-        case refused(String)
+        let isPaused: Bool
     }
 
     var body: some View {
-        content
-            .task(id: QuoteKey(amount: amount, localStateRevision: localStateRevision)) {
-                await quote()
-            }
-            .onReceive(walletManager.$lastShieldedSyncEvent.dropFirst()) { event in
-                if ShieldedSyncEventScope.covers(event, walletId: walletId) {
-                    localStateRevision &+= 1
-                }
-            }
-            .onReceive(shieldedService.$localStateClearCount.dropFirst()) { _ in
+        // The task and the receivers sit on one stable row. On the switch
+        // itself each branch is its own Form row, so every state change
+        // would replace the row, restart the task and ask again, forever.
+        VStack(alignment: .leading, spacing: 0) {
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .task(id: QuoteKey(amount: amount, localStateRevision: localStateRevision, isPaused: isPaused)) {
+            await quote()
+        }
+        .onReceive(walletManager.$lastShieldedSyncEvent.dropFirst()) { event in
+            if ShieldedSyncEventScope.covers(event, walletId: walletId) {
                 localStateRevision &+= 1
             }
+        }
+        .onReceive(shieldedService.$localStateClearCount.dropFirst()) { _ in
+            localStateRevision &+= 1
+        }
     }
 
     @ViewBuilder
@@ -675,7 +719,7 @@ struct ShieldedTokenSpendFeeLine: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier(accessibilityId)
-        case .quoted(let preview):
+        case .quoted(_, let preview):
             VStack(alignment: .leading, spacing: 2) {
                 LabeledContent("Fee", value: formatCreditsAsDash(preview.fee))
                 Text("Spends \(preview.tokenNotes) token \(preview.tokenNotes == 1 ? "note" : "notes"); \(preview.feeNotes) credit \(preview.feeNotes == 1 ? "note pays" : "notes pay") the fee.")
@@ -684,7 +728,7 @@ struct ShieldedTokenSpendFeeLine: View {
             }
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier(accessibilityId)
-        case .refused(let message):
+        case .refused(_, let message):
             Text(message)
                 .font(.caption)
                 .foregroundColor(.orange)
@@ -693,11 +737,9 @@ struct ShieldedTokenSpendFeeLine: View {
     }
 
     private func quote() async {
-        guard let amount else {
-            state = .idle
-            return
-        }
-        state = .loading
+        guard !isPaused else { return }
+        state = state.startingQuote(for: amount)
+        guard let amount else { return }
         // Debounce: a newer amount cancels this task during the wait.
         do {
             try await Task.sleep(nanoseconds: 400_000_000)
@@ -714,10 +756,10 @@ struct ShieldedTokenSpendFeeLine: View {
                 amount: amount
             )
             guard !Task.isCancelled else { return }
-            state = .quoted(preview)
+            state = .quoted(amount: amount, preview: preview)
         } catch {
             guard !Task.isCancelled else { return }
-            state = .refused(error.localizedDescription)
+            state = .refused(amount: amount, message: error.localizedDescription)
         }
     }
 }
@@ -779,6 +821,7 @@ struct ShieldedTokenSpendSourceSection: View {
 /// `Data.identifier(fromBase58:)`) and the amount, and shows Rust's fee
 /// preview and answer. The amount is a whole number of the token's smallest
 /// unit, passed to Rust unchanged, exactly as in `ShieldedTokenSendSheet`.
+/// Unshield stays off until Rust has quoted the typed amount, as Send does.
 struct ShieldedTokenUnshieldSheet: View {
     let walletId: Data
     let target: ShieldedTokenSpendTarget
@@ -798,6 +841,7 @@ struct ShieldedTokenUnshieldSheet: View {
     @State private var resultMessage: String?
     @State private var resultMayHaveGoneThrough = false
     @State private var errorMessage: String?
+    @State private var feeState: ShieldedTokenSpendFeeState = .idle
 
     init(
         walletId: Data,
@@ -848,6 +892,7 @@ struct ShieldedTokenUnshieldSheet: View {
 
     private var canSubmit: Bool {
         !isSubmitting && resultMessage == nil && recipientId != nil && amount != nil
+            && feeState.allowsSubmit(amount: amount)
     }
 
     var body: some View {
@@ -917,7 +962,9 @@ struct ShieldedTokenUnshieldSheet: View {
                         balance: balance,
                         kind: .unshield,
                         amount: amount,
-                        accessibilityId: "shieldedTokenUnshield.fee"
+                        isPaused: isSubmitting || resultMessage != nil,
+                        accessibilityId: "shieldedTokenUnshield.fee",
+                        state: $feeState
                     )
                 } header: {
                     Text("Amount (smallest unit)")
