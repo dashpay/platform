@@ -230,8 +230,8 @@ public final class PersistentAssetLock {
     /// funding types and for unbound locks that record no identity, such as
     /// one rebuilt from the chain; a resume of those is refused
     /// (`assetLockRecipientUnknown`). Only the SDK writes it, when the lock is
-    /// built or assigned a recipient (`assignTopUpRecipient`, which refuses a
-    /// lock rebuilt from the chain).
+    /// built or assigned a recipient (`assignTopUpRecipient`, which assigns a
+    /// lock rebuilt from the chain only with `acknowledgeUnknownConsumption`).
     ///
     /// Default `nil` on the column keeps SwiftData's lightweight migration
     /// safe for rows that pre-date this field. Lands in the live, not yet

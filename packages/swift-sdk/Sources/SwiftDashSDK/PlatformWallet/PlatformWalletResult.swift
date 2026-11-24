@@ -335,6 +335,11 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// so no resume pays it. Nothing was submitted or paid. Not retryable as
     /// is: assign it a recipient the user chooses, then resume it.
     case errorAssetLockRecipientUnknown = 81
+    /// A lock rebuilt from the chain may already have been used on Platform,
+    /// which the wallet cannot tell, so it was not assigned a recipient.
+    /// Nothing was stored or paid. Assign it again only after telling the
+    /// user, with `acknowledgeUnknownConsumption`.
+    case errorAssetLockConsumptionUnknown = 82
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -490,6 +495,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorIdentityLookupFailed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_RECIPIENT_UNKNOWN:
             self = .errorAssetLockRecipientUnknown
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_CONSUMPTION_UNKNOWN:
+            self = .errorAssetLockConsumptionUnknown
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -704,8 +711,16 @@ public enum PlatformWalletError: LocalizedError {
     /// lock rebuilt from the chain (`RecoveredFromChain`, for example after a
     /// restore from the seed) is not flagged: Platform may have consumed it
     /// already, so assigning it is refused with
-    /// `assetLockConsumptionUnknown` and it stays unpaid.
+    /// `assetLockConsumptionUnknown` unless the user was told so and the
+    /// assignment passes `acknowledgeUnknownConsumption`.
     case assetLockRecipientUnknown(String)
+    /// Code 82: the lock was rebuilt from the chain, so Platform may already
+    /// have used it, which the wallet cannot tell; it was not assigned a
+    /// recipient and nothing was stored or paid. Tell the user, then assign
+    /// it with `acknowledgeUnknownConsumption`: if Platform already used the
+    /// outpoint, the resume is refused there (`assetLockAlreadyConsumed`) and
+    /// nothing is paid twice.
+    case assetLockConsumptionUnknown(String)
     /// The contact requests with that identity came or went privately
     /// (protocol version 15): a public request to it, in reply or as a
     /// rotation, would publish the relationship, so the public accept and
@@ -1014,7 +1029,7 @@ public enum PlatformWalletError: LocalizedError {
              .assetLockNotTracked(let m), .assetLockAlreadyConsumed(let m),
              .assetLockFundingMismatch(let m), .assetLockInsufficientFunds(let m),
              .assetLockTooManyInputs(let m), .assetLockRecipientMismatch(let m),
-             .assetLockRecipientUnknown(let m),
+             .assetLockRecipientUnknown(let m), .assetLockConsumptionUnknown(let m),
              .privateContactRequestNeedsPrivateReply(let m),
              .shieldedBuildRequired(let m), .protocolVersionNotActive(let m),
              .privateContactRequestPending(let m), .privateContactPaymentsNotRestored(let m),
@@ -1141,6 +1156,7 @@ public enum PlatformWalletError: LocalizedError {
         case .errorAssetLockTooManyInputs: self = .assetLockTooManyInputs(detail)
         case .errorAssetLockRecipientMismatch: self = .assetLockRecipientMismatch(detail)
         case .errorAssetLockRecipientUnknown: self = .assetLockRecipientUnknown(detail)
+        case .errorAssetLockConsumptionUnknown: self = .assetLockConsumptionUnknown(detail)
         case .errorPrivateContactRequestNeedsPrivateReply:
             self = .privateContactRequestNeedsPrivateReply(detail)
         case .errorShieldedBuildRequired:

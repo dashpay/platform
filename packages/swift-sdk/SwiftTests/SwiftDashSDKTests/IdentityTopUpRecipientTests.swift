@@ -40,6 +40,25 @@ final class IdentityTopUpRecipientTests: XCTestCase {
         }
     }
 
+    // MARK: - Code 82
+
+    func testShouldMapCode82ToAssetLockConsumptionUnknown() {
+        XCTAssertEqual(PlatformWalletResultCode.errorAssetLockConsumptionUnknown.rawValue, 82)
+        XCTAssertEqual(
+            PlatformWalletResultCode(ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_CONSUMPTION_UNKNOWN),
+            .errorAssetLockConsumptionUnknown)
+        let ffi = PlatformWalletFFIResult(
+            code: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_CONSUMPTION_UNKNOWN,
+            message: strdup("may already be used"))
+        XCTAssertThrowsError(try ffi.check()) { error in
+            guard case PlatformWalletError.assetLockConsumptionUnknown(let detail) = error else {
+                return XCTFail("expected assetLockConsumptionUnknown, got \(error)")
+            }
+            XCTAssertEqual(detail, "may already be used")
+            XCTAssertEqual(error.localizedDescription, "may already be used")
+        }
+    }
+
     // MARK: - Built outpoint
 
     func testShouldReportNoOutPointWhenTheFFILeftItZero() {

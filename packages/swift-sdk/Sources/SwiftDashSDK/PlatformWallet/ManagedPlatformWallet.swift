@@ -5995,12 +5995,22 @@ extension ManagedPlatformWallet {
     /// first: one Platform does not know is `identityNotFound` and nothing is
     /// assigned. A lock already recording another identity is
     /// `assetLockRecipientMismatch`; the same identity again is a no-op,
-    /// which also retries a failed store. A lock rebuilt from the chain whose
-    /// Platform use is unknown is `assetLockAlreadyConsumed`.
+    /// which also retries a failed store; a failed Platform lookup is
+    /// `identityLookupFailed`. On any error nothing was stored, and any
+    /// identity may be assigned again.
+    ///
+    /// A lock rebuilt from the chain (`RecoveredFromChain`, not flagged
+    /// `identityRecipientUnassigned`) may already have been used on Platform,
+    /// which the wallet cannot tell. It is assigned only with
+    /// `acknowledgeUnknownConsumption`, after telling the user so, and is
+    /// `assetLockConsumptionUnknown` otherwise. Platform uses an outpoint
+    /// once: if it already used this one, the resume is refused there with
+    /// `assetLockAlreadyConsumed`, and nothing is paid twice.
     public func assignTopUpRecipient(
         outPointTxid: Data,
         outPointVout: UInt32,
-        identityId: Data
+        identityId: Data,
+        acknowledgeUnknownConsumption: Bool = false
     ) async throws {
         guard outPointTxid.count == 32 else {
             throw PlatformWalletError.invalidParameter(
@@ -6016,7 +6026,12 @@ extension ManagedPlatformWallet {
         try await Task.detached(priority: .userInitiated) {
             var outPoint = ManagedPlatformWallet.outPointFFI(txid: outPointTxid, vout: outPointVout)
             var idTuple = ManagedPlatformWallet.byteTuple32(identityId)
-            try platform_wallet_assign_identity_top_up_recipient(handle, &outPoint, &idTuple).check()
+            try platform_wallet_assign_identity_top_up_recipient(
+                handle,
+                &outPoint,
+                &idTuple,
+                acknowledgeUnknownConsumption
+            ).check()
         }.value
     }
 
