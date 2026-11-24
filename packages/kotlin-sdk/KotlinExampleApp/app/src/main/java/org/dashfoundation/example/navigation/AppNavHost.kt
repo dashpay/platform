@@ -20,6 +20,7 @@ import org.dashfoundation.example.ui.contracts.GroupDetailScreen
 import org.dashfoundation.example.ui.contracts.LocalDataContractsScreen
 import org.dashfoundation.example.ui.contracts.PlatformBlocksScreen
 import org.dashfoundation.example.ui.contracts.PrivateDocumentEntriesScreen
+import org.dashfoundation.example.ui.contracts.PrivateDocumentEntryCreateScreen
 import org.dashfoundation.example.ui.contracts.RegisterContractSourceScreen
 import org.dashfoundation.example.ui.contracts.QueriesListScreen
 import org.dashfoundation.example.ui.contracts.QueryDetailScreen
@@ -83,6 +84,9 @@ import org.dashfoundation.example.ui.funding.AddressFundProgressScreen
 import org.dashfoundation.example.ui.funding.FundFromAssetLockScreen
 import org.dashfoundation.example.ui.shielded.SeedShieldedPoolScreen
 import org.dashfoundation.example.ui.shielded.ShieldedActivityScreen
+import org.dashfoundation.example.ui.shielded.ShieldedTokenPoolsScreen
+import org.dashfoundation.example.ui.shielded.ShieldedTokenSendScreen
+import org.dashfoundation.example.ui.shielded.ShieldedTokenUnshieldScreen
 import org.dashfoundation.example.ui.shielded.ShieldedFundProgressScreen
 import org.dashfoundation.example.ui.shielded.ShieldedFundScreen
 import org.dashfoundation.example.ui.settings.DataManagementScreen
@@ -338,6 +342,20 @@ fun AppNavHost(
             ShieldedActivityScreen(entry.toRoute<ShieldedActivity>().walletIdHex, navController)
         }
 
+        composable<ShieldedTokens> { entry ->
+            ShieldedTokenPoolsScreen(entry.toRoute<ShieldedTokens>().walletIdHex, navController)
+        }
+
+        composable<ShieldedTokenSend> { entry ->
+            val route = entry.toRoute<ShieldedTokenSend>()
+            ShieldedTokenSendScreen(route.walletIdHex, route.tokenIdHex, route.account, navController)
+        }
+
+        composable<ShieldedTokenUnshield> { entry ->
+            val route = entry.toRoute<ShieldedTokenUnshield>()
+            ShieldedTokenUnshieldScreen(route.walletIdHex, route.tokenIdHex, route.account, navController)
+        }
+
         // ── Contracts graph ────────────────────────────────────────────
 
         composable<ContractsHome> { ContractsHomeScreen(navController) }
@@ -558,6 +576,11 @@ fun AppNavHost(
         composable<PrivateDocumentEntries> { entry ->
             val route = entry.toRoute<PrivateDocumentEntries>()
             PrivateDocumentEntriesScreen(route.contractIdHex, route.typeName, navController)
+        }
+
+        composable<PrivateDocumentEntryCreate> { entry ->
+            val route = entry.toRoute<PrivateDocumentEntryCreate>()
+            PrivateDocumentEntryCreateScreen(route.contractIdHex, route.typeName, navController)
         }
 
         composable<BlockExplorer> { PlatformBlocksScreen(navController) }

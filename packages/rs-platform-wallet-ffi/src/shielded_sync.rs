@@ -743,6 +743,14 @@ pub unsafe extern "C" fn platform_wallet_manager_configure_shielded(
 /// THIS manager instance — a wiring fault that must surface (and make the host
 /// fail closed) rather than report a phantom success while the on-disk tree is
 /// left untouched.
+///
+/// Returns `ErrorShieldedOperationInProgress` (84) at once, without waiting,
+/// while a shielded operation is in flight (a bind, an account being added, a
+/// token pool transfer or unshield, a DashPay profile write or a tip address
+/// preparation, or another Clear). Nothing was changed: the sync loop keeps
+/// running and no registration, note or tree leaf was touched, so the host
+/// **must not** wipe its own rows. Call again once the operation has
+/// finished.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_clear(
     handle: Handle,
@@ -759,20 +767,97 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_clear(
     });
     let result = unwrap_option_or_return!(option);
     if let Err(e) = result {
-        // A drain that did not complete is NOT an ordinary store failure:
-        // it means callback-capable work may still be running, which the
-        // host must be able to tell apart (it keeps its callback context
-        // alive rather than just retrying the wipe). Route that one case
-        // through the typed conversion and keep the generic mapping for
-        // every other failure.
-        if matches!(
-            e,
-            platform_wallet::PlatformWalletError::ShutdownIncomplete(_)
-        ) {
-            return PlatformWalletFFIResult::from(e);
-        }
-        return map_shielded_error(e, "clear_shielded");
+        return map_clear_error(e);
     }
+    PlatformWalletFFIResult::ok()
+}
+
+/// The result [`platform_wallet_manager_shielded_clear`] reports a failed
+/// Clear with.
+///
+/// Two failures keep their own code, because a host acts on each
+/// differently from a store failure. A drain that did not complete
+/// (`ErrorShutdownIncomplete`) means callback-capable work may still be
+/// running, so the host keeps its callback context alive instead of only
+/// retrying the wipe. A Clear refused while a shielded operation is in flight
+/// (`ErrorShieldedOperationInProgress`) changed nothing, so the host keeps
+/// everything as it was and offers the Clear again. Every other failure
+/// keeps the generic mapping.
+fn map_clear_error(error: PlatformWalletError) -> PlatformWalletFFIResult {
+    if matches!(
+        error,
+        PlatformWalletError::ShutdownIncomplete(_)
+            | PlatformWalletError::ShieldedOperationInProgress
+    ) {
+        return PlatformWalletFFIResult::from(error);
+    }
+    map_shielded_error(error, "clear_shielded")
+}
+
+// ---------------------------------------------------------------------------
+// Ordinary shielded accounts
+// ---------------------------------------------------------------------------
+
+/// Read the ordinary (non-identity) shielded accounts bound on `wallet_id`,
+/// in ascending order: the list a host passes to
+/// [`platform_wallet_manager_bind_shielded`] to bind the wallet again after
+/// [`platform_wallet_manager_shielded_clear`]. A Clear drops the
+/// coordinator's registration, not the keys the wallet handle holds, so the
+/// accounts read here are the ones bound before it. Identity accounts are
+/// left out: a bind adds them itself and refuses them from a host.
+///
+/// On success up to `accounts_capacity` entries are written to
+/// `out_accounts` and their number to `*out_count`. A wallet never bound on
+/// this manager reports `*out_count = 0`. A bind accepts at most 64
+/// accounts, so a 64-entry buffer always holds the list of a wallet bound
+/// through this FFI. A list longer than `accounts_capacity` returns
+/// `ErrorInvalidParameter` naming both numbers and writes nothing. An unknown
+/// wallet returns `ErrorWalletOperation` and leaves both outputs untouched.
+///
+/// # Safety
+/// - `wallet_id_bytes` must point at 32 readable bytes.
+/// - `out_accounts` must point at `accounts_capacity` writable `u32`s.
+/// - `out_count` must be writable.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_ordinary_accounts(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    out_accounts: *mut u32,
+    accounts_capacity: usize,
+    out_count: *mut usize,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(out_accounts);
+    check_ptr!(out_count);
+
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(async {
+            match manager.get_wallet(&wallet_id).await {
+                Some(wallet) => Some(wallet.shielded_ordinary_account_indices().await),
+                None => None,
+            }
+        })
+    });
+    let Some(accounts) = unwrap_option_or_return!(option) else {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("wallet not found: {}", hex::encode(wallet_id)),
+        );
+    };
+    if accounts.len() > accounts_capacity {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!(
+                "the wallet has {} ordinary shielded accounts, more than the buffer's capacity of {accounts_capacity}",
+                accounts.len()
+            ),
+        );
+    }
+    std::ptr::copy_nonoverlapping(accounts.as_ptr(), out_accounts, accounts.len());
+    *out_count = accounts.len();
     PlatformWalletFFIResult::ok()
 }
 
@@ -1086,6 +1171,36 @@ mod sync_result_tests {
 #[cfg(test)]
 mod recovery_error_tests {
     use super::*;
+
+    /// The exported Clear reports a refusal during a shielded operation and
+    /// an incomplete drain by their own codes, and any other failure as a
+    /// wallet operation failure. Flattening the refusal to the generic code
+    /// would lose the typed retry outcome in Swift and Kotlin.
+    #[test]
+    fn should_keep_the_typed_codes_of_a_refused_and_an_undrained_clear() {
+        for (error, expected, raw) in [
+            (
+                PlatformWalletError::ShieldedOperationInProgress,
+                PlatformWalletFFIResultCode::ErrorShieldedOperationInProgress,
+                84,
+            ),
+            (
+                PlatformWalletError::ShutdownIncomplete("a pass did not drain".into()),
+                PlatformWalletFFIResultCode::ErrorShutdownIncomplete,
+                27,
+            ),
+            (
+                PlatformWalletError::ShieldedStoreError("purge failed".into()),
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                6,
+            ),
+        ] {
+            let mut result = map_clear_error(error);
+            assert_eq!(result.code, expected);
+            assert_eq!(result.code as u32, raw);
+            unsafe { platform_wallet_ffi_result_free(&mut result) };
+        }
+    }
 
     #[test]
     fn should_preserve_recovery_errors_when_configuring_binding_or_syncing() {
@@ -2201,5 +2316,104 @@ mod identity_account_tests {
         assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
         assert_eq!(out_address, [0u8; 43]);
         unsafe { platform_wallet_ffi_result_free(&mut r) };
+    }
+
+    /// Bind `accounts` on `wallet_id` through the exported bind.
+    fn bind_through_the_export(handle: Handle, wallet_id: &[u8; 32], accounts: &[u32]) {
+        let (_vtable, mut resolver) = test_resolver();
+        let mut r = unsafe {
+            platform_wallet_manager_bind_shielded(
+                handle,
+                wallet_id.as_ptr(),
+                &mut resolver,
+                accounts.as_ptr(),
+                accounts.len(),
+            )
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::Success);
+        unsafe { platform_wallet_ffi_result_free(&mut r) };
+    }
+
+    /// Read the ordinary accounts into a 64-entry buffer, the size a host
+    /// passes, prefilled with a sentinel so untouched entries show.
+    fn ordinary_accounts(
+        handle: Handle,
+        wallet_id: &[u8; 32],
+        capacity: usize,
+    ) -> (PlatformWalletFFIResult, [u32; 64], usize) {
+        let mut out_accounts = [u32::MAX; 64];
+        let mut out_count = usize::MAX;
+        let r = unsafe {
+            platform_wallet_manager_shielded_ordinary_accounts(
+                handle,
+                wallet_id.as_ptr(),
+                out_accounts.as_mut_ptr(),
+                capacity,
+                &mut out_count,
+            )
+        };
+        (r, out_accounts, out_count)
+    }
+
+    /// A Clear drops the registration, not the keys the wallet handle holds,
+    /// so the export still reports the accounts bound before it, which the
+    /// host then passes back to the bind.
+    #[test]
+    fn should_return_the_ordinary_accounts_after_clear_through_the_export() {
+        let (handle, wallet_id, path) = configured_manager();
+        bind_through_the_export(handle, &wallet_id, &[2, 1]);
+
+        let mut cleared = unsafe { platform_wallet_manager_shielded_clear(handle) };
+        assert_eq!(cleared.code, PlatformWalletFFIResultCode::Success);
+        unsafe { platform_wallet_ffi_result_free(&mut cleared) };
+
+        let (mut r, out_accounts, out_count) = ordinary_accounts(handle, &wallet_id, 64);
+        assert_eq!(r.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(&out_accounts[..out_count], &[1, 2]);
+        unsafe { platform_wallet_ffi_result_free(&mut r) };
+        destroy_manager(handle, path);
+    }
+
+    #[test]
+    fn should_return_no_accounts_for_an_unbound_wallet() {
+        let (handle, wallet_id, path) = configured_manager();
+        let (mut r, out_accounts, out_count) = ordinary_accounts(handle, &wallet_id, 64);
+        assert_eq!(r.code, PlatformWalletFFIResultCode::Success);
+        assert_eq!(out_count, 0);
+        assert_eq!(out_accounts, [u32::MAX; 64]);
+        unsafe { platform_wallet_ffi_result_free(&mut r) };
+        destroy_manager(handle, path);
+    }
+
+    #[test]
+    fn should_refuse_an_unknown_wallet() {
+        let (handle, _wallet_id, path) = configured_manager();
+        let (mut r, out_accounts, out_count) = ordinary_accounts(handle, &[0x77u8; 32], 64);
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorWalletOperation);
+        assert!(message_of(&r).contains("wallet not found"));
+        assert_eq!(out_count, usize::MAX);
+        assert_eq!(out_accounts, [u32::MAX; 64]);
+        unsafe { platform_wallet_ffi_result_free(&mut r) };
+        destroy_manager(handle, path);
+    }
+
+    /// A list longer than the buffer is refused whole, not truncated: a
+    /// truncated list bound again would drop the accounts left out.
+    #[test]
+    fn should_refuse_a_buffer_too_small_for_the_ordinary_accounts() {
+        let (handle, wallet_id, path) = configured_manager();
+        bind_through_the_export(handle, &wallet_id, &[0, 1, 2]);
+
+        let (mut r, out_accounts, out_count) = ordinary_accounts(handle, &wallet_id, 2);
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+        let message = message_of(&r);
+        assert!(
+            message.contains("has 3 ") && message.contains("capacity of 2"),
+            "{message}"
+        );
+        assert_eq!(out_count, usize::MAX);
+        assert_eq!(out_accounts, [u32::MAX; 64]);
+        unsafe { platform_wallet_ffi_result_free(&mut r) };
+        destroy_manager(handle, path);
     }
 }

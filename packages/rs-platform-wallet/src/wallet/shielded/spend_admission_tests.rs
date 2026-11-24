@@ -586,7 +586,8 @@ async fn should_hold_removal_and_clear_admission_while_a_shield_runs() {
 
 /// Several shield-class spends that waited for the same operation all take
 /// their turn once it finishes: one of them at a time waits for the
-/// single-flight guard, so they do not hand it to each other for ever.
+/// single-flight guard, so they do not hand it to each other for ever. Each
+/// is polled until it waits before the operation in flight finishes.
 #[tokio::test]
 async fn should_run_every_shield_class_spend_that_waited_for_another() {
     let dir = tempfile::tempdir().expect("temporary shielded store");
@@ -595,32 +596,28 @@ async fn should_run_every_shield_class_spend_that_waited_for_another() {
     let wallet = add_bound_wallet(&manager, &coordinator).await;
 
     let in_flight = wallet.shield_guard.lock().await;
-    let queued: Vec<_> = [
+    let mut queued: Vec<_> = [
         CreditPoolSpend::IdentityTopUp,
         CreditPoolSpend::IdentityTopUp,
         CreditPoolSpend::ShieldFromAccount,
         CreditPoolSpend::ShieldFromIdentity,
     ]
     .into_iter()
-    .map(|spend| {
-        let wallet = Arc::clone(&wallet);
-        let coordinator = Arc::clone(&coordinator);
-        tokio::spawn(async move { spend_from_credit_pool(spend, &wallet, &coordinator).await })
-    })
+    .map(|spend| Box::pin(spend_from_credit_pool(spend, &wallet, &coordinator)))
     .collect();
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    assert!(
-        queued.iter().all(|spend| !spend.is_finished()),
-        "all wait for the operation in flight"
-    );
+    for (index, spend) in queued.iter_mut().enumerate() {
+        assert!(
+            futures::poll!(spend.as_mut()).is_pending(),
+            "queued spend {index} waits for the operation in flight"
+        );
+    }
     assert!(!coordinator.has_admitted_operation());
 
     drop(in_flight);
-    for (index, spend) in queued.into_iter().enumerate() {
-        let returned = tokio::time::timeout(REACHED, spend)
-            .await
-            .unwrap_or_else(|_| panic!("queued spend {index} never took its turn"))
-            .expect("spend task");
+    let returned = tokio::time::timeout(REACHED, futures::future::join_all(queued))
+        .await
+        .expect("every queued spend takes its turn");
+    for (index, returned) in returned.into_iter().enumerate() {
         assert!(
             !matches!(
                 returned,
@@ -631,4 +628,94 @@ async fn should_run_every_shield_class_spend_that_waited_for_another() {
         );
     }
     assert!(!coordinator.has_admitted_operation());
+}
+
+/// A Clear issued while a credit pool spend runs is refused at once and
+/// changes nothing; it neither waits for the spend nor holds it up. Once the
+/// spend has returned, the Clear goes through.
+#[tokio::test]
+async fn should_refuse_a_clear_while_a_credit_pool_spend_runs() {
+    let dir = tempfile::tempdir().expect("temporary shielded store");
+    let coordinator = coordinator_at(dir.path());
+    let manager = manager();
+    let wallet = add_bound_wallet(&manager, &coordinator).await;
+
+    let store = coordinator.store().write().await;
+    let transfer = {
+        let wallet = Arc::clone(&wallet);
+        let coordinator = Arc::clone(&coordinator);
+        tokio::spawn(async move {
+            spend_from_credit_pool(CreditPoolSpend::Transfer, &wallet, &coordinator).await
+        })
+    };
+    admitted(&coordinator, "transfer").await;
+    let refused = tokio::time::timeout(REACHED, coordinator.clear())
+        .await
+        .expect("a Clear does not wait for the spend");
+    assert!(
+        matches!(
+            refused,
+            Err(PlatformWalletError::ShieldedOperationInProgress)
+        ),
+        "{refused:?}"
+    );
+    assert!(!transfer.is_finished(), "the transfer waits at the store");
+
+    drop(store);
+    let returned = tokio::time::timeout(REACHED, transfer)
+        .await
+        .expect("the refused Clear does not hold the spend up")
+        .expect("transfer task");
+    assert!(
+        !matches!(returned, Err(PlatformWalletError::ShieldedNotBound)),
+        "the refused Clear changed nothing: {returned:?}"
+    );
+    coordinator
+        .clear()
+        .await
+        .expect("a Clear goes through once the spend has returned");
+}
+
+/// A Clear is not refused for a shield-class spend that is only waiting its
+/// turn, and a spend that queues after that Clear is told at once that the
+/// wallet is not bound, not when the operation in flight finishes. The one
+/// that was already waiting is told when its turn comes.
+#[tokio::test]
+async fn should_tell_a_spend_queued_after_a_clear_that_the_wallet_is_not_bound() {
+    let dir = tempfile::tempdir().expect("temporary shielded store");
+    let coordinator = coordinator_at(dir.path());
+    let manager = manager();
+    let wallet = add_bound_wallet(&manager, &coordinator).await;
+
+    let in_flight = wallet.shield_guard.lock().await;
+    let mut waiting = Box::pin(spend_from_credit_pool(
+        CreditPoolSpend::IdentityTopUp,
+        &wallet,
+        &coordinator,
+    ));
+    assert!(futures::poll!(waiting.as_mut()).is_pending());
+    coordinator
+        .clear()
+        .await
+        .expect("a Clear is not refused for a spend that has not started");
+
+    let late = tokio::time::timeout(
+        REACHED,
+        spend_from_credit_pool(CreditPoolSpend::IdentityTopUp, &wallet, &coordinator),
+    )
+    .await
+    .expect("a spend queued after the Clear does not wait for its turn");
+    assert!(
+        matches!(late, Err(PlatformWalletError::ShieldedNotBound)),
+        "{late:?}"
+    );
+
+    drop(in_flight);
+    let waited = tokio::time::timeout(REACHED, waiting)
+        .await
+        .expect("the waiting spend takes its turn");
+    assert!(
+        matches!(waited, Err(PlatformWalletError::ShieldedNotBound)),
+        "{waited:?}"
+    );
 }

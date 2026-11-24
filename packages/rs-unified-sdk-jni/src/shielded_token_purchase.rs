@@ -36,7 +36,7 @@ const AVAILABILITY_ON_ERROR: jint = -1;
 
 /// Read a required 32-byte id; throws and returns `None` on JVM null, a JNI
 /// error or the wrong length. `field` names the argument in the message.
-fn read_id32(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Option<[u8; 32]> {
+pub(crate) fn read_id32(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Option<[u8; 32]> {
     if arr.is_null() {
         throw_sdk_exception(env, 1, &format!("{field} byte[] was null"));
         return None;
@@ -64,7 +64,7 @@ fn read_id32(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Option<[u8; 32]
 
 /// A token's position in its contract as the `u16` the FFI takes; throws and
 /// returns `None` outside `0..=65535`.
-fn read_token_position(env: &mut JNIEnv, position: jint) -> Option<u16> {
+pub(crate) fn read_token_position(env: &mut JNIEnv, position: jint) -> Option<u16> {
     match u16::try_from(position) {
         Ok(position) => Some(position),
         Err(_) => {

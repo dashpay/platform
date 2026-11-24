@@ -79,4 +79,16 @@ data class AssetLockEntity(
     val createdAt: Date = Date(),
     /** Swift names this `updatedAt` (not `lastUpdated`). */
     val updatedAt: Date = Date(),
+    /**
+     * The raw 43-byte Orchard recipient a shielded funding
+     * (`fundingTypeRaw == 5`) was built to pay (Swift
+     * `PersistentAssetLock.shieldedRecipientRaw43`), or null for other
+     * funding types and for shielded locks tracked before the recipient was
+     * recorded. Written by `onPersistAssetLockShieldedRecipient` in the same
+     * round as the row, never changed afterwards, and kept through later
+     * status upserts and on the terminal row: a resume after a restart pays
+     * this recipient and refuses another. Last, so positional calls that
+     * pass the timestamps keep compiling.
+     */
+    val shieldedRecipientRaw43: ByteArray? = null,
 )

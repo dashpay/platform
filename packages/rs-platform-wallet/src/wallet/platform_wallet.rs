@@ -62,7 +62,8 @@ use {
     },
     super::shielded::tips::PreparedTipAccount,
     super::shielded::{
-        FileBackedShieldedStore, NetworkShieldedCoordinator, OrchardKeySet, ShieldedStore,
+        is_shielded_identity_account, FileBackedShieldedStore, NetworkShieldedCoordinator,
+        OrchardKeySet, ShieldedStore,
     },
     crate::{
         AutoAcceptProofSource, ContactCryptoProvider, ContactRequest, EstablishedContact,
@@ -1000,8 +1001,10 @@ impl PlatformWallet {
     /// removal stores nothing. A caller must not hold the gate.
     ///
     /// Holds the coordinator's operation admission the same way, so a
-    /// Clear waits for a bind in flight and the host, which wipes its own
-    /// rows once the Clear returns, wipes the viewing keys the bind stored.
+    /// Clear is refused while a bind is in flight
+    /// ([`PlatformWalletError::ShieldedOperationInProgress`]): the host,
+    /// which wipes its own rows once a Clear returns, cannot wipe them and
+    /// then have the bind store its viewing keys after the wipe.
     /// A bind that waited for a Clear registers the wallet and restores
     /// nothing: the rows it reads may be the ones the host is about to
     /// wipe. A caller must not hold the admission either.
@@ -1194,7 +1197,7 @@ impl PlatformWallet {
         // Keep the generation alive from attachment validation through the
         // persisted snapshot read and coordinator/handle installation.
         let _lifecycle = self.core().generation_payment_guard().await;
-        // A Clear waits for this bind, as for a seed bind.
+        // A Clear is refused while this bind runs, as for a seed bind.
         let _operation = coordinator.operation_guard().await;
         let _config = self.shielded_config_lock.lock().await;
         self.ensure_no_other_shielded_coordinator(coordinator)?;
@@ -1511,10 +1514,11 @@ impl PlatformWallet {
     /// hold it.
     ///
     /// Holds the operation admission of the coordinator the keys were
-    /// installed on as well, so a Clear waits for an add in flight. Once a
-    /// Clear has run since that bind this returns `ShieldedNotBound` and
-    /// stores nothing: the Clear dropped the wallet's registration, so the
-    /// wallet is bound again first. A caller must not hold the admission.
+    /// installed on as well, so a Clear is refused while an add is in
+    /// flight. Once a Clear has run since that bind this returns
+    /// `ShieldedNotBound` and stores nothing: the Clear dropped the wallet's
+    /// registration, so the wallet is bound again first. A caller must not
+    /// hold the admission.
     ///
     /// An account number of the range reserved for identity accounts is
     /// refused, as in a bind.
@@ -1545,9 +1549,9 @@ impl PlatformWallet {
         // The lifecycle gate spans attachment validation through host
         // persistence and the final handle mutation.
         let _lifecycle = self.core().generation_payment_guard().await;
-        // A Clear waits for this add as it does for a bind: one completing
-        // between the host load and the host store below would have the
-        // viewing key written after the host wiped its rows.
+        // A Clear is refused while this add runs, as it is for a bind: one
+        // completing between the host load and the host store below would
+        // have the viewing key written after the host wiped its rows.
         let coordinator = self
             .shielded_binding()
             .and_then(|binding| binding.coordinator.upgrade());
@@ -1810,16 +1814,26 @@ impl PlatformWallet {
     /// the admission, then `shield_guard`) is kept.
     ///
     /// Only one spend at a time waits this way; the others wait their turn
-    /// on `shield_turn`, in arrival order, holding nothing. Two spends that
-    /// both waited on `shield_guard` and gave it up at once would hand it to
-    /// each other and never find it free.
+    /// on `shield_turn`, in arrival order, holding nothing, once the checks
+    /// have passed a first time. Two spends that both waited on
+    /// `shield_guard` and gave it up at once would hand it to each other and
+    /// never find it free.
     #[cfg(feature = "shielded")]
     async fn admit_single_flight_shielded_spend<'a>(
         &'a self,
         coordinator: &'a Arc<NetworkShieldedCoordinator>,
     ) -> Result<(ShieldedSpendAdmission<'a>, tokio::sync::MutexGuard<'a, ()>), PlatformWalletError>
     {
-        let _turn = self.shield_turn.lock().await;
+        let _turn = match self.shield_turn.try_lock() {
+            Ok(turn) => turn,
+            Err(_) => {
+                // The turn may be long in coming. A wallet removed or not
+                // bound is told so now, not when its turn comes; the checks
+                // are made again then.
+                drop(self.admit_shielded_spend(coordinator).await?);
+                self.shield_turn.lock().await
+            }
+        };
         loop {
             let admission = self.admit_shielded_spend(coordinator).await?;
             if let Ok(single_flight) = self.shield_guard.try_lock() {
@@ -1901,6 +1915,24 @@ impl PlatformWallet {
             .as_ref()
             .map(|keys| keys.keys().copied().collect())
             .unwrap_or_default()
+    }
+
+    /// The ordinary (non-identity) ZIP-32 account indices bound on the
+    /// shielded sub-wallet, in ascending order: the accounts a host passes
+    /// to bind this wallet again. Identity accounts are left out because a
+    /// bind adds them itself and refuses them from a host.
+    ///
+    /// They survive a Clear, which drops the coordinator's registration but
+    /// not the keys this handle holds, so a host reads them here after a
+    /// Clear instead of falling back to the default accounts. Empty for a
+    /// wallet never bound on this handle.
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_ordinary_account_indices(&self) -> Vec<u32> {
+        self.shielded_account_indices()
+            .await
+            .into_iter()
+            .filter(|account| !is_shielded_identity_account(*account))
+            .collect()
     }
 
     /// The default Orchard payment address for `account` on this
@@ -2303,7 +2335,8 @@ impl PlatformWallet {
     /// An accepted transfer stays pending until a shielded sync sees it
     /// ([`ShieldedTokenSpendOutcome::Submitted`]). The lifecycle gate is held
     /// as the purchase holds it, through settlement, and so is the
-    /// coordinator's operation guard, so a Clear waits for the transfer.
+    /// coordinator's operation guard, so a Clear is refused until the
+    /// transfer has returned.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_token_transfer<P: OrchardProver>(
@@ -2323,8 +2356,8 @@ impl PlatformWallet {
                 self.wallet_id,
             )));
         }
-        // Held through settlement, so a Clear waits for the transfer instead
-        // of purging the store it reserves in and settles against.
+        // Held through settlement, so a Clear is refused meanwhile instead
+        // of purging the store the transfer reserves in and settles against.
         let _operation = coordinator.operation_guard().await;
         // Bound on this coordinator, with no Clear since: the keys this
         // handle holds outlive a Clear, and a caller may pass another
@@ -2375,7 +2408,7 @@ impl PlatformWallet {
                 self.wallet_id,
             )));
         }
-        // Held through settlement, so a Clear waits for the unshield.
+        // Held through settlement, so a Clear is refused meanwhile.
         let _operation = coordinator.operation_guard().await;
         // Bound on this coordinator, with no Clear since, and the config lock
         // held through settlement, as the transfer does.
@@ -3801,7 +3834,7 @@ impl PlatformWallet {
         // A preparation stands only until its coordinator is cleared. The
         // coordinator's admission is taken before the check that reads the
         // preparation and held until the profile is written, so a Clear
-        // waits for the write instead of landing between the two.
+        // is refused meanwhile instead of landing between the two.
         #[cfg(feature = "shielded")]
         let prepared_coordinator = match &input.shielded_address {
             PaymentAddressUpdate::Set(_) => self.prepared_tip_coordinator(identity_id),

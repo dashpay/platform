@@ -425,6 +425,22 @@ class DashSdkErrorTest {
         assertTrue("the read can be made again", mapped.isRetryable)
     }
 
+    /**
+     * Code 84: a shielded Clear refused while a shielded operation is in
+     * flight. Typed and retryable, so a host tells it apart from a Clear that
+     * failed and offers the Clear again.
+     */
+    @Test
+    fun shouldReportAShieldedClearRefusedDuringAnOperationByItsOwnRetryableCode() {
+        val detail =
+            "A shielded operation is in progress; clear the shielded state once it has finished"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 84, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedOperationInProgress)
+        assertEquals(detail, mapped.message)
+        assertTrue("Clear can be requested again", mapped.isRetryable)
+    }
+
     @Test
     fun platformShieldCapacityCode41MapsTyped() {
         val message =

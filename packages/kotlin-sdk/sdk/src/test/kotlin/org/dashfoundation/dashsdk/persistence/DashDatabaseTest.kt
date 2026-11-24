@@ -259,7 +259,7 @@ class DashDatabaseTest {
     }
 
     @Test
-    fun schemaIsAtVersion19WithTheSweepHoldIndexes() = runTest {
+    fun schemaIsAtVersion21WithTheSweepHoldIndexes() = runTest {
         // The sweep-hold columns land in ONE migration (10 → 11), with the
         // two `pending_inputs` indexes the sweep's claimed-row lookup
         // (`spendingTxid`) and the end-of-round collector
@@ -271,8 +271,10 @@ class DashDatabaseTest {
         // contact request scan state tables, 16 → 17 the asset-lock
         // operation id column and the wallet drain operations table,
         // 17 → 18 the masternode voting key check columns on `identities`,
-        // and 18 → 19 the masternode pro_tx_hash column on `identities`.
-        assertEquals(19, db.openHelper.readableDatabase.version)
+        // 18 → 19 the masternode pro_tx_hash column on `identities`,
+        // 19 → 20 the shielded recipient column on `asset_locks`, and
+        // 20 → 21 the DashPay profile payment address columns.
+        assertEquals(21, db.openHelper.readableDatabase.version)
         val indexes = mutableSetOf<String>()
         db.openHelper.readableDatabase.query("PRAGMA index_list('pending_inputs')").use { c ->
             val nameColumn = c.getColumnIndexOrThrow("name")
@@ -280,6 +282,28 @@ class DashDatabaseTest {
         }
         assertTrue(indexes.contains("index_pending_inputs_spendingTxid"))
         assertTrue(indexes.contains("index_pending_inputs_walletId_isSweptTombstone_winnerMinedHeight"))
+    }
+
+    @Test
+    fun shouldHaveNullablePaymentAddressColumnsOnBothProfileTables() = runTest {
+        // Version 21 (20 → 21): a profile stored before it publishes no
+        // address, so the columns are nullable BLOBs with no default.
+        for (table in listOf("dashpay_profiles", "dashpay_contact_profiles")) {
+            val seen = mutableSetOf<String>()
+            db.openHelper.readableDatabase.query("PRAGMA table_info('$table')").use { c ->
+                val name = c.getColumnIndexOrThrow("name")
+                val type = c.getColumnIndexOrThrow("type")
+                val notNull = c.getColumnIndexOrThrow("notnull")
+                while (c.moveToNext()) {
+                    val column = c.getString(name)
+                    if (column !in setOf("corePaymentAddress", "platformPaymentAddress", "shieldedAddress")) continue
+                    seen += column
+                    assertEquals("$table.$column", "BLOB", c.getString(type))
+                    assertEquals("$table.$column", 0, c.getInt(notNull))
+                }
+            }
+            assertEquals(table, 3, seen.size)
+        }
     }
 
     @Test
