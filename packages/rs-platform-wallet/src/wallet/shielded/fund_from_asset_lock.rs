@@ -58,6 +58,14 @@ use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, AssetLockFunding, FundingResolution, ResolvedFunding,
 };
 use crate::wallet::asset_lock::AssetLockBuiltObserver;
+use crate::wallet::shielded::activity::{
+    ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus, ShieldedDirection,
+};
+use crate::wallet::shielded::activity_recorder::{
+    build_pending_entry, visible_output_cmxs, with_status, LiveEntryParams,
+};
+use crate::wallet::shielded::operations::queue_shielded_activity;
+use crate::wallet::shielded::SubwalletId;
 use crate::wallet::PlatformWallet;
 use crate::PlatformWalletError;
 
@@ -761,9 +769,6 @@ impl PlatformWallet {
         shield_amount: Credits,
         funding_epoch: u64,
     ) {
-        use crate::wallet::shielded::activity::{ShieldedActivityKind, ShieldedDirection};
-        use crate::wallet::shielded::activity_recorder::build_pending_entry;
-
         let (account, pending) = {
             let guard = self.shielded_keys.read().await;
             let Some(keys_map) = guard.as_ref() else {
@@ -777,17 +782,16 @@ impl PlatformWallet {
             // shared-id natural key against the eventual scan-derived row.
             // Fall back to the lowest bound account only when nothing
             // matches (a shield to a fully external recipient).
-            let matched = keys_map.iter().find(|(_, ks)| {
-                !crate::wallet::shielded::activity_recorder::visible_output_cmxs(actions, ks)
-                    .is_empty()
-            });
+            let matched = keys_map
+                .iter()
+                .find(|(_, ks)| !visible_output_cmxs(actions, ks).is_empty());
             let Some((&account, keyset)) = matched.or_else(|| keys_map.iter().next()) else {
                 return;
             };
 
             let Some(pending) = build_pending_entry(
                 keyset,
-                crate::wallet::shielded::activity_recorder::LiveEntryParams {
+                LiveEntryParams {
                     kind: ShieldedActivityKind::ShieldFromAssetLock,
                     direction: ShieldedDirection::In,
                     amount: shield_amount,
@@ -824,11 +828,8 @@ impl PlatformWallet {
         &self,
         funding_epoch: u64,
         account: u32,
-        pending: crate::wallet::shielded::activity::ShieldedActivityEntry,
+        pending: ShieldedActivityEntry,
     ) {
-        use crate::wallet::shielded::activity::ShieldedActivityStatus;
-        use crate::wallet::shielded::activity_recorder::with_status;
-
         let Ok(coordinator) = self.shielded_coordinator().await else {
             return;
         };
@@ -853,8 +854,8 @@ impl PlatformWallet {
             return;
         }
         let confirmed = with_status(&pending, ShieldedActivityStatus::Confirmed, None);
-        let id = crate::wallet::shielded::SubwalletId::new(self.wallet_id(), account);
-        crate::wallet::shielded::operations::queue_shielded_activity(
+        let id = SubwalletId::new(self.wallet_id(), account);
+        queue_shielded_activity(
             coordinator.store(),
             Some(self.persister()),
             self.wallet_id(),
