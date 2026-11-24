@@ -5,6 +5,7 @@ on:
       - '.github/runner-requirements.json'
       - '.github/scripts/runner-image.py'
       - '.github/scripts/tests/**'
+      - 'scripts/release/**'
       - '.github/actions/npm-release-build/**'
       - '.github/actions/rust/**'
       - '.github/actions/nodejs/**'
