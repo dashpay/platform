@@ -56,6 +56,7 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundin
 use crate::wallet::asset_lock::AssetLockOperationState;
 
 use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::task::AbortOnDropHandle;
 
@@ -604,7 +605,7 @@ impl PlatformWallet {
             }
         };
         let bundle = join_proof(proving).await?;
-        let bundle_state = std::sync::Arc::new(tokio::sync::Mutex::new(ShieldBundleState {
+        let bundle_state = Arc::new(tokio::sync::Mutex::new(ShieldBundleState {
             bundle,
             platform_version,
             pool_fee_credits,
@@ -616,7 +617,7 @@ impl PlatformWallet {
         let prover_for_retry = prover;
         let asset_lock_value_for_retry = asset_lock_value_credits;
         let num_actions_for_retry = num_actions;
-        let bundle_state_for_submit = std::sync::Arc::clone(&bundle_state);
+        let bundle_state_for_submit = Arc::clone(&bundle_state);
         let path_for_retry = path.clone();
         // Serialized actions of the bundle that actually landed — fed to
         // the live activity recorder below. Each attempt re-signs the
@@ -631,7 +632,7 @@ impl PlatformWallet {
                 cl_wait,
                 "shielded fund-from-asset-lock",
                 move |proof, s| {
-                    let bundle_state = std::sync::Arc::clone(&bundle_state_for_submit);
+                    let bundle_state = Arc::clone(&bundle_state_for_submit);
                     let sdk = sdk.clone();
                     let sender_ovk_for_retry = sender_ovk_for_retry.clone();
                     let path = path_for_retry.clone();
@@ -645,15 +646,9 @@ impl PlatformWallet {
                                 current_platform_version,
                             )
                             .map_err(|e| dash_sdk::Error::Generic(e.to_string()))?;
-                            let binding_changed =
-                                dpp::shielded::shield_from_asset_lock_extra_sighash_data(
-                                    &proof,
-                                    current_platform_version,
-                                )? != dpp::shielded::shield_from_asset_lock_extra_sighash_data(
-                                    &proof,
-                                    state.platform_version,
-                                )?;
-                            if current_pool_fee != state.pool_fee_credits || binding_changed {
+                            let still_bound =
+                                state.bundle.is_bound_to(&proof, current_platform_version)?;
+                            if current_pool_fee != state.pool_fee_credits || !still_bound {
                                 let shield_amount = shield_amount_after_fee(
                                     asset_lock_value_for_retry,
                                     current_pool_fee,
@@ -693,23 +688,23 @@ impl PlatformWallet {
                                 state.platform_version,
                             )
                             .await;
-                            let version_moved = matches!(
-                                &result,
-                                Err(dash_sdk::Error::Generic(message))
-                                    if message.starts_with("protocol version moved")
-                            ) && sdk.version().protocol_version
-                                != state.platform_version.protocol_version;
                             drop(state);
-                            if version_moved && !version_retry {
-                                version_retry = true;
-                                continue;
+                            match result {
+                                // The SDK moved on while this attempt was being
+                                // signed: refresh the bundle and try once more.
+                                Err(ShieldAttemptError::VersionMoved { .. }) if !version_retry => {
+                                    version_retry = true;
+                                }
+                                result => return result.map_err(dash_sdk::Error::from),
                             }
-                            return result;
                         }
                     }
                 },
             )
             .await?;
+        // An attempt re-prices the bundle when the fee schedule moved, so the
+        // fee the landed attempt paid can differ from Step 3's.
+        let submitted_pool_fee_credits = bundle_state.lock().await.pool_fee_credits;
         // Release the proved bundle's signing secrets
         // (`ProvedShieldFromAssetLockBundle`) before the reconciliation
         // awaits below.
@@ -817,9 +812,9 @@ impl PlatformWallet {
         }
 
         tracing::info!(
-            shield_amount,
+            shield_amount = landed.shield_amount,
             asset_lock_value_credits,
-            pool_fee_credits,
+            pool_fee_credits = submitted_pool_fee_credits,
             "Shielded fund-from-asset-lock succeeded"
         );
 
@@ -1080,6 +1075,41 @@ struct ShieldBundleState {
     shield_amount: Credits,
 }
 
+/// Why one Type 18 submission attempt did not land.
+enum ShieldAttemptError {
+    /// The SDK moved off the protocol version the bundle was priced under
+    /// while the attempt was being signed. Nothing was broadcast.
+    VersionMoved { priced: u32, current: u32 },
+    /// Assembly or broadcast failed.
+    Sdk(dash_sdk::Error),
+}
+
+impl From<dash_sdk::Error> for ShieldAttemptError {
+    fn from(error: dash_sdk::Error) -> Self {
+        Self::Sdk(error)
+    }
+}
+
+impl From<ProtocolError> for ShieldAttemptError {
+    fn from(error: ProtocolError) -> Self {
+        Self::Sdk(error.into())
+    }
+}
+
+impl From<ShieldAttemptError> for dash_sdk::Error {
+    fn from(error: ShieldAttemptError) -> Self {
+        match error {
+            ShieldAttemptError::VersionMoved { priced, current } => {
+                dash_sdk::Error::Generic(format!(
+                    "protocol version moved from {priced} to {current} since the shield bundle \
+                     was priced; resume the asset lock to re-prove it"
+                ))
+            }
+            ShieldAttemptError::Sdk(error) => error,
+        }
+    }
+}
+
 /// Whether a landed Type 18's verified proof result attests that its asset
 /// lock was consumed **in full**.
 ///
@@ -1106,8 +1136,9 @@ fn proof_attests_full_consumption(result: &StateTransitionProofResult) -> bool {
 /// Each call re-signs the proved `bundle` around `proof`, and refuses to
 /// submit once the SDK has moved off the `platform_version` the bundle's
 /// amount was priced under: consensus would charge another fee, and a lower
-/// one would donate the difference to the pools. The lock stays resumable,
-/// and a resume proves afresh.
+/// one would donate the difference to the pools. That refusal is
+/// [`ShieldAttemptError::VersionMoved`], so the caller can refresh the bundle
+/// and try again; the lock stays resumable either way.
 ///
 /// On success returns the landed bundle's actions together with what the
 /// verified proof result attests about the asset lock's consumption.
@@ -1122,7 +1153,7 @@ async fn build_and_broadcast_shielded<AS>(
     settings: Option<PutSettings>,
     shield_amount: Credits,
     platform_version: &PlatformVersion,
-) -> Result<LandedShield, dash_sdk::Error>
+) -> Result<LandedShield, ShieldAttemptError>
 where
     AS: ::key_wallet::signer::Signer,
 {
@@ -1148,11 +1179,10 @@ where
     // as close to the broadcast as the SDK allows.
     let current_version = sdk.version().protocol_version;
     if current_version != platform_version.protocol_version {
-        return Err(dash_sdk::Error::Generic(format!(
-            "protocol version moved from {} to {current_version} since the shield bundle \
-             was priced; resume the asset lock to re-prove it",
-            platform_version.protocol_version
-        )));
+        return Err(ShieldAttemptError::VersionMoved {
+            priced: platform_version.protocol_version,
+            current: current_version,
+        });
     }
 
     // Wait for the verified result rather than relay-ACK. Single-use

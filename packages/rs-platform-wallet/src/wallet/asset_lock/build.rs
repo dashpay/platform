@@ -1879,6 +1879,8 @@ mod tests {
         ClientStartState, ClientWalletStartState, PersistenceError, PlatformWalletChangeSet,
         PlatformWalletPersistence,
     };
+    #[cfg(feature = "shielded")]
+    use crate::test_support::orchard_address_fixture;
     use crate::test_support::{
         funded_wallet_manager, funded_wallet_manager_dual_standard,
         funded_wallet_manager_with_contact, funded_wallet_manager_with_outputs,
@@ -2246,7 +2248,7 @@ mod tests {
                 funding,
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 0,
-                Some(crate::test_support::orchard_address_fixture(0x71).to_raw_bytes()),
+                Some(orchard_address_fixture(0x71).to_raw_bytes()),
                 &signer,
                 Some(&on_built),
                 |out_point| {
