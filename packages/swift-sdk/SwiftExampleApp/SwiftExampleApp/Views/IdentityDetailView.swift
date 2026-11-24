@@ -467,16 +467,15 @@ struct IdentityDetailView: View {
             EditAliasView(identity: identity, newAlias: $newAlias)
         }
         .sheet(isPresented: $showingRegisterName) {
-            // Owned names come from `@Query` over `PersistentDPNSName`:
-            // Rust records a regular registration as owned and the
-            // persister upserts its row. A contested registration is
-            // recorded by Rust in the identity's contested list instead
-            // (not owned until the vote ends), which this view keeps in
-            // `@State`, so re-read that list from the wallet once the
-            // registration lands.
-            RegisterNameView(identity: identity, onRegistered: { _ in
-                reloadContestedNamesFromWallet()
-            })
+            // The DPNS name list is now driven by `@Query` over
+            // `PersistentDPNSName`. The Rust-side
+            // `register_name_with_external_signer` path queues an
+            // `IdentityChangeSet` whose persister-callback hop
+            // upserts the new label row, which `dpnsNamesRows`
+            // observes — no manual @State poke needed. We still pass
+            // an `onRegistered` closure so `RegisterNameView` can
+            // honor its callback contract, but the body is a no-op.
+            RegisterNameView(identity: identity, onRegistered: { _ in })
                 .environmentObject(appState)
         }
         .sheet(item: $giveUpRequest) { request in
@@ -602,18 +601,6 @@ struct IdentityDetailView: View {
                 }
             }
         }
-    }
-
-    /// Re-read the contested labels Rust holds for this identity, without a
-    /// network round-trip (a fresh read could reach a node that has not yet
-    /// seen the registration). The next network load reconciles them.
-    private func reloadContestedNamesFromWallet() {
-        guard let identity,
-              let walletId = identity.wallet?.walletId,
-              let wallet = walletManager.wallet(for: walletId),
-              let names = try? wallet.managedIdentity(identityId: identity.identityId)
-                .getContestedDpnsNames() else { return }
-        contestedDpnsNames = names
     }
 
     private func loadDPNSNames() {

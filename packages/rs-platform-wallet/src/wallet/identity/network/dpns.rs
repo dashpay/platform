@@ -280,10 +280,12 @@ impl IdentityWallet {
         self.persist_proven_owner_balance(identity_id, owner_balance, metadata)
             .await;
 
-        // Record the just-registered label and emit an
-        // `IdentityChangeSet` so the persister callback refreshes the
-        // app's name lists. A contested label is recorded as contested,
-        // not owned: its domain is awarded only when the vote ends.
+        // Same book-keeping as `register_name`: append the just-
+        // registered label to `ManagedIdentity.dpns_names` and emit
+        // an `IdentityChangeSet` so the Swift persister callback
+        // refreshes `PersistentIdentity.dpnsName` automatically.
+        // Skip on duplicate to avoid emitting a redundant entry on
+        // re-runs.
         let acquired_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
@@ -293,11 +295,19 @@ impl IdentityWallet {
             let mut wm = self.wallet_manager.write().await;
             if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
                 if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                    managed.record_registered_dpns_name(
-                        label_to_store,
-                        acquired_at,
-                        &self.persister,
-                    );
+                    if !managed
+                        .dpns_names
+                        .iter()
+                        .any(|existing| existing.label == label_to_store)
+                    {
+                        managed.add_dpns_name(
+                            DpnsNameInfo {
+                                label: label_to_store,
+                                acquired_at,
+                            },
+                            &self.persister,
+                        );
+                    }
                 }
             }
         }
@@ -411,38 +421,27 @@ impl IdentityWallet {
     }
 
     /// Fetch the list of DPNS contests `identity_id` is currently
-    /// contending for (still in the voting period, not resolved) and
-    /// replace the local
+    /// contending for (still in the voting period, not resolved)
+    /// and replace the local
     /// [`ManagedIdentity.contested_dpns_names`](crate::wallet::identity::ManagedIdentity)
-    /// list with the canonical set, so resolved contests (won / locked)
-    /// drop out of the local cache.
+    /// list wholesale with the canonical set.
     ///
-    /// The read is strict: a contest whose vote state cannot be read fails
-    /// the sync rather than being left out, so a partial read never
-    /// replaces the list. A contest recorded locally while the read ran
-    /// (`record_registered_dpns_name` after a registration) is kept, since
-    /// the read may predate it; the next sync reconciles it.
+    /// Uses `set_contested_dpns_names` rather than
+    /// `add_contested_dpns_name` so resolved contests
+    /// (won / locked) automatically drop out of the local cache —
+    /// the sync result IS the authoritative set. Individual add/
+    /// remove flows (e.g. "I just contended a name") can still use
+    /// `add_contested_dpns_name` for immediate UI reflection; the
+    /// next sync round reconciles.
     ///
-    /// Returns the contested-name labels now held.
+    /// Returns the canonical contested-name labels.
     pub async fn sync_contested_dpns_names(
         &self,
         identity_id: &Identifier,
     ) -> Result<Vec<String>, PlatformWalletError> {
-        // The list as the read starts, so a registration that lands while
-        // it runs is not dropped by a read that predates its contest.
-        let seen_before_read = {
-            let wm = self.wallet_manager.read().await;
-            wm.get_wallet_info(&self.wallet_id)
-                .and_then(|info| info.identity_manager.managed_identity(identity_id))
-                .map(|managed| managed.contested_dpns_names.clone())
-                .unwrap_or_default()
-        };
-        // Strict: a contest whose vote state cannot be read fails the sync
-        // instead of being left out, so a partial read never replaces the
-        // list.
         let contests = self
             .sdk
-            .get_non_resolved_dpns_contests_for_identity_strict(*identity_id, None)
+            .get_non_resolved_dpns_contests_for_identity(*identity_id, None)
             .await
             .map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
@@ -450,20 +449,17 @@ impl IdentityWallet {
                 ))
             })?;
 
-        let mut labels: Vec<String> = contests.keys().cloned().collect();
+        let labels: Vec<String> = contests.keys().cloned().collect();
 
-        // The snapshot-based changeset emits a fresh list, so resolved
-        // contests the local cache still carried get dropped on
-        // merge/apply; a contest registered during the read is kept.
+        // Drop the write lock before returning the labels. Using
+        // `set_contested_dpns_names` means the snapshot-based
+        // changeset emits a fresh list — resolved contests that the
+        // local cache still carried get dropped on merge/apply.
         {
             let mut wm = self.wallet_manager.write().await;
             if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
                 if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                    labels = managed.apply_synced_contested_dpns_names(
-                        labels,
-                        &seen_before_read,
-                        &self.persister,
-                    );
+                    managed.set_contested_dpns_names(labels.clone(), &self.persister);
                 }
             }
         }

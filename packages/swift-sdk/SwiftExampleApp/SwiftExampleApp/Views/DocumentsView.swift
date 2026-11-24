@@ -967,7 +967,10 @@ struct EraseDocumentView: View {
                             .accessibilityIdentifier("documentErase.localCopyWarning")
                     }
                 }
-                if let networkRaw = openingAbsentNetworkRaw, submissions == 0, !localCopyRemoved {
+                // Follows the latest observation, not how many chunks this
+                // sheet submitted: an erase finished by another caller
+                // after an earlier chunk here also offers the removal.
+                if let networkRaw = openingAbsentNetworkRaw, !localCopyRemoved {
                     Section {
                         Button("Remove Local Copy") {
                             persistWarning = removeLocalCopy(networkRaw: networkRaw)
@@ -1100,6 +1103,8 @@ struct EraseDocumentView: View {
                     case .submitted(_, let after):
                         submissions += 1
                         lifecycle = after
+                        // The latest observation comes from a submission.
+                        openingAbsentNetworkRaw = nil
                         // ABSENT after this submission: nothing is left to
                         // show, so drop the local copy at once.
                         if after?.state == .absent {
