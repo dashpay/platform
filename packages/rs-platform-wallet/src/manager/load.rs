@@ -2665,9 +2665,10 @@ mod address_pool_restore_tests {
                 .next_address(None)
                 .expect("next funding address");
             assert_ne!(next, pool.addresses()[&lost].address, "lost index {lost}");
+            derive_through(&mut pool, &key_source, last + 1).expect("derive above the lost window");
             assert_eq!(
                 next,
-                pool.addresses()[&(highest_used + 1)].address,
+                pool.addresses()[&(last + 1)].address,
                 "lost index {lost}"
             );
         }

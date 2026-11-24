@@ -111,8 +111,6 @@ pub(crate) fn restore_address_rows(
     rows.sort_by_key(|row| row.index);
     let highest_row = rows.last().map(|row| row.index);
     let mut restored = BTreeSet::new();
-    let highest_row = rows.last().map(|row| row.index);
-    let mut restored = BTreeSet::new();
     let mut outcome = AddressRowsRestore::default();
     let mut first_refusal: Option<(u32, RowRefusal)> = None;
     let mut budget = MAX_RESTORE_GAP_FILL;
