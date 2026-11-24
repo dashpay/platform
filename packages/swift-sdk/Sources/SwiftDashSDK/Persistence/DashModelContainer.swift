@@ -97,13 +97,24 @@ public enum DashModelContainer {
             PersistentIdentityBalanceMetadata.self,
             PersistentPrivateContactRequestsPosition.self,
             PersistentPrivateShieldedAddress.self,
-            PersistentLockedOutpoint.self
+            PersistentLockedOutpoint.self,
+            PersistentTransactionAccounting.self
         ]
     }
 
+    /// The live versioned schema. `schema` and every diagnostic's
+    /// `target_version` derive from it, so a schema bump is one edit.
+    typealias LiveSchema = DashSchemaV5
+
     /// Create the schema for all Dash Platform models
     public static var schema: Schema {
-        Schema(versionedSchema: DashSchemaV5.self)
+        Schema(versionedSchema: LiveSchema.self)
+    }
+
+    /// `LiveSchema`'s version as logged in `target_version` (`major.minor.patch`).
+    static var targetVersion: String {
+        let version = LiveSchema.versionIdentifier
+        return "\(version.major).\(version.minor).\(version.patch)"
     }
 
     /// Create a persistent model container for storing data.
@@ -175,7 +186,7 @@ public enum DashModelContainer {
         bridgeLegacyStore: Bool = true
     ) throws -> ModelContainer {
         SDKLogger.event("store_open_started", category: .persistence,
-                        fields: ["target_version": .publicText("5.0.0")])
+                        fields: ["target_version": .publicText(targetVersion)])
         do {
             let container: ModelContainer
             if bridgeLegacyStore {
@@ -188,7 +199,7 @@ public enum DashModelContainer {
                     configurations: [configuration])
             }
             SDKLogger.event("store_open_succeeded", category: .persistence,
-                            fields: ["target_version": .publicText("5.0.0")])
+                            fields: ["target_version": .publicText(targetVersion)])
             return container
         } catch {
             logMigrationFailure(error)
@@ -204,7 +215,7 @@ public enum DashModelContainer {
         let domain = systemDomains.contains(nsError.domain) ? nsError.domain : String(reflecting: type(of: error))
         SDKLogger.event("store_open_failed", category: .persistence, severity: .error,
                         fields: ["error_domain": .publicText(domain), "error_code": .integer(Int64(nsError.code)),
-                                 "target_version": .publicText("5.0.0")])
+                                 "target_version": .publicText(targetVersion)])
     }
 
     /// Select by the complete stored model identity, after journal recovery.
@@ -221,7 +232,7 @@ public enum DashModelContainer {
         guard ObjectIdentifier(defaultPlan) == ObjectIdentifier(DashMigrationPlan.self) else { return defaultPlan }
         guard FileManager.default.fileExists(atPath: url.path) else {
             SDKLogger.event("store_migration_route", category: .persistence, fields: [
-                "route": .publicText("new-store"), "target_version": .publicText("5.0.0")])
+                "route": .publicText("new-store"), "target_version": .publicText(targetVersion)])
             return defaultPlan
         }
         let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(type: .sqlite, at: url)
@@ -239,7 +250,7 @@ public enum DashModelContainer {
         func logRoute(_ route: String) {
             SDKLogger.event("store_migration_route", category: .persistence, fields: [
                 "source_version": .publicText(safeVersions), "source_checksum": .publicText(safeChecksum),
-                "route": .publicText(route), "target_version": .publicText("5.0.0")])
+                "route": .publicText(route), "target_version": .publicText(targetVersion)])
         }
         func matches(_ type: any VersionedSchema.Type) throws -> Bool {
             let expected = try identity(type)
@@ -250,7 +261,7 @@ public enum DashModelContainer {
         // probe stays fatal here: the open fails with the probe's own error
         // instead of an inapplicable plan, and the store is untouched.
         if versions == ["1.0.0"], try matches(DashSchemaV1.self) {
-            logRoute("accepted-v1-to-v3")
+            logRoute("accepted-v1-to-v5")
             return DashAcceptedV1MigrationPlan.self
         }
         if versions == ["2.0.0"] {
@@ -264,15 +275,15 @@ public enum DashModelContainer {
                 throw DashLegacyStoreSQLite.Failure.unsupported(
                     "The database identifies itself as schema 2.0.0 but its model does not match the supported historical or current schema. The original database has not been replaced. Contact support; do not delete the app.")
             }
-            logRoute(historical ? "historical-v2-to-v3" : "previous-live-v2-current-shape")
+            logRoute(historical ? "historical-v2-to-v5" : "previous-live-v2-v3-shape")
         } else if versions == ["3.0.0"] {
-            // Same plan either way. Opening a current store must neither wait
-            // on nor fail with a schema probe that could only refine this line;
-            // `source_checksum` above already identifies the exact graph.
-            logRoute("published-v3-to-v4")
+            logRoute("published-v3-to-v5")
         } else if versions == ["4.0.0"] {
             logRoute("published-v4-to-v5")
         } else if versions == ["5.0.0"] {
+            // Same plan either way. Opening a current store must neither wait
+            // on nor fail with a schema probe that could only refine this line;
+            // `source_checksum` above already identifies the exact graph.
             logRoute("labelled-current-v5")
         } else {
             logRoute("ordinary-current-plan")
@@ -397,10 +408,10 @@ public enum DashSchemaV4: VersionedSchema {
     public static var models: [any PersistentModel.Type] { DashSchemaSnapshotV4.models }
 }
 
-/// Current schema: an asset lock records the optional Orchard recipient of its
-/// shielded funding, the private contact request sync keeps its scan state
-/// (each identity's read position and its private contacts' shielded addresses),
-/// and a wallet keeps the outpoints it holds out of coin selection.
+/// Current schema: asset locks record the optional Orchard recipient of
+/// shielded funding. Private contact request sync keeps its scan state and
+/// shielded addresses. Wallets store locked outpoints, per-wallet
+/// transaction accounting, and the accounting backfill marker.
 public enum DashSchemaV5: VersionedSchema {
     public static var versionIdentifier: Schema.Version { Schema.Version(5, 0, 0) }
     public static var models: [any PersistentModel.Type] { DashModelContainer.modelTypes }
