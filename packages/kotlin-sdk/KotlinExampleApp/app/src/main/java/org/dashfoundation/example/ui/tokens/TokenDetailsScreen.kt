@@ -48,7 +48,7 @@ import org.dashfoundation.example.util.truncateMiddle
 /**
  * One token's full configuration — port of `TokenDetailsView.swift`:
  * actions entry point (→ [TokenActionPermissions]), basic info,
- * localizations, supply, feature flags (via the `hasAuthorizedTakers`
+ * localizations, supply, feature flags (via the `capabilityLabel`
  * truth-in-UI predicate), history-keeping flags, control rules,
  * distribution, and trade mode — plus the identity balances and history
  * events the Room token family carries.
@@ -137,23 +137,23 @@ fun TokenDetailsScreen(tokenIdHex: String, navController: NavHostController) {
                 )
                 LabeledContent(
                     "Max Supply Changeable",
-                    if (maxSupplyRules?.hasAuthorizedTakers == true) "Yes" else "No",
+                    maxSupplyRules?.capabilityLabel ?: "No",
                 )
             }
 
             FormSection(title = "Token Features") {
-                FeatureRow("Can be minted", current.rulesAllow { it.manualMintingRules })
-                FeatureRow("Can be burned", current.rulesAllow { it.manualBurningRules })
-                FeatureRow("Can be frozen", current.rulesAllow { it.freezeRules })
-                FeatureRow("Can be unfrozen", current.rulesAllow { it.unfreezeRules })
-                FeatureRow(
+                LabeledContent("Can be minted", current.ruleLabel { it.manualMintingRules })
+                LabeledContent("Can be burned", current.ruleLabel { it.manualBurningRules })
+                LabeledContent("Can be frozen", current.ruleLabel { it.freezeRules })
+                LabeledContent("Can be unfrozen", current.ruleLabel { it.unfreezeRules })
+                LabeledContent(
                     "Can destroy frozen funds",
-                    current.rulesAllow { it.destroyFrozenFundsRules },
+                    current.ruleLabel { it.destroyFrozenFundsRules },
                 )
                 FeatureRow("Transfer to frozen allowed", current.allowTransferToFrozenBalance)
-                FeatureRow(
+                LabeledContent(
                     "Emergency action available",
-                    current.rulesAllow { it.emergencyActionRules },
+                    current.ruleLabel { it.emergencyActionRules },
                 )
                 FeatureRow("Currently paused", current.isPaused)
             }
@@ -315,10 +315,13 @@ private fun ControlRuleRows(title: String, rulesJson: String?) {
     }
 }
 
-/** True when the rule column exists AND names an authorized taker. */
-private inline fun org.dashfoundation.dashsdk.persistence.entities.TokenEntity.rulesAllow(
+/**
+ * "Yes" when the rule column exists and names an authorized taker, "Unknown"
+ * when this build cannot read the taker, "No" otherwise.
+ */
+private inline fun org.dashfoundation.dashsdk.persistence.entities.TokenEntity.ruleLabel(
     selector: (org.dashfoundation.dashsdk.persistence.entities.TokenEntity) -> String?,
-): Boolean = ChangeControlRules.parse(selector(this))?.hasAuthorizedTakers == true
+): String = ChangeControlRules.parse(selector(this))?.capabilityLabel ?: "No"
 
 /** Localization rows from the stored `{lang: TokenLocalization}` JSON map. */
 @Composable
