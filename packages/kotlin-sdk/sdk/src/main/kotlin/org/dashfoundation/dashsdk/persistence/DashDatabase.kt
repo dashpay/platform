@@ -220,9 +220,18 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * identities the load rule returned (`"owner"` or `"voter"`). Both NULL for
  * every pre-existing row: such a row is resolved through the load rule when
  * it is next picked to vote.
+ *
+ * Version 20 (shielded asset-lock recipients): adds the nullable
+ * `asset_locks.shieldedRecipientRaw43` column, the Orchard recipient a
+ * shielded funding was built to pay, which native writes through
+ * `onPersistAssetLockShieldedRecipient` and reads back through
+ * `onLoadAssetLockShieldedRecipient` (Swift
+ * `PersistentAssetLock.shieldedRecipientRaw43`). NULL for every
+ * pre-existing lock: such a lock was tracked before its recipient was
+ * recorded, and a resume of it names the recipient, as before.
  */
 @Database(
-    version = 19,
+    version = 20,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -837,6 +846,17 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v19 -> v20: the nullable `asset_locks.shieldedRecipientRaw43`
+         * column, see the version-20 class doc above. NULL for every
+         * pre-existing lock.
+         */
+        val MIGRATION_19_20: Migration = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `asset_locks` ADD COLUMN `shieldedRecipientRaw43` BLOB")
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -870,6 +890,7 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_16_17,
                     MIGRATION_17_18,
                     MIGRATION_18_19,
+                    MIGRATION_19_20,
                 )
                 .build()
 

@@ -188,6 +188,17 @@ interface AssetLockDao {
     @Query("UPDATE asset_locks SET operationId = :operationId WHERE outPointHex = :outPointHex")
     suspend fun setOperationId(outPointHex: String, operationId: ByteArray): Int
 
+    /**
+     * Associate the shielded [recipientRaw43] with the lock at [outPointHex]
+     * (`onPersistAssetLockShieldedRecipient`). Returns the number of rows
+     * changed.
+     */
+    @Query(
+        "UPDATE asset_locks SET shieldedRecipientRaw43 = :recipientRaw43 " +
+            "WHERE outPointHex = :outPointHex"
+    )
+    suspend fun setShieldedRecipient(outPointHex: String, recipientRaw43: ByteArray): Int
+
     @Upsert
     suspend fun upsert(assetLock: AssetLockEntity)
 

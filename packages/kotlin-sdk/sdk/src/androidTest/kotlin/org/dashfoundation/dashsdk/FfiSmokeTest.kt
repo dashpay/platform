@@ -673,6 +673,43 @@ class FfiSmokeTest {
     }
 
     /**
+     * The asset-lock shielded recipients need every override they depend on,
+     * the same way as the operation ids: JNI wires the two slots only for a
+     * bridge that overrides the recipient store, the recipient load and the
+     * asset lock upsert, and Rust attests the capability only when the
+     * bridge declares it. An inherited no-op load would answer "no
+     * recipient" for a lock built to pay one, and a resume would accept any.
+     */
+    @Test
+    fun assetLockShieldedRecipientCapabilityNeedsEveryOverride() {
+        NativeLoader.ensureLoaded()
+        val bit = NativePersistenceBridge.CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS
+        fun effective(bridge: NativePersistenceBridge): Boolean =
+            WalletManagerNative.nativeEffectivePersistenceCapabilityBits(bridge) and bit == bit
+
+        assertTrue("every override", effective(ShieldedRecipientBridge.Full()))
+        assertFalse("no recipient store", effective(ShieldedRecipientBridge.WithoutStore()))
+        assertFalse("no recipient load", effective(ShieldedRecipientBridge.WithoutLoad()))
+        assertFalse("no asset lock upsert", effective(ShieldedRecipientBridge.WithoutUpsert()))
+        assertFalse(
+            "every override, not declared",
+            effective(object : ShieldedRecipientBridge.Full() {
+                override fun persistenceCapabilitiesBits(): Long = TRACKED_ASSET_LOCKS or WALLET_RESTORE
+            }),
+        )
+
+        val db = DashDatabase.createInMemory(ApplicationProvider.getApplicationContext())
+        try {
+            val handlerBits = WalletManagerNative.nativeEffectivePersistenceCapabilityBits(
+                PlatformWalletPersistenceHandler(db, Dispatchers.Unconfined),
+            )
+            assertEquals("the Room handler attests it", bit, handlerBits and bit)
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
      * Rust↔Kotlin persistence-descriptor lockstep. The trampolines resolve
      * each bridge method by (name, descriptor) only when its slot first
      * fires — for the invitation upsert that would be mid-way through a
@@ -793,6 +830,93 @@ private abstract class OperationIdBridge : NativePersistenceBridge() {
         ): Int = 0
 
         override fun onLoadAssetLockOperationId(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+            null
+    }
+}
+
+/**
+ * Bridges declaring the asset-lock shielded recipients with some of the
+ * overrides they depend on, for
+ * [FfiSmokeTest.assetLockShieldedRecipientCapabilityNeedsEveryOverride].
+ * Each concrete class declares exactly the overrides its name says.
+ */
+private abstract class ShieldedRecipientBridge : NativePersistenceBridge() {
+    override fun persistenceCapabilitiesVersion(): Int = 1
+
+    override fun persistenceCapabilitiesBits(): Long =
+        CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS or TRACKED_ASSET_LOCKS or WALLET_RESTORE
+
+    open class Full : ShieldedRecipientBridge() {
+        @Suppress("LongParameterList")
+        override fun onPersistAssetLockUpsert(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            transactionBytes: ByteArray,
+            accountIndex: Int,
+            fundingType: Byte,
+            identityIndex: Int,
+            amountDuffs: Long,
+            status: Byte,
+            proofBytes: ByteArray?,
+        ): Int = 0
+
+        override fun onPersistAssetLockShieldedRecipient(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            recipientRaw43: ByteArray,
+        ): Int = 0
+
+        override fun onLoadAssetLockShieldedRecipient(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+            null
+    }
+
+    class WithoutStore : ShieldedRecipientBridge() {
+        @Suppress("LongParameterList")
+        override fun onPersistAssetLockUpsert(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            transactionBytes: ByteArray,
+            accountIndex: Int,
+            fundingType: Byte,
+            identityIndex: Int,
+            amountDuffs: Long,
+            status: Byte,
+            proofBytes: ByteArray?,
+        ): Int = 0
+
+        override fun onLoadAssetLockShieldedRecipient(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+            null
+    }
+
+    class WithoutLoad : ShieldedRecipientBridge() {
+        @Suppress("LongParameterList")
+        override fun onPersistAssetLockUpsert(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            transactionBytes: ByteArray,
+            accountIndex: Int,
+            fundingType: Byte,
+            identityIndex: Int,
+            amountDuffs: Long,
+            status: Byte,
+            proofBytes: ByteArray?,
+        ): Int = 0
+
+        override fun onPersistAssetLockShieldedRecipient(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            recipientRaw43: ByteArray,
+        ): Int = 0
+    }
+
+    class WithoutUpsert : ShieldedRecipientBridge() {
+        override fun onPersistAssetLockShieldedRecipient(
+            walletId: ByteArray,
+            outPoint: ByteArray,
+            recipientRaw43: ByteArray,
+        ): Int = 0
+
+        override fun onLoadAssetLockShieldedRecipient(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
             null
     }
 }

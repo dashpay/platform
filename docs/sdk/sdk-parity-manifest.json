@@ -2419,7 +2419,7 @@
           "sdk": "supported",
           "example_app": "partial",
           "restart": "tested",
-          "reason": "The SDK bridges preview, execution and status by a durable operation UUID, the two asset-lock operation-id persistence slots and the wallet-drain recovery rules; an instrumented test finds a persisted drain lock by its operation UUID from a new manager over the same database and sees a second drain refused. KotlinExampleApp exposes the flow (TEST_PLAN SH-18 to SH-20): a Max switch on the Core to shielded screen shows the preview and runs the drain, the operation UUID is stored in Room before the call, the status is read when the manager is activated, and a saved transfer is listed on the wallet screen and resumed from the exact asset-lock outpoint its status names. An emulator run against testnet killed the app after the asset lock was broadcast and finished the same lock through Resume. The app is partial because Max sweeps only Core account index 0 (the screen has no account picker), the refused second Max (SH-20) has not been run in the app, only through the instrumented test, and the CoinJoin drain has no Max flow there."
+          "reason": "The SDK bridges preview, execution and status by a durable operation UUID, the two asset-lock operation-id persistence slots and the wallet-drain recovery rules. Like Swift, the Room store also keeps the Orchard recipient recorded on a shielded asset lock (the two shielded-recipient slots, attesting ASSET_LOCK_SHIELDED_RECIPIENTS), so a resume after a restart pays that recipient and refuses another; a unit test stores the lock and its recipient, closes and reopens the database and reads the recipient back. An instrumented test finds a persisted drain lock by its operation UUID from a new manager over the same database and sees a second drain refused. KotlinExampleApp exposes the flow (TEST_PLAN SH-18 to SH-20): a Max switch on the Core to shielded screen shows the preview and runs the drain, the operation UUID is stored in Room before the call, the status is read when the manager is activated, and a saved transfer is listed on the wallet screen and resumed from the exact asset-lock outpoint its status names. An emulator run against testnet killed the app after the asset lock was broadcast and finished the same lock through Resume. The app is partial because Max sweeps only Core account index 0 (the screen has no account picker), the refused second Max (SH-20) has not been run in the app, only through the instrumented test, and the CoinJoin drain has no Max flow there."
         }
       },
       "verification": [
@@ -2518,6 +2518,38 @@
           "id": "shouldKeepTheOperationIdThroughLaterStatusUpsertsAndOnTheTerminalRow",
           "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
           "covers_restart": true
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/AssetLockShieldedRecipientPersistenceTest.kt",
+          "id": "shouldRestoreTheRecipientAfterTheDatabaseIsClosedAndReopened",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": true
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/persistence/AssetLockShieldedRecipientPersistenceTest.kt",
+          "id": "shouldKeepTheRecipientThroughLaterStatusUpsertsAndOnTheTerminalRow",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "assetLockShieldedRecipientCapabilityNeedsEveryOverride",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/persistence/DashDatabaseMigrationTest.kt",
+          "id": "migrate19To20AddsTheAssetLockShieldedRecipientColumn",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
         },
         {
           "host": "kotlin",
