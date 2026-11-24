@@ -1790,10 +1790,13 @@ class PlatformWalletManager(
 
     /**
      * Add or replace the identity-token sync registry row for [identityId],
-     * watching [tokenIds] (each a 32-byte token id). Each sync pass then reads
-     * these balances and persists them through `onPersistTokenBalanceUpsert`
-     * into the `token_balances` table. Idempotent: a second call replaces the
-     * watched set, and balances of tokens kept across the swap survive.
+     * watching [tokenIds] (each a 32-byte token id; a repeated id is watched
+     * once). Each sync pass then reads these balances and persists them
+     * through `onPersistTokenBalanceUpsert` into the `token_balances` table;
+     * a token the identity does not hold yet stays watched. A second call
+     * replaces the native registry row with zero-balance placeholders and
+     * resets its sync timestamp; it does not change rows already stored in
+     * Room. An empty [tokenIds] stops the identity's watches.
      *
      * Port of Swift's `PlatformWalletManager.registerIdentityForTokenSync`
      * (`PlatformWalletManagerIdentitySync.swift`).
@@ -1814,7 +1817,9 @@ class PlatformWalletManager(
 
     /**
      * Run one identity-token sync pass across every registered identity now,
-     * returning when it completes (at once when a pass is already running).
+     * returning when it completes. When a pass is already running it returns
+     * at once, and the running pass runs again after it finishes, so
+     * registrations made before this call are synced.
      *
      * Port of Swift's `PlatformWalletManager.syncIdentityTokensNow()`
      * (`PlatformWalletManagerIdentitySync.swift`).

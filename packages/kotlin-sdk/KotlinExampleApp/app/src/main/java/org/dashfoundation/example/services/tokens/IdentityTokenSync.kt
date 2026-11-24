@@ -6,16 +6,20 @@ import org.dashfoundation.dashsdk.persistence.entities.TokenEntity
 import org.dashfoundation.example.util.Base58
 
 /**
- * Registers an identity's watched tokens with the Rust identity-token sync
- * and runs one sync pass, so `onPersistTokenBalanceUpsert` fills the
- * `token_balances` rows the Tokens list and the token action forms read.
+ * Registers the wallet's identities and their watched tokens with the Rust
+ * identity-token sync and runs one sync pass, so `onPersistTokenBalanceUpsert`
+ * fills the `token_balances` rows the Tokens list and the token action forms
+ * read.
  *
  * Port of the persistence half of `IdentityDetailView.reloadTokenBalances`
  * (SwiftExampleApp `IdentityDetailView.swift`): the watched set is every
  * locally saved token on the active network, each token id comes from the
  * native `calculateTokenId` (the protocol formula is not mirrored here), and
- * a failure is non-fatal, so the next reload tries again. As in Swift, an
- * empty local token list registers nothing.
+ * a failure is non-fatal, so the next reload tries again. Swift registers the
+ * one identity on screen; this registers every wallet identity on the
+ * network with the same set, so a sender picked on a token's action screen is
+ * synced too and a removed contract's token stops being watched for every
+ * identity, not only the one selected. An empty saved set clears the watches.
  */
 object IdentityTokenSync {
 
@@ -47,22 +51,24 @@ object IdentityTokenSync {
     }
 
     /**
-     * Register [identityId] with the watched ids of [tokens] and run one sync
-     * pass. Returns false when nothing was registered or the native calls
-     * failed; never throws except on cancellation.
+     * Register each of [identityIds] with the watched ids of [tokens] and,
+     * when any token is watched, run one sync pass. With no saved token the
+     * identities are registered with none, which stops their watches.
+     * Returns true when a sync pass ran; false when there was nothing to sync
+     * or the native calls failed. Never throws except on cancellation.
      */
     suspend fun refresh(
-        identityId: ByteArray,
+        identityIds: List<ByteArray>,
         tokens: List<TokenEntity>,
         calculateTokenId: suspend (contractIdBase58: String, position: Int) -> String?,
         register: suspend (identityId: ByteArray, tokenIds: List<ByteArray>) -> Unit,
         syncNow: suspend () -> Unit,
     ): Boolean {
-        if (tokens.isEmpty()) return false
+        if (identityIds.isEmpty()) return false
         val tokenIds = watchedTokenIds(tokens, calculateTokenId)
-        if (tokenIds.isEmpty()) return false
         return try {
-            register(identityId, tokenIds)
+            for (identityId in identityIds) register(identityId, tokenIds)
+            if (tokenIds.isEmpty()) return false
             syncNow()
             true
         } catch (e: CancellationException) {

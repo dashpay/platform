@@ -47,6 +47,14 @@ interface TokenDao {
     )
     fun observeTokensByNetwork(networkRaw: Int): Flow<List<TokenEntity>>
 
+    /** One-shot form of [observeTokensByNetwork], for persistence callbacks. */
+    @Query(
+        "SELECT tokens.* FROM tokens INNER JOIN data_contracts " +
+            "ON tokens.contractId = data_contracts.id " +
+            "WHERE data_contracts.networkRaw = :networkRaw"
+    )
+    suspend fun getTokensByNetwork(networkRaw: Int): List<TokenEntity>
+
     /** Mirror of `mintableTokensPredicate()` (`manualMintingRules != nil`). */
     @Query("SELECT * FROM tokens WHERE canManuallyMint = 1")
     fun observeMintableTokens(): Flow<List<TokenEntity>>

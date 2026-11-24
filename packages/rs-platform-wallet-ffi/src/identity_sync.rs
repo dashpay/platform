@@ -163,22 +163,31 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_set_interval(
 /// Synchronous from the FFI caller's point of view — blocks the
 /// calling thread until the pass completes. If a pass is already in
 /// flight (e.g. fired by the background loop), returns `Success`
-/// immediately without scheduling extra work; check `is_syncing` if
-/// the caller needs to distinguish.
+/// immediately and the pass in flight runs once more after it
+/// finishes, so registrations made before this call are still synced.
+/// A panic inside the pass is returned as `ErrorWalletOperation`
+/// instead of unwinding through this export.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_identity_sync_sync_now(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        // `block_on_worker`, NOT `runtime().block_on`: the pass
-        // verifies GroveDB proofs whose recursion blows the ~512 KB
-        // stack of the host's dispatch/concurrency calling thread
-        // (same SIGBUS as the shielded/dashpay Sync Now buttons).
-        let mgr = manager.identity_sync_arc();
-        block_on_worker(async move { mgr.sync_now().await });
-    });
-    unwrap_option_or_return!(option);
-    PlatformWalletFFIResult::ok()
+    catch_panic_to_code(
+        "platform_wallet_manager_identity_sync_sync_now",
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        "Balances read before the failure may already be stored; run the sync again.",
+        || {
+            let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+                // `block_on_worker`, NOT `runtime().block_on`: the pass
+                // verifies GroveDB proofs whose recursion blows the ~512 KB
+                // stack of the host's dispatch/concurrency calling thread
+                // (same SIGBUS as the shielded/dashpay Sync Now buttons).
+                let mgr = manager.identity_sync_arc();
+                block_on_worker(async move { mgr.sync_now().await });
+            });
+            unwrap_option_or_return!(option);
+            PlatformWalletFFIResult::ok()
+        },
+    )
 }
 
 /// Snapshot the identity-token sync state for one identity.

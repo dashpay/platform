@@ -10,15 +10,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Wiring of [IdentityTokenSync]: the Tokens screen registers the selected
+ * Wiring of [IdentityTokenSync]: the Tokens screen registers every wallet
  * identity with the canonical ids of every local token and then runs one
- * sync pass, the way `IdentityDetailView.reloadTokenBalances` does in
- * SwiftExampleApp. Token ids come from the injected native calculation; the
- * test only checks they are passed through.
+ * sync pass, the way `IdentityDetailView.reloadTokenBalances` does for one
+ * identity in SwiftExampleApp. Token ids come from the injected native
+ * calculation; the test only checks they are passed through.
  */
 class IdentityTokenSyncTest {
 
     private val identityId = ByteArray(32) { 7 }
+    private val otherIdentityId = ByteArray(32) { 8 }
 
     private fun token(contractTag: Int, position: Int) = TokenEntity(
         id = ByteArray(32) { contractTag.toByte() } + byteArrayOf(0, 0, 0, position.toByte()),
@@ -40,12 +41,12 @@ class IdentityTokenSyncTest {
 
     private class Recorder {
         val calls = mutableListOf<String>()
-        var registeredIdentity: ByteArray? = null
-        var registeredTokens: List<ByteArray> = emptyList()
+        val registered = mutableListOf<Pair<ByteArray, List<ByteArray>>>()
+        val registeredIdentity: ByteArray? get() = registered.lastOrNull()?.first
+        val registeredTokens: List<ByteArray> get() = registered.lastOrNull()?.second.orEmpty()
         val register: suspend (ByteArray, List<ByteArray>) -> Unit = { id, tokens ->
             calls += "register"
-            registeredIdentity = id
-            registeredTokens = tokens
+            registered += id to tokens
         }
         val syncNow: suspend () -> Unit = { calls += "syncNow" }
     }
@@ -56,7 +57,7 @@ class IdentityTokenSyncTest {
         val recorder = Recorder()
 
         val done = IdentityTokenSync.refresh(
-            identityId, tokens, calculate, recorder.register, recorder.syncNow,
+            listOf(identityId), tokens, calculate, recorder.register, recorder.syncNow,
         )
 
         assertTrue(done)
@@ -70,11 +71,44 @@ class IdentityTokenSyncTest {
     }
 
     @Test
-    fun shouldRegisterNothingWhenNoTokenIsSavedLocally() = runTest {
+    fun shouldRegisterEveryIdentityWithTheSameTokensThenSyncOnce() = runTest {
+        val tokens = listOf(token(1, 0), token(2, 0))
+        val recorder = Recorder()
+
+        IdentityTokenSync.refresh(
+            listOf(identityId, otherIdentityId), tokens, calculate,
+            recorder.register, recorder.syncNow,
+        )
+
+        assertEquals(listOf("register", "register", "syncNow"), recorder.calls)
+        assertArrayEquals(identityId, recorder.registered[0].first)
+        assertArrayEquals(otherIdentityId, recorder.registered[1].first)
+        assertEquals(2, recorder.registered[0].second.size)
+        recorder.registered[0].second.zip(recorder.registered[1].second).forEach { (a, b) ->
+            assertArrayEquals(a, b)
+        }
+    }
+
+    @Test
+    fun shouldClearEveryIdentitysWatchWhenNoTokenIsSavedLocally() = runTest {
         val recorder = Recorder()
 
         val done = IdentityTokenSync.refresh(
-            identityId, emptyList(), calculate, recorder.register, recorder.syncNow,
+            listOf(identityId, otherIdentityId), emptyList(), calculate,
+            recorder.register, recorder.syncNow,
+        )
+
+        assertFalse(done)
+        assertEquals("registered with no tokens, no pass", listOf("register", "register"), recorder.calls)
+        assertTrue(recorder.registered.all { it.second.isEmpty() })
+    }
+
+    @Test
+    fun shouldDoNothingWithoutIdentities() = runTest {
+        val recorder = Recorder()
+
+        val done = IdentityTokenSync.refresh(
+            emptyList(), listOf(token(1, 0)), calculate, recorder.register, recorder.syncNow,
         )
 
         assertFalse(done)
@@ -89,7 +123,7 @@ class IdentityTokenSyncTest {
         val recorder = Recorder()
 
         IdentityTokenSync.refresh(
-            identityId,
+            listOf(identityId),
             listOf(good, failing),
             { contract, position ->
                 if (contract == failingContract) error("native failure") else calculate(contract, position)
@@ -130,7 +164,7 @@ class IdentityTokenSyncTest {
         var synced = false
 
         val done = IdentityTokenSync.refresh(
-            identityId,
+            listOf(identityId),
             listOf(token(1, 0)),
             calculate,
             { _, _ -> error("dead manager") },

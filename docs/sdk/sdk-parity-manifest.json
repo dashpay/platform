@@ -1785,7 +1785,7 @@
           "sdk": "supported",
           "example_app": "partial",
           "restart": "not_applicable",
-          "reason": "PlatformWalletManager.registerIdentityForTokenSync and syncIdentityTokensNow wrap the FFI entry points through JNI (rs-unified-sdk-jni wallet_manager.rs). KotlinExampleApp's Tokens screen registers the selected identity with every locally saved token on the active network (ids from calculateTokenId) and runs one sync pass whenever the identity or the saved token set changes, so onPersistTokenBalanceUpsert fills token_balances for the TOKEN BALANCES list and the token action forms (TEST_PLAN TOK-01, TOK-02). Swift does this from the identity detail screen, which has no Tokens section on Android. Partial because no emulator or network run has been recorded; the stored rows survive a restart."
+          "reason": "PlatformWalletManager.registerIdentityForTokenSync and syncIdentityTokensNow wrap the FFI entry points through JNI (rs-unified-sdk-jni wallet_manager.rs). KotlinExampleApp's Tokens screen registers every wallet identity on the network with every locally saved token on that network (ids from calculateTokenId) and runs one sync pass whenever the identities or the saved token set change, so onPersistTokenBalanceUpsert fills token_balances for the TOKEN BALANCES list and the token action forms (TEST_PLAN TOK-01, TOK-02). The persistence handler links each row to its saved token through the canonical token id and labels it with the manager's network. Swift does this for one identity from the identity detail screen, which has no Tokens section on Android. Partial because no emulator or network run has been recorded; the stored rows survive a restart."
         }
       },
       "verification": [
