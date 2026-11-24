@@ -225,11 +225,22 @@ struct MultipleChoiceProposalsView: View {
 private struct MultipleChoiceProposalRow: View {
     let proposal: MultipleChoiceProposal
 
+    @EnvironmentObject var appState: AppState
+    /// The vote's state as Platform reports it; `nil` until read.
+    @State private var pollState: ProposalPollBadgeState?
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(proposal.title)
-                .font(.headline)
-                .lineLimit(2)
+            HStack(alignment: .firstTextBaseline) {
+                Text(proposal.title)
+                    .font(.headline)
+                    .lineLimit(2)
+                Spacer(minLength: 8)
+                ProposalPollStateBadge(
+                    state: pollState,
+                    accessibilityIdentifier: "multipleChoiceProposals.row.pollState"
+                )
+            }
             HStack(spacing: 12) {
                 if let createdAt = proposal.createdAt {
                     Label {
@@ -238,8 +249,10 @@ private struct MultipleChoiceProposalRow: View {
                         Image(systemName: "calendar")
                     }
                 }
+                // `open` says who may enter choices, not whether the vote
+                // runs: the badge above shows that.
                 Label(
-                    proposal.open ? "Open" : "Owner only",
+                    proposal.open ? "Anyone enters choices" : "Proposer enters choices",
                     systemImage: proposal.open ? "person.3" : "person"
                 )
                 if proposal.descriptionDocument != nil {
@@ -255,5 +268,22 @@ private struct MultipleChoiceProposalRow: View {
                 .truncationMode(.middle)
         }
         .padding(.vertical, 2)
+        .task(id: proposal.id) {
+            await loadPollState()
+        }
+    }
+
+    /// Read the vote so the badge shows whether it still runs: Platform
+    /// reports a result once the vote ended.
+    private func loadPollState() async {
+        pollState = nil
+        guard let sdk = appState.sdk else { return }
+        do {
+            let vote = try await sdk.multipleChoiceProposalVote(proposalId: proposal.id)
+            pollState = vote.result == nil ? .voting : .closed(detail: nil)
+        } catch {
+            // Leave the badge out: an unknown state is not shown as either.
+            pollState = nil
+        }
     }
 }

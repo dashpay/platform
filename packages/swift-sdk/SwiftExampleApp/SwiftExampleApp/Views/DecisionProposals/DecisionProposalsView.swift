@@ -233,11 +233,23 @@ struct DecisionProposalsView: View {
 private struct DecisionProposalRow: View {
     let proposal: DecisionProposal
 
+    @EnvironmentObject var appState: AppState
+    /// The poll's state as Platform reports it; `nil` until read, and for a
+    /// poll that was never opened.
+    @State private var pollState: ProposalPollBadgeState?
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(proposal.title)
-                .font(.headline)
-                .lineLimit(2)
+            HStack(alignment: .firstTextBaseline) {
+                Text(proposal.title)
+                    .font(.headline)
+                    .lineLimit(2)
+                Spacer(minLength: 8)
+                ProposalPollStateBadge(
+                    state: pollState,
+                    accessibilityIdentifier: "decisionProposals.row.pollState"
+                )
+            }
             HStack(spacing: 12) {
                 Label {
                     Text(proposal.endDate, style: proposal.endDate > Date() ? .relative : .date)
@@ -256,5 +268,28 @@ private struct DecisionProposalRow: View {
                 .truncationMode(.middle)
         }
         .padding(.vertical, 2)
+        .task(id: proposal.id) {
+            await loadPollState()
+        }
+    }
+
+    /// Read the poll so the badge shows whether it still runs, from
+    /// Platform's status rather than the end date against the device clock.
+    private func loadPollState() async {
+        pollState = nil
+        guard let sdk = appState.sdk else { return }
+        do {
+            guard let state = try await sdk.decisionProposalVotePollState(proposalId: proposal.id) else {
+                return
+            }
+            if let result = state.result {
+                pollState = .closed(detail: result.passed ? "passed" : "did not pass")
+            } else {
+                pollState = .voting
+            }
+        } catch {
+            // Leave the badge out: an unknown state is not shown as either.
+            pollState = nil
+        }
     }
 }

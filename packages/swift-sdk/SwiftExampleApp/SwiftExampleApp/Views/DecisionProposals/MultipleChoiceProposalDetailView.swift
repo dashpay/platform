@@ -234,24 +234,35 @@ struct MultipleChoiceProposalDetailView: View {
                     .foregroundColor(.green)
             }
 
-            Button {
-                actionMessage = nil
-                showVoteSheet = true
-            } label: {
-                Label("Vote as Masternode…", systemImage: "hand.raised.fill")
-            }
-            // An ended vote keeps no votes; Platform refuses one.
-            .disabled(appState.sdk == nil || vote?.result != nil)
-            .accessibilityIdentifier("multipleChoiceProposal.vote")
+            if let result = vote?.result {
+                // An ended vote keeps no votes and takes no choices; Platform
+                // refuses both, so neither is offered once it reports a result.
+                Label(
+                    "Voting closed at block \(result.finalizationBlock.height); no more votes or choices.",
+                    systemImage: "lock.fill"
+                )
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .accessibilityIdentifier("multipleChoiceProposal.votingClosed")
+            } else {
+                Button {
+                    actionMessage = nil
+                    showVoteSheet = true
+                } label: {
+                    Label("Vote as Masternode…", systemImage: "hand.raised.fill")
+                }
+                .disabled(appState.sdk == nil)
+                .accessibilityIdentifier("multipleChoiceProposal.vote")
 
-            Button {
-                actionMessage = nil
-                showEnterChoiceSheet = true
-            } label: {
-                Label("Enter a Choice…", systemImage: "plus.bubble")
+                Button {
+                    actionMessage = nil
+                    showEnterChoiceSheet = true
+                } label: {
+                    Label("Enter a Choice…", systemImage: "plus.bubble")
+                }
+                .disabled(appState.sdk == nil || localSigners.isEmpty)
+                .accessibilityIdentifier("multipleChoiceProposal.enterChoice")
             }
-            .disabled(appState.sdk == nil || localSigners.isEmpty || vote?.result != nil)
-            .accessibilityIdentifier("multipleChoiceProposal.enterChoice")
 
             if localOwner != nil {
                 Button {

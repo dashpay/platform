@@ -836,11 +836,8 @@ struct CreateIdentityView: View {
 
     private var walletlessSection: some View {
         Section {
-            TextEditor(text: $walletlessProof)
-                .font(.system(.footnote, design: .monospaced))
+            PlainTextEditor(text: $walletlessProof, textStyle: .footnote)
                 .frame(minHeight: 120)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
         } header: {
             Text("Asset Lock Proof")
         } footer: {

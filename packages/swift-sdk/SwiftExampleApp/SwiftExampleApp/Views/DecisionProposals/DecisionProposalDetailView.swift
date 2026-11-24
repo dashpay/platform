@@ -235,15 +235,26 @@ struct DecisionProposalDetailView: View {
                 .foregroundColor(actionMessageIsError ? .orange : .green)
             }
 
-            Button {
-                actionMessage = nil
-                showVoteSheet = true
-            } label: {
-                Label("Vote as Masternode…", systemImage: "hand.raised.fill")
+            if let result = pollState?.result {
+                // A finished poll keeps no votes; Platform refuses one, so it
+                // is not offered once Platform reports the poll finished.
+                Label(
+                    "Voting closed at block \(result.finalizationBlock.height); no more votes.",
+                    systemImage: "lock.fill"
+                )
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .accessibilityIdentifier("decisionProposal.votingClosed")
+            } else {
+                Button {
+                    actionMessage = nil
+                    showVoteSheet = true
+                } label: {
+                    Label("Vote as Masternode…", systemImage: "hand.raised.fill")
+                }
+                .disabled(appState.sdk == nil)
+                .accessibilityIdentifier("decisionProposal.vote")
             }
-            // A finished poll keeps no votes; Platform refuses one.
-            .disabled(appState.sdk == nil || pollState?.result != nil)
-            .accessibilityIdentifier("decisionProposal.vote")
 
             if localOwner != nil {
                 Button {

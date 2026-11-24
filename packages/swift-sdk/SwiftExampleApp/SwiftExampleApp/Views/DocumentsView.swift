@@ -549,11 +549,12 @@ struct ReplaceDocumentView: View {
                     }
                     immutabilitySection
                     Section {
-                        TextEditor(text: $propertiesText)
-                            .font(.system(.body, design: .monospaced))
-                            .frame(minHeight: 200)
-                            .disabled(isSubmitting)
-                            .accessibilityIdentifier("documentReplace.jsonEditor")
+                        PlainTextEditor(
+                            text: $propertiesText,
+                            accessibilityIdentifier: "documentReplace.jsonEditor"
+                        )
+                        .frame(minHeight: 200)
+                        .disabled(isSubmitting)
                     } header: {
                         Text("Properties (JSON)")
                     } footer: {
