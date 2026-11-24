@@ -271,8 +271,6 @@ impl PlatformWalletInfo {
         for outpoint in arrived {
             if self.core_wallet.lock_outpoint(outpoint) {
                 result.locked_outpoints.push(outpoint);
-                // The lock set is persisted wallet state.
-                result.state_modified = true;
             }
         }
     }
