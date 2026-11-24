@@ -596,7 +596,7 @@ internal fun PrivateEntryCreateSubmitArea(
     // Counted so a tap answered with the same words as the last one scrolls again
     var taps by remember { mutableIntStateOf(0) }
     LaunchedEffect(taps, localRefusal) {
-        if (localRefusal != null || (taps > 0 && outcome != null)) answer.bringIntoView()
+        if (localRefusal != null) answer.bringIntoView()
     }
     // By identity: two creates that may have gone through give equal outcomes
     val scrolledTo = remember {
