@@ -697,14 +697,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                             tracked_out_point: Some(out_point),
                         }))
                     }
-                    Err(PlatformWalletError::FinalityTimeout(out_point)) => {
-                        // The exact outpoint that timed out comes from
-                        // the error payload — no `find_tracked_unproven_lock`
-                        // walk needed (which would pick BTreeMap-first
-                        // on multiple unproven locks for the same key).
-                        Ok(FundingResolution::IsTimeout { out_point })
-                    }
-                    Err(e) => Err(e),
+                    // The exact outpoint that timed out comes from the error
+                    // payload, read through the class wrapper — no
+                    // `find_tracked_unproven_lock` walk needed (which would
+                    // pick BTreeMap-first on multiple unproven locks for the
+                    // same key).
+                    Err(e) => match e.instant_lock_timeout() {
+                        Some(out_point) => Ok(FundingResolution::IsTimeout { out_point }),
+                        None => Err(e),
+                    },
                 }
             }
             AssetLockFunding::DrainWalletBalance {
@@ -737,10 +738,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                             tracked_out_point: Some(out_point),
                         }))
                     }
-                    Err(PlatformWalletError::FinalityTimeout(out_point)) => {
-                        Ok(FundingResolution::IsTimeout { out_point })
-                    }
-                    Err(error) => Err(error),
+                    Err(error) => match error.instant_lock_timeout() {
+                        Some(out_point) => Ok(FundingResolution::IsTimeout { out_point }),
+                        None => Err(error),
+                    },
                 }
             }
             AssetLockFunding::DrainAccountBalance {
@@ -768,10 +769,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                             tracked_out_point: Some(out_point),
                         }))
                     }
-                    Err(PlatformWalletError::FinalityTimeout(out_point)) => {
-                        Ok(FundingResolution::IsTimeout { out_point })
-                    }
-                    Err(e) => Err(e),
+                    Err(e) => match e.instant_lock_timeout() {
+                        Some(out_point) => Ok(FundingResolution::IsTimeout { out_point }),
+                        None => Err(e),
+                    },
                 }
             }
             AssetLockFunding::FromExistingAssetLock {
@@ -822,17 +823,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     // lock for a row it cannot take on (a proofless
                     // `RecoveredFromChain` one), but its timeout still
                     // routes to the ChainLock fallback.
-                    Err(e) => match e.dispatched_source() {
-                        PlatformWalletError::FinalityTimeout(timed_out) => {
-                            // Outpoint from the error (which equals
-                            // `out_point` from the variant in practice —
-                            // but we use the error payload for parity
-                            // with the FromWalletBalance arm).
-                            Ok(FundingResolution::IsTimeout {
-                                out_point: *timed_out,
-                            })
-                        }
-                        _ => Err(e),
+                    Err(e) => match e.instant_lock_timeout() {
+                        // Outpoint from the error (which equals `out_point`
+                        // from the variant in practice — but we use the error
+                        // payload for parity with the FromWalletBalance arm).
+                        Some(timed_out) => Ok(FundingResolution::IsTimeout {
+                            out_point: timed_out,
+                        }),
+                        None => Err(e),
                     },
                 }
             }

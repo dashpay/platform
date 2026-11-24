@@ -369,11 +369,14 @@ where
     let mut attempt = 0u32;
     loop {
         attempt += 1;
-        match fund(funding).await {
+        // The timeout is read through the class wrapper: a funding that
+        // names no held lock still timed out on this batch's lock.
+        match fund(funding)
+            .await
+            .map_err(|e| (e.instant_lock_timeout(), e))
+        {
             Ok(()) => return Ok(()),
-            Err(PlatformWalletError::FinalityTimeout(out_point))
-                if attempt < SEED_BATCH_FINALITY_RETRIES =>
-            {
+            Err((Some(out_point), _)) if attempt < SEED_BATCH_FINALITY_RETRIES => {
                 tracing::warn!(
                     batch = batches_submitted,
                     attempt,
@@ -389,7 +392,7 @@ where
             }
             // A retry resumes the lock this batch already broadcast, so the
             // batch dispatched even when the resume is refused.
-            Err(e) => return Err(seed_batch_failure(e, batches_submitted > 0 || attempt > 1)),
+            Err((_, e)) => return Err(seed_batch_failure(e, batches_submitted > 0 || attempt > 1)),
         }
     }
 }
@@ -518,6 +521,41 @@ mod tests {
             .await
             .expect_err("the first attempt is refused");
         assert_eq!(first.payment_delivery(), PaymentDelivery::NotSent);
+    }
+
+    /// A timeout the funding wrapped in its payment class (no held lock) is
+    /// still a timeout of this batch's lock: the batch resumes that lock.
+    #[tokio::test(start_paused = true)]
+    async fn should_resume_a_batch_whose_timeout_names_no_held_lock() {
+        let out_point = dashcore::OutPoint::new(dashcore::Txid::from_byte_array([7; 32]), 0);
+        let mut calls = Vec::new();
+        let _ = fund_seed_batch(
+            0,
+            AssetLockFunding::FromWalletBalance {
+                amount_duffs: 1,
+                account_index: 0,
+            },
+            |funding| {
+                calls.push(funding);
+                let result = if calls.len() == 1 {
+                    Err(PlatformWalletError::PaymentAlreadyDispatched {
+                        held_lock: None,
+                        source: Box::new(PlatformWalletError::FinalityTimeout(out_point)),
+                    })
+                } else {
+                    Ok(())
+                };
+                async move { result }
+            },
+        )
+        .await;
+        assert!(matches!(
+            calls.as_slice(),
+            [
+                AssetLockFunding::FromWalletBalance { .. },
+                AssetLockFunding::FromExistingAssetLock { out_point: resumed, .. }
+            ] if *resumed == out_point
+        ));
     }
 
     #[test]

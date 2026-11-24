@@ -1643,6 +1643,17 @@ impl PlatformWalletError {
         }
     }
 
+    /// The outpoint whose InstantSend-lock wait timed out, when this error's
+    /// diagnostic ([`Self::dispatched_source`]) is a
+    /// [`Self::FinalityTimeout`]: the one lookup every reader of the timeout
+    /// shares, so a payment-class wrapper never hides it.
+    pub fn instant_lock_timeout(&self) -> Option<dashcore::OutPoint> {
+        match self.dispatched_source() {
+            Self::FinalityTimeout(out_point) => Some(*out_point),
+            _ => None,
+        }
+    }
+
     /// The tracked asset lock this error leaves held, when it names one: the
     /// lock exists and may be on the network, and the payment goes on by
     /// resuming it rather than by funding a new one. `None` for every other
@@ -1903,8 +1914,12 @@ pub fn is_asset_lock_proof_transaction_height_invalid(error: &dash_sdk::Error) -
 /// [`AssetLockManager::wait_for_proof`](crate::wallet::asset_lock::manager::AssetLockManager),
 /// which emits `PlatformWalletError::FinalityTimeout(Txid)` when the
 /// 300-second IS deadline elapses.
+///
+/// Reads through the payment-class wrappers
+/// ([`PlatformWalletError::instant_lock_timeout`]), as the wallet's own
+/// fallback does.
 pub fn is_instant_lock_timeout(error: &PlatformWalletError) -> bool {
-    matches!(error, PlatformWalletError::FinalityTimeout(_))
+    error.instant_lock_timeout().is_some()
 }
 
 /// Extract the `AddressInvalidNonceError` (DPP consensus code 40603) when
@@ -3395,6 +3410,30 @@ mod payment_delivery_tests {
             maybe,
             PlatformWalletError::TransactionBroadcastUnconfirmed(_)
         ));
+    }
+
+    /// A finality timeout reads as one through either payment-class wrapper,
+    /// for the wallet's fallback and the public predicate alike.
+    #[test]
+    fn should_find_a_finality_timeout_through_the_class_wrappers() {
+        let timeout = || PlatformWalletError::FinalityTimeout(out_point());
+        for error in [
+            timeout(),
+            timeout().without_held_lock(),
+            PlatformWalletError::RefusedBeforeDispatch {
+                source: Box::new(timeout()),
+            },
+        ] {
+            assert_eq!(error.instant_lock_timeout(), Some(out_point()), "{error:?}");
+            assert!(is_instant_lock_timeout(&error), "{error:?}");
+        }
+        assert!(matches!(
+            timeout().without_held_lock(),
+            PlatformWalletError::PaymentAlreadyDispatched { .. }
+        ));
+        let other = PlatformWalletError::AssetLockNotTracked(out_point()).after_dispatch();
+        assert_eq!(other.instant_lock_timeout(), None);
+        assert!(!is_instant_lock_timeout(&other));
     }
 
     /// A refusal its emitter proved came before the payment's first dispatch
