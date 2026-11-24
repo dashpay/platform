@@ -2,6 +2,8 @@ package org.dashfoundation.example.services.tokens
 
 import android.util.Log
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.dashfoundation.dashsdk.persistence.entities.TokenEntity
 import org.dashfoundation.example.util.Base58
 
@@ -21,10 +23,18 @@ import org.dashfoundation.example.util.Base58
  * other identities with no tokens, so a pass reads only the identity on
  * screen and a token whose contract was removed stops being watched for every
  * identity.
+ *
+ * Screens launch it in the application scope, so leaving the screen (for
+ * example opening Transfer) does not cancel it before its sync pass. Calls
+ * run one at a time in call order, so the latest screen's registration is
+ * the one left in place.
  */
 object IdentityTokenSync {
 
     private const val TAG = "IdentityTokenSync"
+
+    /** Serializes registrations and passes, first come first served. */
+    private val mutex = Mutex()
 
     /**
      * Canonical 32-byte token ids for [tokens], deduplicated in first-seen
@@ -65,14 +75,14 @@ object IdentityTokenSync {
         calculateTokenId: suspend (contractIdBase58: String, position: Int) -> String?,
         register: suspend (identityId: ByteArray, tokenIds: List<ByteArray>) -> Unit,
         syncNow: suspend () -> Unit,
-    ): Boolean {
+    ): Boolean = mutex.withLock {
         val tokenIds = watchedTokenIds(tokens, calculateTokenId)
-        return try {
+        try {
             for (other in otherIdentityIds) {
                 if (!other.contentEquals(identityId)) register(other, emptyList())
             }
             register(identityId, tokenIds)
-            if (tokenIds.isEmpty()) return false
+            if (tokenIds.isEmpty()) return@withLock false
             syncNow()
             true
         } catch (e: CancellationException) {
@@ -94,13 +104,15 @@ object IdentityTokenSync {
     suspend fun clear(
         identityIds: List<ByteArray>,
         register: suspend (identityId: ByteArray, tokenIds: List<ByteArray>) -> Unit,
-    ): Boolean = try {
-        for (identityId in identityIds) register(identityId, emptyList())
-        true
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        runCatching { Log.w(TAG, "identity token watch clear failed", e) }
-        false
+    ): Boolean = mutex.withLock {
+        try {
+            for (identityId in identityIds) register(identityId, emptyList())
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            runCatching { Log.w(TAG, "identity token watch clear failed", e) }
+            false
+        }
     }
 }

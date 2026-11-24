@@ -37,6 +37,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.TokenEntity
 import org.dashfoundation.example.di.LocalAppContainer
@@ -110,14 +111,19 @@ fun TokensScreen(navController: NavHostController) {
         val activeManager = manager ?: return@LaunchedEffect
         val activeSdk = sdk ?: return@LaunchedEffect
         val identity = selectedIdentity ?: return@LaunchedEffect
-        IdentityTokenSync.refresh(
-            identityId = identity.identityId,
-            otherIdentityIds = identities.map { it.identityId },
-            tokens = tokens,
-            calculateTokenId = activeSdk.tokenQueries::calculateTokenId,
-            register = activeManager::registerIdentityForTokenSync,
-            syncNow = activeManager::syncIdentityTokensNow,
-        )
+        val otherIds = identities.map { it.identityId }
+        val catalog = tokens
+        // Application scope: leaving the screen must not cancel the pass.
+        container.applicationScope.launch {
+            IdentityTokenSync.refresh(
+                identityId = identity.identityId,
+                otherIdentityIds = otherIds,
+                tokens = catalog,
+                calculateTokenId = activeSdk.tokenQueries::calculateTokenId,
+                register = activeManager::registerIdentityForTokenSync,
+                syncNow = activeManager::syncIdentityTokensNow,
+            )
+        }
     }
 
     Scaffold(

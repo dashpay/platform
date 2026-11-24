@@ -162,9 +162,9 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_set_interval(
 ///
 /// Synchronous from the FFI caller's point of view — blocks the
 /// calling thread until the pass completes. If a pass is already in
-/// flight (e.g. fired by the background loop), returns `Success`
-/// immediately without scheduling extra work; check `is_syncing` if
-/// the caller needs to distinguish.
+/// flight (e.g. fired by the background loop), it first waits for that
+/// pass to finish, since it may have read the watch list before the
+/// caller's latest registration, and then runs a pass that covers it.
 ///
 /// The manager registry's lock is held only to clone the coordinator,
 /// not across the pass, so a slow pass does not hold up other managers'
@@ -188,7 +188,7 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_sync_now(
             // verifies GroveDB proofs whose recursion blows the ~512 KB
             // stack of the host's dispatch/concurrency calling thread
             // (same SIGBUS as the shielded/dashpay Sync Now buttons).
-            block_on_worker(async move { mgr.sync_now().await });
+            block_on_worker(async move { mgr.sync_now_after_in_flight().await });
             PlatformWalletFFIResult::ok()
         },
     )

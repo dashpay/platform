@@ -533,7 +533,13 @@ where
     #[must_use = "None means the pass did NOT drain; the caller must fail closed"]
     pub(crate) async fn quiesce_held_within(&self, budget: Duration) -> Option<QuiesceGuard<'_>> {
         let guard = drain_pass(&self.quiescing, &self.is_syncing, || self.stop(), budget).await;
-        self.persistence_barrier().await;
+        if !self.persistence_barrier(budget).await {
+            // A store admitted before the gate closed is still running (a
+            // stalled persister): report the drain as incomplete and keep
+            // admission shut until that pass releases `is_syncing`.
+            self.quiescing.latch_closed();
+            return None;
+        }
         guard
     }
 
@@ -551,17 +557,21 @@ where
         let drained = guard.is_some();
         // Seal before the guard drops so its Drop cannot reopen.
         self.quiescing.seal();
-        self.persistence_barrier().await;
         drop(guard);
         drained
     }
 
-    /// Wait out a result application already past its gate check. Results
-    /// are applied under the `state` write lock after checking the gate, so
-    /// once the gate is closed and this lock has been taken once, no pass
-    /// (including one whose drain timed out) stores anything more.
-    async fn persistence_barrier(&self) {
-        drop(self.state.write().await);
+    /// Wait, at most `budget`, for a result application already past its
+    /// gate check. Results are applied under the `state` write lock after
+    /// checking the gate, so once the gate is closed and this lock has been
+    /// taken once, no pass (including one whose drain timed out) stores
+    /// anything more. `false` means a store admitted earlier is still running
+    /// at the deadline; the caller reports the quiesce as incomplete instead
+    /// of waiting on the persister without limit.
+    async fn persistence_barrier(&self, budget: Duration) -> bool {
+        tokio::time::timeout(budget, self.state.write())
+            .await
+            .is_ok()
     }
 
     /// Test-only: whether new sync passes are currently barred — a drain in
@@ -630,6 +640,24 @@ where
             .map(|d| d.as_secs())
             .unwrap_or(0);
         self.last_sync_unix.store(now, Ordering::Release);
+    }
+
+    /// [`sync_now`](Self::sync_now) for a manual caller that has just
+    /// registered identities or tokens: when a pass is in flight it waits
+    /// for that pass to finish first, since that pass may have snapshotted
+    /// the watch list before the registration. Any pass that starts after
+    /// the wait (this call's own, or a timer tick that took the slot first)
+    /// starts after the registration and covers it. Returns early, without a
+    /// pass, if the quiesce gate closes while it waits. Timer ticks keep
+    /// using `sync_now`, so they never wait.
+    pub async fn sync_now_after_in_flight(&self) {
+        while self.is_syncing.load(Ordering::Acquire) {
+            if self.quiescing.is_closed() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        self.sync_now().await;
     }
 
     /// Sync a single identity's watched tokens against Platform.
@@ -1254,6 +1282,42 @@ mod tests {
 
         assert_eq!(persister.stores.load(AtomicOrdering::SeqCst), 0);
         mgr.is_syncing.store(false, Ordering::Release);
+    }
+
+    /// A quiesce whose barrier cannot take the registry lock in time (a
+    /// store stalled inside the persister holds it) reports an incomplete
+    /// drain instead of waiting without limit, and keeps admission shut.
+    #[tokio::test]
+    async fn should_report_a_quiesce_timeout_while_a_store_is_stalled() {
+        let mgr = make_manager();
+        let stalled_store = mgr.state.write().await;
+
+        let drained = mgr.quiesce_within(Duration::from_millis(50)).await;
+
+        assert!(!drained);
+        assert!(mgr.sync_admission_closed());
+        drop(stalled_store);
+    }
+
+    /// The manual sync waits for a pass in flight and then runs its own, so
+    /// a registration that pass snapshotted past is still synced.
+    #[tokio::test]
+    async fn should_run_a_manual_pass_after_the_pass_in_flight() {
+        let mgr = make_manager();
+        mgr.is_syncing.store(true, Ordering::Release);
+        let releaser = {
+            let mgr = Arc::clone(&mgr);
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(60)).await;
+                mgr.is_syncing.store(false, Ordering::Release);
+            })
+        };
+
+        mgr.sync_now_after_in_flight().await;
+
+        releaser.await.unwrap();
+        assert!(mgr.last_sync_unix_seconds().is_some(), "its own pass ran");
+        assert!(!mgr.is_syncing());
     }
 
     /// A token proved absent (the identity holds none yet) has its stored

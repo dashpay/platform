@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -126,14 +127,19 @@ fun TokenActionPermissionsScreen(
         val activeSdk = sdk ?: return@LaunchedEffect
         val identity = resolvedIdentity ?: return@LaunchedEffect
         if (networkRaw == null) return@LaunchedEffect
-        IdentityTokenSync.refresh(
-            identityId = identity.identityId,
-            otherIdentityIds = identities.map { it.identityId },
-            tokens = networkTokens,
-            calculateTokenId = activeSdk.tokenQueries::calculateTokenId,
-            register = activeManager::registerIdentityForTokenSync,
-            syncNow = activeManager::syncIdentityTokensNow,
-        )
+        val otherIds = identities.map { it.identityId }
+        val catalog = networkTokens
+        // Application scope: leaving the screen must not cancel the pass.
+        container.applicationScope.launch {
+            IdentityTokenSync.refresh(
+                identityId = identity.identityId,
+                otherIdentityIds = otherIds,
+                tokens = catalog,
+                calculateTokenId = activeSdk.tokenQueries::calculateTokenId,
+                register = activeManager::registerIdentityForTokenSync,
+                syncNow = activeManager::syncIdentityTokensNow,
+            )
+        }
     }
 
     // Live balance + on-chain pause reconciliation for the acting identity.
