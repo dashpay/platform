@@ -82,6 +82,21 @@ impl ProvedShieldFromAssetLockBundle {
         })
     }
 
+    /// Whether [`Self::build_transition_with_signer`] accepts `asset_lock_proof` at
+    /// `platform_version`: a proof of the outpoint the bundle was proved for, under a version
+    /// that binds the same asset-lock data into the sighash as the proving version did.
+    pub fn is_bound_to(
+        &self,
+        asset_lock_proof: &AssetLockProof,
+        platform_version: &PlatformVersion,
+    ) -> Result<bool, ProtocolError> {
+        Ok(
+            asset_lock_proof.out_point() == Some(self.asset_lock_out_point)
+                && shield_from_asset_lock_extra_sighash_data(asset_lock_proof, platform_version)?
+                    == self.extra_sighash_data,
+        )
+    }
+
     /// Wraps the proved bundle into a `ShieldFromAssetLock` transition funded by
     /// `asset_lock_proof`: signs the bundle afresh and has `asset_lock_signer` produce the outer
     /// ECDSA signature. Does not consume the proved bundle, so a rejected transition can be
@@ -102,10 +117,7 @@ impl ProvedShieldFromAssetLockBundle {
     where
         AS: ::key_wallet::signer::Signer,
     {
-        if asset_lock_proof.out_point() != Some(self.asset_lock_out_point)
-            || shield_from_asset_lock_extra_sighash_data(&asset_lock_proof, platform_version)?
-                != self.extra_sighash_data
-        {
+        if !self.is_bound_to(&asset_lock_proof, platform_version)? {
             return Err(ProtocolError::ShieldedBuildError(
                 "shield_from_asset_lock: the asset lock proof does not match the binding the \
                  bundle was proved with (different outpoint or protocol version)"
@@ -409,7 +421,7 @@ mod tests {
 
     #[cfg(feature = "core_key_wallet")]
     #[test]
-    fn proved_bundle_signs_afresh_and_verifies_against_a_real_lock_proof_binding() {
+    fn should_sign_a_proved_bundle_afresh_and_verify_against_a_real_lock_proof_binding() {
         // Consensus derives the sighash from the transition's own lock proof, not from what the
         // builder stored: verify against that, for a proof `prove` never saw, after each of two
         // signings (`signing_tests` checks they share the proof but not the signatures).

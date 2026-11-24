@@ -24,11 +24,14 @@
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::prelude::AssetLockProof;
 use crate::shielded::builder::build_shield_from_asset_lock_transition_with_signer;
+use crate::shielded::builder::test_helpers::{test_orchard_address, TestProver};
+use crate::shielded::builder::ProvedShieldFromAssetLockBundle;
 use crate::state_transition::shield_from_asset_lock_transition::methods::ShieldFromAssetLockTransitionMethodsV0;
 use crate::state_transition::shield_from_asset_lock_transition::v0::ShieldFromAssetLockTransitionV0;
 use crate::state_transition::shield_from_asset_lock_transition::v1::ShieldFromAssetLockTransitionV1;
 use crate::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
 use crate::state_transition::StateTransition;
+use crate::ProtocolError;
 use dashcore::OutPoint;
 use platform_version::version::PlatformVersion;
 
@@ -256,8 +259,6 @@ async fn build_shield_from_asset_lock_transition_with_signer_end_to_end() {
     // bundle (via the TestProver, which builds the proving key on
     // first call) and signs the outer ST with the external signer.
     // This is the codepath the wallet orchestration uses in production.
-    use crate::shielded::builder::test_helpers::{test_orchard_address, TestProver};
-
     let recipient = test_orchard_address();
     let signer = FixedKeySigner::new([7u8; 32]);
     let path = DerivationPath::default();
@@ -307,7 +308,6 @@ async fn seed_pool_batch_fits_max_state_transition_size() {
     // proof- or action-encoding size change that breaks seeding fails here
     // instead of on a devnet.
     use crate::serialization::PlatformSerializable;
-    use crate::shielded::builder::test_helpers::{test_orchard_address, TestProver};
 
     let platform_version = PlatformVersion::latest();
     let recipient = test_orchard_address();
@@ -352,14 +352,11 @@ async fn seed_pool_batch_fits_max_state_transition_size() {
 }
 
 #[tokio::test]
-async fn proved_bundle_assembles_around_any_proof_of_its_outpoint() {
+async fn should_assemble_a_proved_bundle_around_any_proof_of_its_outpoint() {
     // Proved from the outpoint alone, one bundle wraps a proof of that outpoint, the same proof
     // again and another proof of it. Each assembly signs afresh, so a resubmission never repeats a
     // rejected transition's hash. That an InstantSend and a ChainLock proof of one outpoint bind
     // alike is pinned in `shielded::sighash`.
-    use crate::shielded::builder::test_helpers::{test_orchard_address, TestProver};
-    use crate::shielded::builder::ProvedShieldFromAssetLockBundle;
-
     let platform_version = PlatformVersion::latest();
     let signer = FixedKeySigner::new([7u8; 32]);
     let path = DerivationPath::default();
@@ -400,19 +397,16 @@ async fn proved_bundle_assembles_around_any_proof_of_its_outpoint() {
         .await
         .expect_err("a bundle bound to another outpoint must not be assembled");
     assert!(
-        matches!(&err, crate::ProtocolError::ShieldedBuildError(msg)
+        matches!(&err, ProtocolError::ShieldedBuildError(msg)
             if msg.contains("does not match the binding")),
         "unexpected error: {err:?}"
     );
 }
 
 #[tokio::test]
-async fn proved_bundle_refuses_another_outpoint_where_the_sighash_binds_nothing() {
+async fn should_refuse_another_outpoint_where_the_sighash_binds_nothing() {
     // Protocol 13 predates `credit_pool_bundle_binding`, so the sighash is the same for every
     // lock: only the stored outpoint stops one proved bundle from funding the note twice.
-    use crate::shielded::builder::test_helpers::{test_orchard_address, TestProver};
-    use crate::shielded::builder::ProvedShieldFromAssetLockBundle;
-
     let platform_version = PlatformVersion::get(13).expect("protocol version 13");
     let signer = FixedKeySigner::new([7u8; 32]);
     let path = DerivationPath::default();
@@ -436,6 +430,12 @@ async fn proved_bundle_refuses_another_outpoint_where_the_sighash_binds_nothing(
         core_chain_locked_height: 100,
         out_point,
     });
+    assert!(proved
+        .is_bound_to(&own, platform_version)
+        .expect("binding at protocol 13"));
+    assert!(!proved
+        .is_bound_to(&own, PlatformVersion::latest())
+        .expect("binding at the latest version"));
     assemble(own.clone())
         .await
         .expect("a proof of its own outpoint assembles");
@@ -446,7 +446,7 @@ async fn proved_bundle_refuses_another_outpoint_where_the_sighash_binds_nothing(
         .await
         .expect_err("a bundle proved before the binding must not assemble after it");
     assert!(
-        matches!(&err, crate::ProtocolError::ShieldedBuildError(msg)
+        matches!(&err, ProtocolError::ShieldedBuildError(msg)
             if msg.contains("does not match the binding")),
         "unexpected error: {err:?}"
     );
@@ -454,7 +454,7 @@ async fn proved_bundle_refuses_another_outpoint_where_the_sighash_binds_nothing(
         .await
         .expect_err("a bundle proved for another outpoint must not be assembled");
     assert!(
-        matches!(&err, crate::ProtocolError::ShieldedBuildError(msg)
+        matches!(&err, ProtocolError::ShieldedBuildError(msg)
             if msg.contains("does not match the binding")),
         "unexpected error: {err:?}"
     );
