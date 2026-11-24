@@ -726,11 +726,35 @@ class ShieldedService(private val database: DashDatabase) {
         // again, not replaced. A bind made directly on the manager in that
         // gap is outside this service's lock and can still be replaced by
         // the accounts read just before it.
-        val mirrorNow = bindingTurns.read { boundWalletId.takeIf { manager === mgr } }.second
-        if (bindingTurns.read { manager !== mgr }.second) {
+        if (!registerOtherWalletsAgain(mgr, dbPath)) {
             android.util.Log.i(TAG, "Shielded clear: the service left this manager; no fleet recovery")
             return
         }
+        val stillOnManager = bindingTurns.read { manager === mgr }.second
+        val notRunning = runCatching { !mgr.isShieldedSyncRunning() }.getOrDefault(false)
+        if (isAvailable && notRunning && stillOnManager) {
+            runCatching { mgr.startShieldedSync() }.onFailure {
+                android.util.Log.w(TAG, "restart shielded sync after clear failed: ${it.message}", it)
+            }
+        }
+    }
+
+    /**
+     * [clearLocalState]'s fleet pass: register again, on [mgr]'s
+     * coordinator, every loaded wallet other than the mirror, each with the
+     * accounts Rust holds for it. Its own function so that the on-device
+     * test can run it after a reset without the sync restart that follows
+     * it in a Clear.
+     *
+     * @return false when the service has left [mgr] (an unbind, another
+     *   network) and nothing was registered.
+     */
+    internal suspend fun registerOtherWalletsAgain(
+        mgr: PlatformWalletManager,
+        dbPath: String,
+    ): Boolean {
+        val mirrorNow = bindingTurns.read { boundWalletId.takeIf { manager === mgr } }.second
+        if (bindingTurns.read { manager !== mgr }.second) return false
         engineBindOtherWallets(
             allWalletIds = mgr.wallets.value.keys,
             mirrorWalletId = mirrorNow?.joinToString("") { "%02x".format(it) }.orEmpty(),
@@ -747,13 +771,7 @@ class ShieldedService(private val database: DashDatabase) {
                 }
             }
         }
-        val stillOnManager = bindingTurns.read { manager === mgr }.second
-        val notRunning = runCatching { !mgr.isShieldedSyncRunning() }.getOrDefault(false)
-        if (isAvailable && notRunning && stillOnManager) {
-            runCatching { mgr.startShieldedSync() }.onFailure {
-                android.util.Log.w(TAG, "restart shielded sync after clear failed: ${it.message}", it)
-            }
-        }
+        return true
     }
 
     /**

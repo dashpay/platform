@@ -1920,9 +1920,10 @@ class PlatformWalletManager(
      * with the accounts it had. Rust is the source: the host keeps no copy
      * of its own.
      *
-     * Swift has no counterpart: its Clear registers nothing again. Only
-     * meaningful on a shielded build ([Sdk.hasShielded]); the native entry
-     * point is absent otherwise and this throws.
+     * Swift has no counterpart: its Clear registers nothing again, and its
+     * next Sync Now registers the other wallets with the default account.
+     * Only meaningful on a shielded build ([Sdk.hasShielded]); the native
+     * entry point is absent otherwise and this throws.
      */
     suspend fun shieldedOrdinaryAccounts(walletId: ByteArray): List<Int> =
         withContext(Dispatchers.IO) {

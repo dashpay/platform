@@ -5,6 +5,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.config.SdkConfig
@@ -45,6 +46,9 @@ class WalletManagerRoundTripTest {
     // BIP39 English test vector (entropy 0x7f repeated).
     private val otherTestMnemonic =
         "legal winner thank year wave sausage worth useful legal winner thank yellow"
+
+    /** How long a test waits for Rust to announce a balance state. */
+    private val stateWaitMs = 30_000L
 
     private lateinit var db: DashDatabase
     private lateinit var walletStorage: WalletStorage
@@ -355,14 +359,19 @@ class WalletManagerRoundTripTest {
     }
 
     /**
-     * A Clear through [ShieldedService] registers every loaded wallet again.
-     * A wallet other than the displayed one comes back with the accounts it
-     * had, read from Rust, where it used to come back with the default
-     * account 0 only (dashpay/platform#5989).
+     * After a Clear's reset, [ShieldedService] registers every loaded wallet
+     * other than the displayed one again, each with the accounts Rust holds
+     * for it. A wallet bound with other accounts used to come back with the
+     * default account 0 only (dashpay/platform#5989).
      *
-     * The Clear restarts the shielded sync loop, which this test stops
-     * again at once; the client is built offline, so a pass that started
-     * meanwhile reaches nothing.
+     * Two things are checked for the other wallet: that it is registered
+     * again (Rust announces its balance state as no longer unbound; the
+     * accounts alone would not show that, since the keys outlive the reset),
+     * and that it has the accounts it had.
+     *
+     * Offline: the reset is run directly and then the service's fleet pass,
+     * which is what a Clear runs between its Room wipe and its sync restart.
+     * Nothing here starts the sync loop, so nothing contacts the network.
      */
     @Test
     fun shieldedClearRegistersAnotherWalletAgainWithItsOwnAccounts() = runBlocking {
@@ -385,24 +394,44 @@ class WalletManagerRoundTripTest {
                     name = "shielded-clear-other",
                     createDefaultAccounts = true,
                 ).walletId
+                val otherKey = shieldedBalanceKey(other)
 
                 service.bind(manager, displayed, storePath)
                 assertTrue("the displayed wallet is bound", service.isBound.value)
                 assertTrue(service.bindEngine(manager, other, storePath, listOf(2, 1)))
                 assertEquals(listOf(1, 2), manager.shieldedOrdinaryAccounts(other))
-
-                try {
-                    service.clearLocalState()
-                } finally {
-                    runCatching { manager.stopShieldedSync() }
+                // Announced as registered first, so that each change below
+                // is one Rust reports on its own.
+                withTimeout(stateWaitMs) {
+                    manager.shieldedBalances.first {
+                        val state = it[otherKey]?.state
+                        state != null && state != ShieldedLocalBalanceState.Unbound
+                    }
                 }
 
+                // The reset drops the registration: Rust announces the
+                // wallet as unbound, while its keys still name its accounts.
+                manager.clearShieldedStorage()
+                withTimeout(stateWaitMs) {
+                    manager.shieldedBalances.first {
+                        it[otherKey]?.state == ShieldedLocalBalanceState.Unbound
+                    }
+                }
+                assertEquals(listOf(1, 2), manager.shieldedOrdinaryAccounts(other))
+
+                assertTrue(service.registerOtherWalletsAgain(manager, storePath))
+
+                withTimeout(stateWaitMs) {
+                    manager.shieldedBalances.first {
+                        val state = it[otherKey]?.state
+                        state != null && state != ShieldedLocalBalanceState.Unbound
+                    }
+                }
                 assertEquals(
-                    "the other wallet keeps its accounts across the Clear",
+                    "the other wallet is registered with the accounts it had",
                     listOf(1, 2),
                     manager.shieldedOrdinaryAccounts(other),
                 )
-                assertEquals(listOf(0), manager.shieldedOrdinaryAccounts(displayed))
             }
         } finally {
             service.close()
