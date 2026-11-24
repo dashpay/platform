@@ -549,11 +549,12 @@ struct ReplaceDocumentView: View {
                     }
                     immutabilitySection
                     Section {
-                        TextEditor(text: $propertiesText)
-                            .font(.system(.body, design: .monospaced))
-                            .frame(minHeight: 200)
-                            .disabled(isSubmitting)
-                            .accessibilityIdentifier("documentReplace.jsonEditor")
+                        PlainTextEditor(
+                            text: $propertiesText,
+                            accessibilityIdentifier: "documentReplace.jsonEditor"
+                        )
+                        .frame(minHeight: 200)
+                        .disabled(isSubmitting)
                     } header: {
                         Text("Properties (JSON)")
                     } footer: {
@@ -913,6 +914,13 @@ struct EraseDocumentView: View {
     @State private var progress: String?
     @State private var persistWarning: String?
     @State private var actionError: DocumentActionErrorBox?
+    /// Network of a read that observed ABSENT without an erase being
+    /// submitted (the opening read, or a skipped erase's preflight). The
+    /// local copy is then removed only on an explicit tap: the network code
+    /// alone does not tell two devnets apart, so the row may belong to
+    /// another chain than the one just read.
+    @State private var openingAbsentNetworkRaw: UInt32?
+    @State private var localCopyRemoved = false
 
     // This hides a button for presentation; Rust re-decides eligibility on every call.
     private var canSubmitAnother: Bool {
@@ -946,12 +954,32 @@ struct EraseDocumentView: View {
                                     .font(.caption)
                                     .accessibilityIdentifier("documentErase.progress")
                             }
-                            if let warning = persistWarning {
-                                Label(warning, systemImage: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.orange)
-                                    .font(.caption)
-                            }
                         }
+                    }
+                }
+                if let warning = persistWarning {
+                    // Shown on every path, including the opening read, which
+                    // changes neither `submissions` nor `progress`.
+                    Section {
+                        Label(warning, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                            .font(.caption)
+                            .accessibilityIdentifier("documentErase.localCopyWarning")
+                    }
+                }
+                // Follows the latest observation, not how many chunks this
+                // sheet submitted: an erase finished by another caller
+                // after an earlier chunk here also offers the removal.
+                if let networkRaw = openingAbsentNetworkRaw, !localCopyRemoved {
+                    Section {
+                        Button("Remove Local Copy") {
+                            persistWarning = removeLocalCopy(networkRaw: networkRaw)
+                            localCopyRemoved = persistWarning == nil
+                        }
+                        .frame(maxWidth: .infinity)
+                        .accessibilityIdentifier("documentErase.removeLocalCopy")
+                    } footer: {
+                        Text("Platform reports no retained revisions of this document on the network the app is connected to. If this copy was saved from that network, it is stale and can be removed from this device. Nothing is broadcast.")
                     }
                 }
                 Section {
@@ -990,6 +1018,8 @@ struct EraseDocumentView: View {
             }
             .interactiveDismissDisabled(isSubmitting)
             .task {
+                // The network the read goes to, captured before awaiting it.
+                let readNetworkRaw = (appState.sdk?.network ?? appState.currentNetwork).rawValue
                 let observed = try? await appState.sdk?.documentGetLifecycle(
                     dataContractId: contractIdBase58,
                     documentType: documentTypeName,
@@ -998,6 +1028,11 @@ struct EraseDocumentView: View {
                 // A skipped submission also has a newer lifecycle observation.
                 guard !isSubmitting, submissions == 0, progress == nil else { return }
                 lifecycle = observed
+                // Already ABSENT (an earlier erase whose closing read failed):
+                // the submit button is hidden, so offer the local cleanup.
+                if observed?.state == .absent {
+                    openingAbsentNetworkRaw = readNetworkRaw
+                }
             }
             .alert(item: $actionError) { err in
                 Alert(title: Text("Erase status"), message: Text(err.message), dismissButton: .default(Text("OK")))
@@ -1011,6 +1046,18 @@ struct EraseDocumentView: View {
                 && $0.wallet != nil
                 && $0.identityIdBase58 == document.ownerIdBase58
         }
+    }
+
+    /// Remove the local row for this document on the network that observed
+    /// it ABSENT; a row saved from another network with the same ids stays.
+    private func removeLocalCopy(networkRaw: UInt32) -> String? {
+        DocumentPersistence.removeErasedLocalCopy(
+            networkRaw: networkRaw,
+            contractId: contractIdBase58,
+            documentType: documentTypeName,
+            documentId: documentIdText,
+            modelContext: modelContext
+        )
     }
 
     private func submit() {
@@ -1027,6 +1074,8 @@ struct EraseDocumentView: View {
         isSubmitting = true
         let signer = KeychainSigner(modelContainer: modelContext.container)
         let ownerId = owner.identityId
+        // The erase runs on the owner's network; captured before awaiting it.
+        let eraseNetworkRaw = owner.networkRaw
         let contractId = document.contractIdData
         let typeName = document.documentType
         let docId = document.id
@@ -1043,14 +1092,23 @@ struct EraseDocumentView: View {
                 await MainActor.run {
                     progress = describeDocumentEraseOutcome(outcome)
                     switch outcome {
-                    case .notSubmitted(_, let before): lifecycle = before
+                    case .notSubmitted(_, let before):
+                        lifecycle = before
+                        // Nothing was submitted: offer the removal on a tap,
+                        // as for the opening read (the row may belong to
+                        // another devnet with the same network code).
+                        if before?.state == .absent {
+                            openingAbsentNetworkRaw = eraseNetworkRaw
+                        }
                     case .submitted(_, let after):
                         submissions += 1
                         lifecycle = after
+                        // The latest observation comes from a submission.
+                        openingAbsentNetworkRaw = nil
+                        // ABSENT after this submission: nothing is left to
+                        // show, so drop the local copy at once.
                         if after?.state == .absent {
-                            persistWarning = DocumentPersistence.applyDelete(
-                                document: document, modelContext: modelContext
-                            )
+                            persistWarning = removeLocalCopy(networkRaw: eraseNetworkRaw)
                         }
                     }
                     isSubmitting = false
@@ -1632,6 +1690,44 @@ enum DocumentPersistence {
     ) -> String? {
         modelContext.delete(document)
         return save(modelContext)
+    }
+
+    /// Erase: once Rust observed the document ABSENT, remove the local row
+    /// for it on the erasing identity's network. Matches network, contract,
+    /// type and id, so a row saved from another network with the same ids
+    /// is kept. Returns a warning if the read or save failed, nil otherwise
+    /// (including when no local row exists).
+    static func removeErasedLocalCopy(
+        networkRaw: UInt32,
+        contractId: String,
+        documentType: String,
+        documentId: String,
+        modelContext: ModelContext
+    ) -> String? {
+        let descriptor = FetchDescriptor<PersistentDocument>(
+            predicate: #Predicate {
+                $0.networkRaw == networkRaw
+                    && $0.contractId == contractId
+                    && $0.documentType == documentType
+                    && $0.documentId == documentId
+            }
+        )
+        let matches: [PersistentDocument]
+        do {
+            matches = try modelContext.fetch(descriptor)
+        } catch {
+            return "Platform reports the document absent, but reading the copy saved on this device failed: \(error.localizedDescription)."
+        }
+        guard !matches.isEmpty else { return nil }
+        for document in matches {
+            modelContext.delete(document)
+        }
+        do {
+            try modelContext.save()
+            return nil
+        } catch {
+            return "Platform reports the document absent, but removing the copy saved on this device failed: \(error.localizedDescription)."
+        }
     }
 
     /// Extract `$revision` from the canonical JSON, falling back to the

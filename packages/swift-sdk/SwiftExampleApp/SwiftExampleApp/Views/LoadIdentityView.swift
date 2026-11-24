@@ -107,6 +107,7 @@ struct LoadIdentityView: View {
                         .foregroundColor(.secondary)
                     TextField("Hex or Base58", text: $identityIdInput)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .machineTextEntry()
                 }
 
                 Picker("Identity Type", selection: $selectedIdentityType) {
@@ -260,6 +261,7 @@ struct LoadIdentityView: View {
 
                         TextField("Hex (64 characters)", text: $privateKeys[index])
                             .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .machineTextEntry()
                     }
 
                     if privateKeys.count > 1 {

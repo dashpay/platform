@@ -78,7 +78,7 @@ struct DecisionProposalsView: View {
                     .accessibilityIdentifier("decisionProposals.ownerPicker")
                 }
             } footer: {
-                Text(listing.footer)
+                Text(listing.footer + " Each row's Voting / Closed badge is read when the row appears; pull to refresh to read it again.")
             }
 
             if let errorMessage {
@@ -112,7 +112,7 @@ struct DecisionProposalsView: View {
                         NavigationLink(
                             destination: DecisionProposalDetailView(proposal: proposal)
                         ) {
-                            DecisionProposalRow(proposal: proposal)
+                            DecisionProposalRow(proposal: proposal, refreshToken: loadGeneration)
                         }
                         .accessibilityIdentifier("decisionProposals.row.\(proposal.id)")
                     }
@@ -232,12 +232,27 @@ struct DecisionProposalsView: View {
 /// One proposal in a listing.
 private struct DecisionProposalRow: View {
     let proposal: DecisionProposal
+    /// The list's load generation: a pull to refresh bumps it, so the row
+    /// reads its poll state again.
+    let refreshToken: Int
+
+    @EnvironmentObject var appState: AppState
+    /// The poll's state as Platform reports it; `nil` until read, and for a
+    /// poll that was never opened.
+    @State private var pollState: ProposalPollBadgeState?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(proposal.title)
-                .font(.headline)
-                .lineLimit(2)
+            HStack(alignment: .firstTextBaseline) {
+                Text(proposal.title)
+                    .font(.headline)
+                    .lineLimit(2)
+                Spacer(minLength: 8)
+                ProposalPollStateBadge(
+                    state: pollState,
+                    accessibilityIdentifier: "decisionProposals.row.pollState"
+                )
+            }
             HStack(spacing: 12) {
                 Label {
                     Text(proposal.endDate, style: proposal.endDate > Date() ? .relative : .date)
@@ -256,5 +271,38 @@ private struct DecisionProposalRow: View {
                 .truncationMode(.middle)
         }
         .padding(.vertical, 2)
+        // Keyed on the SDK too: a network or endpoint switch swaps it, and
+        // the row then reads again from the new one.
+        .task(id: "\(proposal.id)#\(refreshToken)#\(sdkKey)") {
+            await loadPollState()
+        }
+    }
+
+    /// Identity of the SDK the badge was read from, for the task key.
+    private var sdkKey: String {
+        appState.sdk.map { "\(ObjectIdentifier($0).hashValue)" } ?? "none"
+    }
+
+    /// Read the poll so the badge shows whether it still runs, from
+    /// Platform's status rather than the end date against the device clock.
+    private func loadPollState() async {
+        pollState = nil
+        guard let sdk = appState.sdk else { return }
+        do {
+            let read = try await sdk.decisionProposalVotePollState(proposalId: proposal.id)
+            // The read can return after the row's task was cancelled (the
+            // row scrolled away or a refresh superseded it).
+            // Also drop it if the SDK was swapped while the read ran.
+            guard !Task.isCancelled, appState.sdk === sdk, let state = read else { return }
+            if let result = state.result {
+                pollState = .closed(detail: result.passed ? "passed" : "did not pass")
+            } else {
+                pollState = .voting
+            }
+        } catch {
+            // Leave the badge out: an unknown state is not shown as either.
+            // It was already cleared above; no write here, so a late failure
+            // of a superseded read cannot clear a newer badge.
+        }
     }
 }

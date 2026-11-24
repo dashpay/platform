@@ -76,7 +76,7 @@ struct MultipleChoiceProposalsView: View {
                     .accessibilityIdentifier("multipleChoiceProposals.ownerPicker")
                 }
             } footer: {
-                Text(listing.footer)
+                Text(listing.footer + " Each row's Voting / Closed badge is read when the row appears; pull to refresh to read it again.")
             }
 
             if let errorMessage {
@@ -110,7 +110,7 @@ struct MultipleChoiceProposalsView: View {
                         NavigationLink(
                             destination: MultipleChoiceProposalDetailView(proposal: proposal)
                         ) {
-                            MultipleChoiceProposalRow(proposal: proposal)
+                            MultipleChoiceProposalRow(proposal: proposal, refreshToken: loadGeneration)
                         }
                         .accessibilityIdentifier("multipleChoiceProposals.row.\(proposal.id)")
                     }
@@ -224,12 +224,26 @@ struct MultipleChoiceProposalsView: View {
 /// One proposal in a listing.
 private struct MultipleChoiceProposalRow: View {
     let proposal: MultipleChoiceProposal
+    /// The list's load generation: a pull to refresh bumps it, so the row
+    /// reads its poll state again.
+    let refreshToken: Int
+
+    @EnvironmentObject var appState: AppState
+    /// The vote's state as Platform reports it; `nil` until read.
+    @State private var pollState: ProposalPollBadgeState?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(proposal.title)
-                .font(.headline)
-                .lineLimit(2)
+            HStack(alignment: .firstTextBaseline) {
+                Text(proposal.title)
+                    .font(.headline)
+                    .lineLimit(2)
+                Spacer(minLength: 8)
+                ProposalPollStateBadge(
+                    state: pollState,
+                    accessibilityIdentifier: "multipleChoiceProposals.row.pollState"
+                )
+            }
             HStack(spacing: 12) {
                 if let createdAt = proposal.createdAt {
                     Label {
@@ -238,8 +252,10 @@ private struct MultipleChoiceProposalRow: View {
                         Image(systemName: "calendar")
                     }
                 }
+                // `open` says who may enter choices, not whether the vote
+                // runs: the badge above shows that.
                 Label(
-                    proposal.open ? "Open" : "Owner only",
+                    proposal.open ? "Anyone enters choices" : "Proposer enters choices",
                     systemImage: proposal.open ? "person.3" : "person"
                 )
                 if proposal.descriptionDocument != nil {
@@ -255,5 +271,40 @@ private struct MultipleChoiceProposalRow: View {
                 .truncationMode(.middle)
         }
         .padding(.vertical, 2)
+        // Keyed on the SDK too: a network or endpoint switch swaps it, and
+        // the row then reads again from the new one.
+        .task(id: "\(proposal.id)#\(refreshToken)#\(sdkKey)") {
+            await loadPollState()
+        }
+    }
+
+    /// Identity of the SDK the badge was read from, for the task key.
+    private var sdkKey: String {
+        appState.sdk.map { "\(ObjectIdentifier($0).hashValue)" } ?? "none"
+    }
+
+    /// Read the vote so the badge shows whether it still runs: Platform
+    /// reports a result once the vote ended.
+    private func loadPollState() async {
+        pollState = nil
+        guard let sdk = appState.sdk else { return }
+        do {
+            let vote = try await sdk.multipleChoiceProposalVote(proposalId: proposal.id)
+            // The read can return after the row's task was cancelled (the
+            // row scrolled away or a refresh superseded it).
+            // Also drop it if the SDK was swapped while the read ran.
+            guard !Task.isCancelled, appState.sdk === sdk else { return }
+            if vote.result != nil {
+                pollState = .closed(detail: nil)
+            } else if vote.choices.isEmpty {
+                pollState = .awaitingFirstChoice
+            } else {
+                pollState = .voting
+            }
+        } catch {
+            // Leave the badge out: an unknown state is not shown as either.
+            // It was already cleared above; no write here, so a late failure
+            // of a superseded read cannot clear a newer badge.
+        }
     }
 }
