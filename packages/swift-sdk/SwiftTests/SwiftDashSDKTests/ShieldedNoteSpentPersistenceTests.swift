@@ -41,7 +41,7 @@ final class ShieldedNoteSpentPersistenceTests: XCTestCase {
         return try XCTUnwrap(rows.first)
     }
 
-    func testResaveNeverClearsSpent() throws {
+    func testShouldNeverClearSpentOnResave() throws {
         let container = try DashModelContainer.createInMemory()
         let handler = PlatformWalletPersistenceHandler(
             modelContainer: container, network: .testnet)
@@ -64,7 +64,7 @@ final class ShieldedNoteSpentPersistenceTests: XCTestCase {
     /// A send can confirm a note before the sync pass that found it has
     /// stored it. The spend's round then inserts the note spent, and the
     /// pass's later receipt must not clear it.
-    func testReceiptAfterTheSpendRoundKeepsTheNoteSpent() throws {
+    func testShouldKeepTheNoteSpentWhenTheReceiptArrivesAfterTheSpendRound() throws {
         let container = try DashModelContainer.createInMemory()
         let handler = PlatformWalletPersistenceHandler(
             modelContainer: container, network: .testnet)
@@ -76,7 +76,7 @@ final class ShieldedNoteSpentPersistenceTests: XCTestCase {
 
     /// The existing-row read is what keeps a spent flag. If it fails, the
     /// save must fail the round, not insert the stale copy over the row.
-    func testUnreadableRowFailsTheSaveInsteadOfInsertingItUnspent() throws {
+    func testShouldFailTheSaveInsteadOfInsertingAnUnreadableRowUnspent() throws {
         let container = try DashModelContainer.createInMemory()
         let handler = PlatformWalletPersistenceHandler(
             modelContainer: container, network: .testnet)
@@ -109,7 +109,7 @@ final class ShieldedNoteSpentPersistenceTests: XCTestCase {
         XCTAssertTrue(try storedNote(container).isSpent)
     }
 
-    func testResaveStillMarksAnUnspentNoteSpent() throws {
+    func testShouldStillMarkAnUnspentNoteSpentOnResave() throws {
         let container = try DashModelContainer.createInMemory()
         let handler = PlatformWalletPersistenceHandler(
             modelContainer: container, network: .testnet)

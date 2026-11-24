@@ -60,6 +60,7 @@ use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use crate::changeset::merge::Merge;
+use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
 
 /// Callback fired once per chunk during a coordinator sync pass —
 /// the **"downloaded"** progress signal.
@@ -2469,11 +2470,7 @@ impl NetworkShieldedCoordinator {
     /// that the store has marked spent by the time delivery ends gets a
     /// correction round; a send marking it later queues its own round after
     /// this one. No store guard is held across the host write.
-    async fn queue_pass_changeset(
-        &self,
-        epoch: &EpochWatch<'_>,
-        mut changeset: crate::changeset::ShieldedChangeSet,
-    ) {
+    async fn queue_pass_changeset(&self, epoch: &EpochWatch<'_>, mut changeset: ShieldedChangeSet) {
         let _fan_out = self.fan_out.lock().await;
         changeset.retain_subwallets(|id| epoch.state_kept(id));
         if Merge::is_empty(&changeset) {
@@ -2502,7 +2499,7 @@ impl NetworkShieldedCoordinator {
         if delivered_unspent.is_empty() {
             return;
         }
-        let mut correction = crate::changeset::ShieldedChangeSet::default();
+        let mut correction = ShieldedChangeSet::default();
         {
             let store = self.store.read().await;
             for (id, nullifier) in delivered_unspent {
@@ -2541,10 +2538,7 @@ impl NetworkShieldedCoordinator {
 
     /// Split `changeset` per wallet and queue each slice on that wallet's
     /// persister.
-    fn deliver(
-        persisters: &BTreeMap<WalletId, WalletPersister>,
-        changeset: crate::changeset::ShieldedChangeSet,
-    ) {
+    fn deliver(persisters: &BTreeMap<WalletId, WalletPersister>, changeset: ShieldedChangeSet) {
         for (wallet_id, cs) in changeset.split_by_wallet_id() {
             let Some(persister) = persisters.get(&wallet_id) else {
                 tracing::warn!(
@@ -2553,7 +2547,7 @@ impl NetworkShieldedCoordinator {
                 );
                 continue;
             };
-            let full = crate::changeset::PlatformWalletChangeSet {
+            let full = PlatformWalletChangeSet {
                 shielded: Some(cs),
                 ..Default::default()
             };
@@ -3765,7 +3759,7 @@ mod tests {
     use crate::wallet::shielded::keys::OrchardKeySet;
     use std::time::Duration;
 
-    use crate::changeset::ShieldedChangeSet;
+    use crate::changeset::{ClientStartState, PersistenceError, PlatformWalletPersistence};
     use crate::wallet::shielded::activity::{
         compute_activity_id, ShieldedActivityEntry, ShieldedActivityKind, ShieldedDirection,
     };
@@ -6358,12 +6352,12 @@ mod tests {
         std::sync::Mutex<Option<Box<dyn FnMut() + Send>>>,
     );
 
-    impl crate::changeset::PlatformWalletPersistence for RecordingPersistence {
+    impl PlatformWalletPersistence for RecordingPersistence {
         fn store(
             &self,
             _wallet_id: WalletId,
-            changeset: crate::changeset::PlatformWalletChangeSet,
-        ) -> Result<(), crate::changeset::PersistenceError> {
+            changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
             if let Some(on_store) = self.1.lock().unwrap().as_mut() {
                 on_store();
             }
@@ -6374,14 +6368,11 @@ mod tests {
             Ok(())
         }
 
-        fn flush(&self, _wallet_id: WalletId) -> Result<(), crate::changeset::PersistenceError> {
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
             Ok(())
         }
 
-        fn load(
-            &self,
-        ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError>
-        {
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
             Ok(Default::default())
         }
     }
@@ -6662,7 +6653,7 @@ mod tests {
         let recorder = Arc::new(RecordingPersistence::default());
 
         let selected = test_note([0xA4; 32], 10, false);
-        let rescanned = crate::wallet::shielded::ShieldedNote {
+        let rescanned = ShieldedNote {
             block_height: selected.block_height + 50,
             ..selected.clone()
         };
@@ -7306,7 +7297,7 @@ mod tests {
     ///
     /// Paused clock, same reasoning as the unregister test above.
     #[tokio::test(flavor = "current_thread", start_paused = true)]
-    async fn clear_waits_for_an_in_flight_sync_pass() {
+    async fn should_wait_for_an_in_flight_sync_pass_on_clear() {
         let dir = temp_dir("clear_vs_sync");
         let coordinator = Arc::new(coordinator_with_one_wallet(&dir).await);
 

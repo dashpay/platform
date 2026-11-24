@@ -14,6 +14,7 @@ use super::{
 };
 use crate::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
 use crate::error::PlatformWalletError;
+use crate::manager::shielded_sync::WalletShieldedOutcome;
 use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
 use drive_proof_verifier::types::{ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery};
 use tokio_util::sync::CancellationToken;
@@ -935,7 +936,7 @@ async fn should_fail_sync_after_repeated_supersession() {
     assert_eq!(outcome.success_count(), 0, "{outcome:?}");
     assert!(
         matches!(&outcome.wallet_results[&wallet],
-            crate::manager::shielded_sync::WalletShieldedOutcome::Err(message)
+            WalletShieldedOutcome::Err(message)
                 if message.contains("superseded")),
         "{outcome:?}"
     );

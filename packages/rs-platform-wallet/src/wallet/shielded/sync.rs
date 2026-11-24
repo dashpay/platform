@@ -435,9 +435,11 @@ const APPEND_SLICE: usize = 256;
 ///
 /// # Cancellation
 ///
-/// `cancel` is observed before the scan starts, while waiting for a store
-/// lock, and between batches; a stop returns
-/// [`NoteSyncOutcome::Cancelled`]. It is a clean early stop, not an error.
+/// `cancel` is observed before the scan starts, while waiting for the
+/// pre-scan read and for each append slice's write lock, and between
+/// batches; a stop returns [`NoteSyncOutcome::Cancelled`]. It is a clean
+/// early stop, not an error. Once the stream has ended, the commit's wait
+/// for the write lock does not observe it: a complete scan always commits.
 ///
 /// # A gap between ranges
 ///
