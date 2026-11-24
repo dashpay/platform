@@ -24,6 +24,9 @@ struct ProposalPollStateBadge: View {
     var body: some View {
         if let state {
             Label(text(for: state), systemImage: icon(for: state))
+                // In a List row the automatic style drops the title and
+                // leaves a tall, icon-only capsule; the words are the badge.
+                .labelStyle(.titleAndIcon)
                 .font(.caption2.weight(.semibold))
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
