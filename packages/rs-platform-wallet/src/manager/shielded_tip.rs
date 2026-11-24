@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use dpp::prelude::Identifier;
 use dpp::shielded::builder::OrchardProver;
 use tracing::debug;
 
@@ -50,6 +51,7 @@ impl ShieldedTipSender {
         source: ShieldedTipSource,
         username: &str,
         expected_recipient: &ShieldedTipRecipient,
+        expected_identity: Option<&Identifier>,
         amount: u64,
         memo: [u8; 36],
         prover: P,
@@ -63,6 +65,7 @@ impl ShieldedTipSender {
                 source,
                 username,
                 expected_recipient,
+                expected_identity,
                 amount,
                 memo,
                 prover,

@@ -843,6 +843,17 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorShieldedTipRecipientMismatch` (native code 85). A shielded
+         * tip was started from a saved contact, and the contact's username
+         * now belongs to another identity. Nothing was sent. Not retryable:
+         * the user picks the recipient again, and a tip to the name's new
+         * owner is started from the name, not from the contact.
+         * ← Swift `PlatformWalletError.shieldedTipRecipientMismatch`.
+         */
+        class ShieldedTipRecipientMismatch(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -1054,6 +1065,7 @@ sealed class DashSdkError(
             76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
             83 -> PlatformWallet.BalanceHistoryInconsistentHeights(message, cause) // ErrorBalanceHistoryInconsistentHeights
             84 -> PlatformWallet.ShieldedTipPending(message, cause) // ErrorShieldedTipPending
+            85 -> PlatformWallet.ShieldedTipRecipientMismatch(message, cause) // ErrorShieldedTipRecipientMismatch
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.
