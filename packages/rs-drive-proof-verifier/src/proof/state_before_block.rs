@@ -95,8 +95,8 @@ pub struct StateTransitionResultAroundBlock {
 pub fn verify_state_transition_result_around_block<I, O>(
     request: I,
     response: O,
-    platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
+    platform_version: &PlatformVersion,
 ) -> Result<StateTransitionResultAroundBlock, Error>
 where
     I: Into<BroadcastStateTransitionRequest>,
@@ -151,8 +151,8 @@ where
     let (outcome, metadata, _) = verify_state_transition_proof_outcome(
         &state_transition,
         &response,
-        platform_version,
         provider,
+        platform_version,
     )?;
     let metadata = metadata.clone();
 
@@ -162,8 +162,8 @@ where
             &state_transition,
             proof,
             before_metadata,
-            platform_version,
             provider,
+            platform_version,
         )?,
     };
 
@@ -191,8 +191,8 @@ fn verify_state_before_block(
     state_transition: &StateTransition,
     proof: Proof,
     metadata: ResponseMetadata,
-    platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
+    platform_version: &PlatformVersion,
 ) -> Result<StateBeforeBlockVerification, Error> {
     if !Drive::state_transition_prior_state_is_readable(state_transition, platform_version)
         .map_drive_error(&proof, &metadata)?
@@ -327,8 +327,8 @@ mod tests {
         verify_state_transition_result_around_block(
             request,
             response,
-            PlatformVersion::latest(),
             &UnreachableContextProvider,
+            PlatformVersion::latest(),
         )
     }
 
@@ -407,8 +407,8 @@ mod tests {
             &state_transition,
             Proof::default(),
             metadata_at(9),
-            PlatformVersion::latest(),
             &UnreachableContextProvider,
+            PlatformVersion::latest(),
         )
         .expect("expected an answer without verifying a proof");
 

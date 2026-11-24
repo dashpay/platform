@@ -299,8 +299,8 @@ fn verify_with(
     verify_state_transition_result_around_block(
         request,
         response,
-        PlatformVersion::latest(),
         provider,
+        PlatformVersion::latest(),
     )
     .map_err(Box::new)
 }
