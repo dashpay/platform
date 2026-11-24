@@ -1784,6 +1784,42 @@ impl PlatformWallet {
         })
     }
 
+    /// [`Self::admit_shielded_spend`] for a shield-class spend, which runs
+    /// one at a time on a wallet: the admission together with `shield_guard`.
+    ///
+    /// A spend that finds another shield-class operation running gives its
+    /// admission back while it waits its turn, and is admitted again, with
+    /// both checks repeated, once the other has finished. An asset-lock
+    /// funding holds `shield_guard` across a ChainLock wait with no deadline,
+    /// and a spend queued behind it has read, reserved and signed nothing:
+    /// holding the gate and the admission meanwhile would keep a removal of
+    /// the wallet and a Clear waiting for a payment that has not started. A
+    /// wallet removed, or a coordinator cleared, while the spend waited is
+    /// refused when its turn comes.
+    ///
+    /// The admission is never awaited while `shield_guard` is held, nor
+    /// `shield_guard` while the admission is, so a bind's order (the gate,
+    /// the admission, then `shield_guard`) is kept. Waiting spends are not
+    /// served in arrival order.
+    #[cfg(feature = "shielded")]
+    async fn admit_single_flight_shielded_spend<'a>(
+        &'a self,
+        coordinator: &'a Arc<NetworkShieldedCoordinator>,
+    ) -> Result<(ShieldedSpendAdmission<'a>, tokio::sync::MutexGuard<'a, ()>), PlatformWalletError>
+    {
+        loop {
+            let admission = self.admit_shielded_spend(coordinator).await?;
+            if let Ok(single_flight) = self.shield_guard.try_lock() {
+                return Ok((admission, single_flight));
+            }
+            drop(admission);
+            // Wait for the operation in flight, holding nothing, then go
+            // round again: the guard is given up at once so it is only ever
+            // taken under a fresh admission.
+            drop(self.shield_guard.lock().await);
+        }
+    }
+
     /// `Err` once this wallet has been removed from the manager.
     ///
     /// The install transaction performs the authoritative check, but the
@@ -2136,18 +2172,17 @@ impl PlatformWallet {
         // A zero amount must not queue behind a long-running shielded operation.
         ensure_positive_amount(amount)?;
 
-        // Held until the top-up has settled, the local balance included, as
-        // the transfer holds it. Taken before the single-flight guard, as a
-        // bind takes them.
-        let _admission = self.admit_shielded_spend(coordinator).await?;
-
+        // The admission is held until the top-up has settled, the local
+        // balance included, as the transfer holds it.
+        //
         // Single-flight with the other shield-class operations. The proof
         // result carries the identity's absolute post-execution balance, so
         // two top-ups (or a top-up and a shield-from-identity debit) whose
         // waits completed out of execution order would let the older balance
         // overwrite the newer one. Held across build -> broadcast -> wait ->
         // reconcile.
-        let _shield_guard = self.shield_guard.lock().await;
+        let (_admission, _shield_guard) =
+            self.admit_single_flight_shielded_spend(coordinator).await?;
 
         let keyset = self.derive_spend_keyset(seed, account).await?;
         let (mut proven_balance, metadata) =
@@ -3269,15 +3304,15 @@ impl PlatformWallet {
             ));
         }
 
-        // Held until the shield has settled, as a shielded transfer holds it.
-        // Taken before the single-flight guard, as a bind takes them.
-        let _admission = self.admit_shielded_spend(coordinator).await?;
-
+        // The admission is held until the shield has settled, as a shielded
+        // transfer holds it.
+        //
         // Single-flight: serialize shield-class ops on this wallet so
         // two concurrent calls can't fetch + build with the same
         // address nonce (the second would be rejected as a replay after
         // a ~30 s proof). Held across selection → build → broadcast.
-        let _shield_guard = self.shield_guard.lock().await;
+        let (_admission, _shield_guard) =
+            self.admit_single_flight_shielded_spend(coordinator).await?;
 
         // Planning and amount selection are shared with the cached preflight.
         // The helper drops the wallet-manager read lock before the expensive
@@ -3481,15 +3516,14 @@ impl PlatformWallet {
             ));
         }
 
-        // Held until the shield has settled, the local balance included, as a
-        // shielded transfer holds it: the identity read below, the debit and
-        // its activity and recovery rows are one wallet's. Taken before the
-        // single-flight guard, as a bind takes them.
-        let _admission = self.admit_shielded_spend(coordinator).await?;
-
+        // The admission is held until the shield has settled, the local
+        // balance included, as a shielded transfer holds it: the identity read
+        // below, the debit and its activity and recovery rows are one wallet's.
+        //
         // Single-flight with the address-funded shields: the identity nonce is
         // fetched inside the operation, and two concurrent builds would race it.
-        let _shield_guard = self.shield_guard.lock().await;
+        let (_admission, _shield_guard) =
+            self.admit_single_flight_shielded_spend(coordinator).await?;
 
         let identity = {
             let wm = self.wallet_manager.read().await;

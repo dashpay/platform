@@ -310,20 +310,26 @@ async fn should_refuse_a_credit_pool_spend_after_a_clear_until_the_wallet_is_bou
     }
 }
 
-/// Every credit pool spend that was admitted holds the wallet generation's
+/// A credit pool spend that was admitted holds the wallet generation's
 /// lifecycle gate and the coordinator's operation admission until it
 /// returns: a removal of the wallet waits for it, and a Clear finds an
-/// operation admitted. Each spend is held here at the first wallet lock it
-/// takes after its admission.
+/// operation admitted. Each spend is held here at the key slot, the first
+/// wallet lock it takes after its admission. The two shields are not in the
+/// sweep: on an unfunded wallet they return before they read a key.
 #[tokio::test]
 async fn should_hold_removal_and_clear_admission_until_a_credit_pool_spend_returns() {
-    for spend in CREDIT_POOL_SPENDS {
+    for spend in [
+        CreditPoolSpend::Transfer,
+        CreditPoolSpend::Unshield,
+        CreditPoolSpend::IdentityTopUp,
+        CreditPoolSpend::Withdraw,
+        CreditPoolSpend::IdentityCreate,
+    ] {
         let dir = tempfile::tempdir().expect("temporary shielded store");
         let coordinator = coordinator_at(dir.path());
         let manager = manager();
         let wallet = add_bound_wallet(&manager, &coordinator).await;
 
-        let single_flight = wallet.shield_guard.lock().await;
         let keys = wallet.shielded_keys.write().await;
         let running = {
             let wallet = Arc::clone(&wallet);
@@ -335,7 +341,7 @@ async fn should_hold_removal_and_clear_admission_until_a_credit_pool_spend_retur
             removal_waits(&wallet).await,
             "{spend:?}: a removal waits for the spend in flight"
         );
-        assert!(!running.is_finished(), "{spend:?}: held at a wallet lock");
+        assert!(!running.is_finished(), "{spend:?}: held at the key slot");
         // The configuration lock is taken for the binding check only: a
         // bind of this wallet, and another of its spends, do not wait for
         // the proof and the result of this one.
@@ -345,7 +351,6 @@ async fn should_hold_removal_and_clear_admission_until_a_credit_pool_spend_retur
         );
 
         drop(keys);
-        drop(single_flight);
         let returned = running.await.expect("spend task");
         assert!(
             !matches!(
@@ -420,4 +425,96 @@ async fn should_hold_a_wallets_removal_until_a_transfer_held_at_the_store_return
         .expect("removal task")
         .expect("the removal completes");
     assert!(!wallet.core().is_current_generation().await);
+}
+
+/// The spends that run one at a time on a wallet.
+const SHIELD_CLASS_SPENDS: [CreditPoolSpend; 3] = [
+    CreditPoolSpend::IdentityTopUp,
+    CreditPoolSpend::ShieldFromAccount,
+    CreditPoolSpend::ShieldFromIdentity,
+];
+
+/// A shield-class spend that finds another one running, here an asset-lock
+/// funding's hold on `shield_guard`, which can last as long as a ChainLock
+/// takes, gives its admission back while it waits: it has read, reserved and
+/// signed nothing, so neither a removal of the wallet nor a Clear waits for
+/// it. It is admitted when its turn comes.
+#[tokio::test]
+async fn should_hold_nothing_while_a_shield_class_spend_waits_for_another() {
+    for spend in SHIELD_CLASS_SPENDS {
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let coordinator = coordinator_at(dir.path());
+        let manager = manager();
+        let wallet = add_bound_wallet(&manager, &coordinator).await;
+
+        let in_flight = wallet.shield_guard.lock().await;
+        let queued = {
+            let wallet = Arc::clone(&wallet);
+            let coordinator = Arc::clone(&coordinator);
+            tokio::spawn(async move { spend_from_credit_pool(spend, &wallet, &coordinator).await })
+        };
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(!queued.is_finished(), "{spend:?}: waits its turn");
+        assert!(
+            !coordinator.has_admitted_operation(),
+            "{spend:?}: a Clear finds no operation admitted while the spend is queued"
+        );
+        assert!(
+            !removal_waits(&wallet).await,
+            "{spend:?}: a removal does not wait for a queued spend"
+        );
+
+        drop(in_flight);
+        let returned = tokio::time::timeout(REACHED, queued)
+            .await
+            .expect("the queued spend takes its turn")
+            .expect("spend task");
+        assert!(
+            !matches!(
+                returned,
+                Err(PlatformWalletError::WalletRemovedBeforeSend(_)
+                    | PlatformWalletError::ShieldedNotBound)
+            ),
+            "{spend:?}: admitted once the other operation finished: {returned:?}"
+        );
+        assert!(!coordinator.has_admitted_operation());
+    }
+}
+
+/// A wallet removed while one of its shield-class spends waited for another
+/// operation is refused when its turn comes: the liveness check is made
+/// again under the admission the spend then takes.
+#[tokio::test]
+async fn should_refuse_a_queued_shield_class_spend_whose_wallet_was_removed_meanwhile() {
+    for spend in SHIELD_CLASS_SPENDS {
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let coordinator = coordinator_at(dir.path());
+        let manager = manager();
+        let wallet = add_bound_wallet(&manager, &coordinator).await;
+        let wallet_id = wallet.wallet_id();
+
+        let in_flight = wallet.shield_guard.lock().await;
+        let queued = {
+            let wallet = Arc::clone(&wallet);
+            let coordinator = Arc::clone(&coordinator);
+            tokio::spawn(async move { spend_from_credit_pool(spend, &wallet, &coordinator).await })
+        };
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(!queued.is_finished(), "{spend:?}: waits its turn");
+        tokio::time::timeout(REACHED, manager.remove_wallet(&wallet_id))
+            .await
+            .expect("the removal does not wait for the queued spend")
+            .expect("removed");
+
+        drop(in_flight);
+        let refused = tokio::time::timeout(REACHED, queued)
+            .await
+            .expect("the queued spend takes its turn")
+            .expect("spend task");
+        assert!(
+            matches!(&refused, Err(PlatformWalletError::WalletRemovedBeforeSend(id))
+                if *id == hex::encode(wallet_id)),
+            "{spend:?}: {refused:?}"
+        );
+    }
 }
