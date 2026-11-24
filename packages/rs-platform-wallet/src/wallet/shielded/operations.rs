@@ -8245,6 +8245,10 @@ mod select_recorded_spends_tests {
     use crate::wallet::shielded::anchor_cache::FetchStamp;
     use crate::wallet::shielded::file_store::FileBackedShieldedStore;
     use crate::wallet::shielded::CachedOrchardProver;
+    use dash_sdk::dapi_grpc::platform::v0::get_shielded_anchors_request::{
+        self, GetShieldedAnchorsRequestV0,
+    };
+    use dash_sdk::dapi_grpc::platform::v0::GetShieldedAnchorsRequest;
     use dashcore::Network;
     use grovedb_commitment_tree::{ExtractedNoteCommitment, Note, NoteValue, RandomSeed, Rho};
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -8908,6 +8912,22 @@ mod select_recorded_spends_tests {
 
         let _ = std::fs::remove_file(&path);
         assert!(result.is_err(), "the other SDK's fetch fails");
+        let anchors_request = GetShieldedAnchorsRequest {
+            version: Some(get_shielded_anchors_request::Version::V0(
+                GetShieldedAnchorsRequestV0 {
+                    prove: true,
+                    token_id: None,
+                },
+            )),
+        };
+        // A clone shares the mock's request counts.
+        let (mut owner, mut other) = ((*owner).clone(), (*other).clone());
+        assert_eq!(
+            other.mock().request_count(&anchors_request).await,
+            1,
+            "the spend reached its own fetch instead of the owner's set"
+        );
+        assert_eq!(owner.mock().request_count(&anchors_request).await, 0);
         assert!(
             cache.get(size).is_some(),
             "the owner SDK's cached set is kept"
