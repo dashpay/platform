@@ -23,6 +23,10 @@ use crate::util::now_ms;
 /// trails it by seconds at most). What is left of a budget is not known offline; a spent key
 /// is refused by Platform.
 ///
+/// `key_types` is a preference order: among unlimited keys, every key of the first type
+/// (in key-id order) comes before any key of the next, and the same again among limited
+/// keys, which all come after the unlimited ones.
+///
 /// `Ok(None)` means no key is eligible at all; `Err` means at least one eligible key exists
 /// but the signer cannot reach any of them.
 pub(crate) fn usable_authentication_key<'a>(
@@ -45,7 +49,8 @@ pub(crate) fn usable_authentication_key<'a>(
 
 /// [`usable_authentication_key`] for a transition that acts on documents of several types of
 /// `contract_id`, such as a create that consumes another type's document: the key's contract
-/// bounds must cover every one of `document_type_names`.
+/// bounds must cover every one of `document_type_names`. `key_types` is a preference order,
+/// as there.
 pub(crate) fn usable_authentication_key_for_types<'a>(
     identity: &'a Identity,
     signer: &impl Signer<IdentityPublicKey>,
@@ -58,7 +63,6 @@ pub(crate) fn usable_authentication_key_for_types<'a>(
     let qualifies = |key: &IdentityPublicKey| {
         key.purpose() == Purpose::AUTHENTICATION
             && security_levels.contains(&key.security_level())
-            && key_types.contains(&key.key_type())
             && document_type_names
                 .iter()
                 .all(|name| bounds_cover(key.contract_bounds(), contract_id, name))
@@ -66,13 +70,16 @@ pub(crate) fn usable_authentication_key_for_types<'a>(
             && !key.is_expired_at(now)
     };
     let keys = identity.public_keys();
-    let unlimited = keys
-        .values()
-        .filter(|key| qualifies(key) && !key.has_limits());
-    let limited = keys
-        .values()
-        .filter(|key| qualifies(key) && key.has_limits());
-    first_available(unlimited.chain(limited), signer)
+    // Unlimited keys before limited ones; within each, the types in `key_types` order and
+    // each type's keys in key-id order.
+    let candidates = [false, true].into_iter().flat_map(|limited| {
+        key_types.iter().flat_map(move |key_type| {
+            keys.values().filter(move |key| {
+                key.key_type() == *key_type && key.has_limits() == limited && qualifies(key)
+            })
+        })
+    });
+    first_available(candidates, signer)
 }
 
 /// Whether a key carrying `bounds` may sign a `document_type_name` document of `contract_id`.
@@ -181,6 +188,33 @@ mod tests {
         ]);
         let chosen = pick(&identity).expect("a key");
         assert_eq!(chosen.id(), 2, "the expired key 1 is skipped");
+    }
+
+    /// `key_types` is a preference order, also among limited keys: a later SECP256K1 key
+    /// is taken over an earlier HASH160 key when both are limited, eligible and signable.
+    #[test]
+    fn should_prefer_the_first_key_type_among_limited_keys_over_a_lower_key_id() {
+        // Limits make a V1 key, so the type is set on the V0 key first.
+        let mut hash160 = key(1, SecurityLevel::HIGH);
+        if let IdentityPublicKey::V0(key) = &mut hash160 {
+            key.key_type = KeyType::ECDSA_HASH160;
+            key.data = BinaryData::new(vec![1; 20]);
+        }
+        let identity = identity(vec![
+            hash160.with_limits(Some(1_000), None),
+            key(2, SecurityLevel::HIGH).with_limits(Some(1_000), None),
+        ]);
+        let chosen = usable_authentication_key(
+            &identity,
+            &KeyFilter(|_| true),
+            Identifier::from(CONTRACT),
+            DOCUMENT_TYPE,
+            &LEVELS,
+            &[KeyType::ECDSA_SECP256K1, KeyType::ECDSA_HASH160],
+        )
+        .unwrap()
+        .expect("a key");
+        assert_eq!(chosen.id(), 2);
     }
 
     #[test]

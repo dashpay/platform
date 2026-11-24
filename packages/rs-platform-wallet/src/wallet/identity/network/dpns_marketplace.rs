@@ -9,8 +9,10 @@
 //!
 //! - resolving a name to its `domain` document (with `$price` and the
 //!   document id, which the SDK's `DpnsUsername` drops),
-//! - automatic signing-key selection (AUTHENTICATION / ECDSA at the
-//!   document type's required security level — no hardcoded key ids),
+//! - no signing key picked here: the generic writes select the key
+//!   (`select_document_signing_key`: AUTHENTICATION / ECDSA at the
+//!   document type's required security level, with contract bounds
+//!   allowing `domain` — no hardcoded key ids),
 //! - typed pre-flight checks (not-found / contested / not-for-sale /
 //!   price-changed / insufficient credits),
 //! - local persistence of sale state through the changeset pipeline
@@ -942,49 +944,6 @@ impl IdentityWallet {
     }
 
     // -----------------------------------------------------------------
-    // Signing-key selection
-    // -----------------------------------------------------------------
-
-    /// Auto-select the signing key for a DPNS `domain` state transition
-    /// on `identity_id`: the identity's first AUTHENTICATION-purpose
-    /// ECDSA (or ECDSA_HASH160) key whose security level satisfies the document
-    /// type's requirement (the same consensus rule
-    /// [`super::document::allowed_signing_security_levels`] encodes), with
-    /// contract bounds allowing the `domain` type. Replaces the app
-    /// layer's hardcoded "key id 1".
-    async fn select_dpns_signing_key(
-        &self,
-        identity_id: &Identifier,
-        signer: &impl Signer<IdentityPublicKey>,
-    ) -> Result<IdentityPublicKey, PlatformWalletError> {
-        let contract = self.dpns_contract().await?;
-        self.select_signing_key_for_document_type(
-            identity_id,
-            &contract,
-            DPNS_DOCUMENT_TYPE,
-            signer,
-        )
-        .await
-    }
-
-    /// [`Self::select_dpns_signing_key`] for any document type of
-    /// `contract`: the key must satisfy the security level
-    /// `document_type_name` requires, and its contract bounds must allow
-    /// that type (a key bound elsewhere could sign, and the network would
-    /// refuse the transition). The same policy every generic document
-    /// write uses when it names no key.
-    async fn select_signing_key_for_document_type(
-        &self,
-        identity_id: &Identifier,
-        contract: &DataContract,
-        document_type_name: &str,
-        signer: &impl Signer<IdentityPublicKey>,
-    ) -> Result<IdentityPublicKey, PlatformWalletError> {
-        self.document_operation_signing_key(identity_id, contract, document_type_name, None, signer)
-            .await
-    }
-
-    // -----------------------------------------------------------------
     // Local bookkeeping
     // -----------------------------------------------------------------
 
@@ -1156,9 +1115,6 @@ impl IdentityWallet {
                 state.owner_id
             )));
         }
-        let signing_key = self
-            .select_dpns_signing_key(owner_identity_id, signer)
-            .await?;
         let contract_id = dpns_contract_id();
         // Signed through the generation-gated signer: a wallet removed while the host
         // signed sends nothing, and the bookkeeping below runs on this generation.
@@ -1170,7 +1126,6 @@ impl IdentityWallet {
                 DPNS_DOCUMENT_TYPE,
                 &state.document_id,
                 price,
-                Some(&signing_key),
                 &gated,
             )
             .await
@@ -1214,9 +1169,6 @@ impl IdentityWallet {
                 document_id: state.document_id,
             });
         }
-        let signing_key = self
-            .select_dpns_signing_key(owner_identity_id, signer)
-            .await?;
         let contract_id = dpns_contract_id();
         // Signed through the generation-gated signer: a wallet removed while the host
         // signed sends nothing, and the bookkeeping below runs on this generation.
@@ -1228,7 +1180,6 @@ impl IdentityWallet {
                 DPNS_DOCUMENT_TYPE,
                 &state.document_id,
                 owner_identity_id,
-                Some(&signing_key),
                 &gated,
             )
             .await
@@ -1281,9 +1232,6 @@ impl IdentityWallet {
                 state.owner_id
             )));
         }
-        let signing_key = self
-            .select_dpns_signing_key(owner_identity_id, signer)
-            .await?;
         let contract_id = dpns_contract_id();
         // Signed through the generation-gated signer: a wallet removed while the host
         // signed sends nothing, and the bookkeeping below runs on this generation.
@@ -1295,7 +1243,6 @@ impl IdentityWallet {
                 DPNS_DOCUMENT_TYPE,
                 &state.document_id,
                 recipient_id,
-                Some(&signing_key),
                 &gated,
             )
             .await
@@ -1403,9 +1350,6 @@ impl IdentityWallet {
                 available,
             });
         }
-        let signing_key = self
-            .select_dpns_signing_key(purchaser_identity_id, signer)
-            .await?;
         let contract_id = dpns_contract_id();
         // Signed through the generation-gated signer: a wallet removed while the host
         // signed sends nothing, and the bookkeeping below runs on this generation.
@@ -1417,7 +1361,6 @@ impl IdentityWallet {
                 DPNS_DOCUMENT_TYPE,
                 &state.document_id,
                 expected_price,
-                Some(&signing_key),
                 &gated,
             )
             .await
@@ -4070,8 +4013,9 @@ mod tests {
         );
     }
 
-    /// A trade write's key must be allowed the `domain` type: a signer-reachable key bound
-    /// to another contract is skipped for a later key without bounds.
+    /// A trade write's key, which the generic write selects, must be allowed the `domain`
+    /// type: a signer-reachable key bound to another contract is skipped for a later key
+    /// without bounds.
     #[tokio::test]
     async fn trade_writes_skip_a_key_bound_to_another_contract() {
         let wallet = mirror_backed_identity_wallet(Arc::new(MirrorPersister::hydrated(Vec::new())));
@@ -4104,13 +4048,12 @@ mod tests {
         )
         .expect("bundled DPNS contract");
 
+        let domain = contract
+            .document_type_cloned_for_name(DPNS_DOCUMENT_TYPE)
+            .expect("the domain type");
+
         let key = wallet
-            .select_signing_key_for_document_type(
-                &owner_id,
-                &contract,
-                DPNS_DOCUMENT_TYPE,
-                &KeyFilter(|_| true),
-            )
+            .select_document_signing_key(&owner_id, &domain, &KeyFilter(|_| true))
             .await
             .expect("a key is selected");
         assert_eq!(key.id(), 2, "the key bound to another contract is skipped");
@@ -4243,10 +4186,36 @@ mod tests {
         )
     }
 
+    /// The price write selects its own key once it has read the domain document: a signer
+    /// that holds no eligible key keeps the structured key-unavailable failure through the
+    /// marketplace call.
     #[tokio::test]
     async fn should_preserve_unavailable_signer_when_setting_dpns_price() {
         let owner = Identifier::from([0xB2; 32]);
-        let wallet = wallet_seeing_listing(Identifier::from([0xB1; 32]), owner, None).await;
+        let document_id = Identifier::from([0xB1; 32]);
+        let listed = listed_domain_document(document_id, owner, None);
+        let mut documents = dash_sdk::query_types::Documents::new();
+        documents.insert(document_id, Some(listed.clone()));
+        let mut sdk = mock_sdk_answering_dpns_domain_query(DEPARTED_LABEL, documents).await;
+        let contract = dpp::system_data_contracts::load_system_data_contract(
+            dpp::data_contracts::SystemDataContract::DPNS,
+            dpp::version::PlatformVersion::latest(),
+        )
+        .expect("bundled DPNS contract");
+        // The price write reads the current document by id before it selects a key.
+        sdk.mock()
+            .expect_fetch(
+                DocumentQuery::new(Arc::new(contract), DPNS_DOCUMENT_TYPE)
+                    .expect("the domain type")
+                    .with_document_id(&document_id),
+                Some(listed),
+            )
+            .await
+            .expect("expects the document read");
+        let wallet = mirror_backed_identity_wallet_with_sdk(
+            Arc::new(MirrorPersister::hydrated(Vec::new())),
+            Arc::new(sdk),
+        );
         let mut identity = identity(
             Purpose::AUTHENTICATION,
             SecurityLevel::CRITICAL,

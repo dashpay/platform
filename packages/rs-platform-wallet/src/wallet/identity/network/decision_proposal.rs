@@ -40,8 +40,10 @@ impl IdentityWallet {
     /// rs-sdk builds the proposal (`Sdk::build_decision_proposal`); its
     /// create states the decision proposal fund (0.5 Dash), which the
     /// owner pays on top of the fees. The transition is signed with the
-    /// owner's first AUTHENTICATION + ECDSA key at a security level the
-    /// `proposal` type accepts that `signer` can sign with, and the
+    /// owner's key that `select_document_signing_key` picks for the
+    /// `proposal` type: the first AUTHENTICATION key (ECDSA_SECP256K1,
+    /// else ECDSA_HASH160) at a security level the type accepts, whose
+    /// contract bounds allow it, that `signer` can sign with. The
     /// owner's balance the proof carries is kept. Platform refuses a rule
     /// outside the contract's limits and an end date less than a week or
     /// more than four weeks after the block that creates the proposal.

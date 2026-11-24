@@ -607,7 +607,6 @@ pub unsafe extern "C" fn platform_wallet_document_transfer(
                         &document_type_str,
                         &document_id_value,
                         &recipient_id_value,
-                        None,
                         signer,
                     )
                     .await?;
@@ -678,7 +677,6 @@ pub unsafe extern "C" fn platform_wallet_document_set_price(
                         &document_type_str,
                         &document_id_value,
                         price,
-                        None,
                         signer,
                     )
                     .await?;
@@ -751,7 +749,6 @@ pub unsafe extern "C" fn platform_wallet_document_purchase(
                         &document_type_str,
                         &document_id_value,
                         price,
-                        None,
                         signer,
                     )
                     .await?;
