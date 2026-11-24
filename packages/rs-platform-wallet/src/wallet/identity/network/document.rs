@@ -464,18 +464,14 @@ impl IdentityWallet {
     }
 
     /// Resolve the AUTHENTICATION signing key `signing_key_id` on
-    /// `owner_identity_id` from the in-process wallet manager.
+    /// `owner_identity_id` from the in-process wallet manager, for
+    /// [`Self::erase_document_with_signer`], which takes an explicit key.
     ///
-    /// Unlike `create_document_with_signer` (which auto-selects an
-    /// AUTHENTICATION key by security level), the mutate flows take an
-    /// explicit `signing_key_id` chosen by the caller's key picker, so
-    /// the user keeps control of which key signs. We still enforce the
-    /// document state-transition signing rule here: the key must exist,
-    /// be AUTHENTICATION-purpose, and be ECDSA_SECP256K1 — the same
-    /// purpose `create` uses (see
-    /// `project_document_signing_key_purpose_bug`: signing with a
+    /// The key must exist, be AUTHENTICATION-purpose and be
+    /// ECDSA_SECP256K1, the purpose `create` uses: signing with a
     /// non-AUTHENTICATION key, e.g. a TRANSFER/CRITICAL key, is rejected
-    /// by consensus with "requires AUTHENTICATION").
+    /// by consensus with "requires AUTHENTICATION". `signer` must be able
+    /// to sign with it.
     async fn resolve_authentication_signing_key(
         &self,
         owner_identity_id: &Identifier,
@@ -520,16 +516,47 @@ impl IdentityWallet {
         Ok(key)
     }
 
+    /// The key a `document_type_name` state transition of
+    /// `signing_identity_id` on `data_contract` is signed with:
+    /// `signing_key` when the caller names one (it must be available to
+    /// `signer`), otherwise the key [`Self::select_document_signing_key`]
+    /// picks for the document type's security requirement.
+    async fn document_operation_signing_key<S>(
+        &self,
+        signing_identity_id: &Identifier,
+        data_contract: &DataContract,
+        document_type_name: &str,
+        signing_key: Option<&IdentityPublicKey>,
+        signer: &S,
+    ) -> Result<IdentityPublicKey, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey>,
+    {
+        if let Some(key) = signing_key {
+            return Ok(require_available(key, signer)?.clone());
+        }
+        let document_type = data_contract
+            .document_type_cloned_for_name(document_type_name)
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Document type {document_type_name:?} not found on contract {}: {e}",
+                    data_contract.id()
+                ))
+            })?;
+        self.select_document_signing_key(signing_identity_id, &document_type, signer)
+            .await
+    }
+
     /// Replace an existing document's properties on
     /// `contract_id`'s `document_type_name` and broadcast.
     ///
     /// Fetches the current document, applies `properties_json` (parsed
     /// + schema-sanitized exactly like the create path), bumps the
-    /// revision, signs with the explicit `signing_key_id`
-    /// (AUTHENTICATION + ECDSA), broadcasts via `Sdk::document_replace`
-    /// on the platform-wallet 8 MB worker stack, and returns the
-    /// confirmed `Document`.
-    #[allow(clippy::too_many_arguments)]
+    /// revision, signs with the owner's AUTHENTICATION key that the
+    /// document type's security level allows and `signer` can sign with
+    /// (see [`Self::select_document_signing_key`]), broadcasts via
+    /// `Sdk::document_replace` on the platform-wallet 8 MB worker stack,
+    /// and returns the confirmed `Document`.
     pub async fn replace_document_with_signer<S>(
         &self,
         owner_identity_id: &Identifier,
@@ -537,7 +564,6 @@ impl IdentityWallet {
         document_type_name: &str,
         document_id: &Identifier,
         properties_json: &str,
-        signing_key_id: u32,
         signer: &S,
     ) -> Result<Document, PlatformWalletError>
     where
@@ -576,7 +602,7 @@ impl IdentityWallet {
         })?;
 
         let signing_key = self
-            .resolve_authentication_signing_key(owner_identity_id, signing_key_id, signer)
+            .select_document_signing_key(owner_identity_id, &document_type, signer)
             .await?;
 
         let builder = DocumentReplaceTransitionBuilder::new(
@@ -604,17 +630,17 @@ impl IdentityWallet {
     /// Delete an existing document on `contract_id`'s
     /// `document_type_name` and broadcast.
     ///
-    /// Signs with the explicit `signing_key_id` (AUTHENTICATION +
-    /// ECDSA) and broadcasts via `Sdk::document_delete` on the
-    /// platform-wallet 8 MB worker stack. Returns the deleted document's
-    /// `Identifier` on confirmation.
+    /// Signs with the owner's AUTHENTICATION key that the document
+    /// type's security level allows and `signer` can sign with (see
+    /// [`Self::select_document_signing_key`]) and broadcasts via
+    /// `Sdk::document_delete` on the platform-wallet 8 MB worker stack.
+    /// Returns the deleted document's `Identifier` on confirmation.
     pub async fn delete_document_with_signer<S>(
         &self,
         owner_identity_id: &Identifier,
         contract_id: &Identifier,
         document_type_name: &str,
         document_id: &Identifier,
-        signing_key_id: u32,
         signer: &S,
     ) -> Result<Identifier, PlatformWalletError>
     where
@@ -625,7 +651,13 @@ impl IdentityWallet {
             .await?;
 
         let signing_key = self
-            .resolve_authentication_signing_key(owner_identity_id, signing_key_id, signer)
+            .document_operation_signing_key(
+                owner_identity_id,
+                &data_contract,
+                document_type_name,
+                None,
+                signer,
+            )
             .await?;
 
         // Delete is keyed by (document_id, owner_id); no current-document
@@ -671,11 +703,11 @@ impl IdentityWallet {
     /// every required property has to be there. A changed value does not
     /// match the stored entry and Platform rejects the delete.
     ///
-    /// Signs with the explicit `signing_key_id` (AUTHENTICATION + ECDSA)
-    /// and broadcasts via `Sdk::document_delete` on the platform-wallet
-    /// 8 MB worker stack. Returns the deleted document's `Identifier` on
-    /// confirmation.
-    #[allow(clippy::too_many_arguments)]
+    /// Signs with the owner's AUTHENTICATION key that the document
+    /// type's security level allows and `signer` can sign with (see
+    /// [`Self::select_document_signing_key`]) and broadcasts via
+    /// `Sdk::document_delete` on the platform-wallet 8 MB worker stack.
+    /// Returns the deleted document's `Identifier` on confirmation.
     pub async fn delete_document_by_values_with_signer<S>(
         &self,
         owner_identity_id: &Identifier,
@@ -683,7 +715,6 @@ impl IdentityWallet {
         document_type_name: &str,
         document_id: &Identifier,
         properties_json: &str,
-        signing_key_id: u32,
         signer: &S,
     ) -> Result<Identifier, PlatformWalletError>
     where
@@ -695,7 +726,7 @@ impl IdentityWallet {
 
         let (values, created_at) = values_from_json(properties_json)?;
         let builder = DocumentDeleteTransitionBuilder::from_values(
-            data_contract,
+            Arc::clone(&data_contract),
             document_type_name.to_string(),
             *document_id,
             *owner_identity_id,
@@ -706,7 +737,13 @@ impl IdentityWallet {
         .map_err(delete_preparation_error)?;
 
         let signing_key = self
-            .resolve_authentication_signing_key(owner_identity_id, signing_key_id, signer)
+            .document_operation_signing_key(
+                owner_identity_id,
+                &data_contract,
+                document_type_name,
+                None,
+                signer,
+            )
             .await?;
 
         let DocumentDeleteResult::Deleted(deleted_id) = self
@@ -794,11 +831,17 @@ impl IdentityWallet {
     /// Transfer an existing document on `contract_id`'s
     /// `document_type_name` to `recipient_id` and broadcast.
     ///
-    /// Fetches the current document, bumps the revision, signs with the
-    /// explicit `signing_key_id` (AUTHENTICATION + ECDSA), broadcasts
-    /// via `Sdk::document_transfer` on the platform-wallet 8 MB worker
-    /// stack, and returns the confirmed `Document` (now owned by
-    /// `recipient_id`).
+    /// Fetches the current document, bumps the revision, signs,
+    /// broadcasts via `Sdk::document_transfer` on the platform-wallet
+    /// 8 MB worker stack, and returns the confirmed `Document` (now owned
+    /// by `recipient_id`).
+    ///
+    /// With `signing_key` `None` the transition is signed with the
+    /// owner's AUTHENTICATION key that the document type's security level
+    /// allows and `signer` can sign with (see
+    /// [`Self::select_document_signing_key`]); a caller that has already
+    /// chosen a key under stricter rules (the DPNS marketplace checks
+    /// contract bounds) passes it, and it must be available to `signer`.
     #[allow(clippy::too_many_arguments)]
     pub async fn transfer_document_with_signer<S>(
         &self,
@@ -807,7 +850,7 @@ impl IdentityWallet {
         document_type_name: &str,
         document_id: &Identifier,
         recipient_id: &Identifier,
-        signing_key_id: u32,
+        signing_key: Option<&IdentityPublicKey>,
         signer: &S,
     ) -> Result<Document, PlatformWalletError>
     where
@@ -827,7 +870,13 @@ impl IdentityWallet {
         })?;
 
         let signing_key = self
-            .resolve_authentication_signing_key(owner_identity_id, signing_key_id, signer)
+            .document_operation_signing_key(
+                owner_identity_id,
+                &data_contract,
+                document_type_name,
+                signing_key,
+                signer,
+            )
             .await?;
 
         let builder = DocumentTransferTransitionBuilder::new(
@@ -857,11 +906,14 @@ impl IdentityWallet {
     /// Set (update) the trade price of an existing document on
     /// `contract_id`'s `document_type_name` and broadcast.
     ///
-    /// Fetches the current document, bumps the revision, signs with the
-    /// explicit `signing_key_id` (AUTHENTICATION + ECDSA), broadcasts
-    /// via `Sdk::document_set_price` on the platform-wallet 8 MB worker
-    /// stack, and returns the confirmed `Document` (now carrying
-    /// `$price`).
+    /// Fetches the current document, bumps the revision, signs,
+    /// broadcasts via `Sdk::document_set_price` on the platform-wallet
+    /// 8 MB worker stack, and returns the confirmed `Document` (now
+    /// carrying `$price`).
+    ///
+    /// `signing_key` is chosen as in
+    /// [`Self::transfer_document_with_signer`]: `None` selects the
+    /// owner's key for the document type and `signer`.
     #[allow(clippy::too_many_arguments)]
     pub async fn set_document_price_with_signer<S>(
         &self,
@@ -870,7 +922,7 @@ impl IdentityWallet {
         document_type_name: &str,
         document_id: &Identifier,
         price: u64,
-        signing_key_id: u32,
+        signing_key: Option<&IdentityPublicKey>,
         signer: &S,
     ) -> Result<Document, PlatformWalletError>
     where
@@ -890,7 +942,13 @@ impl IdentityWallet {
         })?;
 
         let signing_key = self
-            .resolve_authentication_signing_key(owner_identity_id, signing_key_id, signer)
+            .document_operation_signing_key(
+                owner_identity_id,
+                &data_contract,
+                document_type_name,
+                signing_key,
+                signer,
+            )
             .await?;
 
         let builder = DocumentSetPriceTransitionBuilder::new(
@@ -920,14 +978,17 @@ impl IdentityWallet {
     /// `document_type_name` and broadcast.
     ///
     /// `purchaser_identity_id` is the buyer (which becomes the new
-    /// owner) and signs the transition with `signing_key_id`
-    /// (AUTHENTICATION + ECDSA) — so the signing key is resolved on the
-    /// purchaser, not the current owner. Fetches the current document,
-    /// bumps the revision, broadcasts via `Sdk::document_purchase` on
-    /// the platform-wallet 8 MB worker stack, and returns the confirmed
-    /// `Document` (now owned by the purchaser). Consensus rejects a
-    /// purchase where the buyer is the current owner — the caller's UI
-    /// gates against that.
+    /// owner) and signs the transition, so the signing key belongs to
+    /// the purchaser, not the current owner: with `signing_key` `None` it
+    /// is the purchaser's AUTHENTICATION key that the document type's
+    /// security level allows and `signer` can sign with (see
+    /// [`Self::select_document_signing_key`]); a caller that has already
+    /// chosen one passes it, as in [`Self::transfer_document_with_signer`].
+    /// Fetches the current document, bumps the revision, broadcasts via
+    /// `Sdk::document_purchase` on the platform-wallet 8 MB worker stack,
+    /// and returns the confirmed `Document` (now owned by the purchaser).
+    /// Consensus rejects a purchase where the buyer is the current owner
+    /// — the caller's UI gates against that.
     #[allow(clippy::too_many_arguments)]
     pub async fn purchase_document_with_signer<S>(
         &self,
@@ -936,7 +997,7 @@ impl IdentityWallet {
         document_type_name: &str,
         document_id: &Identifier,
         price: u64,
-        signing_key_id: u32,
+        signing_key: Option<&IdentityPublicKey>,
         signer: &S,
     ) -> Result<Document, PlatformWalletError>
     where
@@ -956,7 +1017,13 @@ impl IdentityWallet {
         })?;
 
         let signing_key = self
-            .resolve_authentication_signing_key(purchaser_identity_id, signing_key_id, signer)
+            .document_operation_signing_key(
+                purchaser_identity_id,
+                &data_contract,
+                document_type_name,
+                signing_key,
+                signer,
+            )
             .await?;
 
         let builder = DocumentPurchaseTransitionBuilder::new(
@@ -1052,8 +1119,201 @@ fn delete_preparation_error(error: dash_sdk::Error) -> PlatformWalletError {
 
 #[cfg(test)]
 mod tests {
-    use super::super::signing_key::tests::{lock_checking_signer, wallet_with_signing_keys};
+    use super::super::signing_key::tests::{
+        available, lock_checking_signer, wallet_with_signing_keys,
+    };
     use super::*;
+    use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
+    use dpp::data_contract::factory::DataContractFactory;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::platform_value::platform_value;
+    use dpp::version::PlatformVersion;
+
+    /// The owner identity `wallet_with_signing_keys` holds: CRITICAL
+    /// AUTHENTICATION ECDSA_SECP256K1 keys 1 and 2.
+    fn owner() -> Identifier {
+        Identifier::default()
+    }
+
+    /// A contract whose `note` type requires `requirement` to sign.
+    fn contract_requiring(requirement: SecurityLevel) -> DataContract {
+        DataContractFactory::new(PlatformVersion::latest().protocol_version)
+            .unwrap()
+            .create_with_value_config(
+                Identifier::from([1; 32]),
+                1,
+                platform_value!({
+                    "note": {
+                        "type": "object",
+                        "documentsMutable": true,
+                        "canBeDeleted": true,
+                        "signatureSecurityLevelRequirement": requirement as u8,
+                        "properties": {"message": {"type": "string", "maxLength": 64, "position": 0}},
+                        "additionalProperties": false
+                    }
+                }),
+                None,
+                None,
+            )
+            .unwrap()
+            .data_contract_owned()
+    }
+
+    fn assert_signer_key_unavailable(error: PlatformWalletError) {
+        assert!(
+            matches!(error, PlatformWalletError::Sdk(dash_sdk::Error::Protocol(ProtocolError::Generic(ref message)))
+                if message.starts_with(SIGNER_KEY_UNAVAILABLE_PREFIX)),
+            "{error:?}"
+        );
+    }
+
+    /// The replace / delete / transfer / set-price / purchase flows name no
+    /// key: the wallet signs with the first owner key the signer can sign
+    /// with, so a wallet-derived identity (no key stored per public key)
+    /// is not refused for want of a key Swift or Kotlin could see.
+    #[tokio::test]
+    async fn should_select_the_document_key_the_signer_can_sign_with() {
+        let wallet = wallet_with_signing_keys().await;
+        let contract = contract_requiring(SecurityLevel::HIGH);
+        let select = |ids: &'static [u32]| {
+            let wallet = Arc::clone(&wallet);
+            let contract = contract.clone();
+            async move {
+                wallet
+                    .identity()
+                    .document_operation_signing_key(
+                        &owner(),
+                        &contract,
+                        "note",
+                        None,
+                        &available(ids),
+                    )
+                    .await
+                    .map(|key| key.id())
+            }
+        };
+        assert_eq!(select(&[2]).await.unwrap(), 2);
+        assert_eq!(select(&[1, 2]).await.unwrap(), 1);
+    }
+
+    /// A signer that can sign with none of the owner's eligible keys keeps
+    /// the structured key-unavailable failure (FFI code 31), and is asked
+    /// with the wallet manager lock released.
+    #[tokio::test]
+    async fn should_refuse_a_document_operation_when_the_signer_holds_no_eligible_key() {
+        let wallet = wallet_with_signing_keys().await;
+        let contract = contract_requiring(SecurityLevel::HIGH);
+        let signer = lock_checking_signer(wallet.identity());
+        let error = wallet
+            .identity()
+            .document_operation_signing_key(&owner(), &contract, "note", None, &signer)
+            .await
+            .unwrap_err();
+        assert_signer_key_unavailable(error);
+
+        let stranger = Identifier::from([5; 32]);
+        let error = wallet
+            .identity()
+            .document_operation_signing_key(&stranger, &contract, "note", None, &available(&[1]))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, PlatformWalletError::IdentityNotFound(id) if id == stranger),
+            "{error:?}"
+        );
+    }
+
+    /// The document type's security requirement bounds the selection: a
+    /// HIGH key the signer holds signs a HIGH type but never a CRITICAL one.
+    #[tokio::test]
+    async fn should_skip_document_keys_below_the_type_requirement() {
+        let wallet = wallet_with_signing_keys().await;
+        {
+            let mut wm = wallet.identity().wallet_manager.write().await;
+            wm.get_wallet_info_mut(&wallet.wallet_id())
+                .unwrap()
+                .identity_manager
+                .identity_mut(&owner())
+                .unwrap()
+                .identity
+                .add_public_key(
+                    IdentityPublicKeyV0 {
+                        id: 0,
+                        purpose: Purpose::AUTHENTICATION,
+                        security_level: SecurityLevel::HIGH,
+                        key_type: KeyType::ECDSA_SECP256K1,
+                        data: vec![9; 33].into(),
+                        ..Default::default()
+                    }
+                    .into(),
+                );
+        }
+        let select = |requirement, ids: &'static [u32]| {
+            let wallet = Arc::clone(&wallet);
+            async move {
+                wallet
+                    .identity()
+                    .document_operation_signing_key(
+                        &owner(),
+                        &contract_requiring(requirement),
+                        "note",
+                        None,
+                        &available(ids),
+                    )
+                    .await
+                    .map(|key| key.id())
+            }
+        };
+        assert_eq!(select(SecurityLevel::HIGH, &[0, 2]).await.unwrap(), 0);
+        assert_eq!(select(SecurityLevel::CRITICAL, &[0, 2]).await.unwrap(), 2);
+        assert_signer_key_unavailable(select(SecurityLevel::CRITICAL, &[0]).await.unwrap_err());
+    }
+
+    /// A key a caller already chose (the DPNS marketplace checks contract
+    /// bounds) is used as given when the signer holds it, and never
+    /// replaced by another key when it does not.
+    #[tokio::test]
+    async fn should_sign_with_a_chosen_document_key_only_when_the_signer_holds_it() {
+        let wallet = wallet_with_signing_keys().await;
+        let contract = contract_requiring(SecurityLevel::HIGH);
+        let chosen = {
+            let wm = wallet.identity().wallet_manager.read().await;
+            wm.get_wallet_info(&wallet.wallet_id())
+                .unwrap()
+                .identity_manager
+                .identity(&owner())
+                .unwrap()
+                .identity
+                .get_public_key_by_id(2)
+                .unwrap()
+                .clone()
+        };
+        let key = wallet
+            .identity()
+            .document_operation_signing_key(
+                &owner(),
+                &contract,
+                "note",
+                Some(&chosen),
+                &available(&[1, 2]),
+            )
+            .await
+            .unwrap();
+        assert_eq!(key.id(), 2);
+
+        let error = wallet
+            .identity()
+            .document_operation_signing_key(
+                &owner(),
+                &contract,
+                "note",
+                Some(&chosen),
+                &available(&[1]),
+            )
+            .await
+            .unwrap_err();
+        assert_signer_key_unavailable(error);
+    }
 
     #[tokio::test]
     async fn should_reject_unavailable_explicit_document_key_outside_wallet_lock() {

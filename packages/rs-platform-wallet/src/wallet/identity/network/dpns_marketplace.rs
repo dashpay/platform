@@ -34,7 +34,6 @@ use dpp::document::property_names::PRICE;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -1205,7 +1204,7 @@ impl IdentityWallet {
                 DPNS_DOCUMENT_TYPE,
                 &state.document_id,
                 price,
-                signing_key.id(),
+                Some(&signing_key),
                 &gated,
             )
             .await
@@ -1263,7 +1262,7 @@ impl IdentityWallet {
                 DPNS_DOCUMENT_TYPE,
                 &state.document_id,
                 owner_identity_id,
-                signing_key.id(),
+                Some(&signing_key),
                 &gated,
             )
             .await
@@ -1330,7 +1329,7 @@ impl IdentityWallet {
                 DPNS_DOCUMENT_TYPE,
                 &state.document_id,
                 recipient_id,
-                signing_key.id(),
+                Some(&signing_key),
                 &gated,
             )
             .await
@@ -1452,7 +1451,7 @@ impl IdentityWallet {
                 DPNS_DOCUMENT_TYPE,
                 &state.document_id,
                 expected_price,
-                signing_key.id(),
+                Some(&signing_key),
                 &gated,
             )
             .await
@@ -2335,6 +2334,7 @@ mod tests {
     use crate::error::SIGNER_KEY_UNAVAILABLE_PREFIX;
     use crate::wallet::core::WalletGeneration;
     use dpp::identity::accessors::IdentitySettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
     use dpp::identity::Purpose;
     use dpp::identity::SecurityLevel;

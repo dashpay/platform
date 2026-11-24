@@ -394,71 +394,41 @@ struct DocumentActionSheet: View {
     }
 }
 
-/// Shared select-key → sign → call-wrapper → persist pipeline behind all
-/// five document mutate actions.
+/// Shared resolve-wallet → sign → call-wrapper → persist pipeline behind
+/// the five document mutate actions.
 ///
-/// Per `project_document_signing_key_purpose_bug` the signing key MUST be
-/// an AUTHENTICATION key (a TRANSFER/CRITICAL key is rejected by consensus
-/// with "requires AUTHENTICATION"); we resolve it via
-/// `KeyManager.findSigningKey(purpose: .authentication, ...)` and pass its
-/// id to the `ManagedPlatformWallet` wrapper, which re-validates it
-/// Rust-side. The actual signature is produced on demand by the
-/// `KeychainSigner` trampoline — no private bytes ever cross into Swift
-/// logic here.
+/// Swift resolves only the `ManagedPlatformWallet` that holds the signing
+/// identity. The key is chosen in Rust (`rs-platform-wallet`), which picks
+/// the identity's AUTHENTICATION key that the document type's security
+/// level requires and the `KeychainSigner` can sign with. That covers
+/// identities restored from their wallet mnemonic, whose private keys are
+/// not stored per public key but derived by the signer on demand. The
+/// signature itself is produced by the `KeychainSigner` trampoline, so no
+/// private bytes cross into Swift logic here.
 @MainActor
 enum DocumentActionRunner {
-    /// Resolve the controlled identity + its `ManagedPlatformWallet` and
-    /// the AUTHENTICATION signing-key id for `identity`, satisfying the
-    /// document type's security-level requirement. Throws a descriptive
-    /// error if any precondition is missing.
-    static func resolveSigning(
+    /// The `ManagedPlatformWallet` that holds `identity`. Throws
+    /// `DocumentActionError.noWallet` when no loaded wallet holds it.
+    static func resolveWallet(
         for identity: PersistentIdentity,
-        documentType: PersistentDocumentType?,
         walletManager: PlatformWalletManager
-    ) throws -> (wallet: ManagedPlatformWallet, signingKeyId: UInt32) {
+    ) throws -> ManagedPlatformWallet {
         guard let walletId = identity.wallet?.walletId,
               let wallet = walletManager.wallet(for: walletId) else {
             throw DocumentActionError.noWallet
         }
-
-        // The document type's security level bounds which AUTHENTICATION
-        // keys may sign (mirrors the Rust-side requirement). Fall back to
-        // HIGH when unknown — the same default the builder path uses.
-        let requiredLevel = SecurityLevel(rawValue: UInt8(documentType?.securityLevel ?? 2)) ?? .high
-
-        let dppIdentity = DPPIdentity(
-            id: identity.identityId,
-            publicKeys: Dictionary(
-                uniqueKeysWithValues: identity.identityPublicKeys.map { ($0.id, $0) }
-            ),
-            balance: UInt64(bitPattern: identity.balance),
-            revision: 0
-        )
-
-        let km = KeyManager.withSharedKeychain()
-        guard let key = km.findSigningKey(
-            for: dppIdentity,
-            purpose: .authentication,
-            minimumSecurityLevel: requiredLevel,
-            preferCritical: true
-        ) else {
-            throw DocumentActionError.noSigningKey(requiredLevel.name)
-        }
-        return (wallet, key.id)
+        return wallet
     }
 }
 
 enum DocumentActionError: LocalizedError {
     case noWallet
-    case noSigningKey(String)
     case identityNotFound
 
     var errorDescription: String? {
         switch self {
         case .noWallet:
             return "The owner identity is not held by a loaded wallet on this device."
-        case .noSigningKey(let level):
-            return "No AUTHENTICATION key with security \(level) or higher (and an available private key) found on the signing identity."
         case .identityNotFound:
             return "Could not resolve the controlled identity for this operation."
         }
@@ -680,12 +650,10 @@ struct ReplaceDocumentView: View {
             return
         }
 
-        let docType = document.documentType_relation
         let wallet: ManagedPlatformWallet
-        let signingKeyId: UInt32
         do {
-            (wallet, signingKeyId) = try DocumentActionRunner.resolveSigning(
-                for: owner, documentType: docType, walletManager: walletManager
+            wallet = try DocumentActionRunner.resolveWallet(
+                for: owner, walletManager: walletManager
             )
         } catch {
             actionError = .init(message: error.localizedDescription)
@@ -707,7 +675,6 @@ struct ReplaceDocumentView: View {
                     documentType: typeName,
                     documentId: docId,
                     propertiesJSON: trimmed,
-                    signingKeyId: signingKeyId,
                     signer: signer
                 )
                 _ = signer
@@ -813,12 +780,10 @@ struct DeleteDocumentView: View {
             actionError = .init(message: DocumentActionError.identityNotFound.localizedDescription)
             return
         }
-        let docType = document.documentType_relation
         let wallet: ManagedPlatformWallet
-        let signingKeyId: UInt32
         do {
-            (wallet, signingKeyId) = try DocumentActionRunner.resolveSigning(
-                for: owner, documentType: docType, walletManager: walletManager
+            wallet = try DocumentActionRunner.resolveWallet(
+                for: owner, walletManager: walletManager
             )
         } catch {
             actionError = .init(message: error.localizedDescription)
@@ -839,7 +804,6 @@ struct DeleteDocumentView: View {
                     contractId: contractId,
                     documentType: typeName,
                     documentId: docId,
-                    signingKeyId: signingKeyId,
                     signer: signer
                 )
                 _ = signer
@@ -1183,12 +1147,10 @@ struct TransferDocumentView: View {
             actionError = .init(message: "Enter a valid recipient identity ID.")
             return
         }
-        let docType = document.documentType_relation
         let wallet: ManagedPlatformWallet
-        let signingKeyId: UInt32
         do {
-            (wallet, signingKeyId) = try DocumentActionRunner.resolveSigning(
-                for: owner, documentType: docType, walletManager: walletManager
+            wallet = try DocumentActionRunner.resolveWallet(
+                for: owner, walletManager: walletManager
             )
         } catch {
             actionError = .init(message: error.localizedDescription)
@@ -1210,7 +1172,6 @@ struct TransferDocumentView: View {
                     documentType: typeName,
                     documentId: docId,
                     recipientId: recipient,
-                    signingKeyId: signingKeyId,
                     signer: signer
                 )
                 _ = signer
@@ -1334,12 +1295,10 @@ struct SetDocumentPriceView: View {
             actionError = .init(message: "Enter a valid price in credits.")
             return
         }
-        let docType = document.documentType_relation
         let wallet: ManagedPlatformWallet
-        let signingKeyId: UInt32
         do {
-            (wallet, signingKeyId) = try DocumentActionRunner.resolveSigning(
-                for: owner, documentType: docType, walletManager: walletManager
+            wallet = try DocumentActionRunner.resolveWallet(
+                for: owner, walletManager: walletManager
             )
         } catch {
             actionError = .init(message: error.localizedDescription)
@@ -1361,7 +1320,6 @@ struct SetDocumentPriceView: View {
                     documentType: typeName,
                     documentId: docId,
                     price: price,
-                    signingKeyId: signingKeyId,
                     signer: signer
                 )
                 _ = signer
@@ -1530,14 +1488,12 @@ struct PurchaseDocumentView: View {
             actionError = .init(message: "This document is not for sale (no price found).")
             return
         }
-        let docType = document.documentType_relation
         let wallet: ManagedPlatformWallet
-        let signingKeyId: UInt32
         do {
             // The purchaser signs (and becomes the new owner), so resolve
-            // the AUTHENTICATION key on the purchaser, not the owner.
-            (wallet, signingKeyId) = try DocumentActionRunner.resolveSigning(
-                for: purchaser, documentType: docType, walletManager: walletManager
+            // the purchaser's wallet; Rust picks the purchaser's key.
+            wallet = try DocumentActionRunner.resolveWallet(
+                for: purchaser, walletManager: walletManager
             )
         } catch {
             actionError = .init(message: error.localizedDescription)
@@ -1559,7 +1515,6 @@ struct PurchaseDocumentView: View {
                     documentType: typeName,
                     documentId: docId,
                     price: price,
-                    signingKeyId: signingKeyId,
                     signer: signer
                 )
                 _ = signer
