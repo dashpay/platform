@@ -43,6 +43,7 @@ use std::ffi::CStr;
 use std::os::raw::{c_char, c_void};
 
 use dpp::address_funds::{OrchardAddress, PlatformAddress};
+use dpp::prelude::Identifier;
 use dpp::shielded::{
     compute_minimum_shielded_fee, compute_shielded_identity_balance_write_fee,
     compute_shielded_identity_top_up_fee, compute_shielded_unshield_fee,
@@ -1049,6 +1050,15 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
         r
     });
 
+    shielded_identity_create_result(result, &mut *out_identity_id)
+}
+
+/// Map the outcome of a shielded identity create to its FFI result, writing
+/// `out_identity_id` on success and on an unconfirmed broadcast only.
+fn shielded_identity_create_result(
+    result: Result<Identifier, PlatformWalletError>,
+    out_identity_id: &mut [u8; 32],
+) -> PlatformWalletFFIResult {
     match result {
         Ok(identity_id) => {
             *out_identity_id = identity_id.to_buffer();
@@ -1084,6 +1094,12 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
             PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
             format!("shielded identity-create-from-pool failed: {e}"),
         ),
+        // Slot refusals happen before a note is spent; they keep their typed
+        // codes so the host can take the next slot or re-acquire.
+        Err(
+            e @ (PlatformWalletError::IdentitySlotNotHeld { .. }
+            | PlatformWalletError::IdentitySlotTakenOnChain { .. }),
+        ) => e.into(),
         Err(e) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("shielded identity-create-from-pool failed: {e}"),
@@ -2534,6 +2550,33 @@ mod tests {
     use platform_wallet::wallet::shielded::store::PendingRedrive;
     use platform_wallet::wallet::shielded::{FileBackedShieldedStore, ShieldedStore, SubwalletId};
     use std::ffi::CString;
+
+    /// Slot refusals of a shielded create keep their typed codes (81/82) and
+    /// leave `out_identity_id` untouched, like every other refusal.
+    #[test]
+    fn should_keep_typed_slot_codes_for_a_shielded_create() {
+        let mut out = [7u8; 32];
+        let not_held = shielded_identity_create_result(
+            Err(PlatformWalletError::IdentitySlotNotHeld { identity_index: 2 }),
+            &mut out,
+        );
+        assert_eq!(
+            not_held.code,
+            PlatformWalletFFIResultCode::ErrorIdentitySlotNotHeld
+        );
+        let taken = shielded_identity_create_result(
+            Err(PlatformWalletError::IdentitySlotTakenOnChain {
+                identity_index: 2,
+                identity_id: Identifier::from([9u8; 32]),
+            }),
+            &mut out,
+        );
+        assert_eq!(
+            taken.code,
+            PlatformWalletFFIResultCode::ErrorIdentitySlotTakenOnChain
+        );
+        assert_eq!(out, [7u8; 32]);
+    }
 
     #[test]
     fn encode_memo_text_none_is_empty() {
