@@ -3163,3 +3163,63 @@ async fn should_report_a_failed_load_in_an_account_add_as_a_persister_load_failu
     );
     assert_eq!(wallet.shielded_account_indices().await, vec![0]);
 }
+
+/// A host passes the ordinary accounts back to a bind, which refuses an
+/// identity account, so the read leaves out the identity account the wallet
+/// also holds and reports the rest in ascending order.
+#[tokio::test]
+async fn should_report_only_the_ordinary_accounts_of_a_bound_wallet() {
+    use crate::shielded_identity_account_index;
+    let (wallet, seed, id, coordinator) = tip_race_fixture("ordinary_accounts_bound").await;
+    wallet
+        .prepare_shielded_identity_address(&seed, &id, &coordinator)
+        .await
+        .unwrap();
+    wallet
+        .bind_shielded(&seed, &[2, 1], &coordinator)
+        .await
+        .unwrap();
+    let tip = shielded_identity_account_index(2).unwrap();
+    assert!(
+        wallet.shielded_account_indices().await.contains(&tip),
+        "the identity account is held, so leaving it out is what is tested"
+    );
+
+    assert_eq!(wallet.shielded_ordinary_account_indices().await, vec![1, 2]);
+}
+
+/// A Clear drops the registration, not the keys the handle holds, so the
+/// ordinary accounts read after it are the ones bound before, and binding
+/// exactly them registers every subwallet again rather than the defaults.
+#[tokio::test]
+async fn should_keep_the_ordinary_accounts_after_a_clear_and_register_them_again() {
+    let wallet = platform_wallet_with(Arc::new(CapturingPersistence::default())).await;
+    let coordinator = coordinator_at(&temp_dir("ordinary_accounts_after_clear"));
+    wallet
+        .bind_shielded(&BIND_SEED, &[1, 2], &coordinator)
+        .await
+        .expect("seed bind succeeds");
+
+    coordinator.clear().await.expect("clear succeeds");
+    assert!(coordinator.registered_subwallets().await.is_empty());
+    let accounts = wallet.shielded_ordinary_account_indices().await;
+    assert_eq!(accounts, vec![1, 2]);
+
+    wallet
+        .bind_shielded(&BIND_SEED, &accounts, &coordinator)
+        .await
+        .expect("bound again");
+    let registered = coordinator.registered_subwallets().await;
+    for account in [1, 2] {
+        assert!(
+            registered.contains(&SubwalletId::new(wallet.wallet_id(), account)),
+            "account {account} registered again"
+        );
+    }
+}
+
+#[tokio::test]
+async fn should_report_no_ordinary_accounts_for_a_wallet_never_bound() {
+    let wallet = platform_wallet_with(Arc::new(CapturingPersistence::default())).await;
+    assert!(wallet.shielded_ordinary_account_indices().await.is_empty());
+}

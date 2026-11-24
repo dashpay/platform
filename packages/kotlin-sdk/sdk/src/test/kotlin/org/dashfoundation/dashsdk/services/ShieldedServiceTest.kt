@@ -405,47 +405,6 @@ class ShieldedServiceTest {
     }
 
     @Test
-    fun shouldLetABindThatWaitedForClearsFleetPassKeepItsOwnAccounts() = runTest {
-        // Wallet B was registered with [0]; a Clear's reset dropped that.
-        val manager = Any()
-        val registrations = EngineRegistrations()
-        registrations.record(manager, "B", listOf(0))
-        registrations.reset(manager)
-
-        // The fleet pass reaches B: it decides and binds in one ledger step.
-        val passDecided = CompletableDeferred<Unit>()
-        val passMayBind = CompletableDeferred<Unit>()
-        val pass = launch(UnconfinedTestDispatcher(testScheduler)) {
-            service.withLedgerLifecycle {
-                val accounts = registrations.accountsToRestore(manager, "B", listOf(0))
-                passDecided.complete(Unit)
-                passMayBind.await()
-                if (accounts != null) registrations.record(manager, "B", accounts)
-            }
-        }
-        passDecided.await()
-        // B becomes the mirror and binds [1] meanwhile. Its native call
-        // waits for the pass, so it cannot land between the pass's decision
-        // and its bind and then be replaced.
-        val bind = launch(UnconfinedTestDispatcher(testScheduler)) {
-            service.withLedgerLifecycle { registrations.record(manager, "B", listOf(1)) }
-        }
-        assertNull(registrations.standing(manager, "B"))
-        passMayBind.complete(Unit)
-        pass.join()
-        bind.join()
-        assertEquals(listOf(1), registrations.standing(manager, "B"))
-
-        // Had the bind gone first, the pass would have left B alone.
-        registrations.reset(manager)
-        service.withLedgerLifecycle { registrations.record(manager, "B", listOf(1)) }
-        service.withLedgerLifecycle {
-            assertNull(registrations.accountsToRestore(manager, "B", listOf(0)))
-        }
-        assertEquals(listOf(1), registrations.standing(manager, "B"))
-    }
-
-    @Test
     fun shouldNotStartABindsJobsOnceItsLastWriteWokeAnUnbind() {
         // The bind publishes "is bound", a collector answers with an unbind
         // on the same thread, and the bind's last step goes on. It must not

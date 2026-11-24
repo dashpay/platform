@@ -62,7 +62,8 @@ use {
     },
     super::shielded::tips::PreparedTipAccount,
     super::shielded::{
-        FileBackedShieldedStore, NetworkShieldedCoordinator, OrchardKeySet, ShieldedStore,
+        is_shielded_identity_account, FileBackedShieldedStore, NetworkShieldedCoordinator,
+        OrchardKeySet, ShieldedStore,
     },
     crate::{
         AutoAcceptProofSource, ContactCryptoProvider, ContactRequest, EstablishedContact,
@@ -1776,6 +1777,24 @@ impl PlatformWallet {
             .as_ref()
             .map(|keys| keys.keys().copied().collect())
             .unwrap_or_default()
+    }
+
+    /// The ordinary (non-identity) ZIP-32 account indices bound on the
+    /// shielded sub-wallet, in ascending order: the accounts a host passes
+    /// to bind this wallet again. Identity accounts are left out because a
+    /// bind adds them itself and refuses them from a host.
+    ///
+    /// They survive a Clear, which drops the coordinator's registration but
+    /// not the keys this handle holds, so a host reads them here after a
+    /// Clear instead of falling back to the default accounts. Empty for a
+    /// wallet never bound on this handle.
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_ordinary_account_indices(&self) -> Vec<u32> {
+        self.shielded_account_indices()
+            .await
+            .into_iter()
+            .filter(|account| !is_shielded_identity_account(*account))
+            .collect()
     }
 
     /// The default Orchard payment address for `account` on this

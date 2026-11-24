@@ -10,6 +10,7 @@ import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.config.SdkConfig
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.security.WalletStorage
+import org.dashfoundation.dashsdk.services.ShieldedService
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -40,6 +41,10 @@ class WalletManagerRoundTripTest {
     private val testMnemonic =
         "abandon abandon abandon abandon abandon abandon abandon abandon " +
             "abandon abandon abandon about"
+
+    // BIP39 English test vector (entropy 0x7f repeated).
+    private val otherTestMnemonic =
+        "legal winner thank year wave sausage worth useful legal winner thank yellow"
 
     private lateinit var db: DashDatabase
     private lateinit var walletStorage: WalletStorage
@@ -302,6 +307,105 @@ class WalletManagerRoundTripTest {
                 reloaded.bindShielded(walletId, listOf(0))
             }
         } finally {
+            storeDir.deleteRecursively()
+        }
+    }
+
+    /**
+     * The ordinary shielded accounts of a wallet are read from Rust through
+     * JNI, and outlive a Clear: the Clear drops the wallet's registration on
+     * the coordinator, not the keys Rust holds for it. Bound again with the
+     * list read back, the wallet has the accounts it had before.
+     *
+     * Offline: nothing here contacts the network.
+     */
+    @Test
+    fun shieldedOrdinaryAccountsOutliveAClearAndBindAgain() = runBlocking {
+        assumeTrue("the native library has no shielded support", Sdk.hasShielded())
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val storeDir = File(context.cacheDir, "shielded-accounts-${System.nanoTime()}")
+        assertTrue(storeDir.mkdirs())
+        try {
+            PlatformWalletManager(sdk, Network.TESTNET, db, walletStorage).use { manager ->
+                manager.configureShielded(File(storeDir, "shielded.sqlite").absolutePath)
+                val walletId = manager.createWallet(
+                    mnemonic = testMnemonic,
+                    name = "shielded-accounts",
+                    createDefaultAccounts = true,
+                ).walletId
+                assertEquals(
+                    "a wallet never bound holds no shielded accounts",
+                    emptyList<Int>(),
+                    manager.shieldedOrdinaryAccounts(walletId),
+                )
+
+                manager.bindShielded(walletId, listOf(2, 1))
+                assertEquals(listOf(1, 2), manager.shieldedOrdinaryAccounts(walletId))
+
+                manager.clearShieldedStorage()
+                val held = manager.shieldedOrdinaryAccounts(walletId)
+                assertEquals("the accounts outlive the Clear", listOf(1, 2), held)
+
+                manager.bindShielded(walletId, held)
+                assertEquals(listOf(1, 2), manager.shieldedOrdinaryAccounts(walletId))
+            }
+        } finally {
+            storeDir.deleteRecursively()
+        }
+    }
+
+    /**
+     * A Clear through [ShieldedService] registers every loaded wallet again.
+     * A wallet other than the displayed one comes back with the accounts it
+     * had, read from Rust, where it used to come back with the default
+     * account 0 only (dashpay/platform#5989).
+     *
+     * The Clear restarts the shielded sync loop, which this test stops
+     * again at once; the client is built offline, so a pass that started
+     * meanwhile reaches nothing.
+     */
+    @Test
+    fun shieldedClearRegistersAnotherWalletAgainWithItsOwnAccounts() = runBlocking {
+        assumeTrue("the native library has no shielded support", Sdk.hasShielded())
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val storeDir = File(context.cacheDir, "shielded-clear-accounts-${System.nanoTime()}")
+        assertTrue(storeDir.mkdirs())
+        val storePath = File(storeDir, "shielded.sqlite").absolutePath
+        val service = ShieldedService(db)
+        try {
+            PlatformWalletManager(sdk, Network.TESTNET, db, walletStorage).use { manager ->
+                manager.configureShielded(storePath)
+                val displayed = manager.createWallet(
+                    mnemonic = testMnemonic,
+                    name = "shielded-clear-displayed",
+                    createDefaultAccounts = true,
+                ).walletId
+                val other = manager.createWallet(
+                    mnemonic = otherTestMnemonic,
+                    name = "shielded-clear-other",
+                    createDefaultAccounts = true,
+                ).walletId
+
+                service.bind(manager, displayed, storePath)
+                assertTrue("the displayed wallet is bound", service.isBound.value)
+                assertTrue(service.bindEngine(manager, other, storePath, listOf(2, 1)))
+                assertEquals(listOf(1, 2), manager.shieldedOrdinaryAccounts(other))
+
+                try {
+                    service.clearLocalState()
+                } finally {
+                    runCatching { manager.stopShieldedSync() }
+                }
+
+                assertEquals(
+                    "the other wallet keeps its accounts across the Clear",
+                    listOf(1, 2),
+                    manager.shieldedOrdinaryAccounts(other),
+                )
+                assertEquals(listOf(0), manager.shieldedOrdinaryAccounts(displayed))
+            }
+        } finally {
+            service.close()
             storeDir.deleteRecursively()
         }
     }

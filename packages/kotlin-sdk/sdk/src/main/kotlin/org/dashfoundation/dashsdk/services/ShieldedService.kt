@@ -25,14 +25,12 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.persistence.DashDatabase
-import org.dashfoundation.dashsdk.persistence.toHex
 import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 import org.dashfoundation.dashsdk.wallet.ShieldedBalanceUpdate
 import org.dashfoundation.dashsdk.wallet.ShieldedLocalBalanceSnapshot
 import org.dashfoundation.dashsdk.wallet.ShieldedLocalBalanceState
 import org.dashfoundation.dashsdk.wallet.WalletSyncEvent
 import org.dashfoundation.dashsdk.wallet.shieldedBalanceKey
-import java.util.WeakHashMap
 
 /**
  * Reactive view of the Rust-owned shielded (Orchard) sync loop — port of
@@ -132,12 +130,6 @@ class ShieldedService(private val database: DashDatabase) {
 
     /** A Room wipe a Clear still owes. Touched only inside [withLedgerLifecycle]. */
     private val pendingHostWipe = PendingHostWipe()
-
-    /**
-     * The account list of each registration this service made. Touched only
-     * inside [withLedgerLifecycle]; see [EngineRegistrations].
-     */
-    private val engineRegistrations = EngineRegistrations()
 
     /**
      * Run [step] with no other ledger lifecycle step in flight. Two things
@@ -352,7 +344,7 @@ class ShieldedService(private val database: DashDatabase) {
                     // if it fails again this bind fails and restores nothing.
                     pendingHostWipe.commit()
                     manager.configureShielded(dbPath)
-                    registerAndRecord(manager, walletId, sortedAccounts)
+                    manager.bindShielded(walletId, sortedAccounts)
                     true
                 } else {
                     false
@@ -456,10 +448,6 @@ class ShieldedService(private val database: DashDatabase) {
      * read + ZIP-32 re-derivation is low-millisecond per wallet and
      * rebind fires are rare (wallet-set change, network switch, Clear).
      *
-     * The [accounts] of a registration that went through are remembered:
-     * a later [clearLocalState], whose reset drops the registration,
-     * registers the wallet with them again.
-     *
      * @return whether the engine registration succeeded; callers running
      *   a best-effort fleet pass may ignore it.
      */
@@ -474,30 +462,29 @@ class ShieldedService(private val database: DashDatabase) {
     }
 
     /**
-     * [bindEngine] with the accounts chosen inside the ledger lifecycle
-     * step that binds them: [accountsFor] runs there, and null leaves the
-     * wallet alone (nothing is bound and `false` is returned). So nothing
-     * can register the wallet between that choice and the bind.
+     * [bindEngine] with the accounts read inside the ledger lifecycle step
+     * that binds them: [accountsFor] runs there, right before the native
+     * bind. [clearLocalState] uses it to ask Rust which accounts a wallet
+     * holds, so that no bind of this service can change them between the
+     * read and the bind.
      */
     private suspend fun engineBind(
         manager: PlatformWalletManager,
         walletId: ByteArray,
         dbPath: String,
-        accountsFor: () -> List<Int>?,
+        accountsFor: suspend () -> List<Int>,
     ): Boolean {
         if (!isAvailable) return false
         val walletIdHex4 = walletId.take(4).joinToString("") { "%02x".format(it) }
         return try {
-            val bound = withLedgerLifecycle {
-                accountsFor()?.also { accounts ->
-                    pendingHostWipe.commit()
-                    manager.configureShielded(dbPath)
-                    registerAndRecord(manager, walletId, accounts)
-                }
-            } ?: return false
+            val accounts = withLedgerLifecycle {
+                pendingHostWipe.commit()
+                manager.configureShielded(dbPath)
+                accountsFor().also { manager.bindShielded(walletId, it) }
+            }
             android.util.Log.i(
                 TAG,
-                "Shielded engine-bound: walletId=$walletIdHex4… accounts=$bound",
+                "Shielded engine-bound: walletId=$walletIdHex4… accounts=$accounts",
             )
             true
         } catch (e: Exception) {
@@ -507,66 +494,6 @@ class ShieldedService(private val database: DashDatabase) {
                 e,
             )
             false
-        }
-    }
-
-    /**
-     * Register [accounts] for [walletId] on [manager]'s coordinator and
-     * remember them (see [EngineRegistrations]). Called inside
-     * [withLedgerLifecycle].
-     *
-     * Not cancellable between the two. The native bind runs to its end
-     * whatever happens to its caller, and a caller cancelled meanwhile would
-     * otherwise be told it failed: the wallet would be registered with
-     * accounts nothing here remembers, and the next Clear would register it
-     * with those of an earlier bind.
-     */
-    private suspend fun registerAndRecord(
-        manager: PlatformWalletManager,
-        walletId: ByteArray,
-        accounts: List<Int>,
-    ) = withContext(NonCancellable) {
-        manager.bindShielded(walletId, accounts)
-        engineRegistrations.record(manager, walletId.toHex(), accounts)
-    }
-
-    /**
-     * Register [walletId] again on [mgr] after a Clear's reset dropped its
-     * registration, with the accounts it had (see
-     * [EngineRegistrations.accountsToRestore]). Whether the wallet is this
-     * pass's to register is decided inside the ledger lifecycle step that
-     * binds it, and every bind makes its native call and records it in such
-     * a step too. So a bind that began after the reset either has recorded
-     * by then, and the wallet is left alone, or runs afterwards, and its own
-     * registration is the one that stands.
-     *
-     * @return whether the wallet was registered here.
-     */
-    private suspend fun restoreRegistration(
-        mgr: PlatformWalletManager,
-        walletId: ByteArray,
-        dbPath: String,
-    ): Boolean = engineBind(mgr, walletId, dbPath) {
-        // The manager and the mirror as they are now, not as they were when
-        // the pass started: a bind installs both before it waits for its
-        // turn at the ledger.
-        val (onManager, isMirror) = bindingTurns.read {
-            (manager === mgr) to (boundWalletId?.contentEquals(walletId) == true)
-        }.second
-        when {
-            // The service left this manager (an unbind, another network):
-            // the rest of its fleet is no longer this Clear's to register.
-            !onManager -> null
-            // The mirror's registration is [bind]'s to make, with the
-            // accounts the service publishes, and [isBound] reports how it
-            // went. Registering it here would have Rust scan a wallet the
-            // service may report as not bound.
-            isMirror -> null
-            else -> engineRegistrations.accountsToRestore(
-                mgr,
-                walletId.toHex(),
-                neverRegistered = NEVER_REGISTERED_ACCOUNTS,
-            )
         }
     }
 
@@ -683,14 +610,15 @@ class ShieldedService(private val database: DashDatabase) {
      *    for the mirror wallet (re-registers the viewing keys on the
      *    now-empty coordinator, its `restore_for_wallet` finding no
      *    watermark → starts at index 0), then engine-bind every OTHER
-     *    loaded wallet with the accounts this service last registered it
-     *    with (`[0]` for a wallet it never registered; a wallet bound again
-     *    since the reset is left alone, see [EngineRegistrations]). A
-     *    mirror-bind failure does NOT skip the others ([bind] swallows its
-     *    errors; the fleet pass runs regardless, the iOS best-effort
-     *    lesson). Then restart the background loop, so the button alone
-     *    triggers an in-session cold rebuild 0→N for the whole fleet.
-     *    Swift's Clear re-binds nothing; its next Sync Now does.
+     *    loaded wallet with the accounts Rust holds for it
+     *    ([PlatformWalletManager.shieldedOrdinaryAccounts]: the reset drops
+     *    a wallet's registration, not its keys), so each comes back with
+     *    the accounts it had and not with a default. A mirror-bind failure
+     *    does NOT skip the others ([bind] swallows its errors; the fleet
+     *    pass runs regardless, the iOS best-effort lesson). Then restart
+     *    the background loop, so the button alone triggers an in-session
+     *    cold rebuild 0→N for the whole fleet. Swift's Clear registers
+     *    nothing again; its next Sync Now does.
      *
      * Fail-closed: if the Rust reset throws, the exception propagates and the
      * Room rows are left intact — the FFI's contract is that the host must
@@ -787,15 +715,17 @@ class ShieldedService(private val database: DashDatabase) {
         // not depend on who bound the mirror: a bind that overtook the
         // re-bind above registers one wallet and restarts nothing, so the
         // rest is still this Clear's to do. An engine bind writes nothing
-        // to the service's mirror. Skipped only when the service left this
-        // manager.
+        // to the service. Skipped only when the service left this manager.
         //
-        // Each wallet comes back with the accounts it had, and a wallet
-        // bound again since the reset is left alone: [restoreRegistration]
-        // decides both per wallet, inside the step that binds it. The
-        // mirror read here only saves the current mirror a turn at the
-        // ledger. Nothing rests on it being current: a wallet that becomes
-        // the mirror later is recognised inside its own step.
+        // Each wallet is registered with the accounts Rust holds for it,
+        // which outlive the reset, and with the default only when Rust
+        // holds none (a wallet never bound). Rust is asked inside the step
+        // that binds, so a bind of this service that went through since
+        // the reset (a wallet that became the mirror meanwhile, with its
+        // own accounts) is read back and registered with the same accounts
+        // again, not replaced. A bind made directly on the manager in that
+        // gap is outside this service's lock and can still be replaced by
+        // the accounts read just before it.
         val mirrorNow = bindingTurns.read { boundWalletId.takeIf { manager === mgr } }.second
         if (bindingTurns.read { manager !== mgr }.second) {
             android.util.Log.i(TAG, "Shielded clear: the service left this manager; no fleet recovery")
@@ -805,8 +735,16 @@ class ShieldedService(private val database: DashDatabase) {
             allWalletIds = mgr.wallets.value.keys,
             mirrorWalletId = mirrorNow?.joinToString("") { "%02x".format(it) }.orEmpty(),
         ) { otherKey ->
-            mgr.wallets.value[otherKey]?.let { other ->
-                restoreRegistration(mgr, other.walletId, dbPath)
+            // Checked before each wallet: once the service has left this
+            // manager (an unbind, another network), the rest of its fleet
+            // is no longer this Clear's to register.
+            if (bindingTurns.read { manager === mgr }.second) {
+                mgr.wallets.value[otherKey]?.let { other ->
+                    engineBind(mgr, other.walletId, dbPath) {
+                        mgr.shieldedOrdinaryAccounts(other.walletId)
+                            .ifEmpty { NEVER_BOUND_ACCOUNTS }
+                    }
+                }
             }
         }
         val stillOnManager = bindingTurns.read { manager === mgr }.second
@@ -824,9 +762,6 @@ class ShieldedService(private val database: DashDatabase) {
      */
     private suspend fun resetAndWipe(mgr: PlatformWalletManager, db: DashDatabase) {
         mgr.clearShieldedStorage()
-        // The reset dropped every registration on this manager. Their
-        // account lists are kept for the fleet pass that makes them again.
-        engineRegistrations.reset(mgr)
         android.util.Log.i(TAG, "Shielded clear: Rust store reset OK; wiping Room rows")
         // From here the Room wipe is owed. If it fails now, no bind restores
         // anything until it has gone through (see [PendingHostWipe]).
@@ -875,10 +810,10 @@ class ShieldedService(private val database: DashDatabase) {
         const val CLEAR_REBIND_ATTEMPTS = 3
 
         /**
-         * The accounts a Clear registers a wallet with when this service
-         * never registered it: [bindEngine]'s default.
+         * The accounts a Clear registers a wallet with when Rust holds none
+         * for it, because it was never bound: [bindEngine]'s default.
          */
-        val NEVER_REGISTERED_ACCOUNTS = listOf(0)
+        val NEVER_BOUND_ACCOUNTS = listOf(0)
     }
 }
 
@@ -911,73 +846,6 @@ internal class PendingHostWipe {
         val wipe = owed ?: return
         wipe()
         owed = null
-    }
-}
-
-/**
- * The shielded registrations one [ShieldedService] made, per manager: for
- * each wallet (its id in lowercase hex), the account list of the last bind
- * that went through. A Clear resets the Rust coordinator, which drops every
- * registration, and Rust has no call that reads a wallet's bound accounts.
- * So the service remembers the arguments it passed itself, and nothing else:
- * that is what lets a Clear register each wallet again with the accounts it
- * had, not with a default.
- *
- * A registration is either standing or dropped. [record] makes it standing;
- * [reset] turns every standing one into a dropped one, which keeps its
- * account list until the wallet is registered again. A wallet that is
- * standing after a reset was bound since, and [accountsToRestore] leaves it
- * alone.
- *
- * Each manager has its own entries and is held weakly: a manager made for
- * another network (or for the same one again) starts with none, and a
- * closed manager is not kept alive by them.
- *
- * Not thread-safe. The service touches it only inside
- * [ShieldedService.withLedgerLifecycle], in the same step as the native call
- * an entry describes.
- */
-internal class EngineRegistrations {
-    private class OfManager {
-        val standing = HashMap<String, List<Int>>()
-        val dropped = HashMap<String, List<Int>>()
-    }
-
-    private val byManager = WeakHashMap<Any, OfManager>()
-
-    /** A bind of [walletKey] with [accounts] went through on [manager]. */
-    fun record(manager: Any, walletKey: String, accounts: List<Int>) {
-        val of = byManager.getOrPut(manager) { OfManager() }
-        of.standing[walletKey] = accounts.distinct().sorted()
-        of.dropped.remove(walletKey)
-    }
-
-    /** [manager]'s coordinator was reset: nothing is registered on it now. */
-    fun reset(manager: Any) {
-        val of = byManager[manager] ?: return
-        of.dropped.putAll(of.standing)
-        of.standing.clear()
-    }
-
-    /** The accounts [walletKey] is registered with on [manager], or null if it is not. */
-    fun standing(manager: Any, walletKey: String): List<Int>? =
-        byManager[manager]?.standing?.get(walletKey)
-
-    /**
-     * The accounts to register [walletKey] with again on [manager] after a
-     * reset, or null when it must be left alone because a bind registered
-     * it since. They are the accounts of the registration the reset
-     * dropped, and [neverRegistered] for a wallet the service has not
-     * registered on this manager.
-     */
-    fun accountsToRestore(
-        manager: Any,
-        walletKey: String,
-        neverRegistered: List<Int>,
-    ): List<Int>? {
-        val of = byManager[manager] ?: return neverRegistered
-        if (walletKey in of.standing) return null
-        return of.dropped[walletKey] ?: neverRegistered
     }
 }
 
