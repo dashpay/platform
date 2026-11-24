@@ -18,9 +18,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -93,22 +96,22 @@ fun FundFromAssetLockScreen(
     }
 
     // An external lock pays the recipients it recorded when it was built, not
-    // the picked address: load them before submit is enabled and show them.
-    // Null while loading, for an owned lock, or when the lock no longer
-    // carries them.
+    // the picked address: read them before submit is enabled and show them.
+    // The read waits for the wallet (re-run when it becomes available), keeps
+    // a failed read apart from a lock recording none, and re-runs on Retry.
     val isExternal = resumeLock?.platformAddressRecipients != null
-    val recordedPayees by produceState<List<ManagedPlatformWallet.FundRecipient>?>(
-        initialValue = null,
-        wallet,
-        resumeLock,
-    ) {
-        val w = wallet
-        val parsed = resumeLock?.takeIf { isExternal }?.let { parseOutPoint(it.outPointHex) }
-        value = if (w != null && parsed != null) {
-            runCatching { w.assetLockPlatformAddressRecipients(parsed.first, parsed.second) }.getOrNull()
-        } else {
-            null
+    var recordedPayees by remember(resumeOutPointHex) {
+        mutableStateOf<RecordedPayeesLoad>(RecordedPayeesLoad.WaitingForWallet)
+    }
+    var payeesAttempt by remember(resumeOutPointHex) { mutableIntStateOf(0) }
+    LaunchedEffect(isExternal, wallet, payeesAttempt) {
+        val outPointHex = resumeOutPointHex
+        if (!isExternal || outPointHex == null || recordedPayees is RecordedPayeesLoad.Loaded) {
+            return@LaunchedEffect
         }
+        val w = wallet
+        if (w != null) recordedPayees = RecordedPayeesLoad.Loading
+        recordedPayees = readRecordedPayees(outPointHex, w?.let { it::assetLockPlatformAddressRecipients })
     }
 
     // Fresh unused, zero-balance Platform-payment addresses are the fund
@@ -133,7 +136,7 @@ fun FundFromAssetLockScreen(
     // amount too. ← Swift `canSubmit`.
     val canSubmit = wallet != null && manager != null && recipient != null &&
         if (isResume) {
-            resumeLock != null && (!isExternal || !recordedPayees.isNullOrEmpty())
+            resumeLock != null && (!isExternal || recordedPayees.loadedPayees != null)
         } else {
             amount != null && amount > 0
         }
@@ -209,15 +212,39 @@ fun FundFromAssetLockScreen(
 
             if (isExternal) {
                 FormSection(title = "Recorded Payees") {
-                    val payees = recordedPayees
-                    if (payees.isNullOrEmpty()) {
-                        Text(
+                    when (val load = recordedPayees) {
+                        RecordedPayeesLoad.WaitingForWallet -> Text(
+                            "Waiting for the wallet to load…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag("fundFromAssetLock.payees.waiting"),
+                        )
+                        RecordedPayeesLoad.Loading -> Text(
                             "Loading the recipients this asset lock recorded…",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag("fundFromAssetLock.payees.loading"),
                         )
-                    } else {
-                        RecordedPayeeLines(payees)
+                        is RecordedPayeesLoad.Loaded -> RecordedPayeeLines(load.payees)
+                        RecordedPayeesLoad.NotFound -> Text(
+                            "This asset lock no longer records its recipients, so it cannot " +
+                                "be completed here.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag("fundFromAssetLock.payees.notFound"),
+                        )
+                        is RecordedPayeesLoad.Failed -> {
+                            Text(
+                                "Could not read the recorded payees: ${load.message}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.testTag("fundFromAssetLock.payees.failed"),
+                            )
+                            TextButton(
+                                onClick = { payeesAttempt++ },
+                                modifier = Modifier.testTag("fundFromAssetLock.payees.retry"),
+                            ) { Text("Retry") }
+                        }
                     }
                 }
             } else FormSection(title = "Recipient") {
@@ -286,6 +313,10 @@ fun FundFromAssetLockScreen(
                         return@SubmitButton
                     }
                     val (txid, vout) = parsed
+                    if (lock.platformAddressRecipients != null && recordedPayees.loadedPayees == null) {
+                        error = "The recorded payees of this asset lock are not loaded."
+                        return@SubmitButton
+                    }
 
                     container.addressFundCoordinator.startFunding(
                         walletId = walletId,
