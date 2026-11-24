@@ -20,6 +20,7 @@ mod contract_moderation;
 mod contract_update;
 mod credits;
 mod dashpay;
+mod dashpay_payment_address;
 mod decision_proposals;
 mod dpns_give_up;
 mod dpns_marketplace;
