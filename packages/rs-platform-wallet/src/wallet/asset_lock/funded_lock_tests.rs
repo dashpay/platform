@@ -591,7 +591,8 @@ async fn should_offer_no_resume_when_a_resumed_shielded_funding_cannot_cover_its
 }
 
 /// A fresh shielded funding too small to clear the pool fee is refused before
-/// anything is built: `NotSent`, a typed shortfall, and no lock is tracked.
+/// anything is built: `NotSent`, an invalid amount naming the minimum, and no
+/// lock is tracked.
 #[cfg(feature = "shielded")]
 #[tokio::test]
 async fn should_refuse_a_fresh_shielded_funding_below_the_pool_fee_as_not_sent() {
@@ -633,11 +634,16 @@ async fn should_refuse_a_fresh_shielded_funding_below_the_pool_fee_as_not_sent()
         .expect_err("the lock could not pay the pool fee");
     let _ = std::fs::remove_dir_all(&dir);
 
+    // A refusal of the requested amount, with the minimum: not a measured
+    // coin-selection shortfall (`AssetLockInsufficientFunds`).
+    let requested = pool_fee / CREDITS_PER_DUFF;
+    let minimum = requested + 1;
     assert!(
         matches!(
-            error,
-            PlatformWalletError::AssetLockInsufficientFunds { required, .. }
-                if required == pool_fee / CREDITS_PER_DUFF + 1
+            &error,
+            PlatformWalletError::InvalidParameter(message)
+                if message.contains(&format!("{requested} duffs"))
+                    && message.contains(&format!("minimum {minimum} duffs"))
         ),
         "{error:?}"
     );

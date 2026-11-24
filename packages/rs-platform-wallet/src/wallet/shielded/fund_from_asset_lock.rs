@@ -350,15 +350,16 @@ impl PlatformWallet {
         // Nothing is built yet, so the refusal is `NotSent`: the requested
         // amount is below the smallest whole-duff lock whose value clears the
         // pool fee (the floor the drain paths below use), compared in duffs so
-        // no credits conversion can overflow.
+        // no credits conversion can overflow. It is a refusal of the requested
+        // amount, not a coin-selection shortfall: no funds were measured.
         if let AssetLockFunding::FromWalletBalance { amount_duffs, .. } = &funding {
             let pool_fee_credits = self.shield_from_asset_lock_pool_fee(num_actions)?;
             let required = pool_fee_credits / CREDITS_PER_DUFF + 1;
             if *amount_duffs < required {
-                return Err(PlatformWalletError::AssetLockInsufficientFunds {
-                    available: *amount_duffs,
-                    required,
-                });
+                return Err(PlatformWalletError::InvalidParameter(format!(
+                    "shield amount {amount_duffs} duffs is below the minimum {required} duffs \
+                     that covers the ShieldFromAssetLock pool fee"
+                )));
             }
         }
 
