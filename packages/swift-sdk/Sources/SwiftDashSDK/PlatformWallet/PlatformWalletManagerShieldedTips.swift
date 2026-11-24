@@ -113,6 +113,7 @@ extension PlatformWalletManager {
     /// - Throws: `PlatformWalletError.invalidParameter` with Rust's reason for
     ///   a refused amount.
     nonisolated public static func parseShieldedTipAmount(_ text: String) throws -> UInt64 {
+        try requireCString(text, "amount text")
         var credits: UInt64 = 0
         try text.withCString { textPtr in
             try platform_wallet_parse_shielded_tip_amount(textPtr, &credits).check()
@@ -136,6 +137,7 @@ extension PlatformWalletManager {
         guard walletId.count == 32 else {
             throw PlatformWalletError.invalidParameter("walletId must be exactly 32 bytes")
         }
+        try PlatformWalletManager.requireCString(username, "username")
         return try await withAdmittedNativeOperation("reviewShieldedTip") { handle in
             var out = ShieldedTipReviewFFI()
             try walletId.withUnsafeBytes { widRaw in
@@ -206,6 +208,10 @@ extension PlatformWalletManager {
             sourceIdentity = nil
             sourceAccount = account
         }
+        try PlatformWalletManager.requireCString(username, "username")
+        if let memo {
+            try PlatformWalletManager.requireCString(memo, "memo")
+        }
         guard let resolverHandle = resolver.handle else {
             throw PlatformWalletError.invalidParameter("MnemonicResolver has no handle")
         }
@@ -272,6 +278,17 @@ extension PlatformWalletManager {
                 }
             }
             return try ShieldedIdentityBalance(ffi: out)
+        }
+    }
+
+    /// Refuse `text` when it holds a NUL: a C string ends at its first NUL,
+    /// so Rust would read only what precedes it and judge a different text
+    /// than the caller passed. What the text may otherwise hold is Rust's
+    /// to decide.
+    nonisolated static func requireCString(_ text: String, _ name: String) throws {
+        if text.utf8.contains(0) {
+            throw PlatformWalletError.invalidParameter(
+                "\(name) contains a NUL character and cannot be passed to the wallet")
         }
     }
 

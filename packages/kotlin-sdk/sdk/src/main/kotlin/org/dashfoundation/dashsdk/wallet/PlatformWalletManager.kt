@@ -2426,6 +2426,12 @@ class PlatformWalletManager(
      *   [DashSdkError.PlatformWallet.WalletOperation] for a recipient that
      *   changed since the review).
      *
+     * A caller cancelled while the native call runs still gets its outcome
+     * when the call completes ([opReturningCompletedResult]): native code
+     * cannot see the cancellation, so the tip can be sent after it, and a
+     * sent tip must never read as a cancelled one. Handle the result before
+     * suspending again.
+     *
      * @param amount credits to send, as [parseShieldedTipAmount] returned
      *   them.
      * @param memo optional UTF-8 memo on the recipient's note (null or
@@ -2438,7 +2444,7 @@ class PlatformWalletManager(
         expectedRecipient: ShieldedTipRecipient,
         amount: Long,
         memo: String? = null,
-    ): Unit = teardownGate.op {
+    ): Unit = teardownGate.opReturningCompletedResult {
         // The C call takes the source as a nullable identity id beside an
         // account number that it ignores when the id is present.
         val sourceIdentityId: ByteArray?

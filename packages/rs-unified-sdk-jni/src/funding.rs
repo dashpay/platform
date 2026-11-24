@@ -53,7 +53,8 @@ use platform_wallet_ffi::identity_registration_with_signer::IdentityPubkeyFFI;
 use platform_wallet_ffi::shielded_tip::{
     platform_wallet_manager_review_shielded_tip, platform_wallet_manager_send_shielded_tip,
     platform_wallet_manager_shielded_identity_balance, platform_wallet_parse_shielded_tip_amount,
-    ShieldedIdentityBalanceFFI, ShieldedTipReviewFFI,
+    ShieldedIdentityBalanceFFI, ShieldedIdentityBalanceStateFFI, ShieldedTipRecipientChangeFFI,
+    ShieldedTipReviewFFI,
 };
 use std::os::raw::c_void;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -1356,7 +1357,13 @@ fn tip_review_blob(review: &ShieldedTipReviewFFI) -> Vec<u8> {
     let mut blob = Vec::with_capacity(TIP_REVIEW_BLOB_LEN);
     blob.extend_from_slice(&review.recipient_identity_id);
     blob.extend_from_slice(&review.recipient_address);
-    blob.push(review.change as u8);
+    // Matched in full, so a case added to the C enum does not compile until
+    // it is given a tag here and a branch in Kotlin's decoder.
+    blob.push(match review.change {
+        ShieldedTipRecipientChangeFFI::New => 0,
+        ShieldedTipRecipientChangeFFI::Unchanged => 1,
+        ShieldedTipRecipientChangeFFI::Changed => 2,
+    });
     blob.extend_from_slice(&review.previous_identity_id);
     blob.extend_from_slice(&review.previous_address);
     blob.push(u8::from(review.unresolved));
@@ -1368,7 +1375,12 @@ fn tip_review_blob(review: &ShieldedTipReviewFFI) -> Vec<u8> {
 /// u64 credits`.
 fn identity_balance_blob(balance: &ShieldedIdentityBalanceFFI) -> Vec<u8> {
     let mut blob = Vec::with_capacity(IDENTITY_BALANCE_BLOB_LEN);
-    blob.push(balance.state as u8);
+    // Matched in full, as the review's change is.
+    blob.push(match balance.state {
+        ShieldedIdentityBalanceStateFFI::Unverified => 0,
+        ShieldedIdentityBalanceStateFFI::Unavailable => 1,
+        ShieldedIdentityBalanceStateFFI::Available => 2,
+    });
     blob.extend_from_slice(&balance.account.to_be_bytes());
     blob.extend_from_slice(&balance.credits.to_be_bytes());
     blob
@@ -1573,9 +1585,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
 #[cfg(test)]
 mod tests {
     use super::*;
-    use platform_wallet_ffi::shielded_tip::{
-        ShieldedIdentityBalanceStateFFI, ShieldedTipRecipientChangeFFI,
-    };
 
     /// The layout `decodeShieldedTipReview` reads on the Kotlin side.
     #[test]
