@@ -4667,6 +4667,7 @@ mod contact_watch_only_projection_tests {
                     balance: Default::default(),
                     account_balances: Default::default(),
                     addresses_derived: vec![],
+                    locked_outpoints: Default::default(),
                 },
                 WalletEvent::BlockProcessed {
                     wallet_id,
@@ -4678,6 +4679,7 @@ mod contact_watch_only_projection_tests {
                     balance: Default::default(),
                     account_balances: Default::default(),
                     addresses_derived: vec![],
+                    locked_outpoints: Default::default(),
                 },
                 WalletEvent::TransactionInstantLocked {
                     wallet_id,

@@ -3,7 +3,6 @@
 //! a reload.
 
 use dashcore::block::{Header, Version};
-use dashcore::hashes::Hash;
 use dashcore::script::{Builder, PushBytesBuf};
 use dashcore::sighash::SighashCache;
 use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
