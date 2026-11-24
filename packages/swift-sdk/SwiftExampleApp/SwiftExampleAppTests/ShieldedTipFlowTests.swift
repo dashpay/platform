@@ -408,6 +408,72 @@ final class ShieldedTipFlowTests: XCTestCase {
         XCTAssertNil(flow.reviewed)
     }
 
+    // MARK: - Accessibility ids
+
+    func testShouldNameTheSyncButtonForTheStateItShowsIn() async {
+        let unresolved = makeFlow(review: review(unresolved: true))
+        XCTAssertNil(unresolved.syncNowIdentifier)
+        unresolved.amountText = "1"
+        await unresolved.review()
+        XCTAssertEqual(unresolved.syncNowIdentifier, "dashpay.tip.syncNow")
+
+        let pending = makeFlow(sendError: PlatformWalletError.shieldedTipPending("unresolved"))
+        await reviewAndSend(pending)
+        XCTAssertEqual(pending.syncNowIdentifier, "dashpay.tip.outcome.syncNow")
+
+        let unconfirmed = makeFlow(sendError: PlatformWalletError.shieldedSpendUnconfirmed("not proved"))
+        await reviewAndSend(unconfirmed)
+        XCTAssertEqual(unconfirmed.syncNowIdentifier, "dashpay.tip.outcome.syncNow")
+
+        let sent = makeFlow()
+        await reviewAndSend(sent)
+        XCTAssertNil(sent.syncNowIdentifier)
+    }
+
+    func testShouldHoldTheSheetAndNameTheProgressRowWhileAReviewOrASendRuns() async {
+        let gate = ReviewGate()
+        let sendGate = ReviewGate()
+        let flow = ShieldedTipFlow(
+            username: "alice",
+            actions: ShieldedTipFlow.Actions(
+                parseAmount: { _ in 1 },
+                review: { [recipient, gate] _, _ in
+                    await withCheckedContinuation { gate.pending = $0 }
+                    return ShieldedTipReview(recipient: recipient, change: .new, unresolved: false)
+                },
+                send: { [sendGate] _ in
+                    await withCheckedContinuation { sendGate.pending = $0 }
+                }
+            )
+        )
+        flow.amountText = "1"
+        XCTAssertNil(flow.progressIdentifier)
+
+        let reviewing = Task { await flow.review() }
+        while gate.pending == nil { await Task.yield() }
+        XCTAssertEqual(flow.progressIdentifier, "dashpay.tip.reviewing")
+        XCTAssertTrue(flow.isBusy)
+        gate.pending?.resume()
+        await reviewing.value
+        XCTAssertNil(flow.progressIdentifier)
+
+        let sending = Task { await flow.send() }
+        while sendGate.pending == nil { await Task.yield() }
+        XCTAssertEqual(flow.progressIdentifier, "dashpay.tip.sending")
+        // While it sends the sheet cannot close (isBusy), and nothing can be
+        // reviewed or sent again.
+        XCTAssertTrue(flow.isBusy)
+        XCTAssertTrue(flow.inputsLocked)
+        XCTAssertFalse(flow.canReview)
+        XCTAssertFalse(flow.canSend)
+        await flow.send()
+        sendGate.pending?.resume()
+        await sending.value
+        XCTAssertNil(flow.progressIdentifier)
+        XCTAssertFalse(flow.isBusy)
+        XCTAssertEqual(flow.phase, .finished(.submitted))
+    }
+
     // MARK: - Amount
 
     func testShouldShowTheWalletsReasonForARefusedAmount() {

@@ -244,7 +244,7 @@ private struct ShieldedTipSheetContent: View {
                 Text(reason)
                     .font(.caption)
                     .foregroundColor(.red)
-                    .accessibilityIdentifier("dashpay.tip.review.error")
+                    .accessibilityIdentifier("dashpay.tip.error")
             }
 
             if case .finished(let outcome) = flow.phase {
@@ -273,19 +273,19 @@ private struct ShieldedTipSheetContent: View {
                 .accessibilityIdentifier("dashpay.tip.review")
             }
 
-            if flow.offersShieldedSync {
+            if let syncNowIdentifier = flow.syncNowIdentifier {
                 Button {
                     Task { await syncShielded() }
                 } label: {
                     Label("Sync shielded now", systemImage: "arrow.triangle.2.circlepath")
                 }
                 .disabled(syncStatus == .checking || shieldedService.isSyncing)
-                .accessibilityIdentifier("dashpay.tip.sync")
+                .accessibilityIdentifier(syncNowIdentifier)
                 if let text = syncStatus.text {
                     Text(text)
                         .font(.caption)
                         .foregroundColor(syncStatus.isFailure ? .red : .secondary)
-                        .accessibilityIdentifier("dashpay.tip.sync.status")
+                        .accessibilityIdentifier("dashpay.tip.syncNow.status")
                 }
             }
 
@@ -294,14 +294,14 @@ private struct ShieldedTipSheetContent: View {
                     .accessibilityIdentifier("dashpay.tip.tipAgain")
             }
 
-            if flow.isBusy {
+            if let progressIdentifier = flow.progressIdentifier {
                 HStack(spacing: 8) {
                     ProgressView()
                     Text(flow.phase == .reviewing ? "Reviewing…" : "Sending…")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                .accessibilityIdentifier("dashpay.tip.busy")
+                .accessibilityIdentifier(progressIdentifier)
             }
         }
     }
@@ -406,12 +406,12 @@ struct ShieldedTipBalanceRow: View {
             Text(state.text)
                 .font(.caption)
                 .foregroundColor(state.isFailure ? .red : .primary)
-                .accessibilityIdentifier("dashpay.tip.balance")
+                .accessibilityIdentifier("dashpay.tip.identityBalance")
             if let busyText = state.busyText {
                 Text(busyText)
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    .accessibilityIdentifier("dashpay.tip.balance.busy")
+                    .accessibilityIdentifier("dashpay.tip.identityBalance.busy")
             }
             if state.offersPrepare {
                 Button {
@@ -424,13 +424,13 @@ struct ShieldedTipBalanceRow: View {
                 }
                 .buttonStyle(.borderless)
                 .disabled(preparing)
-                .accessibilityIdentifier("dashpay.tip.balance.prepare")
+                .accessibilityIdentifier("dashpay.tip.prepareIdentityAccount")
             }
             if let prepareError {
                 Text(prepareError)
                     .font(.caption)
                     .foregroundColor(.red)
-                    .accessibilityIdentifier("dashpay.tip.balance.prepareError")
+                    .accessibilityIdentifier("dashpay.tip.identityBalance.prepareError")
             }
         }
         .task(id: ReadInputs(reload: reloadToken, syncs: syncs, prepares: prepares)) {
