@@ -27,6 +27,7 @@ struct ContactDetailView: View {
     @Query private var pairRows: [PersistentDashpayContactRequest]
 
     @State private var showPaymentSheet = false
+    @State private var showTipSheet = false
     @State private var showAliasEditor = false
     @State private var showNoteEditor = false
     @State private var isRefreshingPayments = false
@@ -149,6 +150,12 @@ struct ContactDetailView: View {
             )
             .environmentObject(walletManager)
         }
+        .sheet(isPresented: $showTipSheet) {
+            if let username = dpnsHint {
+                ShieldedTipSheet(identity: identity, username: username)
+                    .environmentObject(walletManager)
+            }
+        }
         .sheet(isPresented: $showAliasEditor) {
             ContactLocalFieldEditor(
                 title: "Alias",
@@ -265,6 +272,23 @@ struct ContactDetailView: View {
                 )
                 .font(.caption)
                 .foregroundColor(.orange)
+            }
+
+            // A shielded tip goes to a username: the wallet resolves it and
+            // pays the shielded address its profile publishes.
+            Button {
+                showTipSheet = true
+            } label: {
+                Label("Send shielded tip", systemImage: "eye.slash.fill")
+            }
+            .disabled(dpnsHint == nil)
+            .accessibilityIdentifier("dashpay.tip.contactEntry")
+
+            if dpnsHint == nil {
+                Text(ShieldedTipPresentation.noUsernameMessage)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .accessibilityIdentifier("dashpay.tip.contactNoUsername")
             }
         }
     }
