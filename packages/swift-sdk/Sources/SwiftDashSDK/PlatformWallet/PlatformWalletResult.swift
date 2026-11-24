@@ -701,6 +701,12 @@ public enum PlatformWalletError: LocalizedError {
     /// submitted; resume it with
     /// `ManagedPlatformWallet.resumeTopUpToRecordedRecipient`, which pays the
     /// recorded identity (`TrackedAssetLock.identityRecipient`).
+    ///
+    /// Also raised when a lock built by `fundFromAssetLockExternal` (it
+    /// recorded the Platform addresses it pays,
+    /// `TrackedAssetLock.hasPlatformAddressRecipients`) is resumed as an
+    /// owned funding or to other recipients. Nothing was submitted; resume
+    /// it with `ManagedPlatformAddressWallet.resumeFundFromAssetLockToRecordedRecipients`.
     case assetLockRecipientMismatch(String)
     /// Code 81: an unbound identity top-up lock records no identity to pay,
     /// so no resume pays it; it may have been meant for someone else's
