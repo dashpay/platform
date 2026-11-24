@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -34,6 +36,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateSetOf
@@ -82,6 +85,8 @@ import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.formatCredits
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.toHex
+import java.util.Collections
+import java.util.IdentityHashMap
 
 /** The shielded account a create pays from, as on iOS. */
 internal const val PRIVATE_ENTRY_CREATE_ACCOUNT = 0
@@ -154,6 +159,9 @@ fun PrivateDocumentEntryCreateScreen(
 
     val coordinator = container.privateDocumentEntryCreateCoordinator
     val createStates by coordinator.states.collectAsStateWithLifecycle()
+    // The creates as they stood when this screen opened: what one of them left is shown, and only
+    // the outcome of a create that finishes from here on is scrolled to
+    val statesAtOpen = remember { coordinator.states.value }
     val heldRequests by coordinator.held.collectAsStateWithLifecycle()
     val hasShielded = remember { runCatching { Sdk.hasShielded() }.getOrDefault(false) }
     // Why the last tap sent nothing (the properties did not encode, the form changed under it)
@@ -535,43 +543,107 @@ fun PrivateDocumentEntryCreateScreen(
                 Footer("Paid from the shielded notes when one or two notes are spent; each further note adds to it.")
             }
 
-            SubmitButton(
-                text = if (isSubmitting) "Proving and broadcasting…" else "Create Entry",
-                isLoading = isSubmitting,
-                enabled = canSubmit,
-                modifier = Modifier.fillMaxWidth().testTag("privateEntryCreate.createButton"),
-            ) { submit() }
-
-            if (isHeld) {
-                Text(
-                    HELD_MESSAGE,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = WarningOrange,
-                    modifier = Modifier.testTag("privateEntryCreate.held"),
-                )
-            }
-
-            localRefusal?.let {
-                SelectionContainer {
-                    Text(
-                        it,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.testTag("privateEntryCreate.refusal"),
-                    )
-                }
-            }
-
-            outcome?.let { current ->
-                OutcomeSection(current) {
+            PrivateEntryCreateSubmitArea(
+                isSubmitting = isSubmitting,
+                canSubmit = canSubmit,
+                isHeld = isHeld,
+                localRefusal = localRefusal,
+                outcome = outcome,
+                outcomeSinceOpened = walletState !== selectedWalletHex?.let { statesAtOpen[it] },
+                onSubmit = ::submit,
+                onReadEntries = {
                     navController.navigate(PrivateDocumentEntries(contractIdHex, documentTypeName))
-                }
-            }
+                },
+            )
         }
 
         if (!lifecycleState.isAtLeast(Lifecycle.State.RESUMED)) {
             PrivacyCover(text = "Private entry hidden", testTag = "privateEntryCreate.privacyCover")
         }
+        }
+    }
+}
+
+/**
+ * The Create Entry button and, under it, what a tap led to: the hold notice, why nothing was
+ * sent, and the create's outcome. It is the last thing in the form, so the button is tapped at
+ * the bottom edge of the screen and whatever appears under it appears out of sight: the form
+ * scrolls to show it. Left there, a create that went through looks like a tap that did nothing,
+ * with the same entry one tap away from being paid for again.
+ *
+ * The form scrolls to what is under the button, not to the button: in a window too short for
+ * both, the answer is what has to be seen. It scrolls once per answer. An outcome it already
+ * scrolled to is shown again without moving the form when another wallet is chosen and then this
+ * one again.
+ *
+ * [outcomeSinceOpened] says the outcome is of a create that finished while this screen was shown.
+ * The outcome of an earlier one is shown but not scrolled to, so a reopened form starts at its
+ * top. The hold notice is not scrolled to by itself either: it also appears while a field is
+ * being edited.
+ */
+@Composable
+internal fun PrivateEntryCreateSubmitArea(
+    isSubmitting: Boolean,
+    canSubmit: Boolean,
+    isHeld: Boolean,
+    localRefusal: String?,
+    outcome: PrivateEntryCreateOutcome?,
+    outcomeSinceOpened: Boolean,
+    onSubmit: () -> Unit,
+    onReadEntries: () -> Unit,
+) {
+    val answer = remember { BringIntoViewRequester() }
+    // Counted so a tap answered with the same words as the last one scrolls again
+    var taps by remember { mutableIntStateOf(0) }
+    LaunchedEffect(taps, localRefusal) {
+        if (localRefusal != null) answer.bringIntoView()
+    }
+    // By identity: two creates that may have gone through give equal outcomes
+    val scrolledTo = remember {
+        Collections.newSetFromMap(IdentityHashMap<PrivateEntryCreateOutcome, Boolean>())
+    }
+    LaunchedEffect(outcome) {
+        if (outcome != null && outcomeSinceOpened && scrolledTo.add(outcome)) answer.bringIntoView()
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        SubmitButton(
+            text = if (isSubmitting) "Proving and broadcasting…" else "Create Entry",
+            isLoading = isSubmitting,
+            enabled = canSubmit,
+            modifier = Modifier.fillMaxWidth().testTag("privateEntryCreate.createButton"),
+            onClick = {
+                taps++
+                onSubmit()
+            },
+        )
+
+        if (isHeld || localRefusal != null || outcome != null) {
+            Column(
+                modifier = Modifier.bringIntoViewRequester(answer),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                if (isHeld) {
+                    Text(
+                        HELD_MESSAGE,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = WarningOrange,
+                        modifier = Modifier.testTag("privateEntryCreate.held"),
+                    )
+                }
+
+                localRefusal?.let {
+                    SelectionContainer {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.testTag("privateEntryCreate.refusal"),
+                        )
+                    }
+                }
+
+                outcome?.let { OutcomeSection(it, onReadEntries) }
+            }
         }
     }
 }
