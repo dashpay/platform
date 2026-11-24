@@ -1453,6 +1453,46 @@ mod tests {
         ));
     }
 
+    /// A resume whose lock is not a tracked registration lock of the index
+    /// settles nothing, even with the slot's keys registered: no placement,
+    /// and a claim's lease on that index stays.
+    #[tokio::test]
+    async fn should_settle_nothing_for_a_resume_its_lock_does_not_authorize() {
+        let wallet = wallet_answering(
+            Backend::new(full()),
+            Some(Some(registered_with_our_master())),
+        )
+        .await;
+        let leased = wallet
+            .identity()
+            .acquire_resolved_slot(claim(1))
+            .await
+            .unwrap();
+        let untracked = OutPoint::new(Txid::from_byte_array([7; 32]), 0);
+        let other_index = OutPoint::new(Txid::from_byte_array([8; 32]), 0);
+        track_registration_lock_at(&wallet, other_index, 1).await;
+
+        assert_eq!(leased.identity_index, 0);
+        for (out_point, expected_untracked) in [(untracked, true), (other_index, false)] {
+            let refused = resume_at(&wallet, out_point).await;
+            assert_eq!(
+                matches!(refused, Err(PlatformWalletError::AssetLockNotTracked(_))),
+                expected_untracked,
+                "{refused:?}"
+            );
+            assert!(refused.is_err());
+        }
+        let wm = wallet.identity().wallet_manager.read().await;
+        let manager = &wm
+            .get_wallet_info(&wallet.wallet_id())
+            .unwrap()
+            .identity_manager;
+        assert!(matches!(
+            manager.slot_state(&wallet.wallet_id(), leased.identity_index),
+            SlotState::Leased(_)
+        ));
+    }
+
     /// An identity on Platform holding [`master_keys`]'s master key, plus a
     /// key this wallet did not derive.
     fn registered_with_our_master() -> Identity {
@@ -1481,6 +1521,15 @@ mod tests {
 
     /// Track a registration lock at `out_point` for slot 0.
     async fn track_registration_lock(wallet: &PlatformWallet, out_point: OutPoint) {
+        track_registration_lock_at(wallet, out_point, 0).await;
+    }
+
+    /// Track a registration lock at `out_point` for slot `identity_index`.
+    async fn track_registration_lock_at(
+        wallet: &PlatformWallet,
+        out_point: OutPoint,
+        identity_index: RegistrationIndex,
+    ) {
         let mut wm = wallet.identity().wallet_manager.write().await;
         let info = wm.get_wallet_info_mut(&wallet.wallet_id()).unwrap();
         info.tracked_asset_locks.insert(
@@ -1497,7 +1546,7 @@ mod tests {
                 },
                 account_index: 0,
                 funding_type: AssetLockFundingType::IdentityRegistration,
-                identity_index: 0,
+                identity_index,
                 amount: 1,
                 status: AssetLockStatus::Broadcast,
                 proof: None,

@@ -679,6 +679,27 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
         }
     }
+    /// Refuse unless `out_point` is a tracked identity-registration lock for
+    /// `identity_index`, spent or not: what a resumed registration needs
+    /// before it may settle that slot by what holds its keys. Resolves no
+    /// proof.
+    pub(crate) async fn authorize_registration_lock(
+        &self,
+        out_point: OutPoint,
+        identity_index: u32,
+    ) -> Result<(), PlatformWalletError> {
+        let (actual_funding_type, actual_identity_index, _status) = self
+            .tracked_resume_metadata(&out_point)
+            .await
+            .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
+        validate_existing_asset_lock_role(
+            out_point,
+            AssetLockFundingType::IdentityRegistration,
+            identity_index,
+            actual_funding_type,
+            actual_identity_index,
+        )
+    }
 }
 
 /// The two dedicated invitation-reclaim destinations. Explicit authority is

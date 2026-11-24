@@ -209,7 +209,11 @@ impl IdentityWallet {
             // submitted (a refusal for keys already registered costs a
             // penalty from the lock each time), see whether the keys derived
             // at its index are an identity's already: this lock's own (an
-            // earlier submit landed) or another of this wallet's.
+            // earlier submit landed) or another of this wallet's. Only a
+            // tracked registration lock of this index may settle the slot.
+            self.asset_locks
+                .authorize_registration_lock(out_point, identity_index)
+                .await?;
             if let Some(settled) = self
                 .settle_registration_lock(identity_index, &keys_map, out_point)
                 .await?
@@ -357,38 +361,20 @@ impl IdentityWallet {
         // Resume gets Platform's deterministic "lock already consumed"
         // rejection. A missed local add self-heals on the next identity
         // re-sync. This mirrors `register_from_addresses` Step 3.
+        // The identity, its keys with their breadcrumbs, in one durable
+        // write, into this wallet generation only: a wallet replaced during
+        // the submit keeps its own slots and leases.
+        if let Err(e) = self
+            .record_registered_identity(identity.clone(), identity_index)
+            .await
         {
-            let mut wm = self.wallet_manager.write().await;
-            match wm.get_wallet_info_mut(&self.wallet_id) {
-                Some(info) => {
-                    // The identity, its keys with their breadcrumbs, in one
-                    // durable write; memory holds it only once stored.
-                    let keys = derived_keys(&identity, self.wallet_id, identity_index);
-                    if let Err(e) = info.identity_manager.place_in_slot(
-                        identity.clone(),
-                        identity_index,
-                        self.wallet_id,
-                        keys,
-                        &self.persister,
-                    ) {
-                        tracing::warn!(
-                            error = %e,
-                            identity_id = %identity.id(),
-                            "register_identity_with_funding: identity registered on \
-                             Platform but not recorded in its slot; continuing so \
-                             the spent asset lock is still consumed"
-                        );
-                    }
-                }
-                None => {
-                    tracing::warn!(
-                        identity_id = %identity.id(),
-                        "register_identity_with_funding: identity registered on \
-                         Platform but wallet info was not found locally; skipping \
-                         local persistence"
-                    );
-                }
-            }
+            tracing::warn!(
+                error = %e,
+                identity_id = %identity.id(),
+                "register_identity_with_funding: identity registered on \
+                 Platform but not recorded in its slot; continuing so \
+                 the spent asset lock is still consumed"
+            );
         }
 
         // Step 5: clean up the tracked asset lock — Platform has
