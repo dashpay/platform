@@ -31,6 +31,26 @@ final class ShieldedTipFlowTests: XCTestCase {
 
     // MARK: - Helpers
 
+    /// Wait until `gate` holds the call the test started, for at most two
+    /// seconds. Fails and returns false when the call never reaches the
+    /// gate, so a flow that finished early fails the test instead of
+    /// hanging it.
+    private func waitUntilHeld(
+        _ gate: ReviewGate,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async -> Bool {
+        let deadline = ContinuousClock.now + .seconds(2)
+        while gate.pending == nil {
+            if ContinuousClock.now >= deadline {
+                XCTFail("the gated call never started", file: file, line: line)
+                return false
+            }
+            await Task.yield()
+        }
+        return true
+    }
+
     private func review(
         _ change: ShieldedTipRecipientChange = .new, unresolved: Bool = false
     ) -> ShieldedTipReview {
@@ -408,7 +428,7 @@ final class ShieldedTipFlowTests: XCTestCase {
         // While the review runs: no second review, no send, and the sheet
         // cannot be closed (`isBusy` disables Done and swipe-to-dismiss).
         let reviewing = Task { await flow.review() }
-        while reviewGate.pending == nil { await Task.yield() }
+        guard await waitUntilHeld(reviewGate) else { return }
         XCTAssertTrue(flow.isBusy)
         XCTAssertFalse(flow.canReview)
         XCTAssertFalse(flow.canSend)
@@ -425,7 +445,7 @@ final class ShieldedTipFlowTests: XCTestCase {
         // sent again, and the sheet cannot be closed.
         sendGate.armed = true
         let sending = Task { await flow.send() }
-        while sendGate.pending == nil { await Task.yield() }
+        guard await waitUntilHeld(sendGate) else { return }
         XCTAssertTrue(flow.isBusy)
         XCTAssertTrue(flow.inputsLocked)
         XCTAssertFalse(flow.canReview)
