@@ -671,6 +671,23 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(message, detail)
     }
 
+    /// A busy local shielded balance read keeps its own code and typed case,
+    /// not the generic wallet operation error: it is the only error of that
+    /// read that means keep the last state and read again.
+    func testShouldReportABusyShieldedBalanceByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_BALANCE_BUSY
+        )
+        XCTAssertEqual(code, .errorShieldedBalanceBusy)
+        XCTAssertEqual(code.rawValue, 87)
+        let detail = "shielded identity balance busy; retry after sync releases its locks"
+        guard case .shieldedBalanceBusy(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed shielded balance busy error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
     func testShouldReadEveryFieldOfThePrivateContactReadiness() {
         var ffi = PrivateContactReadinessFFI()
         ffi.private_payments_restored = false
