@@ -4768,7 +4768,7 @@
           "sdk": "supported",
           "example_app": "partial",
           "restart": "required",
-          "reason": "PlatformWalletManager.parseShieldedTipAmount, reviewShieldedTip, sendShieldedTip and shieldedIdentityBalance (PlatformWalletManagerShieldedTips.swift) marshal the four exports and decode the review and balance blobs, unit-tested in ShieldedTipDecodingTests; the wallet decides the amount, the recipient, its change and every refusal. SwiftExampleApp tips a contact from its detail screen (the username this device knows for it) and any username from the own profile's Shielded tips section (ShieldedTipSheet): the amount parsed by the wallet, an optional memo, a review showing the recipient identity and address, the change (a changed recipient as a warning with the previous one) and an unresolved earlier payment (Send off, with a caution that it may pay the recipient and a shielded sync), then a send from .identity of the acting identity; a tip from a contact passes the contact's identity id to the review and the send, and a name that now belongs to another identity (86) is refused with an explanation that a tip to the new owner starts from the name; sends that may have gone through (18, 20) or met an unresolved earlier payment (85) are never offered again and offer only a shielded sync, since the app cannot tell what became of that payment, and every other error reads not sent with the wallet's message. The paying identity's balance shows unverified (with Prepare through prepareShieldedIdentityAddress), unavailable and available; a busy store (shieldedBalanceBusy, code 87) keeps the last balance with a busy note and reads again every 2 seconds, every other read error (walletOperation included) shows as a failure without a retry, and only the latest read applies. ShieldedTipFlowTests pin that mapping with closures in place of the native calls. The sheet cannot be closed while a review or send runs, so the outcome always shows where the tip started (DP-38); it asks for no background time, so a send pauses while iOS suspends the app. The app is partial and restart is required because none of TEST_PLAN DP-33 to DP-40 has been driven on a simulator: the unresolved tip that survives a relaunch (DP-36) is read from the wallet's saved payment, which only the Rust tests exercise, and the app keeps no record of its own."
+          "reason": "PlatformWalletManager.parseShieldedTipAmount, reviewShieldedTip, sendShieldedTip and shieldedIdentityBalance (PlatformWalletManagerShieldedTips.swift) marshal the four exports and decode the review and balance blobs, unit-tested in ShieldedTipDecodingTests; the wallet decides the amount, the recipient, its change and every refusal. SwiftExampleApp tips a contact from its detail screen (the username this device knows for it) and any username from the own profile's Shielded tips section (ShieldedTipSheet): the amount parsed by the wallet, an optional memo, a review showing the recipient identity and address, the change (a changed recipient as a warning with the previous one) and an unresolved earlier payment (Send off, with a caution that it may pay the recipient and a shielded sync), then a send from .identity of the acting identity; a tip from a contact passes the contact's identity id to the review and the send, and a name that now belongs to another identity (86) is refused with an explanation that a tip to the new owner starts from the name; sends that may have gone through (18, 20) or met an unresolved earlier payment (85) are never offered again and offer only a shielded sync, since the app cannot tell what became of that payment, and every other error reads not sent with the wallet's message. The paying identity's balance shows unverified (with Prepare through prepareShieldedIdentityAddress), unavailable and available; a busy store (shieldedBalanceBusy, code 87) keeps the last balance with a busy note and reads again every 2 seconds, every other read error (walletOperation included) shows as a failure without a retry, and only the latest read applies. ShieldedTipFlowTests pin that mapping with closures in place of the native calls. The app is partial and restart is required because none of TEST_PLAN DP-33 to DP-38 has been driven on a simulator: the unresolved tip that survives a relaunch (DP-35) is read from the wallet's saved payment, which only the Rust tests exercise, and the app keeps no record of its own."
         },
         "kotlin": {
           "sdk": "supported",
@@ -5062,14 +5062,6 @@
           "host": "swift",
           "kind": "unit",
           "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
-          "id": "testShouldHoldTheSheetAndNameTheProgressRowWhileAReviewOrASendRuns",
-          "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
-          "covers_restart": false
-        },
-        {
-          "host": "swift",
-          "kind": "unit",
-          "file": "packages/swift-sdk/SwiftExampleApp/SwiftExampleAppTests/ShieldedTipFlowTests.swift",
           "id": "testShouldPassTheContactsIdentityIdToTheReviewAndTheSend",
           "command": "xcodebuild test -project packages/swift-sdk/SwiftExampleApp/SwiftExampleApp.xcodeproj -scheme SwiftExampleApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:SwiftExampleAppTests/ShieldedTipFlowTests",
           "covers_restart": false
@@ -5109,14 +5101,14 @@
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
           "id": "DP-35",
-          "covers_restart": false
+          "covers_restart": true
         },
         {
           "host": "swift",
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
           "id": "DP-36",
-          "covers_restart": true
+          "covers_restart": false
         },
         {
           "host": "swift",
@@ -5130,20 +5122,6 @@
           "kind": "manual",
           "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
           "id": "DP-38",
-          "covers_restart": false
-        },
-        {
-          "host": "swift",
-          "kind": "manual",
-          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
-          "id": "DP-39",
-          "covers_restart": false
-        },
-        {
-          "host": "swift",
-          "kind": "manual",
-          "file": "packages/swift-sdk/SwiftExampleApp/TEST_PLAN.md",
-          "id": "DP-40",
           "covers_restart": false
         },
         {
