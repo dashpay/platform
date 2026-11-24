@@ -216,6 +216,17 @@ pub enum InvitationError {
     #[error("cannot verify Platform's answer yet, retry once synced: {0}")]
     NotReady(#[source] Error),
 
+    /// Platform refused the claim because the voucher's asset lock is
+    /// already spent, and a proved lookup found no identity at the
+    /// invitation's id: something other than a claim spent it (an inviter's
+    /// reclaim as a top-up). No claim of this invitation can execute any
+    /// longer. `rejection` is Platform's refusal.
+    #[error("invitation voucher was already spent without a claim: {rejection}")]
+    VoucherConsumed {
+        #[source]
+        rejection: Error,
+    },
+
     /// An SDK call failed.
     #[error(transparent)]
     Sdk(#[from] Error),
@@ -1591,8 +1602,9 @@ pub fn identity_id_for_out_point(out_point: OutPoint) -> Identifier {
 /// an ECDSA or BLS key, and is then the claim's result. Another identity
 /// there is reported as whose claim it is
 /// ([`InvitationError::ClaimedByThisWallet`] when it holds a submitted ECDSA
-/// or BLS key, else [`InvitationError::AlreadyClaimed`]); no identity or a
-/// failed lookup reports the original rejection.
+/// or BLS key, else [`InvitationError::AlreadyClaimed`]); no identity is
+/// [`InvitationError::VoucherConsumed`], and a failed lookup reports the
+/// original rejection.
 ///
 /// `fetch` looks up the identity at the prospective id: the injectable seam
 /// (production passes `Identity::fetch`).
@@ -1623,7 +1635,7 @@ where
         // Not exactly our submission, but whose claim it is still matters:
         // our key at another index, or keys changed since, is ours.
         Ok(Some(identity)) => Err(claimed_by(&identity, submitted_keys)),
-        Ok(None) => Err(InvitationError::Sdk(error)),
+        Ok(None) => Err(InvitationError::VoucherConsumed { rejection: error }),
         Err(lookup) => {
             tracing::warn!(
                 error = %lookup,
@@ -3409,7 +3421,12 @@ mod tests {
         #[tokio::test]
         async fn should_report_the_rejection_when_no_identity_exists() {
             let (result, _) = adopt(Err(consumed(out_point())), Ok(None)).await;
-            assert!(is_consumed(&result));
+            assert!(matches!(
+                result,
+                Err(InvitationError::VoucherConsumed {
+                    rejection: Error::Protocol(_)
+                })
+            ));
         }
 
         /// A failed lookup must not replace the rejection that explains the

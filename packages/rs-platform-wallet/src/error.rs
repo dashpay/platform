@@ -1341,6 +1341,7 @@ impl From<InvitationError> for PlatformWalletError {
                 rejection,
             },
             InvitationError::NotReady(error) => Self::InvitationNotReady(error),
+            InvitationError::VoucherConsumed { rejection } => Self::Sdk(rejection),
             InvitationError::Sdk(error) => Self::Sdk(error),
         }
     }

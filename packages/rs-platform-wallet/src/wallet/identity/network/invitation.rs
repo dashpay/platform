@@ -618,7 +618,7 @@ impl IdentityWallet {
         // and its lease turns `Submitted` durably before anything is sent:
         // from then on only the claim's outcome frees the slot.
         let out_point = self.invitation_funding_out_point(&invitation).await?;
-        self.submit_claim_lease(identity_index, out_point).await?;
+        let submitted_here = self.submit_claim_lease(identity_index, out_point).await?;
 
         let our_keys = keys_map.clone();
         let identity = match self
@@ -629,8 +629,12 @@ impl IdentityWallet {
             Ok(identity) => identity,
             Err(error) => {
                 // A claim that can never execute gives its slot back to the
-                // host; a failed store keeps it held, as before.
-                if claim_never_executes(&error) {
+                // host; a failed store keeps it held, as before. A refusal of
+                // this attempt alone does so only when this attempt submitted
+                // the lease: an earlier attempt's claim may still land.
+                if invitation_never_executes(&error)
+                    || (submitted_here && attempt_never_executes(&error))
+                {
                     if let Err(e) = self.unsubmit_claim_lease(identity_index, out_point).await {
                         tracing::warn!(
                             identity_index,
@@ -704,28 +708,53 @@ impl IdentityWallet {
     }
 }
 
-/// Whether a claim the SDK refused with `error` can never execute, so its
-/// slot need not stay held for its outcome. Only refusals made before the
-/// claim was sent, or ones no node would accept it past:
-/// - `Invalid`, `NetworkMismatch`, `NotReady`: refused before anything was
-///   sent;
+/// Whether a refusal shows that no claim of this invitation can execute, by
+/// any attempt: the link is not a usable invitation, or is for the other
+/// network, or its voucher was spent without a claim (a proved lookup found
+/// no identity at the invitation's id).
+fn invitation_never_executes(error: &InvitationError) -> bool {
+    match error {
+        InvitationError::Invalid(_)
+        | InvitationError::NetworkMismatch { .. }
+        | InvitationError::VoucherConsumed { .. } => true,
+        InvitationError::NotReady(_)
+        | InvitationError::NotChainLocked(_)
+        | InvitationError::ClaimedByThisWallet { .. }
+        | InvitationError::AlreadyClaimed { .. }
+        | InvitationError::KeysAlreadyRegistered { .. }
+        | InvitationError::Sdk(_) => false,
+    }
+}
+
+/// Whether a refusal shows that the attempt it answers was never sent, or
+/// that no node would accept it:
+/// - `NotReady`: refused before anything was sent;
+/// - `KeysAlreadyRegistered` without Platform's rejection: the claim's own
+///   lookup found a key registered, before sending;
 /// - `NotChainLocked`: the funding transaction was not found or not yet
 ///   chain-locked (before sending), or Platform refused the islock proof as
 ///   stale, which every node refuses alike.
 ///
-/// Every other refusal may follow a claim that reached Platform: the
-/// invitation claimed (by this wallet or another), a key already registered,
-/// or an SDK error. Those keep the slot held until the claim's outcome is
-/// known.
-fn claim_never_executes(error: &InvitationError) -> bool {
+/// It says nothing of an earlier attempt, whose claim may still land. Every
+/// other refusal may follow a claim that reached Platform: the invitation
+/// claimed (by this wallet or another), a key Platform found registered, or
+/// an SDK error. Those keep the slot held until the claim's outcome is known.
+fn attempt_never_executes(error: &InvitationError) -> bool {
     match error {
+        InvitationError::NotReady(_)
+        | InvitationError::NotChainLocked(_)
+        | InvitationError::KeysAlreadyRegistered {
+            rejection: None, ..
+        } => true,
+        // Covered for every attempt by `invitation_never_executes`.
         InvitationError::Invalid(_)
         | InvitationError::NetworkMismatch { .. }
-        | InvitationError::NotReady(_)
-        | InvitationError::NotChainLocked(_) => true,
-        InvitationError::ClaimedByThisWallet { .. }
+        | InvitationError::VoucherConsumed { .. }
+        | InvitationError::ClaimedByThisWallet { .. }
         | InvitationError::AlreadyClaimed { .. }
-        | InvitationError::KeysAlreadyRegistered { .. }
+        | InvitationError::KeysAlreadyRegistered {
+            rejection: Some(_), ..
+        }
         | InvitationError::Sdk(_) => false,
     }
 }
@@ -736,37 +765,71 @@ mod tests {
 
     /// Only refusals made before sending, or ones every node makes alike,
     /// give a claim's slot back; any that may follow a claim that reached
-    /// Platform keep it.
+    /// Platform keep it. A refusal about the invitation frees it whichever
+    /// attempt submitted it; one about this attempt only frees what this
+    /// attempt submitted.
     #[test]
     fn should_give_a_slot_back_only_for_a_claim_that_can_never_execute() {
         let id = Identifier::from([7u8; 32]);
         let sdk_error = || dash_sdk::Error::Generic("node".to_string());
-        for (error, never_executes) in [
-            (InvitationError::Invalid("bad link".to_string()), true),
+        // (refusal, frees any attempt's lease, frees this attempt's lease)
+        for (error, invitation, attempt) in [
+            (
+                InvitationError::Invalid("bad link".to_string()),
+                true,
+                false,
+            ),
             (
                 InvitationError::NetworkMismatch {
                     invitation: dashcore::Network::Testnet,
                     wallet: dashcore::Network::Mainnet,
                 },
                 true,
-            ),
-            (InvitationError::NotReady(sdk_error()), true),
-            (InvitationError::NotChainLocked("later".to_string()), true),
-            (
-                InvitationError::ClaimedByThisWallet { identity_id: id },
                 false,
             ),
-            (InvitationError::AlreadyClaimed { identity_id: id }, false),
+            (
+                InvitationError::VoucherConsumed {
+                    rejection: sdk_error(),
+                },
+                true,
+                false,
+            ),
+            (InvitationError::NotReady(sdk_error()), false, true),
+            (
+                InvitationError::NotChainLocked("later".to_string()),
+                false,
+                true,
+            ),
             (
                 InvitationError::KeysAlreadyRegistered {
-                    identity_id: None,
+                    identity_id: Some(id),
                     rejection: None,
                 },
                 false,
+                true,
             ),
-            (InvitationError::Sdk(sdk_error()), false),
+            (
+                InvitationError::KeysAlreadyRegistered {
+                    identity_id: None,
+                    rejection: Some(sdk_error()),
+                },
+                false,
+                false,
+            ),
+            (
+                InvitationError::ClaimedByThisWallet { identity_id: id },
+                false,
+                false,
+            ),
+            (
+                InvitationError::AlreadyClaimed { identity_id: id },
+                false,
+                false,
+            ),
+            (InvitationError::Sdk(sdk_error()), false, false),
         ] {
-            assert_eq!(claim_never_executes(&error), never_executes, "{error}");
+            assert_eq!(invitation_never_executes(&error), invitation, "{error}");
+            assert_eq!(attempt_never_executes(&error), attempt, "{error}");
         }
     }
 

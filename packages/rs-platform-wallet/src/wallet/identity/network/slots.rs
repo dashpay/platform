@@ -231,7 +231,9 @@ impl IdentityWallet {
 
     /// Move `invitation`'s claim lease on slot `identity_index` to
     /// `Submitted`, stored durably, before its claim is sent: from then on
-    /// only the claim's outcome frees the slot. Refused with
+    /// only the claim's outcome frees the slot. `Ok(false)` when an earlier
+    /// attempt already submitted it: that attempt's claim may still land, so
+    /// this one may not give the slot back on a refusal of its own. Refused with
     /// [`PlatformWalletError::IdentitySlotNotHeld`] unless the claim leases
     /// that slot; on a failed store the lease keeps its phase, unless a later
     /// flush may still write the new one ([`NotDurable::may_still_be_written`](crate::wallet::persister::NotDurable::may_still_be_written)),
@@ -240,7 +242,7 @@ impl IdentityWallet {
         &self,
         identity_index: RegistrationIndex,
         invitation: OutPoint,
-    ) -> Result<(), PlatformWalletError> {
+    ) -> Result<bool, PlatformWalletError> {
         self.set_claim_lease_phase(identity_index, invitation, SlotLeasePhase::Submitted)
             .await
     }
@@ -254,17 +256,19 @@ impl IdentityWallet {
         &self,
         identity_index: RegistrationIndex,
         invitation: OutPoint,
-    ) -> Result<(), PlatformWalletError> {
+    ) -> Result<bool, PlatformWalletError> {
         self.set_claim_lease_phase(identity_index, invitation, SlotLeasePhase::Reserved)
             .await
     }
 
+    /// Move the claim lease to `phase`, stored durably. `Ok(true)` when this
+    /// call moved it, `Ok(false)` when it already stood there.
     async fn set_claim_lease_phase(
         &self,
         identity_index: RegistrationIndex,
         invitation: OutPoint,
         phase: SlotLeasePhase,
-    ) -> Result<(), PlatformWalletError> {
+    ) -> Result<bool, PlatformWalletError> {
         let holder = SlotHolder::InvitationClaim { invitation };
         let mut wm = self.wallet_manager.write().await;
         let info = self.current_wallet_info_mut(&mut wm)?;
@@ -276,7 +280,7 @@ impl IdentityWallet {
             }
         };
         if lease.phase == phase {
-            return Ok(());
+            return Ok(false);
         }
         manager.set_slot_lease_phase(&self.wallet_id, &holder, phase);
         let changeset = PlatformWalletChangeSet {
@@ -289,7 +293,7 @@ impl IdentityWallet {
             }
             return Err(self.persister.classify_not_durable(not_durable));
         }
-        Ok(())
+        Ok(true)
     }
 
     /// Before anything is funded at `identity_index`: the identity Platform
@@ -1345,6 +1349,35 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(retried.phase, SlotLeasePhase::Submitted);
+    }
+
+    /// A retried claim learns that an earlier attempt submitted the lease,
+    /// so a refusal of the retry alone does not give that slot back.
+    #[tokio::test]
+    async fn should_tell_a_retried_claim_its_lease_was_submitted_earlier() {
+        let wallet = wallet(Backend::new(full())).await;
+        let slot = wallet
+            .identity()
+            .acquire_resolved_slot(claim(1))
+            .await
+            .unwrap();
+        let ResolvedSlotRequest::InvitationClaim { invitation } = claim(1) else {
+            unreachable!()
+        };
+
+        let first = wallet
+            .identity()
+            .submit_claim_lease(slot.identity_index, invitation)
+            .await
+            .unwrap();
+        let retried = wallet
+            .identity()
+            .submit_claim_lease(slot.identity_index, invitation)
+            .await
+            .unwrap();
+
+        assert!(first);
+        assert!(!retried);
     }
 
     #[tokio::test]
