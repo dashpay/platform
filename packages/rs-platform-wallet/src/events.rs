@@ -57,6 +57,14 @@ pub trait PlatformEventHandler: EventHandler {
     /// including passes that produced no updates or skipped every
     /// wallet because none had a bound shielded sub-wallet yet.
     ///
+    /// Called from inside the pass, before it counts as finished, so a
+    /// stop or a Clear that drains the pass waits for this to return:
+    /// hand the event on and return. Do not wait here for a shielded
+    /// operation (a bind, an added account, a transfer): during a Clear it
+    /// waits for the Clear while the Clear waits for this handler, until
+    /// `PlatformWalletManager::clear_shielded` returns `ShutdownIncomplete`
+    /// with the sync loop stopped.
+    ///
     /// Default impl is a no-op so existing handlers don't have to
     /// care.
     ///

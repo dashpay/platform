@@ -173,6 +173,13 @@ pub struct EventHandlerCallbacks {
     /// callback slot is plumbed unconditionally so the C ABI is
     /// stable across feature toggles, but is only invoked when
     /// shielded support is compiled in.
+    ///
+    /// Runs inside the pass: copy what you keep, hand it on and return.
+    /// Do not wait in it for a shielded call on this manager (a bind, an
+    /// added account, a transfer): during
+    /// `platform_wallet_manager_shielded_clear` that call waits for the
+    /// Clear while the Clear waits for this callback, until the Clear
+    /// returns `ErrorShutdownIncomplete` with the sync loop stopped.
     pub on_shielded_sync_completed_fn: Option<
         unsafe extern "C" fn(
             context: *mut c_void,
