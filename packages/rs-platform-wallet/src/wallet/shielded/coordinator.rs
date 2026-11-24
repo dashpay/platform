@@ -1661,7 +1661,9 @@ impl NetworkShieldedCoordinator {
         }) = stranded_release.filter(|_| !cancelled)
         {
             // Judged only for what the scan replayed: a skipped subwallet's
-            // landed spend was not cleared by it.
+            // landed spend was not cleared by it. A subwallet removed after
+            // the scan's filter was purged under the store guard, so the
+            // release's own re-check (`still_same`) finds its spend gone.
             stale.retain(|(id, _)| !notes.removed_subwallets.contains(id));
             journal.retain(|(wallet_id, _)| {
                 subwallets.iter().any(|(id, _)| id.wallet_id == *wallet_id)
@@ -1757,8 +1759,14 @@ impl NetworkShieldedCoordinator {
         if !Merge::is_empty(&consolidated) {
             let persisters = self.persisters.read().await;
             // A subwallet removed since the list: the wallet's persister may
-            // be its new registration's (see `SubwalletRemovals`).
-            consolidated.retain_subwallets(|id| !self.removals.removed_since(&removal_marks, *id));
+            // be its new registration's (see `SubwalletRemovals`). Read once,
+            // so every field of a subwallet is kept or dropped together.
+            let removed: BTreeSet<SubwalletId> = removal_marks
+                .keys()
+                .filter(|id| self.removals.removed_since(&removal_marks, **id))
+                .copied()
+                .collect();
+            consolidated.retain_subwallets(|id| !removed.contains(id));
             let per_wallet = consolidated.split_by_wallet_id();
             for (wallet_id, cs) in per_wallet {
                 let Some(persister) = persisters.get(&wallet_id) else {
@@ -1793,7 +1801,9 @@ impl NetworkShieldedCoordinator {
         // registration that replaced it, so it stamps nothing either.
         let any_activity = notes.total_scanned > 0
             || newly_spent_per_sub.values().any(|&n| n > 0)
-            || !notes.removed_subwallets.is_empty();
+            || removal_marks
+                .keys()
+                .any(|id| self.removals.removed_since(&removal_marks, *id));
         if let Ok(mut guard) = self.last_caught_up_at.lock() {
             if any_activity {
                 *guard = None;

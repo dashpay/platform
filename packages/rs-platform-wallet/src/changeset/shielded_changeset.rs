@@ -304,7 +304,6 @@ mod activity_changeset_tests {
         );
     }
 
-    /// `split_by_wallet_id` routes activity entries to the owning wallet.
     #[test]
     fn retain_subwallets_drops_every_field_of_the_others() {
         let kept = SubwalletId::new([0x01; 32], 0);
@@ -327,6 +326,7 @@ mod activity_changeset_tests {
         assert_eq!(cs.viewing_keys.keys().collect::<Vec<_>>(), [&kept]);
     }
 
+    /// `split_by_wallet_id` routes activity entries to the owning wallet.
     #[test]
     fn split_by_wallet_id_routes_activity() {
         let wallet_a = [0x01; 32];
