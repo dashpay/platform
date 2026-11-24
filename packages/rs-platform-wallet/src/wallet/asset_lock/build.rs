@@ -64,12 +64,14 @@ use super::{input_cap_violation, AssetLockOperationContext, AssetLockOperationSt
 ///   in-memory listings can show it just before the callback runs, and its
 ///   row is queued best-effort afterwards. The callback does not run when
 ///   the wallet is gone at tracking. A lock whose broadcast then fails is
-///   removed again after a definite rejection; otherwise it stays tracked
-///   and can be resumed by its outpoint (a resume may then find it already
-///   consumed). Both hold in memory; on disk they hold only when the
-///   best-effort row store or removal succeeded, so after a restart a
-///   failed store can leave no row for a broadcast lock, or the row of a
-///   removed one.
+///   removed again after a definite rejection, durably: if the removal
+///   cannot be made durable the row may come back after a restart, so the
+///   inputs stay reserved and the call fails with
+///   [`PlatformWalletError::TransactionBroadcastUnconfirmed`] rather than
+///   as a definite rejection. Otherwise the lock stays tracked and can be
+///   resumed by its outpoint (a resume may then find it already consumed).
+///   A failed best-effort row store can leave no row for a broadcast lock
+///   after a restart.
 /// - For a wallet drain (`DrainWalletBalance`) the callback runs before the
 ///   row is stored durably and before the lock is tracked. If that store
 ///   fails, the lock is not tracked and is recovered by resuming the drain
@@ -1868,17 +1870,21 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // still-tracked row would be resumable while its inputs are
                 // re-spendable.
                 let removed_built_row = cs_untrack.removed.contains(&out_point);
-                // A row stored durably before the broadcast (a drain, or a lock
-                // recording its recipient) is removed durably too. Otherwise a
-                // lost removal would bring the `Built` row back after a
-                // restart, resumable to its recipient, while the inputs
-                // released below fund the user's next attempt: the same
-                // recipient could then be paid twice.
-                if (operation.is_some() || recipient_must_be_durable) && removed_built_row {
+                // Every removed row is removed durably, whatever its funding
+                // type: a row that reached the store (durably for a drain or a
+                // recipient-carrying lock, best-effort for the others) and
+                // whose removal is lost comes back after a restart as a
+                // resumable `Built` lock, while the inputs released below fund
+                // the user's next attempt, so the same payment could be made
+                // twice. The retry verdict is given only once the removal is
+                // durable.
+                if removed_built_row {
                     let kind = if operation.is_some() {
                         "drain"
-                    } else {
+                    } else if recipient_must_be_durable {
                         "recipient-carrying"
+                    } else {
+                        "asset-lock"
                     };
                     if let Err(error) = self.store_lock_removal_durably(cs_untrack) {
                         // The durable removal is unknown. Keep the context
@@ -3882,6 +3888,93 @@ mod tests {
         );
     }
 
+    /// Every funding type removes a rejected lock's row durably before it
+    /// reports the retry-safe rejection, not only the ones whose row was
+    /// stored durably: a best-effort row that reached the store and whose
+    /// removal is lost comes back after a restart, resumable, while the
+    /// released inputs fund the next attempt. A buffered backend that cannot
+    /// flush the removal gets the unknown outcome, and the inputs stay
+    /// reserved.
+    #[tokio::test]
+    async fn should_durably_remove_a_rejected_lock_of_every_funding_type() {
+        for funding_type in [
+            AssetLockFundingType::IdentityRegistration,
+            AssetLockFundingType::IdentityTopUp,
+            AssetLockFundingType::AssetLockAddressTopUp,
+        ] {
+            for flush_fails in [false, true] {
+                let persistence = Arc::new(CapturingPersistence {
+                    commits_inline: false,
+                    fail_flush: flush_fails,
+                    ..Default::default()
+                });
+                let (manager, signer) = funded_asset_lock_manager_with_persistence(
+                    Arc::new(AlwaysRejectedBroadcaster),
+                    Arc::clone(&persistence),
+                )
+                .await;
+
+                let result = manager
+                    .broadcast_funded_asset_lock_tracked(
+                        super::AssetLockBuildAmount::Exact(1_000_000),
+                        &ASSET_LOCK_FUNDING_SOURCES,
+                        0,
+                        funding_type,
+                        0,
+                        None,
+                        &signer,
+                        None,
+                        None,
+                    )
+                    .await;
+
+                assert_eq!(
+                    persistence.removed_outpoints().len(),
+                    1,
+                    "{funding_type:?}: the removal reached the store"
+                );
+                if flush_fails {
+                    assert!(
+                        matches!(&result, Err(PlatformWalletError::TransactionBroadcastUnconfirmed(message))
+                            if message.contains("could not be made durable")),
+                        "{funding_type:?}: {result:?}"
+                    );
+                    let retry = manager
+                        .broadcast_funded_asset_lock_tracked(
+                            super::AssetLockBuildAmount::Exact(1_000_000),
+                            &ASSET_LOCK_FUNDING_SOURCES,
+                            0,
+                            funding_type,
+                            0,
+                            None,
+                            &signer,
+                            None,
+                            None,
+                        )
+                        .await;
+                    assert!(
+                        !matches!(retry, Err(PlatformWalletError::TransactionBroadcast(_))),
+                        "{funding_type:?}: the inputs stay reserved, so no second lock is \
+                         built from them and rejected: {retry:?}"
+                    );
+                } else {
+                    assert!(
+                        matches!(result, Err(PlatformWalletError::TransactionBroadcast(_))),
+                        "{funding_type:?}: the removal is durable, so the rejection is \
+                         retry-safe: {result:?}"
+                    );
+                    assert!(
+                        persistence
+                            .flushes
+                            .load(std::sync::atomic::Ordering::SeqCst)
+                            >= 1,
+                        "{funding_type:?}: the removal was flushed"
+                    );
+                }
+            }
+        }
+    }
+
     /// On a backend whose store commits inline, a rejected lock's removal is
     /// durable once stored, so no flush is asked of it: a backend whose
     /// flushes would all fail must not keep the inputs fenced, since the row
@@ -5220,8 +5313,12 @@ mod tests {
                 &signer,
             )
             .await;
+        // The rejection proves the broadcaster was reached. Its row's removal
+        // then cannot be flushed either, so the rejection is reported as the
+        // unknown outcome rather than as retry-safe.
         assert!(
-            matches!(result, Err(PlatformWalletError::TransactionBroadcast(_))),
+            matches!(&result, Err(PlatformWalletError::TransactionBroadcastUnconfirmed(message))
+                if message.contains("was rejected at broadcast")),
             "a registration build must reach the broadcaster despite the flush \
              failure (best-effort persistence), got {result:?}"
         );
