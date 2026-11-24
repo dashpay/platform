@@ -162,6 +162,27 @@ class TokenActionResolverClaimTest {
     }
 
     @Test
+    fun `an Evonode label does not open a participation claim`() {
+        // identityType is what the user picked in Load Identity; Drive never
+        // reads it, so it must not make a participation claim selectable.
+        val evonodeOwner = identity().copy(identityType = "Evonode", masternodeRoleRaw = "owner")
+        val evonodePaid = perpetualJson("""{"${'$'}type":"evonodesByParticipation"}""")
+        assertEquals(
+            TokenActionPermission.Denied(
+                "Distribution pays evonodes by participation; eligibility not evaluated by this app",
+            ),
+            claim(token(perpetual = evonodePaid), evonodeOwner),
+        )
+        // With a once-per-identity distribution the form opens, and offers only that kind.
+        val withOnce = token(perpetual = evonodePaid, oncePerIdentity = oncePerIdentityJson())
+        assertTrue(claim(withOnce, evonodeOwner).isAllowed)
+        assertEquals(
+            listOf(TokenDistributionType.ONCE_PER_IDENTITY),
+            claimable(withOnce, evonodeOwner),
+        )
+    }
+
+    @Test
     fun `pre-programmed recipient is allowed`() {
         assertTrue(
             claim(token(preProgrammed = preProgrammedJson()), identity()).isAllowed,
