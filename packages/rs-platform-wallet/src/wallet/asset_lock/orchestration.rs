@@ -238,6 +238,22 @@ pub enum AssetLockFunding {
     },
 }
 
+/// Crate-private authority a caller holds over a tracked lock whose funding
+/// role differs from the operation about to consume it. Not part of
+/// [`AssetLockFunding`] so the public enum and every FFI/JNI caller keep their
+/// shape; only crate entry points that opt in by function name pass anything
+/// but [`ExistingLockAuthority::RoleMatch`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ExistingLockAuthority {
+    /// The tracked role must satisfy `validate_existing_asset_lock_role`
+    /// (or the explicit invitation-reclaim authorization).
+    RoleMatch,
+    /// Additionally admits an `AssetLockShieldedAddressTopUp` lock consumed
+    /// as an `AssetLockAddressTopUp`: recovering the remaining credit value
+    /// Platform left on a shielded-funding lock into Platform addresses.
+    ShieldedRemainderToAddresses,
+}
+
 // ---------------------------------------------------------------------------
 // Funding resolution outcome
 // ---------------------------------------------------------------------------
@@ -520,6 +536,35 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
+        self.resolve_funding_with_authority(
+            funding,
+            funding_type,
+            destination_index,
+            shielded_recipient,
+            ExistingLockAuthority::RoleMatch,
+            asset_lock_signer,
+            on_built,
+        )
+        .await
+    }
+
+    /// [`Self::resolve_funding_with_is_timeout_fallback`] with an explicit
+    /// [`ExistingLockAuthority`] for the `FromExistingAssetLock` arm. The
+    /// other variants build a fresh lock of `funding_type` and ignore it.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn resolve_funding_with_authority<AS>(
+        &self,
+        funding: AssetLockFunding,
+        funding_type: AssetLockFundingType,
+        destination_index: u32,
+        shielded_recipient: Option<ShieldedRecipientRaw>,
+        authority: ExistingLockAuthority,
+        asset_lock_signer: &AS,
+        on_built: Option<&AssetLockBuiltObserver<'_>>,
+    ) -> Result<FundingResolution, PlatformWalletError>
+    where
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
+    {
         match funding {
             AssetLockFunding::FromWalletBalance {
                 amount_duffs,
@@ -625,33 +670,18 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 out_point,
                 consume_invitation_voucher,
             } => {
-                let (actual_funding_type, actual_identity_index, status) = self
+                let tracked = self
                     .tracked_resume_metadata(&out_point)
                     .await
                     .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
-                if status.is_consumed() {
-                    return Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point));
-                }
-                // Invitation vouchers are bearer instruments: the credit
-                // output's private key was exported into a shared link, so
-                // consuming the lock through a generic resume/top-up would
-                // both misdirect the funds into a local identity and kill
-                // the invitee's claim. Refuse unless the caller carries the
-                // reclaim flow's explicit authorization.
-                let invitation_reclaim = authorized_invitation_reclaim(
-                    actual_funding_type,
+                authorize_existing_asset_lock(
+                    out_point,
                     funding_type,
+                    destination_index,
+                    tracked,
                     consume_invitation_voucher,
-                );
-                if !invitation_reclaim {
-                    validate_existing_asset_lock_role(
-                        out_point,
-                        funding_type,
-                        destination_index,
-                        actual_funding_type,
-                        actual_identity_index,
-                    )?;
-                }
+                    authority,
+                )?;
                 // 300s is a window for the record or a mined-height lookup to
                 // prove the lock, not a finality timeout: on expiry the caller
                 // falls back to an unbounded ChainLock wait, so a resumed
@@ -679,6 +709,68 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
         }
     }
+}
+
+/// Gate a `FromExistingAssetLock` resume on the tracked lock's status and
+/// role, as snapshotted by `tracked_resume_metadata`.
+///
+/// Invitation vouchers are bearer instruments: the credit output's private
+/// key was exported into a shared link, so consuming the lock through a
+/// generic resume/top-up would both misdirect the funds into a local
+/// identity and kill the invitee's claim. They pass only with the reclaim
+/// flow's explicit authorization. A shielded-funding lock passes as an
+/// address top-up only with [`ExistingLockAuthority::ShieldedRemainderToAddresses`],
+/// and never while it belongs to a wallet drain: only the drain's own flow
+/// can settle such a lock. Every other pair goes through
+/// `validate_existing_asset_lock_role`.
+fn authorize_existing_asset_lock(
+    out_point: OutPoint,
+    expected_funding_type: AssetLockFundingType,
+    expected_identity_index: u32,
+    (actual_funding_type, actual_identity_index, status, operation_id): (
+        AssetLockFundingType,
+        u32,
+        crate::wallet::asset_lock::tracked::AssetLockStatus,
+        Option<[u8; 16]>,
+    ),
+    consume_invitation_voucher: bool,
+    authority: ExistingLockAuthority,
+) -> Result<(), PlatformWalletError> {
+    if status.is_consumed() {
+        return Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point));
+    }
+    if authorized_invitation_reclaim(
+        actual_funding_type,
+        expected_funding_type,
+        consume_invitation_voucher,
+    ) || (operation_id.is_none()
+        && authorized_shielded_remainder_to_addresses(
+            actual_funding_type,
+            expected_funding_type,
+            authority,
+        ))
+    {
+        return Ok(());
+    }
+    validate_existing_asset_lock_role(
+        out_point,
+        expected_funding_type,
+        expected_identity_index,
+        actual_funding_type,
+        actual_identity_index,
+    )
+}
+
+/// The single cross-role pair [`ExistingLockAuthority::ShieldedRemainderToAddresses`]
+/// unlocks: a shielded-funding lock consumed as an address top-up.
+fn authorized_shielded_remainder_to_addresses(
+    actual_funding_type: AssetLockFundingType,
+    expected_funding_type: AssetLockFundingType,
+    authority: ExistingLockAuthority,
+) -> bool {
+    authority == ExistingLockAuthority::ShieldedRemainderToAddresses
+        && actual_funding_type == AssetLockFundingType::AssetLockShieldedAddressTopUp
+        && expected_funding_type == AssetLockFundingType::AssetLockAddressTopUp
 }
 
 /// The two dedicated invitation-reclaim destinations. Explicit authority is
@@ -837,6 +929,160 @@ mod tests {
             AssetLockFundingType::IdentityRegistration,
             true,
         ));
+    }
+
+    const ALL_FUNDING_TYPES: [AssetLockFundingType; 6] = [
+        AssetLockFundingType::IdentityRegistration,
+        AssetLockFundingType::IdentityTopUp,
+        AssetLockFundingType::IdentityTopUpNotBound,
+        AssetLockFundingType::IdentityInvitation,
+        AssetLockFundingType::AssetLockAddressTopUp,
+        AssetLockFundingType::AssetLockShieldedAddressTopUp,
+    ];
+
+    fn authorize(
+        expected: AssetLockFundingType,
+        actual: AssetLockFundingType,
+        status: crate::wallet::asset_lock::tracked::AssetLockStatus,
+        authority: ExistingLockAuthority,
+    ) -> Result<(), PlatformWalletError> {
+        authorize_existing_asset_lock(
+            OutPoint::null(),
+            expected,
+            0,
+            (actual, 0, status, None),
+            false,
+            authority,
+        )
+    }
+
+    #[test]
+    fn shielded_remainder_authority_refuses_a_wallet_drain_lock() {
+        assert!(matches!(
+            authorize_existing_asset_lock(
+                OutPoint::null(),
+                AssetLockFundingType::AssetLockAddressTopUp,
+                0,
+                (
+                    AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                    0,
+                    crate::wallet::asset_lock::tracked::AssetLockStatus::ChainLocked,
+                    Some([7; 16]),
+                ),
+                false,
+                ExistingLockAuthority::ShieldedRemainderToAddresses,
+            ),
+            Err(PlatformWalletError::AssetLockFundingMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn role_match_refuses_shielded_lock_for_address_funding() {
+        assert!(matches!(
+            authorize(
+                AssetLockFundingType::AssetLockAddressTopUp,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                crate::wallet::asset_lock::tracked::AssetLockStatus::ChainLocked,
+                ExistingLockAuthority::RoleMatch,
+            ),
+            Err(PlatformWalletError::AssetLockFundingMismatch {
+                expected_funding_type: AssetLockFundingType::AssetLockAddressTopUp,
+                actual_funding_type: AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn shielded_remainder_authority_admits_shielded_lock_for_address_funding() {
+        assert!(authorize(
+            AssetLockFundingType::AssetLockAddressTopUp,
+            AssetLockFundingType::AssetLockShieldedAddressTopUp,
+            crate::wallet::asset_lock::tracked::AssetLockStatus::ChainLocked,
+            ExistingLockAuthority::ShieldedRemainderToAddresses,
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn shielded_remainder_authority_widens_no_other_pair() {
+        use crate::wallet::asset_lock::tracked::AssetLockStatus;
+
+        for expected in ALL_FUNDING_TYPES {
+            for actual in ALL_FUNDING_TYPES {
+                let widened = expected == AssetLockFundingType::AssetLockAddressTopUp
+                    && actual == AssetLockFundingType::AssetLockShieldedAddressTopUp;
+                if widened {
+                    continue;
+                }
+                let baseline = authorize(
+                    expected,
+                    actual,
+                    AssetLockStatus::ChainLocked,
+                    ExistingLockAuthority::RoleMatch,
+                );
+                let with_authority = authorize(
+                    expected,
+                    actual,
+                    AssetLockStatus::ChainLocked,
+                    ExistingLockAuthority::ShieldedRemainderToAddresses,
+                );
+                assert_eq!(
+                    baseline.is_ok(),
+                    with_authority.is_ok(),
+                    "{expected:?} <- {actual:?} must not change under the shielded-remainder authority"
+                );
+            }
+        }
+
+        for expected in ALL_FUNDING_TYPES
+            .into_iter()
+            .filter(|expected| *expected != AssetLockFundingType::IdentityInvitation)
+        {
+            assert!(matches!(
+                authorize(
+                    expected,
+                    AssetLockFundingType::IdentityInvitation,
+                    AssetLockStatus::ChainLocked,
+                    ExistingLockAuthority::ShieldedRemainderToAddresses,
+                ),
+                Err(PlatformWalletError::AssetLockFundingMismatch { .. })
+            ));
+        }
+        assert!(authorize(
+            AssetLockFundingType::AssetLockAddressTopUp,
+            AssetLockFundingType::AssetLockAddressTopUp,
+            AssetLockStatus::ChainLocked,
+            ExistingLockAuthority::ShieldedRemainderToAddresses,
+        )
+        .is_ok());
+        assert!(!authorized_shielded_remainder_to_addresses(
+            AssetLockFundingType::AssetLockShieldedAddressTopUp,
+            AssetLockFundingType::AssetLockAddressTopUp,
+            ExistingLockAuthority::RoleMatch,
+        ));
+    }
+
+    #[test]
+    fn shielded_remainder_authority_refuses_consumed_lock() {
+        use crate::wallet::asset_lock::tracked::AssetLockStatus;
+
+        for status in [AssetLockStatus::Consumed, AssetLockStatus::DrainCompleted] {
+            for authority in [
+                ExistingLockAuthority::RoleMatch,
+                ExistingLockAuthority::ShieldedRemainderToAddresses,
+            ] {
+                assert!(matches!(
+                    authorize(
+                        AssetLockFundingType::AssetLockAddressTopUp,
+                        AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                        status.clone(),
+                        authority,
+                    ),
+                    Err(PlatformWalletError::AssetLockAlreadyConsumed(_))
+                ));
+            }
+        }
     }
 
     // -----------------------------------------------------------------
