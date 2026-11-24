@@ -4772,9 +4772,9 @@
         },
         "kotlin": {
           "sdk": "supported",
-          "example_app": "unsupported",
+          "example_app": "partial",
           "restart": "required",
-          "reason": "PlatformWalletManager.parseShieldedTipAmount, reviewShieldedTip, sendShieldedTip and shieldedIdentityBalance (ShieldedTip.kt, through the JNI bridge in funding.rs) wrap the four exports, with the review and balance blob decoders unit-tested in ShieldedTipTest. KotlinExampleApp tip screens are in a separate pull request."
+          "reason": "PlatformWalletManager.parseShieldedTipAmount, reviewShieldedTip, sendShieldedTip and shieldedIdentityBalance (ShieldedTip.kt, through the JNI bridge in funding.rs) wrap the four exports, with the review and balance blob decoders unit-tested in ShieldedTipTest. FfiSmokeTest calls the four natives through the loaded library, and the send keeps the result of a native call that completed after its caller was cancelled. KotlinExampleApp's SendShieldedTipScreen (from the DashPay tab, and from a contact with its saved DPNS name fixed and its identity passed to the review and the send, so Rust refuses a name that moved with code 86, worded as nothing sent, at review and at send, whatever the new owner's profile holds) has the wallet parse the amount and review the name, locks the name and amount while it reviews, shows the recipient, its change since the recipient last confirmed for the name (a changed one only after a confirmation dialog) and an unresolved earlier payment (send off; each shielded sync reviews again, and when it no longer reports the hold the review is dropped with a notice that this says nothing about the earlier payment, so another tip starts from a new review), and sends the reviewed recipient from the identity's own account or account 0 on the app-scoped ShieldedIdentityPaymentCoordinator, so a rotation or tab switch can neither drop the outcome nor send twice; a returned tip reads submitted, codes 18 and 20 read may have gone through with no resend, code 85 reads refused with nothing sent (TEST_PLAN DP-33 to DP-39, DP-33 to DP-38 mirroring Swift's, DP-39 the Kotlin-only rotation case; ShieldedTipPresentationTest). The identity balance is shown as the wallet reports it, never unknown as zero, with a prepare action while unverified; a busy read (code 87) keeps the last state and any other read failure is shown. Restart is required: the wallet refuses a repeat after a relaunch from its saved spend record (Rust should_refuse_a_tip_while_an_earlier_payment_to_its_recipient_is_unresolved), but no host test or emulator run kills the app with a tip unresolved (DP-35), and none of the rows has been driven on an emulator."
         }
       },
       "verification": [
@@ -5154,6 +5154,44 @@
           "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/wallet/ShieldedTipTest.kt",
           "id": "shouldRefuseAReviewItCannotReadExactly",
           "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest --tests '*ShieldedTipTest*'",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/dashpay/ShieldedTipPresentationTest.kt",
+          "id": "should refuse a second tip from a recreated screen while the first is proving",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "device",
+          "file": "packages/kotlin-sdk/sdk/src/androidTest/kotlin/org/dashfoundation/dashsdk/FfiSmokeTest.kt",
+          "id": "shieldedTipSymbolsBindAndRejectInvalidInput",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:connectedDebugAndroidTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/app/src/test/java/org/dashfoundation/example/ui/dashpay/ShieldedTipPresentationTest.kt",
+          "id": "should word a tip the wallet refused as pending, with nothing sent",
+          "command": "cd packages/kotlin-sdk && ./gradlew :app:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "DP-33",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "DP-35",
           "covers_restart": false
         }
       ]

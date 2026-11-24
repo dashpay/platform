@@ -275,6 +275,18 @@ import kotlinx.serialization.Serializable
     val contactIdHex: String,
 )
 
+/**
+ * Send a shielded tip from [identityIdHex] to a DashPay username
+ * ([org.dashfoundation.example.ui.dashpay.SendShieldedTipScreen]). From a
+ * contact, [contactIdHex] is the contact's identity and [contactUsername]
+ * its saved DPNS name (fixed); both null from the DashPay tab.
+ */
+@Serializable data class DashPaySendShieldedTip(
+    val identityIdHex: String,
+    val contactIdHex: String? = null,
+    val contactUsername: String? = null,
+)
+
 /** Read-only own-profile sheet (← `DashPayProfileView.swift`). */
 @Serializable data class DashPayProfile(val identityIdHex: String)
 

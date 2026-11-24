@@ -64,6 +64,7 @@ import org.dashfoundation.example.navigation.DashPayIgnored
 import org.dashfoundation.example.navigation.DashPayInvitations
 import org.dashfoundation.example.navigation.DashPayProfile
 import org.dashfoundation.example.navigation.DashPayRequests
+import org.dashfoundation.example.navigation.DashPaySendShieldedTip
 import org.dashfoundation.example.navigation.IdentitiesHome
 import org.dashfoundation.example.navigation.WalletsHome
 import org.dashfoundation.example.ui.components.AccessiblePicker
@@ -339,6 +340,15 @@ fun DashPayTabScreen(navController: NavHostController) {
                                 onClick = { navController.navigate(DashPayAddContact(identityHex)) },
                                 modifier = Modifier.testTag("dashpay.addContact"),
                             )
+                            if (container.shieldedService.isAvailable) {
+                                EntityRow(
+                                    icon = Icons.AutoMirrored.Filled.Send,
+                                    title = "Send Shielded Tip",
+                                    subtitle = "Pay a username from the shielded pool",
+                                    onClick = { navController.navigate(DashPaySendShieldedTip(identityHex)) },
+                                    modifier = Modifier.testTag("dashpay.sendShieldedTip"),
+                                )
+                            }
                             EntityRow(
                                 icon = Icons.Default.Person,
                                 title = "Your Profile",

@@ -56,6 +56,8 @@ import org.dashfoundation.example.ui.dashpay.DashPayTabScreen
 import org.dashfoundation.example.ui.dashpay.HiddenContactsScreen
 import org.dashfoundation.example.ui.dashpay.IgnoredContactsScreen
 import org.dashfoundation.example.ui.dashpay.InvitationsScreen
+import org.dashfoundation.example.ui.dashpay.SendShieldedTipScreen
+import org.dashfoundation.example.ui.dashpay.ShieldedTipContact
 import org.dashfoundation.example.ui.identity.DpnsTestScreen
 import org.dashfoundation.example.ui.identity.DpnsMarketplaceScreen
 import org.dashfoundation.example.ui.identity.IdentitiesHomeScreen
@@ -503,6 +505,17 @@ fun AppNavHost(
         composable<DashPayContactDetail> { entry ->
             val route = entry.toRoute<DashPayContactDetail>()
             ContactDetailScreen(route.identityIdHex, route.contactIdHex, navController)
+        }
+
+        composable<DashPaySendShieldedTip> { entry ->
+            val route = entry.toRoute<DashPaySendShieldedTip>()
+            SendShieldedTipScreen(
+                identityIdHex = route.identityIdHex,
+                contact = route.contactIdHex?.let { id ->
+                    route.contactUsername?.let { ShieldedTipContact(id, it) }
+                },
+                navController = navController,
+            )
         }
 
         composable<DashPayProfile> { entry ->

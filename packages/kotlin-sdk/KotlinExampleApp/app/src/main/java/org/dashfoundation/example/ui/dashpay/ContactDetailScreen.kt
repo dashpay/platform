@@ -50,6 +50,7 @@ import org.dashfoundation.dashsdk.persistence.entities.DashpayPaymentEntity
 import org.dashfoundation.dashsdk.tokens.ContactInfoPublishOutcome
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
+import org.dashfoundation.example.navigation.DashPaySendShieldedTip
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.theme.appStatusColors
@@ -295,6 +296,45 @@ fun ContactDetailScreen(
                         )
                     },
                 )
+                if (container.shieldedService.isAvailable) {
+                    // The wallet refuses the tip if the contact's saved name
+                    // now belongs to another identity (contactIdentityId).
+                    val tipUsername = dpnsHint
+                    ListItem(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = tipUsername != null) {
+                                if (tipUsername != null) {
+                                    navController.navigate(
+                                        DashPaySendShieldedTip(identityIdHex, contactIdHex, tipUsername),
+                                    )
+                                }
+                            }
+                            .testTag("dashpay.tip.contactEntry"),
+                        leadingContent = { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null) },
+                        headlineContent = {
+                            Text(
+                                "Send Shielded Tip",
+                                color = if (tipUsername == null) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
+                            )
+                        },
+                        supportingContent = if (tipUsername == null) {
+                            {
+                                Text(
+                                    ShieldedTipMessages.NO_USERNAME,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.testTag("dashpay.tip.contactNoUsername"),
+                                )
+                            }
+                        } else {
+                            null
+                        },
+                    )
+                }
                 if (channelBroken) {
                     Text(
                         "Payment channel broken — ask the contact to send a new request",
