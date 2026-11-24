@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.wallet
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -1826,6 +1827,10 @@ class PlatformWalletManager(
                     }
                 }
             }
+        } catch (cancelled: CancellationException) {
+            // A subclass of IllegalStateException on the JVM: rethrow it
+            // before the catch below can turn a cancellation into a skip.
+            throw cancelled
         } catch (closing: IllegalStateException) {
             // The teardown gate refuses new borrows once close began.
             if (isClosed) skip(TxoReconcileSkipReason.MANAGER_CLOSED) else throw closing
