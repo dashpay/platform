@@ -443,7 +443,15 @@ impl FileBackedShieldedStore {
     /// so relative paths and symlinked directories reach the same lock. A path
     /// whose last component is a symlink is refused with
     /// [`FileShieldedStoreError::DatabasePathIsSymlink`]. Hard links to the
-    /// database file are unsupported.
+    /// database file are unsupported, and so are network filesystems, where
+    /// the lock may not exclude a second open in the same process. On a
+    /// volume where the parent directory cannot be canonicalized the open
+    /// fails rather than fall back to a spelling another open might not share.
+    ///
+    /// The `.lock` file is not a pidfile: never delete it while a store may be
+    /// open, or the next open takes a fresh lock beside the live one. A child
+    /// process spawned while the store is open briefly shares the lock's
+    /// descriptor until it execs.
     pub fn open_path(
         path: impl AsRef<Path>,
         max_checkpoints: usize,
@@ -639,18 +647,16 @@ impl FileBackedShieldedStore {
     fn lock_owner(path: &Path, requested: &Path) -> Result<std::fs::File, FileShieldedStoreError> {
         let mut lock_path = path.as_os_str().to_owned();
         lock_path.push(".lock");
-        let lock = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(&lock_path)
-            .map_err(|e| {
-                FileShieldedStoreError::Storage(format!(
-                    "open store lock {}: {e}",
-                    Path::new(&lock_path).display()
-                ))
-            })?;
+        let mut options = std::fs::OpenOptions::new();
+        options.read(true).write(true).create(true).truncate(false);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        let lock = options.open(&lock_path).map_err(|e| {
+            FileShieldedStoreError::Storage(format!(
+                "open store lock {}: {e}",
+                Path::new(&lock_path).display()
+            ))
+        })?;
         match lock.try_lock() {
             Ok(()) => Ok(lock),
             Err(std::fs::TryLockError::WouldBlock) => Err(FileShieldedStoreError::AlreadyOpen {
@@ -3580,6 +3586,25 @@ mod tests {
             Err(other) => panic!("expected DatabasePathIsSymlink, got {other}"),
             Ok(_) => panic!("a symlinked database path must be refused"),
         }
+    }
+
+    /// The lock file is created readable by its owner only, so another local
+    /// user cannot hold its lock and keep the wallet out.
+    #[test]
+    #[cfg(unix)]
+    fn the_lock_file_is_private_to_its_owner() {
+        use std::os::unix::fs::PermissionsExt;
+        let path = temp_tree_path("store_lock_mode");
+        let store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
+        let mut lock_path = path.as_os_str().to_owned();
+        lock_path.push(".lock");
+        let mode = std::fs::metadata(&lock_path)
+            .expect("the lock file")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+        drop(store);
+        remove_store_files(&path);
     }
 
     /// One live store per file. Reservations live in the store, so a second
