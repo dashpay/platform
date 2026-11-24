@@ -96,20 +96,23 @@ fun TokensScreen(navController: NavHostController) {
         )
     }).collectAsStateWithLifecycle(initialValue = emptyList())
 
-    // Watch every wallet identity's tokens in the Rust identity-token sync,
+    // Watch the selected identity's tokens in the Rust identity-token sync,
     // which persists their balances into `token_balances` (the list above
-    // and the token action forms read it). Re-runs when the identities, the
+    // and the token action forms read it); the other wallet identities are
+    // registered with none. Re-runs when the selection, the identities, the
     // manager or the set of locally saved tokens changes (a contract load or
     // removal). Port of `IdentityDetailView.reloadTokenBalances`.
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val sdk by appState.sdk.collectAsStateWithLifecycle()
     val identitySetKey = identities.joinToString(",") { it.identityId.toHex() }
     val tokenSetKey = tokens.joinToString(",") { it.id.toHex() }
-    LaunchedEffect(manager, sdk, identitySetKey, tokenSetKey) {
+    LaunchedEffect(manager, sdk, selectedIdentity?.identityId?.toHex(), identitySetKey, tokenSetKey) {
         val activeManager = manager ?: return@LaunchedEffect
         val activeSdk = sdk ?: return@LaunchedEffect
+        val identity = selectedIdentity ?: return@LaunchedEffect
         IdentityTokenSync.refresh(
-            identityIds = identities.map { it.identityId },
+            identityId = identity.identityId,
+            otherIdentityIds = identities.map { it.identityId },
             tokens = tokens,
             calculateTokenId = activeSdk.tokenQueries::calculateTokenId,
             register = activeManager::registerIdentityForTokenSync,

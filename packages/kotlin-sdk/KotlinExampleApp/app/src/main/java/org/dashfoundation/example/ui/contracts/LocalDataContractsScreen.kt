@@ -40,7 +40,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.Network
-import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.example.di.AppContainer
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
@@ -244,9 +243,7 @@ fun LocalDataContractsScreen(navController: NavHostController) {
                                     IconButton(onClick = {
                                         scope.launch {
                                             try {
-                                                unwatchContractTokens(
-                                                    container, sdk, network, contract.id,
-                                                )
+                                                unwatchContractTokens(container, network)
                                                 container.database.dataContractDao()
                                                     .delete(contract)
                                             } catch (e: CancellationException) {
@@ -298,29 +295,19 @@ private val KNOWN_CONTRACTS = listOf(
 )
 
 /**
- * Before a saved contract is deleted, re-register every wallet identity on
- * [network] with the saved tokens that remain, so a token-sync pass already
- * reading the deleted contract's tokens stores nothing for them once Room has
- * cascaded the delete. Skipped when no manager or SDK is active; nothing is
- * watched then.
+ * Before a saved contract is deleted, register every wallet identity on
+ * [network] with no tokens, so a token-sync pass already reading the deleted
+ * contract's tokens stores nothing for them once Room has cascaded the
+ * delete. The Tokens screen registers the identity on screen again. Skipped
+ * when no manager is active; nothing is watched then.
  */
 private suspend fun unwatchContractTokens(
     container: AppContainer,
-    sdk: Sdk?,
     network: Network,
-    contractId: ByteArray,
 ) {
     val manager = container.walletManagerStore.activeManager.value ?: return
-    val activeSdk = sdk ?: return
-    val remaining = container.database.tokenDao().getTokensByNetwork(network.ffiValue)
-        .filterNot { it.contractId.contentEquals(contractId) }
     val identityIds = container.database.identityDao()
         .observeWalletOwnedByNetwork(network.ffiValue).first()
         .map { it.identityId }
-    IdentityTokenSync.watch(
-        identityIds = identityIds,
-        tokens = remaining,
-        calculateTokenId = activeSdk.tokenQueries::calculateTokenId,
-        register = manager::registerIdentityForTokenSync,
-    )
+    IdentityTokenSync.clear(identityIds, manager::registerIdentityForTokenSync)
 }

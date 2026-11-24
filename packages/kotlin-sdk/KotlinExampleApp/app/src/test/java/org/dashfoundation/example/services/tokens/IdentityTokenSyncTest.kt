@@ -10,11 +10,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Wiring of [IdentityTokenSync]: the Tokens screen registers every wallet
- * identity with the canonical ids of every local token and then runs one
- * sync pass, the way `IdentityDetailView.reloadTokenBalances` does for one
- * identity in SwiftExampleApp. Token ids come from the injected native
- * calculation; the test only checks they are passed through.
+ * Wiring of [IdentityTokenSync]: a screen registers the identity it shows
+ * with the canonical ids of every local token, registers the wallet's other
+ * identities with none, and runs one sync pass, the way
+ * `IdentityDetailView.reloadTokenBalances` does for its identity in
+ * SwiftExampleApp. Token ids come from the injected native calculation; the
+ * test only checks they are passed through.
  */
 class IdentityTokenSyncTest {
 
@@ -42,94 +43,70 @@ class IdentityTokenSyncTest {
     private class Recorder {
         val calls = mutableListOf<String>()
         val registered = mutableListOf<Pair<ByteArray, List<ByteArray>>>()
-        val registeredIdentity: ByteArray? get() = registered.lastOrNull()?.first
-        val registeredTokens: List<ByteArray> get() = registered.lastOrNull()?.second.orEmpty()
         val register: suspend (ByteArray, List<ByteArray>) -> Unit = { id, tokens ->
             calls += "register"
             registered += id to tokens
         }
         val syncNow: suspend () -> Unit = { calls += "syncNow" }
+
+        fun tokensFor(id: ByteArray): List<ByteArray> =
+            registered.last { it.first.contentEquals(id) }.second
     }
 
     @Test
-    fun shouldRegisterEveryLocalTokenThenRunOneSyncPass() = runTest {
+    fun shouldWatchEveryLocalTokenForTheIdentityOnScreenThenSyncOnce() = runTest {
         val tokens = listOf(token(1, 0), token(1, 1), token(2, 0))
         val recorder = Recorder()
 
         val done = IdentityTokenSync.refresh(
-            listOf(identityId), tokens, calculate, recorder.register, recorder.syncNow,
+            identityId, listOf(identityId), tokens, calculate, recorder.register, recorder.syncNow,
         )
 
         assertTrue(done)
         assertEquals(listOf("register", "syncNow"), recorder.calls)
-        assertArrayEquals(identityId, recorder.registeredIdentity)
         val expected = tokens.map { fakeTokenId(Base58.encode(it.contractId), it.position) }
-        assertEquals(expected.size, recorder.registeredTokens.size)
-        expected.zip(recorder.registeredTokens).forEach { (want, got) ->
-            assertArrayEquals(want, got)
-        }
+        val watched = recorder.tokensFor(identityId)
+        assertEquals(expected.size, watched.size)
+        expected.zip(watched).forEach { (want, got) -> assertArrayEquals(want, got) }
     }
 
     @Test
-    fun shouldRegisterEveryIdentityWithTheSameTokensThenSyncOnce() = runTest {
-        val tokens = listOf(token(1, 0), token(2, 0))
+    fun shouldClearTheOtherIdentitiesSoAPassReadsOnlyTheIdentityOnScreen() = runTest {
         val recorder = Recorder()
 
         IdentityTokenSync.refresh(
-            listOf(identityId, otherIdentityId), tokens, calculate,
+            identityId, listOf(otherIdentityId, identityId), listOf(token(1, 0)), calculate,
             recorder.register, recorder.syncNow,
         )
 
         assertEquals(listOf("register", "register", "syncNow"), recorder.calls)
-        assertArrayEquals(identityId, recorder.registered[0].first)
-        assertArrayEquals(otherIdentityId, recorder.registered[1].first)
-        assertEquals(2, recorder.registered[0].second.size)
-        recorder.registered[0].second.zip(recorder.registered[1].second).forEach { (a, b) ->
-            assertArrayEquals(a, b)
-        }
+        assertTrue("other identity watches nothing", recorder.tokensFor(otherIdentityId).isEmpty())
+        assertEquals(1, recorder.tokensFor(identityId).size)
     }
 
     @Test
-    fun shouldClearEveryIdentitysWatchWhenNoTokenIsSavedLocally() = runTest {
+    fun shouldStopTheWatchAndSkipThePassWhenNoTokenIsSavedLocally() = runTest {
         val recorder = Recorder()
 
         val done = IdentityTokenSync.refresh(
-            listOf(identityId, otherIdentityId), emptyList(), calculate,
+            identityId, listOf(identityId), emptyList(), calculate,
             recorder.register, recorder.syncNow,
         )
 
         assertFalse(done)
-        assertEquals("registered with no tokens, no pass", listOf("register", "register"), recorder.calls)
+        assertEquals("registered with no tokens, no pass", listOf("register"), recorder.calls)
+        assertTrue(recorder.tokensFor(identityId).isEmpty())
+    }
+
+    @Test
+    fun shouldClearEveryIdentityWithoutASyncPassBeforeAContractIsDeleted() = runTest {
+        val recorder = Recorder()
+
+        val cleared = IdentityTokenSync.clear(listOf(identityId, otherIdentityId), recorder.register)
+
+        assertTrue(cleared)
+        assertEquals(listOf("register", "register"), recorder.calls)
         assertTrue(recorder.registered.all { it.second.isEmpty() })
-    }
-
-    @Test
-    fun shouldReplaceTheWatchesWithoutASyncPassBeforeAContractIsDeleted() = runTest {
-        val remaining = listOf(token(2, 0))
-        val recorder = Recorder()
-
-        val watched = IdentityTokenSync.watch(
-            listOf(identityId, otherIdentityId), remaining, calculate, recorder.register,
-        )
-
-        assertEquals(1, watched!!.size)
-        assertEquals("register only, no pass", listOf("register", "register"), recorder.calls)
-        assertArrayEquals(
-            fakeTokenId(Base58.encode(remaining.single().contractId), 0),
-            recorder.registered[0].second.single(),
-        )
-    }
-
-    @Test
-    fun shouldDoNothingWithoutIdentities() = runTest {
-        val recorder = Recorder()
-
-        val done = IdentityTokenSync.refresh(
-            emptyList(), listOf(token(1, 0)), calculate, recorder.register, recorder.syncNow,
-        )
-
-        assertFalse(done)
-        assertTrue(recorder.calls.isEmpty())
     }
 
     @Test
@@ -140,6 +117,7 @@ class IdentityTokenSyncTest {
         val recorder = Recorder()
 
         IdentityTokenSync.refresh(
+            identityId,
             listOf(identityId),
             listOf(good, failing),
             { contract, position ->
@@ -149,10 +127,9 @@ class IdentityTokenSyncTest {
             recorder.syncNow,
         )
 
-        assertEquals(1, recorder.registeredTokens.size)
         assertArrayEquals(
             fakeTokenId(Base58.encode(good.contractId), 0),
-            recorder.registeredTokens.single(),
+            recorder.tokensFor(identityId).single(),
         )
     }
 
@@ -181,6 +158,7 @@ class IdentityTokenSyncTest {
         var synced = false
 
         val done = IdentityTokenSync.refresh(
+            identityId,
             listOf(identityId),
             listOf(token(1, 0)),
             calculate,

@@ -6,7 +6,7 @@ import org.dashfoundation.dashsdk.persistence.entities.TokenEntity
 import org.dashfoundation.example.util.Base58
 
 /**
- * Registers the wallet's identities and their watched tokens with the Rust
+ * Registers the identity on screen and its watched tokens with the Rust
  * identity-token sync and runs one sync pass, so `onPersistTokenBalanceUpsert`
  * fills the `token_balances` rows the Tokens list and the token action forms
  * read.
@@ -15,11 +15,12 @@ import org.dashfoundation.example.util.Base58
  * (SwiftExampleApp `IdentityDetailView.swift`): the watched set is every
  * locally saved token on the active network, each token id comes from the
  * native `calculateTokenId` (the protocol formula is not mirrored here), and
- * a failure is non-fatal, so the next reload tries again. Swift registers the
- * one identity on screen; this registers every wallet identity on the
- * network with the same set, so a sender picked on a token's action screen is
- * synced too and a removed contract's token stops being watched for every
- * identity, not only the one selected. An empty saved set clears the watches.
+ * a failure is non-fatal, so the next reload tries again. Like Swift it syncs
+ * only the identity on screen (the Tokens selection, or the acting identity
+ * on a token's action screen). Unlike Swift it also registers the wallet's
+ * other identities with no tokens, so a pass reads only the identity on
+ * screen and a token whose contract was removed stops being watched for every
+ * identity.
  */
 object IdentityTokenSync {
 
@@ -51,22 +52,27 @@ object IdentityTokenSync {
     }
 
     /**
-     * Register each of [identityIds] with the watched ids of [tokens] and,
-     * when any token is watched, run one sync pass. With no saved token the
-     * identities are registered with none, which stops their watches.
-     * Returns true when a sync pass ran; false when there was nothing to sync
-     * or the native calls failed. Never throws except on cancellation.
+     * Register [identityId] with the watched ids of [tokens], register each of
+     * [otherIdentityIds] with none (stopping their watches), and, when a token
+     * is watched, run one sync pass. Returns true when a sync pass ran; false
+     * when there was nothing to sync or the native calls failed. Never throws
+     * except on cancellation.
      */
     suspend fun refresh(
-        identityIds: List<ByteArray>,
+        identityId: ByteArray,
+        otherIdentityIds: List<ByteArray>,
         tokens: List<TokenEntity>,
         calculateTokenId: suspend (contractIdBase58: String, position: Int) -> String?,
         register: suspend (identityId: ByteArray, tokenIds: List<ByteArray>) -> Unit,
         syncNow: suspend () -> Unit,
     ): Boolean {
-        val tokenIds = watch(identityIds, tokens, calculateTokenId, register) ?: return false
-        if (tokenIds.isEmpty()) return false
+        val tokenIds = watchedTokenIds(tokens, calculateTokenId)
         return try {
+            for (other in otherIdentityIds) {
+                if (!other.contentEquals(identityId)) register(other, emptyList())
+            }
+            register(identityId, tokenIds)
+            if (tokenIds.isEmpty()) return false
             syncNow()
             true
         } catch (e: CancellationException) {
@@ -78,29 +84,23 @@ object IdentityTokenSync {
     }
 
     /**
-     * Register each of [identityIds] with the watched ids of [tokens], without
-     * a sync pass. Contract deletion calls this with the tokens that remain
-     * before it deletes the contract, so a pass already reading the removed
-     * tokens cannot store their balances after the delete (platform-wallet
-     * stores a result only for tokens still watched). Returns the watched
-     * ids, or null when there are no identities or registration failed.
+     * Register each of [identityIds] with no tokens, without a sync pass.
+     * Contract deletion calls this before it deletes the contract, so a pass
+     * already reading the contract's tokens cannot store their balances after
+     * the delete (platform-wallet stores a result only for tokens still
+     * watched). The next refresh registers the identity on screen again.
+     * Returns false when registration failed.
      */
-    suspend fun watch(
+    suspend fun clear(
         identityIds: List<ByteArray>,
-        tokens: List<TokenEntity>,
-        calculateTokenId: suspend (contractIdBase58: String, position: Int) -> String?,
         register: suspend (identityId: ByteArray, tokenIds: List<ByteArray>) -> Unit,
-    ): List<ByteArray>? {
-        if (identityIds.isEmpty()) return null
-        val tokenIds = watchedTokenIds(tokens, calculateTokenId)
-        return try {
-            for (identityId in identityIds) register(identityId, tokenIds)
-            tokenIds
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            runCatching { Log.w(TAG, "identity token watch update failed", e) }
-            null
-        }
+    ): Boolean = try {
+        for (identityId in identityIds) register(identityId, emptyList())
+        true
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        runCatching { Log.w(TAG, "identity token watch clear failed", e) }
+        false
     }
 }
