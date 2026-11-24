@@ -607,9 +607,12 @@ enum TokenActionResolver {
             // `TokenPerpetualDistribution` init default, which never named
             // a real recipient. Loading a contract that is already saved
             // keeps its rows as they are, so only deleting the contract and
-            // loading it again re-parses the token.
+            // loading it again re-parses the token. Deleting it also drops
+            // the documents saved locally under it (they stay on-chain), so
+            // the reason says so.
             return .denied(
-                reason: "Distribution recipient not recorded; delete the contract and load it again"
+                reason: "Distribution recipient not recorded; delete the contract and load it again "
+                    + "(this also clears its locally saved documents)"
             )
         default:
             return .denied(reason: "Distribution recipient '\(recipient)' not recognised by this app")

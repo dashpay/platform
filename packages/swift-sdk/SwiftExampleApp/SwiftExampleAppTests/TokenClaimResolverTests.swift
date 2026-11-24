@@ -684,7 +684,8 @@ final class TokenClaimResolverTests: XCTestCase {
             ("futureVariant", "Distribution recipient 'futureVariant' not recognised by this app"),
             (
                 "AllEqualShare",
-                "Distribution recipient not recorded; delete the contract and load it again"
+                "Distribution recipient not recorded; delete the contract and load it again "
+                    + "(this also clears its locally saved documents)"
             ),
             (TokenDistributionRecipient.identity(""), "Not the designated distribution recipient")
         ]
