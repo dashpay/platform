@@ -74,7 +74,6 @@
 
 use dashcore::bls_sig_utils::BlsScheme;
 use dashcore::eddsa::{EddsaPkBytes, EddsaPkHash, EddsaSecretKey};
-use dashcore::Address;
 use dashcore::PubkeyHash;
 use key_wallet::account::derivation::AccountDerivation;
 use key_wallet::account::{AccountType, BLSAccount, EdDSAAccount};
