@@ -142,12 +142,14 @@ export class DocumentsFacade {
    * Pass the document with its `revision` already increased by one: the
    * revision this replace writes is the stored revision + 1, and the SDK
    * sends the revision as given. A document from {@link get} carries the
-   * stored revision. One still at revision 1 is sent as a create instead,
-   * which Platform refuses because the document already exists.
+   * stored revision. One still at revision 1 is sent as a create instead:
+   * the create derives a new document ID, so it can succeed and leave the
+   * original unchanged.
    *
    * @example
    * const document = await sdk.documents.get(contractId, 'card', documentId);
-   * document.revision = (document.revision ?? 0n) + 1n;
+   * if (document?.revision === undefined) throw new Error('no stored revision');
+   * document.revision += 1n;
    * document.properties = { ...document.properties, name: 'New name' };
    * await sdk.documents.replace({ document, identityKey, signer });
    */
@@ -190,7 +192,8 @@ export class DocumentsFacade {
    *
    * @example
    * const document = await sdk.documents.get(contractId, 'card', documentId);
-   * document.revision = (document.revision ?? 0n) + 1n;
+   * if (document?.revision === undefined) throw new Error('no stored revision');
+   * document.revision += 1n;
    * await sdk.documents.transfer({ document, recipientId, identityKey, signer });
    */
   async transfer(options: wasm.DocumentTransferOptions): Promise<void> {
@@ -208,7 +211,8 @@ export class DocumentsFacade {
    *
    * @example
    * const document = await sdk.documents.get(contractId, 'card', documentId);
-   * document.revision = (document.revision ?? 0n) + 1n;
+   * if (document?.revision === undefined) throw new Error('no stored revision');
+   * document.revision += 1n;
    * await sdk.documents.purchase({ document, buyerId, price, identityKey, signer });
    */
   async purchase(options: wasm.DocumentPurchaseOptions): Promise<void> {
@@ -217,7 +221,9 @@ export class DocumentsFacade {
   }
 
   /**
-   * Sets the sale price of a document (0 takes it off sale) and resolves once Platform confirms it.
+   * Sets the sale price of a document and resolves once Platform confirms it.
+   * A price of 0 does not take the document off sale: it stays listed, and
+   * anyone may buy it for 0 credits.
    *
    * Pass the document with its `revision` already increased by one: the
    * revision this price update writes is the stored revision + 1, and the SDK
@@ -226,7 +232,8 @@ export class DocumentsFacade {
    *
    * @example
    * const document = await sdk.documents.get(contractId, 'card', documentId);
-   * document.revision = (document.revision ?? 0n) + 1n;
+   * if (document?.revision === undefined) throw new Error('no stored revision');
+   * document.revision += 1n;
    * await sdk.documents.setPrice({ document, price: 5000000n, identityKey, signer });
    */
   async setPrice(options: wasm.DocumentSetPriceOptions): Promise<void> {

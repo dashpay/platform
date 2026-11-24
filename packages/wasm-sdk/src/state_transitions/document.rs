@@ -382,15 +382,17 @@ export interface DocumentReplaceOptions {
    * revision + 1. The SDK sends the revision as given and does not increase
    * it, so increase it yourself: a document fetched from Platform carries the
    * stored revision. Passing the stored revision is refused with
-   * "Document ... has invalid revision Some(n). The desired revision is n",
-   * except at revision 1, where the document is sent as a create instead and
-   * refused because it already exists.
+   * "Document ... has invalid revision Some(n). The desired revision is n".
+   * A document still at revision 1 is sent as a create instead: the create
+   * derives a new document ID, so it can succeed and leave the original
+   * unchanged.
    *
    * @example
-   * const document = await sdk.documents.get(contractId, 'card', documentId);
-   * document.revision = (document.revision ?? 0n) + 1n;
+   * const document = await sdk.getDocument(contractId, 'card', documentId);
+   * if (document?.revision === undefined) throw new Error('no stored revision');
+   * document.revision += 1n;
    * document.properties = { ...document.properties, name: 'New name' };
-   * await sdk.documents.replace({ document, identityKey, signer });
+   * await sdk.documentReplace({ document, identityKey, signer });
    */
   document: Document;
 
@@ -895,9 +897,10 @@ export interface DocumentTransferOptions {
    * "Document ... has invalid revision Some(n). The desired revision is n".
    *
    * @example
-   * const document = await sdk.documents.get(contractId, 'card', documentId);
-   * document.revision = (document.revision ?? 0n) + 1n;
-   * await sdk.documents.transfer({ document, recipientId, identityKey, signer });
+   * const document = await sdk.getDocument(contractId, 'card', documentId);
+   * if (document?.revision === undefined) throw new Error('no stored revision');
+   * document.revision += 1n;
+   * await sdk.documentTransfer({ document, recipientId, identityKey, signer });
    */
   document: Document;
 
@@ -1042,9 +1045,10 @@ export interface DocumentPurchaseOptions {
    * "Document ... has invalid revision Some(n). The desired revision is n".
    *
    * @example
-   * const document = await sdk.documents.get(contractId, 'card', documentId);
-   * document.revision = (document.revision ?? 0n) + 1n;
-   * await sdk.documents.purchase({ document, buyerId, price, identityKey, signer });
+   * const document = await sdk.getDocument(contractId, 'card', documentId);
+   * if (document?.revision === undefined) throw new Error('no stored revision');
+   * document.revision += 1n;
+   * await sdk.documentPurchase({ document, buyerId, price, identityKey, signer });
    */
   document: Document;
 
@@ -1190,15 +1194,18 @@ export interface DocumentSetPriceOptions {
    * "Document ... has invalid revision Some(n). The desired revision is n".
    *
    * @example
-   * const document = await sdk.documents.get(contractId, 'card', documentId);
-   * document.revision = (document.revision ?? 0n) + 1n;
-   * await sdk.documents.setPrice({ document, price: 5000000n, identityKey, signer });
+   * const document = await sdk.getDocument(contractId, 'card', documentId);
+   * if (document?.revision === undefined) throw new Error('no stored revision');
+   * document.revision += 1n;
+   * await sdk.documentSetPrice({ document, price: 5000000n, identityKey, signer });
    */
   document: Document;
 
   /**
    * The price in credits.
-   * Set to 0 to remove the price and make the document not for sale.
+   * A price of 0 does not take the document off sale: it stays listed, and
+   * anyone may buy it for 0 credits. Platform removes the price only when the
+   * document is purchased or transferred.
    */
   price: bigint;
 
