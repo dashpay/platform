@@ -10,26 +10,35 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import org.dashfoundation.dashsdk.persistence.entities.AccountEntity
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.navigation.AccountDetail
+import org.dashfoundation.example.ui.dashpay.AccountBalance
+import org.dashfoundation.example.ui.dashpay.parseAccountBalances
 import org.dashfoundation.example.util.formatDuffs
 
 /**
  * Per-wallet account list — port of `AccountListView.swift`. Rows come
  * from the Room `AccountDao` flow (= the SwiftData `@Query`) in the same
  * grouped display order (BIP44 → PlatformPayment → BIP32 → CoinJoin →
- * special purpose). Balances render the persisted per-account columns —
- * the per-account in-memory FFI read (`accountBalances(for:)`) isn't
- * bridged in the Kotlin SDK yet; the persisted values are refreshed by the
- * same Rust persister callbacks.
+ * special purpose). A Core account's balance is Rust's in-memory
+ * per-account read (`PlatformWalletManager.accountBalances`, ← Swift
+ * `accountBalances(for:)`): nothing persists the Room balance columns,
+ * which stay 0. A PlatformPayment account shows no balance line until Rust
+ * offers an account-scoped credit total (#6235); a sum of its persisted
+ * address rows can lag the managed account.
  */
 @Composable
 internal fun AccountListSection(
@@ -41,6 +50,7 @@ internal fun AccountListSection(
     val accounts by remember(walletIdHex) {
         container.database.accountDao().observeByWallet(walletId)
     }.collectAsStateWithLifecycle(initialValue = emptyList())
+    val coreBalances = rememberCoreAccountBalances(walletId)
 
     if (accounts.isEmpty()) {
         Text(
@@ -57,6 +67,7 @@ internal fun AccountListSection(
         ordered.forEachIndexed { index, account ->
             AccountRow(
                 account = account,
+                balance = accountRowBalance(account, coreBalances),
                 modifier = Modifier
                     .clickable {
                         navController.navigate(AccountDetail(walletIdHex, account.id))
@@ -88,10 +99,89 @@ private fun accountSortKey(account: AccountEntity): String {
     )
 }
 
+/**
+ * Rust's per-account Core balances for [walletId], read again every two
+ * seconds while shown (the wallet detail's Core balance has the same
+ * cadence). Null while nothing has been read: before the first read,
+ * without an active manager, and after a manager change. A failed read
+ * keeps the same manager's last snapshot.
+ */
+@Composable
+internal fun rememberCoreAccountBalances(walletId: ByteArray): List<AccountBalance>? {
+    val container = LocalAppContainer.current
+    val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
+    var balances by remember(walletId, manager) { mutableStateOf<List<AccountBalance>?>(null) }
+    LaunchedEffect(manager, walletId) {
+        val m = manager ?: return@LaunchedEffect
+        while (true) {
+            try {
+                balances = parseAccountBalances(m.accountBalances(walletId))
+            } catch (e: CancellationException) {
+                // The manager or wallet changed: write nothing for the old one.
+                throw e
+            } catch (_: Exception) {
+                // Keep the last snapshot; the next read tries again.
+            }
+            delay(2_000)
+        }
+    }
+    return balances
+}
+
+/** What an account row shows as its balance. */
+internal sealed interface AccountRowBalance {
+    /** A Core account (BIP44, BIP32): duffs, from Rust's per-account read. */
+    data class Core(val confirmed: Long, val unconfirmed: Long) : AccountRowBalance
+
+    /**
+     * A Core account whose balance is not known: nothing read yet, or the
+     * read has no row for it (wallet not loaded in Rust). Shown as such,
+     * never as a measured 0.
+     */
+    data object CoreUnknown : AccountRowBalance
+
+    /**
+     * A PlatformPayment account: no balance line until Rust offers an
+     * account-scoped credit total (#6235).
+     */
+    data object PlatformNotShown : AccountRowBalance
+
+    /** Any other account: no balance line (special purpose). */
+    data object None : AccountRowBalance
+}
+
+/**
+ * The balance of [account]. A Core account matches Rust's row on type tag,
+ * standard tag and index, as `AccountListView` does; with no read yet
+ * ([coreBalances] null) or no matching row it is [AccountRowBalance.CoreUnknown].
+ */
+internal fun accountRowBalance(
+    account: AccountEntity,
+    coreBalances: List<AccountBalance>?,
+): AccountRowBalance = when (account.accountType) {
+    0, 1 -> {
+        val match = coreBalances?.firstOrNull {
+            it.typeTag == account.accountType &&
+                it.standardTag == account.standardTag &&
+                it.index == account.accountIndex
+        }
+        if (match == null) {
+            AccountRowBalance.CoreUnknown
+        } else {
+            AccountRowBalance.Core(match.confirmed, match.unconfirmed)
+        }
+    }
+    14 -> AccountRowBalance.PlatformNotShown
+    else -> AccountRowBalance.None
+}
+
 /** One account row (← `AccountRowView`). */
 @Composable
-private fun AccountRow(account: AccountEntity, modifier: Modifier = Modifier) {
-    val showsBalance = account.accountType in intArrayOf(0, 1, 14)
+private fun AccountRow(
+    account: AccountEntity,
+    balance: AccountRowBalance,
+    modifier: Modifier = Modifier,
+) {
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -110,24 +200,30 @@ private fun AccountRow(account: AccountEntity, modifier: Modifier = Modifier) {
             )
         }
 
-        if (showsBalance) {
-            val total = account.balanceConfirmed + account.balanceUnconfirmed
-            Row(
+        when (balance) {
+            is AccountRowBalance.Core -> Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    "Confirmed ${formatDuffs(account.balanceConfirmed)}",
+                    "Confirmed ${formatDuffs(balance.confirmed)}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                // confirmed + unconfirmed is key-wallet's `spendable()`;
+                // immature and locked funds are not in it.
                 Text(
-                    "Total ${formatDuffs(total)}",
+                    "Spendable ${formatDuffs(balance.confirmed + balance.unconfirmed)}",
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-        } else {
-            Text(
+            AccountRowBalance.CoreUnknown -> Text(
+                "Balance not read yet",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            AccountRowBalance.PlatformNotShown -> Unit
+            AccountRowBalance.None -> Text(
                 "Special Purpose Account",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -241,7 +241,17 @@ private fun ActivityRow(row: ShieldedActivityEntity) {
     Card(modifier = Modifier.testTag("shieldedActivity.row")) {
         ListItem(
             headlineContent = { Text(kindLabel(row.kindTag)) },
-            supportingContent = { Text(supportingText(row.kindTag, row.status)) },
+            supportingContent = {
+                // Kotlin has no detail sheet, so the fee Swift shows there
+                // (`ShieldedActivityDetailView`'s "Fee") goes on the row: a
+                // private document payment (type 29) moves no value and
+                // costs only its fee.
+                val fee = activityFeeText(row.hasFee, row.fee)
+                Text(
+                    listOfNotNull(supportingText(row.kindTag, row.status), fee)
+                        .joinToString("\n"),
+                )
+            },
             trailingContent = { Text(signedAmount(row)) },
         )
     }
@@ -344,9 +354,10 @@ private fun statusLabel(status: Int): String = when (status) {
 }
 
 /**
- * 1 DASH = 1e11 credits; signed by direction (0 In +, 1 Out −, 2 Self). A
- * token transfer or unshield shows its token count in the token's smallest
- * unit instead, as Rust records it.
+ * 1 DASH = 1e11 credits; signed by direction (0 In +, 1 Out −, 2 Self),
+ * exact down to one credit as Swift's `signedAmountText` is, so a small
+ * amount is never rounded to 0. A token transfer or unshield shows its
+ * token count in the token's smallest unit instead, as Rust records it.
  */
 internal fun signedAmount(kindTag: Int, direction: Int, amount: Long): String {
     val sign = when (direction) {
@@ -355,8 +366,15 @@ internal fun signedAmount(kindTag: Int, direction: Int, amount: Long): String {
         else -> ""
     }
     if (amountIsTokens(kindTag)) return "$sign${amount.toULong()} token units"
-    return "%s%.4f DASH".format(sign, amount.toDouble() / 1e11)
+    return sign + formatCreditsExact(amount.toULong())
 }
+
+/**
+ * "Fee 0.00144 DASH" for a row whose fee Rust recorded (always credits,
+ * also for token kinds), or null when it has none (a restored spend).
+ */
+internal fun activityFeeText(hasFee: Boolean, fee: Long): String? =
+    if (hasFee) "Fee ${formatCreditsExact(fee.toULong())}" else null
 
 private fun signedAmount(row: ShieldedActivityEntity): String =
     signedAmount(row.kindTag, row.direction, row.amount)

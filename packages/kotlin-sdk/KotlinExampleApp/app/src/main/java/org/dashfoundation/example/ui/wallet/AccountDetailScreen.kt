@@ -74,6 +74,11 @@ fun AccountDetailScreen(
             .map { rows -> rows.filter { it.accountId == accountId } }
     }.collectAsStateWithLifecycle(initialValue = emptyList())
 
+    // ← AccountDetailView.balanceCard: Rust's per-account read for a Core
+    // account. PlatformPayment shows no balance until Rust offers an
+    // account-scoped total (#6235).
+    val coreBalances = rememberCoreAccountBalances(walletId)
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -112,17 +117,23 @@ fun AccountDetailScreen(
                 LabeledContent("Network", network.displayName)
             }
 
-            if (current.accountType in intArrayOf(0, 1, 14)) {
-                FormSection(title = "Balance") {
-                    LabeledContent("Confirmed", formatDuffs(current.balanceConfirmed))
-                    if (current.balanceUnconfirmed > 0) {
-                        LabeledContent("Pending", formatDuffs(current.balanceUnconfirmed))
+            when (val balance = accountRowBalance(current, coreBalances)) {
+                is AccountRowBalance.Core -> FormSection(title = "Balance") {
+                    LabeledContent("Confirmed", formatDuffs(balance.confirmed))
+                    if (balance.unconfirmed > 0) {
+                        LabeledContent("Pending", formatDuffs(balance.unconfirmed))
                     }
-                    LabeledContent(
-                        "Total",
-                        formatDuffs(current.balanceConfirmed + current.balanceUnconfirmed),
+                    // key-wallet's `spendable()`: immature and locked funds are not in it.
+                    LabeledContent("Spendable", formatDuffs(balance.confirmed + balance.unconfirmed))
+                }
+                AccountRowBalance.CoreUnknown -> FormSection(title = "Balance") {
+                    Text(
+                        "Balance not read yet",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                AccountRowBalance.PlatformNotShown, AccountRowBalance.None -> Unit
             }
 
             // Pool summary (← poolSummaryCard).

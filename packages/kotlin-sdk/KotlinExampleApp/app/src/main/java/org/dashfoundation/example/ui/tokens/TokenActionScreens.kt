@@ -38,6 +38,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.flowOf
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.funding.ShieldedProver
 import org.dashfoundation.dashsdk.tokens.GroupAction
 import org.dashfoundation.dashsdk.tokens.TokenConfigChange
@@ -857,21 +858,29 @@ private fun PurchaseForm(
                         )
                     }
                     // The form closes when the buyer dismisses the message.
-                    viewModel.showNoticeUntilDismissed(outcome)
+                    viewModel.showNoticeUntilDismissed(
+                        TokenActionNotice("Shielded purchase", outcome, "tokenPurchase.shieldedOutcome"),
+                    )
                 }
                 return@TokenActionScaffold
             }
             val signer = context.signerHandle ?: return@TokenActionScaffold
             viewModel.submit {
-                wallet.tokens.purchase(
-                    identityId = context.identity.identityId,
-                    tokenContractId = token.contractId,
-                    tokenPosition = token.position,
-                    amount = amount,
-                    expectedTotalCost = totalCost,
-                    signingKeyId = TokenActionContext.SIGNING_KEY_ID,
-                    signerHandle = signer,
-                )
+                // A purchase spends credits: say what happened before the
+                // form closes, as the shielded path does, so the buyer is
+                // not left guessing and buying again.
+                val notice = identityPurchaseNotice(TokenAmounts.format(amount, token.decimals), totalCost) {
+                    wallet.tokens.purchase(
+                        identityId = context.identity.identityId,
+                        tokenContractId = token.contractId,
+                        tokenPosition = token.position,
+                        amount = amount,
+                        expectedTotalCost = totalCost,
+                        signingKeyId = TokenActionContext.SIGNING_KEY_ID,
+                        signerHandle = signer,
+                    )
+                }
+                viewModel.showNoticeUntilDismissed(notice)
             }
         },
     ) {
@@ -939,17 +948,57 @@ private fun PurchaseForm(
         }
     }
 
-    viewModel.notice?.let { message ->
+    viewModel.notice?.let { notice ->
         AlertDialog(
             onDismissRequest = { viewModel.dismissNotice() },
-            title = { Text("Shielded purchase") },
-            text = { Text(message, modifier = Modifier.testTag("tokenPurchase.shieldedOutcome")) },
+            title = { Text(notice.title) },
+            text = { Text(notice.message, modifier = Modifier.testTag(notice.testTag)) },
             confirmButton = {
                 TextButton(onClick = { viewModel.dismissNotice() }) { Text("OK") }
             },
         )
     }
 }
+
+/**
+ * Run an identity-funded [purchase] and say what happened. Success means
+ * the SDK call returned normally, which can follow a node error on an earlier
+ * send attempt; the proof may show only the buyer's balance (a
+ * token without purchase history), so it is worded as submitted, not as a
+ * receipt. An unconfirmed broadcast may still execute: the buyer is told not
+ * to submit again until its outcome is known (a balance snapshot cannot
+ * settle it), and the form closes, as the shielded path does. Other errors
+ * propagate to the form's error dialog.
+ */
+internal suspend fun identityPurchaseNotice(
+    amountText: String,
+    totalCost: ULong,
+    purchase: suspend () -> Unit,
+): TokenActionNotice = try {
+    purchase()
+    TokenActionNotice(
+        title = "Purchase submitted",
+        message = "The purchase of $amountText for $totalCost credits from this identity's " +
+            "balance was submitted. Do not buy again unless you want more.",
+        testTag = "tokenPurchase.outcome",
+    )
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Exception) {
+    if (!identityPurchaseMayHaveGoneThrough(e)) throw e
+    TokenActionNotice(
+        title = "Purchase may have gone through",
+        message = "The purchase of $amountText for $totalCost credits was sent, but its result " +
+            "could not be confirmed, and it may still go through. Do not submit it again until " +
+            "you know its outcome: an unchanged token balance does not mean it failed.",
+        testTag = "tokenPurchase.outcome",
+    )
+}
+
+/** The typed outcomes of a broadcast that may have executed. */
+internal fun identityPurchaseMayHaveGoneThrough(error: Throwable): Boolean =
+    error is DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed ||
+        error is DashSdkError.StateTransitionResultUnconfirmed
 
 /** The shielded account a purchase spends from, as on iOS. */
 private const val SHIELDED_PURCHASE_ACCOUNT = 0

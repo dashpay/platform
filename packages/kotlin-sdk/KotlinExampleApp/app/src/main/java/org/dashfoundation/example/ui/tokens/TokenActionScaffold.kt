@@ -49,6 +49,13 @@ import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.toHex
 
 /**
+ * What a form shows after its action returned: everything the dialog
+ * renders, fixed when the action ends, so a configuration change cannot
+ * relabel it from form state that is reloading.
+ */
+data class TokenActionNotice(val title: String, val message: String, val testTag: String)
+
+/**
  * Shared submit state for the 12 token-action forms — the Kotlin
  * counterpart of the `isSubmitting` / `submitError` / `submitGeneration`
  * trio each `TokenXxxActionView.swift` carries. Scoped to the action's
@@ -72,24 +79,24 @@ class TokenActionViewModel : ViewModel() {
      * closes ([showNoticeUntilDismissed]). Held here, not in the
      * composition, so it survives a configuration change.
      */
-    var notice by mutableStateOf<String?>(null)
+    var notice by mutableStateOf<TokenActionNotice?>(null)
         private set
 
     private var noticeDismissed: CompletableDeferred<Unit>? = null
 
     /**
-     * Show [message] and suspend until [dismissNotice]. Called at the end
+     * Show [notice] and suspend until [dismissNotice]. Called at the end
      * of a [submit] block whose result the user must read before the form
      * pops: the action is over, so no retry is offered while it shows.
      */
-    suspend fun showNoticeUntilDismissed(message: String) {
+    suspend fun showNoticeUntilDismissed(notice: TokenActionNotice) {
         val dismissed = CompletableDeferred<Unit>()
         noticeDismissed = dismissed
-        notice = message
+        this.notice = notice
         try {
             dismissed.await()
         } finally {
-            notice = null
+            this.notice = null
         }
     }
 

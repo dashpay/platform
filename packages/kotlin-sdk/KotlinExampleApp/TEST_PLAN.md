@@ -167,7 +167,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | ID | Action | Layer | Tier | Status | Tags | Entry point & test notes |
 |---|---|---|---|---|---|---|
 | DPNS-01 | Register username (normal) | Platform | Essential | ✅ | | `RegisterNameScreen` → `platform_wallet_register_dpns_name_with_signer`. Name resolves to the identity afterward. |
-| DPNS-02 | Check availability / validate / normalize | Platform | Essential | ✅ | | `RegisterNameScreen` / `DpnsTestScreen`. |
+| DPNS-02 | Check availability / validate / normalize | Platform | Essential | ✅ | | `RegisterNameScreen` / `DpnsTestScreen`. Register (`registerName.submit`) is enabled only while the availability check (`dash_sdk_dpns_check_availability`, shown in `registerName.availability`) reports the label available, as Swift's `RegisterNameView` does: a taken, tombstoned or invalid label, a pending or failed check keep it disabled, so no preorder is paid for a name Platform will refuse. After a registration, typing another label on the same screen checks it and enables Register again. *`RegisterNameAvailabilityTest`.* |
 | DPNS-03 | Resolve name → identity | Platform | Essential | ✅ | | `QueriesListScreen` (dpnsResolve) / `DpnsTestScreen`. |
 | DPNS-04 | Get usernames for an identity | Platform | Essential | ✅ | | `IdentityDetailScreen` DPNS section. |
 | DPNS-05 | Register username (contested / premium) | Platform | Common | ✅ | contested | `RegisterNameScreen` (auto-detects contested via `dash_sdk_dpns_is_contested_username`). Creates a live vote poll. |
@@ -253,7 +253,7 @@ All token actions support single-signer **and** group (propose / co-sign) modes 
 |---|---|---|---|---|---|---|
 | TOK-01 | View token balances / details / search | Platform | Common | ✅ | | `TokenDetailsScreen`, `TokensScreen`, `TokenSearchScreen`. |
 | TOK-02 | Transfer token | Platform | Common | ✅ | | `TokenActionScreens(transfer)` → `wallet.tokenTransfer`. |
-| TOK-03 | Direct purchase token | Platform | Common | ✅ | | `TokenActionScreens(directPurchase)` → `wallet.tokenPurchase`. |
+| TOK-03 | Direct purchase token | Platform | Common | ✅ | | `TokenActionScreens(directPurchase)` → `wallet.tokenPurchase`. After Platform accepts the purchase the form shows **Purchase submitted** (`tokenPurchase.outcome`) with the amount and the credits, and closes when the buyer taps OK, so a buyer is not left wondering whether to buy again. If the result cannot be confirmed (an unconfirmed broadcast), it shows **Purchase may have gone through**, says not to submit again until the outcome is known (an unchanged token balance does not mean it failed), and closes on OK instead of offering Buy again. Swift closes the form without a message. *`identityPurchaseNotice` in `ShieldedTokenPurchaseTest`.* |
 | TOK-04 | Token queries (statuses / prices / contract info / supply / distributions) | Platform | Common | ✅ | | `QueriesListScreen` token category → `dash_sdk_token_get_*`. |
 | TOK-05 | Mint (issuance) | Platform | Thorough | ✅ | | `TokenActionScreens(mint)` → `wallet.tokenMint`. |
 | TOK-06 | Burn | Platform | Thorough | ✅ | | `TokenActionScreens(burn)` → `wallet.tokenBurn`. |

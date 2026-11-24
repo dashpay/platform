@@ -46,6 +46,21 @@ class IdentityKeysTest {
     }
 
     @Test
+    fun `should show key purpose, security level and type by name as Swift does`() {
+        // The QA row "Key #0 · 0" / "0 · 0" read raw Room values.
+        assertEquals("Authentication", IdentityKeys.purposeLabel("0"))
+        assertEquals("Transfer", IdentityKeys.purposeLabel("TRANSFER"))
+        assertEquals("Master", IdentityKeys.securityLevelLabel("0"))
+        assertEquals("Medium", IdentityKeys.securityLevelLabel("medium"))
+        assertEquals("ECDSA secp256k1", IdentityKeys.keyTypeLabel("0"))
+        assertEquals("BLS12-381", IdentityKeys.keyTypeLabel("1"))
+        // Unknown values keep the raw value with what it is.
+        assertEquals("Purpose 9", IdentityKeys.purposeLabel("9"))
+        assertEquals("Level 7", IdentityKeys.securityLevelLabel("7"))
+        assertEquals("Type mystery", IdentityKeys.keyTypeLabel("mystery"))
+    }
+
+    @Test
     fun securityLevelRankOrdersMasterStrongest() {
         assertEquals(0, IdentityKeys.securityLevelRank("MASTER"))
         assertEquals(1, IdentityKeys.securityLevelRank("1"))

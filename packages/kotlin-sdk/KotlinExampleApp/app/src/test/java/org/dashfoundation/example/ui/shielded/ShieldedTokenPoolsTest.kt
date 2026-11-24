@@ -196,7 +196,7 @@ class ShieldedTokenPoolsTest {
     fun `token rows show their amount in token units, credit rows in DASH`() {
         assertEquals("−1500 token units", signedAmount(KIND_TOKEN_TRANSFER, direction = 1, amount = 1_500))
         assertEquals("−7 token units", signedAmount(KIND_TOKEN_UNSHIELD, direction = 1, amount = 7))
-        assertEquals("−1.0000 DASH", signedAmount(KIND_TOKEN_PURCHASE, direction = 1, amount = 100_000_000_000))
+        assertEquals("−1 DASH", signedAmount(KIND_TOKEN_PURCHASE, direction = 1, amount = 100_000_000_000))
         assertTrue(amountIsTokens(KIND_TOKEN_TRANSFER))
         assertFalse(amountIsTokens(KIND_TOKEN_PURCHASE))
     }

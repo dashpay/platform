@@ -37,6 +37,38 @@ object IdentityKeys {
     /** Canonical DPP key-type name for a raw Room value. */
     fun keyTypeName(raw: String): String = normalize(raw, KEY_TYPE_NAMES)
 
+    /** Display names in rawValue order, ← Swift `KeyPurpose.name`. */
+    private val PURPOSE_LABELS = listOf(
+        "Authentication", "Encryption", "Decryption", "Transfer", "System", "Voting", "Owner",
+    )
+
+    /** Display names in rawValue order, ← Swift `SecurityLevel.name`. */
+    private val SECURITY_LEVEL_LABELS = listOf("Master", "Critical", "High", "Medium")
+
+    /** Display names in rawValue order, ← Swift `KeyType.name`. */
+    private val KEY_TYPE_LABELS = listOf(
+        "ECDSA secp256k1", "BLS12-381", "ECDSA Hash160", "BIP13 Script Hash", "EdDSA 25519 Hash160",
+    )
+
+    /**
+     * Display name of a raw Room purpose ("0" or "AUTHENTICATION" →
+     * "Authentication"); an unknown value reads "Purpose N", as Swift's
+     * `WalletKeyHealthSheet` shows it.
+     */
+    fun purposeLabel(raw: String): String = label(raw, PURPOSE_NAMES, PURPOSE_LABELS, "Purpose")
+
+    /** Display name of a raw Room security level; an unknown value reads "Level N". */
+    fun securityLevelLabel(raw: String): String =
+        label(raw, SECURITY_LEVEL_NAMES, SECURITY_LEVEL_LABELS, "Level")
+
+    /** Display name of a raw Room key type; an unknown value reads "Type N". */
+    fun keyTypeLabel(raw: String): String = label(raw, KEY_TYPE_NAMES, KEY_TYPE_LABELS, "Type")
+
+    private fun label(raw: String, names: List<String>, labels: List<String>, unknown: String): String {
+        val index = names.indexOf(normalize(raw, names))
+        return labels.getOrNull(index) ?: "$unknown ${raw.trim()}"
+    }
+
     /**
      * The numeric DPP security-level rank for a raw Room value (lower =
      * stronger, matching rs-dpp's `SecurityLevel` ordering: MASTER 0 …
