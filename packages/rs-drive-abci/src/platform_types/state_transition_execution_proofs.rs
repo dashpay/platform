@@ -382,7 +382,16 @@ impl StateTransitionExecutionProofs {
 
     /// The hashes of the registered state transitions waiting for their block.
     pub fn waiting_hashes(&self) -> HashSet<StateTransitionHash> {
-        let inner = self.inner();
+        self.waiting_hashes_at(Instant::now())
+    }
+
+    /// [`waiting_hashes`](Self::waiting_hashes) at the time `now`.
+    fn waiting_hashes_at(&self, now: Instant) -> HashSet<StateTransitionHash> {
+        let mut inner = self.inner();
+        // A block can come long after the last one, so the registrations that ran out of time
+        // since are forgotten first: a transition nobody waits for any more takes none of the
+        // block's proving budget
+        inner.expire_registrations(now);
         inner
             .registered
             .keys()
@@ -1086,6 +1095,30 @@ mod tests {
         assert_eq!(proofs.register_at([255; 32], [255; 16], later), Ok(()));
         assert_eq!(proofs.inner().registrations, 1);
         assert!(!proofs.is_registered(&hash_of(0)));
+    }
+
+    #[test]
+    fn should_not_wait_for_a_transition_whose_registrations_ran_out_of_time_since_the_last_block() {
+        let proofs = StateTransitionExecutionProofs::new(10);
+        let taken_at = Instant::now();
+        proofs
+            .register_at([1; 32], A, taken_at)
+            .expect("expected to register");
+        proofs
+            .register_at([2; 32], B, taken_at)
+            .expect("expected to register");
+        // A wait that started later still waits for the second transition
+        let later = taken_at + REGISTRATION_LIFETIME;
+        proofs
+            .register_at([2; 32], lease_of(3), later)
+            .expect("expected to register");
+
+        // The next block comes once the first two registrations ran out of time, with no block
+        // committed and no full registry to forget them before
+        let waiting = proofs.waiting_hashes_at(later + Duration::from_secs(1));
+
+        assert_eq!(waiting, HashSet::from([[2; 32]]));
+        assert_eq!(proofs.inner().registrations, 1);
     }
 
     #[test]
