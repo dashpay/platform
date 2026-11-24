@@ -3,10 +3,12 @@
 //! Validator-verified proof. Production batches remain capped at one.
 
 use super::token_shielded_pool_tests::{
-    assert_tokens_conserved, build_shield_bundle, build_spend_bundle, enable_shielded_pool,
-    insert_token_pool_anchor, nullifier_is_spent, platform_with_latest_version, pool_balance,
-    pool_notes_count, process, spendable_note, SHIELD_AMOUNT,
+    assert_tokens_conserved, assert_tokens_conserved_at_protocol_version, build_shield_bundle,
+    build_spend_bundle, enable_shielded_pool, insert_token_pool_anchor, nullifier_is_spent,
+    platform_with_latest_version, pool_balance, pool_notes_count, process,
+    process_at_protocol_version, spendable_note, SHIELD_AMOUNT,
 };
+use crate::test::helpers::setup::TestPlatformBuilder;
 use super::*;
 use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::validation::state_transition::processor::traits::identity_balance::StateTransitionIdentityBalanceValidationV0;
@@ -67,9 +69,11 @@ struct FundedPool {
 }
 
 impl FundedPool {
-    async fn sponsored_card(shielded: bool) -> Self {
-        let version = PlatformVersion::latest();
-        let mut platform = platform_with_latest_version();
+    async fn sponsored_card(shielded: bool, version: &PlatformVersion) -> Self {
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(version.protocol_version)
+            .build_with_mock_rpc()
+            .set_genesis_state();
         let (identity, signer, key) = setup_identity(&mut platform, 70_501, dash_to_credits!(1.0));
         let (sponsor, _, _) = setup_identity(&mut platform, 70_507, dash_to_credits!(1.0));
         let contract_id = DataContract::generate_data_contract_id_v0(sponsor.id(), 1);
@@ -1770,9 +1774,33 @@ async fn should_reject_a_duplicate_payment_before_its_failing_trigger_without_ch
 
 #[tokio::test]
 async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_and_execution() {
+    // PROTOCOL_VERSION_16: the token market contract joins the genesis contracts tree, which
+    // changes the actual processing fee.
+    run_real_single_payment_sponsor_at_protocol_version(
+        PlatformVersion::latest().protocol_version,
+        3_870_440,
+        92_739_560,
+    )
+    .await;
+}
+
+/// PROTOCOL_VERSION_15: the genesis contracts tree without the token market contract. Pinned so
+/// v15 chain history stays bit-for-bit reproducible.
+#[tokio::test]
+async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_and_execution_protocol_version_15(
+) {
+    run_real_single_payment_sponsor_at_protocol_version(15, 3_916_360, 92_785_480).await;
+}
+
+async fn run_real_single_payment_sponsor_at_protocol_version(
+    protocol_version: u32,
+    actual_processing_transparent: u64,
+    actual_processing_shielded: u64,
+) {
+    let version =
+        PlatformVersion::get(protocol_version).expect("expected a known protocol version");
     for shielded in [false, true] {
-        let pool = FundedPool::sponsored_card(shielded).await;
-        let version = PlatformVersion::latest();
+        let pool = FundedPool::sponsored_card(shielded, version).await;
         let mut rng = StdRng::seed_from_u64(70_508);
         let card_type = pool.contract.document_type_for_name("card").unwrap();
         let (document, entropy) = super::document_shielded_token_payment_tests::random_card(
@@ -1884,7 +1912,7 @@ async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_an
             .unwrap()
             .unwrap();
         let before = pool_notes_count(&pool.platform, pool.token_id);
-        let result = process(&pool.platform, &transition);
+        let result = process_at_protocol_version(&pool.platform, &transition, version);
         println!(
             "SINGLE SPONSORED PAYMENT shielded={shielded}: {:?}",
             result.execution_results()
@@ -1893,9 +1921,19 @@ async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_an
         // the batch's estimate (protocol v15 note 14).
         let (estimated_storage, estimated_processing, actual_storage, actual_processing) =
             if shielded {
-                (171_126_000, 213_389_040, 155_142_000, 92_739_560)
+                (
+                    171_126_000,
+                    213_389_040,
+                    155_142_000,
+                    actual_processing_shielded,
+                )
             } else {
-                (138_024_000, 117_713_120, 126_468_000, 3_870_440)
+                (
+                    138_024_000,
+                    117_713_120,
+                    126_468_000,
+                    actual_processing_transparent,
+                )
             };
         assert_eq!(
             result.execution_results().as_slice(),
@@ -1948,7 +1986,7 @@ async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_an
             assert_eq!(pool_notes_count(&pool.platform, pool.token_id), before);
             assert_eq!(pool_balance(&pool.platform, pool.token_id), 15);
         }
-        assert_tokens_conserved(&pool.platform);
+        assert_tokens_conserved_at_protocol_version(&pool.platform, version);
     }
 }
 
