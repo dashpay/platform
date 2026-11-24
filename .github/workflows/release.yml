@@ -481,9 +481,12 @@ jobs:
           fi
 
       # The apt repository serves both architectures from the release's debs,
-      # so the deb leg publishes exactly one of each or nothing.
-      - name: Require one amd64 and one arm64 deb
-        if: matrix.package_type == 'deb'
+      # so the deb leg publishes exactly one of each or nothing. Every other
+      # leg publishes no deb: one there would be recorded, uploaded and listed
+      # in SHA256SUMS beside the deb leg's two.
+      - name: Require one amd64 and one arm64 deb, from the deb leg only
+        env:
+          PACKAGE_TYPE: ${{ matrix.package_type }}
         run: |
           set -euo pipefail
           amd64=0 arm64=0 all=0 names=''
@@ -496,7 +499,12 @@ jobs:
             all=$((all + 1))
             names="${names} ${name}"
           done < <(find release-artifacts -type f -name '*.deb' ! -path '*/.*' -print0)
-          if [ "${amd64} ${arm64} ${all}" != '1 1 2' ]; then
+          if [ "${PACKAGE_TYPE}" != deb ]; then
+            if [ "${all}" != 0 ]; then
+              echo "::error::The ${PACKAGE_TYPE} leg publishes no deb, found:${names}"
+              exit 1
+            fi
+          elif [ "${amd64} ${arm64} ${all}" != '1 1 2' ]; then
             echo "::error::Expected one amd64 and one arm64 deb, found:${names:- none}"
             exit 1
           fi

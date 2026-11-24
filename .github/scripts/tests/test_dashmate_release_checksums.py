@@ -322,7 +322,7 @@ class ReleaseChecksumsTests(unittest.TestCase):
 
     def test_should_publish_debs_only_as_one_amd64_and_one_arm64_package(self):
         # The apt repository serves both architectures from the release's debs.
-        step = 'Require one amd64 and one arm64 deb'
+        step = 'Require one amd64 and one arm64 deb, from the deb leg only'
         # a hidden file is not uploaded, so it does not count
         leg, _ = self.leg('deb', PACKAGES['deb'] + ['deb/.dashmate_5.1.0-2_amd64.deb'])
         result = self.run_step(step, cwd=leg, package_type='deb')
@@ -344,8 +344,31 @@ class ReleaseChecksumsTests(unittest.TestCase):
 
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn('::error::', result.stdout)
-        # the deb leg alone runs it
-        self.assertEqual(step_block(step)[1], "        if: matrix.package_type == 'deb'")
+
+    def test_should_publish_no_deb_from_any_other_leg(self):
+        # A deb in another leg's artifact would pass the name check, be recorded and uploaded, and
+        # end up in the signed SHA256SUMS beside the deb leg's two.
+        step = 'Require one amd64 and one arm64 deb, from the deb leg only'
+        # every leg runs it, so no leg can skip it
+        self.assertNotIn('        if:', '\n'.join(step_block(step)))
+        for package_type in [p for p in PACKAGES if p != 'deb']:
+            with self.subTest(package_type):
+                leg, _ = self.leg(package_type)
+                result = self.run_step(step, cwd=leg, package_type=package_type)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            with self.subTest(package_type, extra='an amd64 deb'):
+                leg, _ = self.leg(package_type, PACKAGES[package_type] + ['dashmate_5.1.0-1_amd64.deb'])
+
+                result = self.run_step(step, cwd=leg, package_type=package_type)
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(f'::error::The {package_type} leg publishes no deb, found: dashmate_5.1.0-1_amd64.deb',
+                              result.stdout)
+        with self.subTest('a valid Windows installer and both debs'):
+            leg, _ = self.leg('win', PACKAGES['win'] + PACKAGES['deb'])
+            result = self.run_step(step, cwd=leg, package_type='win')
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('::error::The win leg publishes no deb', result.stdout)
 
     def test_should_refuse_a_leg_without_packages(self):
         result, _ = self.record('deb', [])
@@ -587,7 +610,7 @@ class ReleaseChecksumsTests(unittest.TestCase):
         legs = job('release-dashmate-packages')
         order = [legs.index('- name: ' + step) for step in [
             'Sign and notarize macOS installers', 'Refuse to replace the packages of a signed release',
-            'Require one amd64 and one arm64 deb', 'Record package checksums', 'Upload artifacts to release']]
+            'Require one amd64 and one arm64 deb, from the deb leg only', 'Record package checksums', 'Upload artifacts to release']]
         self.assertEqual(order, sorted(order))
 
     def test_should_compare_names_bytewise(self):
