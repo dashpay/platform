@@ -5,8 +5,9 @@
 //! height. A range answered a block earlier comes back short of the next
 //! range's start, while the next one, answered after the tree grew, is not
 //! empty. Feeds `sync_notes_from_stream` that pair of batches: the pass must
-//! use only the run of positions it read without a gap, and the next pass
-//! must pick up every position the first one skipped.
+//! keep the commitments it read without a gap, publish nothing, and leave
+//! every watermark where it was, and the next pass must find every note,
+//! those at the positions the first one skipped included.
 
 use std::sync::Arc;
 
@@ -17,6 +18,7 @@ use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
 use super::{sync_notes_from_stream, MultiSyncNotesResult};
+use crate::changeset::merge::Merge;
 use crate::wallet::shielded::cancelled_scan_tests::{note_to, opaque_note};
 use crate::wallet::shielded::file_store::FileBackedShieldedStore;
 use crate::wallet::shielded::keys::{AccountViewingKeys, OrchardKeySet};
@@ -27,6 +29,8 @@ const RANGE: u64 = 4;
 /// The height the pool held its first two notes at, and the next one.
 const EARLIER: u64 = 1_000;
 const LATER: u64 = 1_001;
+/// The value of the note received before the gap, which the action past it
+/// spends.
 const KEPT_VALUE: u64 = 100;
 const SKIPPED_VALUE: u64 = 500;
 
@@ -46,11 +50,15 @@ fn open(tag: &str) -> (Store, std::path::PathBuf) {
     (Arc::new(RwLock::new(store)), path)
 }
 
-fn subwallet() -> (SubwalletId, AccountViewingKeys) {
-    let views = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+fn subwallet_of(account: u32) -> (SubwalletId, AccountViewingKeys) {
+    let views = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, account)
         .expect("derive viewing keys")
         .viewing_keys();
-    (SubwalletId::new([0x11; 32], 0), views)
+    (SubwalletId::new([0x11; 32], account), views)
+}
+
+fn subwallet() -> (SubwalletId, AccountViewingKeys) {
+    subwallet_of(0)
 }
 
 /// The range starting at `start_index` as the SDK stream hands it over:
@@ -142,102 +150,176 @@ fn pool(views: &AccountViewingKeys) -> Vec<ShieldedEncryptedNote> {
     ]
 }
 
-/// The first range was answered at [`EARLIER`], when the pool held two notes,
-/// and the second at [`LATER`], after it grew to six: positions 2 and 3 are in
-/// neither. The pass stops at position 2, and the next pass reads on from
-/// there, ending with the tree and the notes of a scan that never met the gap.
+/// The pool as the two answers of a pass that meets the gap give it: the
+/// first range answered at [`EARLIER`], when the pool held two notes, and
+/// the second at [`LATER`], after it grew to six. Positions 2 and 3 are in
+/// neither. `count_seen_first` is the pool's note count the first range
+/// carries: 2 when its answer was handed over before the later one arrived,
+/// 6 when the later answer had already arrived.
+fn gapped(
+    views: &AccountViewingKeys,
+    pool: &[ShieldedEncryptedNote],
+    count_seen_first: u64,
+) -> Vec<ShieldedChunkBatch> {
+    vec![
+        range(views, 0, &pool[..2], count_seen_first, EARLIER),
+        range(views, RANGE, &pool[4..], 6, LATER),
+    ]
+}
+
+/// The same pool with every range answered at [`LATER`].
+fn whole(views: &AccountViewingKeys, pool: &[ShieldedEncryptedNote]) -> Vec<ShieldedChunkBatch> {
+    vec![
+        range(views, 0, &pool[..4], 6, LATER),
+        range(views, RANGE, &pool[4..], 6, LATER),
+    ]
+}
+
+/// What a pass that stopped at a gap hands back: nothing but the flag.
+fn assert_published_nothing(result: &MultiSyncNotesResult, case: &str) {
+    assert!(result.stopped_at_gap, "{case}");
+    assert_eq!(result.total_scanned, 0, "{case}");
+    assert_eq!(result.covered_height, None, "{case}");
+    assert!(result.per_subwallet_new_notes.is_empty(), "{case}");
+    assert!(result.per_subwallet_newly_spent.is_empty(), "{case}");
+    assert!(Merge::is_empty(&result.changeset), "{case}");
+}
+
+/// A pass that meets the gap keeps the two commitments it read and publishes
+/// nothing: no note, no spent mark, no watermark. The next pass ends with
+/// the tree and the notes of a scan that never met the gap, whichever of the
+/// two answers arrived first.
 #[tokio::test]
-async fn should_stop_at_a_gap_between_ranges_and_recover_the_skipped_notes_next_pass() {
-    let subwallets = [subwallet()];
-    let (id, views) = &subwallets[0];
-    let pool = pool(views);
-    let (store, path) = open("gap");
+async fn should_publish_nothing_at_a_gap_between_ranges_and_find_every_note_next_pass() {
+    for (case, count_seen_first) in [
+        ("the earlier answer was handed over first", 2),
+        ("the later answer had already arrived", 6),
+    ] {
+        let subwallets = [subwallet()];
+        let (id, views) = &subwallets[0];
+        let pool = pool(views);
+        let (store, path) = open("gap");
 
-    let first = scan(
-        &store,
-        &subwallets,
-        vec![
-            range(views, 0, &pool[..2], 2, EARLIER),
-            range(views, RANGE, &pool[4..], 6, LATER),
-        ],
-    )
-    .await;
+        let first = scan(&store, &subwallets, gapped(views, &pool, count_seen_first)).await;
 
-    assert_eq!(
-        first.total_scanned, 2,
-        "only the run read without a gap counts as scanned"
-    );
-    assert_eq!(
-        first.covered_height,
-        Some(EARLIER),
-        "the pass covers the pool as it read at the earlier height"
-    );
-    assert_eq!(first.per_subwallet_new_notes.get(id), Some(&1));
-    assert!(
-        first.per_subwallet_newly_spent.is_empty(),
-        "a spend read past the gap is not applied"
-    );
+        assert_published_nothing(&first, case);
+        {
+            let store = store.read().await;
+            assert_eq!(
+                store.tree_size().unwrap(),
+                2,
+                "{case}: no commitment past the gap is appended"
+            );
+            assert_eq!(
+                store.last_synced_note_index(*id).unwrap(),
+                0,
+                "{case}: the watermark does not move"
+            );
+            assert!(
+                store.get_all_notes(*id).unwrap().is_empty(),
+                "{case}: a receipt read before the gap does not enter the ledger"
+            );
+        }
+
+        let second = scan(&store, &subwallets, whole(views, &pool)).await;
+
+        assert!(!second.stopped_at_gap, "{case}");
+        assert_eq!(
+            second.per_subwallet_new_notes.get(id),
+            Some(&2),
+            "{case}: the note at a position the first pass skipped is found too"
+        );
+        assert_eq!(second.per_subwallet_newly_spent.get(id), Some(&1), "{case}");
+        assert_eq!(second.covered_height, Some(LATER), "{case}");
+        assert_eq!(
+            unspent_values(&store, *id).await,
+            vec![SKIPPED_VALUE],
+            "{case}"
+        );
+
+        // A store that never met the gap ends with the same tree.
+        let (reference, reference_path) = open("reference");
+        scan(&reference, &subwallets, whole(views, &pool)).await;
+        {
+            let (store, reference) = (store.read().await, reference.read().await);
+            assert_eq!(store.tree_size().unwrap(), 6, "{case}");
+            assert_eq!(store.last_synced_note_index(*id).unwrap(), 6, "{case}");
+            assert_eq!(
+                store.tree_anchor().unwrap(),
+                reference.tree_anchor().unwrap(),
+                "{case}: every commitment sits at its own position"
+            );
+            let skipped = store
+                .get_unspent_notes(*id)
+                .unwrap()
+                .into_iter()
+                .next()
+                .expect("the skipped note");
+            assert_eq!(skipped.position, 2, "{case}");
+            assert!(
+                store.witness(skipped.position).unwrap().is_some(),
+                "{case}: the recovered note can be spent"
+            );
+        }
+
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&reference_path);
+    }
+}
+
+/// An account bound after another one already scanned the shared tree to the
+/// pool's end is scanned from position 0. A pass that meets the gap then
+/// reads the account's receipt before the gap and the action that spends it
+/// after: it must not show the account that receipt as spendable. It shows
+/// it nothing, and the next pass shows it the receipt spent.
+#[tokio::test]
+async fn should_show_a_late_bound_account_nothing_from_a_pass_that_stops_at_a_gap() {
+    let first_bound = subwallet_of(0);
+    let late_bound = subwallet_of(1);
+    let (late_id, late_views) = (late_bound.0, late_bound.1.clone());
+    // The pool's notes belong to the account bound late.
+    let pool = pool(&late_views);
+    let (store, path) = open("late_bound");
+
+    // The first account scans the whole pool: the shared tree is caught up.
+    let caught_up = [first_bound.clone()];
+    scan(&store, &caught_up, whole(&caught_up[0].1, &pool)).await;
+    assert_eq!(store.read().await.tree_size().unwrap(), 6);
+
+    let both = [first_bound.clone(), late_bound];
+    let stopped = scan(&store, &both, gapped(&both[0].1, &pool, 6)).await;
+
+    assert_published_nothing(&stopped, "late bound");
     {
         let store = store.read().await;
-        assert_eq!(
-            store.tree_size().unwrap(),
-            2,
-            "no commitment past the gap is appended"
-        );
-        assert_eq!(
-            store.last_synced_note_index(*id).unwrap(),
-            2,
-            "the watermark stops at the first position the pass did not read"
-        );
-    }
-    assert_eq!(unspent_values(&store, *id).await, vec![KEPT_VALUE]);
-
-    // The next pass reads the same pool with every range answered at the
-    // later height.
-    let whole_pool = || {
-        vec![
-            range(views, 0, &pool[..4], 6, LATER),
-            range(views, RANGE, &pool[4..], 6, LATER),
-        ]
-    };
-    let second = scan(&store, &subwallets, whole_pool()).await;
-
-    assert_eq!(
-        second.per_subwallet_new_notes.get(id),
-        Some(&1),
-        "the note at a position the first pass skipped is found"
-    );
-    assert_eq!(second.per_subwallet_newly_spent.get(id), Some(&1));
-    assert_eq!(second.covered_height, Some(LATER));
-    assert_eq!(unspent_values(&store, *id).await, vec![SKIPPED_VALUE]);
-
-    // A store that never met the gap ends with the same tree.
-    let (reference, reference_path) = open("reference");
-    scan(&reference, &subwallets, whole_pool()).await;
-    {
-        let (store, reference) = (store.read().await, reference.read().await);
-        assert_eq!(store.tree_size().unwrap(), 6);
-        assert_eq!(store.last_synced_note_index(*id).unwrap(), 6);
-        assert_eq!(
-            store.tree_anchor().unwrap(),
-            reference.tree_anchor().unwrap(),
-            "every commitment sits at its own position"
-        );
-        let skipped = store
-            .get_unspent_notes(*id)
-            .unwrap()
-            .into_iter()
-            .next()
-            .expect("the skipped note");
-        assert_eq!(skipped.position, 2);
         assert!(
-            store.witness(skipped.position).unwrap().is_some(),
-            "the recovered note can be spent"
+            store.get_all_notes(late_id).unwrap().is_empty(),
+            "the receipt whose spend lies past the gap is not shown"
         );
+        assert_eq!(store.last_synced_note_index(late_id).unwrap(), 0);
+        assert_eq!(
+            store.last_synced_note_index(first_bound.0).unwrap(),
+            6,
+            "the caught-up account keeps its watermark"
+        );
+        assert_eq!(store.tree_size().unwrap(), 6);
     }
+
+    let completed = scan(&store, &both, whole(&both[0].1, &pool)).await;
+
+    assert_eq!(completed.per_subwallet_new_notes.get(&late_id), Some(&2));
+    assert_eq!(completed.per_subwallet_newly_spent.get(&late_id), Some(&1));
+    assert_eq!(
+        unspent_values(&store, late_id).await,
+        vec![SKIPPED_VALUE],
+        "the receipt reads spent, the other note spendable"
+    );
+    assert_eq!(
+        store.read().await.last_synced_note_index(late_id).unwrap(),
+        6
+    );
 
     let _ = std::fs::remove_file(&path);
-    let _ = std::fs::remove_file(&reference_path);
 }
 
 /// A range that came back empty, answered before the tree reached it, with a
@@ -259,8 +341,7 @@ async fn should_use_nothing_past_an_empty_range_a_later_range_follows() {
     )
     .await;
 
-    assert_eq!(result.total_scanned, 0);
-    assert!(result.per_subwallet_newly_spent.is_empty());
+    assert_published_nothing(&result, "empty range");
     let store = store.read().await;
     assert_eq!(store.tree_size().unwrap(), 0);
     assert_eq!(store.last_synced_note_index(*id).unwrap(), 0);

@@ -1766,6 +1766,11 @@ impl NetworkShieldedCoordinator {
     /// and flushes the completed scan to the host persisters. The
     /// caught-up cooldown is never stamped by a cancelled pass.
     ///
+    /// A scan that stops at a gap between two fetched ranges ends the pass
+    /// the same way: its tree progress is kept, nothing else is published,
+    /// the empty summary is returned and the caught-up cooldown is cleared,
+    /// so the next pass reads the pool again at once.
+    ///
     /// [`sync_notes_across`]: super::sync::sync_notes_across
     /// [`PlatformEventManager::on_shielded_sync_completed`]:
     ///     crate::events::PlatformEventManager::on_shielded_sync_completed
@@ -1880,7 +1885,14 @@ impl NetworkShieldedCoordinator {
         // so the manager treats it as "no pass ran" — `build_per_wallet_summary`
         // would otherwise mint an all-zero `Ok` for every registered
         // wallet, and the host would see a completion event for no work.
-        if cancelled && notes.total_scanned == 0 && Merge::is_empty(&notes.changeset) {
+        //
+        // A scan that stopped at a gap between two fetched ranges published
+        // nothing either, and knows the pool holds notes it did not read
+        // (`MultiSyncNotesResult::stopped_at_gap`): the same summary, so no
+        // wallet reads as synced from it.
+        if notes.stopped_at_gap
+            || (cancelled && notes.total_scanned == 0 && Merge::is_empty(&notes.changeset))
+        {
             // The scan may have appended new leaves before the stop, so the
             // chain has moved past whatever the last completed pass saw:
             // drop the caught-up stamp so the next pass walks Platform at
@@ -1888,7 +1900,10 @@ impl NetworkShieldedCoordinator {
             if let Ok(mut guard) = self.last_caught_up_at.lock() {
                 *guard = None;
             }
-            tracing::debug!("Coordinator sync cancelled; the scan published nothing");
+            tracing::debug!(
+                stopped_at_gap = notes.stopped_at_gap,
+                "Coordinator sync cut short; the scan published nothing"
+            );
             return summary;
         }
         // Scan-based spend detection now happens INSIDE
@@ -6040,6 +6055,83 @@ mod tests {
             remaining[0].0, live_nf,
             "the still-recorded reservation must survive"
         );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A pass whose scan stops at a gap between two fetched ranges
+    /// (dashpay/platform#6109) reports no completion, as a cut-short pass
+    /// does, and clears the caught-up stamp: the pool holds notes it did not
+    /// read, so the next pass must not be skipped as caught up.
+    #[tokio::test]
+    async fn should_report_no_completion_and_clear_the_cooldown_when_the_scan_stops_at_a_gap() {
+        use drive_proof_verifier::types::{ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery};
+
+        let mut sdk = dash_sdk::Sdk::new_mock();
+        let count = 2048
+            * u32::from(
+                sdk.version()
+                    .drive_abci
+                    .query
+                    .shielded_queries
+                    .max_query_chunks,
+            );
+        let opaque = |n: u8| {
+            let mut cmx = [0u8; 32];
+            cmx[0] = n;
+            ShieldedEncryptedNote {
+                cmx: cmx.to_vec(),
+                nullifier: vec![0xAA; 32],
+                cv_net: vec![],
+                encrypted_note: vec![],
+            }
+        };
+        // The first range comes back short of the second one's start, and
+        // the second holds a note: the positions between them are in neither.
+        for chunk in 0..16u64 {
+            let notes = match chunk {
+                0 => vec![opaque(1), opaque(2)],
+                1 => vec![opaque(3)],
+                _ => Vec::new(),
+            };
+            sdk.mock()
+                .expect_fetch(
+                    ShieldedEncryptedNotesQuery {
+                        start_index: u64::from(count) * chunk,
+                        count,
+                    },
+                    Some(ShieldedEncryptedNotes {
+                        notes,
+                        total_count: u64::from(count) + 1,
+                    }),
+                )
+                .await
+                .expect("a pool range");
+        }
+        let dir = temp_dir("gap_pass");
+        let coordinator = coordinator_with_one_wallet_on(&dir, sdk).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        // A stamp an earlier pass that found nothing new left.
+        *coordinator.last_caught_up_at.lock().unwrap() = Some(Instant::now());
+
+        let summary = coordinator.sync(true, &CancellationToken::new()).await;
+
+        assert!(
+            summary.wallet_results.is_empty(),
+            "a pass that stopped at a gap reports no completion: {summary:?}"
+        );
+        assert!(
+            coordinator.last_caught_up_at.lock().unwrap().is_none(),
+            "the next pass is not skipped as caught up"
+        );
+        let store = coordinator.store.read().await;
+        assert_eq!(
+            store.tree_size().expect("tree"),
+            2,
+            "the commitments read before the gap stay appended"
+        );
+        assert_eq!(store.last_synced_note_index(id).expect("watermark"), 0);
+        drop(store);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

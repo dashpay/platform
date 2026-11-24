@@ -192,6 +192,12 @@ pub struct MultiSyncNotesResult {
     /// `total_count` is the highest seen). `None` when no batch shows that:
     /// a proof of a longer tree than the run reached.
     pub covered_height: Option<u64>,
+    /// The pass met a gap between two fetched ranges and published nothing:
+    /// every other field is empty, as for a pass cut short. The commitments
+    /// it read up to the gap stay appended to the local tree. The pool holds
+    /// notes this pass did not read, so the next pass must not be skipped as
+    /// caught up. See the gap note on [`sync_notes_across`].
+    pub stopped_at_gap: bool,
 }
 
 impl MultiSyncNotesResult {
@@ -250,12 +256,16 @@ impl MultiSyncNotesResult {
 ///
 /// A gap between ranges: ranges are fetched concurrently, each proved at
 /// its own height, so one answered a block earlier can end short of the
-/// next one's start while the next holds notes. The pass uses only the run
-/// of positions it read without a gap and stops there: no commitment, note,
-/// spent mark or watermark comes from past it. Unlike a cancelled prefix,
-/// that run is the whole pool as it stood when the short range was proved,
-/// so the pass publishes it as a completed scan of that height, and the
-/// next pass reads on from the gap.
+/// next one's start while the next holds notes. The positions between them
+/// were never read. The pass stops there and ends as a cancelled one does:
+/// the commitments it read up to the gap stay appended and checkpointed,
+/// and nothing else is published, with
+/// [`MultiSyncNotesResult::stopped_at_gap`] set. It knows the pool holds
+/// more than it read, so what it read is not a complete scan either: a
+/// receipt in it may be spent by an action past the gap, and the activity
+/// derived from it would be frozen short of a note the next pass finds at
+/// the same proved height. The next pass re-walks from the last completed
+/// watermark.
 pub(super) async fn sync_notes_across<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
@@ -536,6 +546,8 @@ where
     // The highest height any batch of this pass was proven at: every spend
     // the pass applies was seen at or below it.
     let mut highest_batch_height: Option<u64> = None;
+    // Set when the pass ends at a gap between two ranges (see the loop).
+    let mut stopped_at_gap = false;
     let cancelled = {
         let stream = make_stream(aligned_start, tree_size);
         futures::pin_mut!(stream);
@@ -572,18 +584,18 @@ where
             // read. The pass ends at that gap and uses nothing past it: a
             // commitment appended from there would sit at the wrong position
             // in the local tree, and a watermark past it would leave the
-            // skipped positions undecrypted for good. What was read up to
-            // the gap is the pool as it stood when the short range was
-            // proved, so the pass completes as one that ran then, and the
-            // next pass reads on from the gap. An empty range past the run
-            // holds nothing to use and is passed over, as before.
+            // skipped positions undecrypted for good. It then ends as a
+            // cancelled pass does (below): its tree progress is kept and
+            // nothing else is published. An empty range past the run holds
+            // nothing to use and is passed over, as before.
             if batch.start_index > scanned_to && !batch.notes.is_empty() {
                 info!(
                     scanned_to,
                     next_range = batch.start_index,
                     "Shielded note sync read a range that starts past the positions read so \
-                     far; stopping at the gap, which the next pass reads"
+                     far; stopping at the gap and publishing nothing, the next pass reads it"
                 );
+                stopped_at_gap = true;
                 break false;
             }
             total_notes_scanned += batch.notes.len() as u64;
@@ -780,18 +792,24 @@ where
             .map_err(|e| PlatformWalletError::ShieldedTreeUpdateFailed(e.to_string()))?;
     }
 
-    // A cancelled pass ends here: the appended leaves are checkpointed
-    // (the next pass skips them), and nothing the prefix decrypted is
-    // saved, replayed, watermarked or handed to the caller. See the
-    // cancellation note on `sync_notes_across` for why a consumed prefix
-    // must not reach the ledger.
-    if cancelled {
+    // A cancelled pass, and one that stopped at a gap, ends here: the
+    // appended leaves are checkpointed (the next pass skips them), and
+    // nothing the prefix decrypted is saved, replayed, watermarked or handed
+    // to the caller. See the cancellation and gap notes on
+    // `sync_notes_across` for why a consumed prefix must not reach the
+    // ledger.
+    if cancelled || stopped_at_gap {
         drop(store);
         info!(
             total_scanned = total_notes_scanned,
-            appended, "Shielded note sync stopped; tree progress kept, nothing published"
+            appended,
+            stopped_at_gap,
+            "Shielded note sync stopped; tree progress kept, nothing published"
         );
-        return Ok(MultiSyncNotesResult::default());
+        return Ok(MultiSyncNotesResult {
+            stopped_at_gap,
+            ..Default::default()
+        });
     }
 
     // Before any spend is applied: one can drop a saved record, and the
@@ -927,14 +945,15 @@ where
     // tree position so the next sync resumes coherently across
     // the union: `scanned_to`, the end of the run of positions this pass
     // read without a gap from `aligned_start`. A watermark never covers a
-    // position the scan did not read; a pass that met a gap between two
-    // ranges stopped there (see the loop above).
+    // position the scan did not read: a pass that met a gap between two
+    // ranges returned above, publishing nothing.
     //
     // Never rewind. `aligned_start` is the MIN watermark across the
     // union, so a pass that re-walks a lagging subwallet's range can
     // end below a subwallet that was already further along; a completed
     // pass reaches the tip, which is at or past every watermark. Only a
-    // completed pass gets here (a cancelled one returned above), so the
+    // completed pass gets here (a cancelled one, and one that stopped at a
+    // gap, returned above), so the
     // write is unconditional: the setter also stamps the scan coverage
     // and the `ScannedThisSession` balance source, which is exactly what
     // reaching the tip means.
@@ -972,6 +991,7 @@ where
         total_scanned: scanned_volume,
         changeset,
         covered_height,
+        stopped_at_gap: false,
     })
 }
 
@@ -1561,8 +1581,8 @@ mod cancel_tests;
 #[cfg(test)]
 mod concurrent_sync_tests;
 
-/// A pass stops at a gap between two fetched ranges, and the next pass reads
-/// the positions it skipped.
+/// A pass that meets a gap between two fetched ranges publishes nothing, and
+/// the next pass finds every note.
 #[cfg(test)]
 mod range_gap_tests;
 
