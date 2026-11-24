@@ -796,12 +796,14 @@ impl PlatformWallet {
     }
 
     /// [`Self::shielded_identity_balance`] for a caller that must not wait
-    /// for the shielded store, which a scan or a spend can hold for minutes
-    /// (a screen refreshing a balance): the read is given
+    /// (a screen refreshing a balance): the whole read is given
     /// [`SHIELDED_IDENTITY_BALANCE_WAIT`], and fails with
-    /// [`PlatformWalletError::ShieldedBalanceBusy`] when the store stays
-    /// held past it. That is the one error of this read that means keep the
-    /// state last read and read again; every other one is a failure.
+    /// [`PlatformWalletError::ShieldedBalanceBusy`] when it has not finished
+    /// by then. What it waits for is the wallet's own state and the
+    /// shielded store, which a scan or a spend can hold for minutes; the
+    /// error does not say which was held. It is the one error of this read
+    /// that means keep the state last read and read again; every other one
+    /// is a failure.
     pub async fn shielded_identity_balance_now(
         &self,
         coordinator: &Arc<NetworkShieldedCoordinator>,
