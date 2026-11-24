@@ -61,7 +61,12 @@ import org.dashfoundation.example.util.toHex
  * lock + amount were fixed at original build time), still picks a fresh
  * recipient, and routes Submit to
  * [ManagedPlatformWallet.resumeFundFromAssetLock] instead of
- * `fundFromAssetLock`, seeded with the parsed outpoint. The
+ * `fundFromAssetLock`, seeded with the parsed outpoint. A lock built by
+ * `fundFromAssetLockExternal` recorded the Platform addresses it pays
+ * (`AssetLockEntity.platformAddressRecipients`): it shows those payees in
+ * place of the address picker and resumes through
+ * [ManagedPlatformWallet.resumeFundFromAssetLockToRecordedRecipients], never
+ * as an owned top-up. The
  * [PendingPlatformFundFromAssetLocksList] orphan surface opens the screen in
  * this mode.
  */
@@ -87,6 +92,25 @@ fun FundFromAssetLockScreen(
         }
     }
 
+    // An external lock pays the recipients it recorded when it was built, not
+    // the picked address: load them before submit is enabled and show them.
+    // Null while loading, for an owned lock, or when the lock no longer
+    // carries them.
+    val isExternal = resumeLock?.platformAddressRecipients != null
+    val recordedPayees by produceState<List<ManagedPlatformWallet.FundRecipient>?>(
+        initialValue = null,
+        wallet,
+        resumeLock,
+    ) {
+        val w = wallet
+        val parsed = resumeLock?.takeIf { isExternal }?.let { parseOutPoint(it.outPointHex) }
+        value = if (w != null && parsed != null) {
+            runCatching { w.assetLockPlatformAddressRecipients(parsed.first, parsed.second) }.getOrNull()
+        } else {
+            null
+        }
+    }
+
     // Fresh unused, zero-balance Platform-payment addresses are the fund
     // recipient candidates (matching Swift's `recipientCandidates`). Sorted
     // by (account, index); the first is auto-selected. Resume mode reuses the
@@ -108,7 +132,11 @@ fun FundFromAssetLockScreen(
     // Resume only needs a recipient (+ the loaded lock); fresh needs an
     // amount too. ← Swift `canSubmit`.
     val canSubmit = wallet != null && manager != null && recipient != null &&
-        if (isResume) resumeLock != null else (amount != null && amount > 0)
+        if (isResume) {
+            resumeLock != null && (!isExternal || !recordedPayees.isNullOrEmpty())
+        } else {
+            amount != null && amount > 0
+        }
 
     Scaffold(
         topBar = {
@@ -179,7 +207,20 @@ fun FundFromAssetLockScreen(
                 }
             }
 
-            FormSection(title = "Recipient") {
+            if (isExternal) {
+                FormSection(title = "Recorded Payees") {
+                    val payees = recordedPayees
+                    if (payees.isNullOrEmpty()) {
+                        Text(
+                            "Loading the recipients this asset lock recorded…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        RecordedPayeeLines(payees)
+                    }
+                }
+            } else FormSection(title = "Recipient") {
                 if (recipient == null) {
                     Text(
                         "No unused Platform-payment address available. Sync " +
@@ -221,7 +262,11 @@ fun FundFromAssetLockScreen(
             }
 
             SubmitButton(
-                text = if (isResume) "Resume Top Up" else "Fund Platform Address",
+                text = when {
+                    isExternal -> "Complete External Payment"
+                    isResume -> "Resume Top Up"
+                    else -> "Fund Platform Address"
+                },
                 isLoading = false,
                 enabled = canSubmit,
                 modifier = Modifier.fillMaxWidth().testTag("fundFromAssetLock.submit"),
@@ -247,7 +292,25 @@ fun FundFromAssetLockScreen(
                         platformAccountIndex = platformAccountIndex,
                         recipientHash = recipientHash,
                         recipientType = recipientType,
+                        assetLockOutPointHex = resumeOutPointHex,
                     ) {
+                        if (lock.platformAddressRecipients != null) {
+                            // The lock was built to pay someone else and
+                            // recorded who: resume it to exactly the payees
+                            // shown above, which the SDK reads from the lock.
+                            // An owned resume (the picked address) would be
+                            // refused: it must never return the payment to
+                            // this wallet. The updates are the wallet's own
+                            // remainder, not a balance of the picked address
+                            // or a payee: report none.
+                            w.resumeFundFromAssetLockToRecordedRecipients(
+                                outPointTxid = txid,
+                                outPointVout = vout,
+                                signerHandle = mgr.signerHandle,
+                                coreSignerHandle = mgr.mnemonicResolverHandle,
+                            )
+                            return@startFunding null
+                        }
                         val updates = w.resumeFundFromAssetLock(
                             outPointTxid = txid,
                             outPointVout = vout,
@@ -297,6 +360,7 @@ fun FundFromAssetLockScreen(
                         walletIdHex = walletIdHex,
                         platformAccountIndex = platformAccountIndex,
                         recipientHashHex = recipientHash.toHex(),
+                        assetLockOutPointHex = resumeOutPointHex,
                     ),
                 )
             }
@@ -333,3 +397,32 @@ internal fun parseOutPoint(hex: String): Pair<ByteArray, Int>? {
     for (i in 0 until 32) txid[i] = displayBytes[31 - i]
     return txid to vout
 }
+
+/**
+ * One line per recipient an external asset lock recorded, in its order: the
+ * address hash and its explicit credits, or the remainder that returns to
+ * this wallet (`credits == null`).
+ */
+@Composable
+private fun RecordedPayeeLines(payees: List<ManagedPlatformWallet.FundRecipient>) {
+    Text(
+        "This lock was built to pay someone else. Completing it pays exactly " +
+            "these recipients:",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    recordedPayeeLines(payees).forEachIndexed { index, line ->
+        Text(
+            line,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.testTag("fundFromAssetLock.payee.$index"),
+        )
+    }
+}
+
+/** The text of [RecordedPayeeLines], one entry per payee. */
+internal fun recordedPayeeLines(payees: List<ManagedPlatformWallet.FundRecipient>): List<String> =
+    payees.map { payee ->
+        val address = payee.hash.toHex().take(16) + "…"
+        payee.credits?.let { "$address — $it credits" } ?: "$address — remainder (this wallet)"
+    }

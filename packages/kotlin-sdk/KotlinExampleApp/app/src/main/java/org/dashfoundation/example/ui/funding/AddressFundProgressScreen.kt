@@ -63,6 +63,7 @@ fun PendingAssetLockRow(
                         controller.walletId.toHex(),
                         controller.platformAccountIndex,
                         controller.recipientHash.toHex(),
+                        controller.assetLockOutPointHex,
                     ),
                 )
             },
@@ -204,13 +205,14 @@ fun AddressFundProgressScreen(
     walletIdHex: String,
     platformAccountIndex: Int,
     recipientHashHex: String,
+    assetLockOutPointHex: String?,
     navController: NavHostController,
 ) {
     val container = LocalAppContainer.current
     val walletId = walletIdHex.hexToBytes()
     val recipientHash = recipientHashHex.hexToBytes()
     val controller = container.addressFundCoordinator
-        .controller(walletId, platformAccountIndex, recipientHash)
+        .controller(walletId, platformAccountIndex, recipientHash, assetLockOutPointHex)
 
     Scaffold(topBar = { TopAppBar(title = { Text("Platform Top Up") }) }) { padding ->
         if (controller == null) {
@@ -242,7 +244,9 @@ fun AddressFundProgressScreen(
 
             when (val p = phase) {
                 is Phase.Completed -> Text(
-                    p.newBalance?.let { "Address funded — $it credits" } ?: "Address funded",
+                    // No balance line when the result establishes none — an
+                    // external payment credits its recorded payees.
+                    p.newBalance?.let { "Address funded — $it credits" } ?: "Payment completed",
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.testTag("addressFundProgress.completed"),
                 )

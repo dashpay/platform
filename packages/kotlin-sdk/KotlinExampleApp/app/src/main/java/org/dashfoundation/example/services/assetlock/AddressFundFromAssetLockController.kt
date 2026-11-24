@@ -13,7 +13,7 @@ import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
  * attempt — 1:1 port of `AddressFundFromAssetLockController.swift`.
  *
  * One controller is created per
- * `(walletId, platformAccountIndex, recipientHash)` slot when the user
+ * `(walletId, platformAccountIndex, recipientHash, assetLockOutPointHex)` slot when the user
  * submits the fund-from-asset-lock flow. It owns the in-flight [Job],
  * exposes its current [phase] via a [StateFlow], and survives view
  * dismissal via [AddressFundFromAssetLockCoordinator] on the app
@@ -34,6 +34,12 @@ class AddressFundFromAssetLockController(
     val recipientType: Int,
     private val scope: CoroutineScope,
     private val now: () -> Long = System::currentTimeMillis,
+    /**
+     * The resumed lock's `<txid>:<vout>`, or null for a fresh funding. Part
+     * of the slot: an external payment does not credit the picked address,
+     * so a later resume of another lock can pick it again.
+     */
+    val assetLockOutPointHex: String? = null,
 ) {
     /**
      * Funding phase. Flow: [Idle] → [InFlight] (submit) →
@@ -47,10 +53,11 @@ class AddressFundFromAssetLockController(
         data object InFlight : Phase
 
         /**
-         * Funding done. [newBalance] is the address's proof-attested credit
-         * balance, or null when the result carries no update for it:
+         * Funding done. [newBalance] is the picked address's proof-attested
+         * credit balance, or null when the result establishes none: an
+         * external payment credits its recorded payees, not that address, and
          * reconciliation can return an empty changeset when sync already
-         * applied the balance, and a stand-in 0 would be false.
+         * applied the balance; a stand-in 0 would be false.
          */
         data class Completed(val newBalance: Long?) : Phase
 
@@ -74,9 +81,10 @@ class AddressFundFromAssetLockController(
 
     private var task: Job? = null
 
-    /** Composite id for stable list diffing — wallet hex + account + recipient hex. */
+    /** Composite id for stable list diffing — wallet hex + account + recipient hex (+ outpoint). */
     val slotRowId: String
-        get() = walletId.toHex() + "-" + platformAccountIndex + "-" + recipientHash.toHex()
+        get() = walletId.toHex() + "-" + platformAccountIndex + "-" + recipientHash.toHex() +
+            (assetLockOutPointHex?.let { "-$it" } ?: "")
 
     /**
      * Submit the funding. Defensively rejects [Phase.InFlight] and
