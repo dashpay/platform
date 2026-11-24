@@ -1008,16 +1008,16 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // binding onto one a later `configure_shielded` installs.
         //
         // Inside the shielded admission protocol, in its lock order after
-        // the generation gate: the wallet's `shield_guard`, then a shared
-        // admission, both held to the end of the removal. Every shielded
-        // persist path of the handle checks the detached flag under those
-        // same locks before it writes, so each write either lands before
-        // this returns (and the host's deletion after it removes it) or is
-        // refused. The admission is the removal one, granted while a host
-        // wipe is pending: deleting a wallet is not what a pending wipe
-        // guards against.
-        #[cfg(feature = "shielded")]
-        let _shield_guard = Arc::clone(&removed.shield_guard).lock_owned().await;
+        // the generation gate: a shared admission, held to the end of the
+        // removal. Every shielded persist path of the handle checks the
+        // detached flag under the gate and an admission before it writes, so
+        // each write either lands before this returns (and the host's
+        // deletion after it removes it) or is refused. `shield_guard` is not
+        // taken: a shield-class operation holds it across a host signature
+        // or a funding's ChainLock wait, which a removal must not wait on.
+        // The admission is the removal one, granted while a host wipe is
+        // pending: deleting a wallet is not what a pending wipe guards
+        // against.
         #[cfg(feature = "shielded")]
         let coordinator = self.shielded_coordinator().await;
         #[cfg(feature = "shielded")]

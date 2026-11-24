@@ -590,6 +590,55 @@ pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: Orchar
     signer: &Sig,
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
+    shield_to_fenced(
+        sdk,
+        store,
+        persister,
+        wallet_id,
+        keys,
+        account,
+        recipient,
+        inputs,
+        amount,
+        memo,
+        signer,
+        prover,
+        (),
+        || async { Ok(()) },
+    )
+    .await
+}
+
+/// [`shield_to`] for a caller that admitted the shield under locks a host
+/// signing prompt must not hold: `held` is dropped before the build, whose
+/// signer may wait on the host, and `reacquire` locks again once it returns,
+/// refusing (with nothing recorded or broadcast) a wallet removed or a Clear
+/// completed meanwhile. What it returns is held through the activity record,
+/// the broadcast and its settlement.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn shield_to_fenced<S, Sig, P, H, R, RF, G>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &AccountViewingKeys,
+    account: u32,
+    recipient: Option<&PaymentAddress>,
+    inputs: BTreeMap<PlatformAddress, Credits>,
+    amount: u64,
+    memo: [u8; 36],
+    signer: &Sig,
+    prover: &P,
+    held: H,
+    reacquire: R,
+) -> Result<(), PlatformWalletError>
+where
+    S: ShieldedStore,
+    Sig: Signer<PlatformAddress>,
+    P: OrchardProver,
+    R: FnOnce() -> RF,
+    RF: Future<Output = Result<G, PlatformWalletError>>,
+{
     let ShieldRecipient {
         address: recipient_addr,
         counterparty: external_counterparty,
@@ -657,6 +706,7 @@ pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: Orchar
 
     let claimed_inputs = inputs_with_nonce.clone();
 
+    drop(held);
     let state_transition = build_shield_transition(
         &recipient_addr,
         amount,
@@ -674,6 +724,7 @@ pub async fn shield_to<S: ShieldedStore, Sig: Signer<PlatformAddress>, P: Orchar
     )
     .await
     .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+    let _fence = reacquire().await?;
 
     trace!("Shield credits: state transition built, broadcasting...");
     let network = sdk.network;
@@ -1061,12 +1112,14 @@ async fn arm_identity_shield_redrive<S: ShieldedStore>(
 /// coordinator's confirmation pass), exactly like the ambiguous post-broadcast
 /// paths. The caller owns the managed identity and persists the balance
 /// (`PlatformWallet::shielded_shield_from_identity`).
+///
+/// `held` is what the caller locked to admit the shield; it is dropped before
+/// the build, so neither the proof nor an open signing prompt holds a wallet
+/// removal or a Clear back. `reacquire` locks again after the build and
+/// refuses a removed wallet or a completed Clear before anything is recorded
+/// or broadcast; its guard is returned for the caller's balance write.
 #[allow(clippy::too_many_arguments)]
-pub(in crate::wallet) async fn shield_from_identity_to<
-    S: ShieldedStore,
-    Sig: Signer<IdentityPublicKey>,
-    P: OrchardProver,
->(
+pub(in crate::wallet) async fn shield_from_identity_to<S, Sig, P, H, R, RF, G>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
@@ -1079,7 +1132,16 @@ pub(in crate::wallet) async fn shield_from_identity_to<
     memo: [u8; 36],
     signer: &Sig,
     prover: &P,
-) -> Result<(Credits, ResponseMetadata), PlatformWalletError> {
+    held: H,
+    reacquire: R,
+) -> Result<(Credits, ResponseMetadata, G), PlatformWalletError>
+where
+    S: ShieldedStore,
+    Sig: Signer<IdentityPublicKey>,
+    P: OrchardProver,
+    R: FnOnce() -> RF,
+    RF: Future<Output = Result<G, PlatformWalletError>>,
+{
     let ShieldRecipient {
         address: recipient_addr,
         counterparty: external_counterparty,
@@ -1152,6 +1214,7 @@ pub(in crate::wallet) async fn shield_from_identity_to<
         "ShieldFromIdentity: building proof"
     );
 
+    drop(held);
     let state_transition = build_shield_from_identity_transition(
         identity,
         &recipient_addr,
@@ -1167,6 +1230,7 @@ pub(in crate::wallet) async fn shield_from_identity_to<
     )
     .await
     .map_err(map_shield_from_identity_build_error)?;
+    let fence = reacquire().await?;
 
     trace!("ShieldFromIdentity: state transition built, broadcasting...");
 
@@ -1287,7 +1351,8 @@ pub(in crate::wallet) async fn shield_from_identity_to<
         "ShieldFromIdentity admitted with a proven post-debit balance; the activity row \
          awaits on-chain confirmation by the shielded scan"
     );
-    Ok(new_balance)
+    let (new_balance, metadata) = new_balance;
+    Ok((new_balance, metadata, fence))
 }
 
 /// Whether a proven identity nonce word still leaves `used` available to execute.
@@ -4987,8 +5052,11 @@ mod redrive_tests {
             [0u8; 36],
             &UnreachableIdentitySigner,
             &UnreachableIdentityProver,
+            (),
+            || async { Ok(()) },
         )
-        .await;
+        .await
+        .map(|(balance, metadata, ())| (balance, metadata));
         (result, store, id)
     }
 

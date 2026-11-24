@@ -453,8 +453,8 @@ pub struct PlatformWallet {
     /// preparation) must not interleave with another bind, or the other
     /// bind's ordinary accounts are dropped and their live state purged.
     /// Taken by every bind entry point, tip preparation and
-    /// `shielded_add_account`, after the generation's lifecycle gate,
-    /// `shield_guard` and the coordinator's admission.
+    /// `shielded_add_account`, after `shield_guard`, the generation's
+    /// lifecycle gate and the coordinator's admission.
     #[cfg(feature = "shielded")]
     pub(crate) shielded_config_lock: Arc<tokio::sync::Mutex<()>>,
     /// The tip account each identity's address was last prepared for in
@@ -516,14 +516,14 @@ fn ensure_ordinary_shielded_accounts(accounts: &[u32]) -> Result<(), PlatformWal
 
 /// What a durable shielded operation holds before its admission
 /// ([`PlatformWallet::lock_for_shielded_operation`]): the manager's
-/// coordinator, the generation's lifecycle gate and, for a shield-class
-/// operation, `shield_guard`. Fields drop in declaration order, the reverse
+/// coordinator, for a shield-class operation `shield_guard`, and the
+/// generation's lifecycle gate. Fields drop in declaration order, the reverse
 /// of the lock order.
 #[cfg(feature = "shielded")]
 struct ShieldedOperationLocks<'a> {
     coordinator: Arc<NetworkShieldedCoordinator>,
-    _shield_guard: Option<tokio::sync::MutexGuard<'a, ()>>,
     _lifecycle: tokio::sync::RwLockReadGuard<'a, ()>,
+    _shield_guard: Option<tokio::sync::MutexGuard<'a, ()>>,
 }
 
 #[cfg(feature = "shielded")]
@@ -1179,7 +1179,7 @@ impl PlatformWallet {
     /// identity or its persisted viewing key, never by its number, so an
     /// ordinary account cannot be the account of an identity.
     ///
-    /// Holds the wallet generation's lifecycle gate, `shield_guard` and the
+    /// Holds `shield_guard`, the wallet generation's lifecycle gate and the
     /// coordinator's admission from the attachment check until the keys are
     /// stored and installed, so neither a removal of the wallet nor a Clear
     /// lands in between, and a bind admitted after either stores nothing
@@ -1223,27 +1223,53 @@ impl PlatformWallet {
     }
 
     /// The locks every durable shielded operation takes before its
-    /// admission ([`ShieldedOperationLocks::admit`]), in the lock order: the
-    /// generation's lifecycle gate, then `shield_guard` when `shield_class`.
-    /// An operation queued behind a long shield holds no admission that
-    /// would stall a Clear. Resolves the manager's coordinator first, so an
-    /// unconfigured manager refuses without waiting.
+    /// admission ([`ShieldedOperationLocks::admit`]), in the lock order:
+    /// `shield_guard` when `shield_class`, then the generation's lifecycle
+    /// gate. An operation queued behind a long shield-class operation (a
+    /// funding waiting on its ChainLock) holds neither the gate, which would
+    /// hold a removal of the wallet back, nor an admission, which would stall
+    /// a Clear. Resolves the manager's coordinator first, so an unconfigured
+    /// manager refuses without waiting.
     #[cfg(feature = "shielded")]
     async fn lock_for_shielded_operation(
         &self,
         shield_class: bool,
     ) -> Result<ShieldedOperationLocks<'_>, PlatformWalletError> {
         let coordinator = self.shielded_coordinator().await?;
-        let lifecycle = self.core().generation_payment_guard().await;
         let shield_guard = match shield_class {
             true => Some(self.shield_guard.lock().await),
             false => None,
         };
+        let lifecycle = self.core().generation_payment_guard().await;
         Ok(ShieldedOperationLocks {
             coordinator,
-            _shield_guard: shield_guard,
             _lifecycle: lifecycle,
+            _shield_guard: shield_guard,
         })
+    }
+
+    /// For a shield-class payment holding `shield_guard` across a build that
+    /// awaits the host's signer without the lifecycle gate or an admission:
+    /// take both again in the lock order once the build returns, and refuse a
+    /// Clear completed since `epoch` (`operation` names the payment in that
+    /// error) or a wallet removed meanwhile, before anything is recorded or
+    /// broadcast. The admission drops first, then the gate.
+    #[cfg(feature = "shielded")]
+    async fn relock_shielded_payment<'c>(
+        &self,
+        coordinator: &'c NetworkShieldedCoordinator,
+        epoch: u64,
+        operation: &str,
+    ) -> Result<(ShieldedAdmission<'c>, ShieldedOperationLocks<'_>), PlatformWalletError> {
+        let locks = self.lock_for_shielded_operation(false).await?;
+        let admission = coordinator.admit_since(epoch).await?.ok_or_else(|| {
+            PlatformWalletError::ShieldedStoreError(format!(
+                "a shielded Clear completed while the {operation} was being built; nothing was \
+                 broadcast"
+            ))
+        })?;
+        self.ensure_shielded_attached_for_spend()?;
+        Ok((admission, locks))
     }
 
     /// Refuse a bind on a persister that cannot rebind seedlessly on restart.
@@ -1263,8 +1289,8 @@ impl PlatformWallet {
         Ok(())
     }
 
-    /// [`Self::bind_shielded`] for a caller that holds the generation's
-    /// lifecycle gate, `shield_guard`, `admission` (from `coordinator`) and
+    /// [`Self::bind_shielded`] for a caller that holds `shield_guard`, the
+    /// generation's lifecycle gate, `admission` (from `coordinator`) and
     /// `shielded_config_lock`.
     #[cfg(feature = "shielded")]
     pub(crate) async fn bind_shielded_locked(
@@ -1785,11 +1811,10 @@ impl PlatformWallet {
     /// paths check here first, before writing anything.
     ///
     /// On its own this is a point-in-time observation. The bind paths, tip
-    /// preparation and `shielded_add_account` check it under the
-    /// generation's lifecycle gate, `shield_guard` and the admission, and
-    /// hold them through their host write; the removal sets the flag under
-    /// the gate's exclusive side and the other two, so it cannot complete in
-    /// between.
+    /// preparation, `shielded_add_account` and a funding's writes check it
+    /// under the generation's lifecycle gate and the admission, and hold them
+    /// through their write; the removal sets the flag under the gate's
+    /// exclusive side and an admission, so it cannot complete in between.
     #[cfg(feature = "shielded")]
     pub(crate) fn ensure_shielded_attached(&self) -> Result<(), PlatformWalletError> {
         if self
@@ -3034,10 +3059,16 @@ impl PlatformWallet {
         // two concurrent calls can't fetch + build with the same
         // address nonce (the second would be rejected as a replay after
         // a ~30 s proof). Held across selection → build → broadcast, and
-        // taken before admission (the lock order).
-        let locks = self.lock_for_shielded_operation(true).await?;
-        let coordinator = &locks.coordinator;
-        let _admission = locks.admit_spend(self).await?;
+        // taken before the gate and the admission (the lock order). Those
+        // two are dropped across the build, which awaits the host's signer,
+        // and taken again after it: an open signing prompt holds neither a
+        // removal of the wallet nor a Clear back.
+        let _shield_guard = self.shield_guard.lock().await;
+        let locks = self.lock_for_shielded_operation(false).await?;
+        let coordinator = Arc::clone(&locks.coordinator);
+        let admission = coordinator.admit().await?;
+        self.ensure_shielded_attached_for_spend()?;
+        let epoch = admission.epoch();
 
         // Planning and amount selection are shared with the cached preflight.
         // The helper drops the wallet-manager read lock before the expensive
@@ -3069,7 +3100,7 @@ impl PlatformWallet {
                 })?
                 .clone()
         };
-        super::shielded::operations::shield_to(
+        super::shielded::operations::shield_to_fenced(
             &self.sdk,
             coordinator.store(),
             Some(&self.persister),
@@ -3082,6 +3113,8 @@ impl PlatformWallet {
             memo,
             signer,
             &prover,
+            (admission, locks),
+            || self.relock_shielded_payment(&coordinator, epoch, "shield"),
         )
         .await
     }
@@ -3218,10 +3251,15 @@ impl PlatformWallet {
 
         // Single-flight with the address-funded shields: the identity nonce is
         // fetched inside the operation, and two concurrent builds would race it.
-        // Taken before admission (the lock order).
-        let locks = self.lock_for_shielded_operation(true).await?;
-        let coordinator = &locks.coordinator;
-        let _admission = locks.admit_spend(self).await?;
+        // Taken before the gate and the admission (the lock order), which are
+        // dropped across the build and its host signature and taken again after
+        // it, as the address-funded shield does.
+        let _shield_guard = self.shield_guard.lock().await;
+        let locks = self.lock_for_shielded_operation(false).await?;
+        let coordinator = Arc::clone(&locks.coordinator);
+        let admission = coordinator.admit().await?;
+        self.ensure_shielded_attached_for_spend()?;
+        let epoch = admission.epoch();
 
         let identity = {
             let wm = self.wallet_manager.read().await;
@@ -3249,26 +3287,30 @@ impl PlatformWallet {
                 })?
                 .clone()
         };
-        let (mut new_balance, metadata) = super::shielded::operations::shield_from_identity_to(
-            &self.sdk,
-            coordinator.store(),
-            Some(&self.persister),
-            self.wallet_id,
-            &keyset,
-            shielded_account,
-            recipient.as_ref(),
-            &identity,
-            amount,
-            memo,
-            signer,
-            &prover,
-        )
-        .await?;
+        let (mut new_balance, metadata, _relocked) =
+            super::shielded::operations::shield_from_identity_to(
+                &self.sdk,
+                coordinator.store(),
+                Some(&self.persister),
+                self.wallet_id,
+                &keyset,
+                shielded_account,
+                recipient.as_ref(),
+                &identity,
+                amount,
+                memo,
+                signer,
+                &prover,
+                (admission, locks),
+                || self.relock_shielded_payment(&coordinator, epoch, "shield from identity"),
+            )
+            .await?;
 
         // The operation only received a clone of the identity, so the managed
         // identity still carries the pre-debit balance. Apply the proven
         // post-debit balance and persist the snapshot (the pattern
-        // `transfer_credits_to_addresses_with_external_signer` follows).
+        // `transfer_credits_to_addresses_with_external_signer` follows), under
+        // the locks the operation took again after its build.
         {
             let mut wm = self.wallet_manager.write().await;
             let managed = wm

@@ -288,12 +288,14 @@ pub struct NetworkShieldedCoordinator {
     /// The guarded value is the Clear state: how many Clears completed (the
     /// epoch) and whether the last one reset Rust but could not wipe the host.
     ///
-    /// Lock order: the wallet generation's lifecycle gate → wallet
-    /// `shield_guard` → `admission` → wallet `shielded_config_lock` →
-    /// `lifecycle` → `store`. Wallet removal takes the first three in that
-    /// order too. `shield_guard` comes before the admission so an operation
-    /// queued behind a long shield-class operation (a funding's ChainLock
-    /// wait) holds no admission that would stall a Clear. tokio's `RwLock`
+    /// Lock order: wallet `shield_guard` → the wallet generation's lifecycle
+    /// gate → `admission` → wallet `shielded_config_lock` → `lifecycle` →
+    /// `store`. Wallet removal takes the gate and then the admission, never
+    /// `shield_guard`: a shield-class operation holds it across a host
+    /// signature or a funding's ChainLock wait, without the gate or an
+    /// admission. `shield_guard` comes first so an operation queued behind
+    /// such a wait holds neither the gate, which would hold a removal back,
+    /// nor an admission, which would stall a Clear. tokio's `RwLock`
     /// is write-preferring, so a holder must never take it again (a queued
     /// Clear would deadlock the nested read); an operation that dropped its
     /// admission re-admits with [`admit_since`](Self::admit_since).

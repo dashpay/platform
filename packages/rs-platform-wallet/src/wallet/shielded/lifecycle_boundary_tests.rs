@@ -12,11 +12,15 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
 
+use dash_sdk::query_types::{IdentityBalance, IdentityNonceFetcher};
 use dashcore::Network;
 use dpp::address_funds::{AddressWitness, PlatformAddress};
+use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::IdentityPublicKey;
+use dpp::identity::v0::IdentityV0;
+use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
+use dpp::prelude::Identifier;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::ProtocolError;
 use drive_proof_verifier::types::{NoParamQuery, ShieldedAnchors};
@@ -1064,12 +1068,12 @@ async fn should_record_no_funding_activity_after_a_clear_that_followed_its_broad
     assert_eq!(host.activity_rows.load(Ordering::SeqCst), 1);
 }
 
-/// Wallet removal runs inside the admission protocol. A shield-class
-/// operation holds the wallet's `shield_guard` across a wait that holds no
-/// admission (a funding waiting on its ChainLock); the removal waits for
-/// it, so that operation's last write lands before the removal returns and
-/// the host's deletion of the wallet's rows removes it. A retained handle's
-/// write after the removal is refused, so no row outlives it.
+/// Wallet removal runs inside the admission protocol but never waits on
+/// `shield_guard`, which a funding holds across its signer, broadcast and
+/// ChainLock wait. A funding's activity write takes the generation gate the
+/// removal takes exclusively, so a write made before the removal lands before
+/// it returns (and the host's deletion of the wallet's rows removes it), and
+/// a write after it is refused: no row outlives the removal.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn should_leave_no_funding_activity_row_after_a_removal_returns() {
     let dir = tempfile::tempdir().unwrap();
@@ -1077,40 +1081,33 @@ async fn should_leave_no_funding_activity_row_after_a_removal_returns() {
     let (manager, wallet, coordinator) = configured(&host, &dir).await;
     wallet.bind_shielded(&SEED, &[0]).await.unwrap();
     let id = SubwalletId::new(wallet.wallet_id(), 0);
-    let entry = funding_activity();
 
     // A funding admitted before its broadcast, now waiting on its ChainLock.
     let funding_epoch = coordinator.admit().await.unwrap().epoch();
     let funding = Arc::clone(&wallet.shield_guard).lock_owned().await;
-    let removal = {
-        let manager = Arc::clone(&manager);
-        let wallet_id = wallet.wallet_id();
-        tokio::spawn(async move { manager.remove_wallet(&wallet_id).await.map(drop) })
-    };
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    assert!(
-        !removal.is_finished(),
-        "the removal waits for the shield-class operation in flight"
-    );
     wallet
-        .record_funding_activity_since(funding_epoch, 0, entry.clone())
+        .record_funding_activity_since(funding_epoch, 0, funding_activity())
         .await;
     wallet.persister().flush().unwrap();
     assert_eq!(host.activity_rows.load(Ordering::SeqCst), 1);
-    drop(funding);
-    removal.await.unwrap().expect("the removal completes");
 
-    // The host deletes the wallet's rows now. A funding on a retained
-    // handle that settles afterwards writes nothing, native or host.
+    tokio::time::timeout(
+        Duration::from_secs(30),
+        manager.remove_wallet(&wallet.wallet_id()),
+    )
+    .await
+    .expect("the removal does not wait for the funding's ChainLock wait")
+    .expect("the removal completes");
+
+    // The host deletes the wallet's rows now. The funding settling
+    // afterwards on the retained handle writes nothing, native or host.
     let rows_at_removal = host.activity_rows.load(Ordering::SeqCst);
-    let late_epoch = coordinator.admit().await.unwrap().epoch();
-    let late = Arc::clone(&wallet.shield_guard).lock_owned().await;
     let mut late_entry = funding_activity();
     late_entry.id = [0x5B; 32];
     wallet
-        .record_funding_activity_since(late_epoch, 0, late_entry.clone())
+        .record_funding_activity_since(funding_epoch, 0, late_entry.clone())
         .await;
-    drop(late);
+    drop(funding);
     let _ = wallet.persister().flush();
     assert_eq!(
         host.activity_rows.load(Ordering::SeqCst),
@@ -1127,8 +1124,8 @@ async fn should_leave_no_funding_activity_row_after_a_removal_returns() {
 }
 
 /// A bind parked in its viewing-key write holds a removal of its wallet
-/// off, through the generation gate, `shield_guard` and the admission the
-/// two take in the same order; released, both complete, and a bind on the
+/// off, through the generation gate and the admission the two take in the
+/// same order; released, both complete, and a bind on the
 /// retained handle afterwards writes nothing.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn should_order_a_bind_and_a_removal_of_its_wallet() {
@@ -1407,4 +1404,92 @@ async fn should_complete_a_removal_while_an_identity_create_waits_for_its_signer
     assert!(store.get_activity_ids(id).unwrap().is_empty());
     assert!(store.pending_redrives(id).unwrap().is_empty());
     assert!(store.stale_pending_spends(id).unwrap().is_empty());
+}
+
+/// A shield from an identity parked in its signer holds no lock a removal
+/// takes: `shield_guard` is held across the build, but the generation gate
+/// and the admission are not, so the removal completes while the signing
+/// prompt is open. The shield, released, refuses to broadcast and records
+/// nothing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_complete_a_removal_while_a_shield_from_identity_waits_for_its_signer() {
+    const AMOUNT: u64 = 10_000_000_000;
+    let dir = tempfile::tempdir().unwrap();
+    let host = BoundaryHost::new();
+    let (manager, wallet, coordinator) = configured(&host, &dir).await;
+    wallet.bind_shielded(&SEED, &[0]).await.unwrap();
+    let id = SubwalletId::new(wallet.wallet_id(), 0);
+    let identity_id = Identifier::from([0x61; 32]);
+    let transfer_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+        id: 0,
+        purpose: Purpose::TRANSFER,
+        security_level: SecurityLevel::CRITICAL,
+        contract_bounds: None,
+        key_type: KeyType::ECDSA_SECP256K1,
+        read_only: false,
+        data: BinaryData::new(vec![0x02; 33]),
+        disabled_at: None,
+    });
+    let identity = Identity::V0(IdentityV0 {
+        id: identity_id,
+        public_keys: BTreeMap::from([(0, transfer_key)]),
+        balance: 1_000 * AMOUNT,
+        revision: 0,
+    });
+    {
+        let mut wm = wallet.wallet_manager.write().await;
+        wm.get_wallet_info_mut(&wallet.wallet_id())
+            .unwrap()
+            .identity_manager
+            .add_identity(identity, 0, wallet.wallet_id(), wallet.persister())
+            .unwrap();
+    }
+    let mut sdk = wallet.sdk.as_ref().clone();
+    sdk.mock()
+        .expect_fetch::<IdentityBalance, Identifier>(identity_id, Some(1_000 * AMOUNT))
+        .await
+        .unwrap();
+    sdk.mock()
+        .expect_fetch(identity_id, Some(IdentityNonceFetcher(1)))
+        .await
+        .unwrap();
+    let rows_before = host.activity_rows.load(Ordering::SeqCst);
+
+    let signer = Arc::new(ParkedSigner::default());
+    let shield = {
+        let wallet = Arc::clone(&wallet);
+        let signer = Arc::clone(&signer);
+        tokio::spawn(async move {
+            let prover = CachedOrchardProver::new();
+            wallet
+                .shielded_shield_from_identity(0, &identity_id, AMOUNT, signer.as_ref(), &prover)
+                .await
+        })
+    };
+    tokio::time::timeout(Duration::from_secs(900), signer.reached.notified())
+        .await
+        .expect("the build reaches the identity signer");
+
+    tokio::time::timeout(
+        Duration::from_secs(30),
+        manager.remove_wallet(&wallet.wallet_id()),
+    )
+    .await
+    .expect("the removal does not wait for the open signing prompt")
+    .expect("the removal completes");
+
+    signer.release.notify_one();
+    let result = tokio::time::timeout(Duration::from_secs(60), shield)
+        .await
+        .expect("the shield returns once signed")
+        .unwrap();
+    assert!(
+        matches!(result, Err(PlatformWalletError::WalletRemovedBeforeSend(_))),
+        "{result:?}"
+    );
+    let _ = wallet.persister().flush();
+    assert_eq!(host.activity_rows.load(Ordering::SeqCst), rows_before);
+    let store = coordinator.store().read().await;
+    assert!(store.get_activity_ids(id).unwrap().is_empty());
+    assert!(store.pending_redrives(id).unwrap().is_empty());
 }

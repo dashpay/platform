@@ -689,10 +689,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // A handle a caller obtained while this load published it is
             // retired before the id is freed, in `remove_wallet`'s lock
             // order: under its lifecycle gate, re-checked as still this
-            // load's, then `shield_guard`, the coordinator resolved under
-            // them and its removal admission. The wallet is marked detached
-            // and its live registration dropped; its store rows, including
-            // signed recovery records, stay for the next load.
+            // load's, then the coordinator resolved under it and its removal
+            // admission. The wallet is marked detached and its live
+            // registration dropped; its store rows, including signed
+            // recovery records, stay for the next load.
             #[cfg(feature = "shielded")]
             {
                 let published = self.wallets.load_full();
@@ -705,7 +705,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     if !still_ours {
                         continue;
                     }
-                    let _shield_guard = wallet.shield_guard.lock().await;
                     let coordinator = self.shielded_coordinator().await;
                     let _admission = match coordinator.as_ref() {
                         Some(coordinator) => Some(coordinator.admit_removal().await),
