@@ -871,6 +871,19 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorShieldedBalanceBusy` (native code 87). A local shielded
+         * balance read did not get the shielded store within its wait
+         * budget, because a scan or a spend holds it. Nothing failed and
+         * nothing changed: keep the last state shown and read again later.
+         * The only error of `shieldedIdentityBalance` that means retry.
+         * ← Swift `PlatformWalletError.shieldedBalanceBusy`.
+         */
+        class ShieldedBalanceBusy(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -1084,6 +1097,7 @@ sealed class DashSdkError(
             84 -> PlatformWallet.ShieldedOperationInProgress(message, cause) // ErrorShieldedOperationInProgress
             85 -> PlatformWallet.ShieldedTipPending(message, cause) // ErrorShieldedTipPending
             86 -> PlatformWallet.ShieldedTipRecipientMismatch(message, cause) // ErrorShieldedTipRecipientMismatch
+            87 -> PlatformWallet.ShieldedBalanceBusy(message, cause) // ErrorShieldedBalanceBusy
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.
