@@ -408,8 +408,73 @@ async fn record_activity_status<S: ShieldedStore>(
     status: ShieldedActivityStatus,
     block_height: Option<u64>,
 ) {
+    write_activity_status(
+        store,
+        persister,
+        wallet_id,
+        id,
+        entry,
+        status,
+        block_height,
+        false,
+    )
+    .await;
+}
+
+/// Confirm the row of a spend whose result came back as an affected-state
+/// snapshot, unless it already reads `Failed`. Returns whether the row was
+/// left failed.
+///
+/// The snapshot shows the spend's nullifiers spent, not which transition
+/// spent them. A row that reads `Failed` by the time it arrives was failed on
+/// proof that this transition did not execute and never can: the note scan
+/// read another transition's action for one of its inputs
+/// (`sync::SavedSpendInput`), or its anchor was proven pruned with the scan
+/// covering it (`NetworkShieldedCoordinator::release_stranded_spends`). Those
+/// are the only writers that fail the row of a spend still waiting for its
+/// result, and the snapshot contradicts neither, so the failure stays. The
+/// row is read and written under one store guard, so a scan pass cannot fail
+/// it in between.
+///
+/// A row that does not read counts as not proved failed: the write is
+/// skipped and the snapshot is accepted, as before. Both writers above run
+/// only on the coordinator's file store, whose read of a row cannot fail, so
+/// a store whose read can fail never holds a failure this would pass over.
+async fn confirm_unless_proved_failed<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    id: SubwalletId,
+    entry: &Option<super::activity::ShieldedActivityEntry>,
+) -> bool {
+    write_activity_status(
+        store,
+        persister,
+        wallet_id,
+        id,
+        entry,
+        ShieldedActivityStatus::Confirmed,
+        None,
+        true,
+    )
+    .await
+}
+
+/// [`record_activity_status`], which with `keep_failed` also leaves a stored
+/// row that reads `Failed` untouched. Returns whether it did.
+#[allow(clippy::too_many_arguments)]
+async fn write_activity_status<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    id: SubwalletId,
+    entry: &Option<super::activity::ShieldedActivityEntry>,
+    status: ShieldedActivityStatus,
+    block_height: Option<u64>,
+    keep_failed: bool,
+) -> bool {
     let Some(entry) = entry else {
-        return;
+        return false;
     };
     let next = {
         let mut store = store.write().await;
@@ -427,12 +492,15 @@ async fn record_activity_status<S: ShieldedStore>(
                     "live activity status flip: get_activity_by_entry_id failed; \
                      skipping flip to avoid clobbering a richer row"
                 );
-                return;
+                return false;
             }
         };
         let base = stored.as_ref().unwrap_or(entry);
         if base.status == ShieldedActivityStatus::Confirmed && base.block_height.is_some() {
-            return;
+            return false;
+        }
+        if keep_failed && base.status == ShieldedActivityStatus::Failed {
+            return true;
         }
         // `with_status` keeps `base.block_height` when `block_height` is
         // `None`, so a height the scan populated survives the flip.
@@ -447,6 +515,7 @@ async fn record_activity_status<S: ShieldedStore>(
         next
     };
     queue_shielded_changeset(persister, wallet_id, changeset_for_entry(id, next));
+    false
 }
 
 /// Flip the activity row identified by `entry_id` (if present) to
@@ -1692,28 +1761,9 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
 
     match result {
         Ok((proof, metadata)) => {
-            // It executed: the outcome owns the notes, which it marks spent.
+            // Its nullifiers read spent: the outcome owns the notes, which it
+            // marks spent.
             reservation.hand_over();
-            record_activity_status(
-                store,
-                persister,
-                wallet_id,
-                id,
-                &pending_entry,
-                ShieldedActivityStatus::Confirmed,
-                None,
-            )
-            .await;
-            if let Err(e) = finalize_pending(store, persister, wallet_id, id, &selected_notes).await
-            {
-                warn!(
-                    account,
-                    error = %e,
-                    "IdentityTopUpFromShieldedPool broadcast succeeded but local spent-state \
-                     update failed; will heal on next sync"
-                );
-            }
-            info!(account, credits = amount, identity = %identity_id, "IdentityTopUpFromShieldedPool broadcast succeeded");
             // The affected-state wait returns the spent nullifiers plus the
             // credited identity as a snapshot at the proof's block. The notes are
             // spent either way; the identity's proven balance is the balance at
@@ -1729,6 +1779,20 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
             // execution-proving), a second device on the same seed can show a
             // confirmed row for a top-up its sibling displaced; immediate
             // confirmation was chosen over a pending row for that edge case.
+            // The one exception is a top-up the wallet already proved failed:
+            // its row stays failed and it is reported as not executed
+            // ([`settle_affected_state_spend`]).
+            settle_affected_state_spend(
+                store,
+                persister,
+                wallet_id,
+                id,
+                &pending_entry,
+                &selected_notes,
+                "identity top up from shielded pool",
+            )
+            .await?;
+            info!(account, credits = amount, identity = %identity_id, "IdentityTopUpFromShieldedPool broadcast succeeded");
             let proven_balance = match proof {
                 StateTransitionProofResult::VerifiedIdentityWithShieldedNullifiers(proven, _)
                     if proven.id() == identity_id =>
@@ -3208,27 +3272,22 @@ async fn settle_private_document_payment<S: ShieldedStore>(
 ) -> Result<ResponseMetadata, PlatformWalletError> {
     match result {
         Ok(metadata) => {
-            // It executed: the outcome owns the notes, which it marks spent.
+            // Its nullifiers read spent: the outcome owns the notes, which it
+            // marks spent. A payment the wallet already proved failed keeps
+            // its failed row and is reported as not executed; its journal
+            // records and the pair they hold stay, as for any payment that
+            // left the wallet.
             reservation.hand_over();
-            record_activity_status(
+            settle_affected_state_spend(
                 store,
                 persister,
                 wallet_id,
                 id,
                 pending_entry,
-                ShieldedActivityStatus::Confirmed,
-                None,
+                selected_notes,
+                "private document create from shielded pool",
             )
-            .await;
-            if let Err(e) = finalize_pending(store, persister, wallet_id, id, selected_notes).await
-            {
-                warn!(
-                    account = id.account_index,
-                    error = %e,
-                    "PrivateDocumentCreateFromShieldedPool broadcast succeeded but local \
-                     spent-state update failed; will heal on next sync"
-                );
-            }
+            .await?;
             info!(
                 account = id.account_index,
                 "PrivateDocumentCreateFromShieldedPool broadcast succeeded"
@@ -4918,6 +4977,53 @@ async fn reserve_unspent_notes_for_denomination<S: ShieldedStore>(
     .into_owned();
     let reservation = mark_notes_pending(&mut *guard, store, id, &selected)?;
     Ok((selected, total_input, predicted_fee, reservation))
+}
+
+/// Settle the activity row and notes of a note spend whose result came back
+/// as an affected-state snapshot: an identity top-up (type 22) or a private
+/// document create (type 29), named by `operation`.
+///
+/// The snapshot proves every nullifier of the transition spent at its block
+/// (the verifier refuses one that does not), and not which transition spent
+/// them. Two things follow:
+///
+/// - The notes are spent on chain whichever transition spent them, so they
+///   are marked spent in every case.
+/// - The row is confirmed at once, without waiting for a scan, unless the
+///   wallet already holds proof that this transition did not execute
+///   ([`confirm_unless_proved_failed`]). Then the row stays failed and the
+///   spend is reported as [`PlatformWalletError::ShieldedSpendNotExecuted`]:
+///   the snapshot shows other transitions spent its notes.
+pub(super) async fn settle_affected_state_spend<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    id: SubwalletId,
+    pending_entry: &Option<super::activity::ShieldedActivityEntry>,
+    selected_notes: &[ShieldedNote],
+    operation: &'static str,
+) -> Result<(), PlatformWalletError> {
+    let proved_failed =
+        confirm_unless_proved_failed(store, persister, wallet_id, id, pending_entry).await;
+    if let Err(e) = finalize_pending(store, persister, wallet_id, id, selected_notes).await {
+        warn!(
+            account = id.account_index,
+            operation,
+            error = %e,
+            "Shielded spend result arrived but the local spent-state update failed; will heal \
+             on next sync"
+        );
+    }
+    if proved_failed {
+        warn!(
+            account = id.account_index,
+            operation,
+            "Shielded spend result arrived for a spend already proved not to have executed; \
+             its row stays failed"
+        );
+        return Err(PlatformWalletError::ShieldedSpendNotExecuted { operation });
+    }
+    Ok(())
 }
 
 /// Promote a successful broadcast: mark the notes spent (which
@@ -9560,6 +9666,11 @@ mod reserve_shield_fee_tests {
         assert!(matches!(err, PlatformWalletError::ShieldedBuildError(_)));
     }
 }
+
+/// A snapshot result that arrives after a spend was proved failed leaves
+/// its row failed.
+#[cfg(test)]
+mod affected_state_result_tests;
 
 #[cfg(test)]
 mod record_activity_status_tests {
