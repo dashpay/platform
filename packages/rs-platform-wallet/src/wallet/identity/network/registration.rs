@@ -59,6 +59,7 @@
 use std::collections::BTreeMap;
 
 use dashcore::OutPoint;
+use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -333,17 +334,14 @@ impl IdentityWallet {
             // keys derived at this index says which. Anything that does not
             // settle it is reported as Platform's refusal.
             Err(refusal) if settles_by_the_slot(&refusal, &proof_out_point) => {
-                match self
+                let settled = self
                     .settle_registration_lock(
                         identity_index,
                         placeholder.public_keys(),
                         proof_out_point,
                     )
-                    .await
-                {
-                    Ok(Some(settled)) => return settled,
-                    Ok(None) | Err(_) => return Err(refusal),
-                }
+                    .await;
+                return settled_after_funding(settled, refusal);
             }
             Err(refusal) => return Err(refusal),
         };
@@ -473,18 +471,43 @@ impl IdentityWallet {
 /// Whether Platform's `refusal` of a registration with the lock at
 /// `out_point` is one the keys at the registration's index settle: the lock
 /// already spent, the identity it creates already existing, or a key
-/// already registered (which also charged the lock a penalty).
+/// already registered (which also charged the lock a penalty). Platform
+/// reports a registered key as `DuplicatedIdentityPublicKeyIdStateError`
+/// (40207), or `DuplicatedIdentityPublicKeyIdBasicError` (10501) on
+/// protocol versions before 7.
 fn settles_by_the_slot(refusal: &PlatformWalletError, out_point: &OutPoint) -> bool {
     match refusal {
         PlatformWalletError::AssetLockAlreadyConsumed(consumed) => consumed == out_point,
         PlatformWalletError::Sdk(error) => matches!(
             error.consensus_error(),
-            Some(ConsensusError::StateError(
-                StateError::IdentityAlreadyExistsError(_)
-                    | StateError::DuplicatedIdentityPublicKeyStateError(_)
-            ))
+            Some(
+                ConsensusError::StateError(
+                    StateError::IdentityAlreadyExistsError(_)
+                        | StateError::DuplicatedIdentityPublicKeyStateError(_)
+                        | StateError::DuplicatedIdentityPublicKeyIdStateError(_)
+                ) | ConsensusError::BasicError(
+                    BasicError::DuplicatedIdentityPublicKeyIdBasicError(_)
+                )
+            )
         ),
         _ => false,
+    }
+}
+
+/// The outcome of a funded registration that Platform refused with
+/// `refusal`, given what the keys at its index were found to hold
+/// (`settled`): the lock's own identity is the registration's result; any
+/// other outcome is Platform's refusal. Never
+/// [`PlatformWalletError::IdentitySlotTakenOnChain`]: after funding, that
+/// pre-funding answer would let a host fund the next slot again while this
+/// lock stays tracked for a resume.
+fn settled_after_funding(
+    settled: Result<Option<Result<Identity, PlatformWalletError>>, PlatformWalletError>,
+    refusal: PlatformWalletError,
+) -> Result<Identity, PlatformWalletError> {
+    match settled {
+        Ok(Some(Ok(identity))) => Ok(identity),
+        Ok(Some(Err(_))) | Ok(None) | Err(_) => Err(refusal),
     }
 }
 
@@ -680,9 +703,48 @@ mod tests {
     use super::*;
     use crate::error::is_instant_lock_timeout;
     use dpp::consensus::basic::identity::DuplicatedIdentityPublicKeyIdBasicError;
+    use dpp::consensus::state::identity::duplicated_identity_public_key_id_state_error::DuplicatedIdentityPublicKeyIdStateError;
     use dpp::consensus::state::identity::duplicated_identity_public_key_state_error::DuplicatedIdentityPublicKeyStateError;
     use dpp::consensus::state::identity::IdentityAlreadyExistsError;
+    use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
     use dpp::ProtocolError;
+
+    /// After funding, only the lock's own identity settles a refusal: an
+    /// identity found from another outpoint, nothing found, or a failed
+    /// lookup each leave Platform's refusal, never the pre-funding
+    /// slot-taken code a host would fund the next slot on.
+    #[test]
+    fn should_return_the_refusal_not_slot_taken_after_funding() {
+        let refusal = || PlatformWalletError::Sdk(dash_sdk::Error::Generic("refused".to_string()));
+        let identity = Identity::V0(IdentityV0 {
+            id: Identifier::from([4; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        });
+        assert_eq!(
+            settled_after_funding(Ok(Some(Ok(identity.clone()))), refusal())
+                .expect("the lock's own identity")
+                .id(),
+            identity.id()
+        );
+        for settled in [
+            Ok(Some(Err(PlatformWalletError::IdentitySlotTakenOnChain {
+                identity_index: 0,
+                identity_id: Identifier::from([5; 32]),
+            }))),
+            Ok(None),
+            Err(PlatformWalletError::Sdk(dash_sdk::Error::Generic(
+                "lookup".to_string(),
+            ))),
+        ] {
+            let outcome = settled_after_funding(settled, refusal());
+            assert!(
+                matches!(outcome, Err(PlatformWalletError::Sdk(_))),
+                "{outcome:?}"
+            );
+        }
+    }
 
     /// Only the refusals what holds the slot's keys can settle go to it.
     #[test]
@@ -716,7 +778,25 @@ mod tests {
                 true,
             ),
             (
+                consensus(
+                    StateError::DuplicatedIdentityPublicKeyIdStateError(
+                        DuplicatedIdentityPublicKeyIdStateError::new(vec![0]),
+                    )
+                    .into(),
+                ),
+                true,
+            ),
+            (
                 consensus(DuplicatedIdentityPublicKeyIdBasicError::new(vec![0]).into()),
+                true,
+            ),
+            (
+                consensus(
+                    StateError::IdentityInsufficientBalanceError(
+                        IdentityInsufficientBalanceError::new(Identifier::from([3; 32]), 0, 1),
+                    )
+                    .into(),
+                ),
                 false,
             ),
             (
