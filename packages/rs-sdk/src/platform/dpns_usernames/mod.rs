@@ -689,10 +689,6 @@ impl Sdk {
     ///
     /// Returns the identity ID associated with the domain, or None if not found
     pub async fn resolve_dpns_name(&self, name: &str) -> Result<Option<Identifier>, Error> {
-        use crate::platform::documents::document_query::DocumentQuery;
-        use drive::query::WhereClause;
-        use drive::query::WhereOperator;
-
         let normalized_label = normalize_dpns_label(name);
 
         // Empty normalized label (e.g. `""`, `".dash"`) can't resolve to an
@@ -704,32 +700,7 @@ impl Sdk {
         let dpns_contract = self.fetch_dpns_contract().await?;
 
         // Query for domain with this label
-        let query = DocumentQuery {
-            select: drive::query::SelectProjection::documents(),
-            data_contract: dpns_contract,
-            document_type_name: "domain".to_string(),
-            where_clauses: vec![
-                WhereClause {
-                    field: "normalizedParentDomainName".to_string(),
-                    operator: WhereOperator::Equal,
-                    value: Value::Text("dash".to_string()),
-                },
-                WhereClause {
-                    field: "normalizedLabel".to_string(),
-                    operator: WhereOperator::Equal,
-                    value: Value::Text(normalized_label),
-                },
-            ],
-            time_range_clauses: vec![],
-            integer_range_clauses: vec![],
-            sub_queries: vec![],
-            group_by: vec![],
-            having: vec![],
-            order_by_clauses: vec![],
-            limit: 1,
-            offset: None,
-            start: None,
-        };
+        let query = give_up::dpns_name_query(dpns_contract, "domain", normalized_label);
 
         let documents = Document::fetch_many(self, query).await?;
 
@@ -1449,6 +1420,60 @@ mod tests {
             data: dpp::platform_value::BinaryData::new(vec![1; 33]),
             disabled_at: None,
         })
+    }
+
+    /// DPNS keeps a name under its homograph-safe label and parent domain: `Alice.DASH` is
+    /// stored as `a11ce` under `dash`. The lookup of a full name searches for that form, with
+    /// and without the proof, and returns the stored document, whose owner holds the name.
+    #[tokio::test]
+    async fn should_find_the_domain_document_of_a_full_name_in_its_homograph_safe_form() {
+        let owner = Identifier::new([1u8; 32]);
+        let provider = DpnsV2ContextProvider::default();
+        let mut sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
+        expect_domain_of(&mut sdk, "Alice", owner).await;
+
+        let found = sdk
+            .get_dpns_domain_document_by_name("Alice.DASH")
+            .await
+            .expect("the lookup answers")
+            .expect("the name is found");
+        assert_eq!(found.owner_id(), owner);
+
+        let (proved, _metadata, _proof) = sdk
+            .get_dpns_domain_document_by_name_with_metadata_and_proof("Alice.DASH")
+            .await
+            .expect("the lookup answers");
+        assert_eq!(proved, Some(found));
+    }
+
+    /// A proven absence, which comes back as an entry holding no document, is no name.
+    #[tokio::test]
+    async fn should_find_no_domain_document_for_a_name_nobody_holds() {
+        let provider = DpnsV2ContextProvider::default();
+        let mut sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
+        expect_no_domain_of_bob(&mut sdk).await;
+
+        let found = sdk
+            .get_dpns_domain_document_by_name("Bob.dash")
+            .await
+            .expect("the lookup answers");
+        assert_eq!(found, None);
+    }
+
+    /// The lookup takes a label and a parent domain. Anything else is refused before the SDK
+    /// reads anything: the mock SDK holds no expectation.
+    #[tokio::test]
+    async fn should_refuse_a_name_that_is_not_a_label_and_a_parent_domain() {
+        let provider = DpnsV2ContextProvider::default();
+        let sdk = sdk_with_a_dpns_v2_provider(&provider, seeded_at_13);
+
+        for name in ["alice", "alice.sub.dash", ""] {
+            let found = sdk.get_dpns_domain_document_by_name(name).await;
+            assert!(
+                matches!(found, Err(Error::InvalidRequest(_))),
+                "{name:?}: {found:?}"
+            );
+        }
     }
 
     /// An empty name (`""`, `".dash"`) is given up by nobody: both writes refuse it before

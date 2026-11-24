@@ -105,6 +105,25 @@ pub(super) fn dpns_name_query(
     document_type_name: &str,
     normalized_label: String,
 ) -> DocumentQuery {
+    dpns_name_query_under(
+        dpns_contract,
+        document_type_name,
+        "dash".to_string(),
+        normalized_label,
+    )
+}
+
+/// The query for the `document_type_name` document of the name `normalized_label` under the
+/// parent domain `normalized_parent_domain_name`: at most one exists. Both values are in the
+/// homograph-safe form DPNS stores and indexes them in
+/// ([`convert_to_homograph_safe_chars`](super::convert_to_homograph_safe_chars)). Every lookup
+/// of one name builds its query here, so they all search the same index the same way.
+pub(super) fn dpns_name_query_under(
+    dpns_contract: Arc<DataContract>,
+    document_type_name: &str,
+    normalized_parent_domain_name: String,
+    normalized_label: String,
+) -> DocumentQuery {
     DocumentQuery {
         select: SelectProjection::documents(),
         data_contract: dpns_contract,
@@ -113,7 +132,7 @@ pub(super) fn dpns_name_query(
             WhereClause {
                 field: "normalizedParentDomainName".to_string(),
                 operator: WhereOperator::Equal,
-                value: Value::Text("dash".to_string()),
+                value: Value::Text(normalized_parent_domain_name),
             },
             WhereClause {
                 field: "normalizedLabel".to_string(),
