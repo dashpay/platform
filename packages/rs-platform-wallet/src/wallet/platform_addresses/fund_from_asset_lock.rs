@@ -282,8 +282,11 @@ impl PlatformAddressWallet {
     /// | `AssetLockAddressTopUp` | accepted | accepted |
     /// | any other (including `IdentityInvitation`) | refused | refused |
     ///
-    /// A `Consumed` lock is refused with `AssetLockAlreadyConsumed`. Any
-    /// other shielded lock qualifies, including one never submitted to
+    /// A consumed lock (`Consumed` or `DrainCompleted`) is refused with
+    /// `AssetLockAlreadyConsumed`. A lock that belongs to a wallet drain (it
+    /// carries an operation id) is refused with `AssetLockFundingMismatch`:
+    /// only the drain's own flow settles it. Any other shielded lock
+    /// qualifies, including one never submitted to
     /// Platform (a `Built` lock is broadcast by the resume); spending it
     /// here moves its value to transparent addresses and gives up the
     /// shielding. The wallet cannot see Drive's remaining value, so a lock
@@ -1690,6 +1693,10 @@ mod tests {
         }
     }
 
+    /// Whether the call passed authorization and reached the resume: the
+    /// fixture's lock transaction has no payload, so the resume's credit
+    /// output derivation (`rederive_credit_output_path`) refuses it with this
+    /// message.
     fn reached_resume(result: Result<PlatformAddressChangeSet, PlatformWalletError>) -> bool {
         matches!(
             result,
@@ -1768,6 +1775,29 @@ mod tests {
         .await;
         assert!(reached_resume(fixture.generic_resume().await));
         assert!(reached_resume(fixture.shielded_remainder().await));
+    }
+
+    #[tokio::test]
+    async fn shielded_remainder_entry_point_refuses_a_wallet_drain_lock() {
+        let fixture = tracked_lock_fixture(
+            AssetLockFundingType::AssetLockShieldedAddressTopUp,
+            crate::wallet::asset_lock::tracked::AssetLockStatus::ChainLocked,
+        )
+        .await;
+        {
+            let mut wm = fixture.wallet.platform().wallet_manager.write().await;
+            let wallet_id = fixture.wallet.wallet_id();
+            wm.get_wallet_info_mut(&wallet_id)
+                .expect("wallet must remain registered")
+                .tracked_asset_locks
+                .get_mut(&fixture.out_point)
+                .expect("the tracked lock")
+                .operation_id = Some([7; 16]);
+        }
+        assert!(matches!(
+            fixture.shielded_remainder().await,
+            Err(PlatformWalletError::AssetLockFundingMismatch { .. })
+        ));
     }
 
     #[tokio::test]

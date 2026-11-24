@@ -719,16 +719,19 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 /// generic resume/top-up would both misdirect the funds into a local
 /// identity and kill the invitee's claim. They pass only with the reclaim
 /// flow's explicit authorization. A shielded-funding lock passes as an
-/// address top-up only with [`ExistingLockAuthority::ShieldedRemainderToAddresses`].
-/// Every other pair goes through `validate_existing_asset_lock_role`.
+/// address top-up only with [`ExistingLockAuthority::ShieldedRemainderToAddresses`],
+/// and never while it belongs to a wallet drain: only the drain's own flow
+/// can settle such a lock. Every other pair goes through
+/// `validate_existing_asset_lock_role`.
 fn authorize_existing_asset_lock(
     out_point: OutPoint,
     expected_funding_type: AssetLockFundingType,
     expected_identity_index: u32,
-    (actual_funding_type, actual_identity_index, status): (
+    (actual_funding_type, actual_identity_index, status, operation_id): (
         AssetLockFundingType,
         u32,
         crate::wallet::asset_lock::tracked::AssetLockStatus,
+        Option<[u8; 16]>,
     ),
     consume_invitation_voucher: bool,
     authority: ExistingLockAuthority,
@@ -740,11 +743,13 @@ fn authorize_existing_asset_lock(
         actual_funding_type,
         expected_funding_type,
         consume_invitation_voucher,
-    ) || authorized_shielded_remainder_to_addresses(
-        actual_funding_type,
-        expected_funding_type,
-        authority,
-    ) {
+    ) || (operation_id.is_none()
+        && authorized_shielded_remainder_to_addresses(
+            actual_funding_type,
+            expected_funding_type,
+            authority,
+        ))
+    {
         return Ok(());
     }
     validate_existing_asset_lock_role(
@@ -945,10 +950,30 @@ mod tests {
             OutPoint::null(),
             expected,
             0,
-            (actual, 0, status),
+            (actual, 0, status, None),
             false,
             authority,
         )
+    }
+
+    #[test]
+    fn shielded_remainder_authority_refuses_a_wallet_drain_lock() {
+        assert!(matches!(
+            authorize_existing_asset_lock(
+                OutPoint::null(),
+                AssetLockFundingType::AssetLockAddressTopUp,
+                0,
+                (
+                    AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                    0,
+                    crate::wallet::asset_lock::tracked::AssetLockStatus::ChainLocked,
+                    Some([7; 16]),
+                ),
+                false,
+                ExistingLockAuthority::ShieldedRemainderToAddresses,
+            ),
+            Err(PlatformWalletError::AssetLockFundingMismatch { .. })
+        ));
     }
 
     #[test]
