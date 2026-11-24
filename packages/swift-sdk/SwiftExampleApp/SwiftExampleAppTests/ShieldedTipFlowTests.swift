@@ -382,6 +382,63 @@ final class ShieldedTipFlowTests: XCTestCase {
         XCTAssertEqual(flow.phase, .editing)
     }
 
+    func testShouldNotStartASecondReviewOrSendWhileOneRuns() async {
+        let reviewGate = ReviewGate()
+        let sendGate = ReviewGate()
+        let flow = ShieldedTipFlow(
+            username: "alice",
+            actions: ShieldedTipFlow.Actions(
+                parseAmount: { _ in 1 },
+                review: { [recipient, reviewGate] _, _ in
+                    reviewGate.calls += 1
+                    await withCheckedContinuation { reviewGate.pending = $0 }
+                    return ShieldedTipReview(recipient: recipient, change: .new, unresolved: false)
+                },
+                send: { [sendGate] _ in
+                    sendGate.calls += 1
+                    await withCheckedContinuation { sendGate.pending = $0 }
+                }
+            )
+        )
+        flow.amountText = "1"
+
+        // While the review runs: no second review, no send, and the sheet
+        // cannot be closed (`isBusy` disables Done and swipe-to-dismiss).
+        let reviewing = Task { await flow.review() }
+        while reviewGate.pending == nil { await Task.yield() }
+        XCTAssertTrue(flow.isBusy)
+        XCTAssertFalse(flow.canReview)
+        XCTAssertFalse(flow.canSend)
+        await flow.review()
+        await flow.send()
+        XCTAssertEqual(reviewGate.calls, 1)
+        XCTAssertEqual(sendGate.calls, 0)
+        reviewGate.pending?.resume()
+        await reviewing.value
+        XCTAssertFalse(flow.isBusy)
+        XCTAssertTrue(flow.canSend)
+
+        // While the send runs: inputs locked, nothing can be reviewed or
+        // sent again, and the sheet cannot be closed.
+        let sending = Task { await flow.send() }
+        while sendGate.pending == nil { await Task.yield() }
+        XCTAssertTrue(flow.isBusy)
+        XCTAssertTrue(flow.inputsLocked)
+        XCTAssertFalse(flow.canReview)
+        XCTAssertFalse(flow.canSend)
+        await flow.send()
+        await flow.review()
+        flow.amountText = "2"
+        XCTAssertEqual(sendGate.calls, 1)
+        XCTAssertEqual(reviewGate.calls, 1)
+        sendGate.pending?.resume()
+        await sending.value
+
+        XCTAssertFalse(flow.isBusy)
+        XCTAssertEqual(flow.phase, .finished(.submitted))
+        XCTAssertEqual(sendGate.calls, 1)
+    }
+
     func testShouldDropAReviewThatFinishesAfterTheInputsChanged() async {
         let gate = ReviewGate()
         let flow = ShieldedTipFlow(
@@ -547,8 +604,10 @@ final class ShieldedTipFlowTests: XCTestCase {
     }
 }
 
-/// Holds a review open until the test resumes it.
+/// Holds a review or a send open until the test resumes it.
 @MainActor
 private final class ReviewGate {
     var pending: CheckedContinuation<Void, Never>?
+    /// How many times the gated action was called.
+    var calls = 0
 }
