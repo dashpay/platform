@@ -119,6 +119,7 @@ fun TokensScreen(navController: NavHostController) {
         val otherIds = identities.map { it.identityId }
         val catalog = tokens
         val identityDao = container.database.identityDao()
+        val tokenDao = container.database.tokenDao()
         // Application scope: leaving the screen must not cancel the pass.
         container.applicationScope.launch {
             IdentityTokenSync.refresh(
@@ -129,6 +130,7 @@ fun TokensScreen(navController: NavHostController) {
                 register = activeManager::registerIdentityForTokenSync,
                 syncNow = activeManager::syncIdentityTokensNow,
                 isStillStored = { identityDao.getByIdentityId(identity.identityId) != null },
+                isTokenStillSaved = { tokenDao.getTokenById(it.id) != null },
             )
         }
     }

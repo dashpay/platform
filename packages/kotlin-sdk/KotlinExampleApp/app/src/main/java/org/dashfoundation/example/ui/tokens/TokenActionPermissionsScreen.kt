@@ -117,7 +117,16 @@ fun TokenActionPermissionsScreen(
     // network, and runs only when the contract, that identity and the active
     // manager are on the same network.
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
-    LaunchedEffect(manager, sdk, pickedIdentityHex, token?.id?.toHex()) {
+    // Also re-run when the sender the screen resolves appears or changes
+    // (identity discovery can land after the first Room read below).
+    LaunchedEffect(
+        manager,
+        sdk,
+        pickedIdentityHex,
+        token?.id?.toHex(),
+        resolvedIdentity?.identityId?.toHex(),
+        identities.joinToString(",") { it.identityId.toHex() },
+    ) {
         val activeManager = manager ?: return@LaunchedEffect
         val activeSdk = sdk ?: return@LaunchedEffect
         // During a network switch the new SDK is published before its
@@ -149,6 +158,7 @@ fun TokenActionPermissionsScreen(
                 isStillStored = {
                     database.identityDao().getByIdentityId(identity.identityId) != null
                 },
+                isTokenStillSaved = { database.tokenDao().getTokenById(it.id) != null },
             )
         }
     }

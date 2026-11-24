@@ -243,11 +243,13 @@ fun LocalDataContractsScreen(navController: NavHostController) {
                                     IconButton(onClick = {
                                         scope.launch {
                                             try {
-                                                check(unwatchContractTokens(container, network)) {
+                                                val deleted = unwatchThenDelete(container, network) {
+                                                    container.database.dataContractDao()
+                                                        .delete(contract)
+                                                }
+                                                check(deleted) {
                                                     "its tokens' balance watches could not be cleared; try again"
                                                 }
-                                                container.database.dataContractDao()
-                                                    .delete(contract)
                                             } catch (e: CancellationException) {
                                                 throw e
                                             } catch (e: Exception) {
@@ -297,20 +299,24 @@ private val KNOWN_CONTRACTS = listOf(
 )
 
 /**
- * Before a saved contract is deleted, register every wallet identity on
- * [network] with no tokens, so a token-sync pass already reading the deleted
- * contract's tokens stores nothing for them once Room has cascaded the
- * delete. The Tokens screen registers the identity on screen again. True when
- * no manager is active (nothing is watched then); false when clearing failed,
- * and the caller then keeps the contract.
+ * Delete a saved contract without leaving its tokens watched: register every
+ * wallet identity on [network] with no tokens, so a token-sync pass already
+ * reading the contract's tokens stores nothing for them once Room has
+ * cascaded the delete, then run [delete] under the same token-watch lock, so a refresh
+ * queued meanwhile runs after the delete and leaves its tokens out. The
+ * Tokens screen registers the identity on screen again. Returns false, and
+ * does not delete, when clearing failed; with no active manager nothing is
+ * watched, and it just deletes.
  */
-private suspend fun unwatchContractTokens(
+private suspend fun unwatchThenDelete(
     container: AppContainer,
     network: Network,
+    delete: suspend () -> Unit,
 ): Boolean {
-    val manager = container.walletManagerStore.activeManager.value ?: return true
+    val manager = container.walletManagerStore.activeManager.value
+        ?: return IdentityTokenSync.withWatchLock { delete(); true }
     val identityIds = container.database.identityDao()
         .observeWalletOwnedByNetwork(network.ffiValue).first()
         .map { it.identityId }
-    return IdentityTokenSync.clear(identityIds, manager::registerIdentityForTokenSync)
+    return IdentityTokenSync.clear(identityIds, manager::registerIdentityForTokenSync, delete)
 }

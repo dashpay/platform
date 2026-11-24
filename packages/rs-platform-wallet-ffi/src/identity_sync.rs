@@ -433,3 +433,29 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_update_watched_to
     unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_fixtures::mock_manager;
+
+    /// A live manager whose token-sync admission is sealed (shut down, handle
+    /// still registered) reaches the result conversion and reports that no
+    /// pass ran, instead of `Success`.
+    #[test]
+    fn should_report_no_pass_on_a_live_handle_after_shutdown() {
+        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
+        let shut_down = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+            let _report = runtime().block_on(manager.shutdown());
+        });
+        assert!(shut_down.is_some());
+
+        let result = unsafe { platform_wallet_manager_identity_sync_sync_now(handle) };
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        PLATFORM_WALLET_MANAGER_STORAGE.remove(handle);
+    }
+}

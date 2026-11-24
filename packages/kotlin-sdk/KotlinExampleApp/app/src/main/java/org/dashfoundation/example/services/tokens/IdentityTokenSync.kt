@@ -68,9 +68,11 @@ object IdentityTokenSync {
      * Register [identityId] with the watched ids of [tokens], register each of
      * [otherIdentityIds] with none (stopping their watches), and, when a token
      * is watched, run one sync pass. Does nothing when [isStillStored] says
-     * the identity was removed while this call was queued. Returns true when a sync pass ran; false
-     * when there was nothing to sync or the native calls failed. Never throws
-     * except on cancellation.
+     * the identity was removed while this call was queued, and leaves out
+     * tokens [isTokenStillSaved] says were deleted meanwhile (both checked
+     * under the lock contract deletion and identity removal take). Returns
+     * true when a sync pass ran; false when there was nothing to sync or the
+     * native calls failed. Never throws except on cancellation.
      */
     suspend fun refresh(
         identityId: ByteArray,
@@ -80,10 +82,11 @@ object IdentityTokenSync {
         register: suspend (identityId: ByteArray, tokenIds: List<ByteArray>) -> Unit,
         syncNow: suspend () -> Unit,
         isStillStored: suspend () -> Boolean = { true },
+        isTokenStillSaved: suspend (TokenEntity) -> Boolean = { true },
     ): Boolean = mutex.withLock {
-        val tokenIds = watchedTokenIds(tokens, calculateTokenId)
         try {
             if (!isStillStored()) return@withLock false
+            val tokenIds = watchedTokenIds(tokens.filter { isTokenStillSaved(it) }, calculateTokenId)
             for (other in otherIdentityIds) {
                 if (!other.contentEquals(identityId)) register(other, emptyList())
             }
@@ -100,18 +103,21 @@ object IdentityTokenSync {
     }
 
     /**
-     * Register each of [identityIds] with no tokens, without a sync pass.
-     * Contract deletion calls this before it deletes the contract, so a pass
-     * already reading the contract's tokens cannot store their balances after
-     * the delete (platform-wallet stores a result only for tokens still
-     * watched). The next refresh registers the identity on screen again.
-     * Returns false when registration failed.
+     * Register each of [identityIds] with no tokens, without a sync pass, and
+     * then, still under the lock, run [then]. Contract deletion deletes the
+     * contract in [then]: a pass already reading the contract's tokens cannot
+     * store their balances after the delete (platform-wallet stores a result
+     * only for tokens still watched), and a refresh queued meanwhile runs
+     * after the delete and leaves the deleted tokens out. The next refresh
+     * registers the identity on screen again. Returns false, without running
+     * [then], when registration failed.
      */
     suspend fun clear(
         identityIds: List<ByteArray>,
         register: suspend (identityId: ByteArray, tokenIds: List<ByteArray>) -> Unit,
+        then: suspend () -> Unit = {},
     ): Boolean = mutex.withLock {
-        try {
+        val cleared = try {
             for (identityId in identityIds) register(identityId, emptyList())
             true
         } catch (e: CancellationException) {
@@ -120,6 +126,8 @@ object IdentityTokenSync {
             runCatching { Log.w(TAG, "identity token watch clear failed", e) }
             false
         }
+        if (cleared) then()
+        cleared
     }
 
     /**

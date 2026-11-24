@@ -124,6 +124,50 @@ class IdentityTokenSyncTest {
     }
 
     @Test
+    fun shouldLeaveOutATokenDeletedWhileTheRefreshWasQueued() = runTest {
+        val kept = token(1, 0)
+        val deleted = token(2, 0)
+        val recorder = Recorder()
+
+        IdentityTokenSync.refresh(
+            identityId, listOf(identityId), listOf(kept, deleted), calculate,
+            recorder.register, recorder.syncNow,
+            isTokenStillSaved = { it !== deleted },
+        )
+
+        assertArrayEquals(
+            fakeTokenId(Base58.encode(kept.contractId), 0),
+            recorder.tokensFor(identityId).single(),
+        )
+    }
+
+    @Test
+    fun shouldDeleteUnderTheLockOnlyAfterTheWatchesAreCleared() = runTest {
+        val recorder = Recorder()
+        var deleted = false
+
+        val ok = IdentityTokenSync.clear(listOf(identityId), recorder.register) {
+            assertEquals("cleared before the delete", listOf("register"), recorder.calls)
+            deleted = true
+        }
+
+        assertTrue(ok)
+        assertTrue(deleted)
+    }
+
+    @Test
+    fun shouldKeepTheContractWhenClearingFails() = runTest {
+        var deleted = false
+
+        val ok = IdentityTokenSync.clear(listOf(identityId), { _, _ -> error("dead manager") }) {
+            deleted = true
+        }
+
+        assertFalse(ok)
+        assertFalse(deleted)
+    }
+
+    @Test
     fun shouldSkipTokensWhoseIdCannotBeCalculated() = runTest {
         val good = token(1, 0)
         val failing = token(2, 0)
