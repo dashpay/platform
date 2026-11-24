@@ -78,7 +78,7 @@ struct DecisionProposalsView: View {
                     .accessibilityIdentifier("decisionProposals.ownerPicker")
                 }
             } footer: {
-                Text(listing.footer)
+                Text(listing.footer + " Each row's Voting / Closed badge is read when the row appears; pull to refresh to read it again.")
             }
 
             if let errorMessage {
@@ -293,7 +293,8 @@ private struct DecisionProposalRow: View {
             }
         } catch {
             // Leave the badge out: an unknown state is not shown as either.
-            pollState = nil
+            // It was already cleared above; no write here, so a late failure
+            // of a superseded read cannot clear a newer badge.
         }
     }
 }

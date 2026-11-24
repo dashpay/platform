@@ -991,6 +991,8 @@ struct EraseDocumentView: View {
             }
             .interactiveDismissDisabled(isSubmitting)
             .task {
+                // The network the read goes to, captured before awaiting it.
+                let readNetworkRaw = (appState.sdk?.network ?? appState.currentNetwork).rawValue
                 let observed = try? await appState.sdk?.documentGetLifecycle(
                     dataContractId: contractIdBase58,
                     documentType: documentTypeName,
@@ -999,6 +1001,11 @@ struct EraseDocumentView: View {
                 // A skipped submission also has a newer lifecycle observation.
                 guard !isSubmitting, submissions == 0, progress == nil else { return }
                 lifecycle = observed
+                // Already ABSENT (an earlier erase whose closing read failed):
+                // the button is hidden, so reconcile the local copy here.
+                if observed?.state == .absent {
+                    persistWarning = removeLocalCopy(networkRaw: readNetworkRaw)
+                }
             }
             .alert(item: $actionError) { err in
                 Alert(title: Text("Erase status"), message: Text(err.message), dismissButton: .default(Text("OK")))
@@ -1012,6 +1019,18 @@ struct EraseDocumentView: View {
                 && $0.wallet != nil
                 && $0.identityIdBase58 == document.ownerIdBase58
         }
+    }
+
+    /// Remove the local row for this document on the network that observed
+    /// it ABSENT; a row saved from another network with the same ids stays.
+    private func removeLocalCopy(networkRaw: UInt32) -> String? {
+        DocumentPersistence.removeErasedLocalCopy(
+            networkRaw: networkRaw,
+            contractId: contractIdBase58,
+            documentType: documentTypeName,
+            documentId: documentIdText,
+            modelContext: modelContext
+        )
     }
 
     private func submit() {
@@ -1028,6 +1047,8 @@ struct EraseDocumentView: View {
         isSubmitting = true
         let signer = KeychainSigner(modelContainer: modelContext.container)
         let ownerId = owner.identityId
+        // The erase runs on the owner's network; captured before awaiting it.
+        let eraseNetworkRaw = owner.networkRaw
         let contractId = document.contractIdData
         let typeName = document.documentType
         let docId = document.id
@@ -1052,9 +1073,7 @@ struct EraseDocumentView: View {
                     // ABSENT after this submission, or already ABSENT on
                     // the preflight: either way nothing is left to show.
                     if lifecycle?.state == .absent {
-                        persistWarning = DocumentPersistence.applyDelete(
-                            document: document, modelContext: modelContext
-                        )
+                        persistWarning = removeLocalCopy(networkRaw: eraseNetworkRaw)
                     }
                     isSubmitting = false
                 }
