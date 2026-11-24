@@ -1186,9 +1186,9 @@ pub enum PlatformWalletError {
     /// when the exact attempt cannot be identified, its outcome is unknown
     /// and the tip is not sent again.
     #[error(
-        "A shielded payment to this recipient is still being sent or is unresolved; this tip \
-         was not sent. Wait for shielded sync, then check whether the earlier payment was made \
-         before sending again"
+        "Another shielded tip is being sent, or an earlier shielded payment to this recipient \
+         is unresolved; this tip was not sent. Wait for shielded sync, then check whether the \
+         earlier payment was made before sending again"
     )]
     ShieldedTipPending,
 
