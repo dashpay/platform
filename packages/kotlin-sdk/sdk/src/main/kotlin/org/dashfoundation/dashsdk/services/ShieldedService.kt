@@ -154,11 +154,17 @@ class ShieldedService(private val database: DashDatabase) {
      * this lock is taken before Rust is asked, so without it a Clear tapped
      * during a bind would wait here and then go through with no second tap.
      * A bind that arrives while the Clear holds the ledger still waits.
+     *
+     * The error is raised here, without native code 84 behind it, and the
+     * holder may be an earlier Clear that has already reset Rust and is
+     * still wiping Room. So it promises only that the refused request
+     * changed nothing, not that nothing is being cleared.
      */
     internal suspend fun <T> withLedgerLifecycleForClear(step: suspend () -> T): T {
         if (!ledgerLifecycle.tryLock()) {
             throw DashSdkError.PlatformWallet.ShieldedOperationInProgress(
-                "A shielded bind is in progress; clear the shielded state once it has finished",
+                "A shielded bind or another clear is in progress; clear the shielded state " +
+                    "once it has finished",
             )
         }
         try {
