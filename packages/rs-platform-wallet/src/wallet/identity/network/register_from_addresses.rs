@@ -149,7 +149,8 @@ impl IdentityWallet {
         // suppress the `(identity, address_infos)` return the caller
         // needs to reconcile the spent funding-address balances, leaving
         // them stale even though the identity exists on chain. A missed
-        // local add self-heals on the next identity re-sync. This mirrors
+        // local add is not restored by a routine re-sync; see
+        // `IdentityManager::record_new_identity`. This mirrors
         // the sibling `transfer_credits_to_addresses` / top-up flows,
         // which likewise treat post-acceptance local bookkeeping as
         // best-effort.

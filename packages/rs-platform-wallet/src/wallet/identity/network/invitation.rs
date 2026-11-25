@@ -334,8 +334,9 @@ impl IdentityWallet {
 
         // Best-effort local bookkeeping — Platform has already accepted the
         // registration, so a local failure must NOT propagate (mirrors
-        // `register_identity_with_funding` Step 4). The identity self-heals into
-        // the IdentityManager on the next re-sync if this is skipped.
+        // `register_identity_with_funding` Step 4). An identity this step
+        // misses is not restored by a routine re-sync; see
+        // `IdentityManager::record_new_identity`.
         {
             let mut wm = self.wallet_manager.write().await;
             match wm.get_wallet_info_mut(&self.wallet_id) {

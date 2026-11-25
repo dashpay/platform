@@ -288,8 +288,9 @@ impl IdentityWallet {
         // and the early return would skip Step 5's `consume_asset_lock`,
         // leaving the spent lock in the Resumable Funding list where a
         // Resume gets Platform's deterministic "lock already consumed"
-        // rejection. A missed local add self-heals on the next identity
-        // re-sync. This mirrors `register_from_addresses` Step 3.
+        // rejection. A missed local add is not restored by a routine
+        // re-sync; see `IdentityManager::record_new_identity`. This mirrors
+        // `register_from_addresses` Step 3.
         {
             let mut wm = self.wallet_manager.write().await;
             match wm.get_wallet_info_mut(&self.wallet_id) {

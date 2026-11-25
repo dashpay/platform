@@ -108,6 +108,8 @@ impl IdentityManager {
     /// this session only: an identity discovery scan finds it again, and a
     /// launch that already has another identity on file does not run one by
     /// itself. A key whose own store failed has no breadcrumb on file.
+    /// [`NewIdentityKeyOrigin::Unrecorded`] has no key stores, so the first
+    /// store is the only one that can put its identity on file.
     ///
     /// A failed add records no keys either: `IdentityAlreadyExists` can mean
     /// an out-of-wallet entry, and stamping a wallet breadcrumb on its keys
@@ -129,7 +131,7 @@ impl IdentityManager {
                 identity_index,
                 error = %e,
                 "identity accepted by Platform but not added to the local manager; \
-                 an identity discovery scan adds it"
+                 the entry it already holds under this id is left as it is"
             );
             return;
         }
@@ -404,6 +406,8 @@ mod tests {
     #[derive(Default)]
     struct RecordingPersister {
         fail: bool,
+        /// Stores to accept before the failures begin.
+        successes_before_failures: AtomicUsize,
         /// Stores still to fail before the rest succeed.
         failures_left: AtomicUsize,
         stores: Mutex<Vec<PlatformWalletChangeSet>>,
@@ -418,12 +422,19 @@ mod tests {
             if self.fail {
                 return Err(PersistenceError::backend("store armed to fail"));
             }
-            let fail = self
-                .failures_left
+            let accept_first = self
+                .successes_before_failures
                 .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
                     left.checked_sub(1)
                 })
                 .is_ok();
+            let fail = !accept_first
+                && self
+                    .failures_left
+                    .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
+                        left.checked_sub(1)
+                    })
+                    .is_ok();
             if fail {
                 return Err(PersistenceError::backend("store failed once"));
             }
@@ -563,6 +574,37 @@ mod tests {
             "the identity reaches the store after the failed attempt"
         );
         assert_breadcrumbs_stored(&stores, identity_id, &[0, 1]);
+    }
+
+    /// A failed key store is logged and the next key is still stored: the
+    /// asset-lock flow used to stop at the first one and return its error.
+    #[test]
+    fn should_store_the_breadcrumbs_of_later_keys_after_one_key_store_fails() {
+        let mut manager = IdentityManager::new();
+        let backend = Arc::new(RecordingPersister {
+            successes_before_failures: AtomicUsize::new(1),
+            failures_left: AtomicUsize::new(1),
+            ..Default::default()
+        });
+        let failing_on_first_key = WalletPersister::new(WALLET_ID, backend.clone());
+        let identity = identity_with_keys([6u8; 32], &[0, 1]);
+        let identity_id = identity.id();
+
+        manager.record_new_identity(
+            identity,
+            IDENTITY_INDEX,
+            WALLET_ID,
+            NewIdentityKeyOrigin::DerivedAtKeyId,
+            "test_flow",
+            &failing_on_first_key,
+        );
+
+        let stores = backend.stores.lock().unwrap();
+        assert_eq!(stores.len(), 2, "the identity, then the second key");
+        let first_key_row =
+            &stores[0].identity_keys.as_ref().expect("key rows").upserts[&(identity_id, 0)];
+        assert_eq!(first_key_row.derivation_indices, None);
+        assert_breadcrumbs_stored(&stores, identity_id, &[1]);
     }
 
     /// The last row stored for each key carries the wallet breadcrumb.
