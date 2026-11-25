@@ -370,13 +370,20 @@ class RewriteDebVersionsTests(unittest.TestCase):
 
     def dpkg(self, host, *args):
         """dpkg on a scratch host root, as the current user, with no terminal to answer a
-        conffile prompt, so a prompt fails the command."""
-        return subprocess.run(['dpkg', f'--root={host}', '--force-not-root', '--force-bad-path', *args],
+        conffile prompt, so a prompt fails the command. Its log stays in the scratch root."""
+        return subprocess.run(['dpkg', f'--root={host}', f'--log={host}/var/log/dpkg.log', '--force-not-root',
+                               '--force-bad-path', *args],
                               stdin=subprocess.DEVNULL, capture_output=True, text=True)
+
+    def package_state(self, host):
+        """dashmate's status and version as the scratch host's dpkg database records them."""
+        return subprocess.run(['dpkg-query', f'--root={host}', '--show',
+                               '--showformat=${db:Status-Abbrev}${Version}', 'dashmate'],
+                              capture_output=True, text=True).stdout.strip() or None
 
     def scratch_host(self):
         host = self.tmp / 'host'
-        for directory in ['var/lib/dpkg/info', 'var/lib/dpkg/updates', 'var/lib/dpkg/triggers']:
+        for directory in ['var/lib/dpkg/info', 'var/lib/dpkg/updates', 'var/lib/dpkg/triggers', 'var/log']:
             (host / directory).mkdir(parents=True)
         (host / 'var/lib/dpkg/status').touch()
         return host
@@ -403,18 +410,21 @@ class RewriteDebVersionsTests(unittest.TestCase):
         host = self.scratch_host()
         shipped = {SOURCES: STANZA.encode(), KEYRING: self.keyring, PREFERENCES: PREFERENCES_CONTENT.encode()}
 
-        for step, args, expected in [
-            ('install', ['-i', str(deb)], shipped),
+        # each step is checked against the state dpkg records, so a step dpkg skipped, such as
+        # a refused downgrade, cannot pass on the files alone
+        for step, args, expected, state in [
+            ('install', ['-i', str(deb)], shipped, 'ii 5.1.0-1'),
             # removing without purging keeps the source, so it has to keep its key too
-            ('remove', ['-r', 'dashmate'], shipped),
-            ('install again', ['-i', str(deb)], shipped),
-            ('roll back to a version without the files', ['-i', str(rollback)], shipped),
-            ('purge', ['-P', 'dashmate'], dict.fromkeys(shipped)),
+            ('remove', ['-r', 'dashmate'], shipped, 'rc 5.1.0-1'),
+            ('install again', ['-i', str(deb)], shipped, 'ii 5.1.0-1'),
+            ('roll back to a version without the files', ['-i', str(rollback)], shipped, 'ii 5.1.0~rc.1-1'),
+            ('purge', ['-P', 'dashmate'], dict.fromkeys(shipped), None),
         ]:
             with self.subTest(step):
                 result = self.dpkg(host, *args)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assert_installed_files(host, expected)
+                self.assertEqual(self.package_state(host), state)
 
     @unittest.skipUnless(shutil.which('dpkg'), 'needs dpkg')
     def test_should_upgrade_to_a_renewed_keyring_and_keep_the_operators_suite(self):
