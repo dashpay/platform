@@ -1366,3 +1366,77 @@ async fn a_forwarded_sweep_capture_after_a_truncation_survives_an_older_queued_e
     assert_eq!(rows[&p.coin].block_hash, new_block.block_hash());
     assert_eq!(rows[&p.coin].spender_txid, winner.txid());
 }
+
+// --- A coin whose stale row is gone, across a restart ----------------------
+
+/// The header check deletes a stale row, the wallet reopens, and the next
+/// release of the coin frees it: nothing but the release is needed.
+#[test]
+fn a_coin_comes_back_through_the_release_after_a_restart_once_its_stale_row_is_gone() {
+    let (persister, _tmp, path, wallet_id, held) = chain_locked_block_spend();
+    let chain = BTreeMap::from([(ROW_HEIGHT, Some(BlockHash::from_byte_array([0xEE; 32])))]);
+    assert_eq!(
+        persister
+            .delete_block_spends_off_chain(&wallet_id, &chain)
+            .unwrap(),
+        1
+    );
+    drop(persister);
+
+    let reopened = SqlitePersister::open(SqlitePersisterConfig::new(&path)).expect("reopen");
+    reopened.load().expect("load");
+    assert!(is_spent(&reopened, &wallet_id, &held.outpoint));
+    assert!(offered(&reopened, &wallet_id).is_empty());
+    release(&reopened, wallet_id, held.outpoint);
+
+    assert!(!is_spent(&reopened, &wallet_id, &held.outpoint));
+    assert_eq!(
+        offered(&reopened, &wallet_id),
+        BTreeSet::from([held.outpoint])
+    );
+}
+
+/// The wallet delivers the coin unspent again while its row stands (the
+/// block that spent it was replaced): the row keeps it out of the load, and
+/// once the header check deletes the row the coin is offered, also after a
+/// restart. The wallet already holds it unspent, so no release will come.
+#[test]
+fn a_coin_delivered_unspent_while_its_row_stands_is_offered_once_the_row_is_gone() {
+    let (persister, _tmp, path, wallet_id, held) = chain_locked_block_spend();
+    persister
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    new_utxos: vec![held.clone()],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    persister.flush(wallet_id).unwrap();
+    assert!(
+        offered(&persister, &wallet_id).is_empty(),
+        "the row hides it"
+    );
+
+    let chain = BTreeMap::from([(ROW_HEIGHT, Some(BlockHash::from_byte_array([0xEE; 32])))]);
+    assert_eq!(
+        persister
+            .delete_block_spends_off_chain(&wallet_id, &chain)
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        offered(&persister, &wallet_id),
+        BTreeSet::from([held.outpoint])
+    );
+    drop(persister);
+
+    let reopened = SqlitePersister::open(SqlitePersisterConfig::new(&path)).expect("reopen");
+    assert_eq!(
+        offered(&reopened, &wallet_id),
+        BTreeSet::from([held.outpoint])
+    );
+}
