@@ -116,6 +116,10 @@ const ADDITIONS: &[(&str, Verdict)] = &[
         "field WaitForStateTransitionResultRequest.WaitForStateTransitionResultRequestV0.request_user_balance = 3 bool",
         Verdict::NoGate("a node that drops it answers without the balance, which the result allows"),
     ),
+    (
+        "field WaitForStateTransitionResultRequest.WaitForStateTransitionResultRequestV0.prove_state_before_block = 4 bool",
+        Verdict::NoGate("a node that drops it answers with a proof of current state and no state_before_block, which the result allows"),
+    ),
 ];
 
 /// The Rust request type of each method, as `TransportRequest::method_name` names it.

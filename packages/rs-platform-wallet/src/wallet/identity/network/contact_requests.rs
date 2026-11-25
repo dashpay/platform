@@ -3075,6 +3075,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         Self::parse_contact_request_doc(doc, owner_id, recipient_id)
     }
 
+    /// Parse a `contactRequest` document its owner sent into a
+    /// [`ContactRequest`]: the sender is the document's owner and the
+    /// recipient is its `toUserId`.
+    fn parse_own_sent_contact_request_doc(doc: &dpp::document::Document) -> Option<ContactRequest> {
+        let recipient_id = doc
+            .properties()
+            .get("toUserId")
+            .and_then(|v: &Value| v.to_identifier().ok())?;
+        Self::parse_sent_contact_request_doc(doc, doc.owner_id(), recipient_id)
+    }
+
     /// Enqueue a DIP-15 `AutoAccept` op for each inbound contact request to
     /// `identity_id` that carries a structurally-valid `autoAcceptProof` and is
     /// not yet established — so the next signer-present auto-accept pass
@@ -5208,77 +5219,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
         let mut requests = Vec::new();
 
-        for (_doc_id, maybe_doc) in sent_docs.iter() {
-            let doc = match maybe_doc {
-                Some(d) => d,
-                None => continue,
-            };
-
-            let sender_id = doc.owner_id();
-
-            let props = doc.properties();
-
-            let to_user_id = match props
-                .get("toUserId")
-                .and_then(|v: &Value| v.to_identifier().ok())
-            {
-                Some(v) => v,
-                None => continue,
-            };
-            let sender_key_index = match props
-                .get("senderKeyIndex")
-                .and_then(|v: &Value| v.to_integer::<u32>().ok())
-            {
-                Some(v) => v,
-                None => continue,
-            };
-            let recipient_key_index = match props
-                .get("recipientKeyIndex")
-                .and_then(|v: &Value| v.to_integer::<u32>().ok())
-            {
-                Some(v) => v,
-                None => continue,
-            };
-            let account_reference = match props
-                .get("accountReference")
-                .and_then(|v: &Value| v.to_integer::<u32>().ok())
-            {
-                Some(v) => v,
-                None => continue,
-            };
-            let encrypted_public_key = match props
-                .get("encryptedPublicKey")
-                .and_then(|v: &Value| v.as_bytes())
-                .cloned()
-            {
-                Some(v) => v,
-                None => continue,
-            };
-
-            let mut contact_request = ContactRequest::new(
-                sender_id,
-                to_user_id,
-                sender_key_index,
-                recipient_key_index,
-                account_reference,
-                encrypted_public_key,
-                doc.created_at_core_block_height().unwrap_or(0),
-                doc.created_at().unwrap_or(0),
-            );
-
-            // Attach optional encrypted account label if present.
-            contact_request.encrypted_account_label = props
-                .get("encryptedAccountLabel")
-                .and_then(|v: &Value| v.as_bytes())
-                .cloned();
-
-            // Attach optional auto-accept proof if present.
-            contact_request.auto_accept_proof = props
-                .get("autoAcceptProof")
-                .and_then(|v: &Value| v.as_bytes())
-                .cloned();
-
-            requests.push(contact_request);
+        for doc in sent_docs
+            .iter()
+            .filter_map(|(_doc_id, maybe_doc)| maybe_doc.as_ref())
+        {
+            if let Some(request) = Self::parse_own_sent_contact_request_doc(doc) {
+                requests.push(request);
+            }
         }
 
         // Sort by creation time ascending.
@@ -5663,6 +5610,7 @@ mod sweep_tests {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             tracked_collaterals: Default::default(),
+            funding_issuance_floors: Default::default(),
         }
     }
 
@@ -7062,6 +7010,73 @@ mod sweep_tests {
         );
     }
 
+    /// The public sent-requests query and the sync sweep read the same
+    /// `contactRequest` documents, so they must accept the same byte
+    /// encodings. A document query can yield a byte field as an array of
+    /// `U8` or as base64 text rather than `Value::Bytes`; a parser that only
+    /// matches `Value::Bytes` drops the whole request (required
+    /// `encryptedPublicKey`) or silently loses its label and proof.
+    #[test]
+    fn should_parse_own_sent_contact_request_whose_bytes_are_not_value_bytes() {
+        use dpp::document::{Document, DocumentV0};
+        use dpp::platform_value::Value;
+        use std::collections::BTreeMap;
+
+        let owner = Identifier::from([2u8; 32]);
+        let recipient = Identifier::from([1u8; 32]);
+        let as_u8_array =
+            |bytes: &[u8]| Value::Array(bytes.iter().map(|b| Value::U8(*b)).collect());
+
+        let public_key_ct = vec![1u8; 96];
+        let label_ct = vec![0x2au8; 48];
+        let proof = vec![3u8; 3];
+        let mut properties = BTreeMap::new();
+        properties.insert("toUserId".to_string(), Value::Identifier([1u8; 32]));
+        properties.insert("senderKeyIndex".to_string(), Value::U32(0));
+        properties.insert("recipientKeyIndex".to_string(), Value::U32(0));
+        properties.insert("accountReference".to_string(), Value::U32(5));
+        properties.insert(
+            "encryptedPublicKey".to_string(),
+            as_u8_array(&public_key_ct),
+        );
+        properties.insert("encryptedAccountLabel".to_string(), as_u8_array(&label_ct));
+        // base64 of [3, 3, 3]
+        properties.insert(
+            "autoAcceptProof".to_string(),
+            Value::Text("AwMD".to_string()),
+        );
+
+        let doc = Document::V0(DocumentV0 {
+            contract_version: None,
+            id: Identifier::from([9u8; 32]),
+            owner_id: owner,
+            properties,
+            revision: None,
+            created_at: Some(123),
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: Some(456),
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
+        });
+
+        let parsed = DashPayView::<SpvBroadcaster>::parse_own_sent_contact_request_doc(&doc)
+            .expect("a complete sent contactRequest doc must parse whatever its byte encoding");
+        assert_eq!(parsed.sender_id, owner);
+        assert_eq!(parsed.recipient_id, recipient);
+        assert_eq!(parsed.encrypted_public_key, public_key_ct);
+        assert_eq!(parsed.encrypted_account_label, Some(label_ct));
+        assert_eq!(parsed.auto_accept_proof, Some(proof));
+        assert_eq!(parsed.created_at, 123);
+        assert_eq!(parsed.core_height_created_at, 456);
+    }
+
     /// **Rotation version bump must read established contacts.**
     /// The next request's rotation version is derived by un-masking the
     /// PRIOR sent reference. Once a contact establishes, that prior request
@@ -8084,7 +8099,10 @@ mod receiving_restore_tests {
                 };
                 info.core_wallet
                     .accounts
-                    .insert_funds_bearing_account(ManagedCoreFundsAccount::from_account(&account))
+                    .insert_funds_bearing_account(
+                        ManagedCoreFundsAccount::from_account(&account)
+                            .expect("build managed external account"),
+                    )
                     .expect("managed external account");
             }
             info.core_wallet.update_synced_height(1000);

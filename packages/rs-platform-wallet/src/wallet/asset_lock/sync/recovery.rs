@@ -2585,6 +2585,7 @@ mod tests {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             tracked_collaterals: Default::default(),
+            funding_issuance_floors: Default::default(),
         };
         let out_point = OutPoint::new(tx.txid(), 0);
         let lock = TrackedAssetLock {

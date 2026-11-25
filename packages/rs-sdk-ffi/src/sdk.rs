@@ -1175,6 +1175,35 @@ mod fixed_provider_tests {
         unsafe { dash_sdk_destroy(handle) };
     }
 
+    /// The shielded anchor cache reuses a set only under a provider that
+    /// reports its policy revision; an SDK the native apps build must keep
+    /// reporting one, or every send silently refetches.
+    #[test]
+    fn should_report_a_policy_revision_for_every_fixed_provider_sdk() {
+        let dapi = CString::new("http://127.0.0.1:1").expect("address");
+        let quorum_url = CString::new("http://127.0.0.1:1").expect("quorum url");
+        let config = config(Network::Regtest, &dapi, Some(&quorum_url));
+        let constructors: [(
+            &str,
+            unsafe extern "C" fn(*const DashSDKConfig) -> DashSDKResult,
+        ); 3] = [
+            ("trusted", dash_sdk_create_trusted),
+            ("spv", dash_sdk_create_spv),
+            ("adaptive", dash_sdk_create_adaptive),
+        ];
+        for (kind, create) in constructors {
+            let result = unsafe { create(&config) };
+            assert!(result.error.is_null(), "{kind} SDK failed to build");
+            let handle = result.data as *mut SDKHandle;
+            let sdk = unsafe { &*(dash_sdk_get_inner_sdk_ptr(handle) as *const Sdk) };
+            assert!(
+                sdk.context_provider_arc().policy_revision().is_some(),
+                "{kind} SDK reports no policy revision"
+            );
+            unsafe { dash_sdk_destroy(handle) };
+        }
+    }
+
     /// The contracts registered with a provider, which is how
     /// `dash_sdk_add_known_contracts` and the SDK add them, and the contracts
     /// it verifies proofs and answers the document FFIs with must be one set,

@@ -683,6 +683,46 @@ where
         .ok_or_else(|| DapiError::Client("Tenderdash response missing result field".to_string()))
 }
 
+/// JSON-RPC's "internal error" code, which Tenderdash gives every error one of its RPC
+/// methods returns, a lookup that found nothing among them. A call it could not route
+/// ("Method not found", -32601) or refused as malformed carries another code, and fails the
+/// lookup.
+const METHOD_ERROR_CODE: i64 = -32603;
+
+/// The message of an error a Tenderdash RPC method itself returned.
+fn method_error(error: &DapiError) -> Option<&str> {
+    match error {
+        DapiError::TenderdashClientError(status) if status.code == METHOD_ERROR_CODE => {
+            status.message.as_deref().map(str::trim)
+        }
+        _ => None,
+    }
+}
+
+/// Whether Tenderdash's `tx` failed because its transaction index does not have the hash.
+///
+/// Tenderdash answers `tx (<HASH>) not found, err: <cause>` both when the index has no entry
+/// and when reading the entry failed (a database or decoding error). Only a lookup with no
+/// cause is a missing hash: Go formats the absent cause as `%!w(<nil>)`. A failed read must
+/// fail the call, or a committed transition whose entry could not be read would be reported
+/// unknown.
+pub(crate) fn is_missing_from_index(error: &DapiError) -> bool {
+    method_error(error).is_some_and(|message| {
+        message
+            .strip_prefix("tx (")
+            .and_then(|rest| rest.strip_suffix(") not found, err: %!w(<nil>)"))
+            .is_some_and(|hash| !hash.is_empty() && hash.chars().all(|c| c.is_ascii_hexdigit()))
+    })
+}
+
+/// Whether Tenderdash's `unconfirmed_tx` failed because its mempool does not have the hash:
+/// `transaction <HASH> not found`.
+pub(crate) fn is_missing_from_mempool(error: &DapiError) -> bool {
+    method_error(error).is_some_and(|message| {
+        message.starts_with("transaction ") && message.ends_with(" not found")
+    })
+}
+
 impl TenderdashClient {
     /// Generic POST method for Tenderdash RPC calls
     /// Serializes the request, performs the call, and maps protocol errors to `DapiError`.
@@ -971,6 +1011,7 @@ impl TenderdashClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::platform_service::TenderdashStatus;
     use serde_json::json;
 
     fn answer(id: &str, result: Value) -> Value {
@@ -983,6 +1024,75 @@ mod tests {
             "id": id,
             "error": { "code": -32603, "message": "Internal error", "data": data },
         })
+    }
+
+    fn tenderdash_error(code: i64, message: &str) -> DapiError {
+        DapiError::TenderdashClientError(TenderdashStatus::new(
+            code,
+            Some(message.to_string()),
+            None,
+        ))
+    }
+
+    #[test]
+    fn should_read_only_a_missing_hash_as_absent_from_the_transaction_index() {
+        // Tenderdash's own text when the index has no entry: Go prints the nil cause this way.
+        assert!(is_missing_from_index(&tenderdash_error(
+            -32603,
+            "tx (ABCD) not found, err: %!w(<nil>)"
+        )));
+
+        // The same message wrapping a failed read is not a missing hash: the entry may exist.
+        assert!(!is_missing_from_index(&tenderdash_error(
+            -32603,
+            "tx (ABCD) not found, err: failed to read tx result: database unavailable"
+        )));
+        assert!(!is_missing_from_index(&tenderdash_error(
+            -32603,
+            "tx (ABCD) not found, err: error reading TxResult: unexpected EOF"
+        )));
+        // The mempool's message, a failure and an unrouted method are not a missing hash.
+        assert!(!is_missing_from_index(&tenderdash_error(
+            -32603,
+            "transaction ABCD not found"
+        )));
+        assert!(!is_missing_from_index(&tenderdash_error(
+            -32603,
+            "transaction querying is disabled on this node due to the KV event sink being disabled"
+        )));
+        assert!(!is_missing_from_index(&tenderdash_error(
+            -32601,
+            "Method not found"
+        )));
+        assert!(!is_missing_from_index(&DapiError::Unavailable(
+            "down".to_string()
+        )));
+    }
+
+    #[test]
+    fn should_read_only_a_missing_hash_as_absent_from_the_mempool() {
+        assert!(is_missing_from_mempool(&tenderdash_error(
+            -32603,
+            "transaction ABCD not found"
+        )));
+
+        assert!(!is_missing_from_mempool(&tenderdash_error(
+            -32603,
+            "tx (ABCD) not found, err: <nil>"
+        )));
+        assert!(!is_missing_from_mempool(&tenderdash_error(
+            -32603,
+            "connection refused"
+        )));
+        // A node whose Tenderdash does not serve `unconfirmed_tx` must not answer unknown for a
+        // transition that may be pending.
+        assert!(!is_missing_from_mempool(&tenderdash_error(
+            -32601,
+            "Method not found"
+        )));
+        assert!(!is_missing_from_mempool(&DapiError::NotFound(
+            "missing".to_string()
+        )));
     }
 
     #[test]
