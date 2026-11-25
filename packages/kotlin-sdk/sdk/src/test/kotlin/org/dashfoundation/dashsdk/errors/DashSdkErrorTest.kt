@@ -577,6 +577,21 @@ class DashSdkErrorTest {
         assertTrue("nothing was sent, so it may be retried as it is", mapped.isRetryable)
     }
 
+    /**
+     * A note the local tree cannot witness yet is refused before the proof
+     * and the broadcast: its own code, retryable, apart from the generic
+     * wallet failure a host reads as possibly sent.
+     */
+    @Test
+    fun shouldReportAnUnavailableMerkleWitnessByItsOwnCode() {
+        val detail = "shielded withdraw failed: Shielded Merkle witness unavailable: position 7"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 88, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedMerkleWitnessUnavailable)
+        assertEquals(detail, mapped.message)
+        assertTrue("nothing was sent, so a retry after sync is safe", mapped.isRetryable)
+    }
+
     @Test
     fun shouldReportAMissingIdentityBalanceAsRetryable() {
         val detail = "Platform returned no balance for the identity"
