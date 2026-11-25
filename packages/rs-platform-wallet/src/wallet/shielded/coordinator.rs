@@ -4028,6 +4028,33 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// A note the dropped scan results proved spent is not offered again when
+    /// a later bind restores the host's copy of it, still unspent because the
+    /// host never received that spend: it stays out of selection until a
+    /// scan marks it spent again.
+    #[tokio::test]
+    async fn should_withhold_a_note_the_dropped_scan_proved_spent_until_it_is_marked_spent_again() {
+        let dir = temp_dir("handoff_spent");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let note = test_note([0x41; 32], 7, false);
+        let mut store = coordinator.store().write().await;
+        store.save_note(id, &note).unwrap();
+        assert!(store.mark_spent(id, &note.nullifier).unwrap());
+
+        store.forget_wallet_scan(id.wallet_id);
+        // The rebind's restore: the host's copy, unspent.
+        store.save_note(id, &note).unwrap();
+
+        assert!(store.get_unspent_notes(id).unwrap().is_empty());
+        assert!(
+            store.mark_spent(id, &note.nullifier).unwrap(),
+            "the next scan marks the restored copy spent, for the host this time"
+        );
+        drop(store);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// A wallet still registered at the handoff has the pass's notes and
     /// watermark handed to its host in one changeset, and keeps its scan
     /// results.

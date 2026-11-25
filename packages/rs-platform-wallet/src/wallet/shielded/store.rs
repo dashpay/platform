@@ -1234,6 +1234,13 @@ impl SubwalletState {
 
     /// Drop the scan results (notes, outgoing notes, activity and the sync
     /// watermark), keeping the reservations and redrive records.
+    ///
+    /// Each note the dropped results held as spent is left reserved. A scan
+    /// that proves a note spent resolves the reservation of the spend that
+    /// used it, and the host may never have been told: its copy, restored by
+    /// a later bind, is still unspent. The reservation keeps that copy out of
+    /// the balance and out of selection until a scan marks it spent again, or
+    /// the restore itself does for a copy the host holds as spent.
     pub(super) fn forget_scan(&mut self) {
         let Self {
             notes,
@@ -1241,12 +1248,15 @@ impl SubwalletState {
             last_synced_index,
             last_scanned_index,
             balance_source,
-            pending_nullifiers: _,
+            pending_nullifiers,
             redrives: _,
             outgoing_notes,
             outgoing_cmx_index,
             activity,
         } = self;
+        for note in notes.iter().filter(|note| note.is_spent) {
+            pending_nullifiers.entry(note.nullifier).or_default();
+        }
         notes.clear();
         nullifier_index.clear();
         *last_synced_index = 0;

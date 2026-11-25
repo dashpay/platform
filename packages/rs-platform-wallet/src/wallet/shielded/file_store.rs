@@ -979,7 +979,8 @@ impl FileBackedShieldedStore {
     /// leaves them. For a wallet whose registration went away while a sync
     /// pass ran: the host never received what that pass scanned for it, so a
     /// later bind hydrates from the host and rescans it rather than resuming
-    /// past it.
+    /// past it. A note those results held as spent stays reserved until
+    /// then ([`SubwalletState::forget_scan`]).
     pub(crate) fn forget_wallet_scan(&mut self, wallet_id: WalletId) {
         self.subwallets
             .iter_mut()
