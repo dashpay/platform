@@ -1652,6 +1652,13 @@ class PlatformWalletManager(
      * Clear succeeds. Only meaningful on a shielded build
      * ([Sdk.hasShielded]); the native entry point is absent otherwise and
      * this throws.
+     *
+     * Does not wait for a shielded operation in flight (a bind, an added
+     * account, a spend from the pool, a shield, a tip address preparation):
+     * while one runs this throws
+     * [DashSdkError.PlatformWallet.ShieldedOperationInProgress] at once,
+     * with nothing changed, no Room row deleted and the sync loop still
+     * running. Call it again once the operation has finished.
      */
     suspend fun clearShieldedStorage() = withContext(Dispatchers.IO) {
         mapNativeErrors { WalletManagerNative.shieldedClear(managerHandle) }

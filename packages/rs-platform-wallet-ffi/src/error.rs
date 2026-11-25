@@ -785,6 +785,17 @@ pub enum PlatformWalletFFIResultCode {
     /// managed ones.
     ErrorIdentityLookupFailed = 80,
 
+    /// Maps `PlatformWalletError::ShieldedOperationInProgress`: a shielded
+    /// Clear was refused because a shielded operation a caller started (a
+    /// bind, an account being added, a spend from the pool, a shield or a
+    /// tip address preparation, or another Clear) is in flight.
+    /// Clear does not wait for it: it returned at once and changed nothing,
+    /// so the sync loop keeps running and the host was not asked to wipe its
+    /// rows. Retryable once the operation has finished. Returned by
+    /// `platform_wallet_manager_shielded_clear`. Not the reverse case, an
+    /// operation refused because a Clear holds the wallet.
+    ErrorShieldedOperationInProgress = 84,
+
     /// The named thing does not exist.
     ///
     /// Originally (and still mostly) the code for every `Option` returned as an
@@ -1273,6 +1284,11 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // sent: a not-sent refusal, not an ambiguous SDK error.
             PlatformWalletError::IdentityLookupFailed { .. } => {
                 PlatformWalletFFIResultCode::ErrorIdentityLookupFailed
+            }
+            // A Clear refused while a shielded operation is in flight changed
+            // nothing, host rows included: the host offers the Clear again.
+            PlatformWalletError::ShieldedOperationInProgress => {
+                PlatformWalletFFIResultCode::ErrorShieldedOperationInProgress
             }
             // The wallet's private payments from an earlier process are not
             // restored yet: wallet readiness, not one contact's pending request.
@@ -3209,6 +3225,27 @@ mod private_contact_request_error_tests {
             PlatformWalletFFIResultCode::ErrorIdentityLookupFailed
         );
         assert_eq!(result.code as u32, 80);
+    }
+
+    /// A shielded Clear refused while an operation is in flight reaches the
+    /// host by its own code with its message, so the host can tell "nothing
+    /// changed, retry" apart from a failed store reset.
+    #[test]
+    fn should_report_a_clear_refused_during_a_shielded_operation_by_its_own_code() {
+        let mut result =
+            PlatformWalletFFIResult::from(PlatformWalletError::ShieldedOperationInProgress);
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedOperationInProgress
+        );
+        assert_eq!(result.code as u32, 84);
+        let message = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_str()
+            .expect("UTF-8 message")
+            .to_owned();
+        assert!(message.contains("in progress"), "{message}");
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
     }
 
     /// A public contact request a loaded wallet refuses until its private

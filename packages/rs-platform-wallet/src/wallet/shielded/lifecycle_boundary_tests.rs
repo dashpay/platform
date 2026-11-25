@@ -271,6 +271,25 @@ fn spawn_clear(
     tokio::spawn(async move { manager.clear_shielded().await })
 }
 
+/// A Clear requested now is refused at once because a shielded operation is
+/// in flight, before the host is asked to wipe anything.
+async fn assert_clear_refused(
+    manager: &Arc<PlatformWalletManager<BoundaryHost>>,
+    host: &BoundaryHost,
+) {
+    let refused = tokio::time::timeout(Duration::from_secs(10), manager.clear_shielded())
+        .await
+        .expect("a refused Clear returns without waiting for the operation");
+    assert!(
+        matches!(
+            refused,
+            Err(PlatformWalletError::ShieldedOperationInProgress)
+        ),
+        "{refused:?}"
+    );
+    assert_eq!(host.wipe_count(), 0, "a refused Clear wipes nothing");
+}
+
 /// Wait until a Clear holds or is queued on `coordinator`'s admission, so
 /// what the test checks next happens after Clear reached it.
 async fn until_admission_closed(coordinator: &NetworkShieldedCoordinator) {
@@ -314,11 +333,11 @@ async fn assert_native_state_cleared(coordinator: &NetworkShieldedCoordinator, i
     assert!(coordinator.registered_subwallets().await.is_empty());
 }
 
-/// A seed bind parked in its viewing-key write holds Clear off until it is
-/// done; Clear then resets it and wipes the row it wrote, so nothing of the
-/// bind outlives the Clear.
+/// A Clear requested while a seed bind is parked in its viewing-key write is
+/// refused; the Clear that follows the bind resets it and wipes the row it
+/// wrote, so nothing of the bind outlives the Clear.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn should_wipe_the_viewing_keys_of_a_bind_whose_host_write_was_delayed_across_clear() {
+async fn should_wipe_the_viewing_keys_of_a_bind_whose_host_write_refused_a_clear() {
     let dir = tempfile::tempdir().unwrap();
     let host = BoundaryHost::new();
     let (manager, wallet, coordinator) = configured(&host, &dir).await;
@@ -330,14 +349,11 @@ async fn should_wipe_the_viewing_keys_of_a_bind_whose_host_write_was_delayed_acr
         tokio::spawn(async move { wallet.bind_shielded(&SEED, &[0]).await })
     };
     host.reached("store viewing keys").await;
-    let clear = spawn_clear(&manager);
-    until_admission_closed(&coordinator).await;
-    assert_eq!(host.wipe_count(), 0, "Clear waits for the admitted bind");
-    assert!(!clear.is_finished());
+    assert_clear_refused(&manager, &host).await;
 
     release.send(()).unwrap();
     bind.await.unwrap().expect("the bind finishes first");
-    clear.await.unwrap().expect("then Clear runs");
+    manager.clear_shielded().await.expect("then Clear runs");
 
     assert_eq!(host.wipe_count(), 1);
     assert_eq!(
@@ -349,9 +365,9 @@ async fn should_wipe_the_viewing_keys_of_a_bind_whose_host_write_was_delayed_acr
     assert_native_state_cleared(&coordinator, id).await;
 }
 
-/// A seedless rebind parked in its host load holds Clear off; Clear then
-/// purges what it restored, so the pre-Clear snapshot it read restores
-/// nothing that survives.
+/// A Clear requested while a seedless rebind is parked in its host load is
+/// refused; the Clear that follows purges what the rebind restored, so the
+/// pre-Clear snapshot it read restores nothing that survives.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn should_restore_nothing_that_survives_from_a_snapshot_read_before_clear() {
     let dir = tempfile::tempdir().unwrap();
@@ -368,13 +384,11 @@ async fn should_restore_nothing_that_survives_from_a_snapshot_read_before_clear(
         tokio::spawn(async move { wallet.bind_shielded_from_persisted(&[0]).await })
     };
     host.reached("load").await;
-    let clear = spawn_clear(&manager);
-    until_admission_closed(&coordinator).await;
-    assert_eq!(host.wipe_count(), 0, "Clear waits for the admitted rebind");
+    assert_clear_refused(&manager, &host).await;
 
     release.send(()).unwrap();
     assert!(rebind.await.unwrap().expect("the rebind finishes first"));
-    clear.await.unwrap().expect("then Clear runs");
+    manager.clear_shielded().await.expect("then Clear runs");
 
     assert_eq!(host.events(), vec!["load", "wipe", "wiped"]);
     assert_eq!(host.viewing_key_rows(), 0);
@@ -433,8 +447,9 @@ async fn should_hold_a_bind_started_during_the_wipe_until_clear_finishes() {
     assert_eq!(coordinator.registered_subwallets().await, vec![id]);
 }
 
-/// Adding an account is admitted like a bind: Clear waits for one parked in
-/// its host load, then removes the account it added.
+/// Adding an account is admitted like a bind: a Clear requested while one is
+/// parked in its host load is refused, and the Clear that follows removes
+/// the account it added.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn should_order_an_account_add_and_a_clear() {
     let dir = tempfile::tempdir().unwrap();
@@ -449,17 +464,11 @@ async fn should_order_an_account_add_and_a_clear() {
         tokio::spawn(async move { wallet.shielded_add_account(&SEED, 1).await })
     };
     host.reached("load").await;
-    let clear = spawn_clear(&manager);
-    until_admission_closed(&coordinator).await;
-    assert_eq!(
-        host.wipe_count(),
-        0,
-        "Clear waits for the admitted account add"
-    );
+    assert_clear_refused(&manager, &host).await;
 
     release.send(()).unwrap();
     add.await.unwrap().expect("the add finishes first");
-    clear.await.unwrap().expect("then Clear runs");
+    manager.clear_shielded().await.expect("then Clear runs");
 
     assert_eq!(host.events(), BIND_THEN_CLEAR);
     assert_eq!(host.viewing_key_rows(), 0);
@@ -532,8 +541,9 @@ async fn should_clear_while_a_bind_waits_for_the_wallets_shield_guard() {
     );
 }
 
-/// A shielded operation that keeps its admission past the budget fails the
-/// Clear with nothing reset and the host never called.
+/// What a Clear waits for (a sync pass, a restoration: a holder of the plain
+/// admission) fails the Clear when it keeps the admission past the budget,
+/// with nothing reset and the host never called.
 #[tokio::test(start_paused = true)]
 async fn should_abort_clear_with_nothing_reset_when_admission_is_held_past_the_budget() {
     let dir = tempfile::tempdir().unwrap();
@@ -957,15 +967,15 @@ async fn should_refuse_restorations_until_a_failed_host_wipe_is_retried() {
     assert!(!wallet.private_payments_held().await);
 }
 
-/// A bind parked inside its admission while a Clear queues for the lock runs
-/// its private payment restoration under that same admission: it neither
-/// deadlocks on a second admission behind the queued Clear nor defers the
-/// restoration, and Clear runs once the bind is done.
+/// A bind parked inside its admission refuses a Clear requested meanwhile
+/// and runs its private payment restoration under that same admission: the
+/// refused Clear neither makes it defer the restoration nor leaves it
+/// waiting, and a Clear runs once the bind is done.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn should_restore_a_binds_private_payments_under_its_admission_while_clear_is_queued() {
+async fn should_restore_a_binds_private_payments_under_its_admission_after_refusing_a_clear() {
     let dir = tempfile::tempdir().unwrap();
     let host = BoundaryHost::new();
-    let (manager, wallet, coordinator) = configured(&host, &dir).await;
+    let (manager, wallet, _coordinator) = configured(&host, &dir).await;
 
     let release = BoundaryHost::gate(&host.store_gate);
     let bind = {
@@ -973,13 +983,12 @@ async fn should_restore_a_binds_private_payments_under_its_admission_while_clear
         tokio::spawn(async move { wallet.bind_shielded(&SEED, &[0]).await })
     };
     host.reached("store viewing keys").await;
-    let clear = spawn_clear(&manager);
-    until_admission_closed(&coordinator).await;
+    assert_clear_refused(&manager, &host).await;
 
     release.send(()).unwrap();
     tokio::time::timeout(Duration::from_secs(10), bind)
         .await
-        .expect("the bind does not deadlock behind the queued Clear")
+        .expect("the bind is not left waiting by the refused Clear")
         .unwrap()
         .expect("the bind finishes first");
     assert_eq!(
@@ -988,8 +997,56 @@ async fn should_restore_a_binds_private_payments_under_its_admission_while_clear
         "restored inline, not deferred"
     );
     assert!(!wallet.private_payments_held().await);
-    clear.await.unwrap().expect("then Clear runs");
+    manager.clear_shielded().await.expect("then Clear runs");
     assert_eq!(host.events(), BIND_THEN_CLEAR);
+}
+
+/// A Clear requested while a shielded operation is admitted is refused
+/// before the manager does anything: the sync loop it would have stopped
+/// keeps running, the commitment tree keeps its leaves and the host is not
+/// asked to wipe. Once the operation has returned the Clear goes through,
+/// stopping the loop and emptying the tree.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_refuse_a_clear_and_keep_the_sync_loop_while_an_operation_is_admitted() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = BoundaryHost::new();
+    let (manager, _wallet, coordinator) = configured(&host, &dir).await;
+    coordinator
+        .store()
+        .write()
+        .await
+        .append_commitment(&[7u8; 32], true)
+        .expect("a leaf");
+    // No wallet is bound, so the loop's passes have nothing to scan.
+    manager.shielded_sync_arc().start();
+    assert!(manager.shielded_sync().is_running());
+
+    let operation = coordinator.admit_operation().await.expect("admitted");
+    assert_clear_refused(&manager, &host).await;
+    assert!(
+        manager.shielded_sync().is_running(),
+        "a refused Clear does not stop the sync loop"
+    );
+    assert_eq!(
+        coordinator.store().read().await.tree_size().expect("size"),
+        1,
+        "a refused Clear resets nothing"
+    );
+
+    drop(operation);
+    manager
+        .clear_shielded()
+        .await
+        .expect("clear succeeds once the operation has returned");
+    assert!(
+        !manager.shielded_sync().is_running(),
+        "the Clear that went through stopped the sync loop"
+    );
+    assert_eq!(host.wipe_count(), 1);
+    assert_eq!(
+        coordinator.store().read().await.tree_size().expect("size"),
+        0
+    );
 }
 
 /// A funding's confirmed activity row, as the recorder builds it.

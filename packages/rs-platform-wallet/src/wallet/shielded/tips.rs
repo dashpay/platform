@@ -186,7 +186,7 @@ impl PlatformWallet {
             )));
         }
         let _shield_guard = self.shield_guard.lock().await;
-        let admission = coordinator.admit().await?;
+        let admission = coordinator.admit_operation().await?;
         let (account, master_key_hash) = self.verified_tip_account(seed, identity_id).await?;
         // Read the bound set and bind the augmented copy as one step: a bind
         // replaces the registration, so another bind landing in between

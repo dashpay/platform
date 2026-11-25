@@ -539,11 +539,14 @@ impl ShieldedOperationLocks<'_> {
     /// gate's exclusive side, so an operation admitted here runs to its end
     /// before the removal does, and one that starts after it is refused
     /// before it derives a key, selects a note or reaches the network.
+    ///
+    /// Admitted as an operation: a Clear requested while the admission
+    /// lives is refused instead of waiting for it.
     async fn admit(
         &self,
         wallet: &PlatformWallet,
     ) -> Result<ShieldedAdmission<'_>, PlatformWalletError> {
-        let admission = self.coordinator.admit().await?;
+        let admission = self.coordinator.admit_operation().await?;
         wallet.ensure_shielded_attached()?;
         Ok(admission)
     }
@@ -555,7 +558,7 @@ impl ShieldedOperationLocks<'_> {
         &self,
         wallet: &PlatformWallet,
     ) -> Result<ShieldedAdmission<'_>, PlatformWalletError> {
-        let admission = self.coordinator.admit().await?;
+        let admission = self.coordinator.admit_operation().await?;
         wallet.ensure_shielded_attached_for_spend()?;
         Ok(admission)
     }
@@ -1231,8 +1234,8 @@ impl PlatformWallet {
     /// The locks every durable shielded operation takes before its
     /// admission ([`ShieldedOperationLocks::admit`]), in the lock order: the
     /// generation's lifecycle gate, then `shield_guard` when `shield_class`.
-    /// An operation queued behind a long shield holds no admission that
-    /// would stall a Clear. Resolves the manager's coordinator first, so an
+    /// An operation queued behind a long shield holds no admission, so it
+    /// refuses no Clear. Resolves the manager's coordinator first, so an
     /// unconfigured manager refuses without waiting.
     #[cfg(feature = "shielded")]
     async fn lock_for_shielded_operation(
@@ -1665,8 +1668,8 @@ impl PlatformWallet {
     /// with the full account list.
     ///
     /// Holds the same locks as [`bind_shielded`](Self::bind_shielded), so a
-    /// removal or a Clear waits for an add in flight: a caller must hold
-    /// none of them.
+    /// removal waits for an add in flight and a Clear is refused meanwhile:
+    /// a caller must hold none of them.
     ///
     /// An account number of the range reserved for identity accounts is
     /// refused, as in a bind.
@@ -2589,10 +2592,9 @@ impl PlatformWallet {
         // shielded state, or reaches the network.
         let _lifecycle = self.core().generation_payment_guard().await;
         // Admitted for the spend, after the gate (the lock order), but only
-        // once the host has signed: a signing prompt never holds a Clear
-        // back.
+        // once the host has signed: a signing prompt never refuses a Clear.
         let coordinator = self.shielded_coordinator().await?;
-        let _admission = coordinator.admit().await?;
+        let _admission = coordinator.admit_operation().await?;
         if !self.core().is_current_generation().await {
             return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
                 self.wallet_id,
@@ -2749,18 +2751,21 @@ impl PlatformWallet {
         // registration below.
         let locks = self.lock_for_shielded_operation(false).await?;
         let coordinator = Arc::clone(&locks.coordinator);
-        let admission = coordinator.admit().await?;
+        let admission = coordinator.admit_operation().await?;
         self.ensure_shielded_attached_for_spend()?;
         let epoch = admission.epoch();
         let reacquire = || async {
             let locks = self.lock_for_shielded_operation(false).await?;
-            let admission = coordinator.admit_since(epoch).await?.ok_or_else(|| {
-                PlatformWalletError::ShieldedStoreError(
-                    "a shielded Clear completed while the identity create was being built; \
+            let admission = coordinator
+                .admit_operation_since(epoch)
+                .await?
+                .ok_or_else(|| {
+                    PlatformWalletError::ShieldedStoreError(
+                        "a shielded Clear completed while the identity create was being built; \
                      nothing was broadcast"
-                        .to_string(),
-                )
-            })?;
+                            .to_string(),
+                    )
+                })?;
             self.ensure_shielded_attached_for_spend()?;
             Ok((admission, locks))
         };

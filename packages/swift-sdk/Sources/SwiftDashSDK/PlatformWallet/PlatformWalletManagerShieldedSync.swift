@@ -468,10 +468,20 @@ extension PlatformWalletManager {
     /// Throws `invalidHandle` while an async native operation is admitted
     /// (for example a shielded spend or a wallet drain): Clear would wipe the
     /// recovery state that operation is about to write or has armed.
+    ///
+    /// Throws `PlatformWalletError.shieldedOperationInProgress` at once,
+    /// without waiting, while a shielded operation is in flight (a bind, an
+    /// account being added, a spend from the pool, a shield, a tip address
+    /// preparation, or another Clear). Rust decides that and changed
+    /// nothing: the sync loop keeps running, the host's rows were not wiped,
+    /// and this manager keeps its sync generation, progress mirrors and
+    /// local balance generation. Call again once the operation has finished.
     public func clearShielded() throws {
         try ensureShieldedLifecycleAllowed("clearShielded")
         try ensureNoShieldedStopInFlight(before: "clearing shielded state")
         try ensureSyncNativeOpAllowed("clearShielded")
+        // Every throw, the refusal included, leaves before the bump and the
+        // progress reset below.
         try withShieldedLocalBalanceMutation {
             try platform_wallet_manager_shielded_clear(handle).check()
         }

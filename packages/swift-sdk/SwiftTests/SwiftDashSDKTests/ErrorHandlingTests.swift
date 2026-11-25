@@ -621,6 +621,23 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(message, detail)
     }
 
+    /// A shielded Clear refused while an operation is in flight keeps its own
+    /// code and typed case, so the host can keep its rows and offer a retry
+    /// instead of treating it as a failed reset.
+    func testShouldReportAClearRefusedDuringAShieldedOperationByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_OPERATION_IN_PROGRESS
+        )
+        XCTAssertEqual(code, .errorShieldedOperationInProgress)
+        XCTAssertEqual(code.rawValue, 84)
+        let detail = "A shielded operation is in progress; clear the shielded state once it has finished"
+        guard case .shieldedOperationInProgress(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed shielded operation in progress error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
     func testShouldReadEveryFieldOfThePrivateContactReadiness() {
         var ffi = PrivateContactReadinessFFI()
         ffi.private_payments_restored = false

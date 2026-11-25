@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.Sdk
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 import org.dashfoundation.dashsdk.wallet.WalletSyncEvent
@@ -403,6 +404,11 @@ class ShieldedService(private val database: DashDatabase) {
      *    restart the background loop, so the button alone triggers an
      *    in-session cold rebuild 0→N for the whole fleet.
      *
+     * A Clear refused because a shielded operation is in flight
+     * ([DashSdkError.PlatformWallet.ShieldedOperationInProgress], from Rust)
+     * throws the same way: nothing was reset, wiped or bound again, sync
+     * keeps running, and the caller offers the Clear again once the
+     * operation has finished.
      * No-op when unbound.
      */
     suspend fun clearLocalState() {

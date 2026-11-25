@@ -3319,7 +3319,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
 /// the shared commitment tree, reset the caught-up cooldown, and have the
 /// persistence bridge delete the network's shielded rows
 /// (`onWipeShieldedState`) before returning. Throws `DashSDKException` when
-/// the bridge cannot wipe (nothing reset) or any step fails. Mirrors Swift's
+/// the bridge cannot wipe (nothing reset) or any step fails. While a
+/// shielded operation is in flight it throws at once with code 1084
+/// (`ErrorShieldedOperationInProgress`), nothing changed. Mirrors Swift's
 /// `PlatformWalletManager.clearShielded()`.
 #[cfg(feature = "shielded")]
 #[no_mangle]

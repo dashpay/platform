@@ -759,6 +759,21 @@ var body: some View {
                         // reset first, then wipes SwiftData only if
                         // that reset succeeds.
                         .disabled(shieldedService.isSyncing)
+                        // A refused Clear gets its own alert rather than
+                        // the inline `lastError` line: sync keeps running
+                        // after a refusal and a completed pass clears
+                        // `lastError`, which would hide the instruction.
+                        .alert(
+                            "Clear Not Done",
+                            isPresented: Binding(
+                                get: { shieldedService.clearRefusalNotice != nil },
+                                set: { if !$0 { shieldedService.clearRefusalNotice = nil } }
+                            )
+                        ) {
+                            Button("OK") { shieldedService.clearRefusalNotice = nil }
+                        } message: {
+                            Text(shieldedService.clearRefusalNotice ?? "")
+                        }
                     }
                 }
                 .padding(.vertical, 4)

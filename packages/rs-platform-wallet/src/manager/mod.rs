@@ -1172,6 +1172,23 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// manager whose `configure_shielded` never ran is a wiring fault, and a
     /// silent success would leave the on-disk tree and its watermark in
     /// place for the next bind to reload.
+    ///
+    /// # A shielded operation in flight refuses the Clear
+    ///
+    /// Clear does not wait for a shielded operation a caller started (a
+    /// bind, an added account, a spend from the pool, a shield, a tip
+    /// address preparation). While one is admitted this returns
+    /// [`PlatformWalletError::ShieldedOperationInProgress`] before the sync
+    /// loop is stopped and before anything is reset or the host is asked to
+    /// wipe, so the Clear can be offered again once the operation has
+    /// finished. A sync pass is not such an operation: Clear still cancels a
+    /// running pass and waits for it to drain, as described above.
+    ///
+    /// The Clear's admission is held while that pass drains, so an operation
+    /// that arrives meanwhile waits for the Clear. A sync completion handler
+    /// must therefore not wait for a shielded operation of its own: the pass
+    /// would wait for the handler, the handler for the Clear, and the Clear
+    /// for the pass, until the drain budget ends it with `ShutdownIncomplete`.
     #[cfg(feature = "shielded")]
     pub async fn clear_shielded(&self) -> Result<(), crate::error::PlatformWalletError> {
         // Fail closed before anything is stopped or reset: the host half of
@@ -1188,6 +1205,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 missing.bits(),
             )));
         }
+        // Asked before the quiesce, so a refused Clear leaves the sync loop
+        // running, and held through the wipe: an operation that arrives while
+        // the pass drains waits for this Clear instead of overtaking it.
+        let coordinator = self.shielded_coordinator().await;
+        let admission = coordinator
+            .as_deref()
+            .map(NetworkShieldedCoordinator::try_admit_clear)
+            .transpose()?;
         // Hold the registry's per-key clearing latch across the WHOLE
         // quiesce -> wipe. While it is up, `ShieldedSyncManager::start`
         // (and any registry (re)start) is a no-op, so no fresh pass can
@@ -1212,21 +1237,19 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     .to_string(),
             ));
         };
-        match self.shielded_coordinator().await {
-            Some(coord) => coord.clear(&*self.persister).await,
-            None => {
-                tracing::error!(
-                    "clear_shielded: no shielded coordinator installed on this manager — the \
-                     on-disk commitment tree cannot be reset. configure_shielded never ran on \
-                     THIS manager instance (or ran on a different one)."
-                );
-                Err(crate::error::PlatformWalletError::ShieldedStoreError(
-                    "shielded clear requested but no coordinator is configured on this manager — \
-                     on-disk tree not reset"
-                        .to_string(),
-                ))
-            }
-        }
+        let Some(admission) = admission else {
+            tracing::error!(
+                "clear_shielded: no shielded coordinator installed on this manager — the \
+                 on-disk commitment tree cannot be reset. configure_shielded never ran on \
+                 THIS manager instance (or ran on a different one)."
+            );
+            return Err(crate::error::PlatformWalletError::ShieldedStoreError(
+                "shielded clear requested but no coordinator is configured on this manager — \
+                 on-disk tree not reset"
+                    .to_string(),
+            ));
+        };
+        admission.clear(&*self.persister).await
     }
 
     /// Reset the platform-address (BLAST/DIP-17) incremental-sync

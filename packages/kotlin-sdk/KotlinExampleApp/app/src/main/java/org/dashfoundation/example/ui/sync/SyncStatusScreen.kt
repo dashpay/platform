@@ -33,6 +33,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.Sdk
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.services.PlatformBalanceSyncService.PlatformSyncState
 import org.dashfoundation.dashsdk.wallet.SpvSubProgress
 import org.dashfoundation.example.di.LocalAppContainer
@@ -48,6 +49,14 @@ import org.dashfoundation.example.util.formatCredits
 import org.dashfoundation.example.util.formatRelative
 import java.io.File
 import java.util.Date
+
+/**
+ * Shown when Rust refuses a shielded Clear because a shielded operation is in
+ * flight ([DashSdkError.PlatformWallet.ShieldedOperationInProgress]). The same
+ * text as SwiftExampleApp's.
+ */
+internal const val SHIELDED_CLEAR_REFUSED_MESSAGE =
+    "A shielded payment or wallet setup is in progress. Try Clear again when it finishes."
 
 /**
  * Sync tab root — full port of `CoreContentView.swift`'s three sections:
@@ -374,6 +383,13 @@ fun SyncStatusScreen() {
                             scope.launch {
                                 try {
                                     container.shieldedService.clearLocalState()
+                                } catch (e: DashSdkError.PlatformWallet.ShieldedOperationInProgress) {
+                                    // Rust refused the Clear because a
+                                    // shielded operation is in flight, and
+                                    // changed nothing: not a failure, the
+                                    // user taps Clear again afterwards
+                                    // (← CoreContentView.swift, same text).
+                                    error = SHIELDED_CLEAR_REFUSED_MESSAGE
                                 } catch (e: Exception) {
                                     error = e.message ?: "Failed to clear shielded data"
                                 }

@@ -19,6 +19,7 @@ use key_wallet::account::StandardAccountType;
 use crate::changeset::PersistenceError;
 use crate::changeset::PlatformWalletPersistence;
 use crate::changeset::{ClientStartState, PlatformWalletChangeSet, ShieldedSubwalletStartState};
+use crate::error::PlatformWalletError;
 use crate::test_support::funded_wallet_manager;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
@@ -930,42 +931,64 @@ async fn add_account_rejects_a_viewing_key_change_for_a_persisted_account() {
     );
 }
 
-/// Park `bind` inside its host load, and require a Clear started meanwhile
-/// to wait until the bind has returned.
-async fn assert_clear_waits_for_bind<F>(
+/// Park `operation` inside its host load, and require a Clear requested
+/// meanwhile to be refused at once with nothing changed. The Clear goes
+/// through once the operation has returned.
+async fn assert_clear_refused_while_in_flight<F>(
     persister: &CapturingPersistence,
     coordinator: &NetworkShieldedCoordinator,
-    bind: F,
+    operation: F,
 ) -> F::Output
 where
     F: std::future::Future + Send + 'static,
     F::Output: Send + 'static,
 {
+    let registered = coordinator.registered_subwallets().await;
     let release = persister.gate_next_load();
-    let bind = tokio::spawn(bind);
+    let operation = tokio::spawn(operation);
     persister.gated_load_entered().await;
 
-    let mut clear = std::pin::pin!(clear(coordinator));
+    // Polled once while the operation is still parked: a refusal is decided
+    // without waiting, so a Clear that parks here waits for the operation.
+    let refused = match futures::poll!(std::pin::pin!(clear(coordinator))) {
+        std::task::Poll::Ready(refused) => refused,
+        std::task::Poll::Pending => {
+            release.send(()).expect("release the parked load");
+            panic!("the Clear waited for the operation in flight");
+        }
+    };
     assert!(
-        futures::poll!(clear.as_mut()).is_pending(),
-        "the Clear must wait for the bind in flight"
+        matches!(
+            refused,
+            Err(PlatformWalletError::ShieldedOperationInProgress)
+        ),
+        "{refused:?}"
     );
+    assert_eq!(
+        coordinator.registered_subwallets().await,
+        registered,
+        "a refused Clear drops no registration"
+    );
+
     release.send(()).expect("release the parked load");
-    let bound = bind.await.expect("bind task");
-    clear.await.expect("clear succeeds");
-    bound
+    let outcome = operation.await.expect("operation task");
+    clear(coordinator)
+        .await
+        .expect("clear succeeds once the operation has returned");
+    outcome
 }
 
-/// A Clear waits for a bind in flight. The host wipes its own rows once the
-/// Clear returns, so a Clear that completed while a bind sat between its
-/// host load and its host store would have the bind write its viewing keys
-/// after that wipe: rows for shielded state the user cleared. Waiting puts
-/// the bind's write before the Clear, and so before the wipe.
+/// A Clear is refused while a bind is in flight. Clear wipes the host's
+/// rows, so one that completed while a bind sat between its host load and
+/// its host store would have the bind write its viewing keys after that
+/// wipe: rows for shielded state the user cleared. The refusal leaves the
+/// Clear to a retry after the bind's write, and so the wipe after it too,
+/// without the Clear waiting on the bind.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn should_hold_a_clear_until_a_bind_in_flight_returns() {
+async fn should_refuse_a_clear_while_a_bind_is_in_flight() {
     let persister = Arc::new(CapturingPersistence::default());
     let wallet = platform_wallet_with(Arc::clone(&persister)).await;
-    let coordinator = coordinator_at(&temp_dir("clear_waits_for_bind"));
+    let coordinator = coordinator_at(&temp_dir("clear_refused_during_bind"));
     wallet
         .attach_shielded_coordinator_for_test(&coordinator)
         .await;
@@ -974,7 +997,7 @@ async fn should_hold_a_clear_until_a_bind_in_flight_returns() {
         let wallet = wallet.clone();
         async move { wallet.bind_shielded(&[0x42u8; 64], &[0]).await }
     };
-    assert_clear_waits_for_bind(&persister, &coordinator, bind)
+    assert_clear_refused_while_in_flight(&persister, &coordinator, bind)
         .await
         .expect("bind succeeds");
     assert!(
@@ -987,14 +1010,14 @@ async fn should_hold_a_clear_until_a_bind_in_flight_returns() {
     );
 }
 
-/// The seedless bind is held the same way: it restores the notes and
-/// watermark of the snapshot it loaded, so a Clear completing while it sat
-/// in that load must wait as well.
+/// The seedless bind refuses a Clear the same way: it restores the notes
+/// and watermark of the snapshot it loaded, so a Clear must not complete
+/// while it sits in that load.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn should_hold_a_clear_until_a_persisted_bind_in_flight_returns() {
+async fn should_refuse_a_clear_while_a_persisted_bind_is_in_flight() {
     let persister = Arc::new(CapturingPersistence::default());
     let wallet = platform_wallet_with(Arc::clone(&persister)).await;
-    let coordinator = coordinator_at(&temp_dir("clear_waits_for_persisted_bind"));
+    let coordinator = coordinator_at(&temp_dir("clear_refused_during_persisted_bind"));
     wallet
         .attach_shielded_coordinator_for_test(&coordinator)
         .await;
@@ -1008,7 +1031,7 @@ async fn should_hold_a_clear_until_a_persisted_bind_in_flight_returns() {
         let wallet = wallet.clone();
         async move { wallet.bind_shielded_from_persisted(&[0]).await }
     };
-    let found = assert_clear_waits_for_bind(&persister, &coordinator, bind)
+    let found = assert_clear_refused_while_in_flight(&persister, &coordinator, bind)
         .await
         .expect("persisted bind succeeds");
     assert!(found, "the bind found its persisted key");
@@ -1019,13 +1042,12 @@ async fn should_hold_a_clear_until_a_persisted_bind_in_flight_returns() {
 }
 
 /// `shielded_add_account` writes a viewing key to the host too, so a Clear
-/// waits for one in flight as it does for a bind. It is given no
-/// coordinator: it takes the admission of the one the keys were installed on.
+/// is refused while one is in flight as it is for a bind.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn should_hold_a_clear_until_an_account_add_in_flight_returns() {
+async fn should_refuse_a_clear_while_an_account_add_is_in_flight() {
     let persister = Arc::new(CapturingPersistence::default());
     let wallet = platform_wallet_with(Arc::clone(&persister)).await;
-    let coordinator = coordinator_at(&temp_dir("clear_waits_for_account_add"));
+    let coordinator = coordinator_at(&temp_dir("clear_refused_during_account_add"));
     wallet
         .attach_shielded_coordinator_for_test(&coordinator)
         .await;
@@ -1039,7 +1061,7 @@ async fn should_hold_a_clear_until_an_account_add_in_flight_returns() {
         let wallet = wallet.clone();
         async move { wallet.shielded_add_account(&seed, 1).await }
     };
-    assert_clear_waits_for_bind(&persister, &coordinator, add)
+    assert_clear_refused_while_in_flight(&persister, &coordinator, add)
         .await
         .expect("the account is added");
     assert!(

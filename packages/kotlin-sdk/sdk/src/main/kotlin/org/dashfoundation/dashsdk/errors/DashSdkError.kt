@@ -836,6 +836,22 @@ sealed class DashSdkError(
         }
 
         /**
+         * `ErrorShieldedOperationInProgress` (native code 84). A shielded
+         * Clear was refused because a shielded operation is in flight on the
+         * wallet manager: a bind, an account being added, a spend from the
+         * pool, a shield, a tip address preparation, or another Clear. Rust
+         * does not make Clear wait for it. Clear returned at once and changed
+         * nothing (the sync loop keeps running, no registration, note or
+         * tree leaf was touched, no Room row was deleted), so the host
+         * offers Clear again once the operation has finished.
+         * ← Swift `PlatformWalletError.shieldedOperationInProgress`.
+         */
+        class ShieldedOperationInProgress(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.
          * Carries the platform-wallet [nativeCode] (already de-offset) and
          * the Rust-supplied message.
@@ -1046,6 +1062,7 @@ sealed class DashSdkError(
             75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
             76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
             80 -> PlatformWallet.IdentityLookupFailed(message, cause) // ErrorIdentityLookupFailed
+            84 -> PlatformWallet.ShieldedOperationInProgress(message, cause) // ErrorShieldedOperationInProgress
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

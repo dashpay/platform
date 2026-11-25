@@ -71,6 +71,12 @@ class ShieldedService: ObservableObject {
     /// Last error from a shielded operation. Cleared on a successful
     /// pass.
     @Published var lastError: String?
+    /// Set when Rust refused a Clear because a shielded operation is in
+    /// flight. Kept apart from `lastError` because a refused Clear leaves
+    /// sync running, and a sync pass that completes clears `lastError`,
+    /// which would hide the retry instruction before the user reads it.
+    /// Cleared only when the user dismisses it or starts another Clear.
+    @Published var clearRefusalNotice: String?
 
     /// Bech32m-encoded Orchard payment address for account 0.
     /// Kept for the existing Receive sheet which is still
@@ -755,6 +761,8 @@ class ShieldedService: ObservableObject {
         // per-network SQLite delete; that step is gone — see
         // doc above for why.)
         let managerForStop = walletManager
+        // A new attempt supersedes an earlier refusal, whatever its outcome.
+        clearRefusalNotice = nil
         SDKLogger.event(
             "shielded_reset_started",
             category: .shielded,
@@ -769,8 +777,18 @@ class ShieldedService: ObservableObject {
         // loaded wallet via the `engineBindOtherWallets` / `bindEngine`
         // pass, best-effort across the mirror. `rebindWalletScopedServices`
         // remains the recovery path for wallets loaded LATER.
-        prepareForShieldedRebind()
+        //
+        // `prepareForShieldedRebind()` runs once Rust has acted on the
+        // Clear (`afterResetAttempt`), in the same synchronous MainActor
+        // turn as `clearShielded()`, so no queued event is delivered
+        // between the two; the only thing `clearShielded()` publishes on
+        // the way is the progress reset, which the rebind prep repeats.
+        // A Clear Rust refused because a shielded operation is in flight
+        // changed nothing there: the wallet is still bound, the loop still
+        // runs and the host's rows were not wiped, so the service is left
+        // exactly as it was.
         guard let managerForStop else {
+            prepareForShieldedRebind()
             lastError = "Failed to reset shielded state: no wallet manager is bound."
             SDKLogger.event(
                 "shielded_reset_failed",
@@ -782,21 +800,46 @@ class ShieldedService: ObservableObject {
         }
 
         do {
-            try managerForStop.clearShielded()
+            try Self.executeClearSequence(
+                resetRustState: {
+                    try managerForStop.clearShielded()
+                },
+                afterResetAttempt: {
+                    prepareForShieldedRebind()
+                }
+            )
         } catch {
-            lastError = "Failed to reset shielded state: \(error.localizedDescription)"
+            let underlyingError: Error
+            switch error {
+            case .refusedDuringShieldedOperation:
+                // Expected while a payment or wallet setup runs; Rust kept
+                // everything, so this is a refusal to report, not a failure.
+                // `lastError` keeps whatever sync status it had: the Clear
+                // changed nothing.
+                clearRefusalNotice = Self.clearRefusedDuringShieldedOperationMessage
+                SDKLogger.event(
+                    "shielded_reset_refused",
+                    category: .shielded,
+                    severity: .warning,
+                    fields: ["reason": .publicText("shielded_operation_in_progress")]
+                )
+                return
+            case .rustReset(let error):
+                underlyingError = error
+            }
+            lastError = "Failed to reset shielded state: \(underlyingError.localizedDescription)"
             SDKLogger.event(
                 "shielded_reset_failed",
                 category: .shielded,
                 severity: .error,
                 fields: ["phase": .publicText("clear")],
-                error: error
+                error: underlyingError
             )
             return
         }
 
         // Finish zeroing the published mirror. The subscriptions
-        //    were cancelled before the reset attempt. Keep the bind credentials
+        //    were cancelled once Rust had acted on the Clear. Keep the bind credentials
         //    (walletManager / boundWalletId / network / resolver
         //    / boundAccounts) so [`manualSync`] can re-bind on
         //    the next Sync Now tap. Bare [`reset`] would nil
@@ -820,10 +863,49 @@ class ShieldedService: ObservableObject {
         longestSyncDuration = nil
     }
 
-    /// A clear attempt quiesces Rust before it can report success or failure,
-    /// and a store failure may occur after one reset half has already landed.
-    /// Treat every attempt as requiring a fresh bind while retaining the
-    /// persisted host rows until the whole sequence succeeds.
+    enum ClearLocalStateFailure: Error {
+        /// Rust refused the Clear because a shielded operation is in flight.
+        /// Nothing changed there, so nothing changes here either.
+        case refusedDuringShieldedOperation
+        case rustReset(Error)
+    }
+
+    /// Shown when Clear is tapped while a shielded operation is in flight.
+    /// KotlinExampleApp shows the same text.
+    static let clearRefusedDuringShieldedOperationMessage =
+        "A shielded payment or wallet setup is in progress. Try Clear again when it finishes."
+
+    /// Runs the Rust Clear and sorts its outcome. Kept separate from the
+    /// user-facing operation so tests can exercise the outcomes without a
+    /// live manager. The host deletes nothing here: Rust's Clear wipes the
+    /// host rows itself through the persistence handler.
+    ///
+    /// `afterResetAttempt` runs once Rust has acted on the Clear, whether the
+    /// reset succeeded or failed. It does not run when Rust refused the Clear
+    /// because a shielded operation is in flight: Rust changed nothing then
+    /// and the host's rows were not wiped, so the host keeps its binding and
+    /// subscriptions.
+    static func executeClearSequence(
+        resetRustState: () throws -> Void,
+        afterResetAttempt: () -> Void
+    ) throws(ClearLocalStateFailure) {
+        do {
+            try resetRustState()
+        } catch PlatformWalletError.shieldedOperationInProgress(_) {
+            throw ClearLocalStateFailure.refusedDuringShieldedOperation
+        } catch {
+            afterResetAttempt()
+            throw ClearLocalStateFailure.rustReset(error)
+        }
+        afterResetAttempt()
+    }
+
+    /// A clear attempt Rust acted on quiesced Rust before it could report
+    /// success or failure, and a store failure may occur after one reset half
+    /// has already landed. Treat every such attempt as requiring a fresh bind
+    /// while retaining the persisted host rows until the whole sequence
+    /// succeeds. A Clear Rust refused because an operation is in flight
+    /// quiesced nothing and does not come here.
     private func prepareForShieldedRebind() {
         syncStateCancellable?.cancel()
         syncEventCancellable?.cancel()

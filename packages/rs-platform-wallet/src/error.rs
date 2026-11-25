@@ -1253,6 +1253,18 @@ pub enum PlatformWalletError {
 
     #[error("Shielded sub-wallet not bound: call bind_shielded first")]
     ShieldedNotBound,
+
+    /// A shielded Clear was refused because a shielded operation a caller
+    /// started is admitted on the coordinator: a bind, an account being
+    /// added, a spend from the pool, a shield or a tip address preparation,
+    /// for as long as it holds its admission, or another Clear.
+    /// Clear does not wait for it. It returned at once and changed nothing:
+    /// the sync loop keeps running, and no registration, note, watermark or
+    /// tree leaf was touched, and the host was not asked to wipe its rows.
+    /// Retryable: Clear goes through once the operation has finished.
+    /// FFI mirror: `PlatformWalletFFIResultCode::ErrorShieldedOperationInProgress`.
+    #[error("A shielded operation is in progress; clear the shielded state once it has finished")]
+    ShieldedOperationInProgress,
 }
 
 /// The SDK's invitation errors map onto the variants the wallet used before

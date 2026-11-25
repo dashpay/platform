@@ -328,6 +328,12 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// lookup failed, which is not Platform's answer that it does not exist,
     /// 7). Nothing was signed, reserved or broadcast: retry as it is.
     case errorIdentityLookupFailed = 80
+    /// A shielded Clear was refused because a shielded operation (a bind, an
+    /// account being added, a spend from the pool, a shield, a tip address
+    /// preparation, or another Clear) is in flight. Clear does not wait for
+    /// it: nothing was changed, sync keeps running and the host's rows were
+    /// not wiped. Retry once it has finished.
+    case errorShieldedOperationInProgress = 84
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -481,6 +487,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorPublicContactRequestUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_LOOKUP_FAILED:
             self = .errorIdentityLookupFailed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_OPERATION_IN_PROGRESS:
+            self = .errorShieldedOperationInProgress
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -758,6 +766,13 @@ public enum PlatformWalletError: LocalizedError {
     /// broadcast. Not sent, so it may be retried as it is; unlike an unmapped
     /// SDK error it is never a possibly delivered operation.
     case identityLookupFailed(String)
+    /// `PlatformWalletManager.clearShielded()` was refused at once because a
+    /// shielded operation (a bind, an account being added, a spend from the
+    /// pool, a shield, a tip address preparation, or another Clear) is in
+    /// flight. Clear does not wait for it. Nothing was changed: sync keeps
+    /// running, no shielded state was reset and the host's rows were not
+    /// wiped. Clear again once the operation has finished.
+    case shieldedOperationInProgress(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition never
     /// left the wallet (refused before anything was sent), so it cannot
@@ -994,6 +1009,7 @@ public enum PlatformWalletError: LocalizedError {
              .privateContactRecoveryUnsupported(let m),
              .privateContactStoreNotRead(let m), .sdkPinnedBelowProtocolVersion(let m),
              .publicContactRequestUnconfirmed(let m), .identityLookupFailed(let m),
+             .shieldedOperationInProgress(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
@@ -1133,6 +1149,8 @@ public enum PlatformWalletError: LocalizedError {
             self = .publicContactRequestUnconfirmed(detail)
         case .errorIdentityLookupFailed:
             self = .identityLookupFailed(detail)
+        case .errorShieldedOperationInProgress:
+            self = .shieldedOperationInProgress(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)
