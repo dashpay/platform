@@ -577,9 +577,12 @@ impl NetworkShieldedCoordinator {
     /// call it: a host that sets one spends through the wallet.
     ///
     /// The hook is held in memory only: set it after every open, before the
-    /// first spend. It can't be replaced or removed; a second call is refused
-    /// with [`PlatformWalletError::InvalidParameter`] and changes nothing. A
-    /// spend that started before it was set is not shown to it.
+    /// first wallet is bound and before shielded sync starts. A sync pass
+    /// that runs before it is set re-broadcasts saved spends without asking
+    /// [`ShieldedDispatch::admit`]. It can't be replaced or removed; a second
+    /// call is refused with [`PlatformWalletError::InvalidParameter`] and
+    /// changes nothing. A spend that started before it was set is not shown
+    /// to it.
     pub fn set_shielded_dispatch(
         &self,
         hook: Arc<dyn ShieldedDispatch>,
@@ -1730,6 +1733,7 @@ impl NetworkShieldedCoordinator {
                 super::operations::redrive_pending_spends(
                     &self.sdk,
                     &self.store,
+                    self.shielded_dispatch(),
                     *id,
                     &recorded,
                     cancel,
@@ -3006,6 +3010,7 @@ fn unchanged<S: ShieldedStore>(
 
 #[cfg(test)]
 mod tests {
+    use super::super::dispatch::{DispatchRefused, ShieldedDispatchPayload};
     use super::*;
     use crate::wallet::persister::NoPlatformPersistence;
     use crate::wallet::shielded::keys::OrchardKeySet;
@@ -4581,6 +4586,272 @@ mod tests {
             "the still-recorded reservation must survive"
         );
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A dispatch hook that admits nothing, and counts what it was asked.
+    #[derive(Default)]
+    struct NotAdmitting(std::sync::atomic::AtomicU32);
+
+    #[async_trait::async_trait]
+    impl ShieldedDispatch for NotAdmitting {
+        async fn dispatch(&self, _: ShieldedDispatchPayload) -> Result<(), DispatchRefused> {
+            Err(DispatchRefused::new("never accepted"))
+        }
+
+        async fn admit(
+            &self,
+            _: WalletId,
+            _: u32,
+            _: [u8; 32],
+            _: [u8; 32],
+        ) -> Result<(), DispatchRefused> {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Err(DispatchRefused::new("never accepted"))
+        }
+    }
+
+    /// A shielded transfer's bytes, built on `anchor`.
+    fn transfer_bytes(anchor: [u8; 32]) -> Vec<u8> {
+        use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
+
+        StateTransition::from(ShieldedTransferTransitionV0 {
+            actions: vec![],
+            value_balance: 0,
+            anchor,
+            proof: vec![],
+            binding_signature: [0; 64],
+        })
+        .serialize_to_bytes()
+        .expect("serializes")
+    }
+
+    /// A spend saved before a crash or a cancelled send, whose hook never
+    /// accepted it, is held until its anchor is pruned: a sync pass whose
+    /// hook doesn't admit it never re-sends it, and once a set proves the
+    /// anchor pruned the release frees its note and drops its record, so it
+    /// is never sent.
+    #[tokio::test]
+    async fn should_hold_a_never_admitted_spend_until_its_anchor_is_pruned() {
+        use super::super::store::PendingRedrive;
+
+        let dir = temp_dir("never_admitted");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let id = SubwalletId::new([0x11; 32], 0);
+        let nullifier = [0xCAu8; 32];
+        let anchor = [0xCBu8; 32];
+        let activity_id = [0xCCu8; 32];
+        let st_bytes = transfer_bytes(anchor);
+        {
+            let mut store = coordinator.store.write().await;
+            store.mark_pending(id, &nullifier).expect("reserved");
+            store
+                .set_pending_spend(id, &nullifier, anchor, activity_id, Some(10))
+                .expect("armed");
+            store
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id,
+                        anchor,
+                        nullifiers: vec![nullifier],
+                        st_bytes,
+                        attempts: 0,
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                        anchor_height: Some(10),
+                    },
+                )
+                .expect("saved");
+        }
+        let hook = NotAdmitting::default();
+        let pass = |recorded: HashSet<[u8; 32]>| {
+            let coordinator = &coordinator;
+            let hook = &hook;
+            async move {
+                super::super::operations::redrive_pending_spends(
+                    &coordinator.sdk,
+                    &coordinator.store,
+                    Some(hook),
+                    id,
+                    &recorded,
+                    &CancellationToken::new(),
+                )
+                .await;
+            }
+        };
+
+        pass([anchor].into_iter().collect()).await;
+        assert_eq!(hook.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+        let held = coordinator
+            .store
+            .read()
+            .await
+            .pending_redrives(id)
+            .expect("records");
+        assert_eq!(held.len(), 1, "held while its anchor is recorded");
+        assert_eq!(held[0].attempts, 0, "never sent");
+
+        let snapshot = coordinator
+            .store
+            .read()
+            .await
+            .stale_pending_spends(id)
+            .expect("stale_pending_spends")
+            .into_iter()
+            .map(|spend| (id, spend))
+            .collect::<Vec<_>>();
+        assert_eq!(snapshot.len(), 1, "its note stays reserved");
+        coordinator
+            .release_stranded_spends(
+                snapshot,
+                PrunedAnchorEvidence {
+                    recorded: &HashSet::new(),
+                    height: 10,
+                    scan_covered_height: Some(10),
+                    heightless: None,
+                },
+            )
+            .await;
+        let store = coordinator.store.read().await;
+        assert!(store.stale_pending_spends(id).expect("stale").is_empty());
+        assert!(store.pending_redrives(id).expect("records").is_empty());
+        drop(store);
+
+        pass([anchor].into_iter().collect()).await;
+        assert_eq!(
+            hook.0.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "released, it is never offered again"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A sync pass asks the coordinator's hook to admit each saved note spend
+    /// it would re-broadcast, and sends none it refuses.
+    #[tokio::test]
+    async fn should_put_each_re_broadcast_of_a_sync_pass_to_the_coordinators_hook() {
+        use super::super::store::PendingRedrive;
+        use crate::wallet::shielded::ShieldedNote;
+        use drive_proof_verifier::types::{
+            NoParamQuery, ShieldedAnchors, ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery,
+        };
+
+        const SET_HEIGHT: u64 = 50;
+        let anchor = [0xD2u8; 32];
+        let mut sdk = dash_sdk::Sdk::new_mock();
+        let count = 2048
+            * u32::from(
+                sdk.version()
+                    .drive_abci
+                    .query
+                    .shielded_queries
+                    .max_query_chunks,
+            );
+        for chunk in 0..16 {
+            sdk.mock()
+                .expect_fetch(
+                    ShieldedEncryptedNotesQuery {
+                        start_index: u64::from(count) * chunk,
+                        count,
+                    },
+                    Some(ShieldedEncryptedNotes {
+                        notes: Vec::new(),
+                        total_count: 0,
+                    }),
+                )
+                .await
+                .expect("an empty chunk");
+        }
+        sdk.mock()
+            .expect_fetch(NoParamQuery {}, Some(ShieldedAnchors(vec![anchor])))
+            .await
+            .expect("the anchor set");
+        sdk.mock()
+            .set_response_height_of::<ShieldedAnchors>(SET_HEIGHT)
+            .set_response_height_of::<ShieldedEncryptedNotes>(SET_HEIGHT);
+
+        let dir = temp_dir("pass_asks_hook");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let db_path = dir.join("tree.sqlite");
+        let coordinator = NetworkShieldedCoordinator::new(
+            Arc::new(sdk),
+            dashcore::Network::Testnet,
+            db_path.clone(),
+            FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store"),
+        );
+        let wallet_id: WalletId = [0x11; 32];
+        let views = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+            .expect("derive viewing keys")
+            .viewing_keys();
+        coordinator
+            .register_wallet(
+                wallet_id,
+                BTreeMap::from([(0u32, views)]),
+                WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence)),
+            )
+            .await
+            .expect("register wallet");
+        let hook = Arc::new(NotAdmitting::default());
+        coordinator
+            .set_shielded_dispatch(Arc::clone(&hook) as _)
+            .expect("set");
+        let id = SubwalletId::new(wallet_id, 0);
+        let nullifier = [0xD1u8; 32];
+        {
+            let mut store = coordinator.store().write().await;
+            store
+                .save_note(
+                    id,
+                    &ShieldedNote {
+                        position: 0,
+                        cmx: [0xD0; 32],
+                        nullifier,
+                        block_height: 1,
+                        is_spent: false,
+                        value: 1_000,
+                        note_data: vec![0u8; 115],
+                    },
+                )
+                .expect("note");
+            store.mark_pending(id, &nullifier).expect("reserved");
+            store
+                .set_pending_spend(id, &nullifier, anchor, [0xD3; 32], Some(SET_HEIGHT - 5))
+                .expect("anchored");
+            store
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: [0xD3; 32],
+                        anchor,
+                        nullifiers: vec![nullifier],
+                        st_bytes: transfer_bytes(anchor),
+                        attempts: 0,
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                        anchor_height: Some(SET_HEIGHT - 5),
+                    },
+                )
+                .expect("record");
+        }
+
+        coordinator.sync(true, &CancellationToken::new()).await;
+
+        assert_eq!(
+            hook.0.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "asked once"
+        );
+        let store = coordinator.store().read().await;
+        let records = store.pending_redrives(id).expect("records");
+        assert_eq!(records.len(), 1, "the record stays");
+        assert_eq!(records[0].attempts, 0, "not admitted, not sent");
+        assert!(
+            store.get_unspent_notes(id).expect("notes").is_empty(),
+            "its note stays reserved"
+        );
+        drop(store);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
