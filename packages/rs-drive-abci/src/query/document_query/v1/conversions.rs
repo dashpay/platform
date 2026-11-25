@@ -580,3 +580,98 @@ pub(super) fn select_from_proto(select: ProtoSelect) -> Result<SelectProjection,
         field: select.field,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dapi_grpc::platform::v0::get_documents_request::document_field_value::{
+        ValueList, Variant,
+    };
+    use dapi_grpc::platform::v0::get_documents_request::{
+        IntegerRangeSelection, TimeRangeSelection,
+    };
+    use dash_platform_queries::documents::from_proto as subscriptions;
+
+    fn value(variant: Variant) -> ProtoDocumentFieldValue {
+        ProtoDocumentFieldValue {
+            variant: Some(variant),
+        }
+    }
+
+    fn list(values: Vec<ProtoDocumentFieldValue>) -> ProtoDocumentFieldValue {
+        value(Variant::List(ValueList { values }))
+    }
+
+    /// State transition subscriptions decode a wire where clause with a copy of this decoder
+    /// (`dash_platform_queries::documents::from_proto`), which Drive ABCI does not depend on
+    /// outside its tests. The two must read every clause alike, or one protobuf clause would
+    /// mean one thing to `getDocuments` and another to a subscription.
+    #[test]
+    fn should_decode_every_where_clause_as_the_subscription_decoder_does() {
+        let scalars = [
+            Variant::BoolValue(true),
+            Variant::Int64Value(-7),
+            Variant::Uint64Value(7),
+            Variant::DoubleValue(1.5),
+            Variant::Text("text".to_string()),
+            Variant::BytesValue(vec![1, 2, 3]),
+            Variant::NullValue(true),
+        ];
+        let mut operands: Vec<Option<ProtoDocumentFieldValue>> =
+            scalars.iter().cloned().map(value).map(Some).collect();
+        operands.extend([
+            None,
+            Some(ProtoDocumentFieldValue { variant: None }),
+            Some(list(vec![])),
+            Some(list(scalars.iter().cloned().map(value).collect())),
+            Some(list(vec![ProtoDocumentFieldValue { variant: None }])),
+            Some(list(vec![list(vec![value(Variant::Uint64Value(1))])])),
+        ]);
+
+        let mut clauses = Vec::new();
+        // Every operator the wire names, and discriminants on both sides of them.
+        for operator in -1..=20 {
+            for operand in &operands {
+                clauses.push(ProtoWhereClause {
+                    field: "field".to_string(),
+                    operator,
+                    value: operand.clone(),
+                    ..Default::default()
+                });
+            }
+        }
+        // The operands of the window selections on an ordinary clause.
+        let ordinary = ProtoWhereClause {
+            field: "field".to_string(),
+            operator: ProtoWhereOperator::Equal as i32,
+            value: Some(value(Variant::Uint64Value(1))),
+            ..Default::default()
+        };
+        clauses.push(ProtoWhereClause {
+            time_range: Some(TimeRangeSelection::default()),
+            ..ordinary.clone()
+        });
+        clauses.push(ProtoWhereClause {
+            integer_range: Some(IntegerRangeSelection::default()),
+            ..ordinary
+        });
+
+        let mut decoded = 0;
+        for clause in clauses {
+            let here = where_clause_from_proto(clause.clone());
+            let there = subscriptions::where_clause_from_proto(clause.clone());
+            match (here, there) {
+                (Ok(here), Ok(there)) => {
+                    assert_eq!(here, there, "{clause:?}");
+                    decoded += 1;
+                }
+                (Err(here), Err(there)) => assert!(
+                    here.to_string().contains(&there),
+                    "{clause:?}: '{here}' against '{there}'"
+                ),
+                (here, there) => panic!("{clause:?}: {here:?} against {there:?}"),
+            }
+        }
+        assert!(decoded > 100, "only {decoded} clauses decoded");
+    }
+}

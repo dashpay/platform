@@ -1,6 +1,9 @@
 //! Wire → drive decoding of document where clauses, for state transition subscriptions. Drive
-//! ABCI's `query/document_query/v1/conversions.rs` keeps its own copy; the two must stay in
-//! sync. Decoding is schema-agnostic, and every error describes malformed wire input.
+//! ABCI's `query/document_query/v1/conversions.rs` keeps its own copy, since it depends on
+//! this crate for its tests only; a test there
+//! (`should_decode_every_where_clause_as_the_subscription_decoder_does`) fails when the two
+//! read a clause differently. Decoding is schema-agnostic, and every error describes
+//! malformed wire input.
 
 use dapi_grpc::platform::v0::get_documents_request::{
     document_field_value, DocumentFieldValue as ProtoDocumentFieldValue,
