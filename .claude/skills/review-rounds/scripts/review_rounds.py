@@ -21,9 +21,11 @@ The script does not measure what the author changed between two reviewed
 commits. GitHub's comparison of two commits is the difference between their
 trees only while the first is an ancestor of the second, which a rebase ends,
 and a merge from the base branch in between mixes in changes that are not the
-author's. The pieces cannot be put back together exactly from the API. So the overview names the commit each review looked at, the commit the
-same reviewer had looked at before, and the next reviewed commit, and leaves
-the diffs to `git`, which has the history.
+author's. The pieces cannot be put back together exactly from the API. So the
+overview names the commit each review looked at, the commit the same reviewer
+had looked at before, and the next reviewed commit, and leaves the diffs to
+`git`, which has the history. A thread on a line the pull request removes is
+marked, because its line number counts in the base file.
 
 Limit: only inline threads are counted as findings. A reviewer that lists
 findings in its review summary alone shows up as a round with few or no
@@ -211,11 +213,9 @@ def review_passes(pr, reviews, comments, raw=False):
             continue
         head = review.get("commit_id") or "unknown"
         # What this reviewer had looked at before: the head of their previous
-        # review in time, whichever commit that was.
-        heads = seen.setdefault(reviewer, [])
-        if not heads or heads[-1] != head:
-            heads.append(head)
-        previous = heads[-2] if len(heads) > 1 else None
+        # review in time, whichever commit that was. It is this same head when
+        # they reviewed the commit twice.
+        previous, seen[reviewer] = seen.get(reviewer), head
         entry = passes.setdefault(head, {
             "head": head, "started": review.get("submitted_at"),
             "reviews": [], "threads": [], "findings": False, "summary_only": False,
@@ -236,6 +236,11 @@ def review_passes(pr, reviews, comments, raw=False):
                 "reviewer": reviewer,
                 "path": comment["path"],
                 "line": comment.get("original_line") or comment.get("line"),
+                "start_line": comment.get("original_start_line"),
+                # LEFT: the comment is on a line the pull request removes, and
+                # its number counts in the base file, not in the reviewed one.
+                "side": comment.get("side") or "RIGHT",
+                "commit": comment.get("original_commit_id") or head,
                 "headline": text,
                 "severity": severity_hint(text),
                 "body": clean(comment.get("body"), raw),
@@ -369,6 +374,8 @@ def short(sha):
 
 def tags(thread):
     found = [thread["severity"]] * bool(thread["severity"])
+    if thread["side"] == "LEFT":
+        found.append("on a removed line")
     if thread["resolved"] is False:
         found.append("unresolved")
     if thread["replies"] >= LONG_THREAD - 1:
@@ -407,11 +414,18 @@ def pass_label(entry):
     return "Summary only, not counted as a round" if entry["summary_only"] else "Pass without findings"
 
 
+def before(previous, head):
+    """What a reviewer had looked at when writing a review of `head`."""
+    if previous is None:
+        return "first review"
+    return "reviewed this commit before" if previous == head else f"reviewed {short(previous)} before"
+
+
 def render_pass(entry, body_chars, full=False):
     out = ["", f"### {pass_label(entry)}: head {short(entry['head'])}, {when(entry['started'])}"]
     out.append("Reviews: " + ", ".join(
         f"{review['reviewer']} {review['state']} ({review['threads']} threads; "
-        + (f"reviewed {short(review['previous'])} before" if review["previous"] else "first review") + ")"
+        + before(review["previous"], entry["head"]) + ")"
         for review in entry["reviews"]
     ))
     for thread in entry["threads"]:

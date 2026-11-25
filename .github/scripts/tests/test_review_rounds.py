@@ -116,11 +116,25 @@ class ReviewRoundsTest(unittest.TestCase):
         self.assertIn("This is the tip of the pull request.", text)
         self.assertIn("base v5.1-dev at base, tip h3", text)
 
-    def test_should_keep_a_reviewers_previous_commit_across_two_reviews_of_one_head(self):
+    def test_should_say_when_a_reviewer_reviews_the_same_commit_again(self):
+        # By the second review of h2 the reviewer had already seen h2, so its
+        # findings are not on anything the author changed since.
         raw = history()
         raw["reviews"].append(review(6, "bot", "COMMENTED", "h2", "2026-01-01T03:10:00Z", "One more."))
-        reviews = rounds.build_report(raw)["passes"][1]["reviews"]
-        self.assertEqual([item["previous"] for item in reviews], ["h1", "h1"])
+        report = rounds.build_report(raw)
+        self.assertEqual([item["previous"] for item in report["passes"][1]["reviews"]], ["h1", "h2"])
+        self.assertIn("bot COMMENTED (0 threads; reviewed this commit before)", rounds.render(report, 0))
+
+    def test_should_mark_a_finding_on_a_line_the_pull_request_removes(self):
+        raw = history()
+        raw["comments"][5]["side"] = "LEFT"
+        raw["comments"][5]["original_start_line"] = 12
+        raw["comments"][5]["original_commit_id"] = "h2"
+        report = rounds.build_report(raw)
+        thread = report["passes"][1]["threads"][1]
+        self.assertEqual((thread["side"], thread["start_line"], thread["commit"]), ("LEFT", 12, "h2"))
+        self.assertEqual(report["passes"][1]["threads"][0]["side"], "RIGHT")
+        self.assertIn("- [on a removed line] bot src/store.rs:14: Name the error", rounds.render(report, 0))
 
     def test_should_rank_the_files_findings_return_to(self):
         store = self.report["files"]["src/store.rs"]
