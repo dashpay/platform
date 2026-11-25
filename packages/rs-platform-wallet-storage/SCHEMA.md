@@ -42,7 +42,7 @@ Any `meta_*` row whose parent object does not exist — because it was never cre
 
 A future garbage-collection pass is expected to reap orphan metadata — rows with no live parent object older than approximately one week — but no such GC is implemented yet. Callers should not rely on orphan metadata persisting forever, nor assume it will be cleaned up promptly. `meta_global` is intentionally parentless and always survives.
 
-The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. The diagrams cover 21 of V001's 23 tables; `pending_contact_crypto` and `ignored_senders` appear in the [Tables](#tables) section but are not diagrammed. They show the V001 tables as amended in place by every later migration that changes one of them (the current `core_utxos`, `core_transactions`, `platform_addresses`, and `asset_locks` shapes). Twelve tables added by later migrations are not yet diagrammed here: `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V009, plus its V010–V011 `core_address_pool` columns), `invitations` (V003), `shielded_viewing_keys` (V013), `dpns_name_states` (V005), `tracked_masternodes` (V006), the `identity_scan_states` / `identity_scan_failed_indices` pair (V017), `core_transaction_inputs` / `core_transaction_record_originals` (V021), and `core_locked_outpoints` (V022) — see the [Migrations](#migrations) log for what each adds in the meantime.
+The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. The diagrams cover 21 of V001's 23 tables; `pending_contact_crypto` and `ignored_senders` appear in the [Tables](#tables) section but are not diagrammed. They show the V001 tables as amended in place by every later migration that changes one of them (the current `core_utxos`, `core_transactions`, `platform_addresses`, and `asset_locks` shapes). Thirteen tables added by later migrations are not yet diagrammed here: `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V009, plus its V010–V011 `core_address_pool` columns), `invitations` (V003), `shielded_viewing_keys` (V013), `dpns_name_states` (V005), `tracked_masternodes` (V006), the `identity_scan_states` / `identity_scan_failed_indices` pair (V017), `core_transaction_inputs` / `core_transaction_record_originals` (V021), `core_locked_outpoints` (V022), and `core_address_pool_retired` (V023) — see the [Migrations](#migrations) log for what each adds in the meantime.
 
 ## Diagram 1 — Core / L1 (Bitcoin/Dash layer)
 
@@ -470,6 +470,32 @@ changing accounting. Later repairs cannot replace this recovery copy.
 - PK: `(wallet_id, txid)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`. The original survives
   deletion of its transaction row.
+
+### `core_address_pool_retired`
+
+V023. Pool rows of a `DashpayExternalAccount` whose contact has rotated to a
+new xpub, keyed by the xpub they were derived from (`account_xpub`, its BIP32
+serialization) so successive rotations never collide. The registration
+flush that replaces the account's xpub copies the old rows here (keeping
+their `used` flags) and deletes them from `core_address_pool` in the same
+transaction, so the new pool can claim the same `(pool_type,
+address_index)` slots; a rotation back to an xpub the account had moves
+that generation's rows back to the live pool. A flush writes a DashPay
+external pool row by the xpub it derives from: the registered one's to
+`core_address_pool`, an earlier one's (retired, or registered earlier in
+the same flush) here, merging `used`; a row of an xpub the account never
+had is still a typed-key conflict. So a pool snapshot taken before a
+rotation and flushed after it, of any length, never reaches the live
+pool. Read by `SqlitePersister::retired_pool_addresses`, for history and
+attribution. A script only a retired generation holds still counts as a
+contact's in transaction accounting, and `load()` restores no unspent coin
+at such a script (no account derives it any more). `load()` never derives
+a pool or the used-address set from this table, so nothing here is
+payable.
+
+- PK: `(wallet_id, account_type, account_index, key_class, user_identity_id, friend_identity_id, account_xpub, pool_type, address_index)`.
+- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
+- Index: `idx_core_address_pool_retired_script(wallet_id, script)`.
 
 ### `core_instant_locks`
 
@@ -899,3 +925,4 @@ table-rebuild migration, as V004 does.
 | V021 | `V021__core_transaction_accounting.rs` | Adds the raw-input index and original-record archive. Backfills all decodable history and repairs accounting from retained TXOs, preserving coins, claims, checkpoints and unrelated wallet state. |
 | V022 | `V022__core_locked_outpoints.rs` | Adds `core_locked_outpoints`, one row per `(wallet_id, outpoint)` the wallet keeps out of coin selection: the collateral of a registered masternode, or an outpoint locked by hand. A table of its own rather than a `core_utxos` column, because a lock can exist before its coin and outlives the coin's spend. Deleting the row unlocks the outpoint. Purely additive; an upgraded database starts with no locks. |
 | V023 | `V023__instant_lock_verified.rs` | Adds `core_instant_locks.verified INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0, 1))`. Rows already on disk read 0 and are no longer restored: they may hold a lock that was never verified. Every row written from here on carries 1 (sound only while the SPV client hands the wallet verified locks alone). A record whose lock is no longer trusted also stops vetoing a sweep release of its inputs until its lock is stored again or it is mined. Applied only when the column is missing (`migrations::v023`): a database that already has it with this definition keeps it and its values, and one with another definition is refused with `ColumnDefinitionMismatch`. An affected payment shows as unconfirmed until its lock is announced again or it is mined. |
+| V023 | `V023__core_address_pool_retired.rs` | Adds `core_address_pool_retired` (a rotated DashPay contact's old pool rows, keyed by the xpub they derive from) plus `idx_core_address_pool_retired_script`, so a new-xpub registration no longer fails as a typed-key conflict on every retry. `IF NOT EXISTS`: a file that already holds this exact table and index, created by a downstream build, adopts them in place with their rows. Otherwise purely additive. |

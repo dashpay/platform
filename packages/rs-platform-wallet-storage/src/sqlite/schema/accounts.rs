@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use key_wallet::account::AccountType;
 use key_wallet::bip32::ExtendedPubKey;
-use rusqlite::{params, Connection, Transaction};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use platform_wallet::changeset::{
     AccountRegistrationEntry, ProviderKeyAccountEntry, ProviderKeyExtendedPubKey,
@@ -182,6 +182,7 @@ pub fn apply_registrations(
     }
     let mut stmt = tx.prepare_cached(UPSERT_ACCOUNT_SQL)?;
     for entry in entries {
+        retire_rotated_dashpay_pool(tx, wallet_id, entry)?;
         upsert_account_row(
             &mut stmt,
             wallet_id,
@@ -190,6 +191,77 @@ pub fn apply_registrations(
         )?;
     }
     Ok(())
+}
+
+/// A contact's rotation re-registers their `DashpayExternalAccount` under the
+/// same key with a new xpub. The pool rows of the old xpub hold the same
+/// `(pool_type, address_index)` keys with other public keys, so they move to
+/// their retired generation in this transaction, before the account row and
+/// the new pool are written (and an earlier generation of the new xpub comes
+/// back). Any other account keeps its xpub for life, and a changed one still
+/// meets the pool writer's typed-key conflict.
+///
+/// Only the public key and chain code drive derivation, so an xpub that
+/// differs in anything else (decoding maps every non-mainnet network to
+/// Testnet) is the same generation and retires nothing.
+fn retire_rotated_dashpay_pool(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    entry: &AccountRegistrationEntry,
+) -> Result<(), WalletStorageError> {
+    if !matches!(
+        entry.account_type,
+        AccountType::DashpayExternalAccount { .. }
+    ) {
+        return Ok(());
+    }
+    match stored_registration(tx, wallet_id, &entry.account_type)? {
+        Some(stored)
+            if (
+                stored.account_xpub.public_key,
+                stored.account_xpub.chain_code,
+            ) != (entry.account_xpub.public_key, entry.account_xpub.chain_code) =>
+        {
+            crate::sqlite::schema::core_pool::rotate_account_pool(
+                tx,
+                wallet_id,
+                &entry.account_type,
+                &stored.account_xpub.encode(),
+                &entry.account_xpub.encode(),
+            )
+        }
+        _ => Ok(()),
+    }
+}
+
+/// The registration stored for `account_type`, if any. A stored xpub that
+/// does not decode is an error, so a corrupt registration fails closed: its
+/// account's registration and pool flushes fail rather than overwrite it.
+pub(crate) fn stored_registration(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    account_type: &AccountType,
+) -> Result<Option<AccountRegistrationEntry>, WalletStorageError> {
+    let (user_identity_id, friend_identity_id) = account_dashpay_ids(account_type);
+    let stored: Option<Vec<u8>> = conn
+        .prepare_cached(
+            "SELECT account_xpub_bytes FROM account_registrations \
+             WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+               AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6",
+        )?
+        .query_row(
+            params![
+                wallet_id.as_slice(),
+                account_type_db_label(account_type),
+                i64::from(account_index(account_type)),
+                i64::from(account_key_class(account_type)),
+                &user_identity_id[..],
+                &friend_identity_id[..],
+            ],
+            |row| row.get(0),
+        )
+        .optional()?;
+    stored.map(|bytes| blob::decode(&bytes)).transpose()
 }
 
 fn is_provider_key_material(account_type: &AccountType) -> bool {
