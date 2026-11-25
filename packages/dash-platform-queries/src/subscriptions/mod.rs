@@ -18,6 +18,9 @@ mod tests;
 
 use dpp::address_funds::PlatformAddress;
 use dpp::prelude::Identifier;
+use dpp::state_transition::StateTransition;
+use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use drive::query::{ValueClause, WhereClause};
 
 pub use proto::subscribe_request;
@@ -34,6 +37,28 @@ pub const MAX_ACTIONS_PER_DOCUMENT_FILTER: usize = 12;
 /// Most where clauses one action match may carry, per document side.
 pub const MAX_CLAUSES_PER_ACTION: usize = 16;
 
+/// Decode a state transition a block committed, as the block's protocol version
+/// (`platform_version`) decoded it for execution: from the version whose
+/// `decode_raw_state_transitions` takes a raw transition to be exactly one encoded
+/// transition, bytes left over after it are refused; before, they were ignored, and a
+/// transition with something appended executed.
+pub fn decode_committed_state_transition(
+    bytes: &[u8],
+    platform_version: &PlatformVersion,
+) -> Result<StateTransition, ProtocolError> {
+    let ignores_leftover_bytes = platform_version
+        .drive_abci
+        .methods
+        .state_transition_processing
+        .decode_raw_state_transitions
+        == 0;
+    if ignores_leftover_bytes {
+        StateTransition::deserialize_from_bytes_untrusted_in_version(bytes, platform_version)
+    } else {
+        StateTransition::deserialize_from_bytes_untrusted_exact_in_version(bytes, platform_version)
+    }
+}
+
 /// Which side of a transition a watched address must be on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub enum Role {
@@ -42,7 +67,9 @@ pub enum Role {
     Any,
     /// An address input the transition spends from.
     Sender,
-    /// An address the transition credits: an output or change output.
+    /// An address the transition names as an output or change output. It is credited what
+    /// execution leaves for it, which can be nothing: a shield from an asset lock names
+    /// where its surplus goes and may leave none.
     Recipient,
 }
 

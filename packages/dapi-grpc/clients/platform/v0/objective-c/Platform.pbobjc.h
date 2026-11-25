@@ -1012,7 +1012,11 @@ typedef GPB_ENUM(SubscribeToStateTransitionsRequest_Role) {
   /** An address input the transition spends from. */
   SubscribeToStateTransitionsRequest_Role_Sender = 1,
 
-  /** An address the transition credits: an output or change output. */
+  /**
+   * An address the transition names as an output or change output. It is
+   * credited what execution leaves for it, which can be nothing: a shield
+   * from an asset lock names where its surplus goes and may leave none.
+   **/
   SubscribeToStateTransitionsRequest_Role_Recipient = 2,
 };
 

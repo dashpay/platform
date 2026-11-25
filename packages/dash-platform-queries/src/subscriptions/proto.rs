@@ -104,9 +104,24 @@ fn document_filter_to_proto(filter: &DocumentFilter) -> Result<proto::DocumentFi
     })
 }
 
-/// A clause operand as sent: 128-bit integers become 64-bit, since the shared encoder sends
-/// 128-bit integers as text, which the node reads as text. One that does not fit has no wire form.
+/// A clause operand as sent: a scalar, or a flat list of scalars (the candidates of `in`
+/// and the bounds of `between`). Anything nested deeper has no wire form, and is refused
+/// here without being walked or copied.
 fn narrowed(value: &Value) -> Result<Value, Error> {
+    match value {
+        Value::Array(values) => values
+            .iter()
+            .map(narrowed_scalar)
+            .collect::<Result<_, _>>()
+            .map(Value::Array),
+        scalar => narrowed_scalar(scalar),
+    }
+}
+
+/// A scalar operand as sent: 128-bit integers become 64-bit, since the shared encoder sends
+/// 128-bit integers as text, which the node reads as text. One that does not fit has no wire
+/// form, and neither has a list or a map.
+fn narrowed_scalar(value: &Value) -> Result<Value, Error> {
     let too_wide = || {
         Error::Config(format!(
             "the clause value {value:?} does not fit 64 bits, so it cannot be sent"
@@ -118,11 +133,11 @@ fn narrowed(value: &Value) -> Result<Value, Error> {
             .map(Value::I64)
             .or_else(|_| u64::try_from(*n).map(Value::U64))
             .map_err(|_| too_wide()),
-        Value::Array(values) => values
-            .iter()
-            .map(narrowed)
-            .collect::<Result<_, _>>()
-            .map(Value::Array),
+        Value::Array(_) | Value::Map(_) => Err(Error::Config(
+            "a clause value is a scalar or a flat list of scalars; a nested list or a map \
+             cannot be sent"
+                .to_string(),
+        )),
         _ => Ok(value.clone()),
     }
 }

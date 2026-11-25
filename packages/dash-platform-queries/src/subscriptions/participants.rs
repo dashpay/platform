@@ -13,7 +13,9 @@ use dpp::state_transition::unshield_transition::accessors::UnshieldTransitionAcc
 use dpp::state_transition::StateTransition;
 
 /// The platform addresses `state_transition` names, each with its side: the inputs it spends
-/// from are senders, the outputs it credits recipients.
+/// from are senders, the outputs it names recipients. A named output is credited what
+/// execution leaves for it, which only state tells: the surplus output of a shield from an
+/// asset lock gets nothing when the lock is used up.
 pub(super) fn addresses(state_transition: &StateTransition) -> Vec<(PlatformAddress, Role)> {
     // Every variant is listed, so a new one must be classified here.
     let recipients: Vec<&PlatformAddress> = match state_transition {

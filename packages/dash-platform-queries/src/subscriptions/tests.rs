@@ -923,6 +923,74 @@ fn should_refuse_to_send_an_integer_wider_than_64_bits() {
     assert!(error.to_string().contains("64 bits"), "{error}");
 }
 
+/// A clause value is a scalar or a flat list of scalars. Anything nested deeper has no wire
+/// form: it is refused where it starts, however deep it goes, without being walked.
+#[test]
+fn should_refuse_to_send_a_nested_list_or_a_map_without_walking_it() {
+    let contract = rating_contract();
+    // Deep enough that walking it, or dropping it, recursively would exhaust the stack.
+    let mut deep = Value::U8(1);
+    for _ in 0..100_000 {
+        deep = Value::Array(vec![deep]);
+    }
+    let operands = [
+        Value::Array(vec![Value::Array(vec![Value::U8(1)])]),
+        Value::Map(vec![(Value::Text("a".to_string()), Value::U8(1))]),
+        Value::Array(vec![Value::Map(vec![])]),
+        deep,
+    ];
+    for operand in operands {
+        let filter = rating_creates(
+            &contract,
+            vec![clause("blob", WhereOperator::Equal, operand)],
+        );
+        let error = filter.to_proto().expect_err("no wire form");
+        assert!(
+            error.to_string().contains("flat list of scalars"),
+            "{error}"
+        );
+        // The operand is leaked, not dropped: dropping the deep one would recurse.
+        std::mem::forget(filter);
+    }
+}
+
+/// A shield from an asset lock names the address its surplus goes to. Whether a surplus is
+/// left is only known from execution, so the address matches as a recipient because it is
+/// named, credited or not.
+#[test]
+fn should_match_the_surplus_address_a_shield_names_whatever_it_is_credited() {
+    let contract = contract();
+    let surplus = address(3);
+    let shield = StateTransition::ShieldFromAssetLock(ShieldFromAssetLockTransition::V1(
+        ShieldFromAssetLockTransitionV1 {
+            asset_lock_proof: Default::default(),
+            actions: vec![],
+            // The whole lock: nothing is left over for the surplus address.
+            value_balance: 1000,
+            anchor: [0; 32],
+            proof: vec![],
+            binding_signature: [0; 64],
+            surplus_output: Some(surplus),
+            signature: Default::default(),
+        },
+    ));
+    for (role, named) in [
+        (Role::Recipient, true),
+        (Role::Any, true),
+        (Role::Sender, false),
+    ] {
+        let filters = resolve(
+            vec![StateTransitionFilter::Addresses {
+                addresses: vec![surplus],
+                role,
+            }],
+            &contract,
+        )
+        .unwrap();
+        assert_eq!(matches(&filters, &shield).is_some(), named, "{role:?}");
+    }
+}
+
 #[test]
 fn should_resolve_a_byte_list_operand_the_same_after_the_wire() {
     let contract = rating_contract();
