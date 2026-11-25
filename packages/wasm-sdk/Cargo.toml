@@ -123,7 +123,7 @@ secp256k1 = { workspace = true, features = ["lowmemory"] }
 # `all-system-contracts` would let the trusted context resolve every contract
 # and silently defeat the tests that assert an uncompiled one is fetched.
 wasm-sdk = { path = ".", features = ["mocks"] }
-tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 # The verified context's tests verify fixture proofs and build checkpoints.
 dash-core-proof = { path = "../rs-core-proof" }
 
