@@ -1298,11 +1298,11 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::InputMidBroadcast { .. } => {
                 PlatformWalletFFIResultCode::ErrorUnknown
             }
-            // Discovery or load-by-index could not single out the wallet's own
-            // identity at an index. Not a network condition, so not a retry
-            // code; the index and counts travel in the message. A dedicated
-            // code is a registry change (see `InputMidBroadcast` above).
-            PlatformWalletError::AmbiguousIdentityForKey { .. } => {
+            // Load-by-index could not single out the wallet's own identity at
+            // the index. Not a network condition, so not a retry code; the
+            // index and counts travel in the message. A dedicated code is a
+            // registry change (see `InputMidBroadcast` above).
+            PlatformWalletError::AmbiguousIdentityForKey(..) => {
                 PlatformWalletFFIResultCode::ErrorWalletOperation
             }
             // A definitively-failed address-nonce race (reaches the blanket impl

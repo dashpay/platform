@@ -224,12 +224,19 @@ impl IdentityWallet {
             LoadKeyHashSource::Master(master) => Some(master),
             LoadKeyHashSource::ResidentWallet => None,
         };
-        // Query Platform for an identity registered with this key hash.
+        // Query Platform for an identity registered with this key hash. A
+        // found identity carries a verified candidate for EVERY on-chain key,
+        // so it can sign with all its re-derivable keys, not just MASTER;
+        // derived before the write lock.
         let probe = self
             .fetch_identity_by_master_key_hash(key_hash_array, identity_index, network, master)
             .await?;
-        let (mut identity, block_time) = match probe {
-            MasterKeyProbe::Found(identity, metadata) => (identity, BlockTime::from(metadata)),
+        let (mut identity, block_time, key_decisions) = match probe {
+            MasterKeyProbe::Found {
+                identity,
+                metadata,
+                key_decisions,
+            } => (identity, BlockTime::from(metadata), key_decisions),
             MasterKeyProbe::Absent => {
                 // "No identity here" is about this handle's wallet only
                 // while it is still the one the manager holds.
@@ -242,17 +249,12 @@ impl IdentityWallet {
                     identity_index, e
                 )));
             }
-            MasterKeyProbe::Ambiguous(e) => return Err(e),
+            MasterKeyProbe::Ambiguous(ambiguity) => {
+                return Err(PlatformWalletError::AmbiguousIdentityForKey(ambiguity));
+            }
         };
 
         let identity_id = identity.id();
-
-        // Derive + verify a candidate for EVERY on-chain key (shared with
-        // the discovery scan) so the imported identity can sign with all its
-        // re-derivable keys, not just MASTER. Runs before the write lock.
-        let key_decisions = self
-            .derive_key_breadcrumbs(&identity, identity_index, network, master)
-            .await?;
 
         // Add the identity to the manager and enrich it — only into this
         // handle's wallet generation: the fetches above ran without the lock,
@@ -590,6 +592,7 @@ mod tests {
     use crate::changeset::IdentityKeyDerivationIndices;
     use crate::error::PlatformWalletError;
     use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::wallet::identity::network::AmbiguousIdentity;
     use crate::PlatformWalletManager;
     use dash_sdk::platform::types::identity::{NonUniquePublicKeyHashQuery, PublicKeyHash};
     use dpp::identity::accessors::IdentityGettersV0;
@@ -1201,15 +1204,17 @@ mod tests {
             .load_identity_by_index_from_master(0, &candidate_master())
             .await;
 
+        let expected = AmbiguousIdentity {
+            identity_index: 0,
+            candidates: vec![Identifier::from([0x01; 32])],
+            owned: vec![],
+            more_candidates: false,
+        };
         assert!(
             matches!(
                 &result,
-                Err(PlatformWalletError::AmbiguousIdentityForKey {
-                    identity_index: 0,
-                    candidates,
-                    owned,
-                    more_candidates: false,
-                }) if *candidates == vec![Identifier::from([0x01; 32])] && owned.is_empty()
+                Err(PlatformWalletError::AmbiguousIdentityForKey(ambiguity))
+                    if *ambiguity == expected
             ),
             "{result:?}"
         );

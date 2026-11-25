@@ -6,6 +6,7 @@ use dash_sdk::platform::Fetch;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
+use dpp::prelude::Identifier;
 use key_wallet::bip32::ExtendedPrivKey;
 
 use crate::error::PlatformWalletError;
@@ -15,24 +16,80 @@ use crate::BlockTime;
 use super::identity_handle::MASTER_KEY_INDEX;
 use super::*;
 
-/// Upper bound on non-unique key-hash pages (one identity each) read per
-/// probe. A probe whose last page still returns an identity has more
-/// candidates than it read, and its index is left unanswered.
+/// Upper bound on identities read from the non-unique key-hash tree per
+/// probe, one per page. One more page confirms that none is left; when it
+/// still returns an identity, the probe has more candidates than it read and
+/// its index is left unanswered.
 const MASTER_KEY_HASH_MAX_PAGES: usize = 8;
+
+/// An identity index whose candidates did not single out one identity of this
+/// wallet, so nothing was imported for it.
+///
+/// A candidate is an identity whose key 0 is an enabled MASTER
+/// `ECDSA_HASH160` authentication key over the index's key hash. It belongs to
+/// the wallet only when every enabled key of it derives from the wallet's
+/// seed. None or more than one candidate did, or more candidates exist than
+/// one lookup reads. A user who knows which identity is theirs can import it
+/// by its identity id.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AmbiguousIdentity {
+    /// The identity index whose key hash was looked up.
+    pub identity_index: u32,
+    /// Every candidate read.
+    pub candidates: Vec<Identifier>,
+    /// The candidates whose every enabled key derives from the wallet's seed.
+    pub owned: Vec<Identifier>,
+    /// Whether Platform holds more candidates than were read.
+    pub more_candidates: bool,
+}
+
+impl std::fmt::Display for AmbiguousIdentity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "could not verify which identity at index {} belongs to this wallet: {} \
+             identities use the key for that index{}, {} of them verified as this wallet's \
+             own. Nothing was imported for it; import the right identity by its identity id",
+            self.identity_index,
+            self.candidates.len(),
+            if self.more_candidates {
+                " and there may be more"
+            } else {
+                ""
+            },
+            self.owned.len(),
+        )
+    }
+}
+
+/// What [`IdentityWallet::discover`] and its variants found.
+#[derive(Debug, Clone)]
+pub struct IdentityDiscoveryResult {
+    /// Identities this scan added to the wallet.
+    pub discovered: Vec<Identity>,
+    /// Indices whose candidates did not single out one identity of this
+    /// wallet, ascending. Nothing was imported for them.
+    pub ambiguous: Vec<AmbiguousIdentity>,
+}
 
 /// What [`IdentityWallet::fetch_identity_by_master_key_hash`] answered for one
 /// identity index.
 pub(crate) enum MasterKeyProbe {
     /// The identity at this index that belongs to the wallet, with the
-    /// metadata of the response that returned it.
-    Found(Identity, ResponseMetadata),
+    /// metadata of the response that returned it and its per-key derivation
+    /// breadcrumbs.
+    Found {
+        identity: Identity,
+        metadata: ResponseMetadata,
+        key_decisions: Vec<crate::changeset::KeyWithBreadcrumb>,
+    },
     /// Platform holds no candidate identity for this index.
     Absent,
     /// A lookup went unanswered.
     Unanswered(dash_sdk::Error),
     /// Platform answered, and no single candidate verified as the wallet's
-    /// own. Always [`PlatformWalletError::AmbiguousIdentityForKey`].
-    Ambiguous(PlatformWalletError),
+    /// own.
+    Ambiguous(AmbiguousIdentity),
 }
 
 /// Whether `identity`'s key 0 is an enabled AUTHENTICATION MASTER
@@ -220,16 +277,14 @@ impl IdentityWallet {
     ///
     /// An index whose candidates do not single out one identity of this
     /// wallet (see [`Self::fetch_identity_by_master_key_hash`]) imports
-    /// nothing, stays unanswered in the scan verdict and counts toward the
-    /// gap; the scan carries on, so identities at other indices are still
-    /// imported and persisted. The call then returns the first such index's
-    /// [`PlatformWalletError::AmbiguousIdentityForKey`] instead of the
-    /// discovered list, unless the scan is reported as
-    /// [`PlatformWalletError::IdentityDiscoveryIncomplete`].
+    /// nothing, counts toward the gap and is listed in
+    /// [`IdentityDiscoveryResult::ambiguous`]; the scan carries on. Such an
+    /// index is answered in the scan verdict, unless candidates were left
+    /// unread, in which case it stays unanswered like a failed probe.
     pub async fn discover(
         &self,
         opts: IdentityDiscoveryOptions,
-    ) -> Result<Vec<Identity>, PlatformWalletError> {
+    ) -> Result<IdentityDiscoveryResult, PlatformWalletError> {
         self.discover_inner(opts, KeyHashSource::ResidentWallet, None)
             .await
     }
@@ -253,7 +308,7 @@ impl IdentityWallet {
         &self,
         opts: IdentityDiscoveryOptions,
         enrichment_deadline: Option<std::time::Instant>,
-    ) -> Result<Vec<Identity>, PlatformWalletError> {
+    ) -> Result<IdentityDiscoveryResult, PlatformWalletError> {
         self.discover_inner(opts, KeyHashSource::ResidentWallet, enrichment_deadline)
             .await
     }
@@ -280,7 +335,7 @@ impl IdentityWallet {
         &self,
         opts: IdentityDiscoveryOptions,
         master: &ExtendedPrivKey,
-    ) -> Result<Vec<Identity>, PlatformWalletError> {
+    ) -> Result<IdentityDiscoveryResult, PlatformWalletError> {
         self.discover_inner(opts, KeyHashSource::Master(master), None)
             .await
     }
@@ -294,7 +349,7 @@ impl IdentityWallet {
         opts: IdentityDiscoveryOptions,
         master: &ExtendedPrivKey,
         enrichment_deadline: Option<std::time::Instant>,
-    ) -> Result<Vec<Identity>, PlatformWalletError> {
+    ) -> Result<IdentityDiscoveryResult, PlatformWalletError> {
         self.discover_inner(opts, KeyHashSource::Master(master), enrichment_deadline)
             .await
     }
@@ -379,7 +434,8 @@ impl IdentityWallet {
     /// type Dash Evo Tool registers), whose data is this same hash, is indexed
     /// only in the non-unique tree, which can hold several identities per
     /// hash. After an empty unique answer that tree is read one identity per
-    /// page, up to [`MASTER_KEY_HASH_MAX_PAGES`] pages.
+    /// page, up to [`MASTER_KEY_HASH_MAX_PAGES`] identities plus one page that
+    /// confirms none is left.
     ///
     /// A candidate is an identity whose key 0 is an enabled AUTHENTICATION
     /// MASTER `ECDSA_HASH160` key over `key_hash`. It belongs to the wallet when
@@ -390,6 +446,8 @@ impl IdentityWallet {
     /// [`MasterKeyProbe::Absent`]. Candidates none of which belong to the
     /// wallet, several that do, or pages left unread are
     /// [`MasterKeyProbe::Ambiguous`], and nothing is imported for the index.
+    /// A found identity carries its per-key breadcrumbs, so callers do not
+    /// derive them again.
     ///
     /// `Err` is a local fault while deriving the wallet's keys.
     pub(crate) async fn fetch_identity_by_master_key_hash(
@@ -400,7 +458,16 @@ impl IdentityWallet {
         master: Option<&ExtendedPrivKey>,
     ) -> Result<MasterKeyProbe, PlatformWalletError> {
         match Identity::fetch_with_metadata(&self.sdk, PublicKeyHash(key_hash), None).await {
-            Ok((Some(identity), metadata)) => return Ok(MasterKeyProbe::Found(identity, metadata)),
+            Ok((Some(identity), metadata)) => {
+                let key_decisions = self
+                    .derive_key_breadcrumbs(&identity, identity_index, network, master)
+                    .await?;
+                return Ok(MasterKeyProbe::Found {
+                    identity,
+                    metadata,
+                    key_decisions,
+                });
+            }
             Ok((None, _)) => {}
             Err(e) => return Ok(MasterKeyProbe::Unanswered(e)),
         }
@@ -408,9 +475,11 @@ impl IdentityWallet {
         let mut candidates = Vec::new();
         let mut after = None;
         let mut more_candidates = true;
-        for _ in 0..MASTER_KEY_HASH_MAX_PAGES {
+        // One page past the bound confirms that nothing is left.
+        for page in 0..=MASTER_KEY_HASH_MAX_PAGES {
             let query = NonUniquePublicKeyHashQuery { key_hash, after };
             match Identity::fetch_with_metadata(&self.sdk, query, None).await {
+                Ok((Some(_), _)) if page == MASTER_KEY_HASH_MAX_PAGES => break,
                 Ok((Some(identity), metadata)) => {
                     after = Some(identity.id().to_buffer());
                     if holds_master_key_hash(&identity, &key_hash) {
@@ -429,37 +498,36 @@ impl IdentityWallet {
         }
 
         let mut owned = Vec::new();
-        for (identity, _) in &candidates {
-            let decisions = self
+        for (identity, metadata) in candidates.iter() {
+            let key_decisions = self
                 .derive_key_breadcrumbs(identity, identity_index, network, master)
                 .await?;
-            if decisions
+            if key_decisions
                 .iter()
                 .all(|decision| decision.key.is_disabled() || decision.breadcrumb.is_some())
             {
-                owned.push(identity.id());
+                owned.push((identity, metadata, key_decisions));
             }
         }
         let candidate_ids = candidates
             .iter()
             .map(|(identity, _)| identity.id())
             .collect();
-        if let ([only], false) = (owned.as_slice(), more_candidates) {
-            if let Some((identity, metadata)) = candidates
-                .into_iter()
-                .find(|(identity, _)| identity.id() == *only)
-            {
-                return Ok(MasterKeyProbe::Found(identity, metadata));
+        if !more_candidates && owned.len() == 1 {
+            if let Some((identity, metadata, key_decisions)) = owned.pop() {
+                return Ok(MasterKeyProbe::Found {
+                    identity: identity.clone(),
+                    metadata: metadata.clone(),
+                    key_decisions,
+                });
             }
         }
-        Ok(MasterKeyProbe::Ambiguous(
-            PlatformWalletError::AmbiguousIdentityForKey {
-                identity_index,
-                candidates: candidate_ids,
-                owned,
-                more_candidates,
-            },
-        ))
+        Ok(MasterKeyProbe::Ambiguous(AmbiguousIdentity {
+            identity_index,
+            candidates: candidate_ids,
+            owned: owned.iter().map(|(identity, _, _)| identity.id()).collect(),
+            more_candidates,
+        }))
     }
 
     /// Shared gap-limit scan body for [`Self::discover`] and
@@ -475,7 +543,7 @@ impl IdentityWallet {
         opts: IdentityDiscoveryOptions,
         source: KeyHashSource<'_>,
         enrichment_deadline: Option<std::time::Instant>,
-    ) -> Result<Vec<Identity>, PlatformWalletError> {
+    ) -> Result<IdentityDiscoveryResult, PlatformWalletError> {
         use super::identity_handle::{derive_identity_auth_key_hash_from_master, MASTER_KEY_INDEX};
         use crate::wallet::identity::state::managed_identity::key_storage::IdentityStatus;
 
@@ -569,17 +637,17 @@ impl IdentityWallet {
                     .await?;
 
                 match probe {
-                    MasterKeyProbe::Found(identity, metadata) => {
+                    // The probe derived and verified a candidate for every
+                    // on-chain key BEFORE the write lock below — derivation
+                    // borrows the resident wallet / master xpriv, while
+                    // breadcrumb emission needs `&mut info`.
+                    MasterKeyProbe::Found {
+                        identity,
+                        metadata,
+                        key_decisions,
+                    } => {
                         let block_time = BlockTime::from(metadata);
                         let identity_id = identity.id();
-
-                        // Derive + verify a candidate for every on-chain key
-                        // (shared with the index-load path) BEFORE taking the write
-                        // lock — candidate derivation borrows the resident wallet /
-                        // master xpriv, while breadcrumb emission needs `&mut info`.
-                        let key_decisions = self
-                            .derive_key_breadcrumbs(&identity, identity_index, network, master)
-                            .await?;
 
                         // Acquire write lock to add/enrich the identity, then emit
                         // every per-key breadcrumb in one batched changeset.
@@ -651,14 +719,17 @@ impl IdentityWallet {
                         );
                         tally.record_failure(identity_index, e);
                     }
-                    MasterKeyProbe::Ambiguous(e) => {
+                    MasterKeyProbe::Ambiguous(ambiguity) => {
                         tracing::warn!(
                             index = identity_index,
-                            error = %e,
-                            "identity discovery imported nothing at this index and leaves it \
-                             unanswered: no single candidate identity verified as this wallet's own"
+                            candidates = ambiguity.candidates.len(),
+                            owned = ambiguity.owned.len(),
+                            more_candidates = ambiguity.more_candidates,
+                            "identity discovery imported nothing at this index: no single \
+                             candidate identity verified as this wallet's own; the scan result \
+                             lists the index"
                         );
-                        tally.record_ambiguity(identity_index, e);
+                        tally.record_ambiguity(ambiguity);
                     }
                 }
 
@@ -703,7 +774,7 @@ impl IdentityWallet {
         // Only now, with the verdict on record either way.
         scan_outcome?;
 
-        let first_ambiguity = tally.first_ambiguity.take();
+        let ambiguous = std::mem::take(&mut tally.ambiguous);
 
         if tally.is_trustworthy() {
             // Found something despite a failed probe: the discovered
@@ -777,13 +848,10 @@ impl IdentityWallet {
         let _ = cached_start_index;
         let _ = identity_index;
 
-        // Reported after the walk and the enrichment, so identities at other
-        // indices are still imported; the index itself stays unanswered.
-        if let Some(ambiguity) = first_ambiguity {
-            return Err(ambiguity);
-        }
-
-        Ok(discovered)
+        Ok(IdentityDiscoveryResult {
+            discovered,
+            ambiguous,
+        })
     }
 
     /// Record and persist what a gap-limit scan managed to probe.
@@ -883,13 +951,9 @@ struct ScanTally {
     /// together, because to a later launch they are the same fact: an index
     /// nobody answered.
     aborted_at_index: Option<u32>,
-    /// Indices Platform answered with candidates of which no single one
-    /// verified as the wallet's own, ascending. Unanswered in the verdict, but
-    /// not counted as failed probes: Platform was reached.
-    ambiguous_indices: Vec<u32>,
-    /// The error for the first of [`Self::ambiguous_indices`], which the scan
-    /// returns once it has finished.
-    first_ambiguity: Option<PlatformWalletError>,
+    /// Indices whose candidates did not single out one identity of the
+    /// wallet, ascending. Not failed probes: Platform was reached.
+    ambiguous: Vec<AmbiguousIdentity>,
 }
 
 impl ScanTally {
@@ -920,11 +984,11 @@ impl ScanTally {
     }
 
     /// Platform answered with candidates for this index and no single one
-    /// verified as the wallet's own. Advances the miss counter like an
-    /// unanswered probe, so the scan still terminates.
-    fn record_ambiguity(&mut self, index: u32, error: PlatformWalletError) {
-        self.ambiguous_indices.push(index);
-        self.first_ambiguity.get_or_insert(error);
+    /// verified as the wallet's own. Advances the miss counter, so the scan
+    /// still terminates. The index is answered unless candidates were left
+    /// unread: another scan would get the same answer.
+    fn record_ambiguity(&mut self, ambiguity: AmbiguousIdentity) {
+        self.ambiguous.push(ambiguity);
         self.consecutive_misses += 1;
     }
 
@@ -940,10 +1004,16 @@ impl ScanTally {
     }
 
     /// Every index this scan did not answer, ascending — unanswered probes,
-    /// ambiguous indices and the index a local fault abandoned it at.
+    /// indices with candidates left unread and the index a local fault
+    /// abandoned it at.
     fn unanswered_indices(&self) -> Vec<u32> {
         let mut indices = self.failed_indices.clone();
-        indices.extend(&self.ambiguous_indices);
+        indices.extend(
+            self.ambiguous
+                .iter()
+                .filter(|ambiguity| ambiguity.more_candidates)
+                .map(|ambiguity| ambiguity.identity_index),
+        );
         indices.extend(self.aborted_at_index);
         indices.sort_unstable();
         indices.dedup();
@@ -1014,12 +1084,17 @@ mod tests {
         derive_ecdsa_identity_auth_keypair_from_master, derive_identity_auth_key_hash_from_master,
         MASTER_KEY_INDEX,
     };
-    use super::{breadcrumb_decisions, IdentityDiscoveryOptions, PlatformWalletError, ScanTally};
+    use super::{
+        breadcrumb_decisions, AmbiguousIdentity, IdentityDiscoveryOptions, PlatformWalletError,
+        ScanTally,
+    };
     use crate::changeset::IdentityScanStateEntry;
     use crate::test_support::NoopTestPersister;
     use dash_sdk::platform::types::identity::{NonUniquePublicKeyHashQuery, PublicKeyHash};
     use dpp::identity::accessors::IdentityGettersV0;
-    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::{
+        IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
+    };
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
@@ -1788,7 +1863,8 @@ mod tests {
                 &test_master(),
             )
             .await
-            .expect("every probe was answered");
+            .expect("every probe was answered")
+            .discovered;
 
         let ids: Vec<Identifier> = discovered.iter().map(|identity| identity.id()).collect();
         assert_eq!(
@@ -1840,7 +1916,8 @@ mod tests {
                 &test_master(),
             )
             .await
-            .expect("every probe was answered");
+            .expect("every probe was answered")
+            .discovered;
 
         assert_eq!(discovered.len(), 1);
         assert_eq!(discovered[0].id(), Identifier::from([0xB0; 32]));
@@ -1882,20 +1959,32 @@ mod tests {
         assert_eq!(verdict.failed_indices, vec![0]);
     }
 
-    /// Run a from-zero scan with a gap limit of one against `test_master`.
-    async fn scan_from_zero(
+    /// Run a from-zero scan with `gap_limit` against `test_master`.
+    async fn scan_from_zero_with_gap(
         wallet: &crate::PlatformWallet,
-    ) -> Result<Vec<Identity>, PlatformWalletError> {
+        gap_limit: u32,
+    ) -> Result<super::IdentityDiscoveryResult, PlatformWalletError> {
         wallet
             .identity()
             .discover_from_master(
                 IdentityDiscoveryOptions {
                     start_index: Some(0),
-                    gap_limit: 1,
+                    gap_limit,
                 },
                 &test_master(),
             )
             .await
+    }
+
+    /// Run a from-zero scan with a gap limit of one against `test_master`.
+    async fn scan_from_zero(
+        wallet: &crate::PlatformWallet,
+    ) -> Result<super::IdentityDiscoveryResult, PlatformWalletError> {
+        scan_from_zero_with_gap(wallet, 1).await
+    }
+
+    fn ids(identities: &[Identity]) -> Vec<Identifier> {
+        identities.iter().map(|identity| identity.id()).collect()
     }
 
     /// Of several candidates for one index, the one whose every key derives
@@ -1912,18 +2001,107 @@ mod tests {
         expect_unique(&mut sdk, master_key_hash(1), None).await;
         expect_candidates(&mut sdk, master_key_hash(1), vec![]).await;
 
-        let discovered = scan_from_zero(&wallet)
+        let result = scan_from_zero(&wallet)
             .await
             .expect("every index was answered");
 
-        let ids: Vec<Identifier> = discovered.iter().map(|identity| identity.id()).collect();
-        assert_eq!(ids, vec![Identifier::from([0xC0; 32])]);
+        assert_eq!(ids(&result.discovered), vec![Identifier::from([0xC0; 32])]);
+        assert!(result.ambiguous.is_empty());
         assert!(!is_managed(&manager, &wallet_id, Identifier::from([0x01; 32])).await);
         assert!(scan_verdict(&manager, &wallet_id).await.complete);
     }
 
+    /// The resident-wallet scan verifies candidates against the in-process
+    /// seed the same way.
+    #[tokio::test]
+    async fn should_import_the_candidate_whose_keys_all_derive_from_the_resident_wallet() {
+        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        {
+            let mnemonic = Mnemonic::from_phrase(TEST_MNEMONIC).expect("mnemonic");
+            let resident = key_wallet::wallet::Wallet::from_mnemonic(
+                mnemonic,
+                Network::Testnet,
+                key_wallet::wallet::initialization::WalletAccountCreationOptions::None,
+            )
+            .expect("resident wallet");
+            let mut wm = manager.wallet_manager.write().await;
+            let (in_manager, _) = wm
+                .get_wallet_mut_and_info_mut(&wallet_id)
+                .expect("wallet in manager");
+            *in_manager = resident;
+        }
+        let mut sdk = manager.sdk().clone();
+        let other = hash160_candidate(0x01, 0, vec![key_from_another_seed(1)]);
+        let own = hash160_candidate(0xC0, 0, vec![]);
+        expect_unique(&mut sdk, master_key_hash(0), None).await;
+        expect_candidates(&mut sdk, master_key_hash(0), vec![other, own]).await;
+        expect_unique(&mut sdk, master_key_hash(1), None).await;
+        expect_candidates(&mut sdk, master_key_hash(1), vec![]).await;
+
+        let result = wallet
+            .identity()
+            .discover(IdentityDiscoveryOptions {
+                start_index: Some(0),
+                gap_limit: 1,
+            })
+            .await
+            .expect("every index was answered");
+
+        assert_eq!(ids(&result.discovered), vec![Identifier::from([0xC0; 32])]);
+        assert!(result.ambiguous.is_empty());
+    }
+
+    /// A disabled key the wallet cannot derive does not stand in the way:
+    /// only enabled keys have to derive from the wallet's seed.
+    #[tokio::test]
+    async fn should_import_a_candidate_whose_key_the_wallet_cannot_derive_is_disabled() {
+        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let mut sdk = manager.sdk().clone();
+        let mut disabled = key_from_another_seed(1);
+        disabled.set_disabled_at(1);
+        let own = hash160_candidate(0xC0, 0, vec![disabled]);
+        expect_unique(&mut sdk, master_key_hash(0), None).await;
+        expect_candidates(&mut sdk, master_key_hash(0), vec![own]).await;
+        expect_unique(&mut sdk, master_key_hash(1), None).await;
+        expect_candidates(&mut sdk, master_key_hash(1), vec![]).await;
+
+        let result = scan_from_zero(&wallet)
+            .await
+            .expect("every index was answered");
+
+        assert_eq!(ids(&result.discovered), vec![Identifier::from([0xC0; 32])]);
+        assert!(result.ambiguous.is_empty());
+    }
+
+    /// An identity the non-unique tree returns whose key 0 is not the
+    /// `ECDSA_HASH160` MASTER key over the probed hash is no candidate: it is
+    /// skipped, and an index with nothing else is a miss.
+    #[tokio::test]
+    async fn should_skip_an_identity_that_is_not_a_candidate_and_record_a_miss() {
+        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let mut sdk = manager.sdk().clone();
+        let pubkey = key_from_another_seed(0).data().to_vec();
+        let not_a_candidate = identity_with_master_key(0x0E, KeyType::ECDSA_SECP256K1, pubkey);
+        expect_unique(&mut sdk, master_key_hash(0), None).await;
+        expect_candidates(&mut sdk, master_key_hash(0), vec![not_a_candidate]).await;
+
+        let result = scan_from_zero(&wallet)
+            .await
+            .expect("every index was answered");
+
+        assert!(result.discovered.is_empty());
+        assert!(result.ambiguous.is_empty());
+        assert!(!is_managed(&manager, &wallet_id, Identifier::from([0x0E; 32])).await);
+        let verdict = scan_verdict(&manager, &wallet_id).await;
+        assert!(verdict.complete, "a miss is an answer: {verdict:?}");
+        assert_eq!(verdict.probed_through, 1);
+    }
+
     /// A lone candidate holding a key the wallet cannot derive is not
-    /// imported: the index is reported, and left unanswered, not a miss.
+    /// imported: the scan reports the index and still succeeds.
     #[tokio::test]
     async fn should_not_import_a_candidate_holding_a_key_the_wallet_cannot_derive() {
         let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
@@ -1933,28 +2111,22 @@ mod tests {
         expect_unique(&mut sdk, master_key_hash(0), None).await;
         expect_candidates(&mut sdk, master_key_hash(0), vec![other]).await;
 
-        let err = scan_from_zero(&wallet)
+        let result = scan_from_zero(&wallet)
             .await
-            .expect_err("no candidate belongs to the wallet");
+            .expect("Platform answered every index");
 
-        match err {
-            PlatformWalletError::AmbiguousIdentityForKey {
-                identity_index,
-                candidates,
-                owned,
-                more_candidates,
-            } => {
-                assert_eq!(identity_index, 0);
-                assert_eq!(candidates, vec![Identifier::from([0x01; 32])]);
-                assert!(owned.is_empty());
-                assert!(!more_candidates);
-            }
-            other => panic!("expected AmbiguousIdentityForKey, got {other:?}"),
-        }
+        assert!(result.discovered.is_empty());
+        assert_eq!(
+            result.ambiguous,
+            vec![AmbiguousIdentity {
+                identity_index: 0,
+                candidates: vec![Identifier::from([0x01; 32])],
+                owned: vec![],
+                more_candidates: false,
+            }]
+        );
         assert!(!is_managed(&manager, &wallet_id, Identifier::from([0x01; 32])).await);
-        let verdict = scan_verdict(&manager, &wallet_id).await;
-        assert!(!verdict.complete);
-        assert_eq!(verdict.failed_indices, vec![0]);
+        assert!(scan_verdict(&manager, &wallet_id).await.complete);
     }
 
     /// Two candidates that both belong to the wallet: neither is imported.
@@ -1968,32 +2140,98 @@ mod tests {
         expect_unique(&mut sdk, master_key_hash(0), None).await;
         expect_candidates(&mut sdk, master_key_hash(0), vec![first, second]).await;
 
-        let err = scan_from_zero(&wallet)
+        let result = scan_from_zero(&wallet)
             .await
-            .expect_err("two candidates belong to the wallet");
+            .expect("Platform answered every index");
 
         let both = vec![Identifier::from([0xC1; 32]), Identifier::from([0xC2; 32])];
-        match err {
-            PlatformWalletError::AmbiguousIdentityForKey {
-                identity_index,
-                candidates,
-                owned,
-                more_candidates,
-            } => {
-                assert_eq!(identity_index, 0);
-                assert_eq!(candidates, both);
-                assert_eq!(owned, both);
-                assert!(!more_candidates);
-            }
-            other => panic!("expected AmbiguousIdentityForKey, got {other:?}"),
-        }
+        assert!(result.discovered.is_empty());
+        assert_eq!(
+            result.ambiguous,
+            vec![AmbiguousIdentity {
+                identity_index: 0,
+                candidates: both.clone(),
+                owned: both.clone(),
+                more_candidates: false,
+            }]
+        );
         for id in both {
             assert!(!is_managed(&manager, &wallet_id, id).await);
         }
+    }
+
+    /// An ambiguous index does not cost the identities found at other
+    /// indices: they are imported and returned with the ambiguous one listed.
+    #[tokio::test]
+    async fn should_keep_identities_found_at_other_indices_when_an_index_is_ambiguous() {
+        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let mut sdk = manager.sdk().clone();
+        expect_unique(&mut sdk, master_key_hash(0), None).await;
+        expect_candidates(
+            &mut sdk,
+            master_key_hash(0),
+            vec![hash160_candidate(0xC0, 0, vec![])],
+        )
+        .await;
+        expect_unique(&mut sdk, master_key_hash(1), None).await;
+        expect_candidates(
+            &mut sdk,
+            master_key_hash(1),
+            vec![
+                hash160_candidate(0xC1, 1, vec![]),
+                hash160_candidate(0xC2, 1, vec![]),
+            ],
+        )
+        .await;
+        expect_unique(&mut sdk, master_key_hash(2), None).await;
+        expect_candidates(&mut sdk, master_key_hash(2), vec![]).await;
+
+        let result = scan_from_zero_with_gap(&wallet, 2)
+            .await
+            .expect("Platform answered every index");
+
+        assert_eq!(ids(&result.discovered), vec![Identifier::from([0xC0; 32])]);
+        assert!(is_managed(&manager, &wallet_id, Identifier::from([0xC0; 32])).await);
+        let indices: Vec<u32> = result
+            .ambiguous
+            .iter()
+            .map(|ambiguity| ambiguity.identity_index)
+            .collect();
+        assert_eq!(indices, vec![1]);
+        let verdict = scan_verdict(&manager, &wallet_id).await;
+        assert!(verdict.complete, "{verdict:?}");
+        assert_eq!(verdict.probed_through, 3);
+    }
+
+    /// Exactly as many candidates as one probe reads: the confirming page
+    /// shows none is left, so the index is answered.
+    #[tokio::test]
+    async fn should_read_exactly_the_page_bound_of_candidates_without_reporting_more() {
+        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let mut sdk = manager.sdk().clone();
+        let candidates: Vec<Identity> = (0..super::MASTER_KEY_HASH_MAX_PAGES as u8)
+            .map(|n| hash160_candidate(0xD0 + n, 0, vec![]))
+            .collect();
+        let read = ids(&candidates);
+        expect_unique(&mut sdk, master_key_hash(0), None).await;
+        expect_candidates(&mut sdk, master_key_hash(0), candidates).await;
+
+        let result = scan_from_zero(&wallet)
+            .await
+            .expect("Platform answered every index");
+
         assert_eq!(
-            scan_verdict(&manager, &wallet_id).await.failed_indices,
-            vec![0]
+            result.ambiguous,
+            vec![AmbiguousIdentity {
+                identity_index: 0,
+                candidates: read.clone(),
+                owned: read,
+                more_candidates: false,
+            }]
         );
+        assert!(scan_verdict(&manager, &wallet_id).await.complete);
     }
 
     /// More candidates than one probe reads: the index is unanswered and
@@ -2007,29 +2245,24 @@ mod tests {
         let candidates: Vec<Identity> = (0..=super::MASTER_KEY_HASH_MAX_PAGES as u8)
             .map(|n| hash160_candidate(0xD0 + n, 0, vec![]))
             .collect();
-        let read: Vec<Identifier> = candidates
-            .iter()
+        let read: Vec<Identifier> = ids(&candidates)
+            .into_iter()
             .take(super::MASTER_KEY_HASH_MAX_PAGES)
-            .map(|identity| identity.id())
             .collect();
         expect_unique(&mut sdk, master_key_hash(0), None).await;
         expect_candidates(&mut sdk, master_key_hash(0), candidates).await;
 
-        let err = scan_from_zero(&wallet)
-            .await
-            .expect_err("the candidate pages ran out");
+        let result = scan_from_zero(&wallet).await.expect("no probe failed");
 
-        assert!(
-            matches!(
-                &err,
-                PlatformWalletError::AmbiguousIdentityForKey {
-                    identity_index: 0,
-                    candidates,
-                    more_candidates: true,
-                    ..
-                } if *candidates == read
-            ),
-            "{err:?}"
+        assert!(result.discovered.is_empty());
+        assert_eq!(
+            result.ambiguous,
+            vec![AmbiguousIdentity {
+                identity_index: 0,
+                candidates: read.clone(),
+                owned: read.clone(),
+                more_candidates: true,
+            }]
         );
         for id in read {
             assert!(!is_managed(&manager, &wallet_id, id).await);

@@ -15,6 +15,7 @@ use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePr
 use key_wallet::Network;
 
 use crate::changeset::PersistenceError;
+use crate::wallet::identity::network::AmbiguousIdentity;
 
 pub use dash_sdk::platform::transition::asset_lock_submission::{
     as_asset_lock_proof_cl_height_too_low, as_state_transition_max_size_exceeded,
@@ -208,34 +209,14 @@ pub enum PlatformWalletError {
         source: Box<dash_sdk::Error>,
     },
 
-    /// Platform answered the key-hash lookup for an identity index with
-    /// candidates, and the wallet could not single out one that belongs to it.
-    ///
-    /// A candidate is an identity whose key 0 is an enabled MASTER
-    /// `ECDSA_HASH160` authentication key over the index's key hash. It
-    /// belongs to the wallet only when every enabled key of it derives from
-    /// the wallet's seed. This error means none or more than one candidate
-    /// did, or that more candidates exist than one lookup reads. Nothing was
-    /// imported for the index, which stays unanswered in the scan verdict;
-    /// retrying does not change the answer while Platform's state is the same.
-    #[error(
-        "could not tell which identity at identity index {identity_index} belongs to this \
-         wallet: {} candidate(s) read, {} verified as this wallet's own{}; none was imported",
-        .candidates.len(),
-        .owned.len(),
-        if *.more_candidates { ", more not read" } else { "" }
-    )]
-    AmbiguousIdentityForKey {
-        /// The identity index whose key hash was looked up.
-        identity_index: u32,
-        /// Every candidate read, in the order Platform returned them.
-        candidates: Vec<Identifier>,
-        /// The candidates whose every enabled key derives from the wallet's
-        /// seed.
-        owned: Vec<Identifier>,
-        /// Whether Platform holds more candidates than were read.
-        more_candidates: bool,
-    },
+    /// A load by identity index found candidates for the index and could not
+    /// single out one that belongs to this wallet, so nothing was imported.
+    /// See [`AmbiguousIdentity`] for what a candidate is and how ownership is
+    /// verified. Retrying does not change the answer while Platform's state is
+    /// the same; a user who knows which identity is theirs can import it by
+    /// its identity id. Discovery reports such indices in its result instead.
+    #[error("{0}")]
+    AmbiguousIdentityForKey(AmbiguousIdentity),
 
     #[error(
         "DashPay receiving account already exists for identity {identity} with contact {contact} on network {network:?} (account index {account_index})"

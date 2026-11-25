@@ -171,8 +171,11 @@ pub enum WalletStartupStatus {
     /// Identity resolved, the sync pass ran, and no contact-account builds are
     /// left queued. Everything a contact payment needs is in place.
     Ready,
-    /// Platform answered that this seed owns no identity. Terminal, and not a
-    /// failure: there is nothing to sync and nothing to drain.
+    /// Platform answered that this seed owns no identity the wallet can
+    /// import: none at all, or only at indices whose candidates did not single
+    /// out one of its own (see
+    /// [`crate::wallet::identity::network::AmbiguousIdentity`]). Terminal, and
+    /// not a failure: there is nothing to sync and nothing to drain.
     NoIdentity,
     /// The scan never reached Platform within the budget. The wallet may well
     /// own an identity; we do not know yet, and asking again may answer it.
@@ -328,7 +331,8 @@ impl StartupTally {
         self.discovery_attempts += 1;
     }
 
-    /// A scan reached Platform and proved there is no identity for this seed.
+    /// A scan reached Platform and proved there is no identity for this seed
+    /// that the wallet can import.
     ///
     /// Terminal. Rescanning cannot change a proof of absence, and treating it
     /// as retryable is exactly the bug this type exists to prevent: it costs a
@@ -902,7 +906,21 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
 
             match result {
                 Ok(found) => {
-                    let identity = match found.first() {
+                    // Platform answered these indices; another scan gets the
+                    // same answer, so they neither fail nor retry the launch.
+                    // Without another identity the launch is `NoIdentity`.
+                    if !found.ambiguous.is_empty() {
+                        tracing::warn!(
+                            indices = ?found
+                                .ambiguous
+                                .iter()
+                                .map(|ambiguity| ambiguity.identity_index)
+                                .collect::<Vec<_>>(),
+                            "startup: identity discovery could not verify which identity at \
+                             these indices belongs to this wallet; nothing was imported for them"
+                        );
+                    }
+                    let identity = match found.discovered.first() {
                         Some(identity) => Some(identity.id()),
                         // An empty return is not proof on its own: `discover`
                         // reports only identities THIS call inserted, so a
