@@ -242,9 +242,10 @@ impl std::fmt::Debug for SettleBoundaryHook {
 /// # Not yet durable
 ///
 /// The manager's registry is process-lifetime, so this closes recreation but
-/// NOT a process restart: a fresh process loads the persisted UTXO with no
-/// fence on it. Closing that half needs the pending transaction itself to be
-/// durable — either recorded locally at dispatch, the way the SPV path already
+/// NOT a process restart, nor a manager replaced in the same process: a fresh
+/// process, or a new manager loading the same store after the old one shut
+/// down, loads the persisted UTXO with no fence on it. Closing that half needs
+/// the pending transaction itself to be durable — either recorded locally at dispatch, the way the SPV path already
 /// is via dash-spv's mempool injection (which would remove the input from the
 /// persisted UTXO set through the existing `CoreChangeSet::records` /
 /// `spent_utxos` fields, so no new persistence surface is needed), or written
