@@ -97,7 +97,10 @@ use super::store::{
 };
 use super::CAUGHT_UP_COOLDOWN;
 use crate::error::PlatformWalletError;
-use crate::manager::shielded_sync::{ShieldedSyncPassSummary, WalletShieldedOutcome};
+use crate::manager::shielded_sync::{
+    HeldNullifierState, ShieldedPassEvidence, ShieldedPassId, ShieldedPassNullifiers,
+    ShieldedSyncPassSummary, WalletShieldedOutcome,
+};
 use crate::wallet::identity::network::dashpay_contract;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
@@ -198,6 +201,33 @@ pub struct NetworkShieldedCoordinator {
     /// discharges it; then it leaves this set too. In memory only: a restart
     /// reads the store for it once more.
     landed_private_payments: std::sync::Mutex<BTreeSet<(WalletId, [u8; 32])>>,
+
+    /// Whether every pass reads Platform's recorded anchor set before its
+    /// note scan, so its summary carries the pass's evidence
+    /// ([`Self::set_pass_evidence_wanted`]).
+    pass_evidence_wanted: std::sync::atomic::AtomicBool,
+
+    /// The pass started last, and the last pass that ran to its end
+    /// uncancelled, started last and with the store's notes changed only by
+    /// its own scan meanwhile, with the subwallets it scanned
+    /// ([`Self::last_completed_pass`]).
+    passes: std::sync::Mutex<PassMarks>,
+
+    /// Run just before a pass marks itself completed, for tests to change
+    /// the store at that point.
+    #[cfg(test)]
+    before_pass_completes: std::sync::Mutex<Option<PassCompletionHook>>,
+
+    /// Moves, under the store's write guard, whenever notes change other
+    /// than by a pass's scan: a restore from the host, a purge, an
+    /// unregister or a clear. A pass completes as the last one only if it
+    /// did not move while the pass ran.
+    notes_epoch: std::sync::atomic::AtomicU64,
+
+    /// The evidence the last release judged by, for tests to compare with
+    /// the pass's reported evidence.
+    #[cfg(test)]
+    release_evidence_seen: std::sync::Mutex<Option<ReleaseEvidenceSeen>>,
 
     /// Optional progress callback fired once per chunk inside
     /// `sync_shielded_notes`. Lets the manager translate chunk-level
@@ -429,6 +459,13 @@ impl NetworkShieldedCoordinator {
             persisters: Arc::new(RwLock::new(BTreeMap::new())),
             last_caught_up_at: std::sync::Mutex::new(None),
             landed_private_payments: std::sync::Mutex::new(BTreeSet::new()),
+            pass_evidence_wanted: std::sync::atomic::AtomicBool::new(false),
+            passes: std::sync::Mutex::new(PassMarks::default()),
+            #[cfg(test)]
+            before_pass_completes: std::sync::Mutex::new(None),
+            notes_epoch: std::sync::atomic::AtomicU64::new(0),
+            #[cfg(test)]
+            release_evidence_seen: std::sync::Mutex::new(None),
             progress_handler: std::sync::Mutex::new(None),
             tree_progress_handler: std::sync::Mutex::new(None),
             lifecycle: tokio::sync::Mutex::new(()),
@@ -463,6 +500,110 @@ impl NetworkShieldedCoordinator {
         if let Ok(mut slot) = self.progress_handler.lock() {
             *slot = handler;
         }
+    }
+
+    /// Have every sync pass read Platform's recorded anchor set before its
+    /// note scan, even with no reservation or journal record of its own to
+    /// judge, so its summary carries the pass's evidence
+    /// ([`ShieldedSyncPassSummary::evidence`]). For a host holding spends the
+    /// coordinator does not know of; costs one query a pass while set.
+    pub fn set_pass_evidence_wanted(&self, wanted: bool) {
+        self.pass_evidence_wanted
+            .store(wanted, std::sync::atomic::Ordering::Release);
+    }
+
+    /// The last pass that ran to its end uncancelled, with no other pass
+    /// started and no restore, purge, unregister or clear since it started.
+    /// `None` from the start of a pass until that pass completes, after a
+    /// pass that failed or was cancelled, and after any of those changes to
+    /// the store's notes.
+    pub fn last_completed_pass(&self) -> Option<ShieldedPassId> {
+        self.completed_pass().map(|(pass_id, _)| pass_id)
+    }
+
+    fn pass_marks(&self) -> std::sync::MutexGuard<'_, PassMarks> {
+        self.passes
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn completed_pass(&self) -> Option<CompletedPass> {
+        self.pass_marks().completed.clone()
+    }
+
+    fn start_pass(&self, pass_id: ShieldedPassId) {
+        let mut marks = self.pass_marks();
+        marks.started = Some(pass_id);
+        marks.completed = None;
+    }
+
+    /// Marks `pass_id` the last completed pass if no pass started after it.
+    fn complete_pass(&self, pass_id: ShieldedPassId, scanned: BTreeSet<SubwalletId>) -> bool {
+        let mut marks = self.pass_marks();
+        if marks.started != Some(pass_id) {
+            return false;
+        }
+        marks.completed = Some((pass_id, Arc::new(scanned)));
+        true
+    }
+
+    fn notes_epoch(&self) -> u64 {
+        self.notes_epoch.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Notes changed other than by a pass's scan: no pass is the last
+    /// completed one until a pass starts and completes after this. Called
+    /// with the store's write guard held, which `_held` stands for.
+    fn notes_changed(&self, _held: &FileBackedShieldedStore) {
+        self.notes_epoch
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        self.pass_marks().completed = None;
+    }
+
+    /// How each of `nullifiers` reads in the notes of the subwallets the last
+    /// completed pass scanned, with that pass, taken under the same store
+    /// guard. With no last completed pass, or for a note outside what it
+    /// scanned, a nullifier reads [`HeldNullifierState::Unknown`]; so does
+    /// every one a store that does not read leaves unread.
+    pub async fn read_held_nullifiers(&self, nullifiers: &[[u8; 32]]) -> ShieldedPassNullifiers {
+        let mut states: BTreeMap<[u8; 32], HeldNullifierState> = nullifiers
+            .iter()
+            .map(|nullifier| (*nullifier, HeldNullifierState::Unknown))
+            .collect();
+        let store = self.store.read().await;
+        let Some((pass_id, scanned)) = self.completed_pass() else {
+            return ShieldedPassNullifiers::new(None, states);
+        };
+        for &id in scanned.iter() {
+            match store.get_all_notes(id) {
+                Ok(notes) => {
+                    for note in notes {
+                        if let Some(state) = states.get_mut(&note.nullifier) {
+                            if note.is_spent {
+                                *state = HeldNullifierState::Spent;
+                            } else if *state == HeldNullifierState::Unknown {
+                                *state = HeldNullifierState::Unspent;
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(id.wallet_id),
+                        account = id.account_index,
+                        error = %e,
+                        "held nullifier read: notes did not read; none reads unspent"
+                    );
+                    for state in states.values_mut() {
+                        if *state == HeldNullifierState::Unspent {
+                            *state = HeldNullifierState::Unknown;
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        ShieldedPassNullifiers::new(Some(pass_id), states)
     }
 
     /// Snapshot of the currently installed progress handler.
@@ -515,6 +656,9 @@ impl NetworkShieldedCoordinator {
     /// Reference to the shared store. The full sync / spend
     /// surfaces land on the coordinator itself; this accessor
     /// exists for tests and for migration scaffolding in Phase 1.
+    /// A write through it must not save a note or clear a spent mark:
+    /// [`Self::read_held_nullifiers`] would read it under a pass that did
+    /// not scan it.
     pub fn store(&self) -> &Arc<RwLock<FileBackedShieldedStore>> {
         &self.store
     }
@@ -820,6 +964,7 @@ impl NetworkShieldedCoordinator {
         // dropped; retained accounts are left untouched.
         if !stale.is_empty() {
             let mut store = self.store.write().await;
+            self.notes_changed(&store);
             for (id, _) in stale {
                 if let Err(e) = store.purge_subwallet(id) {
                     tracing::warn!(
@@ -941,7 +1086,9 @@ impl NetworkShieldedCoordinator {
             .retain(|id, _| id.wallet_id != wallet_id);
         self.persisters.write().await.remove(&wallet_id);
         self.hydrated.write().await.remove(&wallet_id);
-        if let Err(e) = self.store.write().await.purge_wallet(wallet_id) {
+        let mut store = self.store.write().await;
+        self.notes_changed(&store);
+        if let Err(e) = store.purge_wallet(wallet_id) {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
                 error = %e,
@@ -1086,6 +1233,7 @@ impl NetworkShieldedCoordinator {
         }
 
         let mut store = self.store.write().await;
+        self.notes_changed(&store);
         for (id, sub) in &snapshot.per_subwallet {
             // Only restore subwallets that are registered on this
             // coordinator — `registered` holds `wallet_id`'s alone, so
@@ -1263,6 +1411,7 @@ impl NetworkShieldedCoordinator {
         let mut first_err: Option<crate::error::PlatformWalletError> = None;
         {
             let mut store = self.store.write().await;
+            self.notes_changed(&store);
             if let Err(e) = store.reset_commitment_tree() {
                 tracing::warn!(error = %e, "Failed to reset commitment tree on clear");
                 first_err.get_or_insert_with(|| {
@@ -1442,6 +1591,10 @@ impl NetworkShieldedCoordinator {
             return Self::cooldown_skip_summary(self).await;
         }
 
+        // Taken before the registry snapshot: a restore, purge or clear from
+        // here on keeps this pass from completing as the last one.
+        let epoch = self.notes_epoch();
+
         // Snapshot the flat subwallet registry. This Vec is both
         // the IVK fan-out for sync_notes_across and the
         // identity-map for per-wallet summary demux below.
@@ -1455,6 +1608,10 @@ impl NetworkShieldedCoordinator {
             summary.sync_unix_seconds = Self::now_unix();
             return summary;
         }
+        // From here the store may change: no earlier pass is the last
+        // completed one until this one is.
+        let pass_id = ShieldedPassId::next();
+        self.start_pass(pass_id);
 
         // Snapshot armed reservations and prefetch Platform's recorded
         // anchor set BEFORE the note scan. The release pass after the scan
@@ -1533,6 +1690,21 @@ impl NetworkShieldedCoordinator {
         // `notes` result and `notes.changeset` the receipts do.
         let newly_spent_per_sub = notes.per_subwallet_newly_spent.clone();
 
+        // The pass's evidence for the host: the PRE-scan set the release below
+        // judges by, from a completed scan that covers a height. A set read
+        // after the scan proves nothing about a spend that executed past the
+        // scan's coverage.
+        let host_evidence = match (stranded_release.as_ref(), notes.covered_height) {
+            (Some(pre), Some(covered)) if !cancelled => Some(ShieldedPassEvidence::new(
+                pass_id,
+                Arc::new(pre.recorded.clone()),
+                pre.recorded_height,
+                covered,
+                pre.heightless.clone(),
+            )),
+            _ => None,
+        };
+
         // Residual-spend resolution: `sync_notes_across` above marked every
         // landed spend (clearing its reservation and dropping its redrive
         // record via the store hook). Two passes over what's left, both
@@ -1581,6 +1753,15 @@ impl NetworkShieldedCoordinator {
                     scan_covered_height: notes.covered_height,
                     heightless: heightless.as_ref(),
                 };
+                #[cfg(test)]
+                if let Ok(mut seen) = self.release_evidence_seen.lock() {
+                    *seen = Some((
+                        recorded.clone(),
+                        recorded_height,
+                        notes.covered_height,
+                        heightless.clone(),
+                    ));
+                }
                 self.release_stranded_spends(stale, evidence).await;
                 self.discharge_expired_private_payments(&journal, evidence)
                     .await;
@@ -1696,6 +1877,26 @@ impl NetworkShieldedCoordinator {
         summary =
             build_per_wallet_summary(&subwallets, &notes, &newly_spent_per_sub, &balances_per_sub);
         summary.sync_unix_seconds = Self::now_unix();
+        #[cfg(test)]
+        {
+            let hook = self
+                .before_pass_completes
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .take();
+            if let Some(hook) = hook {
+                hook(self);
+            }
+        }
+        // Under the store guard, so no restore, purge or clear lands between
+        // the check and the mark.
+        let completed = {
+            let _store = self.store.read().await;
+            !cancelled
+                && self.notes_epoch() == epoch
+                && self.complete_pass(pass_id, subwallets.iter().map(|(id, _)| *id).collect())
+        };
+        summary.evidence = host_evidence.filter(|_| completed);
         summary
     }
 
@@ -1760,7 +1961,8 @@ impl NetworkShieldedCoordinator {
     ) -> Option<PreScanEvidence> {
         // Gather anchored reservations across every synced subwallet, and the
         // journal records of their wallets. The common case is none, and then
-        // the network round-trip is skipped.
+        // the network round-trip is skipped, unless the host asked for the
+        // pass's evidence.
         let (stale, journal, tree_bounds, tree_size) = {
             let store = self.store.read().await;
             let mut stale: Vec<(SubwalletId, StalePendingSpend)> = Vec::new();
@@ -1779,7 +1981,12 @@ impl NetworkShieldedCoordinator {
                 &*store,
                 subwallets.iter().map(|(id, _)| id.wallet_id),
             );
-            if stale.is_empty() && journal.is_empty() {
+            if stale.is_empty()
+                && journal.is_empty()
+                && !self
+                    .pass_evidence_wanted
+                    .load(std::sync::atomic::Ordering::Acquire)
+            {
                 return None;
             }
             let tree_bounds = heightless_tree_bounds(&*store, &stale, &journal);
@@ -2788,6 +2995,29 @@ struct PreScanEvidence {
     /// does, or none was needed.
     heightless: Option<HeightlessAnchorEvidence>,
 }
+
+/// What a test runs as a pass completes.
+#[cfg(test)]
+type PassCompletionHook = Box<dyn FnOnce(&NetworkShieldedCoordinator) + Send>;
+
+/// A pass that completed and the subwallets it scanned.
+type CompletedPass = (ShieldedPassId, Arc<BTreeSet<SubwalletId>>);
+
+#[derive(Default)]
+struct PassMarks {
+    started: Option<ShieldedPassId>,
+    completed: Option<CompletedPass>,
+}
+
+/// The evidence a release judged by: the set, its height, the scan's covered
+/// height and the heightless bounds.
+#[cfg(test)]
+type ReleaseEvidenceSeen = (
+    HashSet<[u8; 32]>,
+    u64,
+    Option<u64>,
+    Option<HeightlessAnchorEvidence>,
+);
 
 /// The private payment journal records of `wallet_ids`, each wallet once, in
 /// order. A wallet whose journal does not read has none here: nothing of it is
@@ -4556,7 +4786,14 @@ mod tests {
         };
         let held = (true, true, Some(ShieldedActivityStatus::Pending));
 
-        coordinator.sync(true, &CancellationToken::new()).await;
+        let summary = coordinator.sync(true, &CancellationToken::new()).await;
+        let evidence = assert_reports_release_evidence(&coordinator, &summary);
+        for (_, anchor, _, anchor_height) in &spends {
+            assert!(
+                !evidence.proves_pruned(anchor, *anchor_height),
+                "the reported evidence judges as the release did"
+            );
+        }
         {
             let store = coordinator.store().read().await;
             for (nullifier, _, activity, _) in &spends {
@@ -4570,7 +4807,10 @@ mod tests {
 
         sdk.mock()
             .set_response_height_of::<ShieldedEncryptedNotes>(SET_HEIGHT);
-        coordinator.sync(true, &CancellationToken::new()).await;
+        let summary = coordinator.sync(true, &CancellationToken::new()).await;
+        let evidence = assert_reports_release_evidence(&coordinator, &summary);
+        assert!(evidence.proves_pruned(&spends[0].1, spends[0].3));
+        assert!(!evidence.proves_pruned(&spends[1].1, spends[1].3));
         let store = coordinator.store().read().await;
         assert_eq!(
             state(&store, spends[0].0, spends[0].2),
@@ -4583,6 +4823,446 @@ mod tests {
             "an anchor read above the set may be newer than it"
         );
         drop(store);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The evidence `summary` reports, checked equal to what that pass's
+    /// release judged by.
+    fn assert_reports_release_evidence(
+        coordinator: &NetworkShieldedCoordinator,
+        summary: &ShieldedSyncPassSummary,
+    ) -> ShieldedPassEvidence {
+        let evidence = summary
+            .evidence
+            .clone()
+            .expect("a completed pass reports its evidence");
+        let seen = coordinator
+            .release_evidence_seen
+            .lock()
+            .unwrap()
+            .take()
+            .expect("the pass ran its release");
+        let (recorded, height, covered, heightless) = evidence.parts();
+        assert_eq!(
+            (recorded, height, Some(covered), heightless),
+            (&seen.0, seen.1, seen.2, seen.3.as_ref()),
+            "the reported evidence is the release's own"
+        );
+        assert_eq!(
+            coordinator.last_completed_pass(),
+            Some(evidence.heights().0)
+        );
+        evidence
+    }
+
+    /// A host holding spends the coordinator does not know of asks every
+    /// pass for its evidence and reads its held nullifiers after the pass.
+    /// A scan proved a block below the set shows nothing about the set's own
+    /// block; a read is bound to the pass last completed when it was taken,
+    /// so one pass's evidence never judges another's read; and whatever is
+    /// unknown, unread or without a height is held.
+    #[tokio::test]
+    async fn should_report_a_passs_anchor_evidence_to_a_host_that_asked_for_it() {
+        use drive_proof_verifier::types::{
+            NoParamQuery, ShieldedAnchors, ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery,
+        };
+
+        const SET_HEIGHT: u64 = 50;
+        let still_recorded = [0xEE; 32];
+        let pruned = [0x22; 32];
+        let unspent = [0x61; 32];
+        let spent = [0x62; 32];
+        let unknown = [0x63; 32];
+        let not_read = [0x64; 32];
+        let held = [unspent, spent, unknown];
+        let mut sdk = dash_sdk::Sdk::new_mock();
+        let count = 2048
+            * u32::from(
+                sdk.version()
+                    .drive_abci
+                    .query
+                    .shielded_queries
+                    .max_query_chunks,
+            );
+        for chunk in 0..16 {
+            sdk.mock()
+                .expect_fetch(
+                    ShieldedEncryptedNotesQuery {
+                        start_index: u64::from(count) * chunk,
+                        count,
+                    },
+                    Some(ShieldedEncryptedNotes {
+                        notes: Vec::new(),
+                        total_count: 0,
+                    }),
+                )
+                .await
+                .expect("an empty chunk");
+        }
+        sdk.mock()
+            .expect_fetch(NoParamQuery {}, Some(ShieldedAnchors(vec![still_recorded])))
+            .await
+            .expect("the anchor set");
+        sdk.mock()
+            .set_response_height_of::<ShieldedAnchors>(SET_HEIGHT)
+            .set_response_height_of::<ShieldedEncryptedNotes>(SET_HEIGHT - 1);
+
+        let dir = temp_dir("pass_evidence");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let db_path = dir.join("tree.sqlite");
+        let coordinator = Arc::new(NetworkShieldedCoordinator::new(
+            Arc::new(sdk.clone()),
+            dashcore::Network::Testnet,
+            db_path.clone(),
+            FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store"),
+        ));
+        // What the last completed pass read as each chunk of a pass came in.
+        let seen_during_pass: Arc<std::sync::Mutex<Vec<Option<ShieldedPassId>>>> = Arc::default();
+        {
+            let watched = Arc::downgrade(&coordinator);
+            let seen = Arc::clone(&seen_during_pass);
+            coordinator.install_progress_handler(Some(Arc::new(move |_, _| {
+                if let Some(coordinator) = watched.upgrade() {
+                    seen.lock().unwrap().push(coordinator.last_completed_pass());
+                }
+            })));
+        }
+        let wallet_id: WalletId = [0x11; 32];
+        let views = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+            .expect("derive viewing keys")
+            .viewing_keys();
+        coordinator
+            .register_wallet(
+                wallet_id,
+                BTreeMap::from([(1u32, views)]),
+                WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence)),
+            )
+            .await
+            .expect("register wallet");
+        {
+            let mut store = coordinator.store().write().await;
+            for (position, (nullifier, is_spent)) in
+                [(unspent, false), (spent, true)].into_iter().enumerate()
+            {
+                let note = ShieldedNote {
+                    position: position as u64,
+                    cmx: [0x70 + position as u8; 32],
+                    nullifier,
+                    block_height: 1,
+                    is_spent,
+                    value: 1_000,
+                    note_data: vec![0u8; 115],
+                };
+                store
+                    .save_note(SubwalletId::new(wallet_id, 1), &note)
+                    .expect("note");
+            }
+        }
+        assert_eq!(
+            coordinator.read_held_nullifiers(&held).await.pass_id(),
+            None,
+            "no pass has completed"
+        );
+
+        let unasked = coordinator.sync(true, &CancellationToken::new()).await;
+        assert!(
+            unasked.evidence.is_none(),
+            "with nothing of its own to judge, a pass reads no set unless asked"
+        );
+
+        coordinator.set_pass_evidence_wanted(true);
+        let pass = || async {
+            coordinator
+                .sync(true, &CancellationToken::new())
+                .await
+                .evidence
+                .expect("an asked-for pass reports its evidence")
+        };
+        let behind = pass().await;
+        let behind_read = coordinator.read_held_nullifiers(&held).await;
+        assert_eq!(behind.heights().1, SET_HEIGHT);
+        assert_eq!(behind.heights().2, SET_HEIGHT - 1);
+        assert_eq!(behind_read.pass_id(), Some(behind.heights().0));
+        assert_eq!(behind_read.state(&unspent), HeldNullifierState::Unspent);
+        assert_eq!(behind_read.state(&spent), HeldNullifierState::Spent);
+        assert_eq!(behind_read.state(&unknown), HeldNullifierState::Unknown);
+        assert_eq!(behind_read.state(&not_read), HeldNullifierState::Unknown);
+        assert_eq!(behind.anchor_recorded_at(&still_recorded), Some(SET_HEIGHT));
+        assert_eq!(behind.anchor_recorded_at(&pruned), None);
+        assert!(
+            !behind.proves_pruned(&pruned, SET_HEIGHT - 5),
+            "a scan a block below the set proves nothing"
+        );
+        assert!(!behind.proves_spend_cannot_execute(
+            &behind_read,
+            &pruned,
+            SET_HEIGHT - 5,
+            &[unspent]
+        ));
+
+        sdk.mock()
+            .set_response_height_of::<ShieldedEncryptedNotes>(SET_HEIGHT);
+        let covering = pass().await;
+        let read = coordinator.read_held_nullifiers(&held).await;
+        let cannot_execute = |anchor: &[u8; 32], height: u64, nullifiers: &[[u8; 32]]| {
+            covering.proves_spend_cannot_execute(&read, anchor, height, nullifiers)
+        };
+        assert_eq!(covering.heights().2, SET_HEIGHT);
+        assert!(
+            cannot_execute(&pruned, SET_HEIGHT - 5, &[unspent]),
+            "absent from a set the scan covers, in the set before it, nullifier unspent"
+        );
+        assert!(
+            cannot_execute(&pruned, SET_HEIGHT, &[unspent]),
+            "taken from a set at the same height"
+        );
+        assert!(
+            !cannot_execute(&pruned, SET_HEIGHT + 1, &[unspent]),
+            "an anchor taken above the set may be newer than it"
+        );
+        assert!(
+            !cannot_execute(&still_recorded, SET_HEIGHT - 5, &[unspent]),
+            "a recorded anchor can still be spent against"
+        );
+        assert_eq!(
+            covering.anchor_recorded_at(&pruned),
+            None,
+            "a set lacking the anchor gives it no height to prove by"
+        );
+        assert!(
+            !cannot_execute(&pruned, SET_HEIGHT - 5, &[unspent, spent]),
+            "a spent nullifier goes to the executed path, not this one"
+        );
+        assert!(
+            !cannot_execute(&pruned, SET_HEIGHT - 5, &[unspent, unknown]),
+            "a nullifier the library does not know is held"
+        );
+        assert!(
+            !cannot_execute(&pruned, SET_HEIGHT - 5, &[unspent, not_read]),
+            "a nullifier the read did not cover is held"
+        );
+        assert!(
+            !cannot_execute(&pruned, SET_HEIGHT - 5, &[]),
+            "a spend without nullifiers is never proven"
+        );
+
+        let next = pass().await;
+        let next_read = coordinator.read_held_nullifiers(&held).await;
+        assert!(next.heights().0 > covering.heights().0, "pass ids increase");
+        assert!(
+            next.proves_spend_cannot_execute(&next_read, &pruned, SET_HEIGHT - 5, &[unspent]),
+            "the next pass proves it on a read taken after it"
+        );
+        assert!(
+            !next.proves_spend_cannot_execute(&read, &pruned, SET_HEIGHT - 5, &[unspent]),
+            "a pass's evidence never judges a read taken before it"
+        );
+        assert!(
+            !covering.proves_spend_cannot_execute(&next_read, &pruned, SET_HEIGHT - 5, &[unspent]),
+            "nor a read taken after a later pass"
+        );
+
+        let during = std::mem::take(&mut *seen_during_pass.lock().unwrap());
+        assert!(
+            !during.is_empty() && during.iter().all(Option::is_none),
+            "while a pass runs, no pass is the last completed one: {during:?}"
+        );
+
+        // A wallet bound after the pass, with a note an earlier session left
+        // in the store, reads Unknown under the pass that never scanned it.
+        let other: WalletId = [0x12; 32];
+        let restored = [0x65; 32];
+        let left = [0x66; 32];
+        {
+            let mut store = coordinator.store().write().await;
+            store
+                .save_note(
+                    SubwalletId::new(other, 0),
+                    &ShieldedNote {
+                        position: 8,
+                        cmx: [0x78; 32],
+                        nullifier: left,
+                        block_height: 1,
+                        is_spent: false,
+                        value: 1_000,
+                        note_data: vec![0u8; 115],
+                    },
+                )
+                .expect("note");
+        }
+        let other_views = |account: u32| {
+            BTreeMap::from([(
+                account,
+                OrchardKeySet::from_seed(&[0x43u8; 64], dashcore::Network::Testnet, account)
+                    .expect("derive viewing keys")
+                    .viewing_keys(),
+            )])
+        };
+        coordinator
+            .register_wallet(
+                other,
+                other_views(0),
+                WalletPersister::new(other, Arc::new(NoPlatformPersistence)),
+            )
+            .await
+            .expect("register the other wallet");
+        let after_register = coordinator.read_held_nullifiers(&[unspent, left]).await;
+        assert_eq!(after_register.pass_id(), Some(next.heights().0));
+        assert_eq!(after_register.state(&unspent), HeldNullifierState::Unspent);
+        assert_eq!(
+            after_register.state(&left),
+            HeldNullifierState::Unknown,
+            "the pass never scanned the wallet bound after it"
+        );
+        assert!(
+            !next.proves_spend_cannot_execute(&after_register, &pruned, SET_HEIGHT - 5, &[left]),
+            "a note the pass never scanned is held"
+        );
+
+        // Restored from the host with a note the pass never scanned, it
+        // reads under no pass until one scans it.
+        let snapshot = crate::changeset::ShieldedSyncStartState {
+            per_subwallet: BTreeMap::from([(
+                SubwalletId::new(other, 0),
+                crate::changeset::ShieldedSubwalletStartState {
+                    notes: vec![ShieldedNote {
+                        position: 7,
+                        cmx: [0x77; 32],
+                        nullifier: restored,
+                        block_height: 1,
+                        is_spent: false,
+                        value: 1_000,
+                        note_data: vec![0u8; 115],
+                    }],
+                    ..Default::default()
+                },
+            )]),
+            ..Default::default()
+        };
+        coordinator
+            .restore_for_wallet(other, &snapshot)
+            .await
+            .expect("restore the other wallet");
+        let after_restore = coordinator.read_held_nullifiers(&[unspent, restored]).await;
+        assert_eq!(after_restore.state(&restored), HeldNullifierState::Unknown);
+        assert_eq!(
+            after_restore.pass_id(),
+            None,
+            "a restore ends the last pass"
+        );
+        assert!(
+            !next.proves_spend_cannot_execute(&after_restore, &pruned, SET_HEIGHT - 5, &[restored]),
+            "a note restored after the pass was never scanned by it"
+        );
+        let scanned = pass().await;
+        assert!(
+            scanned.proves_spend_cannot_execute(
+                &coordinator.read_held_nullifiers(&[restored]).await,
+                &pruned,
+                SET_HEIGHT - 5,
+                &[restored]
+            ),
+            "a pass that scanned it proves it"
+        );
+        coordinator.unregister_wallet(other).await;
+        let after_unregister = coordinator.read_held_nullifiers(&[unspent]).await;
+        assert_eq!(
+            after_unregister.pass_id(),
+            None,
+            "an unregister ends the last pass"
+        );
+        assert!(!scanned.proves_spend_cannot_execute(
+            &after_unregister,
+            &pruned,
+            SET_HEIGHT - 5,
+            &[unspent]
+        ));
+
+        coordinator
+            .register_wallet(
+                other,
+                other_views(0),
+                WalletPersister::new(other, Arc::new(NoPlatformPersistence)),
+            )
+            .await
+            .expect("register the other wallet again");
+        let rebound = pass().await;
+        assert_eq!(coordinator.last_completed_pass(), Some(rebound.heights().0));
+        coordinator
+            .register_wallet(
+                other,
+                other_views(1),
+                WalletPersister::new(other, Arc::new(NoPlatformPersistence)),
+            )
+            .await
+            .expect("re-bind the other wallet to another account");
+        assert_eq!(
+            coordinator.last_completed_pass(),
+            None,
+            "a re-bind that purges a dropped account ends the last pass"
+        );
+
+        // A restore landing after the pass's scan but before it completes
+        // leaves it neither completed nor reporting.
+        *coordinator.before_pass_completes.lock().unwrap() = Some(Box::new(|coordinator| {
+            let store = coordinator
+                .store
+                .try_write()
+                .expect("no store guard held as a pass completes");
+            coordinator.notes_changed(&store);
+        }));
+        assert!(
+            coordinator
+                .sync(true, &CancellationToken::new())
+                .await
+                .evidence
+                .is_none(),
+            "notes changed during the pass"
+        );
+        assert_eq!(coordinator.last_completed_pass(), None);
+        let completed = pass().await;
+        assert_eq!(
+            coordinator.last_completed_pass(),
+            Some(completed.heights().0)
+        );
+
+        // Nor does a pass that another pass started after.
+        *coordinator.before_pass_completes.lock().unwrap() = Some(Box::new(|coordinator| {
+            coordinator.start_pass(ShieldedPassId::next());
+        }));
+        assert!(
+            coordinator
+                .sync(true, &CancellationToken::new())
+                .await
+                .evidence
+                .is_none(),
+            "a later pass started before this one completed"
+        );
+        assert_eq!(coordinator.last_completed_pass(), None);
+        let completed = pass().await;
+        assert_eq!(
+            coordinator.last_completed_pass(),
+            Some(completed.heights().0)
+        );
+
+        coordinator.set_pass_evidence_wanted(false);
+        assert!(
+            coordinator
+                .sync(true, &CancellationToken::new())
+                .await
+                .evidence
+                .is_none(),
+            "withdrawn, the pass reads no set again"
+        );
+        assert!(!next.proves_spend_cannot_execute(
+            &coordinator.read_held_nullifiers(&held).await,
+            &pruned,
+            SET_HEIGHT - 5,
+            &[unspent]
+        ));
+
+        coordinator.clear().await.expect("clear");
+        assert_eq!(coordinator.last_completed_pass(), None, "a clear ends it");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

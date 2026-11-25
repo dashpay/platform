@@ -519,6 +519,7 @@ mod release_tests {
                 ),
             ]),
             sync_unix_seconds: 100,
+            evidence: None,
         });
         assert_eq!(received.len(), 3);
         assert_eq!(received[0].0, [1; 32]);

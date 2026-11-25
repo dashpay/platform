@@ -25,7 +25,7 @@
 //!
 //! [`configure_shielded`]: crate::manager::PlatformWalletManager::configure_shielded
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     Arc,
@@ -43,6 +43,7 @@ use crate::manager::{
     COORDINATOR_DRAIN_BUDGET, LATCHED_RETRY_INTERVAL,
 };
 use crate::wallet::platform_wallet::WalletId;
+use crate::wallet::shielded::coordinator::{HeightlessAnchorEvidence, PrunedAnchorEvidence};
 use crate::wallet::shielded::{NetworkShieldedCoordinator, ShieldedSyncSummary};
 
 /// Default cadence — 60s. Shielded sync is heavier than address sync
@@ -91,6 +92,206 @@ pub struct ShieldedSyncPassSummary {
     /// ran" (e.g. a concurrent pass was already in flight and we
     /// skipped).
     pub sync_unix_seconds: u64,
+    /// The evidence the pass judged anchors by, for a host that judges its
+    /// own held spends by the same rule. `None` unless the pass read
+    /// Platform's recorded anchor set before its note scan, the scan ran to
+    /// its end uncancelled with a covered height, and the pass became the
+    /// last completed one: no other pass started and no restore, purge,
+    /// unregister or clear landed meanwhile.
+    pub evidence: Option<ShieldedPassEvidence>,
+}
+
+/// One sync pass, unique within the process and increasing in the order the
+/// passes start. Not kept across a restart: evidence is never persisted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ShieldedPassId(u64);
+
+impl ShieldedPassId {
+    pub(crate) fn next() -> Self {
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        Self(NEXT.fetch_add(1, Ordering::Relaxed))
+    }
+
+    pub fn get(self) -> u64 {
+        self.0
+    }
+}
+
+/// How a held nullifier reads in the store.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeldNullifierState {
+    /// A note of a subwallet the last completed pass scanned carries it and
+    /// is not marked spent.
+    Unspent,
+    /// A note of a subwallet the last completed pass scanned carries it and
+    /// is marked spent.
+    Spent,
+    /// No such note carries it, no pass has completed, it was not read, or
+    /// the store did not read.
+    Unknown,
+}
+
+/// Held nullifiers as read in the store
+/// ([`NetworkShieldedCoordinator::read_held_nullifiers`]), with the last pass
+/// completed when they were read.
+#[derive(Debug, Clone)]
+pub struct ShieldedPassNullifiers {
+    pass_id: Option<ShieldedPassId>,
+    states: BTreeMap<[u8; 32], HeldNullifierState>,
+}
+
+impl ShieldedPassNullifiers {
+    pub(crate) fn new(
+        pass_id: Option<ShieldedPassId>,
+        states: BTreeMap<[u8; 32], HeldNullifierState>,
+    ) -> Self {
+        Self { pass_id, states }
+    }
+
+    /// The last pass completed when these were read; `None` when none was
+    /// ([`NetworkShieldedCoordinator::last_completed_pass`]).
+    pub fn pass_id(&self) -> Option<ShieldedPassId> {
+        self.pass_id
+    }
+
+    pub fn state(&self, nullifier: &[u8; 32]) -> HeldNullifierState {
+        self.states
+            .get(nullifier)
+            .copied()
+            .unwrap_or(HeldNullifierState::Unknown)
+    }
+}
+
+/// The evidence one sync pass judged anchors by: Platform's recorded anchor
+/// set read before its note scan and the heights the set and the scan were
+/// proved at. It also keeps the pass's bounds on the trees of anchors the
+/// store names without their heights, which judge nothing here: a host
+/// gives every anchor a known height.
+///
+/// Built only by a pass, from the same values its own release judged by (a
+/// stop that lands after the scan skips that release but keeps the evidence,
+/// which the completed scan still stands behind). Its judgement is
+/// [`Self::proves_pruned`], the coordinator's own rule; the heights are there
+/// to report, not to compare.
+///
+/// Read-only: the coordinator releases nothing on a host's behalf from it.
+/// A pass reads the set when it has reservations or journal records to judge,
+/// or when the host asked for it
+/// ([`NetworkShieldedCoordinator::set_pass_evidence_wanted`]).
+#[derive(Debug, Clone)]
+pub struct ShieldedPassEvidence {
+    pass_id: ShieldedPassId,
+    recorded: Arc<HashSet<[u8; 32]>>,
+    anchor_set_height: u64,
+    scan_covered_height: u64,
+    heightless: Option<HeightlessAnchorEvidence>,
+}
+
+impl ShieldedPassEvidence {
+    pub(crate) fn new(
+        pass_id: ShieldedPassId,
+        recorded: Arc<HashSet<[u8; 32]>>,
+        anchor_set_height: u64,
+        scan_covered_height: u64,
+        heightless: Option<HeightlessAnchorEvidence>,
+    ) -> Self {
+        Self {
+            pass_id,
+            recorded,
+            anchor_set_height,
+            scan_covered_height,
+            heightless,
+        }
+    }
+
+    fn rule(&self) -> PrunedAnchorEvidence<'_> {
+        PrunedAnchorEvidence {
+            recorded: &self.recorded,
+            height: self.anchor_set_height,
+            scan_covered_height: Some(self.scan_covered_height),
+            heightless: self.heightless.as_ref(),
+        }
+    }
+
+    /// The values the pass judged by, for tests to compare with its release.
+    #[cfg(test)]
+    pub(crate) fn parts(
+        &self,
+    ) -> (
+        &HashSet<[u8; 32]>,
+        u64,
+        u64,
+        Option<&HeightlessAnchorEvidence>,
+    ) {
+        (
+            &self.recorded,
+            self.anchor_set_height,
+            self.scan_covered_height,
+            self.heightless.as_ref(),
+        )
+    }
+
+    /// The pass, the height its anchor set was proved at (Ha) and the height
+    /// its note scan covers (Hn), both from response metadata.
+    pub fn heights(&self) -> (ShieldedPassId, u64, u64) {
+        (
+            self.pass_id,
+            self.anchor_set_height,
+            self.scan_covered_height,
+        )
+    }
+
+    /// The set's height when the set holds `anchor`: a height to keep as the
+    /// anchor's for one taken without its own. `None` when the set lacks it:
+    /// no height is known then.
+    pub fn anchor_recorded_at(&self, anchor: &[u8; 32]) -> Option<u64> {
+        self.recorded
+            .contains(anchor)
+            .then_some(self.anchor_set_height)
+    }
+
+    /// Whether a spend built on `anchor` is proven unable to execute after
+    /// this pass, with anything it did at or below the set's height seen by
+    /// the pass's scan: the coordinator's release rule, judged on this pass's
+    /// evidence.
+    ///
+    /// `anchor_height` is a height Platform's set is known to have held
+    /// `anchor` at: the height of the set the spend took it from, or
+    /// [`Self::anchor_recorded_at`] of an earlier pass. An anchor with no
+    /// known height is never proven here.
+    ///
+    /// The spend's nullifiers must still read unspent in store state no
+    /// older than this pass ([`Self::proves_spend_cannot_execute`]).
+    pub fn proves_pruned(&self, anchor: &[u8; 32], anchor_height: u64) -> bool {
+        self.rule().proves_pruned(anchor, Some(anchor_height))
+    }
+
+    /// Whether a spend of `nullifiers` built on `anchor` is proven never to
+    /// execute: `reading` was taken with this pass the last completed one,
+    /// every one of `nullifiers` reads [`HeldNullifierState::Unspent`] in it,
+    /// and [`Self::proves_pruned`] holds.
+    ///
+    /// A spend without nullifiers is never proven. An `Unspent` read means no
+    /// spend showed in the range the pass scanned; below a watermark restored
+    /// from the host, it trusts that the host's snapshot of notes and
+    /// watermark was consistent. Parsing the anchor from the
+    /// spend's signed bytes, the host's own records of the nullifiers,
+    /// settling under the guard that keeps the next pass from starting, and
+    /// the durable settle before the hold lifts stay with the host.
+    pub fn proves_spend_cannot_execute(
+        &self,
+        reading: &ShieldedPassNullifiers,
+        anchor: &[u8; 32],
+        anchor_height: u64,
+        nullifiers: &[[u8; 32]],
+    ) -> bool {
+        reading.pass_id == Some(self.pass_id)
+            && !nullifiers.is_empty()
+            && nullifiers
+                .iter()
+                .all(|nullifier| reading.state(nullifier) == HeldNullifierState::Unspent)
+            && self.proves_pruned(anchor, anchor_height)
+    }
 }
 
 impl ShieldedSyncPassSummary {

@@ -21,7 +21,8 @@ use std::sync::{Arc, Mutex};
 
 use dash_sdk::Sdk;
 use drive_proof_verifier::types::{
-    ShieldedEncryptedNote, ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery,
+    NoParamQuery, ShieldedAnchors, ShieldedEncryptedNote, ShieldedEncryptedNotes,
+    ShieldedEncryptedNotesQuery,
 };
 use grovedb_commitment_tree::{
     DashMemo, Domain, ExtractedNoteCommitment, Note, NoteValue, Nullifier, OrchardDomain,
@@ -653,4 +654,38 @@ async fn should_never_show_a_spent_receipt_as_spendable_across_cancelled_restart
         .get(&sub)
         .is_some_and(|nfs| nfs.contains(&own_nullifier))));
     let _ = std::fs::remove_file(&path);
+}
+
+/// A pass stopped during its scan reports no anchor evidence, even to a host
+/// that asked for it. The next, complete pass reports it and is the last
+/// completed one.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn should_report_no_anchor_evidence_from_a_cancelled_pass() {
+    let keys = viewing_keys();
+    let first = owned_note(&keys, FIRST_VALUE);
+    let second = owned_note(&keys, SECOND_VALUE);
+    let (sdk, _) = two_chunk_pool(&first, &second).await;
+    (*sdk)
+        .clone()
+        .mock()
+        .expect_fetch(NoParamQuery {}, Some(ShieldedAnchors(Vec::new())))
+        .await
+        .expect("the anchor set");
+    let (coordinator, _) = coordinator_over(sdk, &keys).await;
+    coordinator.set_pass_evidence_wanted(true);
+
+    let summary = cancelled_pass(&coordinator, 1).await;
+    assert!(
+        summary.evidence.is_none(),
+        "a cut-short pass reports no evidence: {summary:?}"
+    );
+
+    let summary = coordinator.sync(true, &CancellationToken::new()).await;
+    let evidence = summary
+        .evidence
+        .expect("the complete pass reports its evidence");
+    assert_eq!(
+        coordinator.last_completed_pass(),
+        Some(evidence.heights().0)
+    );
 }
