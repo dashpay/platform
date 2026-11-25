@@ -2164,12 +2164,9 @@ pub(crate) mod txo_inventory_tests {
                 .await
                 .is_relevant
         );
-        let mempool_burn = ctx
-            .signed(collateral_burn(mempool_spent_coin), &[&mempool_spent])
-            .await;
         assert!(
             ctx.check_transaction(
-                &mempool_burn,
+                &collateral_burn(mempool_spent_coin),
                 key_wallet::transaction_checking::TransactionContext::Mempool
             )
             .await

@@ -591,7 +591,6 @@ mod tests {
             value: 4_000,
             script_pubkey: ScriptBuf::new_op_return(&[3]),
         }];
-        let payment = ctx.signed(payment, &[&funded]).await;
         let (mut wm, wallet_id) = manager_with(ctx);
         let (wallet, info) = wm.get_wallet_mut_and_info_mut(&wallet_id).expect("wallet");
         assert!(
@@ -724,7 +723,6 @@ mod tests {
             value: 5_000,
             script_pubkey: script.clone(),
         }];
-        let spender = ctx.signed(spender, &[&funded]).await;
         let (mut wm, wallet_id) = manager_with(ctx);
         {
             let (wallet, info) = wm.get_wallet_mut_and_info_mut(&wallet_id).expect("wallet");

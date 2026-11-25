@@ -5003,7 +5003,6 @@ mod contact_watch_only_projection_tests {
             .collect(),
             special_transaction_payload: None,
         };
-        let spend = ctx.signed(spend, &[&bip44_funding, &bip32_funding]).await;
         let result = ctx
             .check_transaction(&spend, TransactionContext::Mempool)
             .await;
@@ -5195,9 +5194,7 @@ mod contact_watch_only_projection_tests {
         let (mut ctx, funding) = single_coin_wallet().await;
         // A send of the whole coin to a foreign address: no change, so
         // no output of ours for the lock to mark — only the context moves.
-        let spend = ctx
-            .signed(spend_of(&funding, vec![paid_away(99_999_000)]), &[&funding])
-            .await;
+        let spend = spend_of(&funding, vec![paid_away(99_999_000)]);
         let sent = ctx
             .check_transaction(&spend, TransactionContext::Mempool)
             .await;
@@ -5241,9 +5238,7 @@ mod contact_watch_only_projection_tests {
             )
         };
         let (mut ctx, funding) = single_coin_wallet().await;
-        let spend = ctx
-            .signed(spend_of(&funding, vec![paid_away(99_999_000)]), &[&funding])
-            .await;
+        let spend = spend_of(&funding, vec![paid_away(99_999_000)]);
         ctx.check_transaction(&spend, TransactionContext::Mempool)
             .await;
         ctx.check_transaction(&spend, TransactionContext::InBlock(block(2)))
@@ -5572,7 +5567,6 @@ mod contact_watch_only_projection_tests {
                 },
             ],
         );
-        let spend = ctx.signed(spend, &[&funding]).await;
         let sent = ctx
             .check_transaction(&spend, TransactionContext::Mempool)
             .await;
@@ -9440,7 +9434,7 @@ mod utxo_credit_verdict_tests {
 
     use super::*;
     use dashcore::{BlockHash, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness};
-    use key_wallet::test_utils::{sign_owned_inputs, TestWalletContext};
+    use key_wallet::test_utils::TestWalletContext;
     use key_wallet::transaction_checking::{BlockInfo, WalletTransactionChecker};
     use key_wallet::WalletCoreBalance;
     use key_wallet_manager::WalletManager;
@@ -9638,7 +9632,6 @@ mod utxo_credit_verdict_tests {
         assert!(winner_result.is_relevant);
         // The loser arrives afterwards from the mempool, paying us back.
         let loser = spend_to(coin, receive_address.script_pubkey(), 18_000);
-        let loser = sign_owned_inputs(&wallet, &managed_wallet, loser, &[&fund_tx]).await;
         let loser_result = managed_wallet
             .check_core_transaction(&loser, TransactionContext::Mempool, &mut wallet, true, true)
             .await;
@@ -9885,9 +9878,7 @@ mod utxo_credit_verdict_tests {
                 .is_relevant
         );
         // A mempool child takes the coin.
-        let child = ctx
-            .signed(spend_to(coin, foreign_script(), 19_000), &[&fund_tx])
-            .await;
+        let child = spend_to(coin, foreign_script(), 19_000);
         assert!(
             ctx.check_transaction(&child, TransactionContext::Mempool)
                 .await
@@ -10624,7 +10615,7 @@ mod no_change_asset_lock_block_projection_tests {
     use dashcore::{BlockHash, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness};
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     use key_wallet::managed_account::transaction_record::{InputDetail, TransactionDirection};
-    use key_wallet::test_utils::{sign_owned_inputs, TestWalletContext};
+    use key_wallet::test_utils::TestWalletContext;
     use key_wallet::transaction_checking::{BlockInfo, WalletTransactionChecker};
     use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
     use key_wallet::{Wallet, WalletCoreBalance};
@@ -10720,7 +10711,6 @@ mod no_change_asset_lock_block_projection_tests {
                 }]),
             )),
         };
-        let lock_tx = sign_owned_inputs(&wallet, &managed_wallet, lock_tx, &[&fund_tx]).await;
         assert!(
             managed_wallet
                 .check_core_transaction(
