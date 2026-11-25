@@ -488,7 +488,8 @@ fn has_block_spend(
 }
 
 /// Store `spend`, a block spend found outside block processing, and mark
-/// its coin's row spent by its spender. The caller owns the transaction.
+/// its coin's unspent row spent by its spender. A coin already spent keeps
+/// its spender: the row is the evidence. The caller owns the transaction.
 pub fn record_found_block_spend(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -513,7 +514,7 @@ pub fn record_found_block_spend(
     )?;
     conn.execute(
         "UPDATE core_utxos SET spent = 1, spent_in_txid = ?3 \
-         WHERE wallet_id = ?1 AND outpoint = ?2",
+         WHERE wallet_id = ?1 AND outpoint = ?2 AND spent = 0",
         params![
             wallet_id.as_slice(),
             &op[..],
@@ -3393,6 +3394,66 @@ mod tests {
             assert!(spent);
             assert_eq!(spender, AsRef::<[u8]>::as_ref(&found.spender_txid).to_vec());
             assert_eq!(load_block_spends(&conn, &w).unwrap()[&held.outpoint], found);
+        }
+
+        /// A coin a recorded payment already spent keeps that spender when
+        /// the one-time check finds a block spend of it; the row is still
+        /// written and keeps the coin out of the load.
+        #[test]
+        fn a_found_block_spend_keeps_the_spender_of_an_already_spent_coin() {
+            let w = [0x89u8; 32];
+            let mut conn = wallet_db(&w);
+            let held = sample_utxo(Txid::from_byte_array([0x89; 32]), 90, true);
+            store(&mut conn, &w, &round(vec![], vec![held.clone()]));
+            let payment = super::spend(&[held.outpoint], TransactionContext::Mempool);
+            let mut loser = super::spend(&[held.outpoint], TransactionContext::Mempool);
+            loser.transaction.lock_time = 1;
+            loser.txid = loser.transaction.txid();
+            store(
+                &mut conn,
+                &w,
+                &round(vec![payment.clone(), loser.clone()], vec![]),
+            );
+            store(
+                &mut conn,
+                &w,
+                &CoreChangeSet {
+                    sweeps: vec![SweepBatch {
+                        txids: vec![loser.txid],
+                        superseded_by: payment.txid,
+                        winner_mined_height: None,
+                        released_outpoints: vec![],
+                    }],
+                    ..Default::default()
+                },
+            );
+            let spender = |conn: &Connection| -> (bool, Option<Vec<u8>>) {
+                conn.query_row(
+                    "SELECT spent, spent_in_txid FROM core_utxos \
+                     WHERE wallet_id = ?1 AND outpoint = ?2",
+                    params![&w[..], blob::encode_outpoint(&held.outpoint).unwrap()],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap()
+            };
+            let before = spender(&conn);
+            assert_eq!(
+                before,
+                (true, Some(AsRef::<[u8]>::as_ref(&payment.txid).to_vec()))
+            );
+
+            let found = BlockSpend {
+                outpoint: held.outpoint,
+                ..block_spend(0x89, 100)
+            };
+            let tx = conn.transaction().unwrap();
+            record_found_block_spend(&tx, &w, &found).unwrap();
+            tx.commit().unwrap();
+
+            assert_eq!(spender(&conn), before, "the recorded spender stays");
+            assert_eq!(load_block_spends(&conn, &w).unwrap()[&held.outpoint], found);
+            assert!(unspent_loaded(&conn, &w).is_empty());
+            assert!(list_unspent_utxos(&conn, &w).unwrap().is_empty());
         }
 
         #[test]
