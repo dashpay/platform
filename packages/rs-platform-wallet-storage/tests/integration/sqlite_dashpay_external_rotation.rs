@@ -11,21 +11,31 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::common::{
     ensure_wallet_meta, fresh_persister, fresh_persister_with_mode, wid, FlushMode,
 };
+use dashcore::{Address, OutPoint, Transaction, Txid};
 use key_wallet::account::{AccountType, StandardAccountType};
 use key_wallet::bip32::ExtendedPubKey;
-use key_wallet::managed_account::address_pool::{AddressState, KeySource};
+use key_wallet::managed_account::address_pool::{AddressPoolType, AddressState, KeySource};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+use key_wallet::managed_account::transaction_record::{
+    InputDetail, OutputDetail, OutputRole, TransactionDirection, TransactionRecord,
+};
 use key_wallet::managed_account::ManagedCoreFundsAccount;
+use key_wallet::transaction_checking::TransactionType;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::Wallet;
 use key_wallet::{Account, AddressInfo, Network};
 use platform_wallet::changeset::{
-    AccountAddressPoolEntry, AccountRegistrationEntry, PersistenceError, PlatformWalletChangeSet,
-    PlatformWalletPersistence,
+    AccountAddressPoolEntry, AccountRegistrationEntry, CoreChangeSet, PersistenceError,
+    PlatformWalletChangeSet, PlatformWalletPersistence,
+};
+use platform_wallet::test_support::core_fixtures::{
+    block, foreign_address, outside, pay, spend_of, stored_utxo,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
-use platform_wallet_storage::sqlite::schema::{blob, core_pool};
-use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig, WalletStorageError};
+use platform_wallet_storage::sqlite::schema::{blob, core_pool, core_state};
+use platform_wallet_storage::{
+    LoadCtx, SqlitePersister, SqlitePersisterConfig, WalletStorageError,
+};
 
 const OWNER: [u8; 32] = [0x71; 32];
 const FRIEND: [u8; 32] = [0x72; 32];
@@ -559,6 +569,18 @@ CREATE TABLE core_address_pool_retired (
 CREATE INDEX idx_core_address_pool_retired_script
     ON core_address_pool_retired(wallet_id, script);";
 
+/// SQL that rebuilds the retired table through [`DOWNSTREAM_RETIRED_POOL_DDL`],
+/// keeping its rows.
+fn rebuild_retired_table_as_downstream() -> String {
+    format!(
+        "CREATE TEMP TABLE kept AS SELECT * FROM core_address_pool_retired;
+         DROP TABLE core_address_pool_retired;
+         {DOWNSTREAM_RETIRED_POOL_DDL}
+         INSERT INTO core_address_pool_retired SELECT * FROM kept;
+         DROP TABLE kept;"
+    )
+}
+
 /// Everything SQLite knows about the retired table's shape: its stored DDL,
 /// columns, indexes and foreign keys.
 fn retired_table_shape(conn: &rusqlite::Connection) -> Vec<String> {
@@ -616,13 +638,10 @@ fn v023_adopts_a_downstream_retired_pool_table() {
         conn.execute_batch(&format!(
             "PRAGMA foreign_keys = OFF;
              BEGIN;
-             CREATE TEMP TABLE kept AS SELECT * FROM core_address_pool_retired;
-             DROP TABLE core_address_pool_retired;
-             {DOWNSTREAM_RETIRED_POOL_DDL}
-             INSERT INTO core_address_pool_retired SELECT * FROM kept;
-             DROP TABLE kept;
+             {}
              DELETE FROM refinery_schema_history WHERE version = 23;
-             COMMIT;"
+             COMMIT;",
+            rebuild_retired_table_as_downstream()
         ))
         .unwrap();
         let version: i64 = conn
@@ -739,27 +758,12 @@ fn a_stale_contact_coin_stays_out_of_the_balance_after_a_rotation() {
     let (persister, _tmp, path) = fresh_persister();
     let w = wid(0xED);
     ensure_wallet_meta(&persister, &w);
-    let funds = AccountRegistrationEntry {
-        account_type: AccountType::Standard {
-            index: 0,
-            standard_account_type: StandardAccountType::BIP44Account,
-        },
-        account_xpub: contact_xpub(0x01),
-    };
-    persister
-        .store(
-            w,
-            PlatformWalletChangeSet {
-                account_registrations: vec![funds],
-                ..Default::default()
-            },
-        )
-        .unwrap();
+    register_funds_account(&persister, &w);
     let (a, b) = (contact_xpub(0x0A), contact_xpub(0x0B));
     persister.store(w, registration(a, &[])).unwrap();
     let stale = address_at(a, 0).script_pubkey.to_bytes();
-    let outpoint = blob::encode_outpoint(&dashcore::OutPoint {
-        txid: <dashcore::Txid as dashcore::hashes::Hash>::from_byte_array([0x5C; 32]),
+    let outpoint = blob::encode_outpoint(&OutPoint {
+        txid: <Txid as dashcore::hashes::Hash>::from_byte_array([0x5C; 32]),
         vout: 0,
     })
     .unwrap();
@@ -796,4 +800,474 @@ fn a_stale_contact_coin_stays_out_of_the_balance_after_a_rotation() {
         0,
         "still outside the balance after the rotation"
     );
+}
+
+fn funds_account() -> AccountType {
+    AccountType::Standard {
+        index: 0,
+        standard_account_type: StandardAccountType::BIP44Account,
+    }
+}
+
+/// Registers the wallet's first funds account, the one a coin no pool row
+/// names falls back to on load.
+fn register_funds_account(persister: &SqlitePersister, w: &WalletId) {
+    let funds = AccountRegistrationEntry {
+        account_type: funds_account(),
+        account_xpub: contact_xpub(0x01),
+    };
+    persister
+        .store(
+            *w,
+            PlatformWalletChangeSet {
+                account_registrations: vec![funds],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+}
+
+/// The funds account's address at `index` of its `pool_type` chain.
+fn funds_address(pool_type: AddressPoolType, index: u32) -> Address {
+    let account = Account {
+        parent_wallet_id: None,
+        account_type: funds_account(),
+        network: Network::Testnet,
+        account_xpub: contact_xpub(0x01),
+        is_watch_only: true,
+    };
+    ManagedCoreFundsAccount::from_account(&account)
+        .managed_account_type()
+        .address_pools()
+        .into_iter()
+        .filter(|pool| pool.pool_type == pool_type)
+        .flat_map(|pool| pool.addresses.values().cloned())
+        .find(|info| info.index == index)
+        .expect("derived funds address")
+        .address
+}
+
+/// After a load: the wallet's balance, and whether a funds account and a
+/// contact account hold `outpoint`.
+fn loaded_coin(
+    persister: &SqlitePersister,
+    w: &WalletId,
+    outpoint: &OutPoint,
+) -> (u64, bool, bool) {
+    let state = persister.load().expect("load");
+    let info = &state.wallets.get(w).expect("wallet rehydrated").wallet_info;
+    let in_funds = info
+        .accounts
+        .all_funding_accounts()
+        .iter()
+        .any(|account| account.utxos.contains_key(outpoint));
+    let in_contact = info
+        .accounts
+        .dashpay_external_accounts
+        .values()
+        .any(|account| account.utxos.contains_key(outpoint));
+    (info.balance.total(), in_funds, in_contact)
+}
+
+fn core_round(core: CoreChangeSet) -> PlatformWalletChangeSet {
+    PlatformWalletChangeSet {
+        core: Some(core),
+        ..Default::default()
+    }
+}
+
+/// A mined record of `tx` as `account_type` hands it to the store.
+fn record(
+    account_type: AccountType,
+    tx: &Transaction,
+    direction: TransactionDirection,
+    input_details: Vec<InputDetail>,
+    output_details: Vec<OutputDetail>,
+    net_amount: i64,
+) -> TransactionRecord {
+    TransactionRecord::new(
+        tx.clone(),
+        account_type,
+        block(100),
+        TransactionType::Standard,
+        direction,
+        input_details,
+        output_details,
+        net_amount,
+    )
+}
+
+fn output(tx: &Transaction, index: u32, role: OutputRole, address: &Address) -> OutputDetail {
+    OutputDetail {
+        index,
+        role,
+        address: Some(address.clone()),
+        value: tx.output[index as usize].value,
+    }
+}
+
+fn stored_record(persister: &SqlitePersister, w: &WalletId, txid: &Txid) -> TransactionRecord {
+    core_state::get_tx_record(&persister.lock_conn_for_test(), w, txid, &LoadCtx::strict())
+        .expect("read record")
+        .expect("record stored")
+}
+
+fn roles(record: &TransactionRecord) -> Vec<(u32, OutputRole)> {
+    record
+        .output_details
+        .iter()
+        .map(|detail| (detail.index, detail.role))
+        .collect()
+}
+
+/// A script only the contact's retired generation holds.
+fn assert_retired_only(persister: &SqlitePersister, w: &WalletId, address: &Address) {
+    let script = address.script_pubkey().to_bytes();
+    assert!(retired(persister, w).contains_key(&script));
+    assert!(!live_scripts(persister, w).contains(&script));
+}
+
+/// A coin the contact received at an address of the generation it rotated
+/// away from, already spent, with the records of its receipt and of the
+/// contact's transaction spending it, the latter attributing its input to
+/// that address. None of it is the wallet's: after a reload the coin is in no
+/// account and outside the balance, the receipt credits the wallet nothing,
+/// and the spend debits it nothing.
+#[test]
+fn a_spent_coin_at_a_retired_contact_address_and_its_spender_are_not_the_wallets() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xEE);
+    ensure_wallet_meta(&persister, &w);
+    register_funds_account(&persister, &w);
+    let (a, b) = (contact_xpub(0x0A), contact_xpub(0x0B));
+    persister.store(w, registration(a, &[0])).unwrap();
+    persister.store(w, registration(b, &[])).unwrap();
+
+    let old = address_at(a, 0).address;
+    let receipt_tx = spend_of(&[outside(0xC0)], vec![pay(70_000, &old)]);
+    let coin = stored_utxo(&receipt_tx, 0, old.clone());
+    let receipt = record(
+        external_account(),
+        &receipt_tx,
+        TransactionDirection::Incoming,
+        vec![],
+        vec![output(&receipt_tx, 0, OutputRole::Received, &old)],
+        70_000,
+    );
+    let payee = foreign_address(0xF1);
+    let spend = spend_of(&[coin.outpoint], vec![pay(69_000, &payee)]);
+    let spender = record(
+        external_account(),
+        &spend,
+        TransactionDirection::Outgoing,
+        vec![InputDetail {
+            index: 0,
+            value: 70_000,
+            address: old.clone(),
+        }],
+        vec![output(&spend, 0, OutputRole::Sent, &payee)],
+        -70_000,
+    );
+    persister
+        .store(
+            w,
+            core_round(CoreChangeSet {
+                records: vec![receipt.clone()],
+                new_utxos: vec![coin.clone()],
+                ..Default::default()
+            }),
+        )
+        .unwrap();
+    persister
+        .store(
+            w,
+            core_round(CoreChangeSet {
+                records: vec![spender.clone()],
+                spent_utxos: vec![coin.clone()],
+                ..Default::default()
+            }),
+        )
+        .unwrap();
+    assert_retired_only(&persister, &w, &old);
+    let spent: bool = persister
+        .lock_conn_for_test()
+        .query_row(
+            "SELECT spent FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+            rusqlite::params![w.as_slice(), blob::encode_outpoint(&coin.outpoint).unwrap()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(spent);
+    drop(persister);
+
+    let persister = reopen(&path);
+    assert_eq!(
+        loaded_coin(&persister, &w, &coin.outpoint),
+        (0, false, false)
+    );
+    let stored = stored_record(&persister, &w, &receipt.txid);
+    assert_eq!(stored.net_amount, 0);
+    assert_eq!(stored.direction, TransactionDirection::Incoming);
+    assert_eq!(roles(&stored), vec![(0, OutputRole::Sent)]);
+    let stored = stored_record(&persister, &w, &spender.txid);
+    assert_eq!(stored.net_amount, 0);
+    assert!(
+        stored.input_details.is_empty(),
+        "no debit from the contact's address"
+    );
+    assert_eq!(stored.direction, TransactionDirection::Incoming);
+    assert_eq!(roles(&stored), vec![(0, OutputRole::Sent)]);
+}
+
+const FUNDING: u64 = 100_000;
+const TO_CURRENT: u64 = 30_000;
+const TO_OLD: u64 = 20_000;
+const CHANGE: u64 = 49_000;
+const FEE: u64 = FUNDING - TO_CURRENT - TO_OLD - CHANGE;
+
+/// One transaction from the wallet pays the contact's current address, an
+/// address of the generation the contact rotated away from, and change back
+/// to the wallet. The record arrives with both contact outputs as the
+/// wallet's own and their coins stored next to the change, as a build from
+/// before contact slices were left out of the record stored them. Returns
+/// that record.
+fn store_mixed_payment(persister: &SqlitePersister, w: &WalletId) -> TransactionRecord {
+    register_funds_account(persister, w);
+    let (a, b) = (contact_xpub(0x0A), contact_xpub(0x0B));
+    persister.store(*w, registration(a, &[1])).unwrap();
+    persister.store(*w, registration(b, &[])).unwrap();
+    let from = funds_address(AddressPoolType::External, 0);
+    let change = funds_address(AddressPoolType::Internal, 0);
+    let funding = stored_utxo(
+        &spend_of(&[outside(0xF0)], vec![pay(FUNDING, &from)]),
+        0,
+        from.clone(),
+    );
+    persister
+        .store(
+            *w,
+            core_round(CoreChangeSet {
+                new_utxos: vec![funding.clone()],
+                ..Default::default()
+            }),
+        )
+        .unwrap();
+
+    let (current, old) = (address_at(b, 0).address, address_at(a, 1).address);
+    let tx = spend_of(
+        &[funding.outpoint],
+        vec![
+            pay(TO_CURRENT, &current),
+            pay(TO_OLD, &old),
+            pay(CHANGE, &change),
+        ],
+    );
+    let incoming = record(
+        funds_account(),
+        &tx,
+        TransactionDirection::Internal,
+        vec![InputDetail {
+            index: 0,
+            value: FUNDING,
+            address: from,
+        }],
+        vec![
+            output(&tx, 0, OutputRole::Received, &current),
+            output(&tx, 1, OutputRole::Received, &old),
+            output(&tx, 2, OutputRole::Change, &change),
+        ],
+        -(FEE as i64),
+    );
+    persister
+        .store(
+            *w,
+            core_round(CoreChangeSet {
+                records: vec![incoming.clone()],
+                spent_utxos: vec![funding],
+                new_utxos: vec![
+                    stored_utxo(&tx, 0, current.clone()),
+                    stored_utxo(&tx, 1, old.clone()),
+                    stored_utxo(&tx, 2, change),
+                ],
+                ..Default::default()
+            }),
+        )
+        .unwrap();
+    assert!(live_scripts(persister, w).contains(&current.script_pubkey().to_bytes()));
+    assert_retired_only(persister, w, &old);
+    incoming
+}
+
+/// Only the change is the wallet's: both contact payments and the fee are
+/// what it spent.
+fn assert_counts_only_the_change(record: &TransactionRecord) {
+    assert_eq!(record.net_amount, -((TO_CURRENT + TO_OLD + FEE) as i64));
+    assert_eq!(
+        roles(record),
+        vec![
+            (0, OutputRole::Sent),
+            (1, OutputRole::Sent),
+            (2, OutputRole::Change)
+        ]
+    );
+    assert_eq!(record.input_details.len(), 1);
+    assert_eq!(record.input_details[0].value, FUNDING);
+    assert_eq!(record.direction, TransactionDirection::Outgoing);
+}
+
+/// After a load only the change is in the balance, in a funds account; the
+/// current address's coin is in the contact account and the old address's
+/// coin in none.
+fn assert_only_the_change_loads(persister: &SqlitePersister, w: &WalletId, txid: Txid) {
+    let at = |vout| loaded_coin(persister, w, &OutPoint::new(txid, vout));
+    assert_eq!(at(0), (CHANGE, false, true));
+    assert_eq!(at(1), (CHANGE, false, false));
+    assert_eq!(at(2), (CHANGE, true, false));
+}
+
+/// A payment to a contact's current and old address with change counts only
+/// the change as the wallet's, right after it is stored and after a reload,
+/// and only the change loads into the balance.
+#[test]
+fn a_payment_to_a_contacts_current_and_old_address_counts_only_the_change() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xF0);
+    ensure_wallet_meta(&persister, &w);
+    let incoming = store_mixed_payment(&persister, &w);
+    assert_counts_only_the_change(&stored_record(&persister, &w, &incoming.txid));
+    drop(persister);
+
+    let persister = reopen(&path);
+    assert_counts_only_the_change(&stored_record(&persister, &w, &incoming.txid));
+    assert_only_the_change_loads(&persister, &w, incoming.txid);
+}
+
+/// Rewinds the file at `path` to a V020 schema that already holds the retired
+/// table, the order of a file a downstream build wrote: that build created the
+/// table before V021 existed. V021's and V022's tables go, as the crate's
+/// `rewind_v021` drops them; the retired table is rebuilt through the
+/// downstream DDL with its rows; and the record of `txid` is put back as the
+/// wallet handed it to the store, before any repair.
+fn rewind_to_v020_with_the_retired_table(
+    path: &std::path::Path,
+    w: &WalletId,
+    as_handed: &TransactionRecord,
+) {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.execute_batch("PRAGMA foreign_keys = OFF; BEGIN;")
+        .unwrap();
+    conn.execute(
+        "UPDATE core_transactions SET record_blob = ?1 WHERE wallet_id = ?2 AND txid = ?3",
+        rusqlite::params![
+            blob::encode(as_handed).unwrap(),
+            w.as_slice(),
+            AsRef::<[u8]>::as_ref(&as_handed.txid)
+        ],
+    )
+    .unwrap();
+    conn.execute_batch(&format!(
+        "{}
+         DROP TABLE core_transaction_inputs;
+         DROP TABLE core_transaction_record_originals;
+         DROP TABLE core_locked_outpoints;
+         DELETE FROM refinery_schema_history WHERE version >= 21;
+         COMMIT;",
+        rebuild_retired_table_as_downstream()
+    ))
+    .unwrap();
+    let version: i64 = conn
+        .query_row(
+            "SELECT MAX(version) FROM refinery_schema_history",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(version, 20);
+}
+
+/// V021 replays history through the same accounting. On a file that already
+/// holds the retired table when V021 runs, it repairs the payment to the
+/// contact's current and old address to count only the change.
+#[test]
+fn v021_counts_only_the_change_on_a_file_that_already_holds_the_retired_table() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xF1);
+    ensure_wallet_meta(&persister, &w);
+    let incoming = store_mixed_payment(&persister, &w);
+    let history = retired(&persister, &w);
+    drop(persister);
+    rewind_to_v020_with_the_retired_table(&path, &w, &incoming);
+
+    let persister = reopen(&path);
+    assert_eq!(retired(&persister, &w), history);
+    let stored = stored_record(&persister, &w, &incoming.txid);
+    assert_counts_only_the_change(&stored);
+    let original: Vec<u8> = persister
+        .lock_conn_for_test()
+        .query_row(
+            "SELECT record_blob FROM core_transaction_record_originals \
+             WHERE wallet_id = ?1 AND txid = ?2",
+            rusqlite::params![w.as_slice(), AsRef::<[u8]>::as_ref(&incoming.txid)],
+            |r| r.get(0),
+        )
+        .expect("V021 repaired the record and kept the one it replaced");
+    assert_eq!(original, blob::encode(&incoming).unwrap());
+    assert_only_the_change_loads(&persister, &w, incoming.txid);
+}
+
+/// The contact rotates A → B → A. A payment to an A address that arrived while
+/// A was retired is a payment to the contact: while A is retired its coin
+/// loads into no account, after the rotation back it reloads into the contact
+/// account, outside the balance either way, and the transaction's
+/// `net_amount` is 0.
+#[test]
+fn a_coin_at_a_restored_generation_reloads_into_the_contact_account() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xF2);
+    ensure_wallet_meta(&persister, &w);
+    register_funds_account(&persister, &w);
+    let (a, b) = (contact_xpub(0x0A), contact_xpub(0x0B));
+    persister.store(w, registration(a, &[])).unwrap();
+    persister.store(w, registration(b, &[])).unwrap();
+
+    let restored = address_at(a, 2).address;
+    let tx = spend_of(&[outside(0xC1)], vec![pay(40_000, &restored)]);
+    let coin = stored_utxo(&tx, 0, restored.clone());
+    let payment = record(
+        external_account(),
+        &tx,
+        TransactionDirection::Incoming,
+        vec![],
+        vec![output(&tx, 0, OutputRole::Received, &restored)],
+        40_000,
+    );
+    assert_retired_only(&persister, &w, &restored);
+    persister
+        .store(
+            w,
+            core_round(CoreChangeSet {
+                records: vec![payment.clone()],
+                new_utxos: vec![coin.clone()],
+                ..Default::default()
+            }),
+        )
+        .unwrap();
+    assert_eq!(
+        loaded_coin(&persister, &w, &coin.outpoint),
+        (0, false, false)
+    );
+    persister.store(w, registration(a, &[])).unwrap();
+    assert_eq!(live_scripts(&persister, &w), scripts_of(a));
+    drop(persister);
+
+    let persister = reopen(&path);
+    assert_eq!(loaded_account(&persister, &w).0, a);
+    assert_eq!(
+        loaded_coin(&persister, &w, &coin.outpoint),
+        (0, false, true)
+    );
+    let stored = stored_record(&persister, &w, &payment.txid);
+    assert_eq!(stored.net_amount, 0);
+    assert_eq!(stored.direction, TransactionDirection::Incoming);
+    assert_eq!(roles(&stored), vec![(0, OutputRole::Sent)]);
 }
