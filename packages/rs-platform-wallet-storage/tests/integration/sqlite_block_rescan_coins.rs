@@ -1,6 +1,7 @@
-//! Coins a block credits only when dash-spv re-scans it for the addresses
-//! its own outputs derive reach the SQLite store through the event adapter,
-//! and a reload restores every one of them.
+//! Coins a block credits past an address pool's gap, in its own pass or
+//! when dash-spv re-scans it for addresses a later block derives, reach the
+//! SQLite store through the event adapter, and a reload restores every one
+//! of them.
 
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -198,6 +199,113 @@ async fn bip44_coins_past_the_gap_in_one_transaction_survive_a_reload() {
         standard_account_type: StandardAccountType::BIP44Account,
     })
     .await;
+}
+
+/// Block 100 pays CoinJoin external index 0 and a far index past the gap,
+/// so its own pass credits only vout 0. Block 101 pays a near index, which
+/// extends the pool over the far one, and dash-spv re-scans block 100 for
+/// the addresses it derived. That pass credits the far output to the record
+/// the wallet already holds, so the event reports the record as updated.
+/// The store holds an unspent row for the far coin, and a reload restores it
+/// and the balance.
+#[tokio::test]
+async fn a_coin_a_rescan_of_an_earlier_block_credits_survives_a_reload() {
+    let (persister, _tmp, path) = fresh_persister();
+    let persister = Arc::new(persister);
+    let wallet = Wallet::new_random(
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .expect("wallet");
+    let coinjoin = AccountType::CoinJoin { index: 0 };
+    let gap = external_gap(&wallet, coinjoin);
+    let (near, far) = (2 * gap / 3, gap + gap / 3);
+    let addresses = external_addresses(&wallet, coinjoin, far + 1);
+    let paying_far = transaction_paying(
+        &[addresses[0].clone(), addresses[far as usize].clone()],
+        VALUE,
+        1,
+    );
+    let extending = transaction_paying(&[addresses[near as usize].clone()], VALUE, 2);
+    let funding = dashcore::Block::dummy(HEIGHT, vec![paying_far.clone()]);
+    let later = dashcore::Block::dummy(HEIGHT + 1, vec![extending.clone()]);
+    let manifest_wallet = wallet.clone();
+    let (manager, wallet_id, mut queued) = wallet_manager_with_persistence(wallet);
+    register(&persister, wallet_id, &manifest_wallet);
+    let far_coin = OutPoint {
+        txid: paying_far.txid(),
+        vout: 1,
+    };
+    let held =
+        |manager: &platform_wallet::key_wallet_manager::WalletManager<PlatformWalletInfo>| {
+            manager
+                .get_wallet_info(&wallet_id)
+                .expect("wallet")
+                .core_wallet
+                .accounts
+                .funds_account(&coinjoin)
+                .expect("account")
+                .utxos
+                .contains_key(&far_coin)
+        };
+
+    process_block_with_rescans(&manager, wallet_id, &funding, HEIGHT).await;
+    assert!(
+        !held(&*manager.read().await),
+        "block 100's own pass does not reach the far output"
+    );
+    process_block_with_rescans(&manager, wallet_id, &later, HEIGHT + 1).await;
+    process_block_with_rescans(&manager, wallet_id, &funding, HEIGHT).await;
+    assert!(
+        held(&*manager.read().await),
+        "the re-scan of block 100 credits the far output"
+    );
+    persist_queued(&manager, &mut queued, &persister).await;
+    persister.flush(wallet_id).expect("flush");
+    drop(persister);
+
+    assert_eq!(
+        stored_unspent_rows(
+            &path,
+            &[
+                addresses[0].clone(),
+                addresses[far as usize].clone(),
+                addresses[near as usize].clone()
+            ]
+        ),
+        vec![1, 1, 1],
+        "the store holds an unspent row for every coin, the far one included"
+    );
+    let reopened = SqlitePersister::open(SqlitePersisterConfig::new(&path)).expect("reopen");
+    let reloaded = reopened
+        .load()
+        .expect("load")
+        .wallets
+        .remove(&wallet_id)
+        .expect("the wallet loads")
+        .wallet_info;
+    let coins: std::collections::BTreeSet<OutPoint> = reloaded
+        .accounts
+        .all_funding_accounts()
+        .into_iter()
+        .flat_map(|account| account.utxos.keys().copied())
+        .collect();
+    assert_eq!(
+        coins,
+        std::collections::BTreeSet::from([
+            OutPoint {
+                txid: paying_far.txid(),
+                vout: 0
+            },
+            far_coin,
+            OutPoint {
+                txid: extending.txid(),
+                vout: 0
+            },
+        ]),
+        "a reload restores the far coin"
+    );
+    assert_eq!(reloaded.balance.total(), 3 * VALUE, "and the balance");
 }
 
 fn bip44_account_0() -> AccountType {

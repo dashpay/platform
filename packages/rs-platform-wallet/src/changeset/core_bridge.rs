@@ -1815,8 +1815,10 @@ async fn build_core_changeset(
             // to reach since. So every coin the wallet holds confirmed at
             // this height that the inserted records did not carry goes out
             // too. A coin spent since is no longer held, so it never comes
-            // back as unspent; re-sending a coin the store holds as an
-            // unspent row is an idempotent upsert.
+            // back as unspent. The wallet's held set is the authority here:
+            // re-sending a coin the store holds as an unspent row is an
+            // idempotent upsert, and a coin the store marked spent but the
+            // wallet holds is stored unspent again.
             let inserted_outpoints: HashSet<OutPoint> =
                 cs.new_utxos.iter().map(|u| u.outpoint).collect();
             cs.new_utxos.extend(
@@ -2250,6 +2252,11 @@ async fn collect_usage_deltas(
 /// per outpoint. The funds accounts are the ones the wallet's UTXO view
 /// walks (`ManagedAccountCollection::all_funding_accounts`), so a
 /// contact's watch-only DashPay external account never contributes.
+///
+/// The wallet is read as it is when the event is drained, not as it was
+/// when the event was emitted. If a reorg replaced the block at `height`
+/// before the drain, the coins sent are the new block's, ahead of that
+/// block's own event; the replaced block's coins are no longer held.
 fn held_at_height(core_wallet: &key_wallet::wallet::ManagedWalletInfo, height: u32) -> Vec<Utxo> {
     let mut seen = HashSet::new();
     core_wallet
@@ -9878,10 +9885,10 @@ mod utxo_credit_verdict_tests {
 
 #[cfg(test)]
 mod block_rescan_credit_tests {
-    //! A block is processed again for the addresses its own outputs derive
-    //! (dash-spv's filter rescan). Every coin those passes credit reaches the
-    //! changesets, and a coin spent before its block is replayed does not
-    //! come back unspent.
+    //! A block is processed again for addresses a later block derives
+    //! (dash-spv's filter rescan), and a transaction can confirm after its
+    //! pools grew. Every coin those passes credit reaches the changesets, and
+    //! a coin spent before its block is replayed does not come back unspent.
 
     use super::*;
     use crate::test_support::{
@@ -9954,15 +9961,14 @@ mod block_rescan_credit_tests {
             .collect()
     }
 
-    /// A block at `height` whose first transaction pays `account`'s external
-    /// index 0 and a far index past the gap, and whose second pays a near
-    /// index that extends the pool over the far one. Only a re-scan pass of
-    /// the block reaches the far output (vout 1 of the first transaction).
-    fn far_output_block(
+    /// A transaction paying `account`'s external index 0 and a far index
+    /// past the gap (vout 1), and one paying a near index that extends the
+    /// pool over the far one.
+    fn far_and_extending_transactions(
         wallet: &Wallet,
         account: AccountType,
         height: u32,
-    ) -> (dashcore::Block, Transaction) {
+    ) -> (Transaction, Transaction) {
         let gap = external_gap(wallet, account);
         let (near, far) = (2 * gap / 3, gap + gap / 3);
         let addresses = external_addresses(wallet, account, far + 1);
@@ -9972,10 +9978,62 @@ mod block_rescan_credit_tests {
             height,
         );
         let extending = transaction_paying(&[addresses[near as usize].clone()], VALUE, height + 1);
+        (paying_far, extending)
+    }
+
+    /// A block at `height` holding both transactions of
+    /// [`far_and_extending_transactions`]. key-wallet checks the block again
+    /// once the second derives the far address, so one call of
+    /// `process_block_for_wallets` credits the far output.
+    fn far_output_block(
+        wallet: &Wallet,
+        account: AccountType,
+        height: u32,
+    ) -> (dashcore::Block, Transaction) {
+        let (paying_far, extending) = far_and_extending_transactions(wallet, account, height);
         (
             dashcore::Block::dummy(height, vec![paying_far.clone(), extending]),
             paying_far,
         )
+    }
+
+    /// Block `height` holds the transaction paying index 0 and the far
+    /// index; block `height + 1` holds the one extending the pool. The
+    /// funding block's own pass credits only vout 0. The far output is
+    /// credited when dash-spv re-scans the funding block for the addresses
+    /// the later block derived, on the record the wallet already holds, so
+    /// that pass reports the record as updated, never inserted.
+    fn far_output_blocks(
+        wallet: &Wallet,
+        account: AccountType,
+        height: u32,
+    ) -> (dashcore::Block, dashcore::Block, Transaction) {
+        let (paying_far, extending) = far_and_extending_transactions(wallet, account, height);
+        (
+            dashcore::Block::dummy(height, vec![paying_far.clone()]),
+            dashcore::Block::dummy(height + 1, vec![extending]),
+            paying_far,
+        )
+    }
+
+    /// Whether `account` of the wallet holds `outpoint` as a coin.
+    async fn holds(
+        manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+        wallet_id: WalletId,
+        account: AccountType,
+        outpoint: OutPoint,
+    ) -> bool {
+        manager
+            .read()
+            .await
+            .get_wallet_info(&wallet_id)
+            .expect("wallet")
+            .core_wallet
+            .accounts
+            .funds_account(&account)
+            .expect("account")
+            .utxos
+            .contains_key(&outpoint)
     }
 
     async fn one_transaction_past_the_gap_credits_every_coin(account: AccountType) {
@@ -10022,18 +10080,16 @@ mod block_rescan_credit_tests {
         one_transaction_past_the_gap_credits_every_coin(bip44_account_0()).await;
     }
 
-    /// A coin only a re-scan pass credits is spent in the next block before
-    /// the bridge projects the funding block's events (one drain, as a
+    /// A coin only a re-scan pass of its block credits is spent in a later
+    /// block before the bridge projects any of their events (one drain, as a
     /// catch-up produces). The changesets carry the other coin as unspent
-    /// and the spent one only as spent, and a record of them that owns the
-    /// spent output carries its `ObservedSpent` verdict. At rust-dashcore
-    /// c9aeac0d no record owns that output, so the verdict check applies only
-    /// once rust-dashcore includes #1326.
+    /// and the spent one only as spent, and the re-scanned record, which now
+    /// owns the spent output, carries its `ObservedSpent` verdict.
     #[tokio::test]
     async fn a_coin_spent_before_the_bridge_sees_its_block_is_not_credited() {
         let account = coinjoin_account_0();
         let wallet = new_wallet();
-        let (funding, paying_far) = far_output_block(&wallet, account, 100);
+        let (funding, extending, paying_far) = far_output_blocks(&wallet, account, 100);
         let (manager, wallet_id, mut receiver) = wallet_manager_with_persistence(wallet);
         let funding_txid = paying_far.txid();
         let spent = OutPoint {
@@ -10057,10 +10113,19 @@ mod block_rescan_credit_tests {
             special_transaction_payload: None,
         };
 
-        let passes = process_block_with_rescans(&manager, wallet_id, &funding, 100).await;
-        assert!(passes > 1, "the block is re-scanned for the far output");
-        let spending = dashcore::Block::dummy(101, vec![spend]);
-        process_block_with_rescans(&manager, wallet_id, &spending, 101).await;
+        one_pass(&manager, wallet_id, &funding, 100).await;
+        assert!(
+            !holds(&manager, wallet_id, account, spent).await,
+            "the funding block's own pass does not reach the far output"
+        );
+        process_block_with_rescans(&manager, wallet_id, &extending, 101).await;
+        one_pass(&manager, wallet_id, &funding, 100).await;
+        assert!(
+            holds(&manager, wallet_id, account, spent).await,
+            "the re-scan of the funding block credits the far output"
+        );
+        let spending = dashcore::Block::dummy(102, vec![spend]);
+        process_block_with_rescans(&manager, wallet_id, &spending, 102).await;
         let cs = drain(&manager, &mut receiver).await;
 
         assert_eq!(credited_vouts(&cs, funding_txid), BTreeSet::from([0]));
@@ -10069,16 +10134,17 @@ mod block_rescan_credit_tests {
             "the spent coin is not sent as unspent"
         );
         assert!(cs.spent_utxos.iter().any(|u| u.outpoint == spent));
-        let owned = (cs.account_records.iter()).any(|r| {
-            r.txid == funding_txid && r.output_details.iter().any(|d| d.index == spent.vout)
-        });
-        if owned {
-            assert_eq!(
-                cs.utxo_credit_verdicts.get(&spent),
-                Some(&UtxoCreditVerdict::ObservedSpent { height: 101 }),
-                "a record owning the spent output carries its spend"
-            );
-        }
+        assert!(
+            cs.account_records.iter().any(|r| {
+                r.txid == funding_txid && r.output_details.iter().any(|d| d.index == spent.vout)
+            }),
+            "the re-scanned record owns the far output"
+        );
+        assert_eq!(
+            cs.utxo_credit_verdicts.get(&spent),
+            Some(&UtxoCreditVerdict::ObservedSpent { height: 102 }),
+            "the record owning the spent output carries its spend"
+        );
     }
 
     /// BIP44 receive addresses the second transaction of a block pays.
@@ -10148,22 +10214,32 @@ mod block_rescan_credit_tests {
     }
 
     /// One block pays two funds accounts: CoinJoin with an output only a
-    /// re-scan pass reaches, BIP44 within its gap. The re-scan pass re-sends
-    /// the BIP44 coins held at the same height exactly as first sent, and
-    /// every coin of both reaches the changesets.
+    /// re-scan pass of the block reaches, BIP44 within its gap. The re-scan
+    /// pass re-sends the BIP44 coins held at the same height exactly as first
+    /// sent, and every coin of both reaches the changesets.
     #[tokio::test]
     async fn coins_of_a_second_account_at_the_same_height_are_resent_unchanged() {
         let wallet = new_wallet();
-        let (coinjoin_block, paying_far) = far_output_block(&wallet, coinjoin_account_0(), 100);
+        let (coinjoin_block, extending, paying_far) =
+            far_output_blocks(&wallet, coinjoin_account_0(), 100);
         let bip44_addresses = external_addresses(&wallet, bip44_account_0(), BIP44_PAID);
         let (manager, wallet_id, mut receiver) = wallet_manager_with_persistence(wallet);
         let within_gap = transaction_paying(&bip44_addresses, VALUE, 2);
         let mut txdata = coinjoin_block.txdata;
         txdata.push(within_gap.clone());
         let block = dashcore::Block::dummy(100, txdata);
+        let far = OutPoint {
+            txid: paying_far.txid(),
+            vout: 1,
+        };
 
-        let passes = process_block_with_rescans(&manager, wallet_id, &block, 100).await;
-        assert!(passes > 1, "the block is re-scanned");
+        one_pass(&manager, wallet_id, &block, 100).await;
+        assert!(
+            !holds(&manager, wallet_id, coinjoin_account_0(), far).await,
+            "the block's own pass does not reach the far output"
+        );
+        process_block_with_rescans(&manager, wallet_id, &extending, 101).await;
+        one_pass(&manager, wallet_id, &block, 100).await;
         let cs = drain(&manager, &mut receiver).await;
 
         assert_eq!(
@@ -10196,15 +10272,16 @@ mod block_rescan_credit_tests {
         assert!(cs.utxo_credit_verdicts.is_empty());
     }
 
-    /// A re-scan pass of block 100 runs after block 101 spent one of its
-    /// coins, and the bridge projects each block's events as they arrive.
-    /// The pass sends the coins of block 100 the wallet still holds, never
-    /// the spent one, and no coin of another block.
+    /// Block 101 spends one coin of block 100 and derives the address of
+    /// another, and the bridge projects each block's events as they arrive.
+    /// The re-scan pass of block 100 that follows sends the coins of block
+    /// 100 the wallet still holds, never the spent one, and no coin of
+    /// another block.
     #[tokio::test]
     async fn a_rescan_pass_after_a_later_spend_does_not_resend_the_spent_coin() {
         let account = coinjoin_account_0();
         let wallet = new_wallet();
-        let (funding, paying_far) = far_output_block(&wallet, account, 100);
+        let (funding, extending, paying_far) = far_output_blocks(&wallet, account, 100);
         let change = external_addresses(&wallet, bip44_account_0(), 1).remove(0);
         let (manager, wallet_id, mut receiver) = wallet_manager_with_persistence(wallet);
         let funding_txid = paying_far.txid();
@@ -10243,12 +10320,12 @@ mod block_rescan_credit_tests {
             "the first pass credits the output the pool reached"
         );
 
-        let spending = dashcore::Block::dummy(101, vec![spend]);
+        let spending = dashcore::Block::dummy(101, vec![spend, extending.txdata[0].clone()]);
         process_block_with_rescans(&manager, wallet_id, &spending, 101).await;
         let spent_drain = drain(&manager, &mut receiver).await;
         assert!(spent_drain.spent_utxos.iter().any(|u| u.outpoint == spent));
 
-        process_block_with_rescans(&manager, wallet_id, &funding, 100).await;
+        one_pass(&manager, wallet_id, &funding, 100).await;
         let rescanned = drain(&manager, &mut receiver).await;
         assert_eq!(
             credited_vouts(&rescanned, funding_txid),
@@ -10266,6 +10343,51 @@ mod block_rescan_credit_tests {
                 .all(|u| block_100.contains(&u.outpoint.txid)),
             "a pass of block 100 sends no coin of another block"
         );
+    }
+    /// The funding block is under a ChainLock before dash-spv re-scans it,
+    /// so the re-scan credits the far output of a finalized transaction.
+    /// The far coin reaches the changesets as a confirmed coin of the
+    /// funding block, and nothing is sent as spent.
+    #[tokio::test]
+    async fn a_rescan_of_a_chain_locked_block_credits_the_far_coin() {
+        use dashcore::bls_sig_utils::BLSSignature;
+        use dashcore::ephemerealdata::chain_lock::ChainLock;
+        use key_wallet_manager::WalletInterface;
+
+        let account = coinjoin_account_0();
+        let wallet = new_wallet();
+        let (funding, extending, paying_far) = far_output_blocks(&wallet, account, 100);
+        let (manager, wallet_id, mut receiver) = wallet_manager_with_persistence(wallet);
+        let txid = paying_far.txid();
+        let far = OutPoint { txid, vout: 1 };
+
+        one_pass(&manager, wallet_id, &funding, 100).await;
+        process_block_with_rescans(&manager, wallet_id, &extending, 101).await;
+        manager.write().await.apply_chain_lock(ChainLock {
+            block_height: 101,
+            block_hash: dashcore::BlockHash::all_zeros(),
+            signature: BLSSignature::from([0u8; 96]),
+        });
+        let locked = drain(&manager, &mut receiver).await;
+        assert_eq!(credited_vouts(&locked, txid), BTreeSet::from([0]));
+
+        one_pass(&manager, wallet_id, &funding, 100).await;
+        assert!(
+            holds(&manager, wallet_id, account, far).await,
+            "the re-scan credits the far output of the finalized transaction"
+        );
+        let rescanned = drain(&manager, &mut receiver).await;
+        let sent: Vec<&Utxo> = rescanned
+            .new_utxos
+            .iter()
+            .filter(|u| u.outpoint == far)
+            .collect();
+        assert!(!sent.is_empty(), "the far coin reaches the changesets");
+        assert!(
+            sent.iter().all(|u| u.is_confirmed && u.height == 100),
+            "as a confirmed coin of the funding block"
+        );
+        assert!(rescanned.spent_utxos.is_empty(), "nothing is sent as spent");
     }
 }
 
