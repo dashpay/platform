@@ -165,7 +165,12 @@ export default class ConfigFileJsonRepository {
       throw new InvalidConfigFileFormatError(this.configFilePath, error);
     }
 
-    const seedUpdates = getDefaultSeedUpdates(migratedConfigFileData.configs);
+    // A newer build owns the stock seeds of a file it migrated. This build may
+    // not save its replacement, so showing it would report a configuration the
+    // file does not hold.
+    const seedUpdates = this.#isNewerThanOwnFormat(originConfigVersion)
+      ? []
+      : getDefaultSeedUpdates(migratedConfigFileData.configs);
     seedUpdates.forEach(([name, seeds]) => {
       migratedConfigFileData.configs[name].platform.drive.tenderdash.p2p.seeds = seeds;
     });

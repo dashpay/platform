@@ -1080,11 +1080,20 @@ describe('ConfigFileJsonRepository', () => {
           // no lock - so it cannot hold up the newer build either.
           this.sinon.spy(lockfile, 'lockSync');
 
-          expect(() => older.readAndMigrate({}, onMigrated)).to.not.throw();
+          const { configFile } = older.readAndMigrate({}, onMigrated);
 
           expect(lockfile.lockSync).to.not.have.been.called();
           expect(onMigrated).to.not.have.been.called();
           expect(fs.readFileSync(configFilePath, 'utf8')).to.equal(original);
+
+          // What `config get --raw` reports has to be what the file holds. The
+          // older build's replacement was never saved, so showing it would
+          // describe a configuration this node does not have.
+          const seedsPath = 'platform.drive.tenderdash.p2p.seeds';
+          [configFile, older.read()].forEach((read) => {
+            expect(read.getConfig('base').getStored(seedsPath)).to.deep.equal(originalDefaults.seeds);
+            expect(read.isChanged()).to.be.false();
+          });
         } finally {
           tenderdashSeeds[network] = originalDefaults;
         }
