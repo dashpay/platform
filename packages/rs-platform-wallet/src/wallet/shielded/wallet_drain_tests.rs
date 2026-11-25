@@ -100,9 +100,18 @@ struct RecoveryPersistence {
     commits_inline: AtomicBool,
     fail_load: AtomicBool,
     records_recipients: AtomicBool,
-    /// Transactions [`InstantSendingSpv`] accepted: their Core record reads
-    /// as InstantSend-locked, so a fresh lock's proof resolves at once.
-    instant_locked: Mutex<BTreeMap<dashcore::Txid, Transaction>>,
+    /// Transactions [`InstantSendingSpv`] accepted, with the InstantLock it
+    /// recorded for each: their Core record reads as locked by it, so a
+    /// fresh lock's proof resolves at once.
+    instant_locked: Mutex<
+        BTreeMap<
+            dashcore::Txid,
+            (
+                Transaction,
+                dashcore::ephemerealdata::instant_lock::InstantLock,
+            ),
+        >,
+    >,
 }
 
 impl PlatformWalletPersistence for RecoveryPersistence {
@@ -166,23 +175,26 @@ impl PlatformWalletPersistence for RecoveryPersistence {
             TransactionDirection, TransactionRecord,
         };
         use key_wallet::transaction_checking::{TransactionContext, TransactionType};
-        Ok(self.instant_locked.lock().unwrap().get(txid).map(|tx| {
-            TransactionRecord::new(
-                tx.clone(),
-                key_wallet::account::AccountType::Standard {
-                    index: 0,
-                    standard_account_type: StandardAccountType::BIP44Account,
-                },
-                TransactionContext::InstantSend(
-                    dashcore::ephemerealdata::instant_lock::InstantLock::default(),
-                ),
-                TransactionType::Standard,
-                TransactionDirection::Outgoing,
-                Vec::new(),
-                Vec::new(),
-                0,
-            )
-        }))
+        Ok(self
+            .instant_locked
+            .lock()
+            .unwrap()
+            .get(txid)
+            .map(|(tx, lock)| {
+                TransactionRecord::new(
+                    tx.clone(),
+                    key_wallet::account::AccountType::Standard {
+                        index: 0,
+                        standard_account_type: StandardAccountType::BIP44Account,
+                    },
+                    TransactionContext::InstantSend(lock.clone()),
+                    TransactionType::Standard,
+                    TransactionDirection::Outgoing,
+                    Vec::new(),
+                    Vec::new(),
+                    0,
+                )
+            }))
     }
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
         if self.fail_load.load(Ordering::SeqCst) {
@@ -291,11 +303,22 @@ impl crate::broadcaster::SpvChannel for InstantSendingSpv {
         transaction: &Transaction,
         _timeout: Option<std::time::Duration>,
     ) -> Result<dash_spv::BroadcastResult, crate::broadcaster::BroadcastError> {
+        // A lock of this transaction: its txid and the inputs it spends.
+        // The quorum fields keep their defaults (no signature is checked).
+        let lock = dashcore::ephemerealdata::instant_lock::InstantLock {
+            txid: transaction.txid(),
+            inputs: transaction
+                .input
+                .iter()
+                .map(|input| input.previous_output)
+                .collect(),
+            ..Default::default()
+        };
         self.persistence
             .instant_locked
             .lock()
             .unwrap()
-            .insert(transaction.txid(), transaction.clone());
+            .insert(transaction.txid(), (transaction.clone(), lock));
         Ok(dash_spv::BroadcastResult::Accepted { relayed_by: 1 })
     }
 
@@ -1075,7 +1098,7 @@ async fn should_hold_a_fresh_shield_lock_whose_first_proof_fails() {
     let (mut lock, keys) = drain_lock_fixture();
     lock.operation_id = None;
     let recipient = dpp::address_funds::OrchardAddress::from(keys[&0].default_address);
-    let (wallet, _persistence, coordinator, _dir, signer) =
+    let (wallet, persistence, coordinator, _dir, signer) =
         signed_wallet_fixture_with(&lock, keys, true).await;
     let coordinator = Arc::new(coordinator);
     let prover: &'static super::prover::CachedOrchardProver = &super::prover::CachedOrchardProver;
@@ -1112,6 +1135,20 @@ async fn should_hold_a_fresh_shield_lock_whose_first_proof_fails() {
     );
     let seen = seen.into_inner().unwrap();
     assert_eq!(seen.len(), 1, "one fresh lock was built");
+    // The lock the proof rests on is the funding transaction's own.
+    {
+        let locked = persistence.instant_locked.lock().unwrap();
+        let (tx, instant_lock) = locked.get(&seen[0].txid).expect("the broadcast was locked");
+        assert_eq!(instant_lock.txid, tx.txid());
+        assert_eq!(
+            instant_lock.inputs,
+            tx.input
+                .iter()
+                .map(|input| input.previous_output)
+                .collect::<Vec<_>>()
+        );
+        assert!(!instant_lock.inputs.is_empty());
+    }
     assert_eq!(error.payment_delivery(), PaymentDelivery::LockHeld(seen[0]));
     assert_eq!(error.held_asset_lock(), Some(seen[0]));
     let tracked = wallet
