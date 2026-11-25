@@ -88,6 +88,13 @@ data class PlatformWalletPersistenceCapabilities(
          */
         const val PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long =
             NativePersistenceBridge.CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE
+        /**
+         * A stored core changeset's chain truncations are durably applied
+         * before the rest of their round. Mirrors
+         * `PersistenceCapabilities::CORE_CHAIN_TRUNCATION`; aliased to the
+         * bridge's declaration like [CORE_SWEEP_REMOVAL].
+         */
+        const val CORE_CHAIN_TRUNCATION: Long = NativePersistenceBridge.CAPABILITY_CORE_CHAIN_TRUNCATION
     }
 }
 

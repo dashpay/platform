@@ -78,6 +78,10 @@ final class InvitationPersistenceTests: XCTestCase {
             // Locked outpoints: the handler wires the persist/load/free trio
             // onto `PersistentLockedOutpoint`, so locks survive a restart.
             | PlatformWalletPersistenceCapabilities.outpointLocks
+            // Chain truncations: the handler wires
+            // `on_persist_wallet_changeset_truncations_fn` and cuts the
+            // mirror back in the round that carries them.
+            | PlatformWalletPersistenceCapabilities.coreChainTruncation
 
         XCTAssertEqual(
             capabilities.version,

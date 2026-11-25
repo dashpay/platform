@@ -254,6 +254,18 @@ interface DocumentDao {
     )
     suspend fun deleteWalletSweptTombstonesByOutpoints(walletId: ByteArray, outpoints: List<ByteArray>)
 
+    /**
+     * Delete [walletId]'s ordinary claims made by one of [spendingTxids] —
+     * its spend-before-funding rows for transactions a chain truncation
+     * removed. Tombstones are not claims of the removed transaction and
+     * stay. Chunked by the caller.
+     */
+    @Query(
+        "DELETE FROM pending_inputs WHERE walletId = :walletId AND isSweptTombstone = 0 " +
+            "AND spendingTransactionTxid IN (:spendingTxids)",
+    )
+    suspend fun deleteWalletClaimsBySpenders(walletId: ByteArray, spendingTxids: List<ByteArray>)
+
     /** Bulk insert of freshly minted tombstones; Room binds one row at a time. */
     @Insert
     suspend fun insertPendingInputs(rows: List<PendingInputEntity>)
