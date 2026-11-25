@@ -62,8 +62,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::changeset::changeset::{
     coalesce_account_records, fold_same_txid_records, merge_payment_overlays, AssetLockChangeSet,
-    CoreChangeSet, HighestUsedIndexes, PaymentOverlay, PlatformWalletChangeSet, SweepBatch,
-    UtxoCreditVerdict,
+    CoreChangeSet, DismissalChange, HighestUsedIndexes, PaymentOverlay, PlatformWalletChangeSet,
+    SweepBatch, UtxoCreditVerdict,
 };
 use crate::changeset::merge::Merge;
 use crate::changeset::persistence_capabilities::PersistenceCapabilities;
@@ -137,6 +137,12 @@ struct AdapterFaultState {
     /// Set by a `store()` rejection, or by the panic-recovery branch for a
     /// wallet whose commit outcome is unknown: freezes only the named wallets.
     per_wallet: HashMap<WalletId, bool>,
+    /// Each wallet's dismissal changes no store has accepted yet, in order,
+    /// recorded before any store of the batch runs. A rescan cannot bring an
+    /// abandon back, so a rejected or panicked round's changes go ahead of
+    /// the wallet's next round. `Ok` from a buffering backend clears them,
+    /// so a flush it later drops loses them.
+    unstored_dismissals: HashMap<WalletId, Vec<DismissalChange>>,
 }
 
 impl AdapterFaultState {
@@ -152,6 +158,31 @@ impl AdapterFaultState {
         self.per_wallet.insert(wallet_id, true);
         hard_signal.store(true, Ordering::Relaxed);
     }
+}
+
+/// Moves each wallet's dismissal changes into
+/// [`AdapterFaultState::unstored_dismissals`], behind any carried ones,
+/// before any store runs: a panicking store unwinds past the wallets after
+/// it, and their changes must survive it.
+fn stage_dismissals(batch: &mut BTreeMap<WalletId, WalletBatch>, fault: &mut AdapterFaultState) {
+    for (wallet_id, wallet_batch) in batch.iter_mut() {
+        if !wallet_batch.core.dismissal_changes.is_empty() {
+            fault
+                .unstored_dismissals
+                .entry(*wallet_id)
+                .or_default()
+                .append(&mut wallet_batch.core.dismissal_changes);
+        }
+    }
+}
+
+/// Whether `event` is a sweep's dismissals, which the manager sends right
+/// ahead of the sweep's `TransactionsSwept`: only a sweep reports a
+/// transaction `Dismissed`.
+fn reports_a_sweep_next(event: &WalletEvent) -> bool {
+    use key_wallet::wallet::managed_wallet_info::DismissalChange as Kw;
+    matches!(event, WalletEvent::DismissalsChanged { changes, .. }
+        if changes.iter().any(|change| matches!(change, Kw::Dismissed(_))))
 }
 
 /// Per-drain accounting behind the one-line batch diagnostic.
@@ -806,10 +837,25 @@ async fn run_wallet_event_adapter<P>(
         // Fold in whatever else is already buffered. `try_recv` never waits,
         // so this drains the backlog at projection speed and stops as soon as
         // the channel is empty.
+        //
+        // A sweep's dismissals are sent right ahead of its `TransactionsSwept`,
+        // which this round waits for, past the batch limit if need be, so both
+        // are stored in one write.
         let mut folded = 1usize;
-        while folded < ADAPTER_STORE_BATCH_LIMIT {
-            match receiver.try_recv() {
+        let mut awaiting_sweep = reports_a_sweep_next(&event);
+        while folded < ADAPTER_STORE_BATCH_LIMIT || awaiting_sweep {
+            let next = if awaiting_sweep && !cancel.is_cancelled() {
+                tokio::select! {
+                    biased;
+                    recv = receiver.recv() => recv.ok_or(TryRecvError::Disconnected),
+                    _ = cancel.cancelled() => receiver.try_recv(),
+                }
+            } else {
+                receiver.try_recv()
+            };
+            match next {
                 Ok(event) => {
+                    awaiting_sweep = reports_a_sweep_next(&event);
                     project_event_into_batch(&wallet_manager, &durable_cursors, &event, &mut batch)
                         .await;
                     folded += 1;
@@ -1044,7 +1090,7 @@ async fn run_wallet_event_adapter<P>(
 #[cfg_attr(not(test), allow(dead_code))]
 fn commit_batch<P>(
     persister: &P,
-    batch: BTreeMap<WalletId, WalletBatch>,
+    mut batch: BTreeMap<WalletId, WalletBatch>,
     folded: usize,
     fault: &mut AdapterFaultState,
     sync_fault: &AtomicBool,
@@ -1055,6 +1101,7 @@ where
     P: PlatformWalletPersistence + ?Sized,
 {
     let mut diag = BatchDiagnostics::new(folded, batch.len());
+    stage_dismissals(&mut batch, fault);
     for (wallet_id, wallet_batch) in batch {
         commit_wallet(
             persister,
@@ -1084,7 +1131,7 @@ where
 #[allow(clippy::too_many_arguments)]
 fn commit_batch_under_writer_lock<P>(
     persister: &P,
-    batch: BTreeMap<WalletId, WalletBatch>,
+    mut batch: BTreeMap<WalletId, WalletBatch>,
     folded: usize,
     batch_wallet_ids: &[WalletId],
     fault: &mut AdapterFaultState,
@@ -1103,6 +1150,7 @@ where
         .iter()
         .map(|(wallet_id, wallet_batch)| (*wallet_id, wallet_batch.advance_epoch))
         .collect();
+    stage_dismissals(&mut batch, fault);
     let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         for (wallet_id, wallet_batch) in batch {
             commit_wallet(
@@ -1172,6 +1220,9 @@ fn commit_wallet<P>(
         payments,
         advance_epoch: _,
     } = wallet_batch;
+    if let Some(unstored) = fault.unstored_dismissals.get(&wallet_id) {
+        core.dismissal_changes = unstored.clone();
+    }
     {
         // Sent-payment verdicts reach a host only through the payment-overlay
         // slot, which a persister advertises with `DASHPAY_PAYMENTS`. A host
@@ -1304,6 +1355,9 @@ fn commit_wallet<P>(
             ..PlatformWalletChangeSet::default()
         };
         let store_result = persister.store(wallet_id, cs);
+        if store_result.is_ok() {
+            fault.unstored_dismissals.remove(&wallet_id);
+        }
         // Recorded only once the store has RETURNED, and whether it accepted
         // or rejected — both are answers. A wallet whose store panicked never
         // reaches this line, and one the loop never got to is never pushed at
@@ -1975,8 +2029,10 @@ async fn project_core_event(
                 ..CoreChangeSet::default()
             }
         }
-        // The persister has no dismissal rows yet, so nothing is stored.
-        WalletEvent::DismissalsChanged { .. } => CoreChangeSet::default(),
+        WalletEvent::DismissalsChanged { changes, .. } => CoreChangeSet {
+            dismissal_changes: changes.iter().map(DismissalChange::from).collect(),
+            ..CoreChangeSet::default()
+        },
         WalletEvent::SyncHeightAdvanced { wallet_id, height } => {
             // A watermark queued before a rewind must not land after it.
             // `reconcile_dashpay_rescan` lowers the in-memory cursor and
@@ -9640,6 +9696,217 @@ mod tests {
             stored_status(&wallet_manager, &wallet_id, &txid).await,
             PaymentStatus::Failed
         );
+    }
+
+    fn dismissals(
+        wallet_id: WalletId,
+        changes: Vec<key_wallet::wallet::managed_wallet_info::DismissalChange>,
+    ) -> WalletEvent {
+        WalletEvent::DismissalsChanged { wallet_id, changes }
+    }
+
+    fn txid(byte: u8) -> dashcore::Txid {
+        dashcore::Txid::from_byte_array([byte; 32])
+    }
+
+    fn spawn_probe_adapter(
+        rx: tokio::sync::mpsc::UnboundedReceiver<WalletEvent>,
+        persister: &Arc<ProbePersister>,
+        cancel: &CancellationToken,
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(run_wallet_event_adapter(
+            test_manager(),
+            Arc::downgrade(persister),
+            rx,
+            Arc::new(AtomicBool::new(false)),
+            crate::changeset::DurableCursors::default(),
+            cancel.clone(),
+        ))
+    }
+
+    async fn next_store(
+        obs_rx: &mut tokio::sync::mpsc::UnboundedReceiver<StoreObserved>,
+    ) -> StoreObserved {
+        tokio::time::timeout(std::time::Duration::from_secs(5), obs_rx.recv())
+            .await
+            .expect("a store arrives")
+            .expect("the probe is open")
+    }
+
+    fn stored_dismissals(
+        observed: &StoreObserved,
+    ) -> Vec<crate::changeset::changeset::DismissalChange> {
+        observed
+            .core
+            .as_ref()
+            .map(|core| core.dismissal_changes.clone())
+            .unwrap_or_default()
+    }
+
+    /// A sweep's dismissals are the last event a full batch can fold, and
+    /// the sweep they come with is not sent yet: the round waits for it, so
+    /// both are stored in one write.
+    #[tokio::test]
+    async fn a_sweeps_dismissals_wait_for_the_sweep_past_the_batch_limit() {
+        use crate::changeset::changeset::DismissalChange as Stored;
+        use key_wallet::wallet::managed_wallet_info::DismissalChange as Kw;
+        let wallet_id = [0xD1u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        for height in 1..ADAPTER_STORE_BATCH_LIMIT as u32 {
+            tx.send(block_processed_event(wallet_id, height)).unwrap();
+        }
+        tx.send(dismissals(wallet_id, vec![Kw::Dismissed(txid(0x51))]))
+            .unwrap();
+        let cancel = CancellationToken::new();
+        let handle = spawn_probe_adapter(rx, &persister, &cancel);
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        tx.send(swept_event(wallet_id, 0x51, 0x52)).unwrap();
+        let round = next_store(&mut obs_rx).await;
+        assert_eq!(
+            stored_dismissals(&round),
+            vec![Stored::Dismissed(txid(0x51))]
+        );
+        assert_eq!(round.n_sweeps, 1, "the dismissal is stored with its sweep");
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
+    }
+
+    /// An abandon's dismissals come alone, and are stored without waiting
+    /// for another event.
+    #[tokio::test]
+    async fn an_abandons_dismissals_are_stored_without_waiting() {
+        use crate::changeset::changeset::DismissalChange as Stored;
+        use key_wallet::wallet::managed_wallet_info::DismissalChange as Kw;
+        let wallet_id = [0xD2u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        let cancel = CancellationToken::new();
+        let handle = spawn_probe_adapter(rx, &persister, &cancel);
+        tx.send(dismissals(
+            wallet_id,
+            vec![Kw::Abandoned(txid(0x61)), Kw::Forgotten(txid(0x62))],
+        ))
+        .unwrap();
+        let round = next_store(&mut obs_rx).await;
+        assert_eq!(
+            stored_dismissals(&round),
+            vec![Stored::Abandoned(txid(0x61)), Stored::Forgotten(txid(0x62))]
+        );
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
+    }
+
+    /// A rescan cannot bring an abandon back, so the dismissals of a round
+    /// the store rejected go ahead of the wallet's next round, also a
+    /// watermark-only one, and are dropped once a store accepts them.
+    #[tokio::test]
+    async fn a_rejected_rounds_dismissals_go_ahead_of_the_next_round() {
+        use crate::changeset::changeset::DismissalChange as Stored;
+        use key_wallet::wallet::managed_wallet_info::DismissalChange as Kw;
+        let wallet_id = [0xD3u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        persister.fail_next(wallet_id);
+        let cancel = CancellationToken::new();
+        let handle = spawn_probe_adapter(rx, &persister, &cancel);
+        tx.send(dismissals(wallet_id, vec![Kw::Abandoned(txid(0x71))]))
+            .unwrap();
+        let rejected = next_store(&mut obs_rx).await;
+        assert!(rejected.rejected);
+        tx.send(sync_height_event(wallet_id, 300)).unwrap();
+        let retried = next_store(&mut obs_rx).await;
+        assert!(!retried.rejected);
+        assert_eq!(
+            stored_dismissals(&retried),
+            vec![Stored::Abandoned(txid(0x71))]
+        );
+        tx.send(dismissals(wallet_id, vec![Kw::Abandoned(txid(0x72))]))
+            .unwrap();
+        let next = next_store(&mut obs_rx).await;
+        assert_eq!(
+            stored_dismissals(&next),
+            vec![Stored::Abandoned(txid(0x72))]
+        );
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
+    }
+
+    /// A store that panics unwinds past the wallets after it in the batch;
+    /// their dismissals go ahead of their next round.
+    #[tokio::test]
+    async fn a_panic_keeps_the_dismissals_of_the_wallets_after_it() {
+        use crate::changeset::changeset::DismissalChange as Stored;
+        use key_wallet::wallet::managed_wallet_info::DismissalChange as Kw;
+        let (first, second) = ([0xD5u8; 32], [0xD6u8; 32]);
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        persister.panic_next(first);
+        tx.send(dismissals(first, vec![Kw::Abandoned(txid(0x91))]))
+            .unwrap();
+        tx.send(dismissals(second, vec![Kw::Abandoned(txid(0x92))]))
+            .unwrap();
+        let cancel = CancellationToken::new();
+        let handle = spawn_probe_adapter(rx, &persister, &cancel);
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while !persister.panic_once.lock().unwrap().is_empty() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the first wallet's store panics");
+        tx.send(dismissals(second, vec![Kw::Abandoned(txid(0x93))]))
+            .unwrap();
+        let next = next_store(&mut obs_rx).await;
+        assert_eq!(next.wallet_id, second);
+        assert_eq!(
+            stored_dismissals(&next),
+            vec![Stored::Abandoned(txid(0x92)), Stored::Abandoned(txid(0x93))]
+        );
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
+    }
+
+    /// A round whose store panicked has an unknown fate; its dismissals go
+    /// ahead of the wallet's next round, in order.
+    #[tokio::test]
+    async fn a_panicked_rounds_dismissals_go_ahead_of_the_next_round() {
+        use crate::changeset::changeset::DismissalChange as Stored;
+        use key_wallet::wallet::managed_wallet_info::DismissalChange as Kw;
+        let wallet_id = [0xD4u8; 32];
+        let (tx, rx) = unbounded_channel::<WalletEvent>();
+        let (obs_tx, mut obs_rx) = unbounded_channel();
+        let persister = Arc::new(ProbePersister::new(obs_tx));
+        persister.panic_next(wallet_id);
+        let cancel = CancellationToken::new();
+        let handle = spawn_probe_adapter(rx, &persister, &cancel);
+        tx.send(dismissals(wallet_id, vec![Kw::Abandoned(txid(0x81))]))
+            .unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while !persister.panic_once.lock().unwrap().is_empty() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the store panics");
+        tx.send(dismissals(wallet_id, vec![Kw::Abandoned(txid(0x82))]))
+            .unwrap();
+        let next = next_store(&mut obs_rx).await;
+        assert_eq!(
+            stored_dismissals(&next),
+            vec![Stored::Abandoned(txid(0x81)), Stored::Abandoned(txid(0x82))]
+        );
+        cancel.cancel();
+        drop(tx);
+        handle.await.unwrap();
     }
 }
 

@@ -553,6 +553,12 @@ pub fn apply_persisted_core_state(
         wallet_info.mark_instant_send_utxos(txid, lock);
     }
 
+    // The store already left out every dismissal it holds settled.
+    wallet_info.restore_dismissed(
+        core.abandoned_txids.iter().copied(),
+        core.dismissed_txids.iter().copied(),
+    );
+
     // Recompute per-account + wallet balance from the restored set.
     // After this, a non-zero persisted balance is non-zero here — a
     // silent zero would be a hard FAIL of the rehydration contract.
