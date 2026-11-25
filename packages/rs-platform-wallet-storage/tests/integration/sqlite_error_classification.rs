@@ -361,6 +361,10 @@ fn samples() -> Vec<WalletStorageError> {
         WalletStorageError::DatabasePathIsSymlink {
             path: PathBuf::from("/tmp/wallet.db"),
         },
+        WalletStorageError::ColumnDefinitionMismatch {
+            table: "core_instant_locks",
+            column: "verified",
+        },
     ]
 }
 
@@ -505,6 +509,9 @@ fn tc_p2_005_is_transient_table() {
                 (false, "empty_pool_address_script")
             }
             WalletStorageError::DatabasePathIsSymlink { .. } => (false, "database_path_is_symlink"),
+            WalletStorageError::ColumnDefinitionMismatch { .. } => {
+                (false, "column_definition_mismatch")
+            }
         }
     }
 

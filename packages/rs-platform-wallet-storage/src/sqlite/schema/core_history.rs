@@ -63,13 +63,14 @@ pub(super) fn preserve_known_details(
     Ok(merged)
 }
 
-/// Read a stored record strictly: corrupt history is an error, never skipped.
+/// Read a stored record strictly and as written: corrupt history is an
+/// error, never skipped, and its context is what the merge writes back.
 fn prior_record(
     conn: &Connection,
     wallet_id: &WalletId,
     txid: &Txid,
 ) -> Result<Option<TransactionRecord>, WalletStorageError> {
-    core_state::get_tx_record(conn, wallet_id, txid, &LoadCtx::strict())
+    core_state::get_stored_tx_record(conn, wallet_id, txid, &LoadCtx::strict())
 }
 
 /// Index raw inputs independently of when their ownership becomes known.
