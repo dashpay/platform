@@ -1588,15 +1588,29 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // (backends may defer I/O until `flush`), so the invitation gate also
         // drives `flush()` — the contract's durability boundary — before
         // anything hits the wire.
-        // For an unbound identity top-up the pool is the only record of the
-        // credit output's key index, which a resume after a restart needs to
-        // sign the top-up: it is not stored here but in the same durable
-        // changeset as the row that records the recipient (below), so the two
-        // reach disk together or not at all, and a flush between two separate
-        // writes cannot commit the row without it.
+        // For a lock whose row must be durable before it is sent (a recorded
+        // identity, Platform-address or shielded recipient) the pool is the
+        // only record of the credit output's key index, which a resume after a
+        // restart needs to sign the funded transition: it is not stored here
+        // but in the same durable changeset as that row (below), so the two
+        // reach disk together or not at all, and a failed pool write cannot
+        // leave a sendable row without it.
         // Aborting BEFORE broadcast is harmless (no tx on the wire); the other
         // asset-lock accounts keep their keys on-device, so they stay best-effort.
-        let (funding_pools, row_funding_pools) = if identity_recipient.is_some() {
+        //
+        // Only where the backend can record a recipient at all: a host without
+        // the capability keeps the best-effort row every other funding has.
+        // An identity recipient and Platform-address recipients always: the
+        // backend's capability was required before the build.
+        let recipient_must_be_durable = operation.is_none()
+            && (identity_recipient.is_some()
+                || platform_address_recipients.is_some()
+                || (shielded_recipient.is_some()
+                    && self
+                        .persister
+                        .persistence_capabilities()
+                        .contains(PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS)));
+        let (funding_pools, row_funding_pools) = if recipient_must_be_durable {
             (Vec::new(), funding_pools)
         } else {
             (funding_pools, Vec::new())
@@ -1658,18 +1672,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
         }
 
-        // Only where the backend can record a recipient at all: a host without
-        // the capability keeps the best-effort row every other funding has.
-        // An identity recipient and Platform-address recipients always: the
-        // backend's capability was required before the build.
-        let recipient_must_be_durable = operation.is_none()
-            && (identity_recipient.is_some()
-                || platform_address_recipients.is_some()
-                || (shielded_recipient.is_some()
-                    && self
-                        .persister
-                        .persistence_capabilities()
-                        .contains(PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS)));
         let tracked = TrackedAssetLock {
             operation_id: operation.map(|context| context.operation_id),
             out_point,
@@ -1725,9 +1727,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
             let mut changeset = AssetLockChangeSet::default();
             changeset.asset_locks.insert(out_point, (&tracked).into());
-            // With the funding pool for an unbound top-up (see the pool gate
-            // above): a resume after a restart signs with the key index it
-            // records.
+            // With the funding pool (see the pool gate above): a resume after
+            // a restart signs with the key index it records.
             let durable = self.persister.store_durably(PlatformWalletChangeSet {
                 asset_locks: Some(changeset),
                 account_address_pools: row_funding_pools,
@@ -3594,6 +3595,85 @@ mod tests {
                 .all(|cs| cs.asset_locks.is_some()),
             "no separate pool write precedes the row"
         );
+    }
+
+    /// Every lock whose row must be durable before it is sent (a recorded
+    /// identity, Platform-address or shielded recipient) stores its funding
+    /// pool in that row's own write: the pool is the only record of the
+    /// credit-output key a resume after a restart signs with. A pool write
+    /// that fails stops the funding before the broadcaster, with no lock row
+    /// stored and nothing tracked, for each kind of recipient.
+    #[tokio::test]
+    async fn should_refuse_a_recipient_lock_whose_funding_pool_was_not_stored() {
+        use crate::changeset::{
+            AssetLockRecipient, PersistenceCapabilities, PlatformAddressRecipients,
+        };
+        use dpp::address_funds::PlatformAddress;
+
+        let platform_addresses =
+            PlatformAddressRecipients::new([(PlatformAddress::P2pkh([0x46; 20]), None)].into())
+                .unwrap();
+        for (funding_type, recipient, kind) in [
+            (
+                AssetLockFundingType::IdentityTopUpNotBound,
+                AssetLockRecipient::Identity(dpp::prelude::Identifier::from([0x46; 32])),
+                "identity",
+            ),
+            (
+                AssetLockFundingType::AssetLockAddressTopUp,
+                AssetLockRecipient::PlatformAddresses(platform_addresses.clone()),
+                "Platform-address",
+            ),
+            (
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                AssetLockRecipient::Shielded([0x46; 43]),
+                "shielded",
+            ),
+        ] {
+            let broadcaster = Arc::new(CountingOkBroadcaster::default());
+            let persistence = Arc::new(CapturingPersistence {
+                commits_inline: true,
+                fail_next_pool_store: std::sync::atomic::AtomicBool::new(true),
+                capabilities_override: Some(
+                    PersistenceCapabilities::WALLET_DRAIN
+                        .union(PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS)
+                        .union(PersistenceCapabilities::EXTERNAL_PLATFORM_ADDRESS_FUNDING)
+                        .union(PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS),
+                ),
+                ..Default::default()
+            });
+            let (manager, signer) = funded_asset_lock_manager_with_persistence(
+                Arc::clone(&broadcaster),
+                Arc::clone(&persistence),
+            )
+            .await;
+
+            let result = manager
+                .broadcast_funded_asset_lock_tracked(
+                    super::AssetLockBuildAmount::Exact(1_000_000),
+                    &ASSET_LOCK_FUNDING_SOURCES,
+                    0,
+                    funding_type,
+                    0,
+                    Some(recipient),
+                    &signer,
+                    None,
+                    None,
+                )
+                .await;
+
+            assert!(
+                matches!(&result, Err(PlatformWalletError::Persistence(message))
+                    if message.contains(&format!("{kind} recipient was not made durable"))),
+                "{kind}: {result:?}"
+            );
+            assert_eq!(broadcaster.calls(), 0, "{kind}");
+            assert!(manager.list_tracked_locks().await.is_empty(), "{kind}");
+            assert!(
+                persistence.stored_outpoints().is_empty(),
+                "{kind}: no lock row was stored"
+            );
+        }
     }
 
     /// A refused unbound top-up hands its funding index back: nothing was
