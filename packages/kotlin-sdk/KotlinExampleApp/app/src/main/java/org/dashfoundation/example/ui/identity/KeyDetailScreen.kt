@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -34,7 +35,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.launch
-import org.dashfoundation.dashsdk.persistence.entities.PublicKeyEntity
 import org.dashfoundation.dashsdk.security.BiometricGate
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.services.IdentityKeys
@@ -52,8 +52,8 @@ import org.dashfoundation.example.util.toHex
  * metadata + public key bytes, a biometric-gated private-key reveal (read
  * from [org.dashfoundation.dashsdk.security.WalletStorage]), and the Key
  * Status section with the gated destructive Disable Key action: the
- * [KeyDisableGate] pre-flight (master / last-auth / last-transfer refusals)
- * in front of `PlatformWalletManager.identityUpdates.disableKeys` — the
+ * [KeyDisableGate] pre-flight (the wallet's verdict from Rust: DIP-11 and the
+ * last transfer key) in front of `PlatformWalletManager.identityUpdates.disableKeys` — the
  * same `platform_wallet_update_identity_with_signer` call Swift's
  * `KeyDetailView.disableKey()` makes.
  */
@@ -89,6 +89,22 @@ fun KeyDetailScreen(identityIdHex: String, keyId: Int, navController: NavHostCon
     var error by remember { mutableStateOf<String?>(null) }
     var showDisableConfirm by remember { mutableStateOf(false) }
     var isDisabling by remember { mutableStateOf(false) }
+
+    // The wallet's verdict for disabling this key, re-asked whenever the key
+    // set or the wallet changes.
+    val ruleVerdict by produceState<KeyDisableGate.RuleVerdict>(
+        initialValue = KeyDisableGate.RuleVerdict.Unavailable(CHECKING_DISABLE_RULE),
+        allKeys,
+        wallet,
+        manager,
+    ) {
+        value = KeyDisableGate.ruleVerdict(
+            manager?.identityUpdates,
+            wallet?.handle,
+            idBytes,
+            keyId,
+        )
+    }
 
     LaunchedEffect(key?.publicKeyData) {
         val row = key
@@ -191,8 +207,8 @@ fun KeyDetailScreen(identityIdHex: String, keyId: Int, navController: NavHostCon
 
             FormSection(title = "Key Status") {
                 when (val evaluation = KeyDisableGate.evaluate(
-                    target = k.normalizedForGate(),
-                    allKeys = allKeys.map { it.normalizedForGate() },
+                    target = k,
+                    ruleVerdict = ruleVerdict,
                 )) {
                     KeyDisableGate.Evaluation.AlreadyDisabled -> {
                         LabeledContent("Disabled", "Permanent")
@@ -253,23 +269,30 @@ fun KeyDetailScreen(identityIdHex: String, keyId: Int, navController: NavHostCon
                 TextButton(
                     enabled = !isDisabling,
                     onClick = {
-                        // Re-check the gate at submit time — the key set could
-                        // have changed since the view rendered. Never broadcast
-                        // a doomed transition (← Swift disableKey()).
                         val target = key ?: return@TextButton
-                        val gate = KeyDisableGate.evaluate(
-                            target.normalizedForGate(),
-                            allKeys.map { it.normalizedForGate() },
-                        )
-                        if (gate != KeyDisableGate.Evaluation.Allowed) {
-                            showDisableConfirm = false
-                            error = (gate as? KeyDisableGate.Evaluation.Forbidden)?.reason
-                            return@TextButton
-                        }
                         val w = wallet ?: return@TextButton
                         val mgr = manager ?: return@TextButton
                         isDisabling = true
                         scope.launch {
+                            // Re-check the gate at submit time, with a fresh
+                            // verdict — the key set could have changed since
+                            // the view rendered. Never broadcast a doomed
+                            // transition (← Swift disableKey()).
+                            val gate = KeyDisableGate.evaluate(
+                                target,
+                                KeyDisableGate.ruleVerdict(
+                                    mgr.identityUpdates,
+                                    w.handle,
+                                    idBytes,
+                                    keyId,
+                                ),
+                            )
+                            if (gate != KeyDisableGate.Evaluation.Allowed) {
+                                showDisableConfirm = false
+                                error = (gate as? KeyDisableGate.Evaluation.Forbidden)?.reason
+                                isDisabling = false
+                                return@launch
+                            }
                             try {
                                 mgr.identityUpdates.disableKeys(
                                     walletHandle = w.handle,
@@ -301,11 +324,4 @@ fun KeyDetailScreen(identityIdHex: String, keyId: Int, navController: NavHostCon
     ErrorAlertDialog(message = error, onDismiss = { error = null })
 }
 
-/**
- * [KeyDisableGate] compares DPP enum *names*; Room rows may store the
- * stringified rawValue. Normalize before evaluating.
- */
-private fun PublicKeyEntity.normalizedForGate(): PublicKeyEntity = copy(
-    purpose = IdentityKeys.purposeName(purpose),
-    securityLevel = IdentityKeys.securityLevelName(securityLevel),
-)
+private const val CHECKING_DISABLE_RULE = "Checking whether this key may be disabled…"
