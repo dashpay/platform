@@ -15,6 +15,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.dashfoundation.example.testing.spendUnconfirmed
 
 /**
  * The coordinator owns a private entry create past the screen that started it (TEST_PLAN
@@ -81,5 +82,5 @@ class PrivateDocumentEntryCreateCoordinatorTest {
         assertNull(coordinator.start(request()) { throw DashSdkError.InvalidParameter("refused again") })
     }
 
-    private fun unconfirmed() = DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed("not proved")
+    private fun unconfirmed() = spendUnconfirmed("not proved")
 }

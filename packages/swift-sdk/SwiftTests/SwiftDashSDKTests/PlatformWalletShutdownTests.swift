@@ -155,7 +155,7 @@ final class PlatformWalletShutdownTests: XCTestCase {
         await fulfillment(of: [entered], timeout: 1)
 
         XCTAssertThrowsError(try manager.deleteWallet(walletId: walletId)) { error in
-            guard case .invalidHandle(let message) = error as? PlatformWalletError else {
+            guard case .invalidHandle(let message, _) = error as? PlatformWalletError else {
                 return XCTFail("Expected an in-flight rejection, got \(error)")
             }
             XCTAssertTrue(message.contains("async native operation is in flight"), message)
@@ -166,7 +166,7 @@ final class PlatformWalletShutdownTests: XCTestCase {
         // Admission is released: deleteWallet now passes the in-flight check
         // and stops at the persistence handler this manager does not have.
         XCTAssertThrowsError(try manager.deleteWallet(walletId: walletId)) { error in
-            guard case .invalidHandle(let message) = error as? PlatformWalletError else {
+            guard case .invalidHandle(let message, _) = error as? PlatformWalletError else {
                 return XCTFail("Expected the persistence-handler refusal, got \(error)")
             }
             XCTAssertTrue(message.contains("persistence handler"), message)

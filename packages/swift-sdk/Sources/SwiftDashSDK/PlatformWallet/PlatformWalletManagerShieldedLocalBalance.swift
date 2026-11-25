@@ -100,7 +100,7 @@ extension PlatformWalletManager {
             shieldedLocalBalanceGeneration.bump()
             return result
         } catch {
-            if case PlatformWalletError.shieldedOperationInProgress(_) = error {
+            if case PlatformWalletError.shieldedOperationInProgress(_, _) = error {
                 throw error
             }
             shieldedLocalBalanceGeneration.bump()

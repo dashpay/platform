@@ -1186,7 +1186,7 @@ class SendViewModel: ObservableObject {
         switch error {
         case .shieldedIdentityDebitPending:
             return identityDebitPendingMessage
-        case .insufficientIdentityCredits(_, let required, let available):
+        case .insufficientIdentityCredits(_, let required, let available, _):
             return "The identity's balance on Platform is too low for this shield: "
                 + "it needs \(formatCredits(required)) including the fee and has "
                 + "\(formatCredits(available)). Nothing was sent."

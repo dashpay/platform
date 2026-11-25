@@ -705,9 +705,7 @@ sealed class DashSdkError(
          * `PlatformWalletResult.swift`.
          */
         class IdentityBalanceUnavailable(message: String, cause: Throwable? = null) :
-            PlatformWallet(message, cause) {
-            override val isRetryable: Boolean get() = true
-        }
+            PlatformWallet(message, cause)
 
         /**
          * `ErrorShutdownIncomplete` (native code 27). A sync pass or an SPV
@@ -885,9 +883,7 @@ sealed class DashSdkError(
          * ← Swift `PlatformWalletError.balanceHistoryInconsistentHeights`.
          */
         class BalanceHistoryInconsistentHeights(message: String, cause: Throwable? = null) :
-            PlatformWallet(message, cause) {
-            override val isRetryable: Boolean get() = true
-        }
+            PlatformWallet(message, cause)
 
         /**
          * `ErrorShieldedOperationInProgress` (native code 84). A shielded
@@ -902,9 +898,7 @@ sealed class DashSdkError(
          * ← Swift `PlatformWalletError.shieldedOperationInProgress`.
          */
         class ShieldedOperationInProgress(message: String, cause: Throwable? = null) :
-            PlatformWallet(message, cause) {
-            override val isRetryable: Boolean get() = true
-        }
+            PlatformWallet(message, cause)
 
         /**
          * `ErrorShieldedTipPending` (native code 85). A shielded tip was
@@ -943,9 +937,7 @@ sealed class DashSdkError(
          * ← Swift `PlatformWalletError.shieldedBalanceBusy`.
          */
         class ShieldedBalanceBusy(message: String, cause: Throwable? = null) :
-            PlatformWallet(message, cause) {
-            override val isRetryable: Boolean get() = true
-        }
+            PlatformWallet(message, cause)
 
         /**
          * Any other `PlatformWalletFFIResultCode` without a dedicated type.

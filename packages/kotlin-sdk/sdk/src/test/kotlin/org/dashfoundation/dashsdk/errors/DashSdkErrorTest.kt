@@ -531,7 +531,9 @@ class DashSdkErrorTest {
     @Test
     fun shouldReportInconsistentBalanceHistoryHeightsByTheirOwnRetryableCode() {
         val detail = "page proved at height 11, below height 12"
-        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 83, detail)
+        val native = DashSDKException(
+            DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 83, detail, 0, 0, NOT_SENT, true,
+        )
         val mapped = DashSdkError.fromNative(native)
         assertTrue(mapped is DashSdkError.PlatformWallet.BalanceHistoryInconsistentHeights)
         assertEquals(detail, mapped.message)
@@ -547,7 +549,9 @@ class DashSdkErrorTest {
     fun shouldReportAShieldedClearRefusedDuringAnOperationByItsOwnRetryableCode() {
         val detail =
             "A shielded operation is in progress; clear the shielded state once it has finished"
-        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 84, detail)
+        val native = DashSDKException(
+            DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 84, detail, 0, 0, NOT_SENT, true,
+        )
         val mapped = DashSdkError.fromNative(native)
         assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedOperationInProgress)
         assertEquals(detail, mapped.message)
@@ -591,7 +595,9 @@ class DashSdkErrorTest {
     @Test
     fun shouldReportABusyShieldedBalanceReadByItsOwnRetryableCode() {
         val detail = "shielded identity balance busy; retry after sync releases its locks"
-        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 87, detail)
+        val native = DashSDKException(
+            DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 87, detail, 0, 0, NOT_SENT, true,
+        )
         val mapped = DashSdkError.fromNative(native)
         assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedBalanceBusy)
         assertEquals(detail, mapped.message)

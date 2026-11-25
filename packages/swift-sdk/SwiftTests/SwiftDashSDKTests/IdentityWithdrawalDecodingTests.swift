@@ -120,7 +120,7 @@ final class IdentityWithdrawalDecodingTests: XCTestCase {
     func testShouldThrowForAnUnknownStatusCode() throws {
         try withRow(status: 6) { row in
             XCTAssertThrowsError(try IdentityWithdrawal(ffi: row)) { error in
-                guard case PlatformWalletError.deserialization(let message) = error else {
+                guard case PlatformWalletError.deserialization(let message, _) = error else {
                     return XCTFail("unexpected error \(error)")
                 }
                 XCTAssertTrue(message.contains("6"), message)
