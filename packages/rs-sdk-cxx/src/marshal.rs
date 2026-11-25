@@ -20,6 +20,7 @@ use dash_sdk::dpp::prelude::AssetLockProof;
 use dash_sdk::dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use dash_sdk::platform::dpns_usernames::DpnsUsername;
 use dash_sdk::query_types::Contenders;
+use platform_encryption::SHIELDED_ADDRESS_LEN;
 
 use crate::ffi;
 
@@ -174,8 +175,23 @@ pub fn contact_request(document: &Document) -> Result<ffi::ContactRequest, Strin
         account_reference: index("accountReference")?,
         encrypted_account_label: optional_bytes("encryptedAccountLabel")?,
         auto_accept_proof: optional_bytes("autoAcceptProof")?,
+        encrypted_shielded_address: optional_bytes("encryptedShieldedAddress")?,
         created_at_ms: document.created_at().unwrap_or(0),
         created_at_core_height: document.created_at_core_block_height().unwrap_or(0),
+    })
+}
+
+/// The shielded address of a contact request to send: none when `bytes` is
+/// empty, its 43 bytes otherwise.
+pub fn shielded_address(bytes: &[u8]) -> Result<Option<[u8; SHIELDED_ADDRESS_LEN]>, String> {
+    if bytes.is_empty() {
+        return Ok(None);
+    }
+    bytes.try_into().map(Some).map_err(|_| {
+        format!(
+            "a shielded address is {SHIELDED_ADDRESS_LEN} bytes, got {}",
+            bytes.len()
+        )
     })
 }
 
@@ -193,6 +209,10 @@ mod tests {
             ("recipientKeyIndex".to_string(), Value::U64(5)),
             ("accountReference".to_string(), Value::U32(6)),
             ("autoAcceptProof".to_string(), Value::Bytes(vec![7; 38])),
+            (
+                "encryptedShieldedAddress".to_string(),
+                Value::Bytes(vec![11; 64]),
+            ),
         ]);
         let document = |properties| -> Document {
             DocumentV0 {
@@ -221,13 +241,29 @@ mod tests {
         );
         assert!(request.encrypted_account_label.is_empty());
         assert_eq!(request.auto_accept_proof, vec![7; 38]);
+        assert_eq!(request.encrypted_shielded_address, vec![11; 64]);
         assert_eq!(
             (request.created_at_ms, request.created_at_core_height),
             (9, 10)
         );
 
+        properties.remove("encryptedShieldedAddress");
+        let without_address = contact_request(&document(properties.clone())).expect("marshals");
+        assert!(without_address.encrypted_shielded_address.is_empty());
+
         properties.remove("toUserId");
         assert!(contact_request(&document(properties)).is_err());
+    }
+
+    #[test]
+    fn a_shielded_address_to_send_is_absent_when_empty_and_43_bytes_otherwise() {
+        assert_eq!(shielded_address(&[]), Ok(None));
+        assert_eq!(
+            shielded_address(&[5; SHIELDED_ADDRESS_LEN]),
+            Ok(Some([5; SHIELDED_ADDRESS_LEN]))
+        );
+        assert!(shielded_address(&[5; SHIELDED_ADDRESS_LEN - 1]).is_err());
+        assert!(shielded_address(&[5; SHIELDED_ADDRESS_LEN + 1]).is_err());
     }
 
     /// The schema bounds the indices below only: one above u32 is passed

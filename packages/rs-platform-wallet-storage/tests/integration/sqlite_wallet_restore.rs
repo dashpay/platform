@@ -9,7 +9,7 @@ use dashcore::{Network, OutPoint, TxOut, Txid};
 use key_wallet::account::StandardAccountType;
 use key_wallet::{
     account::AccountType,
-    managed_account::address_pool::{AddressState, KeySource},
+    managed_account::address_pool::{AddressPool, AddressState, KeySource},
     wallet::{initialization::WalletAccountCreationOptions, ManagedWalletInfo, Wallet},
 };
 use platform_wallet::{
@@ -62,11 +62,11 @@ fn registration(wallet: &Wallet, info: &ManagedWalletInfo) -> PlatformWalletChan
     for account in info.accounts.all_accounts() {
         let managed = account.managed_account_type();
         for pool in managed.address_pools() {
-            if !pool.addresses.is_empty() {
+            if !pool.addresses().is_empty() {
                 pools.push(AccountAddressPoolEntry {
                     account_type: managed.to_account_type(),
-                    pool_type: pool.pool_type,
-                    addresses: pool.addresses.values().cloned().collect(),
+                    pool_type: pool.pool_type(),
+                    addresses: pool.addresses().values().cloned().collect(),
                 });
             }
         }
@@ -142,26 +142,26 @@ async fn should_restore_funding_indices_and_reserved_addresses_before_handing_ou
         let source = public_key_source(&wallet, account_type);
         for pool in account.managed_account_type_mut().address_pools_mut() {
             let reserved_index = if let Some(source) = &source {
-                pool.generate_addresses(40, source, true).unwrap();
+                pool.generate_addresses(40, source).unwrap();
                 for index in 0..40 {
-                    assert!(pool.mark_index_used(index));
+                    assert!(mark_index_used(pool, index));
                 }
-                let reserved = pool.next_unused_and_reserve(source, 12345).unwrap();
-                pool.address_index[&reserved]
+                let reserved = reserve_next(pool, source, 12345);
+                pool.address_index(&reserved).unwrap()
             } else {
-                if pool.addresses.is_empty() {
+                if pool.addresses().is_empty() {
                     continue;
                 }
-                assert!(pool.mark_index_used(0));
-                pool.addresses.get_mut(&1).unwrap().state = AddressState::Reserved { at: 12345 };
+                assert!(mark_index_used(pool, 0));
+                reserve_index(pool, 1, 12345);
                 1
             };
             expected.push((
                 account_type,
-                pool.pool_type,
-                pool.addresses.clone(),
+                pool.pool_type(),
+                pool.addresses().clone(),
                 reserved_index,
-                pool.highest_used,
+                pool.highest_used(),
             ));
         }
     }
@@ -203,11 +203,11 @@ async fn should_restore_funding_indices_and_reserved_addresses_before_handing_ou
         let mut pools = account.managed_account_type_mut().address_pools_mut();
         let pool = pools
             .iter_mut()
-            .find(|pool| pool.pool_type == pool_type)
+            .find(|pool| pool.pool_type() == pool_type)
             .unwrap();
         for (index, expected) in addresses {
             let actual = pool
-                .addresses
+                .addresses()
                 .get(&index)
                 .expect("persisted beyond-gap address");
             assert_eq!(
@@ -219,17 +219,18 @@ async fn should_restore_funding_indices_and_reserved_addresses_before_handing_ou
             assert_eq!(actual.public_key, expected.public_key);
         }
         assert_eq!(
-            pool.addresses[&reserved_index].state,
+            pool.addresses()[&reserved_index].state,
             AddressState::Reserved { at: 12345 }
         );
         assert_eq!(
-            pool.highest_used, highest_used,
+            pool.highest_used(),
+            highest_used,
             "{account_type:?} {pool_type:?}"
         );
         if let Some(source) = source {
-            let next = pool.next_unused(&source, true).unwrap();
+            let next = pool.next_unused(&source).unwrap();
             assert!(
-                pool.address_index[&next] > reserved_index,
+                pool.address_index(&next).unwrap() > reserved_index,
                 "must not reuse funded or handed-out keys"
             );
         }
@@ -310,7 +311,7 @@ async fn should_refuse_wallet_drain_without_durable_operation_evidence() {
                 },
                 Vec::new(),
                 &signer,
-                &CachedOrchardProver::new(),
+                &CachedOrchardProver,
                 None,
                 0,
                 None,
@@ -563,7 +564,7 @@ fn with_pool<R>(
     let mut pools = account.managed_account_type_mut().address_pools_mut();
     let pool = pools
         .iter_mut()
-        .find(|pool| pool.pool_type == pool_type)
+        .find(|pool| pool.pool_type() == pool_type)
         .expect("pool");
     edit(pool)
 }
@@ -585,6 +586,25 @@ fn account_key_source(wallet: &Wallet, account_type: AccountType) -> KeySource {
     public_key_source(wallet, account_type).expect("account keys")
 }
 
+/// Hand out the next unused address of `pool`, reserved at `at`.
+fn reserve_next(pool: &mut AddressPool, source: &KeySource, at: u64) -> dashcore::Address {
+    let address = pool.next_unused(source).unwrap();
+    assert!(pool.reserve(&address, at));
+    address
+}
+
+/// Reserve the already derived address at `index`.
+fn reserve_index(pool: &mut AddressPool, index: u32, at: u64) {
+    let address = pool.address_at_index(index).expect("a derived index");
+    assert!(pool.reserve(&address, at));
+}
+
+/// Mark the already derived address at `index` used; whether it flipped.
+fn mark_index_used(pool: &mut AddressPool, index: u32) -> bool {
+    let address = pool.address_at_index(index).expect("a derived index");
+    pool.mark_used(&address)
+}
+
 /// Persists a wallet shaped by `prepare` next to a healthy sibling, runs the
 /// statement `prepare` returns against the first wallet's rows (`?1` is its
 /// id), and asserts the load's verdict: Strict returns the typed storage
@@ -599,6 +619,7 @@ fn assert_pool_corruption_is_typed_and_isolated(
         Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap(),
         prepare,
         |error| matches!(error, WalletStorageError::BlobDecode { reason: actual } if *actual == reason),
+        "blob_decode",
         reason,
     );
 }
@@ -606,11 +627,12 @@ fn assert_pool_corruption_is_typed_and_isolated(
 /// `prepare` edits the sick wallet before it is stored and returns the SQL
 /// that damages exactly one of its rows (`?1` is the wallet id). Strict must
 /// then fail with an error `strict` accepts; Recovery must drop that wallet
-/// alone, as `blob_decode`, and keep the healthy one beside it.
+/// alone, as `degraded_as`, and keep the healthy one beside it.
 fn assert_wallet_corruption_is_isolated(
     sick: Wallet,
     prepare: impl FnOnce(&Wallet, &mut ManagedWalletInfo) -> String,
     strict: impl Fn(&platform_wallet_storage::WalletStorageError) -> bool,
+    degraded_as: &str,
     expectation: &str,
 ) {
     use platform_wallet::changeset::PersistenceError;
@@ -670,7 +692,7 @@ fn assert_wallet_corruption_is_isolated(
     assert_eq!(degradation.wallets_degraded.len(), 1);
     assert_eq!(
         degradation.wallets_degraded.get(&sick.wallet_id).copied(),
-        Some("blob_decode"),
+        Some(degraded_as),
         "{expectation}"
     );
 }
@@ -687,8 +709,8 @@ fn should_reject_a_pool_row_beyond_the_derived_window_that_its_account_cannot_de
             let account_type = AccountType::IdentityInvitation;
             let source = account_key_source(wallet, account_type);
             let deep = with_pool(info, account_type, AddressPoolType::Absent, |pool| {
-                pool.generate_addresses(40, &source, true).unwrap();
-                pool.highest_generated.unwrap()
+                pool.generate_addresses(40, &source).unwrap();
+                pool.highest_generated().unwrap()
             });
             // A well-formed P2PKH script and a correctly sized key that are
             // not this account's child at that index.
@@ -725,12 +747,12 @@ async fn should_not_hand_out_a_funded_address_restored_beyond_the_derived_window
     let (funded, funded_index) =
         with_pool(&mut info, account_type, AddressPoolType::External, |pool| {
             // Hand out, without funding, more addresses than one gap window.
-            for _ in 0..pool.gap_limit + 10 {
-                pool.next_unused_and_reserve(&source, 12345).unwrap();
+            for _ in 0..pool.gap_limit() + 10 {
+                reserve_next(pool, &source, 12345);
             }
-            let funded = pool.next_unused(&source, true).unwrap();
-            let index = pool.address_index[&funded];
-            assert_eq!(index, pool.gap_limit + 10);
+            let funded = pool.next_unused(&source).unwrap();
+            let index = pool.address_index(&funded).unwrap();
+            assert_eq!(index, pool.gap_limit() + 10);
             (funded, index)
         });
     let (persister, _tmp, path) = common::fresh_persister();
@@ -772,12 +794,12 @@ async fn should_not_hand_out_a_funded_address_restored_beyond_the_derived_window
         .core_wallet;
     with_pool(restored, account_type, AddressPoolType::External, |pool| {
         assert_eq!(
-            pool.addresses[&funded_index].state,
+            pool.addresses()[&funded_index].state,
             AddressState::Used,
             "a funded address must come back used"
         );
         assert_ne!(
-            pool.next_unused(&source, true).unwrap(),
+            pool.next_unused(&source).unwrap(),
             funded,
             "a funded address must not be handed out again"
         );
@@ -797,7 +819,7 @@ fn should_reject_a_pool_row_filed_under_a_pool_its_account_does_not_have() {
             let account_type = AccountType::IdentityInvitation;
             let source = account_key_source(wallet, account_type);
             with_pool(info, account_type, AddressPoolType::Absent, |pool| {
-                pool.next_unused_and_reserve(&source, 12345).unwrap();
+                reserve_next(pool, &source, 12345);
             });
             "UPDATE core_address_pool SET pool_type = 0 \
              WHERE wallet_id = ?1 AND account_type = 'identity_invitation' \
@@ -832,11 +854,11 @@ async fn should_restore_each_dashpay_contact_pool_under_its_own_identity_pair() 
         let source = account_key_source(&wallet, account_type);
         let addresses = with_pool(&mut info, account_type, AddressPoolType::Absent, |pool| {
             if funded {
-                let first = pool.next_unused(&source, true).unwrap();
+                let first = pool.next_unused(&source).unwrap();
                 assert!(pool.mark_used(&first));
             }
-            pool.next_unused_and_reserve(&source, reserved_at).unwrap();
-            pool.addresses.clone()
+            reserve_next(pool, &source, reserved_at);
+            pool.addresses().clone()
         });
         expected.push((account_type, addresses));
     }
@@ -862,7 +884,7 @@ async fn should_restore_each_dashpay_contact_pool_under_its_own_identity_pair() 
     for (account_type, addresses) in expected {
         with_pool(restored, account_type, AddressPoolType::Absent, |pool| {
             for (index, expected) in &addresses {
-                let actual = pool.addresses.get(index).expect("stored contact address");
+                let actual = pool.addresses().get(index).expect("stored contact address");
                 assert_eq!(actual.state, expected.state, "{account_type:?} #{index}");
                 assert_eq!(
                     actual.address, expected.address,
@@ -925,10 +947,14 @@ fn should_reject_a_pool_row_whose_key_is_not_the_derived_one() {
 
 /// The platform-node pool is hardened, so its rows cannot be re-derived and
 /// are trusted as stored. One address filed at two indices is the
-/// contradiction that can still be caught there.
+/// contradiction that can still be caught there: the pool refuses it.
 #[test]
 fn should_reject_a_platform_node_address_stored_at_two_indices() {
-    assert_pool_corruption_is_typed_and_isolated(
+    use key_wallet::error::Error as KeyWalletError;
+    use platform_wallet_storage::WalletStorageError;
+
+    assert_wallet_corruption_is_isolated(
+        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap(),
         |wallet, info| {
             let keys =
                 platform_wallet::wallet::provider_key_at_index::derive_platform_node_public_keys(
@@ -950,7 +976,16 @@ fn should_reject_a_platform_node_address_stored_at_two_indices() {
              WHERE wallet_id = ?1 AND account_type = 'provider_platform' AND address_index = 1"
                 .to_string()
         },
-        "core pool address has multiple derivation indices",
+        |error| {
+            matches!(
+                error,
+                WalletStorageError::AccountRecordInvalid {
+                    e: KeyWalletError::InvalidParameter(reason)
+                } if reason.ends_with("is already stored at another index")
+            )
+        },
+        "account_record_invalid",
+        "one platform-node address at two indices",
     );
 }
 
@@ -984,7 +1019,7 @@ fn should_not_import_a_platform_node_row_filed_under_another_account() {
         AccountType::ProviderPlatformKeys,
         AddressPoolType::AbsentHardened,
         |pool| {
-            pool.addresses.get_mut(&RESERVED).unwrap().state = AddressState::Reserved { at: 12345 };
+            reserve_index(pool, RESERVED, 12345);
         },
     );
     let (persister, _tmp, path) = common::fresh_persister();
@@ -1029,10 +1064,10 @@ fn should_not_import_a_platform_node_row_filed_under_another_account() {
             AddressPoolType::AbsentHardened,
             |pool| {
                 assert!(
-                    !pool.addresses.contains_key(&RESERVED),
+                    !pool.addresses().contains_key(&RESERVED),
                     "{policy:?}: the foreign row must not become an available key"
                 );
-                assert_eq!(pool.addresses.len(), keys.len() - 1, "{policy:?}");
+                assert_eq!(pool.addresses().len(), keys.len() - 1, "{policy:?}");
             },
         );
     }
@@ -1051,13 +1086,12 @@ fn should_restore_a_correctly_derived_pool_deeper_than_the_discovery_ceiling() {
     let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
     let source = account_key_source(&wallet, account_type);
     let reserved = with_pool(&mut info, account_type, AddressPoolType::Absent, |pool| {
-        let derived = pool.highest_generated.map_or(0, |highest| highest + 1);
-        pool.generate_addresses(DEEPEST + 1 - derived, &source, true)
+        let derived = pool.highest_generated().map_or(0, |highest| highest + 1);
+        pool.generate_addresses(DEEPEST + 1 - derived, &source)
             .unwrap();
-        assert_eq!(pool.highest_generated, Some(DEEPEST));
-        let entry = pool.addresses.get_mut(&DEEPEST).unwrap();
-        entry.state = AddressState::Reserved { at: 12345 };
-        entry.clone()
+        assert_eq!(pool.highest_generated(), Some(DEEPEST));
+        reserve_index(pool, DEEPEST, 12345);
+        pool.addresses()[&DEEPEST].clone()
     });
     let (persister, _tmp, path) = common::fresh_persister();
     persister
@@ -1075,82 +1109,11 @@ fn should_restore_a_correctly_derived_pool_deeper_than_the_discovery_ceiling() {
         .expect("wallet")
         .wallet_info;
     with_pool(restored, account_type, AddressPoolType::Absent, |pool| {
-        let actual = &pool.addresses[&DEEPEST];
+        let actual = &pool.addresses()[&DEEPEST];
         assert_eq!(actual.state, AddressState::Reserved { at: 12345 });
         assert_eq!(actual.address, reserved.address);
         assert_eq!(actual.path, reserved.path);
     });
-}
-
-/// `AddressPool::prune_unused` drops available entries above the gap window
-/// but keeps reserved ones, so a valid pool can hold a reservation far above
-/// every other stored row. The reservation has to come back, for an ordinary
-/// receive pool and for a one-time funding pool alike.
-#[test]
-fn should_restore_a_reservation_that_pruning_left_far_above_the_rest_of_its_pool() {
-    use key_wallet::account::StandardAccountType;
-    use key_wallet::managed_account::address_pool::AddressPoolType;
-    use platform_wallet_storage::LoadSite;
-
-    const RESERVED: u32 = 12_000;
-    for (account_type, pool_type) in [
-        (
-            AccountType::Standard {
-                index: 0,
-                standard_account_type: StandardAccountType::BIP44Account,
-            },
-            AddressPoolType::External,
-        ),
-        (AccountType::IdentityInvitation, AddressPoolType::Absent),
-    ] {
-        let wallet =
-            Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
-        let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
-        let source = account_key_source(&wallet, account_type);
-        let reserved = with_pool(&mut info, account_type, pool_type, |pool| {
-            pool.generate_up_to(RESERVED, &source).unwrap();
-            pool.addresses.get_mut(&RESERVED).unwrap().state = AddressState::Reserved { at: 12345 };
-            assert!(pool.prune_unused() > 0);
-            assert!(pool.addresses.len() < 100, "the pruned pool must be sparse");
-            pool.addresses[&RESERVED].clone()
-        });
-        let (persister, _tmp, path) = common::fresh_persister();
-        persister
-            .store(wallet.wallet_id, registration(&wallet, &info))
-            .unwrap();
-        drop(persister);
-
-        let persister = SqlitePersister::open(SqlitePersisterConfig::new(path)).unwrap();
-        let mut state = persister
-            .load()
-            .unwrap_or_else(|e| panic!("{account_type:?}: a pruned pool must load: {e:?}"));
-        let degradation = persister.last_load_degradation();
-        for site in [
-            LoadSite::PoolRowBeyondDerivationBudget,
-            LoadSite::UnrestoredPoolReservation,
-        ] {
-            assert_eq!(
-                degradation.by_site.get(&site),
-                None,
-                "{account_type:?}: {site:?}"
-            );
-        }
-        let restored = &mut state
-            .wallets
-            .get_mut(&wallet.wallet_id)
-            .expect("wallet")
-            .wallet_info;
-        with_pool(restored, account_type, pool_type, |pool| {
-            let actual = pool
-                .addresses
-                .get(&RESERVED)
-                .unwrap_or_else(|| panic!("{account_type:?}: the reservation is restored"));
-            assert_eq!(actual.state, AddressState::Reserved { at: 12345 });
-            assert_eq!(actual.address, reserved.address);
-            assert_eq!(actual.path, reserved.path);
-            assert_eq!(pool.address_index.get(&reserved.address), Some(&RESERVED));
-        });
-    }
 }
 
 /// A reserved row whose account coordinates match no account of the wallet
@@ -1178,8 +1141,8 @@ fn should_report_a_reservation_that_no_restored_pool_takes_back() {
             account_type,
             AddressPoolType::Absent,
             |pool| {
-                let address = pool.next_unused_and_reserve(&source, 12345).unwrap();
-                pool.address_index[&address]
+                let address = reserve_next(pool, &source, 12345);
+                pool.address_index(&address).unwrap()
             },
         ));
     }
@@ -1230,7 +1193,7 @@ fn should_report_a_reservation_that_no_restored_pool_takes_back() {
             .wallet_info;
         let state_of = |restored: &mut ManagedWalletInfo, account_type, index| {
             with_pool(restored, account_type, AddressPoolType::Absent, |pool| {
-                pool.addresses[&index].state
+                pool.addresses()[&index].state
             })
         };
         assert_eq!(
@@ -1264,8 +1227,8 @@ fn should_refill_the_gap_window_past_a_used_address_restored_from_its_pool_row()
     let source = account_key_source(&wallet, account_type);
     let (funded, funded_index, gap) =
         with_pool(&mut info, account_type, AddressPoolType::External, |pool| {
-            let gap = pool.gap_limit;
-            assert_eq!(pool.highest_generated, Some(gap - 1));
+            let gap = pool.gap_limit();
+            assert_eq!(pool.highest_generated(), Some(gap - 1));
             assert!(USED < gap);
             // Past the saved window and past the discovery horizon, but inside
             // the gap window of the used address.
@@ -1273,11 +1236,11 @@ fn should_refill_the_gap_window_past_a_used_address_restored_from_its_pool_row()
             assert!(funded_index <= USED + gap);
             let mut deeper = pool.clone();
             deeper
-                .generate_addresses(funded_index + 1 - gap, &source, true)
+                .generate_addresses(funded_index + 1 - gap, &source)
                 .unwrap();
-            let funded = deeper.addresses[&funded_index].address.clone();
+            let funded = deeper.addresses()[&funded_index].address.clone();
             // Saved as used, through the initial window only.
-            assert!(pool.mark_index_used(USED));
+            assert!(mark_index_used(pool, USED));
             (funded, funded_index, gap)
         });
     let (persister, _tmp, path) = common::fresh_persister();
@@ -1322,17 +1285,17 @@ fn should_refill_the_gap_window_past_a_used_address_restored_from_its_pool_row()
     assert_eq!(restored.balance.total(), 50_000);
     with_pool(restored, account_type, AddressPoolType::External, |pool| {
         assert!(
-            pool.highest_generated >= Some(USED + gap),
+            pool.highest_generated() >= Some(USED + gap),
             "the window past the used address must be derived, got {:?}",
-            pool.highest_generated
+            pool.highest_generated()
         );
         assert_eq!(
-            pool.addresses[&funded_index].state,
+            pool.addresses()[&funded_index].state,
             AddressState::Used,
             "a funded address must come back used"
         );
         assert_ne!(
-            pool.next_unused(&source, true).unwrap(),
+            pool.next_unused(&source).unwrap(),
             funded,
             "a funded address must not be handed out again"
         );
@@ -1384,11 +1347,11 @@ fn burn_two_funding_keys(info: &mut ManagedWalletInfo, account_type: AccountType
     use key_wallet::managed_account::address_pool::AddressPoolType;
 
     with_pool(info, account_type, AddressPoolType::Absent, |pool| {
-        assert!(pool.mark_index_used(0));
+        assert!(mark_index_used(pool, 0));
         if reserve {
-            pool.addresses.get_mut(&1).unwrap().state = AddressState::Reserved { at: 12345 };
+            reserve_index(pool, 1, 12345);
         } else {
-            assert!(pool.mark_index_used(1));
+            assert!(mark_index_used(pool, 1));
         }
     });
 }
@@ -1406,7 +1369,9 @@ fn next_funding_index(info: &mut ManagedWalletInfo, account_type: AccountType) -
         .into_iter()
         .next()
         .expect("funding pool");
-    pool.next_unused_with_info(&KeySource::NoKeySource, false)
+    pool.addresses()
+        .values()
+        .find(|info| info.is_available())
         .expect("an unused funding key")
         .index
 }
@@ -1433,6 +1398,7 @@ fn assert_damaged_one_time_funding_row_fails_the_wallet(
                 )
             },
             strict,
+            "blob_decode",
             &format!("{label}: {damage} (reserved: {reserve})"),
         );
     }
@@ -1474,7 +1440,7 @@ fn should_refuse_a_wallet_whose_one_time_funding_key_row_matches_no_account() {
 }
 
 /// The row sits under the right account, but above the derivation budget of
-/// its pool, and it is not the entry derived at its own index.
+/// its pool.
 #[test]
 fn should_refuse_a_wallet_whose_one_time_funding_key_row_lies_beyond_the_derivation_budget() {
     assert_damaged_one_time_funding_row_fails_the_wallet(
@@ -1546,8 +1512,8 @@ fn should_load_intact_one_time_funding_key_rows_and_hand_out_the_next_key() {
                     AddressState::Used
                 };
                 with_pool(restored, account_type, AddressPoolType::Absent, |pool| {
-                    assert_eq!(pool.addresses[&0].state, AddressState::Used, "{label}");
-                    assert_eq!(pool.addresses[&1].state, second, "{label}");
+                    assert_eq!(pool.addresses()[&0].state, AddressState::Used, "{label}");
+                    assert_eq!(pool.addresses()[&1].state, second, "{label}");
                 });
                 assert_eq!(next_funding_index(restored, account_type), 2, "{label}");
             }
@@ -1644,7 +1610,7 @@ fn should_restore_pools_of_a_standard_account_registered_under_the_legacy_label(
     let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
     let source = account_key_source(&wallet, account_type);
     let reserved = with_pool(&mut info, account_type, AddressPoolType::External, |pool| {
-        pool.next_unused_and_reserve(&source, 12345).unwrap()
+        reserve_next(pool, &source, 12345)
     });
     persister
         .store(wallet.wallet_id, registration(&wallet, &info))
@@ -1680,7 +1646,7 @@ fn should_restore_pools_of_a_standard_account_registered_under_the_legacy_label(
         .wallet_info;
     with_pool(restored, account_type, AddressPoolType::External, |pool| {
         assert_eq!(
-            pool.addresses[&pool.address_index[&reserved]].state,
+            pool.addresses()[&pool.address_index(&reserved).unwrap()].state,
             AddressState::Reserved { at: 12345 }
         );
     });

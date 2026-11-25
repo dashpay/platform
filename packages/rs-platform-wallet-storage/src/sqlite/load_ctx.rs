@@ -79,9 +79,8 @@ pub enum LoadSite {
     /// One used address resolves to two different owning accounts.
     UsedAddressOwnerConflict,
     /// A stored address-pool row sits above the derivation budget of its
-    /// pool and does not match the address derived at its own index, so it
-    /// is not restored. A used or reserved one-time funding key in that state
-    /// fails the wallet instead.
+    /// pool, so it is not restored. A used or reserved one-time funding key
+    /// in that state fails the wallet instead.
     PoolRowBeyondDerivationBudget,
     /// A stored address reservation was taken back by no restored pool: its
     /// row matches no account of the wallet, or was left out above. Counted
@@ -189,7 +188,7 @@ impl LoadSite {
                 "load degraded: deferring addresses that did not resolve against the account xpub"
             }
             Self::PoolRowBeyondDerivationBudget => {
-                "load degraded: leaving out address-pool rows above their pool's derivation budget that do not match their own index"
+                "load degraded: leaving out address-pool rows above their pool's derivation budget"
             }
             Self::UnrestoredPoolReservation => {
                 "load degraded: stored address reservations that no restored pool took back"

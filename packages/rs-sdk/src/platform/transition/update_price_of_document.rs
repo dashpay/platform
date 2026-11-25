@@ -17,6 +17,9 @@ use dpp::tokens::token_payment_info::TokenPaymentInfo;
 
 #[async_trait::async_trait]
 /// A trait for updating the price of a document on Platform
+///
+/// The document's revision is sent as given: it must be the revision this price update
+/// writes, the stored revision + 1. A fetched document carries the stored one.
 pub trait UpdatePriceOfDocument<S: Signer<IdentityPublicKey>>: Waitable {
     /// Updates the price of a document on platform
     /// Setting settings to `None` sets default connection behavior

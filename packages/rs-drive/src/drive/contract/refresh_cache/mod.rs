@@ -138,6 +138,7 @@ mod tests {
                 storage_flags: None,
                 cost: Default::default(),
                 fee: None,
+                parsed_under_protocol_version: PlatformVersion::latest().protocol_version,
             }),
             drive.cache.data_contracts.committed_generation(),
         );

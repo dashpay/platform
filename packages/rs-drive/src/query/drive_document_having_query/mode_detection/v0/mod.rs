@@ -194,15 +194,30 @@ pub fn detect_having_mode_v0(
             )?;
             AxisRangeBounds::Count { lo, hi }
         }
+        // A bound the clause states is an `i64` operand, its successor and predecessor taken
+        // among them; an end it leaves open is the 128-bit extreme, which a read of 64-bit
+        // sums takes at their edge (`AxisRangeBounds::Sum`). Edited in place in this shipped
+        // generation: every axis before protocol version 15 keeps 64-bit sums, which read
+        // the bounds they read before.
         RankedAxis::Sum => {
             let (lo, hi) = bounds_for_operator(
                 clause.operator,
                 right,
-                sum_operand,
-                i64::MIN,
-                i64::MAX,
-                |v| v.checked_add(1),
-                |v| v.checked_sub(1),
+                |value| sum_operand(value).map(i128::from),
+                i128::MIN,
+                i128::MAX,
+                |v| {
+                    i64::try_from(v)
+                        .ok()
+                        .and_then(|v| v.checked_add(1))
+                        .map(i128::from)
+                },
+                |v| {
+                    i64::try_from(v)
+                        .ok()
+                        .and_then(|v| v.checked_sub(1))
+                        .map(i128::from)
+                },
             )?;
             AxisRangeBounds::Sum { lo, hi }
         }

@@ -3966,7 +3966,21 @@ mod token_burn_tests {
             // PROTOCOL_VERSION_15: -48_640: the decision proposals contract adds one
             // sibling to the genesis contracts tree, which reshapes the tree so the token
             // contract's node is billed fewer bytes to reach
-            4_307_560,
+            // PROTOCOL_VERSION_16: +97_280: the token market contract joins the genesis
+            // contracts tree, which reshapes it so the token contract's node is billed more
+            // bytes to reach
+            4_404_840,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_15: the genesis contracts tree without the token market contract.
+    /// Pinned so v15 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_token_burn_group_action_confirmer_fee_includes_transformer_reads_protocol_version_15(
+    ) {
+        run_token_burn_group_action_confirmer_fee_includes_transformer_reads_at_protocol_version(
+            15, 4_307_560,
         )
         .await;
     }

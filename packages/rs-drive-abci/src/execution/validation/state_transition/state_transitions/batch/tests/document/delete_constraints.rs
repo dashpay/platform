@@ -36,6 +36,11 @@ mod delete_constraints_tests {
     const PLAIN_BILLING_CONTRACT_PATH: &str =
         "tests/supporting_files/contract/delete-constraints/delete-constraints-billing-plain.json";
 
+    /// A `post` holding up to four `tags`, deletable while no `pinnedTag` document names
+    /// one of them.
+    const ARRAY_ELEMENTS_CONTRACT_PATH: &str =
+        "tests/supporting_files/contract/delete-constraints/delete-constraints-array-elements.json";
+
     fn identifier_value(id: Identifier) -> Value {
         Value::Identifier(id.to_buffer())
     }
@@ -217,6 +222,39 @@ mod delete_constraints_tests {
         assert_successful(&result, "the unvoted poll is unlocked");
         let result = setup.delete("poll", &poll).await;
         assert_successful(&result, "the unlocked poll is deleted");
+    }
+
+    /// A delete rule counting by the elements of an array (`{ "in": "tags" }`, protocol
+    /// version 15) reads them from the stored document: a post is kept while one of its
+    /// tags is pinned, and deleted once none is. A post without tags reads nothing.
+    #[tokio::test]
+    async fn should_judge_a_delete_rule_by_the_elements_of_the_stored_array() {
+        let mut setup = Setup::new(ARRAY_ELEMENTS_CONTRACT_PATH, 8407);
+        let tags = |tags: &[&str]| Value::Array(tags.iter().map(|tag| Value::from(*tag)).collect());
+        let (post, result) = setup
+            .create("post", &[("tags", tags(&["dash", "news"]))])
+            .await;
+        assert_successful(&result, "the tagged post is created");
+        let (untagged, result) = setup.create("post", &[]).await;
+        assert_successful(&result, "the post without tags is created");
+        let (pinned, result) = setup.create("pinnedTag", &[("tag", "news".into())]).await;
+        assert_successful(&result, "the tag is pinned");
+
+        let result = setup.delete("post", &post).await;
+        assert_delete_refused_by(
+            &result,
+            post.id(),
+            "post",
+            "noPinnedTag",
+            "the stored post holds a pinned tag",
+        );
+        let result = setup.delete("post", &untagged).await;
+        assert_successful(&result, "a post without tags holds no pinned tag");
+
+        let result = setup.delete("pinnedTag", &pinned).await;
+        assert_successful(&result, "the tag is unpinned");
+        let result = setup.delete("post", &post).await;
+        assert_successful(&result, "no tag of the post is pinned any more");
     }
 
     /// `$id` matches a `propertyConstraints` total too: the poll is edited freely before

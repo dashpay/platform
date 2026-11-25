@@ -3313,7 +3313,7 @@ mod tests {
                  new sum_value into the ancestor sum tree."
             ),
             DocumentSumResponse::Entries(entries) => {
-                let total: i64 = entries.iter().filter_map(|e| e.sum).sum();
+                let total: i128 = entries.iter().filter_map(|e| e.sum).sum();
                 assert_eq!(
                     total, 42,
                     "expected the byColor `color=red` aggregate to reflect the updated \
@@ -3550,7 +3550,7 @@ mod tests {
                  the per-doc sum contribution at the value-tree's parent."
             ),
             DocumentSumResponse::Entries(entries) => {
-                let total: i64 = entries.iter().filter_map(|e| e.sum).sum();
+                let total: i128 = entries.iter().filter_map(|e| e.sum).sum();
                 assert_eq!(total, 17, "expected 17, got {total} via Entries shape");
             }
             other => panic!("expected Aggregate or Entries, got {other:?}"),

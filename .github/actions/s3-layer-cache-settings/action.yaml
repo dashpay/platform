@@ -61,7 +61,7 @@ runs:
         secret_access_key: ${{ inputs.s3_secret_access_key }}
         profile: "layers"
 
-    - uses: actions/github-script@v6
+    - uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410 # v6
       id: script
       with:
         script: |

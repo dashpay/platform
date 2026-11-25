@@ -3,10 +3,11 @@
 //! format prefix recording the data contract version the bytes conform to
 //! (0 = unstamped: a pre-format-3 document re-serialized in the new
 //! envelope). Introduced so contract updates can add required properties
-//! via `requiredSince`: the stamp selects each annotated property's byte
-//! layout (raw once the stamp reaches the annotation, presence-flagged
+//! via `requiredSince`: the stamp selects each annotated top-level property's
+//! byte layout (raw once the stamp reaches the annotation, presence-flagged
 //! before it), letting the latest contract alone decode every stored
-//! document.
+//! document. An annotated member of an object is presence-flagged at every
+//! stamp.
 //!
 //! The timestamp flags also mark `$moderatedAt` (512) and `$moderatedBy` (1024), the block
 //! time and the identity of the last moderator to write the fields a document type keeps
@@ -15,7 +16,7 @@
 //! written in this format; a document without the stamp sets neither bit, so its bytes are
 //! as they were before the bits were given a meaning.
 
-use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::document_type::{DecodedValueBudget, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
 
 use crate::document::property_names::{
@@ -296,6 +297,18 @@ impl DocumentV0 {
     pub(super) fn from_bytes_v3(
         serialized_document: &[u8],
         document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, DataContractError> {
+        Self::from_bytes_v3_with_budget(serialized_document, document_type, None, platform_version)
+    }
+
+    /// Format-3 reader parameterized by an optional client-side [`DecodedValueBudget`].
+    /// Consensus calls [`Self::from_bytes_v3`], which passes `None` and is output-identical
+    /// at every protocol version.
+    pub(super) fn from_bytes_v3_with_budget(
+        serialized_document: &[u8],
+        document_type: DocumentTypeRef,
+        mut budget: Option<&mut DecodedValueBudget>,
         _platform_version: &PlatformVersion,
     ) -> Result<Self, DataContractError> {
         let mut buf = BufReader::new(serialized_document);
@@ -535,9 +548,11 @@ impl DocumentV0 {
                         None
                     };
                 }
-                let read_value = property
-                    .property_type
-                    .read_optionally_from(&mut buf, required & !property.transient);
+                let read_value = property.property_type.read_optionally_from_with_budget(
+                    &mut buf,
+                    required & !property.transient,
+                    budget.as_deref_mut(),
+                );
 
                 match read_value {
                     Ok(read_value) => {

@@ -94,14 +94,13 @@ impl Drive {
             contract.id_ref().as_bytes(),
             document_type.name().as_str(),
         );
-        // Worst-case sizing: a chunk may hold the type's largest documents, and
-        // the admission estimate has to cover that whatever this document
-        // actually stores.
-        let revision_size = document_type.max_size(platform_version)? as u32;
-
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
 
         if let Some(layers) = estimated_costs_only_with_layer_info {
+            // Worst-case sizing: a chunk may hold the type's largest documents,
+            // and the admission estimate has to cover that whatever this
+            // document actually stores.
+            let revision_size = document_type.max_size(platform_version)? as u32;
             Self::add_estimation_costs_for_erase_document(
                 document_id,
                 contract,

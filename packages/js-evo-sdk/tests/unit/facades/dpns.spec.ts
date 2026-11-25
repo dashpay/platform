@@ -10,12 +10,24 @@ describe('DPNSFacade', () => {
   let dpnsIsNameAvailableStub: SinonStub;
   let dpnsResolveNameStub: SinonStub;
   let dpnsRegisterNameStub: SinonStub;
+  let dpnsIsNameTombstonedStub: SinonStub;
+  let dpnsDeleteNameStub: SinonStub;
+  let dpnsTombstoneNameStub: SinonStub;
   let getDpnsUsernamesStub: SinonStub;
   let getDpnsUsernameStub: SinonStub;
   let getDpnsUsernamesWithProofInfoStub: SinonStub;
   let getDpnsUsernameWithProofInfoStub: SinonStub;
   let getDpnsUsernameByNameStub: SinonStub;
   let getDpnsUsernameByNameWithProofInfoStub: SinonStub;
+
+  // What the wasm stubs resolve to: the facade hands them back untouched
+  const deletedDocumentId = {} as wasmSDKPackage.Identifier;
+  const tombstone = {} as wasmSDKPackage.Document;
+
+  // Stand-ins for the wasm objects of the delete and tombstone options: the stubs never read them
+  const identity = {} as wasmSDKPackage.Identity;
+  const identityKey = {} as wasmSDKPackage.IdentityPublicKey;
+  const signer = {} as wasmSDKPackage.IdentitySigner;
 
   beforeEach(async function setup() {
     await init();
@@ -26,6 +38,9 @@ describe('DPNSFacade', () => {
     dpnsIsNameAvailableStub = this.sinon.stub(wasmSdk, 'dpnsIsNameAvailable').resolves(true);
     dpnsResolveNameStub = this.sinon.stub(wasmSdk, 'dpnsResolveName').resolves({});
     dpnsRegisterNameStub = this.sinon.stub(wasmSdk, 'dpnsRegisterName').resolves({});
+    dpnsIsNameTombstonedStub = this.sinon.stub(wasmSdk, 'dpnsIsNameTombstoned').resolves(true);
+    dpnsDeleteNameStub = this.sinon.stub(wasmSdk, 'dpnsDeleteName').resolves(deletedDocumentId);
+    dpnsTombstoneNameStub = this.sinon.stub(wasmSdk, 'dpnsTombstoneName').resolves(tombstone);
     getDpnsUsernamesStub = this.sinon.stub(wasmSdk, 'getDpnsUsernames').resolves([]);
     getDpnsUsernameStub = this.sinon.stub(wasmSdk, 'getDpnsUsername').resolves({});
     getDpnsUsernamesWithProofInfoStub = this.sinon.stub(wasmSdk, 'getDpnsUsernamesWithProofInfo').resolves({});
@@ -81,6 +96,43 @@ describe('DPNSFacade', () => {
         signer: mockSigner,
       });
       expect(dpnsRegisterNameStub).to.be.calledOnce();
+    });
+  });
+
+  describe('isNameTombstoned()', () => {
+    it('should forward name to wasm and return its answer', async () => {
+      const tombstoned = await client.dpns.isNameTombstoned('alice.dash');
+      expect(dpnsIsNameTombstonedStub).to.be.calledOnceWithExactly('alice.dash');
+      expect(tombstoned).to.equal(true);
+    });
+  });
+
+  describe('deleteName()', () => {
+    it('should forward delete options to wasm and return the deleted document id', async () => {
+      const options = { name: 'a-name-longer-than-nineteen', identityKey, signer };
+      const deleted = await client.dpns.deleteName(options);
+      expect(dpnsDeleteNameStub).to.be.calledOnceWithExactly(options);
+      expect(deleted).to.equal(deletedDocumentId);
+    });
+
+    it('should reject when wasm refuses the delete', async () => {
+      const refusal = new Error('the DPNS name a11ce.dash is contested: it can not be deleted, only tombstoned');
+      dpnsDeleteNameStub.rejects(refusal);
+      await expect(client.dpns.deleteName({ name: 'alice', identityKey, signer }))
+        .to.be.rejectedWith(refusal);
+      expect(dpnsTombstoneNameStub).to.not.be.called();
+    });
+  });
+
+  describe('tombstoneName()', () => {
+    it('should forward tombstone options to wasm and return the tombstone document', async () => {
+      const options = {
+        name: 'alice', identity, identityKey, signer,
+      };
+      const stored = await client.dpns.tombstoneName(options);
+      expect(dpnsTombstoneNameStub).to.be.calledOnceWithExactly(options);
+      expect(stored).to.equal(tombstone);
+      expect(dpnsDeleteNameStub).to.not.be.called();
     });
   });
 

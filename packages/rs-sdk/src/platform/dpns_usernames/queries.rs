@@ -2,6 +2,7 @@ use crate::platform::documents::document_query::DocumentQuery;
 use crate::platform::{Document, FetchMany};
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start;
+use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::data_contract::DataContract;
 use dpp::document::DocumentV0Getters;
 use dpp::platform_value::Value;
@@ -11,6 +12,7 @@ use drive::query::{OrderClause, SelectProjection, WhereClause, WhereOperator};
 use std::sync::Arc;
 
 use super::convert_to_homograph_safe_chars;
+use super::give_up::dpns_name_query_under;
 
 /// Result of a DPNS username search
 #[derive(Debug, Clone)]
@@ -178,6 +180,50 @@ impl Sdk {
         self.resolve_dpns_name(name).await
     }
 
+    /// The `domain` document of the DPNS name `name`, or `None` when nobody holds the name.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The full name as `label.parent` (e.g., "alice.dash"), in any case. A name
+    ///   without exactly one dot is refused ([`Error::InvalidRequest`]) before anything is
+    ///   read. Only that shape is checked, not the label: a name with an empty label
+    ///   (".dash") or an empty parent ("dash.", how DPNS keeps a top-level domain) is looked
+    ///   up as written.
+    ///
+    /// # Returns
+    ///
+    /// The document as the network stores it. Its owner is the identity that holds the
+    /// name, which is not always the identity the name resolves to
+    /// ([`Sdk::resolve_dpns_name`] reads that from `records.identity`).
+    pub async fn get_dpns_domain_document_by_name(
+        &self,
+        name: &str,
+    ) -> Result<Option<Document>, Error> {
+        self.get_dpns_domain_document_by_name_with_metadata_and_proof(name)
+            .await
+            .map(|(document, _metadata, _proof)| document)
+    }
+
+    /// [`Sdk::get_dpns_domain_document_by_name`], with the metadata of the response and the
+    /// proof the document, or its absence, was verified with.
+    pub async fn get_dpns_domain_document_by_name_with_metadata_and_proof(
+        &self,
+        name: &str,
+    ) -> Result<(Option<Document>, ResponseMetadata, Proof), Error> {
+        let (normalized_parent_domain_name, normalized_label) = full_dpns_name_parts(name)?;
+        let dpns_contract = self.fetch_dpns_contract().await?;
+        let query = dpns_name_query_under(
+            dpns_contract,
+            "domain",
+            normalized_parent_domain_name,
+            normalized_label,
+        );
+        let (documents, metadata, proof) =
+            Document::fetch_many_with_metadata_and_proof(self, query, None).await?;
+        // A proven absence comes back as entries holding `None`
+        Ok((documents.into_values().flatten().next(), metadata, proof))
+    }
+
     /// Search for DPNS names that start with a given prefix
     ///
     /// # Arguments
@@ -267,6 +313,24 @@ impl Sdk {
             records_identity_id,
         })
     }
+}
+
+/// The parent domain and the label of `name`, a full DPNS name `label.parent`, each in the
+/// homograph-safe form DPNS stores and indexes it in: `Alice.DASH` is kept as `a11ce` under
+/// `dash`. A name without exactly one dot is refused. Either part may be empty: this checks
+/// the shape of the name, not whether its label is one DPNS would register.
+fn full_dpns_name_parts(name: &str) -> Result<(String, String), Error> {
+    let mut parts = name.split('.');
+    let (Some(label), Some(parent_domain_name), None) = (parts.next(), parts.next(), parts.next())
+    else {
+        return Err(Error::InvalidRequest(
+            "Invalid username format. Expected format: label.domain".to_string(),
+        ));
+    };
+    Ok((
+        convert_to_homograph_safe_chars(parent_domain_name),
+        convert_to_homograph_safe_chars(label),
+    ))
 }
 
 /// One page of `domain` documents whose `records.identity` is `identity_id`,

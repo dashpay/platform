@@ -240,7 +240,7 @@ struct LoadDataContractView: View {
                             text: $inputId
                         )
                         .textContentType(.none)
-                        .autocapitalization(.none)
+                        .machineTextEntry()
                         .disabled(isLoading)
 
                         // Examples list only makes sense for the

@@ -46,7 +46,9 @@ use std::ffi::{c_char, CStr, CString};
 ///
 /// # Safety
 /// `sdk_handle` must be null or point to an initialized `SDKHandle` that outlives `'a`.
-unsafe fn sdk_wrapper<'a>(sdk_handle: *const SDKHandle) -> Result<&'a SDKWrapper, FFIError> {
+pub(crate) unsafe fn sdk_wrapper<'a>(
+    sdk_handle: *const SDKHandle,
+) -> Result<&'a SDKWrapper, FFIError> {
     if sdk_handle.is_null() {
         return Err(FFIError::InvalidParameter("SDK handle is null".to_string()));
     }
@@ -57,7 +59,10 @@ unsafe fn sdk_wrapper<'a>(sdk_handle: *const SDKHandle) -> Result<&'a SDKWrapper
 ///
 /// # Safety
 /// `ptr` must be null or point to a NUL-terminated string that outlives `'a`.
-unsafe fn required_str<'a>(ptr: *const c_char, field: &str) -> Result<&'a str, FFIError> {
+pub(crate) unsafe fn required_str<'a>(
+    ptr: *const c_char,
+    field: &str,
+) -> Result<&'a str, FFIError> {
     if ptr.is_null() {
         return Err(FFIError::InvalidParameter(format!("{field} is null")));
     }
@@ -82,7 +87,10 @@ unsafe fn optional_str<'a>(ptr: *const c_char, field: &str) -> Result<Option<&'a
 ///
 /// # Safety
 /// `ptr` must be null or point to a NUL-terminated string.
-unsafe fn required_identifier(ptr: *const c_char, field: &str) -> Result<Identifier, FFIError> {
+pub(crate) unsafe fn required_identifier(
+    ptr: *const c_char,
+    field: &str,
+) -> Result<Identifier, FFIError> {
     parse_identifier(required_str(ptr, field)?, field)
 }
 
@@ -90,7 +98,7 @@ unsafe fn required_identifier(ptr: *const c_char, field: &str) -> Result<Identif
 ///
 /// # Safety
 /// `ptr` must be null or point to a NUL-terminated string.
-unsafe fn optional_identifier(
+pub(crate) unsafe fn optional_identifier(
     ptr: *const c_char,
     field: &str,
 ) -> Result<Option<Identifier>, FFIError> {
@@ -106,7 +114,7 @@ fn parse_identifier(value: &str, field: &str) -> Result<Identifier, FFIError> {
 
 /// A result holding `string` as an owned C string (freed with `dash_sdk_string_free`), or no
 /// data for `None`.
-fn string_result(string: Result<Option<String>, FFIError>) -> DashSDKResult {
+pub(crate) fn string_result(string: Result<Option<String>, FFIError>) -> DashSDKResult {
     match string.and_then(|string| string.map(CString::new).transpose().map_err(Into::into)) {
         Ok(Some(string)) => DashSDKResult::success_string(string.into_raw()),
         Ok(None) => DashSDKResult::success(std::ptr::null_mut()),
@@ -114,8 +122,9 @@ fn string_result(string: Result<Option<String>, FFIError>) -> DashSDKResult {
     }
 }
 
-/// A result holding `json` written as a string, or no data for `None`.
-fn json_result(json: Result<Option<serde_json::Value>, FFIError>) -> DashSDKResult {
+/// A result holding `json` serialized straight to a string (no intermediate JSON tree), or no
+/// data for `None`. A value that refuses to serialize is a `SerializationError`.
+pub(crate) fn json_result<T: serde::Serialize>(json: Result<Option<T>, FFIError>) -> DashSDKResult {
     string_result(json.and_then(|json| {
         json.map(|json| serde_json::to_string(&json))
             .transpose()
@@ -173,12 +182,13 @@ mod tests {
             dash_sdk_string_free(result.data as *mut c_char);
         }
 
-        let absent = json_result(Ok(None));
+        let absent = json_result::<serde_json::Value>(Ok(None));
         assert!(absent.error.is_null());
         assert!(absent.data.is_null());
         assert_eq!(absent.data_type, DashSDKResultDataType::NoData);
 
-        let failed = json_result(Err(FFIError::InvalidParameter("bad".to_string())));
+        let failed =
+            json_result::<serde_json::Value>(Err(FFIError::InvalidParameter("bad".to_string())));
         assert!(failed.data.is_null());
         unsafe {
             assert_eq!((*failed.error).code, DashSDKErrorCode::InvalidParameter);

@@ -17,6 +17,9 @@ use dpp::tokens::token_payment_info::TokenPaymentInfo;
 
 #[async_trait::async_trait]
 /// A trait for purchasing a document on Platform
+///
+/// The document's revision is sent as given: it must be the revision this purchase
+/// writes, the stored revision + 1. A fetched document carries the stored one.
 pub trait PurchaseDocument<S: Signer<IdentityPublicKey>>: Waitable {
     /// Tries to purchase a document on platform
     /// Setting settings to `None` sets default connection behavior

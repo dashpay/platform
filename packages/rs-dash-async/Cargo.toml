@@ -10,11 +10,11 @@ description = "Async-sync bridging utilities for Dash Platform"
 [dependencies]
 thiserror = "2.0"
 tracing = "0.1.41"
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-tokio = { version = "1.40", features = ["rt", "rt-multi-thread", "time", "net"] }
-tokio-util = { version = "0.7.12" }
 futures = { version = "0.3.30" }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "time", "net"] }
+tokio-util = { version = "0.7.12" }
+
 [dev-dependencies]
-tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "sync", "time"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }

@@ -139,9 +139,22 @@ if [ "$USE_WASM_PACK" = true ]; then
     # Build using wasm-pack
     echo "Building with wasm-pack..."
 
-    # Disable LTO for wasm-pack builds to avoid conflicts
-    export CARGO_PROFILE_RELEASE_LTO=false
-    export RUSTFLAGS="-C lto=off"
+    if [ "$OPT_LEVEL" = "full" ]; then
+        # Optimize the release WASM for download size.
+        export CARGO_PROFILE_RELEASE_LTO=fat
+        export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1
+        export CARGO_PROFILE_RELEASE_OPT_LEVEL=z
+        # Any RUSTFLAGS value, even an empty one, replaces .cargo/config.toml's
+        # rustflags (getrandom_backend="wasm_js", tokio_unstable). These builds
+        # have always run without them; -C debuginfo=0 is the release default
+        # and only keeps RUSTFLAGS set.
+        export RUSTFLAGS="-C debuginfo=0"
+    else
+        # Keep minimal and unoptimized builds fast. RUSTFLAGS replaces
+        # .cargo/config.toml's rustflags here too, as it always has.
+        export CARGO_PROFILE_RELEASE_LTO=false
+        export RUSTFLAGS="-C lto=off"
+    fi
 
     # Add features if specified
     FEATURES_ARG=""

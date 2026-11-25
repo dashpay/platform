@@ -1,5 +1,12 @@
 package org.dashfoundation.example.services.auth
 
+import android.app.Activity
+import android.app.KeyguardManager
+import android.content.Intent
+import android.os.Build
+import android.os.SystemClock
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
@@ -26,6 +33,13 @@ import kotlin.coroutines.resume
  * [BiometricGate.AuthOutcome.DENIED], missing hardware / enrollment →
  * [BiometricGate.AuthOutcome.UNAVAILABLE], everything else →
  * [BiometricGate.AuthOutcome.FAILED].
+ *
+ * Android 10 (API 29, the app's minimum) does not support a BiometricPrompt
+ * that allows both a strong biometric and the device credential
+ * (`canAuthenticate` reports it unsupported). There the gate confirms the
+ * device credential instead (`KeyguardManager.createConfirmDeviceCredentialIntent`),
+ * which also refreshes the auth window of the identity-key alias, so a device
+ * with only a PIN can still authenticate and no weak biometric is accepted.
  */
 class AuthPrompt(private val activity: FragmentActivity) : BiometricGate {
 
@@ -39,6 +53,10 @@ class AuthPrompt(private val activity: FragmentActivity) : BiometricGate {
         // private-key decrypt unauthorized (the key's window never refreshes).
         val authenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG or
             BiometricManager.Authenticators.DEVICE_CREDENTIAL
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            return confirmDeviceCredential(title, subtitle)
+        }
 
         when (BiometricManager.from(activity).canAuthenticate(authenticators)) {
             BiometricManager.BIOMETRIC_SUCCESS -> Unit
@@ -95,6 +113,44 @@ class AuthPrompt(private val activity: FragmentActivity) : BiometricGate {
 
                 prompt.authenticate(info)
                 continuation.invokeOnCancellation { prompt.cancelAuthentication() }
+            }
+        }
+    }
+
+    /**
+     * API 29 path: the system's confirm-credential screen (PIN, pattern or
+     * password). Cancelling it is [BiometricGate.AuthOutcome.DENIED]; a device
+     * without a secure lock screen is [BiometricGate.AuthOutcome.UNAVAILABLE].
+     */
+    private suspend fun confirmDeviceCredential(
+        title: String,
+        subtitle: String?,
+    ): BiometricGate.AuthOutcome {
+        val keyguard = activity.getSystemService(KeyguardManager::class.java)
+        if (keyguard?.isDeviceSecure != true) return BiometricGate.AuthOutcome.UNAVAILABLE
+        @Suppress("DEPRECATION")
+        val intent = keyguard.createConfirmDeviceCredentialIntent(title, subtitle)
+            ?: return BiometricGate.AuthOutcome.UNAVAILABLE
+        return withContext(Dispatchers.Main.immediate) {
+            suspendCancellableCoroutine { continuation ->
+                lateinit var launcher: ActivityResultLauncher<Intent>
+                launcher = activity.activityResultRegistry.register(
+                    "dash.confirmDeviceCredential.${SystemClock.elapsedRealtimeNanos()}",
+                    ActivityResultContracts.StartActivityForResult(),
+                ) { result ->
+                    launcher.unregister()
+                    if (continuation.isActive) {
+                        continuation.resume(
+                            if (result.resultCode == Activity.RESULT_OK) {
+                                BiometricGate.AuthOutcome.AUTHORIZED
+                            } else {
+                                BiometricGate.AuthOutcome.DENIED
+                            },
+                        )
+                    }
+                }
+                continuation.invokeOnCancellation { launcher.unregister() }
+                launcher.launch(intent)
             }
         }
     }

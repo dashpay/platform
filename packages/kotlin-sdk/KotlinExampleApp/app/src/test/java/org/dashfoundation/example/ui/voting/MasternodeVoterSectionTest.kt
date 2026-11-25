@@ -1,0 +1,270 @@
+package org.dashfoundation.example.ui.voting
+
+import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/** The pure logic behind [MasternodeVoterSection] (port of `MasternodeVoterSection.swift`). */
+class MasternodeVoterSectionTest {
+
+    private val network = 1
+    private val proTxHashHex = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
+    private val keyHex = "11".repeat(32)
+
+    private fun identity(
+        firstByte: Int,
+        type: String = "Masternode",
+        votingKey: String? = "mnvoting." + "01".repeat(32) + "." + "ab".repeat(20),
+        networkRaw: Int = network,
+        alias: String? = null,
+        mainDpnsName: String? = null,
+        dpnsName: String? = null,
+    ) = IdentityEntity(
+        identityId = ByteArray(32) { if (it == 0) firstByte.toByte() else it.toByte() },
+        identityType = type,
+        votingPrivateKeyIdentifier = votingKey,
+        networkRaw = networkRaw,
+        alias = alias,
+        mainDpnsName = mainDpnsName,
+        dpnsName = dpnsName,
+        // A row loaded through the load rule records the pro_tx_hash its votes name.
+        masternodeProTxHash = ByteArray(32) { (0x40 + it).toByte() },
+    )
+
+    @Test
+    fun shouldKeepOnlyMasternodeAndEvonodeIdentitiesOnTheNetworkWithAVotingKey() {
+        val masternode = identity(1, alias = "a")
+        val evonode = identity(2, type = "Evonode", alias = "b")
+        val user = identity(3, type = "User", alias = "c")
+        val noKey = identity(4, votingKey = null, alias = "d")
+        val otherNetwork = identity(5, networkRaw = network + 1, alias = "e")
+
+        val candidates = votingCandidates(listOf(user, noKey, evonode, otherNetwork, masternode), network)
+
+        assertEquals(listOf(masternode, evonode), candidates)
+    }
+
+    @Test
+    fun shouldSortCandidatesByDisplayName() {
+        val zed = identity(1, alias = "zed")
+        val amy = identity(2, mainDpnsName = "amy")
+        val max = identity(3, dpnsName = "max")
+
+        assertEquals(listOf(amy, max, zed), votingCandidates(listOf(zed, max, amy), network))
+    }
+
+    @Test
+    fun shouldPreferAliasThenMainDpnsNameThenDpnsNameThenTheIdStart() {
+        assertEquals("alias", voterDisplayName(identity(1, alias = "alias", mainDpnsName = "main")))
+        assertEquals("main", voterDisplayName(identity(1, alias = "", mainDpnsName = "main", dpnsName = "d")))
+        assertEquals("d", voterDisplayName(identity(1, dpnsName = "d")))
+        val unnamed = voterDisplayName(identity(1, dpnsName = ""))
+        assertTrue(unnamed, unnamed.endsWith("...") && unnamed.length == 15)
+    }
+
+    @Test
+    fun shouldLabelWithTheTypeAndAddTheIdStartOnlyWhenNamesCollide() {
+        val first = identity(0x0a, alias = "node")
+        val second = identity(0x0b, type = "Evonode", alias = "node")
+        val other = identity(0x0c, alias = "other")
+        val candidates = listOf(first, second, other)
+
+        assertEquals("node (Masternode, 0a010203)", voterLabel(first, candidates))
+        assertEquals("node (Evonode, 0b010203)", voterLabel(second, candidates))
+        assertEquals("other (Masternode)", voterLabel(other, candidates))
+    }
+
+    @Test
+    fun shouldReverseTheIdentityIdIntoWireOrder() {
+        val identityId = ByteArray(32) { it.toByte() }
+
+        val wire = wireOrderProTxHash(identityId)
+
+        assertArrayEquals(ByteArray(32) { (31 - it).toByte() }, wire)
+        assertArrayEquals(identityId, ByteArray(32) { it.toByte() }) // input untouched
+    }
+
+    /**
+     * #6099: a shared masternode is stored under its voter identity, so a vote names the
+     * pro_tx_hash recorded on the row, never the row's id.
+     */
+    @Test
+    fun shouldPublishTheRecordedProTxHashOfASharedMasternode() {
+        val proTxHash = ByteArray(32) { 0x5a }
+        val voterRow = identity(9).copy(masternodeProTxHash = proTxHash)
+        val voter = publishVoter(
+            selected = voterRow,
+            allowsTypedProTxHash = false,
+            useTypedProTxHash = false,
+            proTxHashText = "",
+            debugBuild = false,
+            useTypedCredentials = false,
+            votingKeyText = "",
+        )
+        assertArrayEquals(proTxHash, voter!!.wireOrderProTxHash)
+        assertArrayEquals(voterRow.identityId, (voter as MasternodeVoter.StoredKey).identityId)
+    }
+
+    /** #6145: a row with no recorded pro_tx_hash is never published on its id reversed. */
+    @Test
+    fun shouldNotPublishARowWhoseMasternodeIsNotKnownYet() {
+        val legacy = identity(1).copy(masternodeProTxHash = null)
+        assertNull(
+            publishVoter(
+                selected = legacy,
+                allowsTypedProTxHash = false,
+                useTypedProTxHash = false,
+                proTxHashText = "",
+                debugBuild = false,
+                useTypedCredentials = false,
+                votingKeyText = "",
+            ),
+        )
+    }
+
+    /**
+     * A dialog keys its answer and messages on the masternode shown, so a voter withdrawn for
+     * the same masternode (a refusal, a check it waits for) keeps what the dialog shows.
+     */
+    @Test
+    fun shouldShowTheSameMasternodeWhetherOrNotItsVoterIsPublished() {
+        val selected = identity(1)
+        val published = answerTargetOf(publish(selected = selected))
+
+        assertEquals(published, shownAnswerTarget(selected, usesTypedInput = false, typedVoter = null))
+        assertNull(shownAnswerTarget(null, usesTypedInput = false, typedVoter = null))
+        val typed = publish(selected = selected, allowsTyped = true, useTyped = true, proTxHash = proTxHashHex)
+        assertEquals(answerTargetOf(typed), shownAnswerTarget(selected, usesTypedInput = true, typedVoter = typed))
+        assertNull(shownAnswerTarget(selected, usesTypedInput = true, typedVoter = null))
+        // #6099: the masternode shown is the row's recorded pro_tx_hash; none while unresolved.
+        val shared = identity(9).copy(masternodeProTxHash = ByteArray(32) { 0x5a })
+        assertEquals(answerTargetOf(publish(selected = shared)), shownAnswerTarget(shared, usesTypedInput = false, typedVoter = null))
+        assertNull(shownAnswerTarget(shared.copy(masternodeProTxHash = null), usesTypedInput = false, typedVoter = null))
+    }
+
+    @Test
+    fun shouldDecodeOnlyExactly64HexCharacters() {
+        assertEquals(32, decodeTyped32Bytes("  $proTxHashHex\n")?.size)
+        assertEquals(32, decodeTyped32Bytes(proTxHashHex.uppercase())?.size)
+        assertNull(decodeTyped32Bytes(proTxHashHex.dropLast(1)))
+        assertNull(decodeTyped32Bytes(proTxHashHex + "0"))
+        assertNull(decodeTyped32Bytes(proTxHashHex.dropLast(1) + "g"))
+        assertNull(decodeTyped32Bytes(""))
+    }
+
+    /** Char.isDigit() accepts other scripts' digits; a pro_tx_hash is ASCII hex only. */
+    @Test
+    fun shouldRefuseNonAsciiDigits() {
+        val arabicIndic = "\u0661".repeat(64)
+        assertNull(decodeTyped32Bytes(arabicIndic))
+        assertNull(decodeTyped32Bytes("\u0660" + proTxHashHex.drop(1)))
+    }
+
+    @Test
+    fun shouldKeepTheSelectionWhileItIsACandidateElseTakeTheFirst() {
+        val first = identity(1, alias = "a")
+        val second = identity(2, alias = "b")
+        val secondHex = second.identityId.joinToString("") { "%02x".format(it) }
+
+        assertEquals(second, effectiveVoterSelection(secondHex, listOf(first, second)))
+        assertEquals(first, effectiveVoterSelection(secondHex, listOf(first)))
+        assertEquals(first, effectiveVoterSelection(null, listOf(first, second)))
+        assertNull(effectiveVoterSelection(secondHex, emptyList()))
+    }
+
+    @Test
+    fun shouldPublishTheSelectedIdentityAsAStoredKeyVoter() {
+        val selected = identity(1)
+
+        val voter = publish(selected = selected)
+
+        assertEquals(MasternodeVoter.StoredKey(selected.identityId, selected.masternodeProTxHash!!, selected.votingPrivateKeyIdentifier!!), voter)
+        assertNull(publish(selected = null))
+    }
+
+    @Test
+    fun shouldPublishATypedProTxHashOnlyWhenTheDialogAllowsIt() {
+        val selected = identity(1)
+
+        val typed = publish(selected = selected, allowsTyped = true, useTyped = true, proTxHash = proTxHashHex)
+        val refused = publish(selected = selected, allowsTyped = false, useTyped = true, proTxHash = proTxHashHex)
+        val malformed = publish(selected = selected, allowsTyped = true, useTyped = true, proTxHash = "abc")
+
+        assertTrue(typed is MasternodeVoter.TypedProTxHash)
+        assertArrayEquals(decodeTyped32Bytes(proTxHashHex), typed!!.wireOrderProTxHash)
+        assertEquals(MasternodeVoter.StoredKey(selected.identityId, selected.masternodeProTxHash!!, selected.votingPrivateKeyIdentifier!!), refused)
+        assertNull(malformed)
+    }
+
+    @Test
+    fun shouldNeverPublishTypedCredentialsInAReleaseBuild() {
+        val selected = identity(1)
+
+        val voter = publish(
+            selected = selected,
+            debugBuild = false,
+            useCredentials = true,
+            proTxHash = proTxHashHex,
+            key = keyHex,
+        )
+
+        assertEquals(MasternodeVoter.StoredKey(selected.identityId, selected.masternodeProTxHash!!, selected.votingPrivateKeyIdentifier!!), voter)
+    }
+
+    @Test
+    fun shouldPublishTypedCredentialsWithoutAKeyUntilTheKeyIsValid() {
+        val withoutKey = publish(debugBuild = true, useCredentials = true, proTxHash = proTxHashHex, key = "12")
+        val withKey = publish(debugBuild = true, useCredentials = true, proTxHash = proTxHashHex, key = keyHex)
+        val noProTxHash = publish(debugBuild = true, useCredentials = true, proTxHash = "", key = keyHex)
+
+        assertTrue(withoutKey is MasternodeVoter.TypedCredentials)
+        assertFalse(withoutKey!!.canCast)
+        assertTrue(withKey!!.canCast)
+        assertArrayEquals(
+            decodeTyped32Bytes(keyHex),
+            (withKey as MasternodeVoter.TypedCredentials).votingPrivateKeyCopy(),
+        )
+        assertNull(noProTxHash)
+    }
+
+    @Test
+    fun shouldCastOnlyAsAStoredKeyOrTypedCredentialsWithAKey() {
+        val hash = ByteArray(32)
+
+        assertTrue(MasternodeVoter.StoredKey(hash, hash, "mnvoting.x").canCast)
+        assertFalse(MasternodeVoter.TypedProTxHash(hash).canCast)
+        assertFalse(MasternodeVoter.TypedCredentials(hash, null).canCast)
+        assertTrue(MasternodeVoter.TypedCredentials(hash, ByteArray(32)).canCast)
+    }
+
+    @Test
+    fun shouldNeverPrintTheTypedVotingKey() {
+        val key = decodeTyped32Bytes(keyHex)
+
+        val text = MasternodeVoter.TypedCredentials(ByteArray(32), key).toString()
+
+        assertFalse(text, text.contains(keyHex))
+    }
+
+    private fun publish(
+        selected: IdentityEntity? = null,
+        allowsTyped: Boolean = false,
+        useTyped: Boolean = false,
+        proTxHash: String = "",
+        debugBuild: Boolean = false,
+        useCredentials: Boolean = false,
+        key: String = "",
+    ): MasternodeVoter? = publishVoter(
+        selected = selected,
+        allowsTypedProTxHash = allowsTyped,
+        useTypedProTxHash = useTyped,
+        proTxHashText = proTxHash,
+        debugBuild = debugBuild,
+        useTypedCredentials = useCredentials,
+        votingKeyText = key,
+    )
+}

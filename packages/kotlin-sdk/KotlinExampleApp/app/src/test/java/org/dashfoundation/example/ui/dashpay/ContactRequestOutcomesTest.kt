@@ -637,6 +637,93 @@ class ContactRequestOutcomesTest {
         assertNull(rowMessage(snapshot, "01"))
     }
 
+    /**
+     * With "Send privately" on, Add Contact's collision dialog accepts with a
+     * private reply, paid from the shielded balance, and says so.
+     */
+    @Test
+    fun shouldAcceptACollisionPrivatelyWhenSendPrivatelyIsOn() {
+        val accept = CollisionAccept.of(sendPrivately = true)
+        assertEquals(CollisionAccept.PrivateReply, accept)
+        assertEquals("Accept privately", accept.buttonTitle)
+        assertEquals(
+            "This person already sent you a request. Accept it with a private reply instead? " +
+                "The reply is paid from this wallet's shielded balance, and no public request " +
+                "names you as its sender.",
+            accept.message,
+        )
+    }
+
+    /** With it off, the dialog leaves the reply to the wallet, which replies the way the request came. */
+    @Test
+    fun shouldAcceptACollisionInKindWhenSendPrivatelyIsOff() {
+        val accept = CollisionAccept.of(sendPrivately = false)
+        assertEquals(CollisionAccept.ReplyInKind, accept)
+        assertEquals("Accept", accept.buttonTitle)
+        assertEquals("This person already sent you a request. Accept it instead?", accept.message)
+    }
+
+    /**
+     * Add Contact fixes the submission at the tap: turning "Send privately"
+     * off, editing the label or picking another name afterwards does not
+     * change the request, the collision accept or the notice.
+     */
+    @Test
+    fun shouldKeepTheChoicesMadeAtTheTapThroughLaterEdits() {
+        val recipient = byteArrayOf(1, 2, 3)
+        var sendPrivately = true
+        var label = "  Main wallet "
+        var dpns: String? = "alice"
+        val submission = ContactRequestSubmission.of(recipient, sendPrivately, label, dpns)
+        sendPrivately = false
+        label = "Other"
+        dpns = "bob"
+        recipient[0] = 9
+
+        assertTrue(submission.sendPrivately)
+        assertEquals("Main wallet", submission.accountLabel)
+        assertEquals("alice", submission.dpnsLabel)
+        assertEquals(1.toByte(), submission.recipient[0])
+        assertEquals(CollisionAccept.PrivateReply, submission.collisionAccept)
+        assertFalse(sendPrivately)
+        assertEquals("Other", label)
+        assertEquals("bob", dpns)
+    }
+
+    /** A private submission that may have gone through names the read that shows it; a public one the next sync. */
+    @Test
+    fun shouldNameThePrivateReadForAPrivateSubmissionThatMayHaveGoneThrough() {
+        val private = ContactRequestSubmission.of(byteArrayOf(1), sendPrivately = true, accountLabel = "", dpnsLabel = null)
+        assertNull(private.accountLabel)
+        assertEquals(
+            "This may have gone through. It shows up once private requests are read: pull to refresh " +
+                "on Requests, or tap Sync private requests on Add Contact. Do not submit it again.",
+            private.mayHaveGoneThroughMessage,
+        )
+        val public = ContactRequestSubmission.of(byteArrayOf(1), sendPrivately = false, accountLabel = "", dpnsLabel = null)
+        assertEquals(ContactRequestSubmissionOutcome.MAY_HAVE_GONE_THROUGH_MESSAGE, public.mayHaveGoneThroughMessage)
+        assertEquals(CollisionAccept.ReplyInKind, public.collisionAccept)
+    }
+
+    /**
+     * An accept that may have gone through never points at the public sync
+     * alone: an in-kind accept may have replied privately.
+     */
+    @Test
+    fun shouldPointAnAcceptThatMayHaveGoneThroughAtAReadOfPrivateRequests() {
+        val inKind = ContactRequestSubmission.of(byteArrayOf(1), sendPrivately = false, accountLabel = "", dpnsLabel = null)
+        assertEquals(
+            "This may have gone through. It shows up once Requests is refreshed: pull to refresh on " +
+                "Requests, which reads public and private requests. Do not submit it again.",
+            inKind.acceptMayHaveGoneThroughMessage,
+        )
+        val private = ContactRequestSubmission.of(byteArrayOf(1), sendPrivately = true, accountLabel = "", dpnsLabel = null)
+        assertEquals(
+            ContactRequestSubmissionOutcome.PRIVATE_MAY_HAVE_GONE_THROUGH_MESSAGE,
+            private.acceptMayHaveGoneThroughMessage,
+        )
+    }
+
     /** An unconfirmed submission marks only its own contact, and a read that does not cover it leaves the mark. */
     @Test
     fun shouldKeepAnUnconfirmedSubmissionAReadDidNotCover() {

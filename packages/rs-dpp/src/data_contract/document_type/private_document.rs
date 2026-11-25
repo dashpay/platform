@@ -11,9 +11,12 @@
 use crate::data_contract::document_type::accessors::{
     DocumentTypeV0Getters, DocumentTypeV2Getters,
 };
+use crate::data_contract::document_type::class_methods::consensus_or_protocol_data_contract_error;
 use crate::data_contract::document_type::property::DocumentProperty;
-use crate::data_contract::document_type::{property_names, DocumentPropertyType, DocumentTypeRef};
-use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+use crate::data_contract::document_type::{
+    property_names, DecodedValueBudget, DocumentPropertyType, DocumentTypeRef,
+};
+use crate::data_contract::errors::DataContractError;
 use crate::document::DocumentV0;
 use crate::ProtocolError;
 use indexmap::IndexMap;
@@ -43,6 +46,40 @@ impl PrivateDocumentConfig {
     /// which this does not count.
     pub fn entry_size(&self) -> u32 {
         self.entry_size.get()
+    }
+
+    /// Refuses entries larger than a private document type may declare
+    /// (`max_private_document_entry_size`), with the error registration refuses the type
+    /// `document_type_name` declaring them with.
+    pub(crate) fn ensure_entry_size_within_limit(
+        &self,
+        document_type_name: &str,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError> {
+        let entry_size = self.entry_size();
+        let Some(max_entry_size) = platform_version
+            .system_limits
+            .max_private_document_entry_size
+        else {
+            // A table selecting `parse_private_document` without the limit is a fault of this
+            // build, not of the contract
+            return Err(ProtocolError::CorruptedCodeExecution(format!(
+                "protocol version {} parses private document types but sets no \
+                 max_private_document_entry_size",
+                platform_version.protocol_version,
+            )));
+        };
+        if entry_size > max_entry_size {
+            return Err(consensus_or_protocol_data_contract_error(
+                DataContractError::InvalidContractStructure(format!(
+                    "private document type \"{document_type_name}\" declares `{}: {entry_size}`, \
+                     above the largest entry a private document type may declare, \
+                     {max_entry_size} bytes",
+                    property_names::ENTRY_SIZE,
+                )),
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -267,6 +304,7 @@ fn refuse_unread_object_bytes(
     fields: &IndexMap<String, DocumentProperty>,
     buf: &mut BufReader<&[u8]>,
     top_level: bool,
+    budget: &mut DecodedValueBudget,
 ) -> Result<(), ProtocolError> {
     let unread = |path: &str| {
         ProtocolError::DecodingError(format!(
@@ -283,7 +321,11 @@ fn refuse_unread_object_bytes(
             field.required
         };
         let DocumentPropertyType::Object(members) = &field.property_type else {
-            let (_, finished) = field.property_type.read_optionally_from(buf, required)?;
+            let (_, finished) = field.property_type.read_optionally_from_with_budget(
+                buf,
+                required,
+                Some(budget),
+            )?;
             if finished {
                 return Ok(());
             }
@@ -298,6 +340,7 @@ fn refuse_unread_object_bytes(
                 continue;
             }
         }
+        budget.consume(1)?;
         let object_len: usize = buf.read_varint().map_err(|_| {
             ProtocolError::DecodingError(format!(
                 "the object {name} of a private document payload has no length"
@@ -314,7 +357,7 @@ fn refuse_unread_object_bytes(
             )));
         }
         let mut object = BufReader::new(body.as_slice());
-        refuse_unread_object_bytes(members, &mut object, false)?;
+        refuse_unread_object_bytes(members, &mut object, false, budget)?;
         if object.read(&mut [0u8; 1]).map_err(|_| unread(name))? > 0 {
             return Err(unread(name));
         }
@@ -330,20 +373,33 @@ fn refuse_unread_object_bytes(
 /// them is refused by a reader that does not know them, which should refetch the contract. The
 /// schema's bounds are not checked here, so a recipient validates the properties against the type
 /// before trusting them (`DataContract::validate_document_properties`).
+///
+/// Decoded values are bounded proportionally to `payload.len()` via
+/// [`DecodedValueBudget::for_encoded_payload`], so even an unvalidated schema carrying zero-width
+/// typed-array elements cannot expand a small payload beyond its encoded size.
 pub fn decode_private_document_payload(
     document_type: DocumentTypeRef,
     payload: &[u8],
     platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<String, Value>, ProtocolError> {
     refuse_a_public_type(document_type)?;
+    let mut decode_budget = DecodedValueBudget::for_encoded_payload(payload.len(), document_type);
+    let mut check_budget = decode_budget;
     refuse_unread_object_bytes(
         document_type.properties(),
         &mut BufReader::new(payload),
         true,
+        &mut check_budget,
     )?;
     let mut serialized = private_document_payload_prefix().to_vec();
     serialized.extend_from_slice(payload);
-    Ok(DocumentV0::from_bytes(&serialized, document_type, platform_version)?.properties)
+    Ok(DocumentV0::from_bytes_with_budget(
+        &serialized,
+        document_type,
+        &mut decode_budget,
+        platform_version,
+    )?
+    .properties)
 }
 
 #[cfg(test)]
@@ -1086,5 +1142,62 @@ mod tests {
                 "required: {required}"
             );
         }
+    }
+
+    /// Even if an unvalidated private schema carries a zero-width byte-array typed array,
+    /// `decode_private_document_payload` bounds decoded values proportionally to the encoded
+    /// payload length so a 2-byte count cannot expand into `maxItems` values.
+    #[test]
+    fn should_bound_decoded_values_in_private_document_payload_by_encoded_size() {
+        let platform_version = PlatformVersion::latest();
+        let unvalidated_contract = DataContract::from_value(
+            platform_value::to_value(json!({
+                "$formatVersion": "1",
+                "id": Identifier::from([7; 32]).to_string(Encoding::Base58),
+                "ownerId": Identifier::from([8; 32]).to_string(Encoding::Base58),
+                "version": 1,
+                "documentSchemas": {
+                    "secret": {
+                        "type": "object",
+                        "private": { "entrySize": 512 },
+                        "documentsMutable": false,
+                        "canBeDeleted": false,
+                        "properties": {
+                            "empties": {
+                                "type": "array",
+                                "maxItems": 1024,
+                                "items": {
+                                    "type": "array",
+                                    "byteArray": true,
+                                    "minItems": 0,
+                                    "maxItems": 0
+                                },
+                                "position": 0
+                            }
+                        },
+                        "required": ["empties"],
+                        "additionalProperties": false
+                    }
+                }
+            }))
+            .expect("the contract converts"),
+            false,
+            platform_version,
+        )
+        .expect("unvalidated contract parses");
+        let secret = unvalidated_contract
+            .document_type_for_name("secret")
+            .expect("secret type");
+        // Varint 1024 = [0x80, 0x08]: 2 bytes claiming 1024 zero-width elements
+        let payload = [0x80u8, 0x08];
+        let error = decode_private_document_payload(secret, &payload, platform_version)
+            .expect_err("2-byte payload must not decode into 1024 values");
+        assert!(
+            matches!(
+                error,
+                ProtocolError::DataContractError(DataContractError::DecodedValueBudgetExceeded(_))
+            ),
+            "unexpected error: {error}"
+        );
     }
 }

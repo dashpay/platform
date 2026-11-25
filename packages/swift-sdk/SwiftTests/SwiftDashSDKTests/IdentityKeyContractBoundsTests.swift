@@ -107,7 +107,7 @@ final class IdentityKeyContractBoundsTests: XCTestCase {
         _ upserts: [PlatformWalletPersistenceHandler.IdentityKeyEntrySnapshot]
     ) {
         handler.beginChangeset(walletId: walletId)
-        handler.persistIdentityKeys(walletId: walletId, upserts: upserts, removed: [])
+        XCTAssertNoThrow(try handler.persistIdentityKeys(walletId: walletId, upserts: upserts, removed: []))
         XCTAssertTrue(handler.endChangeset(walletId: walletId, success: true))
     }
 

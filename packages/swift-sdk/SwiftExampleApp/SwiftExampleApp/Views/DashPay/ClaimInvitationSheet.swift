@@ -218,14 +218,29 @@ struct ClaimInvitationSheet: View {
                     network: network
                 ))
 
-                let managed = try await wallet.claimInvitation(
-                    uri: submittedURI,
-                    identityIndex: identityIndex,
-                    identityPubkeys: keys,
-                    signer: signer,
-                    nowUnix: UInt32(Date().timeIntervalSince1970)
-                )
-                let newIdentityId = try managed.getId()
+                let newIdentityId: Identifier
+                do {
+                    let managed = try await wallet.claimInvitation(
+                        uri: submittedURI,
+                        identityIndex: identityIndex,
+                        identityPubkeys: keys,
+                        signer: signer,
+                        nowUnix: UInt32(Date().timeIntervalSince1970)
+                    )
+                    newIdentityId = try managed.getId()
+                } catch PlatformWalletError.invitationClaimedByThisWallet(let claimedId) {
+                    // The invitation's identity is this wallet's. When the
+                    // wallet already lists it, the claim continues with it;
+                    // otherwise a rescan loads it.
+                    guard let recorded = identities.first(where: {
+                        $0.identityIdBase58 == claimedId && $0.wallet?.walletId == walletId
+                    }) else {
+                        errorMessage = "This invitation already created identity \(claimedId) "
+                            + "in this wallet. Run Re-scan for Identities to load it."
+                        return
+                    }
+                    newIdentityId = recorded.identityId
+                }
                 kickDashPaySync(walletManager)
 
                 // Offer the contact-bootstrap when the link carried an inviter
@@ -288,11 +303,17 @@ struct ClaimInvitationSheet: View {
 
     /// One past the highest used registration index on this wallet, else 0.
     /// Registration keys aren't gap-limited, so "next unused" is `max + 1`.
+    /// A slot held by an in-flight registration counts as used: its identity
+    /// row only lands after Platform accepts it, and reusing the slot would
+    /// register the same keys twice.
     private func nextUnusedIdentityIndex() -> UInt32 {
-        let used = identities
+        let recorded = identities
             .filter { $0.wallet?.walletId == walletId }
             .map(\.identityIndex)
-        guard let highest = used.max() else { return 0 }
+        let held = walletManager.registrationCoordinator.controllers.keys
+            .filter { $0.walletId == walletId }
+            .map(\.identityIndex)
+        guard let highest = (recorded + held).max() else { return 0 }
         return highest == UInt32.max ? UInt32.max : highest + 1
     }
 }

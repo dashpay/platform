@@ -149,7 +149,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// Background context for writing from callback threads.
     ///
     /// `ModelContext` is not thread-safe — touching it from the
-    /// Tokio worker threads that drive the Rust persistence
+    /// Rust-owned native threads that drive the persistence
     /// callbacks corrupts SwiftData's internal state and crashes
     /// inside `fetch`/`save`. The context is therefore confined to
     /// `serialQueue`: every public entry point wraps its body in
@@ -368,8 +368,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// recursive entry. The internal helpers in this file all
     /// assume they are already on the queue and call
     /// `backgroundContext` directly.
-    /// Every caller arrives from a Rust-owned tokio worker thread, and such a
-    /// thread has no autorelease pool: nothing on it ever drains, because the
+    /// Every caller arrives from a Rust-owned native thread (a tokio worker,
+    /// or the `pw-ffi-bigstack` thread some FFI calls run their work on), and
+    /// such a thread has no autorelease pool: nothing on it ever drains, because the
     /// drain is normally done by the run loop or by GCD's own worker wrapper,
     /// and `serialQueue.sync` can execute the block right on the calling
     /// thread rather than hopping to a GCD worker.
@@ -3738,12 +3739,14 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     /// were dropped from the Rust side — the former moved to the UI
     /// layer, the latter is now derived from
     /// `IdentityManager.highestRegistrationIndex(...)` at read time.
+    @discardableResult
     func persistIdentities(
         walletId: Data,
         upserts: [IdentityEntrySnapshot],
         removed: [Data]
-    ) {
+    ) -> Bool {
         onQueue {
+        do {
         for entry in upserts {
             let identityId = entry.identityId
             let descriptor = FetchDescriptor<PersistentIdentity>(
@@ -3837,7 +3840,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // shape: a missing snapshot leaves any existing row
             // intact.
             if let profile = entry.dashpayProfile {
-                upsertDashpayProfile(identityRow: row, profile: profile)
+                try upsertDashpayProfile(identityRow: row, profile: profile)
             }
 
             // Upsert the cached contact-profile rows for this identity.
@@ -3849,7 +3852,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // contact simply MISSING from this flush is "no update" (not a
             // delete). An empty array leaves any existing rows intact.
             if !entry.contactProfiles.isEmpty {
-                upsertDashpayContactProfiles(
+                try upsertDashpayContactProfiles(
                     identityRow: row,
                     profiles: entry.contactProfiles
                 )
@@ -3905,12 +3908,22 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             let descriptor = FetchDescriptor<PersistentIdentity>(
                 predicate: #Predicate { $0.identityId == identityId }
             )
-            if let existing = try? backgroundContext.fetch(descriptor).first {
+            // A failed fetch fails the changeset rather than reading as an
+            // absent row, which would strand the identity and its sidecar.
+            if let existing = try backgroundContext.fetch(descriptor).first {
+                try PersistentDashpayPaymentAddresses.removeOwned(in: backgroundContext,
+                    networkRaw: existing.networkRaw, ownerIdentityId: identityId)
                 backgroundContext.delete(existing)
             }
         }
 
         // No save() — bracketed by changesetBegin/End.
+        return true
+        } catch {
+            SDKLogger.event("persistence_profile_addresses_failed", category: .persistence,
+                severity: .error, error: error)
+            return false
+        }
         }  // onQueue
     }
 
@@ -4097,7 +4110,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     private func upsertDashpayProfile(
         identityRow: PersistentIdentity,
         profile: DashpayProfileSnapshot
-    ) {
+    ) throws {
         if let existing = identityRow.dashpayProfile {
             // Field-level refresh. Every column is overwritten on
             // every flush — the FFI snapshot is authoritative for
@@ -4129,6 +4142,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // `PersistentIdentity.dashpayProfile`, so we don't need
             // to assign `identityRow.dashpayProfile = row` here.
         }
+        try PersistentDashpayPaymentAddresses.replace(in: backgroundContext,
+            networkRaw: identityRow.networkRaw, ownerIdentityId: identityRow.identityId,
+            profileIdentityId: identityRow.identityId, core: profile.corePaymentAddress,
+            platform: profile.platformPaymentAddress, shielded: profile.shieldedAddress, fetcher: modelFetcher)
     }
 
     /// Upsert one `PersistentDashpayContactProfile` row per cached
@@ -4158,7 +4175,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
     private func upsertDashpayContactProfiles(
         identityRow: PersistentIdentity,
         profiles: [ContactProfileSnapshot]
-    ) {
+    ) throws {
         let ownerIdentityId = identityRow.identityId
         for profile in profiles {
             let contactIdentityId = profile.contactIdentityId
@@ -4169,9 +4186,12 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 )
             )
             guard profile.isPresent else {
+                try PersistentDashpayPaymentAddresses.replace(in: backgroundContext,
+                    networkRaw: identityRow.networkRaw, ownerIdentityId: ownerIdentityId,
+                    profileIdentityId: contactIdentityId, core: nil, platform: nil, shielded: nil, fetcher: modelFetcher)
                 // Confirmed-absent: delete the stale row if one exists; a
                 // never-persisted contact is a no-op.
-                if let existing = try? backgroundContext.fetch(descriptor).first {
+                if let existing = try modelFetcher.fetch(descriptor, in: backgroundContext).first {
                     backgroundContext.delete(existing)
                 }
                 continue
@@ -4202,6 +4222,10 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 // collection from the `inverse:` declaration on
                 // `PersistentIdentity.contactProfiles`.
             }
+            try PersistentDashpayPaymentAddresses.replace(in: backgroundContext,
+                networkRaw: identityRow.networkRaw, ownerIdentityId: ownerIdentityId,
+                profileIdentityId: contactIdentityId, core: profile.corePaymentAddress,
+                platform: profile.platformPaymentAddress, shielded: profile.shieldedAddress, fetcher: modelFetcher)
         }
     }
 
@@ -4224,8 +4248,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         walletId: Data,
         upserts: [IdentityKeyEntrySnapshot],
         removed: [(identityId: Data, keyId: UInt32)]
-    ) {
-        onQueue {
+    ) throws {
+        try onQueue {
         for entry in upserts {
             // PersistentPublicKey is keyed on (identity, keyId) via
             // its parent relationship; fetch by keyId + identityId
@@ -4273,8 +4297,32 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             }
 
             let row: PersistentPublicKey
-            if let existing = try? backgroundContext.fetch(descriptor).first {
+            // Update the row linked to its identity, found through the parent
+            // whatever identity string it carries: an older refresh or Load
+            // Identity could leave an unlinked row with the same key id behind
+            // (or tag the linked one with the hex id), and updating the
+            // unlinked one would leave the row the screens and cold restore
+            // read stale. Only without a linked row fall back to the string
+            // lookup. A failed lookup is not "no row": inserting then could
+            // add a second row for the key, and skipping the upsert would let
+            // the round commit without it. Throw instead, so the callback
+            // fails the round and the changeset is rolled back.
+            let identityIdData = entry.identityId
+            let parentDescriptor = FetchDescriptor<PersistentIdentity>(
+                predicate: #Predicate { $0.identityId == identityIdData }
+            )
+            let parent = try modelFetcher.fetch(parentDescriptor, in: backgroundContext).first
+            if let linked = parent?.publicKeys.first(where: { $0.keyId == targetKeyId }) {
+                row = linked
+            } else if let existing = try modelFetcher.fetch(descriptor, in: backgroundContext).first {
                 row = existing
+                // An unlinked row for a key its identity has no row for (a
+                // reload unlinked it): attach it, so the key screens and cold
+                // restore, which read the identity's keys, see it.
+                if let parent, existing.identity == nil {
+                    existing.identity = parent
+                    parent.addPublicKey(existing)
+                }
             } else {
                 let purposeEnum = KeyPurpose(rawValue: entry.purpose) ?? .authentication
                 let levelEnum = SecurityLevel(rawValue: entry.securityLevel) ?? .high
@@ -4297,11 +4345,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                 // row. (We don't insert a missing parent here —
                 // Rust-side ordering guarantees identities apply
                 // before keys within the same changeset.)
-                let identityIdData = entry.identityId
-                let parentDescriptor = FetchDescriptor<PersistentIdentity>(
-                    predicate: #Predicate { $0.identityId == identityIdData }
-                )
-                if let parent = try? backgroundContext.fetch(parentDescriptor).first {
+                if let parent {
                     row.identity = parent
                     parent.addPublicKey(row)
                 }
@@ -5569,6 +5613,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         /// 8-byte DHash perceptual fingerprint. `nil` when the source
         /// `avatar_fingerprint_present == false`.
         let avatarFingerprint: Data?
+        var corePaymentAddress: Data? = nil
+        var platformPaymentAddress: Data? = nil
+        var shieldedAddress: Data? = nil
         /// Wall-clock ms of the last fetch attempt on the Rust side
         /// (`ContactProfileEntry.checked_at_ms`).
         let checkedAtMs: UInt64
@@ -5592,6 +5639,9 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
         /// `avatarFingerprint`). `nil` when the source
         /// `avatar_fingerprint_present == false`.
         let avatarFingerprint: Data?
+        var corePaymentAddress: Data? = nil
+        var platformPaymentAddress: Data? = nil
+        var shieldedAddress: Data? = nil
     }
 
     /// Swift-side snapshot of `IdentityKeyEntryFFI` — public-key
@@ -7133,24 +7183,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     // and privacy-relevant ignored-sender ids on disk after
                     // a user-initiated wallet wipe.
                     for identity in identitiesToDelete {
-                        for name in Array(identity.dpnsNames) {
-                            backgroundContext.delete(name)
-                        }
-                        if let profile = identity.dashpayProfile {
-                            backgroundContext.delete(profile)
-                        }
-                        for contactProfile in Array(identity.contactProfiles) {
-                            backgroundContext.delete(contactProfile)
-                        }
-                        for cr in Array(identity.contactRequests) {
-                            backgroundContext.delete(cr)
-                        }
-                        for payment in Array(identity.dashpayPayments) {
-                            backgroundContext.delete(payment)
-                        }
-                        for ignored in Array(identity.dashpayIgnoredSenders) {
-                            backgroundContext.delete(ignored)
-                        }
+                        identity.deleteChildrenWithRequiredInverse(in: backgroundContext)
                     }
                     try backgroundContext.save()
 
@@ -7158,6 +7191,8 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     // that their problematic cascade children are
                     // gone from the store.
                     for identity in identitiesToDelete {
+                        try PersistentDashpayPaymentAddresses.removeOwned(in: backgroundContext,
+                            networkRaw: identity.networkRaw, ownerIdentityId: identity.identityId)
                         backgroundContext.delete(identity)
                     }
                     try backgroundContext.save()
@@ -7703,6 +7738,16 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             }
         }
 
+        let paymentAddressRows: [PersistentDashpayPaymentAddresses]
+        do {
+            paymentAddressRows = try modelFetcher.fetch(FetchDescriptor<PersistentDashpayPaymentAddresses>(), in: backgroundContext)
+        } catch {
+            SDKLogger.event("persistence_profile_addresses_load_failed", category: .persistence,
+                severity: .error, error: error)
+            return (nil, 0, true)
+        }
+        let addressesByOwner = Dictionary(grouping: paymentAddressRows, by: \.ownerIdentityId)
+
         // Allocate `entriesPtr` and the `LoadAllocation` here — past
         // the fallible SwiftData fetch above — so an early-error path
         // doesn't leak the entries buffer (LoadAllocation only gets
@@ -7857,6 +7902,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             }
             let identitiesBuffer = buildIdentityRestoreBuffer(
                 identities: sortedIdentities,
+                addressesByOwner: addressesByOwner,
                 allocation: allocation
             )
 
@@ -8868,6 +8914,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
 
     private func buildIdentityRestoreBuffer(
         identities: [PersistentIdentity],
+        addressesByOwner: [Data: [PersistentDashpayPaymentAddresses]],
         allocation: LoadAllocation
     ) -> UnsafeMutablePointer<IdentityRestoreEntryFFI>? {
         if identities.isEmpty {
@@ -9200,6 +9247,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
             // under a wrong key (matching the abort-on-corrupt convention the
             // UTXO restore uses). Filtering up front also keeps the fixed-
             // capacity buffer fully initialized so the count stays exact.
+            let addressRows = (addressesByOwner[identity.identityId] ?? []).filter { $0.networkRaw == identity.networkRaw }
             let contactProfileRows = identity.contactProfiles.filter {
                 $0.contactIdentityId.count == 32
             }
@@ -9211,6 +9259,7 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                     capacity: contactProfileRows.count
                 )
                 for (c, profile) in contactProfileRows.enumerated() {
+                    let addresses = addressRows.first { $0.profileIdentityId == profile.contactIdentityId }
                     var row = ContactProfileRestoreEntryFFI()
                     copyBytes(profile.contactIdentityId, into: &row.contact_id)
                     if let displayName = profile.displayName, !displayName.isEmpty {
@@ -9238,6 +9287,18 @@ public final class PlatformWalletPersistenceHandler: @unchecked Sendable {
                         row.avatar_hash_present = true
                     } else {
                         row.avatar_hash_present = false
+                    }
+                    if let address = addresses?.corePaymentAddress, address.count == 21 {
+                        copyBytes(address, into: &row.core_payment_address)
+                        row.core_payment_address_present = true
+                    }
+                    if let address = addresses?.platformPaymentAddress, address.count == 21 {
+                        copyBytes(address, into: &row.platform_payment_address)
+                        row.platform_payment_address_present = true
+                    }
+                    if let address = addresses?.shieldedAddress, address.count == 43 {
+                        copyBytes(address, into: &row.shielded_address)
+                        row.shielded_address_present = true
                     }
                     if let avatarFingerprint = profile.avatarFingerprint,
                        avatarFingerprint.count == 8 {
@@ -10594,7 +10655,10 @@ private func persistIdentitiesCallback(
                     publicMessage: e.dashpay_profile_public_message.map { String(cString: $0) },
                     avatarUrl: e.dashpay_profile_avatar_url.map { String(cString: $0) },
                     avatarHash: avatarHash,
-                    avatarFingerprint: avatarFingerprint
+                    avatarFingerprint: avatarFingerprint,
+                    corePaymentAddress: e.dashpay_profile_core_payment_address_present ? Swift.withUnsafeBytes(of: e.dashpay_profile_core_payment_address) { Data($0) } : nil,
+                    platformPaymentAddress: e.dashpay_profile_platform_payment_address_present ? Swift.withUnsafeBytes(of: e.dashpay_profile_platform_payment_address) { Data($0) } : nil,
+                    shieldedAddress: e.dashpay_profile_shielded_address_present ? Swift.withUnsafeBytes(of: e.dashpay_profile_shielded_address) { Data($0) } : nil
                 )
             } else {
                 dashpayProfile = nil
@@ -10631,6 +10695,9 @@ private func persistIdentitiesCallback(
                             avatarUrl: row.avatar_url.map { String(cString: $0) },
                             avatarHash: avatarHash,
                             avatarFingerprint: avatarFingerprint,
+                            corePaymentAddress: row.core_payment_address_present ? Swift.withUnsafeBytes(of: row.core_payment_address) { Data($0) } : nil,
+                            platformPaymentAddress: row.platform_payment_address_present ? Swift.withUnsafeBytes(of: row.platform_payment_address) { Data($0) } : nil,
+                            shieldedAddress: row.shielded_address_present ? Swift.withUnsafeBytes(of: row.shielded_address) { Data($0) } : nil,
                             checkedAtMs: row.checked_at_ms
                         )
                     )
@@ -10662,12 +10729,12 @@ private func persistIdentitiesCallback(
         }
     }
 
-    handler.persistIdentities(
+    let success = handler.persistIdentities(
         walletId: walletId,
         upserts: upserts,
         removed: removed
     )
-    return 0
+    return success ? 0 : 1
 }
 
 /// C shim for `on_persist_identity_keys_fn`. Same snapshot + cast
@@ -10768,8 +10835,14 @@ private func persistIdentityKeysCallback(
         }
     }
 
-    handler.persistIdentityKeys(walletId: walletId, upserts: upserts, removed: removed)
-    return 0
+    // A key row that cannot be looked up fails the round rather than
+    // acknowledging it without the row (see `persistIdentityKeys`).
+    do {
+        try handler.persistIdentityKeys(walletId: walletId, upserts: upserts, removed: removed)
+        return 0
+    } catch {
+        return -1
+    }
 }
 
 /// C shim for `on_persist_token_balances_fn`. Same snapshot + cast

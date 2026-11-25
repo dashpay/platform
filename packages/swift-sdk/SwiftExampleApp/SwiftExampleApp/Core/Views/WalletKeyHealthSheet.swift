@@ -366,21 +366,26 @@ enum WalletKeyHealthChecker {
     /// Cascade-delete an orphan identity from SwiftData AND wipe its
     /// associated Keychain entries.
     ///
-    /// Ordering:
-    ///  1. Wipe Keychain first (`identity_privkey.*` rows whose
-    ///     metadata matches this identity). Idempotent on retry.
-    ///  2. Pre-delete the identity's cascade children that have
-    ///     non-Optional inverses back to it — DPNS names, DashPay
-    ///     profile, contact requests — and save. SwiftData fatals
-    ///     on `save()` whenever it tries to null out a non-
-    ///     Optional inverse, so the parent delete in step 3 cannot
-    ///     be in the same save batch as these children; mirrors
-    ///     the per-layer save pattern in
-    ///     `PlatformWalletPersistenceHandler.deleteWalletData`.
-    ///  3. Delete the identity itself + save.
+    /// Ordering, so a failed delete cannot leave a listed identity
+    /// whose keys are gone:
+    ///  1. Delete the identity's SwiftData rows children first
+    ///     (`PersistentIdentity.deleteChildrenFirst`): the children
+    ///     with a non-optional inverse to it are deleted and saved
+    ///     before the identity, because SwiftData fatals in `save()`
+    ///     when it has to null such an inverse. A failed save rolls
+    ///     the context back and throws, and the Keychain is not
+    ///     touched.
+    ///  2. Only then wipe every private key of the identity from the
+    ///     Keychain with `KeychainManager.deleteAllPrivateKeys(ofIdentityId:publicKeys:)`,
+    ///     the same sweep Remove from Device runs: the direct
+    ///     `privkey_*` / `specialkey_*` accounts (an imported key) and
+    ///     the `identity_privkey.*` items whose metadata names the
+    ///     identity, or is unattributed (owner `pending` or empty) with
+    ///     one of its public keys. The sweep reads only
+    ///     values captured before step 1, not the row.
     ///
     /// Returns a per-side outcome so the caller can distinguish
-    /// "fully clean" from "SwiftData clean, Keychain warning" —
+    /// "fully clean" from "SwiftData clean, Keychain warning";
     /// the latter shouldn't prevent the sheet from dropping the
     /// now-deleted row from its in-memory `reports` list.
     /// Genuine SwiftData failures still throw (they're the ones
@@ -390,41 +395,22 @@ enum WalletKeyHealthChecker {
         identity: PersistentIdentity,
         modelContext: ModelContext
     ) throws -> OrphanDeleteOutcome {
-        // Snapshot the base58 id BEFORE the delete — once the row
-        // is removed its computed accessor is invalid.
-        let identityIdBase58 = identity.identityIdBase58
+        // Snapshot the id and public keys BEFORE the delete: once the
+        // row is removed its accessors are invalid.
+        let identityId = identity.identityId
+        let publicKeys = identity.publicKeys.map(\.publicKeyData)
+
+        try PersistentIdentity.deleteChildrenFirst(identity, in: modelContext)
+
         var keychainError: Error?
         do {
-            try KeychainManager.shared.deleteAllIdentityPrivateKeys(
-                forIdentityIdBase58: identityIdBase58
+            try KeychainManager.shared.deleteAllPrivateKeys(
+                ofIdentityId: identityId,
+                publicKeys: publicKeys
             )
         } catch {
             keychainError = error
         }
-
-        // PHASE 1: delete cascade children with non-Optional
-        // inverses to identity. Same reasoning as
-        // `PlatformWalletPersistenceHandler.deleteWalletData` —
-        // PersistentPublicKey / Document / TokenBalance inverses
-        // to identity are already Optional and don't need pre-
-        // deletion; DPNS names, DashPay profile, contact requests
-        // do.
-        for name in Array(identity.dpnsNames) {
-            modelContext.delete(name)
-        }
-        if let profile = identity.dashpayProfile {
-            modelContext.delete(profile)
-        }
-        for cr in Array(identity.contactRequests) {
-            modelContext.delete(cr)
-        }
-        try modelContext.save()
-
-        // PHASE 2: delete the identity itself. Its problematic
-        // cascade children are gone, so SwiftData has no non-
-        // Optional inverse to null out during the merge phase.
-        modelContext.delete(identity)
-        try modelContext.save()
 
         return OrphanDeleteOutcome(
             swiftDataDeleted: true,
@@ -688,7 +674,7 @@ struct WalletKeyHealthSheet: View {
             }
             if let keychainError = outcome.keychainError {
                 actionMessage = "Deleted orphan identity \(report.identityIdBase58.prefix(12))…"
-                errorMessage = "Keychain cleanup warning: \(keychainError.localizedDescription) — re-running Verify Identity Keys can retry."
+                errorMessage = "Keychain cleanup warning: \(keychainError.localizedDescription). The identity was removed, but some of its private keys may still be in the Keychain."
             } else {
                 actionMessage = "Deleted orphan identity \(report.identityIdBase58.prefix(12))…"
                 errorMessage = nil

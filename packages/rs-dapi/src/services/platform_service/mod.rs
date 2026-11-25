@@ -40,6 +40,11 @@ pub use shielded_proof_failure_budget::ShieldedProofFailureBudget;
 
 const MAX_PENDING_STATE_TRANSITION_WAITS: usize = 1_024;
 
+/// Registrations of state transitions for an execution proof that this process holds with
+/// Drive at once, counting the ones whose release is still on its way: a release runs on after
+/// its wait ends and frees its wait permit. As many as Drive keeps.
+const MAX_EXECUTION_PROOF_REGISTRATIONS: usize = 1_024;
+
 /// `getBlocks` requests reading from Tenderdash at once. Ten full blocks hold about 60 MiB
 /// while in flight, so this keeps the memory of the query bounded on a small node.
 const MAX_CONCURRENT_GET_BLOCKS: usize = 4;
@@ -198,6 +203,8 @@ pub struct PlatformServiceImpl {
     pub platform_cache: crate::cache::LruResponseCache,
     pub subscriber_manager: Arc<crate::services::streaming_service::SubscriberManager>,
     pub state_transition_wait_permits: Arc<Semaphore>,
+    /// One per registration for an execution proof, held until its release with Drive ends.
+    pub execution_proof_registration_permits: Arc<Semaphore>,
     pub get_blocks_permits: Arc<Semaphore>,
     pub get_owner_transactions_permits: Arc<Semaphore>,
     pub shielded_proof_failure_budget: Arc<ShieldedProofFailureBudget>,
@@ -262,6 +269,9 @@ impl PlatformServiceImpl {
             subscriber_manager,
             state_transition_wait_permits: Arc::new(Semaphore::new(
                 MAX_PENDING_STATE_TRANSITION_WAITS,
+            )),
+            execution_proof_registration_permits: Arc::new(Semaphore::new(
+                MAX_EXECUTION_PROOF_REGISTRATIONS,
             )),
             get_blocks_permits: Arc::new(Semaphore::new(MAX_CONCURRENT_GET_BLOCKS)),
             get_owner_transactions_permits: Arc::new(Semaphore::new(

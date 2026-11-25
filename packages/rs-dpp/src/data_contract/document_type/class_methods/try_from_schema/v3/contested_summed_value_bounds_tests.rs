@@ -227,15 +227,17 @@ fn should_read_the_bounds_through_a_ref() {
     ));
 }
 
+/// Held to the rule every summed property follows from protocol version 15 instead: values
+/// that are never negative, of any size, on a type keeping its total.
 #[test]
-fn should_leave_a_summed_type_without_a_contested_index_unbounded() {
+fn should_leave_a_summed_type_without_a_contested_index_to_the_general_bounds() {
     parse(name_schema(
-        amount(None, None),
+        amount(Some(0), Some(4_294_967_295)),
         false,
         documents_summable(),
         platform_value!({}),
     ))
-    .expect("an uncontested summed type registers without bounds");
+    .expect("an uncontested summed type registers past the contested limit");
 }
 
 #[test]
