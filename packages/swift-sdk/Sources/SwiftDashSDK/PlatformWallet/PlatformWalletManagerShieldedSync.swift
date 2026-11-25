@@ -718,11 +718,10 @@ extension PlatformWalletManager {
         try ensureShieldedLifecycleAllowed("clearShielded")
         try ensureNoShieldedStopInFlight(before: "clearing shielded state")
         guard !hasAdmittedNativeOp else {
-            // The class Rust gives the same refusal (code 84): nothing was
-            // sent, and Clear may be requested again.
+            // Raised here, before Rust is asked: no payment class and no
+            // retry decision, which only Rust gives (`payment` is nil).
             throw PlatformWalletError.shieldedOperationInProgress(
-                "an async native operation is in flight; clearShielded rejected",
-                payment: PlatformPaymentClass(delivery: .notSent, isRetryable: true))
+                "an async native operation is in flight; clearShielded rejected")
         }
         try ensureSyncNativeOpAllowed("clearShielded")
         // Every throw, the refusal included, leaves before the bump and the

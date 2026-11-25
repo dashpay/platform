@@ -704,7 +704,12 @@ public struct PlatformPaymentClass: Equatable, Sendable {
     }
 
     /// The class a Swift-side guard passes when it throws without a result
-    /// after the payment may have left, so no second one is offered.
+    /// after the payment may have left, so no second one is offered: only
+    /// after Rust returned success but handed back no output (a NULL
+    /// pointer or handle), when the operation's effect already happened.
+    /// It grants nothing (no retry, no resume). A refusal Swift raises
+    /// before Rust is asked carries no class at all (`payment: nil`): the
+    /// class and retry decision are Rust's.
     public static let maybeSent = PlatformPaymentClass(delivery: .maybeSent, isRetryable: false)
 }
 

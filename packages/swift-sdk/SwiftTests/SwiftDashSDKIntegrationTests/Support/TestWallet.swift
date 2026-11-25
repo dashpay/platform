@@ -40,8 +40,8 @@ final class TestWalletWrapper: @unchecked Sendable {
             return txid
         case .rejected(_, let reason):
             throw PlatformWalletError.transactionBroadcastRejected(reason)
-        case .unknown(_, let reason):
-            throw PlatformWalletError.transactionBroadcastUnconfirmed(reason)
+        case .unknown(_, let reason, let payment):
+            throw PlatformWalletError.transactionBroadcastUnconfirmed(reason, payment: payment)
         }
     }
 

@@ -1650,9 +1650,20 @@ final class ErrorHandlingTests: XCTestCase {
             try CoreTransactionBroadcastOutcome(
                 resultCode: .errorTransactionBroadcastUnconfirmed,
                 txid: "unknown-id",
+                reason: "timeout",
+                payment: .maybeSent
+            ),
+            .unknown(txid: "unknown-id", reason: "timeout", payment: .maybeSent)
+        )
+        // The outcome carries Rust's class as given, nil included: it never
+        // derives one from the code.
+        XCTAssertEqual(
+            try CoreTransactionBroadcastOutcome(
+                resultCode: .errorTransactionBroadcastUnconfirmed,
+                txid: "unknown-id",
                 reason: "timeout"
             ),
-            .unknown(txid: "unknown-id", reason: "timeout")
+            .unknown(txid: "unknown-id", reason: "timeout", payment: nil)
         )
     }
 

@@ -213,12 +213,14 @@ final class SendViewModelCoreRecipientsTests: XCTestCase {
         let vm = makeCoreToCoreViewModel(primaryAmount: "0.001")
 
         vm.applyCoreBroadcastOutcome(
-            .unknown(txid: "abc", reason: "request timed out"),
+            .unknown(txid: "abc", reason: "request timed out", payment: .maybeSent),
             recipientCount: 1
         )
 
         XCTAssertNil(vm.successMessage)
         let failure = vm.paymentFailure
+        // The recovery is Rust's class of the result, carried by the outcome.
+        XCTAssertEqual(failure?.recovery, .reconcile)
         XCTAssertTrue(failure?.message.contains("do not retry") == true)
         XCTAssertTrue(failure?.message.contains("abc") == true)
         // An unverified broadcast holds the form like any maybe-sent payment.

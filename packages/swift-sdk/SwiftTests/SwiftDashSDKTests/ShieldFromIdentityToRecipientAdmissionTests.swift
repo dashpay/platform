@@ -118,8 +118,10 @@ final class ShieldFromIdentityToRecipientAdmissionTests: XCTestCase {
         do {
             try manager.clearShielded()
             XCTFail("clearShielded must be rejected while the spend is in flight")
-        } catch PlatformWalletError.shieldedOperationInProgress(let message, _) {
+        } catch PlatformWalletError.shieldedOperationInProgress(let message, let payment) {
             XCTAssertTrue(message.contains("in flight"), "clearShielded rejected for another reason: \(message)")
+            // Raised before Rust is asked: no payment class or retry decision.
+            XCTAssertNil(payment, "a host refusal carries no native class")
         }
 
         gate.signal()

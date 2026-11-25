@@ -1292,12 +1292,13 @@ class SendViewModel: ObservableObject {
         case .rejected(_, let reason):
             successMessage = nil
             error = "Payment rejected by Dash Core: \(reason)"
-        case .unknown(let txid, let reason):
-            // The broadcast may have reached the network: the same hold as
-            // any other maybe-sent payment, so the form refuses a second one.
+        case .unknown(let txid, let reason, let payment):
+            // The broadcast may have reached the network. The hold follows
+            // Rust's class of the result, as for any other payment failure
+            // (one without a class also holds the form).
             successMessage = nil
             paymentFailure = PaymentFailure(
-                payment: .maybeSent,
+                payment: payment,
                 detail: "Payment status could not be verified (\(txid)). "
                     + "It may already have been accepted; do not retry. \(reason)"
             )

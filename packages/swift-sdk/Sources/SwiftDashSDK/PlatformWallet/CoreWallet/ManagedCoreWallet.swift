@@ -6,15 +6,17 @@ import DashSDKFFI
 /// `accepted` means Dash Core accepted the transaction into its mempool or
 /// already knows it; it does not mean the transaction is mined or
 /// InstantSend-locked. `unknown` must not be retried automatically because the
-/// Core response may have been lost after acceptance.
+/// Core response may have been lost after acceptance; its `payment` is Rust's
+/// class of the result (`nil` when Rust gave none), for a screen to hold or
+/// release a form by, never derived here.
 public enum CoreTransactionBroadcastOutcome: Equatable, Sendable {
     case accepted(txid: String)
     case rejected(txid: String, reason: String)
-    case unknown(txid: String, reason: String)
+    case unknown(txid: String, reason: String, payment: PlatformPaymentClass? = nil)
 
     public var txid: String {
         switch self {
-        case .accepted(let txid), .rejected(let txid, _), .unknown(let txid, _):
+        case .accepted(let txid), .rejected(let txid, _), .unknown(let txid, _, _):
             return txid
         }
     }
@@ -22,7 +24,8 @@ public enum CoreTransactionBroadcastOutcome: Equatable, Sendable {
     init(
         resultCode: PlatformWalletResultCode,
         txid: String,
-        reason: String
+        reason: String,
+        payment: PlatformPaymentClass? = nil
     ) throws {
         switch resultCode {
         case .success:
@@ -30,7 +33,7 @@ public enum CoreTransactionBroadcastOutcome: Equatable, Sendable {
         case .errorTransactionBroadcastRejected:
             self = .rejected(txid: txid, reason: reason)
         case .errorTransactionBroadcastUnconfirmed:
-            self = .unknown(txid: txid, reason: reason)
+            self = .unknown(txid: txid, reason: reason, payment: payment)
         default:
             throw PlatformWalletError.unknown(
                 "Cannot create Core broadcast outcome from \(resultCode)"
@@ -325,7 +328,8 @@ public class ManagedCoreWallet {
             return try CoreTransactionBroadcastOutcome(
                 resultCode: result.code,
                 txid: txid,
-                reason: result.message ?? "<no detail from Rust>"
+                reason: result.message ?? "<no detail from Rust>",
+                payment: result.paymentClass
             )
 
         default:

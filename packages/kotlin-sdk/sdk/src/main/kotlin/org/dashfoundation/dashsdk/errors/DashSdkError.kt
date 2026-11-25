@@ -953,7 +953,9 @@ sealed class DashSdkError(
          * it. Clear returned at once and changed nothing (the sync loop keeps
          * running, no registration, note or tree leaf was touched), so the
          * host keeps its Room rows and offers Clear again once the operation
-         * has finished.
+         * has finished. The SDK's own lifecycle guard raises it too, before
+         * Rust is asked: that one carries no payment class ([delivery] `null`,
+         * not [isRetryable]), since the class and retry are Rust's to give.
          * ← Swift `PlatformWalletError.shieldedOperationInProgress`.
          */
         class ShieldedOperationInProgress(message: String, cause: Throwable? = null) :

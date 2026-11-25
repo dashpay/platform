@@ -385,7 +385,10 @@ class ShieldedServiceTest {
             "expected the typed refusal, got $refused",
             refused is DashSdkError.PlatformWallet.ShieldedOperationInProgress,
         )
-        assertTrue("Clear can be requested again", (refused as DashSdkError).isRetryable)
+        // Raised by the host, not by Rust: no payment class, no retry decision.
+        val hostRefusal = refused as DashSdkError.PlatformWallet
+        assertNull("no native class on a host refusal", hostRefusal.delivery)
+        assertFalse("retry is Rust's to grant", hostRefusal.isRetryable)
         assertFalse(cleared)
 
         // The bind finishing does not run the refused Clear after all.
