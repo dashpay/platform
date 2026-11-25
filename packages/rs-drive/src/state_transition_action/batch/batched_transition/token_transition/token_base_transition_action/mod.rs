@@ -104,6 +104,7 @@ mod tests {
     use dpp::group::GroupStateTransitionResolvedInfo;
     use dpp::prelude::DataContract;
     use dpp::tokens::token_event::TokenEvent;
+    use dpp::version::PlatformVersion;
     use grovedb_costs::OperationCost;
     use std::collections::BTreeMap;
 
@@ -159,6 +160,7 @@ mod tests {
                 storage_flags: None,
                 cost: OperationCost::default(),
                 fee: None,
+                parsed_under_protocol_version: PlatformVersion::latest().protocol_version,
             }),
             store_in_group,
             perform_action,
@@ -207,6 +209,7 @@ mod tests {
                 storage_flags: None,
                 cost: OperationCost::default(),
                 fee: None,
+                parsed_under_protocol_version: PlatformVersion::latest().protocol_version,
             }),
             store_in_group: None,
             perform_action: true,
@@ -270,6 +273,7 @@ mod tests {
                 storage_flags: None,
                 cost: OperationCost::default(),
                 fee: None,
+                parsed_under_protocol_version: PlatformVersion::latest().protocol_version,
             }),
             store_in_group: None,
             perform_action: true,

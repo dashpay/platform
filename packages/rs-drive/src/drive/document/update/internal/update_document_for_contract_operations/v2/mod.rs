@@ -1019,6 +1019,7 @@ impl Drive {
                         index.countable,
                         index.summable.is_some(),
                         index.range_summable,
+                        document_type.uses_big_sums(),
                     );
                     self.batch_insert_empty_tree_if_not_exists(
                         PathKeyInfo::PathKeyRef::<0>((index_path.clone(), &[0])),
@@ -1369,6 +1370,7 @@ impl Drive {
             index.countable,
             index.summable.is_some(),
             index.range_summable,
+            document_type.uses_big_sums(),
         );
         let top_level_tree_types =
             index_level_tree_types_with_continuation_demotion(top_index_level)?;

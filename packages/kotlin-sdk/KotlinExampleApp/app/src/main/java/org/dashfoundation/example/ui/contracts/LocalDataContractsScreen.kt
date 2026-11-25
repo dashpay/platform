@@ -36,13 +36,19 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import org.dashfoundation.dashsdk.Network
+import org.dashfoundation.example.di.AppContainer
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.ContractDetail
+import org.dashfoundation.example.services.tokens.IdentityTokenSync
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.toHex
 import org.dashfoundation.example.util.truncateMiddle
@@ -67,7 +73,7 @@ fun LocalDataContractsScreen(navController: NavHostController) {
     val contractsFlow = remember(network) {
         container.database.dataContractDao().observeByNetwork(network.ffiValue)
     }
-    val contracts by contractsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val contracts by contractsFlow.collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     var inputId by rememberSaveable { mutableStateOf("") }
     var contractName by rememberSaveable { mutableStateOf("") }
@@ -92,7 +98,9 @@ fun LocalDataContractsScreen(navController: NavHostController) {
                     database = container.database,
                     network = network,
                 )
-                if (result.alreadyExisted) {
+                if (result.updated) {
+                    fetchedSummary = "Updated ${result.contract.name} to version ${result.contract.version}"
+                } else if (result.alreadyExisted) {
                     errorMessage = "This contract is already saved locally"
                 } else {
                     fetchedSummary = "Saved ${result.contract.name}"
@@ -238,8 +246,15 @@ fun LocalDataContractsScreen(navController: NavHostController) {
                                     IconButton(onClick = {
                                         scope.launch {
                                             try {
-                                                container.database.dataContractDao()
-                                                    .delete(contract)
+                                                val deleted = unwatchThenDelete(container, network) {
+                                                    container.database.dataContractDao()
+                                                        .delete(contract)
+                                                }
+                                                check(deleted) {
+                                                    "its tokens' balance watches could not be cleared; try again"
+                                                }
+                                            } catch (e: CancellationException) {
+                                                throw e
                                             } catch (e: Exception) {
                                                 errorMessage =
                                                     "Failed to delete contract: ${e.message}"
@@ -285,3 +300,26 @@ private val KNOWN_CONTRACTS = listOf(
     "Token History" to "43gujrzZgXqcKBiScLa4T8XTDnRhenR9BLx8GWVHjPxF",
     "Keyword Search" to "BsjE6tQxG47wffZCRQCovFx5rYrAYYC3rTVRWKro27LA",
 )
+
+/**
+ * Delete a saved contract without leaving its tokens watched: register every
+ * wallet identity on [network] with no tokens, so a token-sync pass already
+ * reading the contract's tokens stores nothing for them once Room has
+ * cascaded the delete, then run [delete] under the same token-watch lock, so a refresh
+ * queued meanwhile runs after the delete and leaves its tokens out. The
+ * Tokens screen registers the identity on screen again. Returns false, and
+ * does not delete, when clearing failed; with no active manager nothing is
+ * watched, and it just deletes.
+ */
+private suspend fun unwatchThenDelete(
+    container: AppContainer,
+    network: Network,
+    delete: suspend () -> Unit,
+): Boolean {
+    val manager = container.walletManagerStore.activeManager.value
+        ?: return IdentityTokenSync.withWatchLock { delete(); true }
+    val identityIds = container.database.identityDao()
+        .observeWalletOwnedByNetwork(network.ffiValue).first()
+        .map { it.identityId }
+    return IdentityTokenSync.clear(identityIds, manager::registerIdentityForTokenSync, delete)
+}

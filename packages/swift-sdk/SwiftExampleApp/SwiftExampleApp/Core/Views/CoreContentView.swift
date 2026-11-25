@@ -761,6 +761,21 @@ var body: some View {
                         // reset first, then wipes SwiftData only if
                         // that reset succeeds.
                         .disabled(shieldedService.isSyncing)
+                        // A refused Clear gets its own alert rather than
+                        // the inline `lastError` line: sync keeps running
+                        // after a refusal and a completed pass clears
+                        // `lastError`, which would hide the instruction.
+                        .alert(
+                            "Clear Not Done",
+                            isPresented: Binding(
+                                get: { shieldedService.clearRefusalNotice != nil },
+                                set: { if !$0 { shieldedService.clearRefusalNotice = nil } }
+                            )
+                        ) {
+                            Button("OK") { shieldedService.clearRefusalNotice = nil }
+                        } message: {
+                            Text(shieldedService.clearRefusalNotice ?? "")
+                        }
                     }
                 }
                 .padding(.vertical, 4)
@@ -1072,13 +1087,9 @@ struct WalletRowView: View {
     /// addresses (no identities) showed "Empty".
     @Query private var addressBalances: [PersistentPlatformAddress]
 
-    /// Per-wallet unspent shielded notes. Same persisted-truth
-    /// source as the Sync Status diagnostic — sum of `value` over
-    /// unspent rows for this wallet, in credits. Without this the
-    /// wallet row's combined DASH total under-reported the wallet's
-    /// real value by every shielded note: a wallet with funds in
-    /// the shielded pool would show Core + Platform on the list but
-    /// silently exclude Shielded.
+    /// Per-wallet unspent shielded note rows, every account. They only
+    /// mark the wallet as not empty (identity-account notes are not in the
+    /// shielded balance); the balance itself is Rust's pushed number.
     @Query private var shieldedNotes: [PersistentShieldedNote]
 
     init(wallet: PersistentWallet) {
@@ -1149,20 +1160,40 @@ struct WalletRowView: View {
         totals.confirmed + totals.unconfirmed + totals.immature + totals.locked
     }
 
-    /// Sum of unspent shielded note values in credits. Same scale
-    /// as `platformBalance` (1e11 credits/DASH), so it folds into
-    /// the same divisor in [`combinedDashAmount(coreTotal:)`].
-    private var shieldedBalance: UInt64 {
-        shieldedNotes.reduce(UInt64(0)) { $0 + $1.value }
+    /// The wallet's shielded balance in credits as Rust pushes it
+    /// (ordinary accounts; identity accounts left out), or `nil` while it
+    /// is not a known balance. Same scale as `platformBalance` (1e11
+    /// credits/DASH), so it folds into the same divisor in
+    /// [`combinedDashAmount(coreTotal:)`].
+    private var shieldedBalance: UInt64? {
+        walletManager.ordinaryShieldedBalance(walletId: wallet.walletId)
     }
 
     /// Combined wallet balance expressed in DASH for a precomputed
     /// totals tuple. Core uses 1e8 duffs/DASH; Platform and Shielded
-    /// both use 1e11 credits/DASH.
+    /// both use 1e11 credits/DASH. A shielded balance that is not known
+    /// adds nothing, so the result is then a subtotal.
     private func combinedDashAmount(coreTotal: UInt64) -> Double {
         Double(coreTotal) / 100_000_000.0
             + Double(platformBalance) / 100_000_000_000.0
-            + Double(shieldedBalance) / 100_000_000_000.0
+            + Double(shieldedBalance ?? 0) / 100_000_000_000.0
+    }
+
+    /// The header total. A plain amount only when the shielded balance is
+    /// known; otherwise "At least ..." over the known parts, or "Not known
+    /// yet" when no part holds anything. "Empty" only when every part is a
+    /// known zero and no shielded note row is held.
+    private func headerTotalText(coreTotal: UInt64) -> (text: String, isAmount: Bool) {
+        let knownPartsHoldSomething = coreTotal > 0 || platformBalance > 0
+        guard let shielded = shieldedBalance else {
+            return knownPartsHoldSomething
+                ? (LowerBoundDashText.atLeast(duffs: coreTotal, credits: platformBalance), true)
+                : ("Not known yet", false)
+        }
+        if knownPartsHoldSomething || shielded > 0 || !shieldedNotes.isEmpty {
+            return (formatDash(combinedDashAmount(coreTotal: coreTotal)), true)
+        }
+        return ("Empty", false)
     }
 
     private var walletIdShort: String {
@@ -1238,11 +1269,11 @@ struct WalletRowView: View {
     var body: some View {
         // Single FFI snapshot per render — `coreBalanceTotals()` calls
         // `walletManager.accountBalances(for:)` once; everything below
-        // reads from `core` / `coreTotal` / `hasAny` instead of
+        // reads from `core` / `coreTotal` / `total` instead of
         // re-invoking the accessor.
         let core = coreBalanceTotals()
         let coreTotal = Self.sumCoreBalance(core)
-        let hasAny = coreTotal > 0 || platformBalance > 0 || shieldedBalance > 0
+        let total = headerTotalText(coreTotal: coreTotal)
         return VStack(alignment: .leading, spacing: 6) {
             // Header: label (+ status badges) and total Core balance.
             HStack(alignment: .firstTextBaseline) {
@@ -1257,10 +1288,10 @@ struct WalletRowView: View {
                     }
                 }
                 Spacer()
-                Text(hasAny ? formatDash(combinedDashAmount(coreTotal: coreTotal)) : "Empty")
+                Text(total.text)
                     .font(.subheadline)
                     .fontWeight(.medium)
-                    .foregroundColor(hasAny ? .primary : .secondary)
+                    .foregroundColor(total.isAmount ? .primary : .secondary)
             }
 
             // Row 1: network + created date.
@@ -1505,16 +1536,20 @@ extension CoreContentView {
 /// notes-synced watermark across every wallet/account **on the active
 /// network**.
 ///
-/// Both figures are read **directly from SwiftData** (scoped to the
-/// active network via `walletIds`) rather than from the
-/// `ShieldedService.shieldedBalance` mirror that's updated
-/// per-bound-wallet from sync events, so they survive restart and
-/// reflect the whole on-network pool:
+/// Both figures are scoped to the active network via `walletIds`
+/// rather than taken from the `ShieldedService.shieldedBalance` mirror
+/// that tracks only the mirror wallet:
 ///
-///   * **Total Shielded Balance** — sum of `value` over every unspent
-///     `PersistentShieldedNote` whose wallet is on this network.
+///   * **Total Shielded Balance**: the sum of the shielded balances Rust
+///     pushed for each wallet on this network (each one's ordinary
+///     accounts; identity accounts left out), from
+///     `PlatformWalletManager.shieldedBalances`. The total is a plain
+///     number only when every wallet on the network has an established
+///     balance; a wallet that is unbound, not established yet, or has no
+///     update yet makes it partial ("At least ..." or "Not known yet").
+///     "Too large to show" means the sum does not fit in `UInt64`.
 ///
-///   * **Notes Synced** — the highest `lastSyncedIndex` across this
+///   * **Notes Synced**: read from SwiftData, the highest `lastSyncedIndex` across this
 ///     network's `PersistentShieldedSyncState` rows. The Orchard
 ///     commitment tree is chain-wide and shared by every wallet/account
 ///     **on a given network**, so each subwallet advances toward the
@@ -1522,21 +1557,35 @@ extension CoreContentView {
 ///     sync progresses. Scoping matters: trees are per-chain, so a
 ///     `max()` across networks would blend unrelated tip positions.
 private struct ShieldedNetworkSummaryRows: View {
-    /// Wallet ids on the active network. Both queries are filtered
-    /// against this so a multi-network install (e.g. regtest + testnet)
+    /// Wallet ids on the active network. Both figures are scoped to
+    /// this so a multi-network install (e.g. regtest + testnet)
     /// doesn't blend balances or take a watermark `max()` across
     /// unrelated per-chain commitment trees — matching the Platform
     /// Sync Status section's `walletIdsOnNetwork` scoping.
     let walletIds: Set<Data>
 
-    @Query private var allNotes: [PersistentShieldedNote]
+    @EnvironmentObject var walletManager: PlatformWalletManager
+
     @Query private var syncStates: [PersistentShieldedSyncState]
 
-    /// Sum of `value` over this network's unspent notes, in credits.
-    private var totalUnspentCredits: UInt64 {
-        allNotes.lazy
-            .filter { !$0.isSpent && walletIds.contains($0.walletId) }
-            .reduce(UInt64(0)) { $0 &+ $1.value }
+    /// Sum of this network's wallets' Rust-computed shielded balances, in
+    /// credits, marked partial while any wallet's balance is not known.
+    private var totalShielded: NetworkShieldedTotal {
+        walletManager.networkShieldedTotal(walletIds: walletIds)
+    }
+
+    /// Text for the total, and whether it is a complete non-zero amount.
+    private var totalShieldedText: (text: String, isAmount: Bool) {
+        switch totalShielded {
+        case .complete(let credits):
+            return credits > 0 ? (formatCredits(credits), true) : ("0", false)
+        case .partial(let credits):
+            return credits > 0
+                ? (LowerBoundDashText.atLeast(credits: Decimal(credits)), false)
+                : ("Not known yet", false)
+        case .overflow:
+            return ("Too large to show", false)
+        }
     }
 
     /// Furthest-scanned commitment-tree index across this network's subwallets.
@@ -1570,12 +1619,13 @@ private struct ShieldedNetworkSummaryRows: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                 Spacer()
-                if totalUnspentCredits > 0 {
-                    Text(formatCredits(totalUnspentCredits))
+                let total = totalShieldedText
+                if total.isAmount {
+                    Text(total.text)
                         .font(.subheadline)
                         .fontWeight(.medium)
                 } else {
-                    Text("0")
+                    Text(total.text)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }

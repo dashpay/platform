@@ -555,6 +555,20 @@ internal object WalletManagerNative {
     external fun identitySyncIsRunning(managerHandle: Long): Boolean
 
     /**
+     * Add or replace the identity-token sync registry row for [identityId]
+     * (32 bytes). [tokenIds] is the watched token ids back to back
+     * (`32 * N` bytes, empty for none).
+     */
+    external fun identitySyncRegisterIdentity(
+        managerHandle: Long,
+        identityId: ByteArray,
+        tokenIds: ByteArray,
+    )
+
+    /** Run one identity-token sync pass now; blocks until it completes. */
+    external fun identitySyncSyncNow(managerHandle: Long)
+
+    /**
      * Whether the durable sync watermark has been frozen this session because
      * a persistence store was rejected (the lossless channel cannot drop
      * events) — the persisted
@@ -625,6 +639,17 @@ internal object WalletManagerNative {
      * with shielded.
      */
     external fun shieldedClear(managerHandle: Long)
+
+    /**
+     * The ordinary (non-identity) shielded account indices bound on
+     * [walletId] (32 bytes), ascending: the list to pass back to
+     * [shieldedBind] after [shieldedClear], which drops the registration
+     * but not the keys the wallet holds. Identity accounts are left out
+     * because a bind adds them itself. Empty for a wallet never bound;
+     * throws for an unknown wallet. Only present when the native library
+     * is built with shielded.
+     */
+    external fun shieldedOrdinaryAccounts(managerHandle: Long, walletId: ByteArray): IntArray
 
     /**
      * Start the Core SPV client — flattened form of

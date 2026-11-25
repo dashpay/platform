@@ -73,19 +73,23 @@ public final class PersistentShieldedNote {
 }
 
 public extension PersistentShieldedNote {
-    /// Predicate for one wallet's unspent (spendable) notes — the
-    /// rows whose `value` sum IS that wallet's shielded balance.
-    /// Single home for the filter so every balance surface agrees on
-    /// what "unspent" means.
+    /// Predicate for one wallet's unspent note rows in every account,
+    /// identity accounts included. Summing their `value`s does not give
+    /// the wallet's shielded balance; that number comes from
+    /// `PlatformWalletManager.shieldedBalances`.
+    /// Single home for the filter so every surface that loads these rows
+    /// agrees on what "unspent" means.
     static func unspentPredicate(walletId: Data) -> Predicate<PersistentShieldedNote> {
         #Predicate<PersistentShieldedNote> {
             $0.walletId == walletId && $0.isSpent == false
         }
     }
 
-    /// Predicate for ALL wallets' unspent notes; callers scope by
-    /// walletId in memory (multi-wallet surfaces like the identity
-    /// funding picker).
+    /// Predicate for ALL wallets' unspent note rows, in every account,
+    /// identity accounts included; callers scope by walletId in memory.
+    /// As with [`unspentPredicate(walletId:)`], a balance comes from
+    /// `PlatformWalletManager.shieldedBalances`,
+    /// not from summing these rows.
     static var unspentPredicate: Predicate<PersistentShieldedNote> {
         #Predicate<PersistentShieldedNote> { $0.isSpent == false }
     }

@@ -65,7 +65,7 @@ runs:
   using: composite
   steps:
     - name: Login to DockerHub
-      uses: docker/login-action@v3
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
       with:
         username: ${{ inputs.dockerhub_username }}
         password: ${{ inputs.dockerhub_token }}
@@ -73,7 +73,7 @@ runs:
 
     - name: Set up Docker BuildX
       id: buildx
-      uses: docker/setup-buildx-action@v3
+      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       with:
         install: true
         driver-opts: env.BUILDKIT_STEP_LOG_MAX_SIZE=10485760
@@ -87,7 +87,7 @@ runs:
     # Retry once before giving up.
     - name: Set Docker tags and labels from image tag
       id: docker_meta
-      uses: docker/metadata-action@v5
+      uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
       continue-on-error: true
       with:
         images: ${{ inputs.image_org }}/${{ inputs.image_name }}
@@ -103,7 +103,7 @@ runs:
     - name: Set Docker tags and labels from image tag (retry)
       id: docker_meta_retry
       if: ${{ steps.docker_meta.outcome == 'failure' }}
-      uses: docker/metadata-action@v5
+      uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
       with:
         images: ${{ inputs.image_org }}/${{ inputs.image_name }}
         tags: |
@@ -128,7 +128,7 @@ runs:
       run: echo "HOME=$HOME" >> $GITHUB_ENV
 
     - name: Cargo cache for Docker
-      uses: actions/cache@v5
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
       id: cargo-cache
       with:
         path: |
@@ -140,7 +140,7 @@ runs:
           ${{ runner.os }}-cargo-
 
     - name: Inject cargo cache into docker
-      uses: reproducible-containers/buildkit-cache-dance@v3.1.2
+      uses: reproducible-containers/buildkit-cache-dance@5b6db76d1da5c8b307d5d2e0706d266521b710de # v3.1.2
       with:
         cache-map: |
           {
@@ -160,7 +160,7 @@ runs:
         skip-extraction: ${{ steps.cargo-cache.outputs.cache-hit }}
 
     - name: Yarn unplugged cache for Docker
-      uses: actions/cache@v5
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
       id: yarn-cache
       with:
         path: ${{ env.HOME }}/yarn-unplugged-cache
@@ -170,13 +170,13 @@ runs:
 
     - name: Set arch
       id: arch
-      uses: actions/github-script@v8
+      uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
       with:
         result-encoding: "string"
         script: return '${{ inputs.platform }}'.replace('linux/', '');
 
     - name: Inject cargo cache into docker
-      uses: reproducible-containers/buildkit-cache-dance@v3.1.2
+      uses: reproducible-containers/buildkit-cache-dance@5b6db76d1da5c8b307d5d2e0706d266521b710de # v3.1.2
       with:
         cache-map: |
           {
@@ -201,7 +201,7 @@ runs:
 
     - name: Build and push Docker image ${{ inputs.image }}
       id: docker_build
-      uses: docker/build-push-action@v6
+      uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
       env:
         # AWS profile to be used by layer cache; sccache settings are passed via build-args
         AWS_PROFILE: ${{ steps.layer_cache_settings.outputs.aws_profile }}

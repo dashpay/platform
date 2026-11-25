@@ -314,27 +314,7 @@ impl IdentityManager {
         identity_id: &Identifier,
         persister: &WalletPersister,
     ) -> Result<Identity, PlatformWalletError> {
-        if let Some(managed) = self.managed_identity(identity_id) {
-            let dashpay = managed.dashpay();
-            if let Some(recipient) = dashpay
-                .unconfirmed_public_request_recipients()
-                .first()
-                .copied()
-            {
-                return Err(PlatformWalletError::PublicContactRequestUnconfirmed(
-                    recipient,
-                ));
-            }
-            if let Some(recipient) = dashpay
-                .contact_request_in_flight()
-                .or_else(|| persister.private_sender_journaled(identity_id))
-            {
-                return Err(PlatformWalletError::PrivateContactRequestPending(recipient));
-            }
-            if dashpay.private_payments_unrestored() {
-                return Err(PlatformWalletError::PrivateContactPaymentsNotRestored);
-            }
-        }
+        self.check_removable(identity_id, persister)?;
         // Drop the side-index entry first; its value tells us which
         // bucket the identity lives in so we can avoid a second scan.
         let location = self
@@ -371,6 +351,41 @@ impl IdentityManager {
 
         self.persist_removal(*identity_id, persister);
         Ok(removed_identity)
+    }
+
+    /// The refusal [`remove_identity`](Self::remove_identity) would return for
+    /// `identity_id` because its contact request channel is held, without
+    /// removing anything. `Ok(())` for an identity this manager does not hold,
+    /// so a caller removing one identity from several managers can check all
+    /// of them before changing any.
+    pub fn check_removable(
+        &self,
+        identity_id: &Identifier,
+        persister: &WalletPersister,
+    ) -> Result<(), PlatformWalletError> {
+        let Some(managed) = self.managed_identity(identity_id) else {
+            return Ok(());
+        };
+        let dashpay = managed.dashpay();
+        if let Some(recipient) = dashpay
+            .unconfirmed_public_request_recipients()
+            .first()
+            .copied()
+        {
+            return Err(PlatformWalletError::PublicContactRequestUnconfirmed(
+                recipient,
+            ));
+        }
+        if let Some(recipient) = dashpay
+            .contact_request_in_flight()
+            .or_else(|| persister.private_sender_journaled(identity_id))
+        {
+            return Err(PlatformWalletError::PrivateContactRequestPending(recipient));
+        }
+        if dashpay.private_payments_unrestored() {
+            return Err(PlatformWalletError::PrivateContactPaymentsNotRestored);
+        }
+        Ok(())
     }
 
     fn persist_removal(&self, identity_id: Identifier, persister: &WalletPersister) {

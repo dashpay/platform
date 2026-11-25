@@ -203,9 +203,10 @@ pub enum StorageKeyword {
     /// one after another without names.
     Position,
     /// `requiredSince`: the contract version from which the property is required. A document
-    /// whose contract version has reached it stores the property without a presence flag;
-    /// an earlier one stores the flag. A new document is validated against `required`, which
-    /// must list the property.
+    /// whose contract version has reached it stores a top-level property without a presence
+    /// flag; an earlier one stores the flag. A member of an object (protocol version 15) is
+    /// stored with the flag at every version. A new document is validated against `required`,
+    /// which must list the property.
     RequiredSince,
     /// `contentMediaType`: on a byte array, `application/x.dash.dpp.identifier` makes the
     /// property an identifier, a type the document type parser reads; the meta-schemas then

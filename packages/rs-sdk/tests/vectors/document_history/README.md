@@ -18,6 +18,8 @@ ABCI test and `UPDATE_DOCUMENT_HISTORY_VECTORS=1`.
 The PV14 `pv14_time.json` fixture comes from
 `query::document_history::v1::tests::should_verify_signed_legacy_history_from_protocol_14_with_protocol_15_client`.
 It stores revisions at times 1000, 2000 and 3000, then selects the latter two
-through the released V0 wire request. Its signed producer version selects the
-legacy timestamp history layout even when a PV15 client verifies it. Regenerate
-it with that ABCI test and `UPDATE_DOCUMENT_HISTORY_VECTORS=1`.
+through the released V0 wire request, after 1999: the request the SDK sends for
+revisions from 2000 on, as V0's start time is exclusive. Its signed producer
+version selects the legacy timestamp history layout even when a PV15 client
+verifies it. Regenerate it with that ABCI test and
+`UPDATE_DOCUMENT_HISTORY_VECTORS=1`.

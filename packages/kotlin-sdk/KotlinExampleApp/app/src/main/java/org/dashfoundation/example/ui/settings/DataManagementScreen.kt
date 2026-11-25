@@ -29,9 +29,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.services.DataManager
 import org.dashfoundation.example.di.LocalAppContainer
+import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 
@@ -44,11 +46,12 @@ import org.dashfoundation.example.ui.components.LabeledContent
 @Composable
 fun DataManagementScreen(navController: NavHostController) {
     val container = LocalAppContainer.current
-    val dataManager = remember { DataManager(container.database) }
+    val dataManager = remember { DataManager(container.database, container.walletStorage) }
     val scope = rememberCoroutineScope()
 
     var pendingClear by remember { mutableStateOf<DataManager.Category?>(null) }
     var pendingClearAll by remember { mutableStateOf(false) }
+    var clearError by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         topBar = {
@@ -112,10 +115,28 @@ fun DataManagementScreen(navController: NavHostController) {
         AlertDialog(
             onDismissRequest = { pendingClear = null },
             title = { Text("Clear ${category.displayName}?") },
-            text = { Text("This permanently deletes the locally stored records. Data on the network is unaffected.") },
+            text = {
+                Text(
+                    "This permanently deletes the locally stored records. Data on the network " +
+                        "is unaffected." +
+                        if (category == DataManager.Category.IDENTITIES) {
+                            " Imported masternode voting keys are removed from secure storage too."
+                        } else {
+                            ""
+                        },
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
-                    scope.launch { dataManager.clear(category) }
+                    scope.launch {
+                        try {
+                            dataManager.clear(category)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            clearError = clearFailedMessage(category.displayName, e.message)
+                        }
+                    }
                     pendingClear = null
                 }) { Text("Clear", color = MaterialTheme.colorScheme.error) }
             },
@@ -129,10 +150,18 @@ fun DataManagementScreen(navController: NavHostController) {
         AlertDialog(
             onDismissRequest = { pendingClearAll = false },
             title = { Text("Clear ALL local data?") },
-            text = { Text("Every locally stored wallet, identity, contract, and token record will be deleted. Mnemonics in secure storage are kept.") },
+            text = { Text("Every locally stored wallet, identity, contract, and token record will be deleted, and so are imported masternode voting keys. Mnemonics in secure storage are kept.") },
             confirmButton = {
                 TextButton(onClick = {
-                    scope.launch { dataManager.clearAll() }
+                    scope.launch {
+                        try {
+                            dataManager.clearAll()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            clearError = clearAllFailedMessage(e.message)
+                        }
+                    }
                     pendingClearAll = false
                 }) { Text("Clear Everything", color = MaterialTheme.colorScheme.error) }
             },
@@ -141,4 +170,18 @@ fun DataManagementScreen(navController: NavHostController) {
             },
         )
     }
+
+    ErrorAlertDialog(message = clearError, title = "Clear failed", onDismiss = { clearError = null })
 }
+
+/** A failed category clear; clearing again finishes it. */
+internal fun clearFailedMessage(category: String, reason: String?): String =
+    "$category could not be cleared${reasonSuffix(reason)}. Try again."
+
+/** A failed Clear All: the categories cleared before the failure stay deleted. */
+internal fun clearAllFailedMessage(reason: String?): String =
+    "Clearing all data stopped${reasonSuffix(reason)}. Categories cleared before the " +
+        "failure stay deleted and are not restored. Try again to clear the rest."
+
+private fun reasonSuffix(reason: String?): String =
+    reason?.trim()?.trimEnd('.')?.takeIf { it.isNotEmpty() }?.let { ": $it" } ?: ""

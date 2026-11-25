@@ -41,11 +41,13 @@ use super::super::super::drive_document_sum_query::DriveDocumentSumQuery;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::sum_width::{element_count_and_sum, sum_in_64_bits};
 use crate::query::{
     aggregate_or_zero_when_absent, index_keeps_empty_groups, is_absent_path, ResolvedTimeRange,
 };
 use crate::query::{WhereClause, WhereOperator};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::version::PlatformVersion;
@@ -158,7 +160,7 @@ impl Drive {
         let mut entries: Vec<AverageEntry> = Vec::new();
         for triple in elements.to_path_key_elements() {
             let (path, key, element) = triple;
-            let (count, sum) = element.count_sum_value_or_default();
+            let (count, sum) = element_count_and_sum(&element)?;
             // Drop fully-empty rows only. Sum's standalone distinct
             // executor drops on `sum == 0` regardless of count, but
             // that's overly aggressive for AVG: a row with
@@ -183,7 +185,7 @@ impl Drive {
                 in_key,
                 key,
                 count: Some(count),
-                sum: Some(sum),
+                sum: Some(i128::from(sum)),
             });
         }
 
@@ -351,6 +353,30 @@ impl Drive {
             sum_property,
         };
         let path_query = sum_query.aggregate_count_and_sum_path_query(platform_version)?;
+        let range_total_verifier = platform_version
+            .drive
+            .methods
+            .verify
+            .document_sum
+            .verify_aggregate_count_and_sum_proof;
+        // A type that keeps its sums in 128 bits is read through the entry point that
+        // returns one: the 64-bit one refuses its trees.
+        if document_type.uses_big_sums() {
+            let CostContext { value, cost: _ } = self.grove.query_aggregate_count_and_big_sum(
+                &path_query,
+                transaction,
+                &drive_version.grove_version,
+            );
+            let (count, sum) = aggregate_or_zero_when_absent(
+                self,
+                &path_query.path,
+                value,
+                range_total_verifier,
+                transaction,
+                platform_version,
+            )?;
+            return Ok((count, sum_in_64_bits(sum)?));
+        }
         let CostContext { value, cost: _ } = self.grove.query_aggregate_count_and_sum(
             &path_query,
             transaction,
@@ -361,12 +387,7 @@ impl Drive {
             self,
             &path_query.path,
             value,
-            platform_version
-                .drive
-                .methods
-                .verify
-                .document_sum
-                .verify_aggregate_count_and_sum_proof,
+            range_total_verifier,
             transaction,
             platform_version,
         )

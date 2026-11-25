@@ -35,6 +35,7 @@ pub mod shield_from_identity;
 pub mod shielded_transfer;
 #[cfg(feature = "shielded")]
 pub mod shielded_withdrawal;
+pub mod status_by_hash;
 pub mod top_up_address;
 pub mod top_up_identity;
 pub mod top_up_identity_from_addresses;

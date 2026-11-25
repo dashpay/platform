@@ -46,21 +46,21 @@ struct GroveDBPathElementsView: View {
 
     private var inputSection: some View {
         Section {
-            TextField("[] or [\"60\"]", text: $pathText)
-                .textInputAutocapitalization(.never)
-                .disableAutocorrection(true)
-                .font(.system(.footnote, design: .monospaced))
-                .accessibilityLabel("Path JSON array")
-                .accessibilityIdentifier("sysPathElements.pathField")
-                .disabled(isRunning)
+            PlainTextField(
+                placeholder: "[] or [\"60\"]",
+                text: $pathText,
+                accessibilityIdentifier: "sysPathElements.pathField",
+                accessibilityLabel: "Path JSON array"
+            )
+            .disabled(isRunning)
 
-            TextField("[\"20\",\"40\",\"10\",\"60\"]", text: $keysText)
-                .textInputAutocapitalization(.never)
-                .disableAutocorrection(true)
-                .font(.system(.footnote, design: .monospaced))
-                .accessibilityLabel("Keys JSON array")
-                .accessibilityIdentifier("sysPathElements.keysField")
-                .disabled(isRunning)
+            PlainTextField(
+                placeholder: "[\"20\",\"40\",\"10\",\"60\"]",
+                text: $keysText,
+                accessibilityIdentifier: "sysPathElements.keysField",
+                accessibilityLabel: "Keys JSON array"
+            )
+            .disabled(isRunning)
 
             Button(action: applyExamplePreset) {
                 Label("DPNS contract example", systemImage: "tray.2")

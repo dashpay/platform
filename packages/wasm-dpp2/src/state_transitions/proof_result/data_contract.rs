@@ -13,7 +13,7 @@ use crate::impl_wasm_type_info;
 use crate::serialization::conversions::{kept_fields_to_js, normalize_js_value_for_json};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::moderation::{
-    ContractModerationReason, ContractWarning, decode_kept_fields,
+    ContractModerationReason, ContractWarning, decode_kept_fields_with_default_budget,
 };
 use dpp::group::group_action_status::GroupActionStatus;
 use dpp::platform_value::string_encoding::{Encoding, encode};
@@ -425,7 +425,10 @@ impl VerifiedContractDocumentRemovalWasm {
                     self.document_type_name
                 ))
             })?;
-        kept_fields_to_js(&decode_kept_fields(&self.kept_fields, document_type)?)
+        kept_fields_to_js(&decode_kept_fields_with_default_budget(
+            &self.kept_fields,
+            document_type,
+        )?)
     }
 
     #[wasm_bindgen(js_name = toObject)]
