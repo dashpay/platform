@@ -95,16 +95,22 @@ gh variable set DASHMATE_APT_PUBLISH --body true --repo dashpay/platform
 gh variable list --repo dashpay/platform | grep DASHMATE_APT_PUBLISH
 ```
 
-**While it is off, hand every release apt takes to infra.** That means finals and dev, beta and rc prereleases. Nothing else publishes them: infra's daily run carries no tag, so it only re-signs and promotes signed finals already in `testing`. Once the `Release Dashmate checksums` job is green, ask infra to publish the tag, with the user's go, on #4246 or in infra's channel. Give the tag, a link to that job, and the sha256 of `SHA256SUMS`, which the job logs as `SHA256SUMS attached: asset <id> sha256 <sha256>`:
+**While it is off, hand every release apt takes to infra.** That means finals and dev, beta and rc prereleases. Nothing else publishes them: infra's daily run carries no tag, so it only re-signs and promotes signed finals already in `testing`. Once the `Release Dashmate checksums` job is green, ask infra to publish the tag, with the user's go, on #4246 or in infra's channel. The request binds the publish to the manifest that job verified. Infra publishes only if the sha256 of the exact `SHA256SUMS` bytes the publisher uses equals the job's, and stops before writing anything otherwise. Until infra confirms it made that comparison and published, the release is pending.
+
+Give the tag, a link to that job, and its sha256. The job logs it as `SHA256SUMS attached: asset <id> sha256 <sha256>`, which is read here through the API while the rest of the run still goes; `gh run view --log` waits for the whole run. Exactly one sha256 must come out, from the job's own timestamped output line (a newer `gh` that refuses the log's colour codes needs `--allow-escape-sequences`):
 
 ```sh
-gh run view <run-id> --repo dashpay/platform --json jobs \
-  --jq '.jobs[] | select(.name == "Release Dashmate checksums") | .url'
+gh api "repos/dashpay/platform/actions/runs/<run-id>/jobs?per_page=100" --paginate \
+  --jq '.jobs[] | select(.name == "Release Dashmate checksums" and .conclusion == "success") | [.id, .html_url] | @tsv'
+gh api "repos/dashpay/platform/actions/jobs/<job id>/logs" \
+  | sed -nE 's/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z SHA256SUMS attached: asset [0-9]+ sha256 ([0-9a-f]{64})$/\1/p'
 gh issue comment 4246 --repo dashpay/platform --body \
-  "Please publish v<version> to apt. Release Dashmate checksums: <job url>. SHA256SUMS sha256: <sha256>."
+  "Please publish v<version> to apt only if the SHA256SUMS the publisher uses has sha256 <sha256>, the file Release Dashmate checksums verified (<job url>); stop before writing anything otherwise, and confirm here which you did."
 ```
 
-When infra says it is published, run the apt client check below for each suite the release belongs in. Until it passes, the release is not in apt: report it as pending.
+Re-run no job of the release and rebuild nothing until it is published and checked: a rebuild replaces `SHA256SUMS`, and the request then no longer matches.
+
+When infra says it is published, run the check below for each suite the release belongs in. Until it passes, the release is not done: report it as pending. If it fails, report the failure to infra on #4246.
 
 Once it is on, the `Publish Dashmate debs to apt` job asks infra's apt publisher to publish the two debs, and waits up to 40 minutes for it (one publish runs at a time, so it can queue). The publisher downloads them from the release and takes them only as `SHA256SUMS` lists them and only when their version is the tag's. Dev builds go to `dev`, betas, release candidates and finals to `testing` and `dev`. Other prereleases (alpha, `pr`, `hotfix`) are not published to apt: the job skips them with a notice and stays green. Check the job first:
 
@@ -113,37 +119,26 @@ gh run view <run-id> --repo dashpay/platform --json jobs \
   --jq '.jobs[] | select(.name == "Publish Dashmate debs to apt") | [.status, .conclusion, .databaseId] | @tsv'
 ```
 
-A green job is not yet proof that apt clients see the package: report it as available only once an apt client does. Check the live repository with a throwaway apt client, for each suite it should be in and for both architectures, by its Debian version (`5.1.0-1`, `5.1.0~rc.1-1`, `5.1.0~~dev.1-1`, see [Rebuilding the dashmate deb](#rebuilding-the-dashmate-deb-of-a-published-release)). `apt-get update` verifies the suite's signature against the archive keyring, whose sha256 infra published on #4246, and fails on a bad or expired one. That failure is a failed check, not a missing package; the last line names a package that is missing. The CDN can serve the previous index for a minute or so after the job:
+**The apt check.** A green job or infra's word is not yet proof: report the release as in apt only once this check passes for each suite it belongs in. It needs Docker. The script checks two things:
+- the release's `SHA256SUMS` still has the sha256 the checksums job logged (read it as in the handoff above, with the automatic publish too);
+- a throwaway apt client finds, in the suite's verified Packages indexes, the sha256 `SHA256SUMS` lists for the amd64 deb and for the arm64 deb, after checking that the signed Release names that suite.
+
+The apt client verifies the suite's signature against the archive keyring, pinned by the sha256 infra published on #4246. A bad or expired signature fails the check, which is not the same as a missing deb. Any failure means the release is not done: report it to infra. The CDN can serve the previous index for a minute or so after a publish:
 
 ```sh
-docker run --rm -e SUITE=testing -e VERSION='<debian version>' ubuntu:24.04 bash -euo pipefail -c '
-  apt-get update -qq
-  apt-get install -qq -y curl ca-certificates > /dev/null
-  rm -f /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list
-  keyring=/usr/share/keyrings/dashmate-archive-keyring.gpg
-  curl -fsSo "$keyring" https://apt.services.dash.org/dashmate/dashmate-archive-keyring.gpg
-  echo "08006df56f24e282f19012a29e539dad431654abefefd697832ac61918b01230  $keyring" | sha256sum --check --quiet
-  for arch in amd64 arm64; do
-    [ "$arch" = "$(dpkg --print-architecture)" ] || dpkg --add-architecture "$arch"
-  done
-  echo "deb [arch=amd64,arm64 signed-by=$keyring] https://apt.services.dash.org/dashmate $SUITE main" \
-    > /etc/apt/sources.list.d/dashmate.list
-  apt-get update -qq -o APT::Update::Error-Mode=any
-  for arch in amd64 arm64; do
-    apt-cache madison "dashmate:$arch" | grep -F " $VERSION " \
-      || { echo "dashmate $VERSION ($arch) is not in $SUITE"; exit 1; }
-  done'
+scripts/release/check_dashmate_apt_publish.sh --tag=v<version> --suite=testing --sha256sums-sha256=<sha256>
+scripts/release/check_dashmate_apt_publish.sh --tag=v<version> --suite=dev --sha256sums-sha256=<sha256>
 ```
 
-Run it with `SUITE=dev` too. Once the keyring ships in `packages/dashmate/deb/`, use that file instead of the download.
+Once the keyring ships in `packages/dashmate/deb/`, switch the script to that file.
 
 **Where a failure is explained.** A job whose execution ended prints its status, error and cause. The state machine runs the publisher as a CodeBuild build, so the job also prints the build's log, CloudWatch Logs group `/aws/codebuild/dashmate-apt-publish` and its stream. The publisher's reason is in that log, on a `REFUSED:` or `NEEDS A PERSON:` line. The job reads the publisher's exit status from the build:
 - **2:** it refused this release (`REFUSED:`), possibly part-way through.
 - **1:** it went through but logged a problem for a person (`NEEDS A PERSON:`), which can be about another release waiting for `stable`. This release may be published.
 
-In either case, run the check above before re-running.
+In either case, run the apt check above before re-running.
 
-The GitHub role cannot read that log. If nobody at hand can, send infra the execution ARN the job printed. A job that failed earlier, at the credentials or the start, shows the AWS CLI's error. The job changes no asset and does not hold up signing. Re-run it on its own (`gh run rerun --job <databaseId>`, with the user's go) once the cause is fixed: GitHub re-runs jobs only after the whole run has finished, and only within 30 days of it. Start the re-run before signing or after the signature is attached, never while the signing script runs: a re-run makes a new run attempt, and the script then refuses, after the upload as well. A job that hit its deadline, or could not read the execution, names it: it may still be running and succeed, so run the check above before re-running.
+The GitHub role cannot read that log. If nobody at hand can, send infra the execution ARN the job printed. A job that failed earlier, at the credentials or the start, shows the AWS CLI's error. The job changes no asset and does not hold up signing. Re-run it on its own (`gh run rerun --job <databaseId>`, with the user's go) once the cause is fixed: GitHub re-runs jobs only after the whole run has finished, and only within 30 days of it. Start the re-run before signing or after the signature is attached, never while the signing script runs: a re-run makes a new run attempt, and the script then refuses, after the upload as well. A job that hit its deadline, or could not read the execution, names it: it may still be running and succeed, so run the apt check above before re-running.
 
 Follow the rest of the run, the SDK builds, in the background too:
 
@@ -174,7 +169,7 @@ Ask the user, then attach the signature. With `--upload` the script checks the r
 scripts/release/sign_dashmate_checksums.sh --tag=v<version> --key=<full fingerprint> --commit=<merge commit> --upload
 ```
 
-**Stable:** a final that is already in `testing` (run the apt client check from [step 4](#4-wait-for-releaseyml-and-check-the-assets) with `SUITE=testing`) moves to `stable` once its `SHA256SUMS.asc` is attached and verifies against an accepted key. That happens on the publisher's next run, normally its daily run at 05:17 UTC, with nothing to trigger. A final that never reached `testing` does not move: re-run its apt job first, or, while the apt publish is off, ask infra to publish it. Check `stable` the next day with the apt client check from [step 4](#4-wait-for-releaseyml-and-check-the-assets), with `SUITE=stable`.
+**Stable:** a final that is already in `testing` (run the apt check from [step 4](#4-wait-for-releaseyml-and-check-the-assets) with `--suite=testing`) moves to `stable` once its `SHA256SUMS.asc` is attached and verifies against an accepted key. That happens on the publisher's next run, normally its daily run at 05:17 UTC, with nothing to trigger. A final that never reached `testing` does not move: re-run its apt job first, or, while the apt publish is off, ask infra to publish it as in step 4. Check `stable` the next day with the apt check from [step 4](#4-wait-for-releaseyml-and-check-the-assets), with `--suite=stable`.
 
 **To rebuild a signed release:** once a release carries `SHA256SUMS.asc` (or any `SHA256SUMS.*`), release jobs started afterwards refuse to replace its packages or its `SHA256SUMS` and fail instead. To change either, delete each `SHA256SUMS.*` asset first (`gh release delete-asset v<version> <name> --repo dashpay/platform`), re-run the jobs, and sign the new file.
 
@@ -236,7 +231,7 @@ Tell the user:
 - the release URL, and which release is Latest (`gh api repos/dashpay/platform/releases/latest --jq .tag_name`);
 - the `release.yml` run and its result, including anything still running or re-run;
 - whether the dashmate packages and `SHA256SUMS` are attached;
-- the apt publish: the `Publish Dashmate debs to apt` job's result (or that it skipped a prerelease kind apt does not take, or, while the publish is off, that infra was asked and whether the apt client check passed) and the suites the package is in, and for a stable release whether it has reached `stable`;
+- the apt publish: the `Publish Dashmate debs to apt` job's result (or that it skipped a prerelease kind apt does not take, or, while the publish is off, that infra was asked and whether the apt check passed) and the suites the package is in, and for a stable release whether it has reached `stable`;
 - the signature: attached by whom, or why not (a prerelease the maintainer chose not to sign, or still waiting for the run);
 - `master`: the merge commit pushed, or why it was skipped;
 - for `X.Y.0`, the graduation steps done;
@@ -352,7 +347,7 @@ The dashmate deb's Debian version comes from the tag: `5.1.0-1`, `5.1.0~rc.1-1`,
 3. Delete `DASHMATE_DEB_REVISION` as soon as the build job has finished, whether it succeeded or failed. It is a repository variable, so any other release built while it is set gets that revision too. Only the build job reads it: the later steps don't need it, and it has to be set again only to re-run the build.
 4. Go on only if the build succeeded. After a failed build the release job still publishes the debs the earlier build made, and `Release Dashmate checksums` is skipped; fix the cause, set the variable again and re-run the build. Then check that `Release Dashmate packages (deb, ubuntu-24.04)` ran after the build and attached debs whose names carry the new revision (`dashmate_5.1.0-2_amd64.deb`); re-run that job if it did not. `Release Dashmate checksums` runs after it and fails while the earlier debs are still attached.
 5. Delete every other `dashmate_*_amd64.deb` and `dashmate_*_arm64.deb` asset of the release, keeping only the two that carry the new revision. Earlier builds have different names, so they stay attached, and the install docs and deploy tooling take the first matching asset.
-6. Re-run the `Release Dashmate checksums` job by its id, not with `--failed`, which also re-runs unrelated jobs, so `SHA256SUMS` lists the new debs; then sign it as in [step 5](#5-sign-sha256sums). Re-running it also re-runs the two jobs that need it, and `DASHMATE_APT_PUBLISH` picks which of them runs. With the apt publish on, `Publish Dashmate debs to apt` asks the publisher for the new debs. With it off, `Dashmate apt publish is off` says so, and the new revision goes to infra as in [step 4](#4-wait-for-releaseyml-and-check-the-assets), with the new `SHA256SUMS` sha256. Either way, check the new revision in the suites as in [step 4](#4-wait-for-releaseyml-and-check-the-assets). If the publisher refuses it, ask infra. The id is not the number in the job's URL:
+6. Re-run the `Release Dashmate checksums` job by its id, not with `--failed`, which also re-runs unrelated jobs, so `SHA256SUMS` lists the new debs; then sign it as in [step 5](#5-sign-sha256sums). Re-running it also re-runs the two jobs that need it, and `DASHMATE_APT_PUBLISH` picks which of them runs. With the apt publish on, `Publish Dashmate debs to apt` asks the publisher for the new debs. With it off, `Dashmate apt publish is off` says so, and the new revision goes to infra as in [step 4](#4-wait-for-releaseyml-and-check-the-assets), with the new `SHA256SUMS` sha256. Either way, run the apt check from [step 4](#4-wait-for-releaseyml-and-check-the-assets) with the sha256 the re-run checksums job logs. If the publisher refuses the new revision, ask infra. The id is not the number in the job's URL:
 
 ```sh
 gh run view <run-id> --repo dashpay/platform --json jobs \
