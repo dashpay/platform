@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **57**
+Capabilities tracked: **58**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 36 | 18 | 2 | 1 |
-| Swift | Example app | 6 | 37 | 5 | 9 |
-| Kotlin | SDK | 31 | 22 | 3 | 1 |
-| Kotlin | Example app | 7 | 35 | 5 | 10 |
+| Swift | SDK | 37 | 18 | 2 | 1 |
+| Swift | Example app | 6 | 37 | 5 | 10 |
+| Kotlin | SDK | 31 | 22 | 4 | 1 |
+| Kotlin | Example app | 7 | 35 | 5 | 11 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 2 | 20 | 35 |
-| Kotlin | 9 | 18 | 30 |
+| Swift | 2 | 20 | 36 |
+| Kotlin | 9 | 18 | 31 |
 
 ## Capability status
 
@@ -31,6 +31,7 @@ Capabilities tracked: **57**
 | `tokens.full_u64_domain` | partial / partial / required | supported / supported / tested |
 | `shielded.seedless_restart` | supported / partial / required | partial / partial / required |
 | `dashpay.invitations` | supported / partial / required | supported / partial / required |
+| `dashpay.invitation_claim_status_for_identity` | supported / not-applicable / not_applicable | unsupported / not-applicable / not_applicable |
 | `core.provider_restore` | supported / partial / required | partial / partial / required |
 | `dashpay.deferred_contact_crypto` | partial / partial / required | partial / partial / required |
 | `dashpay.private_contact_requests` | partial / partial / required | partial / partial / required |
