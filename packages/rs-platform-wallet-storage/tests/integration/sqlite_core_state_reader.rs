@@ -776,3 +776,78 @@ fn rehydration_routes_used_addresses_to_owning_account() {
         );
     }
 }
+
+/// Stored dismissals change no coin and no balance the load rebuilds, even
+/// ones naming a coin's own funding transaction: the dismissed set is
+/// carried and nothing else reads it.
+#[test]
+fn stored_dismissals_change_no_loaded_coin_or_balance() {
+    use platform_wallet::changeset::DismissalChange;
+
+    let seed = [0x43; 64];
+    let (wallet, utxo) = wallet_and_utxo(seed, 777_000, 100, 0);
+    let (_, mut pending) = wallet_and_utxo(seed, 333_000, 0, 1);
+    pending.outpoint.txid = Txid::from_byte_array([0x57; 32]);
+    pending.is_confirmed = false;
+    let rebuilt = |dismissals: Vec<DismissalChange>| {
+        let (persister, _tmp, _path) = fresh_persister();
+        let w = wid(0xB7);
+        ensure_wallet_meta(&persister, &w);
+        persister
+            .store(
+                w,
+                PlatformWalletChangeSet {
+                    core: Some(CoreChangeSet {
+                        new_utxos: vec![utxo.clone(), pending.clone()],
+                        dismissal_changes: dismissals,
+                        last_processed_height: Some(200),
+                        synced_height: Some(200),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        persister.flush(w).unwrap();
+        let conn = persister.lock_conn_for_test();
+        let (core, utxo_accounts) =
+            core_state::load_state(&conn, &w, key_wallet::Network::Testnet, &LoadCtx::strict())
+                .expect("load_state");
+        drop(conn);
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+        platform_wallet_storage::sqlite::rehydrate::apply_persisted_core_state(
+            &mut info,
+            &manifest_for(&wallet),
+            &core,
+            &utxo_accounts,
+            &Default::default(),
+            &LoadCtx::strict(),
+        )
+        .expect("rehydrate");
+        let outpoints: Vec<OutPoint> = core.new_utxos.iter().map(|u| u.outpoint).collect();
+        (
+            (core.dismissed_txids, core.abandoned_txids),
+            outpoints,
+            WalletInfoInterface::balance(&info),
+        )
+    };
+
+    let elsewhere = Txid::from_byte_array([0x56; 32]);
+    let (none, coins_without, balance_without) = rebuilt(Vec::new());
+    let (some, coins_with, balance_with) = rebuilt(vec![
+        DismissalChange::Dismissed(utxo.outpoint.txid),
+        DismissalChange::Abandoned(pending.outpoint.txid),
+        DismissalChange::Dismissed(elsewhere),
+    ]);
+
+    assert_eq!(none, (Vec::new(), Vec::new()));
+    // The confirmed coin's funding transaction is held mined, so its
+    // dismissal is settled and not handed back; the pending coin's abandon
+    // is, and so is the other sweep.
+    assert_eq!(some, (vec![elsewhere], vec![pending.outpoint.txid]));
+    assert_eq!(coins_with.len(), 2);
+    assert_eq!(coins_with, coins_without);
+    assert_eq!(balance_with, balance_without);
+    assert_eq!(balance_with.confirmed(), 777_000);
+    assert_eq!(balance_with.total(), 1_110_000);
+}

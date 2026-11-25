@@ -389,6 +389,12 @@ impl SqlitePersister {
         }
 
         let _report = crate::sqlite::migrations::run_for_open(&mut conn, config.load_policy)?;
+        // A kept dismissal of a transaction the store holds mined or
+        // verified-locked is not dead: drop it before anything loads.
+        // Recovery writes nothing.
+        if config.load_policy != LoadPolicy::Recovery {
+            crate::sqlite::schema::core_state::drop_settled_dismissals(&mut conn)?;
+        }
 
         // The open succeeded, so the claim passes to the persister, whose
         // `Drop` releases it.
@@ -2383,6 +2389,7 @@ mod tests {
             "asset_locks",
             "contacts",
             "core_address_pool",
+            "core_dismissed_txids",
             "core_instant_locks",
             "core_locked_outpoints",
             "core_sync_state",

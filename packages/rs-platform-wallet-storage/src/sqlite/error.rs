@@ -688,6 +688,13 @@ pub enum WalletStorageError {
         table: &'static str,
         column: &'static str,
     },
+
+    /// A migration that creates a table only where it is missing found the
+    /// table already there with another shape (columns, unique key or
+    /// foreign key). The store's writes and reads rely on that shape, so the
+    /// migration stops instead of adopting it.
+    #[error("{table} already exists with a different definition")]
+    TableDefinitionMismatch { table: &'static str },
 }
 
 impl From<WalletStorageError> for PersistenceError {
@@ -798,7 +805,8 @@ impl WalletStorageError {
             | Self::EmptyUtxoScript { .. }
             | Self::EmptyPoolAddressScript { .. }
             | Self::DatabasePathIsSymlink { .. }
-            | Self::ColumnDefinitionMismatch { .. } => false,
+            | Self::ColumnDefinitionMismatch { .. }
+            | Self::TableDefinitionMismatch { .. } => false,
         }
     }
 
@@ -908,7 +916,8 @@ impl WalletStorageError {
             | Self::EmptyUtxoScript { .. }
             | Self::EmptyPoolAddressScript { .. }
             | Self::DatabasePathIsSymlink { .. }
-            | Self::ColumnDefinitionMismatch { .. } => PersistenceErrorKind::Fatal,
+            | Self::ColumnDefinitionMismatch { .. }
+            | Self::TableDefinitionMismatch { .. } => PersistenceErrorKind::Fatal,
         }
     }
 
@@ -999,6 +1008,7 @@ impl WalletStorageError {
             Self::EmptyPoolAddressScript { .. } => "empty_pool_address_script",
             Self::DatabasePathIsSymlink { .. } => "database_path_is_symlink",
             Self::ColumnDefinitionMismatch { .. } => "column_definition_mismatch",
+            Self::TableDefinitionMismatch { .. } => "table_definition_mismatch",
         }
     }
 }
