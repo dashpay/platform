@@ -6307,7 +6307,8 @@ mod tests {
             ),
             (
                 PlatformWalletError::ShieldedBroadcastMaybeDelivered("transport".into()),
-                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                // #6276: the identity create takes the spend contract's code.
+                PlatformWalletFFIResultCode::ErrorShieldedSpendUnconfirmed,
                 PlatformWalletFFIPaymentDelivery::MaybeSent,
             ),
             (
