@@ -1379,29 +1379,28 @@ async fn should_refuse_a_payment_that_waited_for_a_clear_until_the_wallet_is_bou
     let clearing = coordinator
         .try_admit_clear()
         .expect("no operation is in flight");
-    let mut shield = {
-        let wallet = Arc::clone(&wallet);
-        tokio::spawn(async move {
-            wallet
-                .shielded_shield_from_account(
-                    0,
-                    0,
-                    1,
-                    &UnreachableAddressSigner,
-                    &CachedOrchardProver::new(),
-                )
-                .await
-        })
-    };
+    let shield_prover = CachedOrchardProver::new();
+    let mut shield = std::pin::pin!(wallet.shielded_shield_from_account(
+        0,
+        0,
+        1,
+        &UnreachableAddressSigner,
+        &shield_prover,
+    ));
+    // Polled here, with the wallet still registered and nothing else holding
+    // a lock it takes: it runs up to the admitted Clear and waits there, so
+    // the refusal below is decided after that wait, not before it.
     assert!(
-        tokio::time::timeout(Duration::from_millis(200), &mut shield)
-            .await
-            .is_err(),
+        futures::poll!(shield.as_mut()).is_pending(),
         "the shield waits for the admitted Clear"
+    );
+    assert!(
+        coordinator.is_wallet_registered(wallet.wallet_id()).await,
+        "the wallet is still registered while the shield waits"
     );
     clearing.clear(&*host).await.expect("the Clear runs");
 
-    let waited = shield.await.unwrap();
+    let waited = shield.await;
     assert!(
         matches!(waited, Err(PlatformWalletError::ShieldedNotBound)),
         "{waited:?}"

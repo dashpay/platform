@@ -310,6 +310,15 @@ pub struct NetworkShieldedCoordinator {
     /// account set.
     hydrated: RwLock<std::collections::BTreeSet<WalletId>>,
 
+    /// Wallets registered since the last Clear, whatever that Clear's
+    /// outcome ([`is_wallet_registered`](Self::is_wallet_registered)).
+    ///
+    /// Not the `persisters` map: a Clear whose store reset failed keeps the
+    /// registries, so sync goes on for wallets the host still holds rows
+    /// for, yet it may have reset the tree under their notes. A payment
+    /// needs a bind made after it, as after a Clear that succeeded.
+    bound_since_clear: RwLock<BTreeSet<WalletId>>,
+
     /// The shielded admission: the one shared/exclusive lock every durable
     /// shielded mutation and a [Clear](Self::clear_admitted) agree on. See
     /// [`admit`](Self::admit) for the protocol.
@@ -728,6 +737,7 @@ impl NetworkShieldedCoordinator {
             operation_admission: RwLock::new(()),
             clear_admission_held: AtomicBool::new(false),
             hydrated: RwLock::new(std::collections::BTreeSet::new()),
+            bound_since_clear: RwLock::new(BTreeSet::new()),
             admission: RwLock::new(clear_state),
             balance_change,
         }
@@ -1343,6 +1353,7 @@ impl NetworkShieldedCoordinator {
             .filter(|account_index| account_views.contains_key(account_index))
             .collect();
         self.persisters.write().await.insert(wallet_id, persister);
+        self.bound_since_clear.write().await.insert(wallet_id);
         {
             let mut accounts = self.accounts.write().await;
             // Drop any prior subwallets for this wallet_id before
@@ -1602,14 +1613,17 @@ impl NetworkShieldedCoordinator {
             .retain(|id, _| id.wallet_id != wallet_id);
         self.persisters.write().await.remove(&wallet_id);
         self.hydrated.write().await.remove(&wallet_id);
+        self.bound_since_clear.write().await.remove(&wallet_id);
         self.signal_balance_change();
     }
 
     /// Whether `wallet_id` is registered: bound on this coordinator, with no
-    /// Clear or removal since. A bind replaces a registration without ever
-    /// removing it, so under an admission this is stable.
+    /// Clear or removal since. A Clear that failed counts too, though it
+    /// keeps the wallet's accounts and persister for sync (see the
+    /// `bound_since_clear` field). A bind replaces a registration without
+    /// ever removing it, so under an admission this is stable.
     pub(crate) async fn is_wallet_registered(&self, wallet_id: WalletId) -> bool {
-        self.persisters.read().await.contains_key(&wallet_id)
+        self.bound_since_clear.read().await.contains(&wallet_id)
     }
 
     /// Watch the shielded pool of the token at `token_contract_position` of
@@ -2265,6 +2279,9 @@ impl NetworkShieldedCoordinator {
         // after changing part of its persistent state, so the next identical
         // bind must not fast-path over a potentially half-reset store.
         self.hydrated.write().await.clear();
+        // So does every wallet's standing as bound, for the same reason: no
+        // payment is admitted on a store this may have half reset.
+        self.bound_since_clear.write().await.clear();
         self.anchor_cache.invalidate();
         clear_state.epoch = clear_state.epoch.wrapping_add(1);
         self.signal_balance_change();
@@ -6215,6 +6232,7 @@ mod tests {
             .expect("arm identity guard");
         assert!(!coordinator.accounts.read().await.is_empty());
         assert!(!coordinator.persisters.read().await.is_empty());
+        assert!(coordinator.is_wallet_registered(guard_id.wallet_id).await);
 
         // Force `reset_commitment_tree` to fail: remove the directory holding
         // the SQLite file so the reset's `Connection::open(path)` can't reopen
@@ -6240,6 +6258,10 @@ mod tests {
         assert!(
             !coordinator.persisters.read().await.is_empty(),
             "persisters must survive a failed clear"
+        );
+        assert!(
+            !coordinator.is_wallet_registered(guard_id.wallet_id).await,
+            "the wallet is scanned on, and pays again only once it is bound again"
         );
         assert_eq!(
             coordinator

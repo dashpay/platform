@@ -1360,6 +1360,16 @@ impl PlatformWallet {
                 })
                 .map(|id| id.account_index),
         );
+        // A Clear wipes those rows and leaves this handle its keys: the
+        // retired tip accounts bound before it are read from the handle, so
+        // the bind that follows a Clear keeps scanning them and writes
+        // their rows again.
+        accounts.extend(
+            self.shielded_account_indices()
+                .await
+                .into_iter()
+                .filter(|account| is_shielded_identity_account(*account)),
+        );
         let mut account_views: std::collections::BTreeMap<u32, AccountViewingKeys> =
             std::collections::BTreeMap::new();
         for &account in &accounts {

@@ -1957,6 +1957,54 @@ async fn should_rebind_retired_tip_accounts_without_profile_or_identity() {
         .contains(&SubwalletId::new(wallet.wallet_id(), account)));
 }
 
+/// A Clear wipes the host's viewing key rows, the only durable record of a
+/// retired tip account, while the wallet handle keeps its keys. The bind a
+/// host makes after the Clear names ordinary accounts only: Rust adds the
+/// retired account from the handle, so tips to its address are still found,
+/// and writes its row again.
+#[tokio::test]
+async fn should_keep_a_retired_tip_account_bound_by_the_bind_after_a_clear() {
+    let retired = crate::shielded_identity_account_index(7).unwrap();
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let row = |account: u32| {
+        let keys = super::OrchardKeySet::from_seed(&BIND_SEED[..], Network::Testnet, account)
+            .expect("derive the account");
+        (
+            SubwalletId::new(wallet.wallet_id(), account),
+            keys.full_viewing_key.to_bytes().to_vec(),
+        )
+    };
+    persister.serve_viewing_keys(BTreeMap::from([row(0), row(retired)]));
+    let coordinator = coordinator_at(&temp_dir("retired_tips_clear"));
+    wallet
+        .attach_shielded_coordinator_for_test(&coordinator)
+        .await;
+    assert!(wallet.bind_shielded_from_persisted(&[0]).await.unwrap());
+    let retired_id = SubwalletId::new(wallet.wallet_id(), retired);
+    assert!(coordinator
+        .registered_subwallets()
+        .await
+        .contains(&retired_id));
+
+    // The wallet's own host wipes: the rows it served are gone.
+    coordinator.clear(&*persister).await.expect("clear");
+    assert!(coordinator.registered_subwallets().await.is_empty());
+
+    wallet.bind_shielded(&BIND_SEED, &[0]).await.unwrap();
+    assert!(
+        coordinator
+            .registered_subwallets()
+            .await
+            .contains(&retired_id),
+        "the retired tip account is scanned again"
+    );
+    assert!(
+        persister.captured_viewing_keys().contains_key(&retired_id),
+        "and its viewing key is written again"
+    );
+}
+
 /// A host rebind passes only ordinary accounts (FFI and host SDKs cap the
 /// request at 64 entries); Rust adds every persisted tip account itself. With
 /// more than 64 tip accounts on record, a `[0]` request must still bind them
@@ -2422,6 +2470,34 @@ async fn should_refuse_a_tip_preparation_admitted_behind_a_clear() {
     );
     assert_eq!(wallet.prepared_shielded_identity_account(&id).await, None);
     assert!(coordinator.registered_subwallets().await.is_empty());
+}
+
+/// A Clear takes no wallet manager lock, so it can run while a preparation
+/// check waits for that lock behind a writer. The check reads the Clear epoch
+/// once it holds the lock: the preparation the Clear ended does not read as
+/// standing.
+#[tokio::test]
+async fn should_not_read_a_preparation_as_standing_when_a_clear_ran_during_the_check() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tips_clear_during_check").await;
+    wallet
+        .prepare_shielded_identity_address(&seed, &id)
+        .await
+        .unwrap();
+    assert!(wallet
+        .prepared_shielded_identity_account(&id)
+        .await
+        .is_some());
+
+    let writer = wallet.wallet_manager.write().await;
+    let mut check = std::pin::pin!(wallet.prepared_shielded_identity_account(&id));
+    assert!(
+        futures::poll!(check.as_mut()).is_pending(),
+        "the check waits for the wallet manager"
+    );
+    clear(&coordinator).await.unwrap();
+    drop(writer);
+
+    assert_eq!(check.await, None);
 }
 
 /// A Clear drops the coordinator's state for the account, so the preparation no

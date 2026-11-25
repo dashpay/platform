@@ -279,8 +279,13 @@ impl PlatformWallet {
         &self,
         identity_id: &Identifier,
     ) -> Option<u32> {
-        let clear_epoch = self.shielded_coordinator().await.ok()?.settled_epoch()?;
+        let coordinator = self.shielded_coordinator().await.ok()?;
         let wm = self.wallet_manager.read().await;
+        // Read once the wallet manager lock is held, not before the wait
+        // for it: a Clear takes no wallet manager lock, so one that ran
+        // during that wait would otherwise be compared with the epoch from
+        // before it, and the preparation it ended would read as standing.
+        let clear_epoch = coordinator.settled_epoch()?;
         let managed = wm
             .get_wallet_info(&self.wallet_id())?
             .identity_manager

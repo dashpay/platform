@@ -783,6 +783,11 @@ impl PlatformWallet {
                 false => Ok(ShieldedIdentityBalance::Unverified),
             };
         };
+        // The amount read below is this epoch's or the read is retried: a
+        // Clear that holds the admission, or waits for it, reads as none.
+        let Some(epoch) = coordinator.settled_epoch() else {
+            return Err(PlatformWalletError::ShieldedBalanceBusy);
+        };
         let established = match coordinator.local_balance_snapshot(self.wallet_id()).await? {
             ShieldedLocalBalanceState::Ready(snapshot) => snapshot
                 .accounts
@@ -810,6 +815,12 @@ impl PlatformWallet {
         // the preparation is not read at all. None of it is known yet, so
         // nothing is reported: the caller reads again.
         if clearing || coordinator.clear_in_progress() {
+            return Err(PlatformWalletError::ShieldedBalanceBusy);
+        }
+        // A Clear that started and finished since the amount was read wiped
+        // the ledger it came from, whatever the preparation read says: the
+        // epoch moved, and the caller reads again.
+        if coordinator.settled_epoch() != Some(epoch) {
             return Err(PlatformWalletError::ShieldedBalanceBusy);
         }
         if standing != Some(account) {
