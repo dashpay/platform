@@ -678,6 +678,16 @@ pub enum WalletStorageError {
     /// database file itself.
     #[error("database path is a symlink: {}", path.display())]
     DatabasePathIsSymlink { path: PathBuf },
+
+    /// A migration that adds a column only where it is missing found the
+    /// column already there with another definition. Adopting it could
+    /// read values the current schema does not mean, so the migration
+    /// stops instead.
+    #[error("{table}.{column} already exists with a different definition")]
+    ColumnDefinitionMismatch {
+        table: &'static str,
+        column: &'static str,
+    },
 }
 
 impl From<WalletStorageError> for PersistenceError {
@@ -787,7 +797,8 @@ impl WalletStorageError {
             | Self::UnownedIdentityHasRegistrationIndex { .. }
             | Self::EmptyUtxoScript { .. }
             | Self::EmptyPoolAddressScript { .. }
-            | Self::DatabasePathIsSymlink { .. } => false,
+            | Self::DatabasePathIsSymlink { .. }
+            | Self::ColumnDefinitionMismatch { .. } => false,
         }
     }
 
@@ -896,7 +907,8 @@ impl WalletStorageError {
             | Self::UnownedIdentityHasRegistrationIndex { .. }
             | Self::EmptyUtxoScript { .. }
             | Self::EmptyPoolAddressScript { .. }
-            | Self::DatabasePathIsSymlink { .. } => PersistenceErrorKind::Fatal,
+            | Self::DatabasePathIsSymlink { .. }
+            | Self::ColumnDefinitionMismatch { .. } => PersistenceErrorKind::Fatal,
         }
     }
 
@@ -986,6 +998,7 @@ impl WalletStorageError {
             Self::EmptyUtxoScript { .. } => "empty_utxo_script",
             Self::EmptyPoolAddressScript { .. } => "empty_pool_address_script",
             Self::DatabasePathIsSymlink { .. } => "database_path_is_symlink",
+            Self::ColumnDefinitionMismatch { .. } => "column_definition_mismatch",
         }
     }
 }

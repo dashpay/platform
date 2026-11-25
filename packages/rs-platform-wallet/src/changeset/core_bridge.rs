@@ -1721,7 +1721,21 @@ async fn build_core_changeset(
                 collect_usage_deltas(wallet_manager, wallet_id, vec![&**record]).await;
             let mut folded = owned.clone();
             fold_same_txid_records(&mut folded);
+            // A transaction that arrives with its lock (the lock came
+            // first) carries it only in its record's context: no
+            // `TransactionInstantLocked` follows. Store it as the lock event
+            // would, or the persisted row reloads as unconfirmed.
+            let instant_locks_for_non_final_records = folded
+                .iter()
+                .filter_map(|record| match &record.context {
+                    TransactionContext::InstantSend(lock) if lock.txid == record.txid => {
+                        Some((record.txid, lock.clone()))
+                    }
+                    _ => None,
+                })
+                .collect();
             CoreChangeSet {
+                instant_locks_for_non_final_records,
                 // New UTXOs from the owned slices only (a watch-only
                 // chain's outputs are the contact's coins); spends
                 // from ALL slices, so a contact spending an output a
@@ -10339,5 +10353,83 @@ mod no_change_asset_lock_block_projection_tests {
             "a held contact watch-only slice must stay out of the row"
         );
         assert_eq!(row.net_amount, -(FUNDING as i64));
+    }
+}
+
+#[cfg(test)]
+mod instant_lock_storage_tests {
+    //! A payment's InstantSend lock reaches `instant_locks_for_non_final_records`
+    //! (the persisted lock rows) in both delivery orders: the lock after its
+    //! transaction, and the transaction arriving with its lock.
+
+    use dashcore::Transaction;
+    use key_wallet::account::account_type::StandardAccountType;
+    use key_wallet_manager::WalletInterface;
+
+    use super::*;
+    use crate::test_support::{coin_worth, funded_wallet_manager_with_outputs};
+
+    const FUNDING: u64 = 10_000_000;
+
+    /// The locks the changesets of every event a payment to the wallet and
+    /// its lock produce carry, and the lock.
+    async fn stored_locks(lock_first: bool) -> (BTreeMap<Txid, InstantLock>, InstantLock) {
+        let (manager, wallet_id, _generation, _signer) =
+            funded_wallet_manager_with_outputs(StandardAccountType::BIP44Account, &[FUNDING]).await;
+        let held = coin_worth(
+            &manager,
+            &wallet_id,
+            StandardAccountType::BIP44Account,
+            FUNDING,
+        )
+        .await;
+        let address = {
+            let wm = manager.read().await;
+            let info = wm.get_wallet_info(&wallet_id).expect("wallet");
+            info.core_wallet
+                .first_bip44_managed_account()
+                .expect("bip44 account")
+                .utxos
+                .get(&held)
+                .expect("funded coin")
+                .address
+                .clone()
+        };
+        let payment = Transaction::dummy(&address, 9..10, &[50_000]);
+        let lock = InstantLock {
+            txid: payment.txid(),
+            inputs: vec![payment.input[0].previous_output],
+            ..InstantLock::default()
+        };
+
+        let mut events = manager.read().await.subscribe_events();
+        {
+            let mut wm = manager.write().await;
+            if lock_first {
+                wm.process_mempool_transaction(&payment, Some(lock.clone()))
+                    .await;
+            } else {
+                wm.process_mempool_transaction(&payment, None).await;
+                wm.process_mempool_instant_send_lock(&payment, lock.clone())
+                    .await;
+            }
+        }
+        let mut stored = CoreChangeSet::default();
+        while let Ok(event) = events.try_recv() {
+            stored.merge(build_core_changeset(&manager, &event).await);
+        }
+        (stored.instant_locks_for_non_final_records, lock)
+    }
+
+    #[tokio::test]
+    async fn should_store_a_lock_that_arrives_after_its_transaction() {
+        let (stored, lock) = stored_locks(false).await;
+        assert_eq!(stored, BTreeMap::from([(lock.txid, lock)]));
+    }
+
+    #[tokio::test]
+    async fn should_store_a_lock_its_transaction_arrives_with() {
+        let (stored, lock) = stored_locks(true).await;
+        assert_eq!(stored, BTreeMap::from([(lock.txid, lock)]));
     }
 }

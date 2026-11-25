@@ -228,9 +228,10 @@ pub(crate) fn restore_provider_platform_node_pool(
 ///   re-marked used (in union with the unspent-UTXO addresses), so an
 ///   address whose funds were since spent is not re-handed-out as fresh.
 /// - **InstantSend locks**: every `instant_locks_for_non_final_records`
-///   entry is replayed through `mark_instant_send_utxos` after the UTXO
-///   restore, so instant-locked funds come back instant-locked instead of
-///   waiting for the next sync to re-learn them.
+///   entry (`load_state` hands back only lock rows stored as verified) is
+///   replayed through `mark_instant_send_utxos` after the UTXO restore, so
+///   instant-locked funds come back instant-locked instead of waiting for
+///   the next sync to re-learn them.
 /// - **Locked outpoints** (masternode collateral and outpoints locked by
 ///   hand): every `outpoint_locks` entry is handed to
 ///   `ManagedWalletInfo::lock_outpoint` (an unlock to `unlock_outpoint`), so
