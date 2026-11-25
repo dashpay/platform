@@ -138,14 +138,31 @@ pub fn apply(
             execute_upsert_utxo(&mut utxo_stmt, wallet_id, utxo, false)?;
         }
     }
+    if let Some(synced) = cs.synced_height.filter(|_| !cs.synced_height_is_rewind) {
+        // Releases holds an advance reaches (see `rescan_held_until` in
+        // SCHEMA.md); before this changeset's fills, which hold to a
+        // checkpoint including this advance.
+        tx.prepare_cached(
+            "UPDATE core_utxos SET rescan_held_until = NULL \
+             WHERE wallet_id = ?1 AND rescan_held_until <= ?2",
+        )?
+        .execute(params![wallet_id.as_slice(), i64::from(synced)])?;
+    }
     if !cs.rescan_utxos.is_empty() {
         // Fill-only: a re-scan's coin is written only where the store has no
-        // row for it, and never changes an existing row's spent flag. A sweep
+        // row for it, and never changes an existing row's spent flag. A coin
+        // at or below the sync checkpoint is held out of the balance until an
+        // advance reaches the checkpoint (see SCHEMA.md). A sweep
         // placeholder is materialised with its spent flag kept, as every
         // delivery must (see `spent_utxos` below). The height is raised
         // either way, so a spent row a sweep later releases loads confirmed.
         // A spend in the same fold lands whichever is written first: the
         // spend marks the row, and the fill never clears the mark.
+        let checkpoint = read_sync_heights(tx, wallet_id)?
+            .1
+            .into_iter()
+            .chain(cs.synced_height)
+            .max();
         let mut height_only_stmt = tx.prepare_cached(HEIGHT_ONLY_TRANSACTION_SQL)?;
         let mut fill_stmt = tx.prepare_cached(INSERT_ABSENT_UTXO_SQL)?;
         for utxo in &cs.rescan_utxos {
@@ -154,7 +171,8 @@ pub fn apply(
                 AsRef::<[u8]>::as_ref(&utxo.outpoint.txid),
                 utxo.is_confirmed.then_some(i64::from(utxo.height)),
             ])?;
-            execute_upsert_utxo(&mut fill_stmt, wallet_id, utxo, false)?;
+            let held_until = checkpoint.filter(|&synced| utxo.height <= synced);
+            execute_upsert_utxo(&mut fill_stmt, wallet_id, utxo, held_until.map(i64::from))?;
         }
     }
     if !cs.spent_utxos.is_empty() {
@@ -804,8 +822,8 @@ const HEIGHT_ONLY_TRANSACTION_SQL: &str = "INSERT INTO core_transactions \
      WHERE core_transactions.record_blob IS NULL";
 
 const INSERT_ABSENT_UTXO_SQL: &str = "INSERT INTO core_utxos \
-        (wallet_id, outpoint, value, script, spent) \
-     VALUES (?1, ?2, ?3, ?4, ?5) \
+        (wallet_id, outpoint, value, script, spent, rescan_held_until) \
+     VALUES (?1, ?2, ?3, ?4, 0, ?5) \
      ON CONFLICT(wallet_id, outpoint) DO UPDATE SET \
         value = excluded.value, \
         script = excluded.script, \
@@ -828,8 +846,9 @@ const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
             WHEN excluded.spent THEN core_utxos.spent_in_txid \
             ELSE NULL END";
 
-/// Write one `core_utxos` row through `stmt` (an upsert, or the fill-only
-/// insert); `spent` marks spent-only synthetic rows.
+/// Upsert one `core_utxos` row. `last` binds `?5`: `spent` (marking
+/// spent-only synthetic rows) for the upsert, a re-scan coin's hold for the
+/// fill-only insert.
 ///
 /// # Errors
 ///
@@ -841,7 +860,7 @@ fn execute_upsert_utxo(
     stmt: &mut rusqlite::CachedStatement<'_>,
     wallet_id: &WalletId,
     utxo: &Utxo,
-    spent: bool,
+    last: impl rusqlite::ToSql,
 ) -> Result<(), WalletStorageError> {
     if utxo.txout.script_pubkey.as_bytes().is_empty() {
         return Err(WalletStorageError::EmptyUtxoScript {
@@ -854,7 +873,7 @@ fn execute_upsert_utxo(
         &op[..],
         crate::sqlite::util::safe_cast::u64_to_i64("core_utxos.value", utxo.value())?,
         utxo.txout.script_pubkey.as_bytes(),
-        spent,
+        last,
     ])?;
     Ok(())
 }
@@ -1044,7 +1063,7 @@ pub fn load_state(
     {
         let mut stmt = conn.prepare(
             "SELECT length(outpoint), outpoint, value, length(script), script \
-             FROM core_utxos WHERE wallet_id = ?1 AND spent = 0",
+             FROM core_utxos WHERE wallet_id = ?1 AND spent = 0 AND rescan_held_until IS NULL",
         )?;
         let mut rows = stmt.query(params![wallet_id.as_slice()])?;
         while let Some(row) = rows.next()? {
@@ -1135,6 +1154,21 @@ pub fn load_state(
             cs.last_processed_height =
                 height_column_u32("core_sync_state.last_processed_height", lp)?;
             cs.synced_height = height_column_u32("core_sync_state.synced_height", sy)?;
+            // Resume below the lowest held re-scan coin, so a restart replays
+            // the blocks its hold waits on (see SCHEMA.md).
+            let held_from: Option<i64> = conn.query_row(
+                "SELECT MIN(COALESCE(t.height, 0)) FROM core_utxos u \
+                 LEFT JOIN core_transactions t \
+                    ON t.wallet_id = u.wallet_id AND t.txid = substr(u.outpoint, 2, 32) \
+                 WHERE u.wallet_id = ?1 AND u.rescan_held_until IS NOT NULL",
+                params![wallet_id.as_slice()],
+                |row| row.get(0),
+            )?;
+            if let Some(held_from) = height_column_u32("core_transactions.height", held_from)? {
+                cs.synced_height = cs
+                    .synced_height
+                    .map(|synced| synced.min(held_from.saturating_sub(1)));
+            }
             // Policy decides: strict aborts on a corrupt chain-lock blob,
             // recovery leaves the field None for the next ChainLock event.
             if let Some(bytes) = cl_bytes {
@@ -1420,7 +1454,7 @@ pub fn list_unspent_utxos(
 ) -> Result<BTreeMap<u32, Vec<UnspentRow>>, WalletStorageError> {
     let mut stmt = conn.prepare_cached(
         "SELECT outpoint, value, script \
-         FROM core_utxos WHERE wallet_id = ?1 AND spent = 0",
+         FROM core_utxos WHERE wallet_id = ?1 AND spent = 0 AND rescan_held_until IS NULL",
     )?;
     let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
         let op_bytes: Vec<u8> = row.get(0)?;
@@ -2035,7 +2069,7 @@ mod tests {
 
         assert_eq!(
             schema_version(&conn),
-            23,
+            24,
             "the upgrade runs on through the migrations after V022"
         );
     }
