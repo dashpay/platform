@@ -7,16 +7,14 @@
 //! [`IdentityManager::add_identity_unstored`], whose caller stores.
 
 use super::{IdentityLocation, IdentityManager};
-use crate::changeset::{
-    IdentityChangeSet, IdentityEntry, KeyWithBreadcrumb, PlatformWalletChangeSet,
-};
+use crate::changeset::{IdentityChangeSet, IdentityEntry, PlatformWalletChangeSet};
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::state::managed_identity::ManagedIdentity;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::Identity;
+use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::prelude::Identifier;
 
 /// Where the keys of a newly registered identity came from, which decides
@@ -92,21 +90,24 @@ impl IdentityManager {
     }
 
     /// Record an identity Platform has just accepted: add it at its HD slot
-    /// and store it with its keys as one changeset, each key carrying the
-    /// derivation breadcrumb `key_origin` says it has.
+    /// and store it, then store each key with the derivation breadcrumb
+    /// `key_origin` says it has.
     ///
     /// Best-effort, and the only owner of that rule: the identity exists on
     /// chain whatever happens here, so every failure (the id already held,
-    /// the store) is logged under `flow` and none is returned. A returned
+    /// a store) is logged under `flow` and none is returned. A returned
     /// error would make the calling flow report a failed registration and
     /// skip what it still owes after acceptance (consuming the asset lock,
     /// reconciling the funding addresses).
     ///
-    /// A store the backend refused as transient, attesting it kept nothing
-    /// (`store_transient_is_reissuable`), is issued once more. An identity
-    /// still not stored stays in memory for this session only: an identity
-    /// discovery scan finds it again, and a launch that already has another
-    /// identity on file does not run one by itself.
+    /// The identity is stored first, with its keys and no breadcrumbs, as
+    /// [`Self::add_identity`] stores it. A key that has a breadcrumb is then
+    /// stored on its own, and that store carries the identity snapshot
+    /// again, so the identity reaches the store when any one of these
+    /// stores succeeds. An identity none of them stored stays in memory for
+    /// this session only: an identity discovery scan finds it again, and a
+    /// launch that already has another identity on file does not run one by
+    /// itself. A key whose own store failed has no breadcrumb on file.
     ///
     /// A failed add records no keys either: `IdentityAlreadyExists` can mean
     /// an out-of-wallet entry, and stamping a wallet breadcrumb on its keys
@@ -121,23 +122,7 @@ impl IdentityManager {
         persister: &WalletPersister,
     ) {
         let identity_id = identity.id();
-        let key_rows = |identity: &Identity| -> Vec<KeyWithBreadcrumb> {
-            identity
-                .public_keys()
-                .values()
-                .map(|key| KeyWithBreadcrumb {
-                    key: key.clone(),
-                    breadcrumb: match key_origin {
-                        NewIdentityKeyOrigin::DerivedAtKeyId => {
-                            Some((wallet_id, identity_index, key.id()))
-                        }
-                        NewIdentityKeyOrigin::Unrecorded => None,
-                    },
-                })
-                .collect()
-        };
-
-        if let Err(e) = self.add_identity_unstored(identity, identity_index, wallet_id) {
+        if let Err(e) = self.add_identity(identity, identity_index, wallet_id, persister) {
             tracing::warn!(
                 flow,
                 %identity_id,
@@ -148,34 +133,29 @@ impl IdentityManager {
             );
             return;
         }
+        if key_origin == NewIdentityKeyOrigin::Unrecorded {
+            return;
+        }
         let Some(managed) = self.managed_identity_mut(&identity_id) else {
             return;
         };
-        let keys = key_rows(&managed.identity);
-        let stored = match managed.store_keys_with_snapshot(keys, persister) {
-            Ok(()) => Ok(()),
-            Err(e) => match persister.classify_store_failure(e) {
-                // The one changeset is all that puts the identity on disk,
-                // so a refusal the backend attests kept nothing of it is
-                // issued again, once.
-                PlatformWalletError::PersisterStore(refusal) if refusal.is_transient() => {
-                    let keys = key_rows(&managed.identity);
-                    managed
-                        .store_keys_with_snapshot(keys, persister)
-                        .map_err(|e| persister.classify_store_failure(e))
-                }
-                error => Err(error),
-            },
-        };
-        if let Err(e) = stored {
-            tracing::warn!(
-                flow,
-                %identity_id,
-                identity_index,
-                error = %e,
-                "identity accepted by Platform and held in memory, but the identity \
-                 and its keys were not persisted"
-            );
+        let keys: Vec<IdentityPublicKey> =
+            managed.identity.public_keys().values().cloned().collect();
+        for key in keys {
+            let key_id = key.id();
+            if let Err(e) =
+                managed.add_key(key, Some((wallet_id, identity_index, key_id)), persister)
+            {
+                tracing::warn!(
+                    flow,
+                    %identity_id,
+                    identity_index,
+                    key_id,
+                    error = %e,
+                    "identity accepted by Platform, but the derivation breadcrumb of \
+                     one of its keys was not persisted"
+                );
+            }
         }
     }
 
@@ -407,8 +387,7 @@ impl IdentityManager {
 mod tests {
     use super::*;
     use crate::changeset::{
-        ClientStartState, IdentityKeyDerivationIndices, PersistenceError, PersistenceErrorKind,
-        PlatformWalletPersistence,
+        ClientStartState, IdentityKeyDerivationIndices, PersistenceError, PlatformWalletPersistence,
     };
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::v0::IdentityV0;
@@ -425,17 +404,12 @@ mod tests {
     #[derive(Default)]
     struct RecordingPersister {
         fail: bool,
-        /// Stores still to refuse as transient, nothing retained.
-        transient_failures: AtomicUsize,
-        reissuable: bool,
+        /// Stores still to fail before the rest succeed.
+        failures_left: AtomicUsize,
         stores: Mutex<Vec<PlatformWalletChangeSet>>,
     }
 
     impl PlatformWalletPersistence for RecordingPersister {
-        fn store_transient_is_reissuable(&self) -> bool {
-            self.reissuable
-        }
-
         fn store(
             &self,
             _wallet_id: WalletId,
@@ -444,17 +418,14 @@ mod tests {
             if self.fail {
                 return Err(PersistenceError::backend("store armed to fail"));
             }
-            let refuse = self
-                .transient_failures
+            let fail = self
+                .failures_left
                 .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
                     left.checked_sub(1)
                 })
                 .is_ok();
-            if refuse {
-                return Err(PersistenceError::backend_with_kind(
-                    PersistenceErrorKind::Transient,
-                    "busy",
-                ));
+            if fail {
+                return Err(PersistenceError::backend("store failed once"));
             }
             self.stores.lock().unwrap().push(changeset);
             Ok(())
@@ -531,8 +502,10 @@ mod tests {
         assert_eq!(manager.identity_index(&identity_id), Some(IDENTITY_INDEX));
     }
 
+    /// Every key store carries the identity snapshot with it, so each
+    /// breadcrumb reaches the store next to the identity it belongs to.
     #[test]
-    fn should_store_a_new_identity_and_its_key_breadcrumbs_as_one_changeset() {
+    fn should_store_a_new_identity_and_a_breadcrumb_for_each_of_its_keys() {
         let mut manager = IdentityManager::new();
         let (backend, recording) = persister(false);
         let identity = identity_with_keys([2u8; 32], &[0, 1]);
@@ -548,48 +521,27 @@ mod tests {
         );
 
         let stores = backend.stores.lock().unwrap();
-        assert_eq!(
-            stores.len(),
-            1,
-            "identity and keys reach the store together"
-        );
-        let identities = stores[0].identities.as_ref().expect("identity entry");
-        assert!(identities.identities.contains_key(&identity_id));
-        let keys = stores[0].identity_keys.as_ref().expect("key entries");
-        assert_eq!(keys.upserts.len(), 2);
-        for key_id in [0, 1] {
-            let entry = &keys.upserts[&(identity_id, key_id)];
-            assert_eq!(entry.wallet_id, Some(WALLET_ID));
-            assert_eq!(
-                entry.derivation_indices,
-                Some(IdentityKeyDerivationIndices {
-                    identity_index: IDENTITY_INDEX,
-                    key_index: key_id,
-                })
-            );
+        assert_eq!(stores.len(), 3, "the identity, then one store per key");
+        for store in stores.iter() {
+            let identities = store.identities.as_ref().expect("identity entry");
+            assert!(identities.identities.contains_key(&identity_id));
         }
+        assert_breadcrumbs_stored(&stores, identity_id, &[0, 1]);
     }
 
-    fn transient_persister(
-        failures: usize,
-        reissuable: bool,
-    ) -> (Arc<RecordingPersister>, WalletPersister) {
+    /// A host whose store fails once and then recovers must not lose the
+    /// identity: a launch that finds an older identity on file runs no scan
+    /// to find it again. The key stores that follow the failed one each
+    /// carry the identity snapshot, whatever kind of failure the host
+    /// reported.
+    #[test]
+    fn should_store_a_new_identity_and_its_key_breadcrumbs_when_only_the_first_store_fails() {
+        let mut manager = IdentityManager::new();
         let backend = Arc::new(RecordingPersister {
-            transient_failures: AtomicUsize::new(failures),
-            reissuable,
+            failures_left: AtomicUsize::new(1),
             ..Default::default()
         });
-        let persister = WalletPersister::new(WALLET_ID, backend.clone());
-        (backend, persister)
-    }
-
-    /// The identity and its keys go out as one changeset, so one refused
-    /// store would leave nothing of the identity on disk, and a launch that
-    /// finds an older identity on file runs no scan to find it again.
-    #[test]
-    fn should_store_a_new_identity_again_after_one_transient_refusal() {
-        let mut manager = IdentityManager::new();
-        let (backend, busy_once) = transient_persister(1, true);
+        let failing_once = WalletPersister::new(WALLET_ID, backend.clone());
         let identity = identity_with_keys([5u8; 32], &[0, 1]);
         let identity_id = identity.id();
 
@@ -599,44 +551,47 @@ mod tests {
             WALLET_ID,
             NewIdentityKeyOrigin::DerivedAtKeyId,
             "test_flow",
-            &busy_once,
+            &failing_once,
         );
 
         let stores = backend.stores.lock().unwrap();
-        assert_eq!(stores.len(), 1, "the refused changeset is stored again");
-        let identities = stores[0].identities.as_ref().expect("identity entry");
-        assert!(identities.identities.contains_key(&identity_id));
-        let keys = stores[0].identity_keys.as_ref().expect("key entries");
-        for key_id in [0, 1] {
+        assert!(
+            stores.iter().any(|store| store
+                .identities
+                .as_ref()
+                .is_some_and(|cs| cs.identities.contains_key(&identity_id))),
+            "the identity reaches the store after the failed attempt"
+        );
+        assert_breadcrumbs_stored(&stores, identity_id, &[0, 1]);
+    }
+
+    /// The last row stored for each key carries the wallet breadcrumb.
+    fn assert_breadcrumbs_stored(
+        stores: &[PlatformWalletChangeSet],
+        identity_id: Identifier,
+        key_ids: &[KeyID],
+    ) {
+        for key_id in key_ids {
+            let entry = stores
+                .iter()
+                .rev()
+                .find_map(|store| {
+                    store
+                        .identity_keys
+                        .as_ref()?
+                        .upserts
+                        .get(&(identity_id, *key_id))
+                })
+                .expect("key row stored");
+            assert_eq!(entry.wallet_id, Some(WALLET_ID));
             assert_eq!(
-                keys.upserts[&(identity_id, key_id)].derivation_indices,
+                entry.derivation_indices,
                 Some(IdentityKeyDerivationIndices {
                     identity_index: IDENTITY_INDEX,
-                    key_index: key_id,
+                    key_index: *key_id,
                 })
             );
         }
-    }
-
-    /// A backend that does not attest it retained nothing of a refused store
-    /// may still hold the changeset; storing it again could apply it twice.
-    #[test]
-    fn should_not_store_again_when_the_backend_may_have_kept_the_refused_changeset() {
-        let mut manager = IdentityManager::new();
-        let (backend, busy_once) = transient_persister(1, false);
-        let identity = identity_with_keys([6u8; 32], &[0]);
-
-        manager.record_new_identity(
-            identity,
-            IDENTITY_INDEX,
-            WALLET_ID,
-            NewIdentityKeyOrigin::DerivedAtKeyId,
-            "test_flow",
-            &busy_once,
-        );
-
-        assert!(backend.stores.lock().unwrap().is_empty());
-        assert_eq!(backend.transient_failures.load(Ordering::SeqCst), 0);
     }
 
     #[test]
