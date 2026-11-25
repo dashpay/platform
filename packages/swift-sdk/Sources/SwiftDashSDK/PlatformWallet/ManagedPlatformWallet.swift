@@ -3082,7 +3082,10 @@ extension ManagedPlatformWallet {
     /// `.invitationKeysAlreadyRegistered` carrying a consensus error is
     /// different: a key was registered after the lookup, Platform refused
     /// the broadcast, and the voucher may have been charged.
-    /// `.assetLockNotChainLocked` means retry later. A node that has not seen an earlier landed claim
+    /// `.assetLockNotChainLocked` with a `.notSent` payment means nothing was
+    /// sent: retry once the funding transaction propagates or is
+    /// chain-locked. With `.maybeSent`, Platform refused the claim sent with
+    /// its islock proof and no ChainLock fallback could be built yet. A node that has not seen an earlier landed claim
     /// lets the retry through; Platform then refuses it, and the identity is
     /// returned as the claim's result when it carries exactly these keys, or
     /// reported as `.invitationClaimedByThisWallet` / `.assetLockAlreadyConsumed`

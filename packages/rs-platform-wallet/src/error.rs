@@ -1202,8 +1202,16 @@ pub enum PlatformWalletError {
     #[error("Asset lock proof expired (IS proof too old, CL not yet available): {0}")]
     AssetLockExpired(String),
 
-    #[error("Asset lock transaction not chain-locked, cannot fall back to CL proof: {0}")]
-    AssetLockNotChainLocked(String),
+    /// The asset lock cannot be used yet: its transaction has not reached the
+    /// queried node, or it is not chain-locked and the operation needs a
+    /// ChainLock proof. `after_broadcast` is `false` when nothing was sent
+    /// (retry once the lock is usable), `true` when Platform refused what
+    /// was already sent with the islock proof.
+    #[error("Asset lock transaction not chain-locked, cannot fall back to CL proof: {message}")]
+    AssetLockNotChainLocked {
+        message: String,
+        after_broadcast: bool,
+    },
 
     // --- Shielded pool errors (feature-gated) ---
     #[error("No unspent shielded notes available")]
@@ -1531,7 +1539,13 @@ impl From<InvitationError> for PlatformWalletError {
             InvitationError::NetworkMismatch { invitation, wallet } => {
                 Self::InvitationNetworkMismatch { invitation, wallet }
             }
-            InvitationError::NotChainLocked(message) => Self::AssetLockNotChainLocked(message),
+            InvitationError::NotChainLocked {
+                message,
+                after_broadcast,
+            } => Self::AssetLockNotChainLocked {
+                message,
+                after_broadcast,
+            },
             InvitationError::AlreadyClaimed { identity_id } => {
                 Self::InvitationAlreadyClaimed { identity_id }
             }
@@ -1867,8 +1881,18 @@ impl PlatformWalletError {
             Self::AssetLockProofWait(_)
             | Self::AssetLockAlreadyConsumed(_)
             | Self::AssetLockTooManyInputs { resumed: true, .. }
-            | Self::AssetLockExpired(_)
-            | Self::AssetLockNotChainLocked(_) => MaybeSent,
+            | Self::AssetLockExpired(_) => MaybeSent,
+            // Not usable yet: before anything was sent, nothing left; after
+            // Platform refused what was sent, the class follows the rule for
+            // a verdict after a broadcast.
+            Self::AssetLockNotChainLocked {
+                after_broadcast: false,
+                ..
+            } => NotSent,
+            Self::AssetLockNotChainLocked {
+                after_broadcast: true,
+                ..
+            } => MaybeSent,
             // Platform's verdict after a broadcast, which no proof backs: the
             // transition may still execute elsewhere, or may already have.
             Self::AddressNonceMismatch { .. }
@@ -2038,6 +2062,10 @@ impl PlatformWalletError {
                 // yet; nothing was broadcast, and the claim gets past once
                 // the wallet has synced.
                 | Self::InvitationNotReady(_)
+                // Not usable yet, before anything was sent: the same call
+                // gets past it once the lock propagates or is chain-locked.
+                // (Only the `after_broadcast: false` one is `NotSent`.)
+                | Self::AssetLockNotChainLocked { .. }
                 | Self::ShieldedBroadcastFailed(_)
                 | Self::ShutdownIncomplete(_)
                 | Self::PrivateContactStoreNotRead(_) => true,
@@ -2161,7 +2189,6 @@ impl PlatformWalletError {
                 | Self::AssetLockProofWait(_)
                 | Self::AssetLockAlreadyConsumed(_)
                 | Self::AssetLockExpired(_)
-                | Self::AssetLockNotChainLocked(_)
                 | Self::AddressNonceMismatch { .. }
                 | Self::DocumentNotForSale { .. }
                 | Self::DocumentPriceChanged { .. }
@@ -2948,8 +2975,24 @@ mod invitation_error_mapping_tests {
             PlatformWalletError::InvalidIdentityData(message) if message == "bad link"
         ));
         assert!(matches!(
-            PlatformWalletError::from(InvitationError::NotChainLocked("later".to_string())),
-            PlatformWalletError::AssetLockNotChainLocked(message) if message == "later"
+            PlatformWalletError::from(InvitationError::NotChainLocked {
+                message: "later".to_string(),
+                after_broadcast: false,
+            }),
+            PlatformWalletError::AssetLockNotChainLocked {
+                message,
+                after_broadcast: false,
+            } if message == "later"
+        ));
+        assert!(matches!(
+            PlatformWalletError::from(InvitationError::NotChainLocked {
+                message: "refused".to_string(),
+                after_broadcast: true,
+            }),
+            PlatformWalletError::AssetLockNotChainLocked {
+                after_broadcast: true,
+                ..
+            }
         ));
         assert!(matches!(
             PlatformWalletError::from(InvitationError::NetworkMismatch {
@@ -3228,7 +3271,7 @@ mod payment_delivery_tests {
             E::TokenOperationFailed { .. } => 79,
             E::FinalityTimeout(_) => 80,
             E::AssetLockExpired(_) => 81,
-            E::AssetLockNotChainLocked(_) => 82,
+            E::AssetLockNotChainLocked { .. } => 82,
             E::ShieldedNoUnspentNotes => 83,
             E::ShieldedInsufficientBalance { .. } => 84,
             E::PlatformShieldCapacityExceeded { .. } => 85,
@@ -3626,7 +3669,23 @@ mod payment_delivery_tests {
             ),
             (E::FinalityTimeout(out_point()), LockHeld(out_point())),
             (E::AssetLockExpired(s()), MaybeSent),
-            (E::AssetLockNotChainLocked(s()), MaybeSent),
+            // Before the claim was sent: the funding transaction not found, a
+            // ChainLock invitation not chain-locked, an islock proof too large.
+            (
+                E::AssetLockNotChainLocked {
+                    message: s(),
+                    after_broadcast: false,
+                },
+                NotSent,
+            ),
+            // Platform refused the claim sent with the islock proof.
+            (
+                E::AssetLockNotChainLocked {
+                    message: s(),
+                    after_broadcast: true,
+                },
+                MaybeSent,
+            ),
             (E::ShieldedNoUnspentNotes, NotSent),
             (
                 E::ShieldedInsufficientBalance {
@@ -3832,6 +3891,7 @@ mod payment_delivery_tests {
                 | PlatformWalletError::IdentityBalanceUnavailable(_)
                 | PlatformWalletError::IdentityLookupFailed { .. }
                 | PlatformWalletError::InvitationNotReady(_)
+                | PlatformWalletError::AssetLockNotChainLocked { .. }
                 | PlatformWalletError::BalanceHistoryInconsistentHeights { .. }
                 | PlatformWalletError::ShieldedBalanceBusy
                 | PlatformWalletError::ShieldedOperationInProgress

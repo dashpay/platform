@@ -165,10 +165,20 @@ pub enum InvitationError {
     /// Retry later: the link may be fine but cannot be used yet. Either the
     /// funding transaction has not reached the queried node, or it is not
     /// chain-locked yet and the claim needs a ChainLock proof (the link has
-    /// no islock, or Platform rejected its islock as stale). The message
-    /// says which.
-    #[error("{0}")]
-    NotChainLocked(String),
+    /// no islock, or Platform refused the claim submitted with its islock
+    /// proof). The message says which.
+    ///
+    /// `after_broadcast` says when it happened: `false` before the claim was
+    /// sent (the funding transaction was not found, a ChainLock invitation is
+    /// not chain-locked yet, or the islock proof makes the claim too large to
+    /// send), `true` when Platform refused a claim already sent with the
+    /// islock proof (a stale islock, or a funding transaction over the input
+    /// cap) and no ChainLock fallback could be built.
+    #[error("{message}")]
+    NotChainLocked {
+        message: String,
+        after_broadcast: bool,
+    },
 
     /// The invitation is claimed: an identity already exists at its id. Whose
     /// it is is not decided here; no key the claim submitted proves it (a
@@ -1392,12 +1402,13 @@ where
             delay().await;
         }
     }
-    Err(InvitationError::NotChainLocked(
-        "invitation funding transaction not found (tried both byte orders across \
-         repeated attempts); it may not have propagated to the queried DAPI node yet — \
-         retry shortly"
+    Err(InvitationError::NotChainLocked {
+        message: "invitation funding transaction not found (tried both byte orders across \
+                  repeated attempts); it may not have propagated to the queried DAPI node \
+                  yet — retry shortly"
             .to_string(),
-    ))
+        after_broadcast: false,
+    })
 }
 
 /// Submit the claim's reconstructed proof with the IS → ChainLock fallback —
@@ -1445,19 +1456,31 @@ where
                 .is_some_and(|proof| needs_chain_lock_proof(&e, proof)) =>
         {
             let Some(chain_proof) = chain_fallback else {
-                let reason = if is_instant_lock_proof_invalid(&e) {
-                    "was rejected by Platform (stale — quorum rotated or no longer recent)"
+                // Platform refused a stale islock or the input cap after the
+                // claim was sent; the size refusal is the SDK's own check
+                // before anything is sent (`checked_broadcast_request`).
+                let (reason, after_broadcast) = if is_instant_lock_proof_invalid(&e) {
+                    (
+                        "was rejected by Platform (stale — quorum rotated or no longer recent)",
+                        true,
+                    )
                 } else if as_asset_lock_transaction_too_many_inputs(&e).is_some() {
-                    "was rejected by Platform (the funding transaction has more inputs than \
-                     an islock proof may carry)"
+                    (
+                        "was rejected by Platform (the funding transaction has more inputs \
+                         than an islock proof may carry)",
+                        true,
+                    )
                 } else {
-                    "makes the claim too large to submit"
+                    ("makes the claim too large to submit", false)
                 };
-                return Err(InvitationError::NotChainLocked(format!(
-                    "invitation islock proof {reason} and the funding transaction is not yet \
-                     chain-locked, so no ChainLock fallback is possible; retry once the \
-                     funding block is chain-locked"
-                )));
+                return Err(InvitationError::NotChainLocked {
+                    message: format!(
+                        "invitation islock proof {reason} and the funding transaction is not \
+                         yet chain-locked, so no ChainLock fallback is possible; retry once \
+                         the funding block is chain-locked"
+                    ),
+                    after_broadcast,
+                });
             };
             tracing::warn!(
                 "invitation IS-lock proof unusable on claim ({}); retrying with a \
@@ -1722,11 +1745,12 @@ fn assemble_asset_lock_proof(
             // chain-locked otherwise. There is no separate fallback — this IS the
             // ChainLock proof.
             if !is_chain_locked {
-                return Err(InvitationError::NotChainLocked(
-                    "chainlock invitation funding transaction is not yet chain-locked; \
-                     retry once it confirms"
+                return Err(InvitationError::NotChainLocked {
+                    message: "chainlock invitation funding transaction is not yet \
+                              chain-locked; retry once it confirms"
                         .to_string(),
-                ));
+                    after_broadcast: false,
+                });
             }
             Ok(ReconstructedProof {
                 primary: chain_lock_proof(),
@@ -2156,7 +2180,13 @@ mod tests {
         let inv = parsed(key, txid, None);
         let err = assemble_asset_lock_proof(tx, false, 100, &inv).unwrap_err();
         assert!(
-            matches!(err, InvitationError::NotChainLocked(_)),
+            matches!(
+                err,
+                InvitationError::NotChainLocked {
+                    after_broadcast: false,
+                    ..
+                }
+            ),
             "expected the retry-later signal, got {err:?}"
         );
     }
@@ -3445,7 +3475,13 @@ mod tests {
                 .collect();
             let (result, calls, delays) = run(script).await;
             assert!(
-                matches!(result, Err(InvitationError::NotChainLocked(_))),
+                matches!(
+                    result,
+                    Err(InvitationError::NotChainLocked {
+                        after_broadcast: false,
+                        ..
+                    })
+                ),
                 "a funding tx that never appears must be a retry-later signal, got {result:?}"
             );
             assert_eq!(calls.len(), (CLAIM_FETCH_MAX_ATTEMPTS * 2) as usize);
@@ -3649,7 +3685,10 @@ mod tests {
             let (result, submitted) = run(None, vec![Err(oversized_rejection())]).await;
 
             match result {
-                Err(InvitationError::NotChainLocked(message)) => {
+                Err(InvitationError::NotChainLocked {
+                    message,
+                    after_broadcast: false,
+                }) => {
                     assert!(
                         message.contains("too large"),
                         "unexpected message: {message}"
@@ -3697,7 +3736,10 @@ mod tests {
             .await;
 
             match result {
-                Err(InvitationError::NotChainLocked(message)) => {
+                Err(InvitationError::NotChainLocked {
+                    message,
+                    after_broadcast: true,
+                }) => {
                     assert!(
                         message.contains("more inputs"),
                         "unexpected message: {message}"
@@ -3758,7 +3800,13 @@ mod tests {
         async fn should_ask_to_retry_when_a_stale_islock_has_no_chain_fallback() {
             let (result, submitted) = run(None, vec![Err(stale_islock_rejection())]).await;
             assert!(
-                matches!(result, Err(InvitationError::NotChainLocked(_))),
+                matches!(
+                    result,
+                    Err(InvitationError::NotChainLocked {
+                        after_broadcast: true,
+                        ..
+                    })
+                ),
                 "expected the not-chain-locked retry signal, got {result:?}"
             );
             assert_eq!(

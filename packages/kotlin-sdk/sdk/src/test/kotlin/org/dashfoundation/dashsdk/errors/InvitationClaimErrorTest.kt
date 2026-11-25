@@ -44,10 +44,14 @@ class InvitationClaimErrorTest {
         val notReady = map(65, "quorum not verified", NOT_SENT, true)
         assertTrue(notReady is DashSdkError.PlatformWallet.InvitationNotReady)
         assertTrue(notReady.isRetryable)
-        // Rust's class, not the code's: the claim may already have been broadcast.
-        val notChainLocked = map(66, "retry later", MAYBE_SENT)
+        // One code for both phases; Rust's class tells them apart.
+        val notChainLocked = map(66, "retry later", NOT_SENT, true)
         assertTrue(notChainLocked is DashSdkError.PlatformWallet.AssetLockNotChainLocked)
-        assertFalse(notChainLocked.isRetryable)
+        assertTrue(notChainLocked.isRetryable)
+        val refused = map(66, "refused", MAYBE_SENT)
+        assertTrue(refused is DashSdkError.PlatformWallet.AssetLockNotChainLocked)
+        assertEquals(PaymentDelivery.MAYBE_SENT, refused.delivery)
+        assertFalse(refused.isRetryable)
     }
 
     private companion object {

@@ -349,9 +349,11 @@ sealed class DashSdkError(
 
         /**
          * Code 66: the asset lock is not usable yet (not propagated, or not
-         * chain-locked for a ChainLock proof). Rust classes it
-         * [PaymentDelivery.MAYBE_SENT], not retryable: one of its causes is
-         * Platform's refusal of a claim already broadcast with a stale islock.
+         * chain-locked for a ChainLock proof). Rust's class says when:
+         * [PaymentDelivery.NOT_SENT] and retryable before anything was sent
+         * (retry once the lock propagates or is chain-locked),
+         * [PaymentDelivery.MAYBE_SENT] when Platform refused the claim sent
+         * with its islock proof.
          */
         class AssetLockNotChainLocked(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)

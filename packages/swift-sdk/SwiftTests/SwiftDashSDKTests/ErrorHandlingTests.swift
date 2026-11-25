@@ -834,7 +834,10 @@ final class ErrorHandlingTests: XCTestCase {
             (.errorInvitationKeysAlreadyRegistered, "{\"identityId\":null}", maybeSent),
             (.errorInvitationClaimedByThisWallet, "{\"identityId\":\"\(id)\"}", maybeSent),
             (.errorInvitationNotReady, "quorum not verified", notSent),
-            (.errorAssetLockNotChainLocked, "retry later", maybeSent),
+            // Code 66 before anything was sent, then after Platform refused
+            // the claim: one code, the class tells them apart.
+            (.errorAssetLockNotChainLocked, "retry later", notSent),
+            (.errorAssetLockNotChainLocked, "refused", maybeSent),
         ]
         for (code, message, payment) in classed {
             let error = PlatformWalletError(code: code, message: message, payment: payment)

@@ -906,7 +906,10 @@ public enum PlatformWalletError: LocalizedError {
     case assetLockRecipientMismatch(String, payment: PlatformPaymentClass? = nil)
     /// The asset lock cannot be used yet: its transaction has not reached the
     /// queried node, or it needs a ChainLock proof and is not chain-locked
-    /// yet. Retry later. Produced today by `claimInvitation`.
+    /// yet. Produced today by `claimInvitation`. `payment` says when:
+    /// `.notSent` and retryable before anything was sent (retry once the
+    /// lock propagates or is chain-locked), `.maybeSent` when Platform
+    /// refused the claim sent with its islock proof.
     case assetLockNotChainLocked(String, payment: PlatformPaymentClass? = nil)
     /// A key of the DashPay invitation claim is already registered to
     /// another identity (base58 `identityId`, `nil` when Platform refused the

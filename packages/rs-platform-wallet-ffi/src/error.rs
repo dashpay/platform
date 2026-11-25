@@ -705,8 +705,11 @@ pub enum PlatformWalletFFIResultCode {
 
     /// Maps `PlatformWalletError::AssetLockNotChainLocked`. The asset lock
     /// cannot be used yet: its transaction has not reached the queried node,
-    /// or it needs a ChainLock proof and is not chain-locked yet. Retry
-    /// later. Produced today by the DashPay invitation claim.
+    /// or it needs a ChainLock proof and is not chain-locked yet. Produced
+    /// today by the DashPay invitation claim. The result's class says when:
+    /// `NotSent` and retryable before anything was sent (retry once the lock
+    /// propagates or is chain-locked), `MaybeSent` when Platform refused the
+    /// claim sent with its islock proof.
     ErrorAssetLockNotChainLocked = 66,
 
     /// Maps `PlatformWalletError::PrivateContactRequestNeedsPrivateReply`:
@@ -1517,7 +1520,7 @@ impl PlatformWalletFFIResult {
             PlatformWalletError::InvitationNotReady(..) => {
                 PlatformWalletFFIResultCode::ErrorInvitationNotReady
             }
-            PlatformWalletError::AssetLockNotChainLocked(..) => {
+            PlatformWalletError::AssetLockNotChainLocked { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockNotChainLocked
             }
             PlatformWalletError::AssetLockFundingMismatch { .. } => {
@@ -3072,7 +3075,10 @@ mod tests {
                 65,
             ),
             (
-                PlatformWalletError::AssetLockNotChainLocked("later".to_string()),
+                PlatformWalletError::AssetLockNotChainLocked {
+                    message: "later".to_string(),
+                    after_broadcast: false,
+                },
                 PlatformWalletFFIResultCode::ErrorAssetLockNotChainLocked,
                 66,
             ),
@@ -3092,6 +3098,29 @@ mod tests {
             let result: PlatformWalletFFIResult = error.into();
             assert_eq!(result.code, expected, "{rendered}");
             assert_eq!(result.code as i32, raw, "{rendered}");
+        }
+    }
+
+    /// Code 66 keeps one code for both phases; the class tells them apart:
+    /// nothing sent and retryable before the claim went out, possibly sent
+    /// and not retryable once Platform refused it.
+    #[test]
+    fn should_class_a_not_chain_locked_lock_by_when_it_happened() {
+        for (after_broadcast, delivery, retryable) in [
+            (false, PlatformWalletFFIPaymentDelivery::NotSent, true),
+            (true, PlatformWalletFFIPaymentDelivery::MaybeSent, false),
+        ] {
+            let result: PlatformWalletFFIResult = PlatformWalletError::AssetLockNotChainLocked {
+                message: "later".to_string(),
+                after_broadcast,
+            }
+            .into();
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorAssetLockNotChainLocked
+            );
+            assert_eq!(result.payment_delivery, delivery, "{after_broadcast}");
+            assert_eq!(result.retryable, retryable, "{after_broadcast}");
         }
     }
 

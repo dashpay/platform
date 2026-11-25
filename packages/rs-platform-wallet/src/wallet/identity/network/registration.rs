@@ -669,7 +669,10 @@ mod tests {
              (the lock is already past the CL grace window)"
         );
 
-        let not_cl = PlatformWalletError::AssetLockNotChainLocked("missing".to_string());
+        let not_cl = PlatformWalletError::AssetLockNotChainLocked {
+            message: "missing".to_string(),
+            after_broadcast: false,
+        };
         assert!(
             !is_instant_lock_timeout(&not_cl),
             "AssetLockNotChainLocked must NOT trigger IS→CL fallback"
