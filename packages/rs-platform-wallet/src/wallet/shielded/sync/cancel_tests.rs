@@ -93,7 +93,14 @@ async fn run(
 ) -> MultiSyncNotesResult {
     tokio::time::timeout(
         std::time::Duration::from_secs(5),
-        sync_notes_from_stream(store, subwallets, None, cancel, move |_, _| stream),
+        sync_notes_from_stream(
+            store,
+            subwallets,
+            &|_| false,
+            None,
+            cancel,
+            move |_, _, _| stream,
+        ),
     )
     .await
     .expect("a cancelled pass must return promptly")
@@ -153,9 +160,10 @@ async fn should_return_empty_without_touching_store_when_cancelled_before_scan()
     let result = sync_notes_from_stream(
         &store,
         &subwallets,
+        &|_| false,
         None,
         &cancel,
-        |_, _| -> futures::stream::Pending<BatchItem> {
+        |_, _, _| -> futures::stream::Pending<BatchItem> {
             panic!("a pass cancelled before the scan must not build the stream")
         },
     )
@@ -328,7 +336,7 @@ async fn should_return_while_waiting_for_the_store_lock_when_cancelled() {
     let cancel = CancellationToken::new();
 
     let held = store.write().await;
-    let pass = sync_notes_from_stream(&store, &subwallets, None, &cancel, |_, _| {
+    let pass = sync_notes_from_stream(&store, &subwallets, &|_| false, None, &cancel, |_, _, _| {
         futures::stream::iter(vec![batch(0, 4, 4)].into_iter().map(Ok))
     });
     futures::pin_mut!(pass);

@@ -108,6 +108,25 @@ impl ShieldedChangeSet {
         self.viewing_keys.insert(id, fvk_bytes.to_vec());
     }
 
+    /// Keep only the entries of the subwallets `keep` accepts, in every
+    /// field.
+    pub fn retain_subwallets(&mut self, mut keep: impl FnMut(&SubwalletId) -> bool) {
+        let ShieldedChangeSet {
+            notes_saved,
+            nullifiers_spent,
+            outgoing_notes,
+            synced_indices,
+            activity_entries,
+            viewing_keys,
+        } = self;
+        notes_saved.retain(|id, _| keep(id));
+        nullifiers_spent.retain(|id, _| keep(id));
+        outgoing_notes.retain(|id, _| keep(id));
+        synced_indices.retain(|id, _| keep(id));
+        activity_entries.retain(|id, _| keep(id));
+        viewing_keys.retain(|id, _| keep(id));
+    }
+
     /// Split a consolidated shielded changeset into one
     /// `ShieldedChangeSet` per `WalletId`. Used by the
     /// network-scoped coordinator's sync path: the free
@@ -283,6 +302,28 @@ mod activity_changeset_tests {
             ShieldedActivityStatus::Confirmed,
             "the Confirmed re-emit lands after the Pending one"
         );
+    }
+
+    #[test]
+    fn retain_subwallets_drops_every_field_of_the_others() {
+        let kept = SubwalletId::new([0x01; 32], 0);
+        let dropped = SubwalletId::new([0x01; 32], 1);
+        let mut cs = ShieldedChangeSet::default();
+        for id in [kept, dropped] {
+            cs.notes_saved.insert(id, Vec::new());
+            cs.nullifiers_spent.insert(id, vec![[0x0a; 32]]);
+            cs.outgoing_notes.insert(id, Vec::new());
+            cs.synced_indices.insert(id, 7);
+            cs.record_activity_entry(id, entry(1, ShieldedActivityStatus::Confirmed));
+            cs.record_viewing_key(id, [0x0b; 96]);
+        }
+        cs.retain_subwallets(|id| *id == kept);
+        assert_eq!(cs.notes_saved.keys().collect::<Vec<_>>(), [&kept]);
+        assert_eq!(cs.nullifiers_spent.keys().collect::<Vec<_>>(), [&kept]);
+        assert_eq!(cs.outgoing_notes.keys().collect::<Vec<_>>(), [&kept]);
+        assert_eq!(cs.synced_indices.keys().collect::<Vec<_>>(), [&kept]);
+        assert_eq!(cs.activity_entries.keys().collect::<Vec<_>>(), [&kept]);
+        assert_eq!(cs.viewing_keys.keys().collect::<Vec<_>>(), [&kept]);
     }
 
     /// `split_by_wallet_id` routes activity entries to the owning wallet.
