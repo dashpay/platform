@@ -4843,9 +4843,15 @@ pub(super) async fn redrive_pending_identity_shields<S: ShieldedStore>(
 /// Runs after the scan's spent-note reconcile (a landed spend's record
 /// was already dropped by the `mark_spent` hook, so anything still
 /// armed here is genuinely unresolved).
+///
+/// With a host hook set (`dispatch`), each re-broadcast first awaits
+/// [`ShieldedDispatch::admit`], with no store guard held, before its attempt
+/// is claimed. A refusal skips the record for this pass: it stays saved,
+/// its attempt count is unchanged and its notes stay reserved.
 pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
+    dispatch: Option<&dyn ShieldedDispatch>,
     id: SubwalletId,
     recorded: &std::collections::HashSet<[u8; 32]>,
     cancel: &CancellationToken,
@@ -4891,6 +4897,32 @@ pub(super) async fn redrive_pending_spends<S: ShieldedStore>(
                 continue;
             }
         };
+        if let Some(hook) = dispatch {
+            let st_hash = dpp::util::hash::hash_single(&redrive.st_bytes);
+            let admitted = cancel
+                .run_until_cancelled(hook.admit(
+                    id.wallet_id,
+                    id.account_index,
+                    redrive.activity_id,
+                    st_hash,
+                ))
+                .await;
+            match admitted {
+                None => {
+                    debug!("redrive: pass cancelled while the host's hook was asked");
+                    return;
+                }
+                Some(Err(refused)) => {
+                    debug!(
+                        reason = %refused,
+                        "redrive: the host's hook did not admit the re-broadcast; kept for a later pass"
+                    );
+                    continue;
+                }
+                Some(Ok(())) if cancel.is_cancelled() => return,
+                Some(Ok(())) => {}
+            }
+        }
         let Some(attempts) = claim_redrive_attempt(store, id, &redrive).await else {
             continue;
         };
@@ -6764,7 +6796,7 @@ mod redrive_tests {
             .expect("arm identity guard");
         let recorded = [anchor].into_iter().collect();
 
-        redrive_pending_spends(&sdk, &store, id, &recorded, &CancellationToken::new()).await;
+        redrive_pending_spends(&sdk, &store, None, id, &recorded, &CancellationToken::new()).await;
 
         let retained = store.read().await.pending_redrives(id).expect("guard");
         assert_eq!(retained.len(), 1);
@@ -6812,7 +6844,7 @@ mod redrive_tests {
         let recorded: std::collections::HashSet<[u8; 32]> =
             [[11u8; 32], [12u8; 32]].into_iter().collect();
 
-        redrive_pending_spends(&sdk, &store, id, &recorded, &CancellationToken::new()).await;
+        redrive_pending_spends(&sdk, &store, None, id, &recorded, &CancellationToken::new()).await;
 
         let left = store.read().await.pending_redrives(id).unwrap();
         let ids: Vec<[u8; 32]> = left.iter().map(|r| r.activity_id).collect();
@@ -6871,6 +6903,7 @@ mod redrive_tests {
         let mut pass = Box::pin(redrive_pending_spends(
             &sdk_handle,
             &store,
+            None,
             id,
             &recorded,
             &cancel,
@@ -7265,6 +7298,7 @@ mod redrive_tests {
         redrive_pending_spends(
             &sdk_handle,
             &restarted,
+            None,
             id,
             &recorded,
             &CancellationToken::new(),
@@ -7421,6 +7455,10 @@ mod redrive_tests {
         }
     }
 
+    /// What a hook's `admit` was asked: wallet, account, activity id and
+    /// transition hash.
+    type AdmitQuestion = (WalletId, u32, [u8; 32], [u8; 32]);
+
     /// A dispatch hook that answers `refuse`, and keeps what it was shown
     /// and whether the spend's record was on the file at `path` then.
     struct RecordingHook {
@@ -7428,6 +7466,7 @@ mod redrive_tests {
         id: SubwalletId,
         refuse: bool,
         shown: std::sync::Mutex<Vec<(ShieldedDispatchPayload, bool)>>,
+        admitted: std::sync::Mutex<Vec<AdmitQuestion>>,
         log: Arc<std::sync::Mutex<Vec<&'static str>>>,
     }
 
@@ -7438,6 +7477,7 @@ mod redrive_tests {
                 id,
                 refuse,
                 shown: Default::default(),
+                admitted: Default::default(),
                 log: Default::default(),
             }
         }
@@ -7456,6 +7496,24 @@ mod redrive_tests {
             self.shown.lock().unwrap().push((payload, durable));
             if self.refuse {
                 Err(DispatchRefused::new("refused by the host"))
+            } else {
+                Ok(())
+            }
+        }
+        async fn admit(
+            &self,
+            wallet_id: WalletId,
+            account_index: u32,
+            activity_id: [u8; 32],
+            st_hash: [u8; 32],
+        ) -> Result<(), DispatchRefused> {
+            self.log.lock().unwrap().push("admit");
+            self.admitted
+                .lock()
+                .unwrap()
+                .push((wallet_id, account_index, activity_id, st_hash));
+            if self.refuse {
+                Err(DispatchRefused::new("not admitted"))
             } else {
                 Ok(())
             }
@@ -7609,6 +7667,7 @@ mod redrive_tests {
         sdk: Arc<dash_sdk::Sdk>,
         store: Arc<RwLock<FileBackedShieldedStore>>,
         id: SubwalletId,
+        admits: bool,
     }
 
     #[async_trait::async_trait]
@@ -7618,12 +7677,27 @@ mod redrive_tests {
             redrive_pending_spends(
                 &self.sdk,
                 &self.store,
+                Some(self),
                 self.id,
                 &recorded,
                 &CancellationToken::new(),
             )
             .await;
             Err(DispatchRefused::new("refused after a pass ran"))
+        }
+
+        async fn admit(
+            &self,
+            _: WalletId,
+            _: u32,
+            _: [u8; 32],
+            _: [u8; 32],
+        ) -> Result<(), DispatchRefused> {
+            if self.admits {
+                Ok(())
+            } else {
+                Err(DispatchRefused::new("not accepted yet"))
+            }
         }
     }
 
@@ -7635,12 +7709,23 @@ mod redrive_tests {
         async fn dispatch(&self, _: ShieldedDispatchPayload) -> Result<(), DispatchRefused> {
             std::future::pending().await
         }
+
+        async fn admit(
+            &self,
+            _: WalletId,
+            _: u32,
+            _: [u8; 32],
+            _: [u8; 32],
+        ) -> Result<(), DispatchRefused> {
+            Err(DispatchRefused::new("never accepted"))
+        }
     }
 
-    /// A sync pass that re-broadcasts the saved record while the hook is
-    /// awaited claims it, so a refusal that follows can no longer retire it:
-    /// the spend may have left the wallet, and it settles as unconfirmed,
-    /// keeping its notes and its record.
+    /// A sync pass that runs while the hook is awaited, and whose hook admits
+    /// the saved record (a host that admits a transition it then refuses),
+    /// claims it, so a refusal that follows can no longer retire it: the
+    /// spend may have left the wallet, and it settles as unconfirmed, keeping
+    /// its notes and its record.
     #[tokio::test]
     async fn should_keep_a_refused_spend_a_pass_re_broadcast_during_the_hook() {
         let wallet_id = [0x77; 32];
@@ -7654,6 +7739,7 @@ mod redrive_tests {
             sdk: Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk")),
             store: Arc::clone(&spend.store),
             id,
+            admits: true,
         };
         let result: Result<(), SpendFailure> = save_spend_then_broadcast(
             &spend.store,
@@ -7683,9 +7769,142 @@ mod redrive_tests {
         assert_eq!(status, ShieldedActivityStatus::Pending);
     }
 
+    /// A sync pass that runs while the hook is awaited asks it to admit the
+    /// saved record. Refused, the pass sends nothing, and the refusal that
+    /// follows retires the record and releases the notes.
+    #[tokio::test]
+    async fn should_retire_a_refused_spend_a_pass_found_during_the_hook() {
+        let wallet_id = [0x7B; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let activity_id = [0x84; 32];
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("tree.sqlite");
+        let mut spend = ReservedSpend::at(&path, id, activity_id).await;
+        let transition = SpendPath::Shared.transition();
+        let hook = RedriveDuringHook {
+            sdk: Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk")),
+            store: Arc::clone(&spend.store),
+            id,
+            admits: false,
+        };
+        let result: Result<(), SpendFailure> = save_spend_then_broadcast(
+            &spend.store,
+            Some(&hook),
+            id,
+            &spend.entry,
+            SPEND_ANCHOR,
+            SPEND_ANCHOR_HEIGHT,
+            &spend.notes,
+            &mut spend.reservation,
+            &transition,
+            "transfer",
+            || async { panic!("the spend's own broadcast never runs") },
+        )
+        .await;
+        let failure = result.expect_err("refused");
+        let store = Arc::clone(&spend.store);
+        let settled = SpendPath::Shared
+            .settle(spend, wallet_id, id, failure)
+            .await;
+        assert!(
+            matches!(settled, PlatformWalletError::ShieldedDispatchRefused { .. }),
+            "{settled:?}"
+        );
+        let (spendable, status) = spendable_and_status(&store, id, &activity_id).await;
+        assert_eq!(spendable, 1, "the notes are released");
+        assert_eq!(status, ShieldedActivityStatus::Failed);
+        assert!(
+            store
+                .read()
+                .await
+                .pending_redrives(id)
+                .expect("records")
+                .is_empty(),
+            "the record is retired"
+        );
+    }
+
+    /// A hook whose `admit` stops the pass, then answers `answer`, or never
+    /// answers.
+    struct StopDuringAdmit {
+        cancel: CancellationToken,
+        answer: Option<bool>,
+    }
+
+    #[async_trait::async_trait]
+    impl ShieldedDispatch for StopDuringAdmit {
+        async fn dispatch(&self, _: ShieldedDispatchPayload) -> Result<(), DispatchRefused> {
+            Err(DispatchRefused::new("unused"))
+        }
+
+        async fn admit(
+            &self,
+            _: WalletId,
+            _: u32,
+            _: [u8; 32],
+            _: [u8; 32],
+        ) -> Result<(), DispatchRefused> {
+            self.cancel.cancel();
+            match self.answer {
+                Some(true) => Ok(()),
+                Some(false) => Err(DispatchRefused::new("refused")),
+                None => std::future::pending().await,
+            }
+        }
+    }
+
+    /// A stop that lands while the hook is asked to admit a re-broadcast ends
+    /// the pass: an `admit` that never answers doesn't hold it, and one that
+    /// answers after the stop sends nothing.
+    #[tokio::test]
+    async fn should_send_nothing_once_a_pass_is_stopped_during_admit() {
+        let id = SubwalletId::new([0x7C; 32], 0);
+        let st_bytes = SpendPath::Shared
+            .transition()
+            .serialize_to_bytes()
+            .expect("serializes");
+        for answer in [None, Some(true), Some(false)] {
+            let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+            store
+                .write()
+                .await
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: [0x85; 32],
+                        anchor: SPEND_ANCHOR,
+                        nullifiers: vec![spend_note().nullifier],
+                        st_bytes: st_bytes.clone(),
+                        attempts: 0,
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                        anchor_height: Some(SPEND_ANCHOR_HEIGHT),
+                    },
+                )
+                .expect("saved");
+            let cancel = CancellationToken::new();
+            let hook = StopDuringAdmit {
+                cancel: cancel.clone(),
+                answer,
+            };
+            let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+            let recorded = [SPEND_ANCHOR].into_iter().collect();
+            tokio::time::timeout(
+                std::time::Duration::from_secs(30),
+                redrive_pending_spends(&sdk, &store, Some(&hook), id, &recorded, &cancel),
+            )
+            .await
+            .expect("the pass ends");
+            let records = store.read().await.pending_redrives(id).expect("records");
+            assert_eq!(records.len(), 1, "answer={answer:?}: the record stays");
+            assert_eq!(records[0].attempts, 0, "answer={answer:?}: nothing sent");
+        }
+    }
+
     /// A refusal whose record cannot be retired (the store's write fails)
     /// settles as unconfirmed and keeps the notes and the record: nothing
-    /// is freed under a transition the wallet still holds.
+    /// is freed under a transition the wallet still holds. A sync pass sends
+    /// it only once the hook admits it.
     #[tokio::test]
     async fn should_keep_a_refused_spend_whose_record_cannot_be_retired() {
         let wallet_id = [0x78; 32];
@@ -7726,20 +7945,23 @@ mod redrive_tests {
         let (spendable, _) = spendable_and_status(&store, id, &activity_id).await;
         assert_eq!(spendable, 0, "the notes stay reserved");
         assert_eq!(
-            store
-                .read()
-                .await
-                .pending_redrives(id)
-                .expect("records")
-                .len(),
+            redrive_once_with(&store, &SilentHook, id).await,
+            0,
+            "a pass whose hook doesn't admit it never sends it"
+        );
+        let (spendable, _) = spendable_and_status(&store, id, &activity_id).await;
+        assert_eq!(spendable, 0, "the notes stay reserved");
+        assert_eq!(
+            redrive_once_with(&store, &RecordingHook::new(&path, id, false), id).await,
             1,
-            "the record stays"
+            "a pass whose hook admits it re-sends it"
         );
     }
 
     /// A send dropped while its hook is awaited (cancelled, timed out, shut
     /// down) leaves its record saved and its notes reserved: nothing frees a
-    /// note under a transition that may still be sent.
+    /// note under a transition that may still be sent. A sync pass sends it
+    /// only once the hook admits it.
     #[tokio::test]
     async fn should_keep_the_notes_and_record_of_a_send_dropped_mid_hook() {
         use std::task::{Context, Waker};
@@ -7791,6 +8013,111 @@ mod redrive_tests {
             1,
             "the record is on the file"
         );
+        assert_eq!(
+            redrive_once_with(&store, &SilentHook, id).await,
+            0,
+            "a pass whose hook doesn't admit it never sends it"
+        );
+        assert!(
+            store
+                .read()
+                .await
+                .get_unspent_notes(id)
+                .expect("notes")
+                .is_empty(),
+            "the notes stay reserved"
+        );
+        let admitting = RecordingHook::new(&path, id, false);
+        assert_eq!(
+            redrive_once_with(&store, &admitting, id).await,
+            1,
+            "a pass whose hook admits it re-sends it"
+        );
+        let st_bytes = transition.serialize_to_bytes().expect("serializes");
+        assert_eq!(
+            *admitting.admitted.lock().unwrap(),
+            [(
+                id.wallet_id,
+                id.account_index,
+                [0x82; 32],
+                dpp::util::hash::hash_single(&st_bytes)
+            )],
+            "the same bytes the send saved"
+        );
+    }
+
+    /// Run one sync pass's redrive of `id` over `store` with `hook`, the
+    /// tests' spend anchor still recorded, and return the attempt count of
+    /// its one saved record.
+    async fn redrive_once_with<S: ShieldedStore>(
+        store: &Arc<RwLock<S>>,
+        hook: &dyn ShieldedDispatch,
+        id: SubwalletId,
+    ) -> u32 {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let recorded = [SPEND_ANCHOR].into_iter().collect();
+        redrive_pending_spends(
+            &sdk,
+            store,
+            Some(hook),
+            id,
+            &recorded,
+            &CancellationToken::new(),
+        )
+        .await;
+        let records = store.read().await.pending_redrives(id).expect("records");
+        assert_eq!(records.len(), 1, "the record stays");
+        records[0].attempts
+    }
+
+    /// A sync pass asks the host's hook to admit each re-broadcast, by the
+    /// transition's SHA-256, before it claims an attempt. Refused, the record
+    /// is kept with its attempt count unchanged and nothing is sent; admitted,
+    /// the pass goes on as without a hook.
+    #[tokio::test]
+    async fn should_re_broadcast_a_saved_spend_only_once_the_hook_admits_it() {
+        let id = SubwalletId::new([0x76; 32], 3);
+        let st_bytes = SpendPath::Shared
+            .transition()
+            .serialize_to_bytes()
+            .expect("serializes");
+        for refuse in [true, false] {
+            let store = Arc::new(RwLock::new(InMemoryShieldedStore::new()));
+            store
+                .write()
+                .await
+                .arm_redrive(
+                    id,
+                    PendingRedrive {
+                        activity_id: [0x7F; 32],
+                        anchor: SPEND_ANCHOR,
+                        nullifiers: vec![spend_note().nullifier],
+                        st_bytes: st_bytes.clone(),
+                        attempts: 0,
+                        identity_nonce_finalized: false,
+                        identity_user_abandoned: false,
+                        anchor_height: Some(SPEND_ANCHOR_HEIGHT),
+                    },
+                )
+                .expect("saved");
+            let hook = RecordingHook::new(std::path::Path::new("unused"), id, refuse);
+            let attempts = redrive_once_with(&store, &hook, id).await;
+            assert_eq!(
+                *hook.admitted.lock().unwrap(),
+                [(
+                    id.wallet_id,
+                    id.account_index,
+                    [0x7F; 32],
+                    dpp::util::hash::hash_single(&st_bytes)
+                )],
+                "refuse={refuse}: asked once, about the record, by the transition's hash"
+            );
+            assert_eq!(
+                attempts,
+                if refuse { 0 } else { 1 },
+                "refuse={refuse}: an attempt is claimed only once admitted"
+            );
+        }
     }
 
     /// A private document payment whose hook refuses it is not broadcast:
@@ -7961,6 +8288,7 @@ mod redrive_tests {
             redrive_pending_spends(
                 &sdk_handle,
                 &restarted,
+                None,
                 id,
                 &recorded,
                 &CancellationToken::new(),
