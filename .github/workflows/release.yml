@@ -575,6 +575,10 @@ jobs:
     permissions:
       contents: write
       actions: read
+    # The sha256 of the SHA256SUMS this job checked and attached. The apt
+    # publish asks for that file only, by this digest.
+    outputs:
+      sha256sums_sha256: ${{ steps.attach.outputs.sha256 }}
     env:
       GH_TOKEN: ${{ github.token }}
       RELEASE_ID: ${{ github.event.release.id }}
@@ -678,6 +682,7 @@ jobs:
       # so the job learns the new asset's id, and the job writes that id and the
       # file's sha256 into its own log: the signing script signs only that asset.
       - name: Attach SHA256SUMS to the release
+        id: attach
         run: |
           set -euo pipefail
           assets="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?per_page=100" \
@@ -708,6 +713,7 @@ jobs:
             exit 1
           fi
           echo "SHA256SUMS attached: asset ${id} sha256 ${sum}"
+          echo "sha256=${sum}" >> "${GITHUB_OUTPUT}"
 
   # Asks the apt publisher, infra's state machine, to publish the release's two
   # debs. It downloads them itself and takes them only as SHA256SUMS lists them,
@@ -732,6 +738,7 @@ jobs:
       contents: none
     env:
       TAG: ${{ github.event.release.tag_name }}
+      SHA256SUMS_SHA256: ${{ needs.release-dashmate-checksums.outputs.sha256sums_sha256 }}
       # The publisher runs one publish at a time, so this includes waiting for
       # another one. It stays under the job's timeout and the hour the
       # credentials last.
@@ -756,6 +763,10 @@ jobs:
             echo "::error::Not a release tag such as v5.1.0 or v5.1.0-rc.1: ${shown}"
             exit 1
           fi
+          if ! [[ "${SHA256SUMS_SHA256}" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::The Release Dashmate checksums job handed over no sha256 of the SHA256SUMS it attached."
+            exit 1
+          fi
           label=''
           case "${TAG}" in
             *-*)
@@ -778,6 +789,10 @@ jobs:
           role-to-assume: arn:aws:iam::854439639386:role/dashmate-apt-release
           aws-region: us-west-2
 
+      # The input names the release and the sha256 of the SHA256SUMS this run
+      # checked, so the publisher can refuse any other manifest the release
+      # holds by the time it serves the request.
+      #
       # The execution's name is unique per run attempt, so a re-run starts a new
       # publish, and made of the characters Step Functions accepts in names it
       # logs, at most 80. Starting is idempotent for the same name and input, so
@@ -793,7 +808,7 @@ jobs:
           suffix="-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           name="${TAG//./-}"
           name="${name:0:$((80 - ${#suffix}))}${suffix}"
-          input="$(jq -cn --arg tag "${TAG}" '{tag: $tag}')"
+          input="$(jq -cn --arg tag "${TAG}" --arg sums "${SHA256SUMS_SHA256}" '{tag: $tag, sha256sums_sha256: $sums}')"
           execution="$(aws stepfunctions start-execution --state-machine-arn "${STATE_MACHINE}" \
             --name "${name}" --input "${input}" --query executionArn --output text \
             --cli-connect-timeout 10 --cli-read-timeout 30)"

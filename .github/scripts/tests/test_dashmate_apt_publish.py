@@ -18,6 +18,8 @@ CHECK_STEP = 'Check the release tag'
 PUBLISH_STEP = 'Publish the debs to the apt repository'
 CREDENTIALS_STEP = 'Get credentials for the apt publisher'
 RUN_ID = '19876543210'
+# The sha256 of the SHA256SUMS the checksums job attached, as its job output hands it over.
+SUMS_SHA256 = '3f0c' + 'ab' * 30
 
 # `aws stepfunctions` as the runner's AWS CLI answers it. start-execution answers with the new
 # execution's ARN, or fails with AWS_START_FAIL. Each describe-execution takes the next status of
@@ -116,9 +118,10 @@ def step_script(name):
     return textwrap.dedent('\n'.join(script))
 
 
-def evaluate(value, tag):
+def evaluate(value, tag, sums_sha256=SUMS_SHA256):
     """`value` with each ${{ expression }} replaced as the runner would; unknown ones raise."""
-    known = {'github.event.release.tag_name': tag}
+    known = {'github.event.release.tag_name': tag,
+             'needs.release-dashmate-checksums.outputs.sha256sums_sha256': sums_sha256}
     return re.sub(r'\$\{\{\s*(.+?)\s*\}\}', lambda match: known[match.group(1)], value)
 
 
@@ -137,6 +140,12 @@ class AptPublishJobTests(unittest.TestCase):
 
     def test_should_take_the_tag_from_the_published_release(self):
         self.assertEqual(mapping(job_lines(), '    env:', 6)['TAG'], '${{ github.event.release.tag_name }}')
+
+    def test_should_take_the_sha256sums_digest_from_the_checksums_job(self):
+        # The digest of the one SHA256SUMS this run checked and attached, so the publisher can
+        # refuse any other manifest the release holds by the time the request is served.
+        self.assertEqual(mapping(job_lines(), '    env:', 6)['SHA256SUMS_SHA256'],
+                         '${{ needs.release-dashmate-checksums.outputs.sha256sums_sha256 }}')
 
     def test_should_get_aws_credentials_only_in_the_environment_the_role_trusts(self):
         # The role trusts only this environment, whose deployments are restricted to v* tags.
@@ -206,11 +215,11 @@ class AptPublishScriptTests(unittest.TestCase):
         (self.tmp / 'bin/sleep').write_text(f'#!/bin/sh\necho "$@" >> {self.tmp}/sleeps\n')
         (self.tmp / 'bin/sleep').chmod(0o755)
 
-    def run_step(self, step, tag='v5.1.0', attempt='1', **knobs):
+    def run_step(self, step, tag='v5.1.0', attempt='1', sums_sha256=SUMS_SHA256, **knobs):
         env = {'PATH': f"{self.tmp / 'bin'}{os.pathsep}{os.environ['PATH']}", 'HOME': str(self.tmp),
                'GITHUB_RUN_ID': RUN_ID, 'GITHUB_RUN_ATTEMPT': attempt, 'AWS_LOG': str(self.tmp / 'aws.log'),
                'AWS_STATUSES': 'SUCCEEDED', 'GITHUB_OUTPUT': str(self.tmp / 'github-output')}
-        env.update({key: evaluate(value, tag) for key, value in step_env(step).items()})
+        env.update({key: evaluate(value, tag, sums_sha256) for key, value in step_env(step).items()})
         env.update(knobs)
         # sleep is stubbed, so a loop that ignores its bounds would spin forever.
         return subprocess.run(['/bin/bash', '-c', step_script(step)], capture_output=True, text=True, env=env,
@@ -271,6 +280,16 @@ class AptPublishScriptTests(unittest.TestCase):
                 self.assertTrue(lines[0].startswith('::error::'), result.stdout)
         self.assertEqual(self.aws_calls(), [])
 
+    def test_should_refuse_a_missing_or_malformed_sha256sums_digest(self):
+        for digest in ['', SUMS_SHA256[:-1], SUMS_SHA256.upper(), SUMS_SHA256 + '0', SUMS_SHA256 + '\n',
+                       'sha256:' + SUMS_SHA256[7:], 'g' * 64]:
+            with self.subTest(digest):
+                result = self.run_step(CHECK_STEP, sums_sha256=digest)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(self.outputs(), [])
+                self.assertIn('::error::', result.stdout)
+        self.assertEqual(self.aws_calls(), [])
+
     def test_should_start_the_state_machine_with_the_tag_as_json(self):
         # The JSON is built from the tag as data, whatever it holds.
         for tag in ('v5.1.0-rc.1', 'v5.1.0"}, "x": {"', 'v5.1.0\\'):
@@ -281,7 +300,8 @@ class AptPublishScriptTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 start = self.start_call()
                 self.assertEqual(self.option(start, '--state-machine-arn'), STATE_MACHINE)
-                self.assertEqual(json.loads(self.option(start, '--input')), {'tag': tag})
+                self.assertEqual(json.loads(self.option(start, '--input')),
+                                 {'tag': tag, 'sha256sums_sha256': SUMS_SHA256})
 
     def test_should_name_each_run_attempt_with_a_name_step_functions_accepts(self):
         names = {}
@@ -302,7 +322,8 @@ class AptPublishScriptTests(unittest.TestCase):
         self.assertRegex(name, r'^[0-9A-Za-z_-]+$')
         self.assertTrue(name.endswith(f'-{RUN_ID}-12'), name)
         self.assertTrue(name.startswith('v5-1-0-rc1234567-'), name)
-        self.assertEqual(json.loads(self.option(self.start_call(), '--input')), {'tag': tag})
+        self.assertEqual(json.loads(self.option(self.start_call(), '--input')),
+                         {'tag': tag, 'sha256sums_sha256': SUMS_SHA256})
 
     def test_should_wait_while_the_execution_runs_and_pass_when_it_succeeded(self):
         result = self.run_step(PUBLISH_STEP, AWS_STATUSES='RUNNING,PENDING_REDRIVE,RUNNING,SUCCEEDED')
@@ -330,7 +351,7 @@ class AptPublishScriptTests(unittest.TestCase):
                                   and line.lstrip().startswith('::')], result.stdout)
                 # The runner reads a `##[` command anywhere in a line.
                 self.assertNotIn('##[', result.stdout)
-                details = json.loads(result.stdout.splitlines()[-1])
+                details = json.loads(next(line for line in result.stdout.splitlines() if line.startswith('{')))
                 self.assertEqual(details['cause'], '::error::forged\n##[error]forged too # \\# ##[')
 
     def test_should_keep_reading_the_execution_through_failed_calls(self):
