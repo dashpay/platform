@@ -276,15 +276,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.block_capture_inputs = None;
         let before = self.core_wallet.metadata.synced_height;
         let truncation = self.core_wallet.truncate_above(height)?;
-        let pending = self
-            .pending_block_spends
-            .get_mut()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        pending.queued.retain(|spend| spend.height <= height);
-        for after in &mut pending.after_truncations {
-            after.retain(|spend| spend.height <= height);
-        }
-        pending.after_truncations.push_back(Vec::new());
+        self.truncate_block_spends_above(height);
         self.note_in_memory_rewind(before);
         Ok(truncation)
     }
