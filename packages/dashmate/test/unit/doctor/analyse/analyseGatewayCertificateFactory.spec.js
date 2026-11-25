@@ -1228,6 +1228,28 @@ describe('analyseGatewayCertificateFactory', () => {
       expect(renewal.getSolution()).to.not.contain('may not be running');
     });
 
+    // The helper knows why it stopped, and doctor says so. It prescribes no
+    // repair: obtaining by hand does not stop the next refusal, and a restart
+    // reloads the gateway from certificate files nothing here has checked.
+    ['a working', 'an expired'].forEach((state) => {
+      it(`should name an outdated helper without prescribing a repair for ${state} certificate`, () => {
+        installedValid(state === 'a working' ? {} : {
+          status: 'INVALID',
+          validTo: validTo(-1),
+          reasons: [{ code: 'EXPIRED', message: 'The installed certificate expired on 2026-08-20' }],
+        });
+        renewalFailed({ code: 'HELPER_OUTDATED', detail: null });
+
+        const problems = analyse(served());
+        const text = problems.map((p) => `${p.getDescription()}\n${p.getSolution()}`).join('\n');
+
+        expect(text).to.contain('runs an older dashmate than the one that last saved its configuration');
+        expect(text).to.not.contain('ssl obtain');
+        expect(text).to.not.contain('dashmate restart');
+        expect(text).to.not.contain('could not work out why');
+      });
+    });
+
     it('should not ask the authority again when it never established a cause', () => {
       // A HIGH problem ending in a runnable command is an instruction to run
       // it, and this one spends one of the few failed attempts the node gets

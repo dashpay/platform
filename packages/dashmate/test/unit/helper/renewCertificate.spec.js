@@ -3,7 +3,11 @@ import ConfigFile from '../../../src/config/configFile/ConfigFile.js';
 import ConfigFileJsonRepository from '../../../src/config/configFile/ConfigFileJsonRepository.js';
 import HomeDir from '../../../src/config/HomeDir.js';
 import renewCertificate from '../../../src/helper/renewCertificate.js';
-import classifyRenewalFailure, { RENEWAL_FAILURE_CODES } from '../../../src/ssl/renewal-failure.js';
+import classifyRenewalFailure, {
+  describeRenewalFailure,
+  REMEDY_CLASS,
+  RENEWAL_FAILURE_CODES,
+} from '../../../src/ssl/renewal-failure.js';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
 import obtainLetsEncryptCertificateTaskFactory from '../../../src/listr/tasks/ssl/letsencrypt/obtainLetsEncryptCertificateTaskFactory.js';
 import obtainZeroSSLCertificateTaskFactory from '../../../src/listr/tasks/ssl/zerossl/obtainZeroSSLCertificateTaskFactory.js';
@@ -265,11 +269,14 @@ describe('renewCertificate', () => {
     }).then(() => null, (e) => e);
 
     expect(refusal).to.be.an('error').with.property('message').that.matches(/updated by a newer dashmate/);
-    // Recorded without a cause. A cause would let doctor prescribe a repair,
-    // and a safe one for an outdated helper does not exist yet: anything that
-    // restarts the node reloads the gateway from unchecked files on disk.
-    expect(classifyRenewalFailure(refusal, { provider: 'zerossl' }).code)
-      .to.equal(RENEWAL_FAILURE_CODES.UNKNOWN);
+    // Recorded with its cause, so doctor can name it, and with a remedy that
+    // prescribes nothing: a safe repair for an outdated helper does not exist
+    // yet, and anything that restarts the node reloads the gateway from
+    // unchecked files on disk.
+    const { code } = classifyRenewalFailure(refusal, { provider: 'zerossl' });
+
+    expect(code).to.equal(RENEWAL_FAILURE_CODES.HELPER_OUTDATED);
+    expect(describeRenewalFailure(code).remedy).to.equal(REMEDY_CLASS.SUPPORT);
 
     expect(obtainCertificateTask).to.not.have.been.called();
     expect(writeConfigTemplates).to.not.have.been.called();

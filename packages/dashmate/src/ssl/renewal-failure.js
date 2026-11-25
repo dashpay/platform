@@ -6,6 +6,7 @@ import VerificationServerUnreachableError from './errors/VerificationServerUnrea
 import ProviderUnreachableError from './errors/ProviderUnreachableError.js';
 import CertificateFileMissingError from './errors/CertificateFileMissingError.js';
 import ProviderCredentialsRejectedError from './errors/ProviderCredentialsRejectedError.js';
+import ConfigFileFormatTooNewError from '../config/errors/ConfigFileFormatTooNewError.js';
 
 /**
  * Why a scheduled renewal did not produce a certificate.
@@ -41,6 +42,7 @@ export const RENEWAL_FAILURE_CODES = {
   PROVIDER_UNREACHABLE: 'PROVIDER_UNREACHABLE',
   CERTIFICATE_FILE_MISSING: 'CERTIFICATE_FILE_MISSING',
   RENEWAL_INTERRUPTED: 'RENEWAL_INTERRUPTED',
+  HELPER_OUTDATED: 'HELPER_OUTDATED',
   UNKNOWN: 'UNKNOWN',
 };
 
@@ -157,6 +159,14 @@ const DESCRIPTIONS = {
   [RENEWAL_FAILURE_CODES.RENEWAL_INTERRUPTED]: {
     sentence: 'another dashmate command was changing configuration, so renewal stopped part way',
     remedy: REMEDY_CLASS.WAIT,
+  },
+  // The cause is known; a safe repair is not. Obtaining by hand does not stop
+  // the next refusal, and a restart reloads the gateway from certificate files
+  // nothing on this path has checked - so nothing is prescribed.
+  [RENEWAL_FAILURE_CODES.HELPER_OUTDATED]: {
+    sentence: 'the dashmate helper on this node runs an older dashmate than the one that last'
+      + ' saved its configuration, so it stopped rather than overwrite the newer settings',
+    remedy: REMEDY_CLASS.SUPPORT,
   },
   [RENEWAL_FAILURE_CODES.UNKNOWN]: {
     sentence: 'dashmate could not work out why',
@@ -432,7 +442,12 @@ function classifyCode(error, message, provider) {
     || candidate instanceof VerificationServerUnreachableError
     || candidate instanceof ProviderUnreachableError
     || candidate instanceof CertificateFileMissingError
-    || candidate instanceof ProviderCredentialsRejectedError);
+    || candidate instanceof ProviderCredentialsRejectedError
+    || candidate instanceof ConfigFileFormatTooNewError);
+
+  if (carried instanceof ConfigFileFormatTooNewError) {
+    return RENEWAL_FAILURE_CODES.HELPER_OUTDATED;
+  }
 
   if (carried instanceof ConfigurationLockLostError) {
     return RENEWAL_FAILURE_CODES.RENEWAL_INTERRUPTED;
