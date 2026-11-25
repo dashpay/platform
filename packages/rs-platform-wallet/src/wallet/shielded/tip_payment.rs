@@ -335,6 +335,21 @@ pub(super) fn unresolved_transfer_recipients(
     Ok(recipients)
 }
 
+/// The recipient the name resolves to now is the one the user reviewed:
+/// another identity, or the same identity with another shielded address, is
+/// refused so the payment is reviewed again.
+pub(super) fn ensure_recipient_unchanged(
+    current: &ShieldedTipRecipient,
+    reviewed: &ShieldedTipRecipient,
+) -> Result<(), PlatformWalletError> {
+    if current != reviewed {
+        return Err(PlatformWalletError::InvalidIdentityData(
+            "The tip recipient changed; review and confirm the payment again".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Refuse a name that resolves to another identity than the one the caller
 /// expects it to belong to ([`PlatformWalletError::ShieldedTipRecipientMismatch`]).
 /// `None` expects nothing: the user typed the name.
@@ -585,53 +600,57 @@ impl PlatformWallet {
         memo: [u8; 36],
         prover: P,
     ) -> Result<(), PlatformWalletError> {
-        // The tip pays `expected_recipient` or nothing, so a recipient of
-        // another identity than the caller expects is refused before any
-        // wait or lookup.
-        ensure_expected_identity(expected_identity, &expected_recipient.identity_id)?;
-        // Held until this returns. An admission of another wallet would
-        // leave this wallet's tips unguarded.
-        if !Arc::ptr_eq(
-            OwnedMutexGuard::mutex(&admission.0),
-            &self.tip_send_in_progress,
-        ) {
-            return Err(PlatformWalletError::InvalidParameter(
-                "the shielded tip admission was taken on another wallet".to_string(),
-            ));
+        // Everything up to the transfer below only checks and looks up:
+        // nothing is built or sent, so every refusal here (a changed
+        // recipient, a name or profile lookup that failed) is proven before
+        // the dispatch. The guards it takes are held through the transfer.
+        let (_sending, _lifecycle, _operation, _config, account, current) = async {
+            // The tip pays `expected_recipient` or nothing, so a recipient of
+            // another identity than the caller expects is refused before any
+            // wait or lookup.
+            ensure_expected_identity(expected_identity, &expected_recipient.identity_id)?;
+            // Held until this returns. An admission of another wallet would
+            // leave this wallet's tips unguarded.
+            if !Arc::ptr_eq(
+                OwnedMutexGuard::mutex(&admission.0),
+                &self.tip_send_in_progress,
+            ) {
+                return Err(PlatformWalletError::InvalidParameter(
+                    "the shielded tip admission was taken on another wallet".to_string(),
+                ));
+            }
+            let lifecycle = self.core().generation_payment_guard().await;
+            if !self.core().is_current_generation().await {
+                return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
+                    self.wallet_id(),
+                )));
+            }
+            coordinator.ensure_network(self.sdk.network)?;
+            // Held through settlement, so a Clear waits for the tip instead of
+            // purging the store it reserves in and settles against.
+            let operation = coordinator.operation_guard().await;
+            // A bind that dropped the paying account would purge the notes the
+            // tip reserves, and its saved record with them.
+            let config = self.shielded_config_lock.lock().await;
+            self.ensure_shielded_bound_on(coordinator)?;
+            let account = self.tip_source_account(seed, source).await?;
+            // The name is looked up again, and its owner checked against the
+            // expected identity before its profile is read: a name that moved
+            // since the review is reported as that, whatever the new owner's
+            // profile holds.
+            let current = self
+                .resolve_tip_recipient(username, expected_identity)
+                .await?;
+            ensure_recipient_unchanged(&current, expected_recipient)?;
+            // The lookups above took network time, during which the wallet's
+            // identities can have changed. Refused here before the wait for the
+            // store; the check that counts runs once the notes are claimed.
+            self.ensure_tip_source_selects(seed, source, account)
+                .await?;
+            Ok((admission, lifecycle, operation, config, account, current))
         }
-        let _sending = admission;
-        let _lifecycle = self.core().generation_payment_guard().await;
-        if !self.core().is_current_generation().await {
-            return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
-                self.wallet_id(),
-            )));
-        }
-        coordinator.ensure_network(self.sdk.network)?;
-        // Held through settlement, so a Clear waits for the tip instead of
-        // purging the store it reserves in and settles against.
-        let _operation = coordinator.operation_guard().await;
-        // A bind that dropped the paying account would purge the notes the
-        // tip reserves, and its saved record with them.
-        let _config = self.shielded_config_lock.lock().await;
-        self.ensure_shielded_bound_on(coordinator)?;
-        let account = self.tip_source_account(seed, source).await?;
-        // The name is looked up again, and its owner checked against the
-        // expected identity before its profile is read: a name that moved
-        // since the review is reported as that, whatever the new owner's
-        // profile holds.
-        let current = self
-            .resolve_tip_recipient(username, expected_identity)
-            .await?;
-        if current != *expected_recipient {
-            return Err(PlatformWalletError::InvalidIdentityData(
-                "The tip recipient changed; review and confirm the payment again".to_string(),
-            ));
-        }
-        // The lookups above took network time, during which the wallet's
-        // identities can have changed. Refused here before the wait for the
-        // store; the check that counts runs once the notes are claimed.
-        self.ensure_tip_source_selects(seed, source, account)
-            .await?;
+        .await
+        .map_err(PlatformWalletError::before_dispatch)?;
         self.send_resolved_shielded_tip(
             coordinator,
             seed,

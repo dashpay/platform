@@ -37,16 +37,17 @@ use super::operations::shielded_actions;
 use super::prover::CachedOrchardProver;
 use super::store::{PendingRedrive, ShieldedNote, ShieldedStore, SubwalletId};
 use super::tip_payment::{
-    ensure_expected_identity, parse_shielded_tip_amount, pays_unresolved, recipient_change,
-    resolve_recipient, tip_recipient_label, unresolved_transfer_recipients,
-    ShieldedIdentityBalance, ShieldedTipRecipient, ShieldedTipRecipientChange, ShieldedTipSource,
+    ensure_expected_identity, ensure_recipient_unchanged, parse_shielded_tip_amount,
+    pays_unresolved, recipient_change, resolve_recipient, tip_recipient_label,
+    unresolved_transfer_recipients, ShieldedIdentityBalance, ShieldedTipRecipient,
+    ShieldedTipRecipientChange, ShieldedTipSource,
 };
 use super::viewing_key_bind_tests::{
     add_identity_at_slot, coordinator_at, platform_wallet_with, seed_master_key, temp_dir,
     tip_race_fixture, CapturingPersistence, BIND_SEED,
 };
 use super::{shielded_identity_account_index, FileBackedShieldedStore};
-use crate::PlatformWalletError;
+use crate::{PaymentDelivery, PlatformWalletError};
 
 /// The Orchard note encryptor with Dash's 36-byte memo.
 type OrchardNoteEncryption = grovedb_commitment_tree::OrchardNoteEncryption<DashMemo>;
@@ -786,10 +787,40 @@ async fn should_refuse_a_name_that_belongs_to_another_identity_than_expected() {
             &prover,
         )
         .await;
+    // The lookup failed before anything was built: proven not sent, with
+    // the lookup's own diagnostic.
+    let error = result.expect_err("the lookup is not answered");
     assert!(
-        matches!(result, Err(PlatformWalletError::Sdk(_))),
-        "{result:?}"
+        matches!(error.dispatched_source(), PlatformWalletError::Sdk(_)),
+        "{error:?}"
     );
+    assert_eq!(error.payment_delivery(), PaymentDelivery::NotSent);
+}
+
+/// A recipient that changed since the review is refused, also when only its
+/// shielded address changed; `send_shielded_tip` runs this check with its
+/// other pre-send refusals under `before_dispatch`, so it is `NotSent` and
+/// keeps its diagnostic (the lookup failure above goes the same way).
+#[test]
+fn should_refuse_a_recipient_whose_address_alone_changed_as_not_sent() {
+    let reviewed = recipient(2, [4; 43]);
+    assert!(ensure_recipient_unchanged(&reviewed, &reviewed).is_ok());
+    let moved_address = ShieldedTipRecipient {
+        identity_id: reviewed.identity_id,
+        address: [5; 43],
+    };
+    let refused = ensure_recipient_unchanged(&moved_address, &reviewed)
+        .expect_err("a changed address is a changed recipient");
+    assert!(matches!(
+        refused,
+        PlatformWalletError::InvalidIdentityData(_)
+    ));
+    let refused = refused.before_dispatch();
+    assert_eq!(refused.payment_delivery(), PaymentDelivery::NotSent);
+    assert!(matches!(
+        refused.dispatched_source(),
+        PlatformWalletError::InvalidIdentityData(_)
+    ));
 }
 
 /// The owner of a contact's name is checked as soon as the name is resolved,
