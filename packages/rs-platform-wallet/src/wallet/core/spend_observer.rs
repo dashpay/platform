@@ -8,7 +8,7 @@
 //! outpoints are spent.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use arc_swap::ArcSwap;
 use dash_spv::EventHandler;
@@ -68,7 +68,7 @@ use crate::wallet::PlatformWallet;
 /// reason: `on_wallet_event` is synchronous and runs inside SPV's block
 /// processing, which holds the wallet-manager WRITE lock for the whole batch.
 /// Resolving the generation through *that* lock would deadlock or silently drop
-/// every event during initial sync, so this handler holds an `Arc` clone of the
+/// every event during initial sync, so this handler holds a handle on the
 /// manager's `wallets` map instead. That map is an [`ArcSwap`], so the lookup
 /// is wait-free and INFALLIBLE: a manager lifecycle write (wallet insert /
 /// remove / load) publishes a new map without ever making a reader fail or
@@ -90,24 +90,44 @@ use crate::wallet::PlatformWallet;
 /// entry in the map is unregistered — a resolution, not contention, with
 /// nothing to retry against.
 ///
+/// The map is held through a [`Weak`], as in `BalanceUpdateHandler` and for
+/// the same reason: a strong clone closes a cycle through the SPV runtime
+/// that keeps every registered wallet, and its persister, alive after the
+/// manager is dropped. The manager owns the map, and never replaces it, for
+/// its whole lifetime, so the upgrade cannot fail while the manager exists.
+/// It fails only after the manager, every coordinator and any `TxoReconciler`
+/// holding the map have dropped, and SPV can still deliver events then only
+/// after a dirty drop (no `shutdown`) or a shutdown whose SPV stop did not
+/// complete. An observation for a wallet the host still holds is then
+/// ignored, so its fences stay up until the process restarts. That is the
+/// fail-safe direction: a fenced outpoint stays unselectable.
 pub struct SpendObservationHandler {
-    wallets: Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
+    wallets: Weak<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
 }
 
 impl SpendObservationHandler {
-    pub fn new(wallets: Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>) -> Self {
-        Self { wallets }
+    /// The caller must keep `wallets` alive for as long as the handler
+    /// should observe spends: the handler holds only a [`Weak`] on it.
+    pub fn new(wallets: &Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>) -> Self {
+        Self {
+            wallets: Arc::downgrade(wallets),
+        }
     }
 
     /// Apply `observation` to its wallet's generation.
     ///
     /// The wallets-map read is a wait-free `ArcSwap` load — it cannot fail or
-    /// block, so the observation is never deferred and never dropped. A wallet
-    /// absent from the loaded map is unregistered: resolved, not contended.
+    /// block, so while the manager exists the observation is never deferred
+    /// and never dropped. A wallet absent from the loaded map is unregistered:
+    /// resolved, not contended. A map that no longer exists is the dirty-drop
+    /// case in the type docs.
     fn observe(&self, wallet_id: WalletId, outpoints: Vec<OutPoint>) {
         // The wallets map, NOT the SPV-contended wallet_manager lock — see
         // the type docs.
-        if let Some(wallet) = self.wallets.load().get(&wallet_id) {
+        let Some(wallets) = self.wallets.upgrade() else {
+            return;
+        };
+        if let Some(wallet) = wallets.load().get(&wallet_id) {
             wallet.generation().observe_spent(outpoints);
         }
     }

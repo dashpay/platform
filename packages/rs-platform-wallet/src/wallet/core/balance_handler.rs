@@ -2,7 +2,7 @@
 //! when an upstream `WalletEvent` carries a fresh balance snapshot.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use arc_swap::ArcSwap;
 use dash_spv::EventHandler;
@@ -22,7 +22,7 @@ use crate::wallet::PlatformWallet;
 /// `WalletBalance` atomics so SwiftUI subscribers see the new totals.
 ///
 /// Registered in `PlatformWalletManager`'s handler list. The handler
-/// holds an `Arc` clone of the manager's `wallets` map (a *separate*
+/// holds a handle on the manager's `wallets` map (a *separate*
 /// structure from the heavily-contended `wallet_manager` SPV write
 /// lock). SPV holds the wallet-manager write lock for the entire
 /// duration of block processing — looking the balance up through *that*
@@ -40,13 +40,29 @@ use crate::wallet::PlatformWallet;
 /// event. A fallible lookup (the previous `RwLock::try_read`) dropped
 /// exactly that snapshot when it raced a lifecycle write, leaving
 /// removed funds on display indefinitely.
+///
+/// The handler holds the map through a [`Weak`]. The chain
+/// wallet → broadcaster → SPV runtime → event manager → this handler leads
+/// back to every registered wallet, so a strong clone would keep the
+/// wallets, and the persister each one holds, alive after the manager is
+/// shut down and dropped. The manager owns the map, and never replaces it,
+/// for its whole lifetime, so the upgrade cannot fail while the manager
+/// exists. It fails only after the manager, every coordinator and any
+/// `TxoReconciler` holding the map have dropped. SPV can still deliver
+/// events then only after a dirty drop (no `shutdown`) or a shutdown whose
+/// SPV stop did not complete, and a wallet the host still holds then gets no
+/// more balance snapshots.
 pub struct BalanceUpdateHandler {
-    wallets: Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
+    wallets: Weak<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
 }
 
 impl BalanceUpdateHandler {
-    pub fn new(wallets: Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>) -> Self {
-        Self { wallets }
+    /// The caller must keep `wallets` alive for as long as the handler
+    /// should update balances: the handler holds only a [`Weak`] on it.
+    pub fn new(wallets: &Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>) -> Self {
+        Self {
+            wallets: Arc::downgrade(wallets),
+        }
     }
 }
 
@@ -94,8 +110,10 @@ impl EventHandler for BalanceUpdateHandler {
         // wallet immediately after publishing — `register_wallet` and
         // `load_from_persistor` alike — so the window costs a snapshot, not
         // the balance.
-        let wallets = self.wallets.load();
-        if let Some(pw) = wallets.get(wallet_id) {
+        let Some(wallets) = self.wallets.upgrade() else {
+            return;
+        };
+        if let Some(pw) = wallets.load().get(wallet_id) {
             pw.balance().set(
                 balance.confirmed(),
                 balance.unconfirmed(),
