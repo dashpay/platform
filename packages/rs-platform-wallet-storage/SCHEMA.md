@@ -42,7 +42,7 @@ Any `meta_*` row whose parent object does not exist — because it was never cre
 
 A future garbage-collection pass is expected to reap orphan metadata — rows with no live parent object older than approximately one week — but no such GC is implemented yet. Callers should not rely on orphan metadata persisting forever, nor assume it will be cleaned up promptly. `meta_global` is intentionally parentless and always survives.
 
-The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. The diagrams cover 21 of V001's 23 tables; `pending_contact_crypto` and `ignored_senders` appear in the [Tables](#tables) section but are not diagrammed. They show the V001 tables as amended in place by every later migration that changes one of them (the current `core_utxos`, `core_transactions`, `platform_addresses`, and `asset_locks` shapes). Twelve tables added by later migrations are not yet diagrammed here: `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V009, plus its V010–V011 `core_address_pool` columns), `invitations` (V003), `shielded_viewing_keys` (V013), `dpns_name_states` (V005), `tracked_masternodes` (V006), the `identity_scan_states` / `identity_scan_failed_indices` pair (V017), `core_transaction_inputs` / `core_transaction_record_originals` (V021), and `core_locked_outpoints` (V022) — see the [Migrations](#migrations) log for what each adds in the meantime.
+The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. The diagrams cover 21 of V001's 23 tables; `pending_contact_crypto` and `ignored_senders` appear in the [Tables](#tables) section but are not diagrammed. They show the V001 tables as amended in place by every later migration that changes one of them (the current `core_utxos`, `core_transactions`, `platform_addresses`, and `asset_locks` shapes). Fourteen tables added by later migrations are not yet diagrammed here: `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V009, plus its V010–V011 `core_address_pool` columns), `invitations` (V003), `shielded_viewing_keys` (V013), `dpns_name_states` (V005), `tracked_masternodes` (V006), the `identity_scan_states` / `identity_scan_failed_indices` pair (V017), `core_transaction_inputs` / `core_transaction_record_originals` (V021), `core_locked_outpoints` (V022), and the `core_block_spends` / `core_block_spends_migrated` pair (V023) — see the [Migrations](#migrations) log for what each adds in the meantime.
 
 ## Diagram 1 — Core / L1 (Bitcoin/Dash layer)
 
@@ -470,6 +470,55 @@ changing accounting. Later repairs cannot replace this recovery copy.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`. The original survives
   deletion of its transaction row.
 
+### `core_block_spends`
+
+V023. One row per wallet coin a processed block spent: the coin's outpoint,
+the block's height and hash, and the spending transaction. The wallet's own
+note of such a spend lives only in memory and is pruned once the block is
+final; this row is its durable form, written in the same transaction as the
+round that carries it (`CoreChangeSet::block_spends`, upserted by outpoint,
+the latest capture winning), which also marks the coin's unspent
+`core_utxos` row spent by the spender.
+
+A coin with a row stays spent: a sweep's release skips it, and neither
+`load_state` nor `list_unspent_utxos` hands it back as unspent, whatever its
+`core_utxos.spent` says. A row is removed only by:
+
+- a chain truncation (`CoreChangeSet::block_spends_truncated_above`, which
+  deletes the rows above the fork before the round's own rows are written,
+  or the host's `delete_block_spends_above`);
+- the host's header check (`delete_block_spends_off_chain`), which deletes a
+  row whose block hash differs from the known header at its height, at every
+  height (a ChainLock does not exempt it), and keeps a row whose header is
+  unknown;
+- a rewind or reset of the wallet's chain data by the host
+  (`delete_block_spends_above`, `clear_block_spends`);
+- the wallet's deletion.
+
+Never at a ChainLock, and never by a drop or sweep. Written only by a
+persister that attests `CORE_BLOCK_SPENDS`.
+
+Removing a row leaves the coin's `core_utxos.spent` mark as the row's write
+set it. A truncation or header check frees the coin only through a later
+release of it, the same as a coin the store never saw a block spend of: a
+chain truncation is not otherwise mirrored to the store.
+
+- PK: `(wallet_id, outpoint)`. `outpoint` uses the `core_utxos.outpoint`
+  encoding; `block_hash` and `spender_txid` are 32 raw bytes.
+- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
+- Index: `idx_core_block_spends_height(wallet_id, height)`.
+
+### `core_block_spends_migrated`
+
+V023. One row per wallet whose block spends from before `core_block_spends`
+existed were recovered by the host's one-time rescan. No row means the
+recovery is still owed, so every wallet of a store upgraded to V023 owes it.
+Set only by `mark_block_spends_migration_done`; a reset of the chain data
+keeps it.
+
+- PK: `wallet_id`.
+- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
+
 ### `core_instant_locks`
 
 Instant-lock blobs for transactions that are broadcast but not yet
@@ -883,3 +932,4 @@ table-rebuild migration, as V004 does.
 | V020 | `V020__asset_lock_shielded_recipient.rs` | Adds the nullable `asset_locks.shielded_recipient BLOB` column (CHECK: NULL or exactly 43 bytes, the raw Orchard address) recording the recipient a shielded asset-lock funding was built to pay, so a resume after restart pays that recipient and refuses another; the lifecycle blob is untouched. Adds the `asset_locks_shielded_recipient_immutable` BEFORE UPDATE trigger, which aborts any change to a non-NULL `shielded_recipient`. Purely additive; existing rows read back NULL and keep accepting the resuming caller's recipient. |
 | V021 | `V021__core_transaction_accounting.rs` | Adds the raw-input index and original-record archive. Backfills all decodable history and repairs accounting from retained TXOs, preserving coins, claims, checkpoints and unrelated wallet state. |
 | V022 | `V022__core_locked_outpoints.rs` | Adds `core_locked_outpoints`, one row per `(wallet_id, outpoint)` the wallet keeps out of coin selection: the collateral of a registered masternode, or an outpoint locked by hand. A table of its own rather than a `core_utxos` column, because a lock can exist before its coin and outlives the coin's spend. Deleting the row unlocks the outpoint. Purely additive; an upgraded database starts with no locks. |
+| V023 | `V023__core_block_spends.rs` | Adds `core_block_spends`, one row per wallet coin a processed block spent (outpoint, block height and hash, spender txid), so a coin a block spent is never handed back as unspent after the wallet's in-memory note is pruned at finality; and `core_block_spends_migrated`, one row per wallet whose earlier block spends were recovered. Idempotent (`IF NOT EXISTS`): a file a downstream build wrote with these exact tables adopts them with their rows. Purely additive otherwise. |

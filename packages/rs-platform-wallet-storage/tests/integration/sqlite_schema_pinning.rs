@@ -15,13 +15,13 @@ use platform_wallet_storage::sqlite::{migrations as mig, schema::versions::Domai
 /// Golden `(version, name)` fingerprint of the frozen migration set. Bump
 /// deliberately only when adding/removing/renaming a migration file.
 const EXPECTED_ID_FINGERPRINT: &str =
-    "d7b49771d6f4b15d850e4a4b380b168b22cc4d878f91db45cc1ecbf835741eff";
+    "ba29f6ad357422e4e5f15e37ba2efb1c0e03c220866802a845c77f509010eea5";
 
 /// Golden content-level fingerprint over every migration's rendered SQL.
 /// Bump it only when ADDING a migration file; a body change on an already
 /// applied migration is a defect, not a golden to refresh.
 const EXPECTED_SQL_FINGERPRINT: &str =
-    "51c3641566f8d7bcc126fe94fbf19c79d19a7e3e272f5795c16992d0d6cfe110";
+    "6883b556c46019e7b3479f7d97a42fd87a510f752cb9f17ef837bd6a33059f93";
 
 /// The migrations merged `v4.2-dev` already ships. Refinery keys
 /// `refinery_schema_history` by version and validates an applied migration's

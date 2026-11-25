@@ -8,7 +8,7 @@ use rusqlite::{Connection, OptionalExtension};
 
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{
-    ClientStartState, IdentityChangeSet, PersistenceCapabilities, PersistenceError,
+    BlockSpend, ClientStartState, IdentityChangeSet, PersistenceCapabilities, PersistenceError,
     PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::wallet::identity::ManagedIdentity;
@@ -654,6 +654,118 @@ impl SqlitePersister {
         let status = schema::asset_locks::status_of(&conn, wallet_id, outpoint, &ctx)?;
         self.merge_load_degradation(ctx.degradation());
         Ok(status)
+    }
+
+    /// Every coin of `wallet_id` a processed block spent, as stored: the
+    /// block's height and hash and the spending transaction, by outpoint.
+    /// A coin with a row is never released as unspent, and `load()` never
+    /// hands it back as unspent.
+    ///
+    /// Reads the *committed* table: in [`FlushMode::Manual`] a row still in
+    /// the write buffer is not visible yet.
+    pub fn block_spent_outpoints(
+        &self,
+        wallet_id: &WalletId,
+    ) -> Result<BTreeMap<dashcore::OutPoint, BlockSpend>, WalletStorageError> {
+        let conn = self.conn()?;
+        schema::core_state::load_block_spends(&conn, wallet_id)
+    }
+
+    /// Delete `wallet_id`'s block spends above `height`, after writing its
+    /// buffered changeset, and return how many went. For a rewind of the
+    /// wallet's chain data to `height`: the scan that follows captures again
+    /// every spend still on the chain.
+    pub fn delete_block_spends_above(
+        &self,
+        wallet_id: &WalletId,
+        height: u32,
+    ) -> Result<usize, PersistenceError> {
+        self.write_block_spends(wallet_id, "delete_block_spends_above", |conn| {
+            schema::core_state::delete_block_spends_above(conn, wallet_id, height)
+        })
+    }
+
+    /// Delete every block spend of `wallet_id`, after writing its buffered
+    /// changeset, and return how many went. For a reset of the wallet's
+    /// chain data.
+    pub fn clear_block_spends(&self, wallet_id: &WalletId) -> Result<usize, PersistenceError> {
+        self.write_block_spends(wallet_id, "clear_block_spends", |conn| {
+            schema::core_state::clear_block_spends(conn, wallet_id)
+        })
+    }
+
+    /// Delete `wallet_id`'s block spends whose block hash differs from the
+    /// one `chain` gives for their height, after writing its buffered
+    /// changeset, and return how many went. Every row is checked, whatever
+    /// its height relative to a ChainLock. `None`, or a height `chain` does
+    /// not name, keeps the row. For a check against the SPV header store.
+    pub fn delete_block_spends_off_chain(
+        &self,
+        wallet_id: &WalletId,
+        chain: &BTreeMap<u32, Option<dashcore::BlockHash>>,
+    ) -> Result<usize, PersistenceError> {
+        self.write_block_spends(wallet_id, "delete_block_spends_off_chain", |conn| {
+            schema::core_state::delete_block_spends_off_chain(conn, wallet_id, chain)
+        })
+    }
+
+    /// Store a block spend of `wallet_id`'s coin found outside block
+    /// processing (a scan of stored blocks), after writing its buffered
+    /// changeset: the row and the coin's spent mark land in one
+    /// transaction.
+    pub fn record_found_block_spend(
+        &self,
+        wallet_id: &WalletId,
+        spend: BlockSpend,
+    ) -> Result<(), PersistenceError> {
+        self.write_block_spends(wallet_id, "record_found_block_spend", |conn| {
+            schema::core_state::record_found_block_spend(conn, wallet_id, &spend).map(|()| 1)
+        })
+        .map(drop)
+    }
+
+    /// Whether `wallet_id`'s block spends from before the block-spend table
+    /// were recovered (the host's one-time rescan). `false` for a wallet the
+    /// mark was never set for, including every wallet of a store that
+    /// attests `CORE_BLOCK_SPENDS` for the first time. A reset of the chain
+    /// data ([`clear_block_spends`](Self::clear_block_spends)) keeps it.
+    pub fn block_spends_migration_done(
+        &self,
+        wallet_id: &WalletId,
+    ) -> Result<bool, WalletStorageError> {
+        let conn = self.conn()?;
+        schema::core_state::block_spends_migration_done(&conn, wallet_id)
+    }
+
+    /// Record that `wallet_id`'s block spends from before the block-spend
+    /// table were recovered, after writing its buffered changeset.
+    /// Idempotent; removed only with the wallet.
+    pub fn mark_block_spends_migration_done(
+        &self,
+        wallet_id: &WalletId,
+    ) -> Result<(), PersistenceError> {
+        self.write_block_spends(wallet_id, "mark_block_spends_migration_done", |conn| {
+            schema::core_state::mark_block_spends_migration_done(conn, wallet_id).map(|()| 0)
+        })
+        .map(drop)
+    }
+
+    fn write_block_spends(
+        &self,
+        wallet_id: &WalletId,
+        op: &'static str,
+        write: impl FnOnce(&Connection) -> Result<usize, WalletStorageError>,
+    ) -> Result<usize, PersistenceError> {
+        self.ensure_writable(op).map_err(PersistenceError::from)?;
+        let mut conn = self.conn().map_err(PersistenceError::from)?;
+        self.flush_locked(&mut conn, wallet_id)?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| PersistenceError::from(WalletStorageError::from(e)))?;
+        let deleted = write(&tx).map_err(PersistenceError::from)?;
+        tx.commit()
+            .map_err(|e| PersistenceError::from(WalletStorageError::from(e)))?;
+        Ok(deleted)
     }
 
     /// Read every identity that belongs to NO wallet, each already
@@ -1348,7 +1460,8 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::TRACKED_MASTERNODES)
             .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
             .union(PersistenceCapabilities::DASHPAY_PAYMENTS)
-            .union(PersistenceCapabilities::OUTPOINT_LOCKS);
+            .union(PersistenceCapabilities::OUTPOINT_LOCKS)
+            .union(PersistenceCapabilities::CORE_BLOCK_SPENDS);
         #[cfg(feature = "shielded")]
         {
             capabilities.union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
@@ -2400,17 +2513,19 @@ mod tests {
         // Not rehydrated by `load()`, but read on demand by a production
         // entry point, so the state is reachable rather than abandoned.
         const READ_BY_A_DEDICATED_API: &[&str] = &[
-            "core_transaction_inputs", // core_history::apply
-            "dpns_name_states",        // get_dpns_name_state
-            "meta_contact",            // the kv object store
-            "meta_data_versions",      // schema::versions
-            "meta_global",             // the kv object store
-            "meta_identity",           // the kv object store
-            "meta_platform_address",   // the kv object store
-            "meta_store_generation",   // schema::versions
-            "meta_token",              // the kv object store
-            "meta_wallet",             // the kv object store
-            "tracked_masternodes",     // load_tracked_masternodes
+            "core_block_spends",          // block_spent_outpoints
+            "core_block_spends_migrated", // block_spends_migration_done
+            "core_transaction_inputs",    // core_history::apply
+            "dpns_name_states",           // get_dpns_name_state
+            "meta_contact",               // the kv object store
+            "meta_data_versions",         // schema::versions
+            "meta_global",                // the kv object store
+            "meta_identity",              // the kv object store
+            "meta_platform_address",      // the kv object store
+            "meta_store_generation",      // schema::versions
+            "meta_token",                 // the kv object store
+            "meta_wallet",                // the kv object store
+            "tracked_masternodes",        // load_tracked_masternodes
         ];
         const INFRASTRUCTURE: &[&str] = &["refinery_schema_history"];
         // First pre-repair bytes, retained for recovery.
