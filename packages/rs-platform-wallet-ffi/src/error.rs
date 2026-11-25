@@ -2802,10 +2802,7 @@ mod tests {
             result.code,
             PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed
         );
-        assert!(!result.message.is_null());
-        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
-            .to_string_lossy()
-            .into_owned();
+        let msg = message_of(&result);
         assert_eq!(msg, rendered);
         assert!(msg.contains("rescan its identities"), "{msg}");
     }
