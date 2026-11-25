@@ -255,10 +255,10 @@ impl<C> Platform<C> {
             let timed_by_block: BTreeMap<_, _> = checkpoints
                 .iter()
                 .map(|(height, loaded)| {
-                    let timestamp_ms = checkpoint_platform_states
-                        .get(height)
-                        .and_then(|state| state.last_committed_block_time_ms())
-                        .unwrap_or(loaded.timestamp_ms);
+                    let timestamp_ms = time_of_a_loaded_checkpoint(
+                        checkpoint_platform_states.get(height).map(Arc::as_ref),
+                        loaded.timestamp_ms,
+                    );
                     let timed = CheckpointInfo::new(timestamp_ms, Arc::clone(&loaded.checkpoint));
                     (*height, timed)
                 })
@@ -355,6 +355,15 @@ impl<C> Platform<C> {
     }
 }
 
+/// The time of a checkpoint that a start loaded: its block's, where the state saved with it
+/// was read and names a block, and else the time the scan gave it, which is the
+/// modification time of its directory, or 0 where the scan could read none.
+fn time_of_a_loaded_checkpoint(saved_state: Option<&PlatformState>, scanned_time_ms: u64) -> u64 {
+    saved_state
+        .and_then(|state| state.last_committed_block_time_ms())
+        .unwrap_or(scanned_time_ms)
+}
+
 impl<C> Drop for Platform<C> {
     fn drop(&mut self) {
         tracing::trace!("platform is shutting down");
@@ -433,6 +442,57 @@ mod tests {
             .build_with_mock_rpc();
         let state = tp.state.load();
         assert_eq!(state.current_protocol_version_in_consensus(), first);
+    }
+
+    /// A checkpoint that a start loaded has its block's time where the state saved with it
+    /// names a block, and exactly the time the scan gave it where the state names none or
+    /// no state was read.
+    #[test]
+    fn a_loaded_checkpoint_has_its_blocks_time_and_else_the_time_the_scan_gave_it() {
+        use dpp::block::block_info::BlockInfo;
+        use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
+        use dpp::block::extended_block_info::ExtendedBlockInfo;
+
+        let block_time = 1_700_000_000_123;
+        let latest = PlatformVersion::latest().protocol_version;
+        let no_block = PlatformState::default_with_protocol_versions(
+            latest,
+            latest,
+            &PlatformConfig::default_testnet(),
+        )
+        .expect("a state with no block");
+        let mut at_a_block = no_block.clone();
+        at_a_block.set_last_committed_block_info(Some(ExtendedBlockInfo::V0(
+            ExtendedBlockInfoV0 {
+                basic_info: BlockInfo {
+                    time_ms: block_time,
+                    height: 7,
+                    core_height: 100,
+                    epoch: Default::default(),
+                },
+                app_hash: [0; 32],
+                quorum_hash: [0; 32],
+                block_id_hash: [0; 32],
+                proposer_pro_tx_hash: [0; 32],
+                signature: [0; 96],
+                round: 0,
+            },
+        )));
+
+        for scanned_time in [0, 946_684_800_000, block_time + 1, u64::MAX] {
+            assert_eq!(
+                time_of_a_loaded_checkpoint(Some(&at_a_block), scanned_time),
+                block_time
+            );
+            assert_eq!(
+                time_of_a_loaded_checkpoint(Some(&no_block), scanned_time),
+                scanned_time
+            );
+            assert_eq!(
+                time_of_a_loaded_checkpoint(None, scanned_time),
+                scanned_time
+            );
+        }
     }
 
     #[test]

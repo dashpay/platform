@@ -1314,16 +1314,6 @@ mod tests {
     }
 
     #[cfg(unix)]
-    fn modified_ms(path: &std::path::Path) -> u64 {
-        std::fs::metadata(path)
-            .and_then(|metadata| metadata.modified())
-            .expect("the modification time")
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("a modification time before the unix epoch")
-            .as_millis() as u64
-    }
-
-    #[cfg(unix)]
     fn set_modified_ms(directory: &std::path::Path, time_ms: u64) {
         std::fs::File::open(directory)
             .and_then(|directory| {
@@ -1343,12 +1333,15 @@ mod tests {
 
     /// A checkpoint loaded at a start is timed by its block where the state saved with it
     /// names one, as a checkpoint made in a run is, so the next checkpoint after a restart
-    /// is scheduled as it is without one. Where the state names no block, cannot be read
-    /// or is missing, the checkpoint keeps the time of its directory.
+    /// is scheduled as it is without one. Three more starts show what a start reads where
+    /// the saved state names no block, is no state or is missing: a state with no block,
+    /// or none. Which time the checkpoint then has is held by the test of
+    /// `time_of_a_loaded_checkpoint`, with times it is given: a start cannot be asked what
+    /// its scan read.
     #[cfg(unix)]
     #[test]
     fn a_checkpoint_loaded_at_a_start_is_timed_by_its_block_where_its_state_names_one() {
-        // An hour ahead: no directory written during this test has that time.
+        // An hour ahead, to tell the block's time from a time of the directory.
         let now = now_ms();
         let block_time = now - now % 1_000 + 3_600_000;
         // Before anything this test writes.
@@ -1413,21 +1406,11 @@ mod tests {
                 Some(bytes) => std::fs::write(&state_path, bytes).expect("write the state file"),
                 None => std::fs::remove_file(&state_path).expect("remove the state file"),
             }
-            set_modified_ms(&checkpoint_directory, set_time);
             platform = TempPlatform::open_with_tempdir(tempdir, checkpointing_config());
 
-            // The open of a database may write in its directory, so the time the start
-            // read is the one set here or a later one, up to the directory's time now.
-            let time = time_of_the_checkpoint_at_height_1(&platform)
-                .unwrap_or_else(|| panic!("{what}: the checkpoint is loaded"));
-            let directory_time = modified_ms(&checkpoint_directory);
             assert!(
-                (set_time..=directory_time).contains(&time),
-                "{what}: {time} is not a time of the directory ({set_time} to {directory_time})"
-            );
-            assert!(
-                directory_time < block_time,
-                "{what}: the directory's time {directory_time} is not before the block's {block_time}"
+                time_of_the_checkpoint_at_height_1(&platform).is_some(),
+                "{what}: the checkpoint is loaded"
             );
             assert_eq!(
                 platform
