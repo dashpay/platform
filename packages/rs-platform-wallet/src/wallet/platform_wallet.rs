@@ -19,6 +19,8 @@ use super::asset_lock::manager::AssetLockManager;
 use super::asset_lock::tracked::TrackedAssetLock;
 use super::core::{CoreWallet, WalletBalance, WalletGeneration};
 use super::identity::network::TopUpScope;
+#[cfg(feature = "shielded")]
+use super::identity::state::manager::NewIdentityKeyOrigin;
 use super::identity::{IdentityManager, IdentityWallet};
 #[cfg(feature = "shielded")]
 use super::persister::PrivatePaymentRestoreRetry;
@@ -3372,7 +3374,8 @@ impl PlatformWallet {
     /// there (mirroring `register_from_addresses`) so the host persister emits the
     /// `IdentityChangeSet` / `IdentityKeysChangeSet` that creates the app's identity row. A failed
     /// registration after a successful broadcast is logged and swallowed — the identity already
-    /// exists on chain, so the next sync heals the local row. Returns the new identity's id.
+    /// exists on chain, and an identity discovery scan finds it again (a routine sync does not;
+    /// see `IdentityManager::record_new_identity`). Returns the new identity's id.
     ///
     /// Admitted for its whole run: a handle to a wallet removed, or
     /// re-created under the same id, since it was taken is refused with
@@ -3437,33 +3440,27 @@ impl PlatformWallet {
         // Register the proof-verified identity in the local manager at its HD slot, exactly like
         // `register_from_addresses`' Step 3 — this drives the host persister's
         // `IdentityChangeSet` / `IdentityKeysChangeSet` emit so the app's identity row is created.
-        // The broadcast already succeeded; a registration failure here (e.g. the slot is already
-        // occupied locally) is logged and swallowed rather than surfaced as an error, since the
-        // identity exists on chain and the next sync heals the local view.
+        // The broadcast already succeeded; a registration failure here (the id is already held
+        // locally, or the store fails; an occupied slot is not detected) is logged and swallowed
+        // rather than surfaced as an error, since the identity exists on chain. A routine sync
+        // does not restore a missed one; see `IdentityManager::record_new_identity`.
         {
             let mut wm = self.wallet_manager.write().await;
             match wm.get_wallet_info_mut(&self.wallet_id) {
-                Some(info) => {
-                    if let Err(e) = info.identity_manager.add_identity(
-                        identity,
-                        identity_index,
-                        self.wallet_id,
-                        &self.persister,
-                    ) {
-                        tracing::warn!(
-                            identity_index,
-                            error = %e,
-                            "IdentityCreateFromShieldedPool broadcast succeeded but registering the \
-                             identity in the local manager failed; the on-chain identity exists and \
-                             the next sync will heal the local row"
-                        );
-                    }
-                }
+                Some(info) => info.identity_manager.record_new_identity(
+                    identity,
+                    identity_index,
+                    self.wallet_id,
+                    NewIdentityKeyOrigin::Unrecorded,
+                    "shielded_identity_create_from_pool",
+                    &self.persister,
+                ),
                 None => {
                     tracing::warn!(
                         identity_index,
                         "IdentityCreateFromShieldedPool broadcast succeeded but the wallet info was \
-                         not found in the manager; skipping local registration (heals on next sync)"
+                         not found in the manager; skipping local registration (an identity \
+                         discovery scan adds it)"
                     );
                 }
             }

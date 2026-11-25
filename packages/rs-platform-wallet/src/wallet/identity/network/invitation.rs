@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::{Identity, IdentityPublicKey, KeyID};
+use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::prelude::{AssetLockProof, Identifier};
 use key_wallet::bip32::{ChildNumber, DerivationPath};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
@@ -36,6 +36,7 @@ pub use dash_sdk::platform::dashpay::{
 use crate::error::PlatformWalletError;
 use crate::wallet::identity::crypto::{encode_invitation_uri, InviterInfo, ParsedInvitation};
 use crate::wallet::identity::network::contact_requests::ContactCryptoProvider;
+use crate::wallet::identity::state::manager::NewIdentityKeyOrigin;
 use crate::wallet::persister::NotDurable;
 
 use super::*;
@@ -368,58 +369,23 @@ impl IdentityWallet {
 
         // Best-effort local bookkeeping — Platform has already accepted the
         // registration, so a local failure must NOT propagate (mirrors
-        // `register_identity_with_funding` Step 4). The identity self-heals into
-        // the IdentityManager on the next re-sync if this is skipped.
+        // `register_identity_with_funding` Step 4). An identity this step
+        // misses is not restored by a routine re-sync; see
+        // `IdentityManager::record_new_identity`.
         {
-            let identity_id = identity.id();
             let mut wm = self.wallet_manager.write().await;
             match wm.get_wallet_info_mut(&self.wallet_id) {
-                Some(info) => {
-                    match info.identity_manager.add_identity(
-                        identity.clone(),
-                        identity_index,
-                        self.wallet_id,
-                        &self.persister,
-                    ) {
-                        Ok(()) => {
-                            let wallet_id = self.wallet_id;
-                            let public_keys: Vec<(KeyID, IdentityPublicKey)> = identity
-                                .public_keys()
-                                .iter()
-                                .map(|(k, v)| (*k, v.clone()))
-                                .collect();
-                            if let Some(managed) =
-                                info.identity_manager.managed_identity_mut(&identity_id)
-                            {
-                                managed.wallet_id = Some(wallet_id);
-                                for (key_id, pub_key) in public_keys {
-                                    if let Err(e) = managed.add_key(
-                                        pub_key,
-                                        Some((wallet_id, identity_index, key_id)),
-                                        &self.persister,
-                                    ) {
-                                        tracing::warn!(
-                                            error = %e,
-                                            %identity_id,
-                                            "claim_invitation: identity key breadcrumb not persisted"
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                error = %e,
-                                %identity_id,
-                                "claim_invitation: identity registered on Platform but local \
-                                 add_identity failed; it will self-heal on the next re-sync"
-                            );
-                        }
-                    }
-                }
+                Some(info) => info.identity_manager.record_new_identity(
+                    identity.clone(),
+                    identity_index,
+                    self.wallet_id,
+                    NewIdentityKeyOrigin::DerivedAtKeyId,
+                    "claim_invitation",
+                    &self.persister,
+                ),
                 None => {
                     tracing::warn!(
-                        %identity_id,
+                        identity_id = %identity.id(),
                         "claim_invitation: identity registered on Platform but wallet info \
                          was not found locally; skipping local persistence"
                     );
