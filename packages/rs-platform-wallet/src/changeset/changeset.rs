@@ -150,10 +150,13 @@ pub struct CoreChangeSet {
     /// `InstantSend`, or `InBlock` context — anything `InChainLockedBlock`
     /// is excluded since chain-lock finality already supersedes IS).
     ///
-    /// Populated from `WalletEvent::TransactionInstantLocked`. A persister
-    /// that keeps locks stores them from here; the record's own context
-    /// reaches it through the record the same event re-emits in `records`
-    /// when the wallet still holds one.
+    /// Populated from `WalletEvent::TransactionInstantLocked`, and from a
+    /// `TransactionDetected` record that arrived with its lock (the lock
+    /// came first). A persister that keeps locks stores them from here as
+    /// verified locks, which holds only while the SPV client hands the
+    /// wallet nothing but verified locks; the record's own context reaches it
+    /// through the record the same event re-emits in `records` when the
+    /// wallet still holds one.
     /// Chain-locked records skip this map entirely — by the time a
     /// transaction is chain-locked it's final, and IS-lock state is
     /// no longer informative.

@@ -12,6 +12,7 @@ use refinery_core::error::WrapMigrationError;
 
 mod legacy_v008;
 mod v021;
+mod v023;
 
 // Generates a `migrations` module with `runner()`; path is relative to
 // the crate root.
@@ -53,6 +54,7 @@ fn run_with_runner(
         registration_sql: hook_sql(8),
         pool_sql: hook_sql(11),
         accounting_sql: hook_sql(21),
+        verified_locks_sql: hook_sql(23),
         policy,
     };
     // Grouped reports never claim that rolled-back migrations were applied.
@@ -69,6 +71,7 @@ struct MigrationTransaction<'conn> {
     registration_sql: String,
     pool_sql: String,
     accounting_sql: String,
+    verified_locks_sql: String,
     policy: LoadPolicy,
 }
 
@@ -81,6 +84,11 @@ impl refinery_core::traits::sync::Transaction for MigrationTransaction<'_> {
     ) -> Result<usize, Self::Error> {
         let mut count = 0;
         for query in queries {
+            if query == self.verified_locks_sql {
+                v023::add_verified_column(&self.tx, query)?;
+                count += 1;
+                continue;
+            }
             self.tx.execute_batch(query)?;
             if query == self.registration_sql {
                 legacy_v008::backfill_registrations(&self.tx)?;
@@ -441,6 +449,7 @@ pub(crate) fn rewind_v021(conn: &rusqlite::Connection) {
     conn.execute_batch(
         "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
          DROP TABLE core_locked_outpoints; \
+         ALTER TABLE core_instant_locks DROP COLUMN verified; \
          DELETE FROM refinery_schema_history WHERE version >= 21;",
     )
     .unwrap();
