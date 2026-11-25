@@ -708,3 +708,127 @@ jobs:
             exit 1
           fi
           echo "SHA256SUMS attached: asset ${id} sha256 ${sum}"
+
+  # Asks the apt publisher, infra's state machine, to publish the release's two
+  # debs. It downloads them itself and takes them only as SHA256SUMS lists them,
+  # so this runs once SHA256SUMS is attached. A final release reaches `stable`
+  # once its SHA256SUMS.asc is attached, on a later run or the publisher's daily
+  # one. This job neither reads nor changes the release, and no job needs it, so
+  # a failed publish leaves every asset in place; re-run this job to try again.
+  publish-dashmate-apt:
+    name: Publish Dashmate debs to apt
+    needs: release-dashmate-checksums
+    # A dispatch attaches no debs and no SHA256SUMS.
+    if: >-
+      !cancelled()
+      && github.event_name == 'release'
+      && needs.release-dashmate-checksums.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    # The role trusts this environment only, and the environment admits v* tags only.
+    environment: dashmate-apt-publish
+    permissions:
+      id-token: write
+      contents: none
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+      # The publisher runs one publish at a time, so this includes waiting for
+      # another one. It stays under the job's timeout and the hour the
+      # credentials last.
+      APT_PUBLISH_WAIT_SECONDS: 2400
+      APT_PUBLISH_POLL_SECONDS: 15
+      AWS_PAGER: ''
+    steps:
+      # The tag goes into the execution's name and input. Only the form the deb
+      # build accepts, so any tag whose debs were built passes. The publisher
+      # takes finals and dev, beta and rc prereleases, by the first identifier
+      # of the prerelease, and refuses every other kind (alpha, pr, hotfix):
+      # those are skipped here rather than turning the release run red. Keep
+      # the list in step with the publisher's.
+      - name: Check the release tag
+        id: tag
+        run: |
+          set -euo pipefail
+          tag_pattern='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$'
+          if ! [[ "${TAG}" =~ ${tag_pattern} ]]; then
+            # Quoted, so that no part of it starts a line of the log.
+            printf -v shown '%q' "${TAG}"
+            echo "::error::Not a release tag such as v5.1.0 or v5.1.0-rc.1: ${shown}"
+            exit 1
+          fi
+          label=''
+          case "${TAG}" in
+            *-*)
+              label="${TAG#*-}"
+              label="${label%%.*}"
+              ;;
+          esac
+          case "${label}" in
+            '' | dev | beta | rc) echo 'publish=true' >> "${GITHUB_OUTPUT}" ;;
+            *)
+              echo "::notice::The apt repository takes no ${label} prereleases, so ${TAG} is not published there."
+              echo 'publish=false' >> "${GITHUB_OUTPUT}"
+              ;;
+          esac
+
+      - name: Get credentials for the apt publisher
+        if: steps.tag.outputs.publish == 'true'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::854439639386:role/dashmate-apt-release
+          aws-region: us-west-2
+
+      # The execution's name is unique per run attempt, so a re-run starts a new
+      # publish, and made of the characters Step Functions accepts in names it
+      # logs, at most 80. Starting is idempotent for the same name and input, so
+      # the CLI's retries start no second one. What the execution reports is
+      # printed as one JSON line with every # escaped, so none of it can form a
+      # workflow command: `::` ones start a line, `##[` ones can be anywhere.
+      - name: Publish the debs to the apt repository
+        if: steps.tag.outputs.publish == 'true'
+        env:
+          STATE_MACHINE: arn:aws:states:us-west-2:854439639386:stateMachine:dashmate-apt-publish
+        run: |
+          set -euo pipefail
+          suffix="-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          name="${TAG//./-}"
+          name="${name:0:$((80 - ${#suffix}))}${suffix}"
+          input="$(jq -cn --arg tag "${TAG}" '{tag: $tag}')"
+          execution="$(aws stepfunctions start-execution --state-machine-arn "${STATE_MACHINE}" \
+            --name "${name}" --input "${input}" --query executionArn --output text \
+            --cli-connect-timeout 10 --cli-read-timeout 30)"
+          echo "Started ${execution}"
+          deadline=$((SECONDS + APT_PUBLISH_WAIT_SECONDS))
+          status=''
+          failed_reads=0
+          while :; do
+            # A read that fails is tried again, but not five times in a row: an
+            # error that does not clear, such as a denied read, fails the job early.
+            if description="$(aws stepfunctions describe-execution --execution-arn "${execution}" --output json \
+              --cli-connect-timeout 10 --cli-read-timeout 30)" \
+              && status="$(jq -er '.status' <<< "${description}")"; then
+              failed_reads=0
+              case "${status}" in
+                RUNNING | PENDING_REDRIVE) ;;
+                *) break ;;
+              esac
+            else
+              failed_reads=$((failed_reads + 1))
+              if [ "${failed_reads}" -ge 5 ]; then
+                echo "::error::Could not read ${execution} five times in a row. It may still be running; check it before re-running this job."
+                exit 1
+              fi
+              echo "::warning::Could not read the execution; trying again."
+            fi
+            if [ "${SECONDS}" -ge "${deadline}" ]; then
+              echo "::error::The apt publish did not finish within ${APT_PUBLISH_WAIT_SECONDS}s. ${execution} may still be running and succeed; check it before re-running this job."
+              exit 1
+            fi
+            sleep "${APT_PUBLISH_POLL_SECONDS}"
+          done
+          echo "apt publish: ${status}"
+          if [ "${status}" != SUCCEEDED ]; then
+            echo "::error::The apt publish of ${TAG} ended ${status}; its error and cause follow."
+            jq -c '{status, error, cause}' <<< "${description}" | sed 's/#/\\u0023/g'
+            exit 1
+          fi
