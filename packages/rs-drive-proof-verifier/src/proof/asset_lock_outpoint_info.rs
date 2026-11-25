@@ -66,27 +66,4 @@ impl FromProof<GetAssetLockOutpointInfoRequest> for StoredAssetLockInfo {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use dapi_grpc::platform::v0::get_asset_lock_outpoint_info_request;
-
-    #[test]
-    fn should_reject_unproved_requests_before_sending() {
-        let request = GetAssetLockOutpointInfoRequest {
-            version: Some(get_asset_lock_outpoint_info_request::Version::V0(
-                get_asset_lock_outpoint_info_request::GetAssetLockOutpointInfoRequestV0 {
-                    outpoint: vec![0; 36],
-                    prove: false,
-                },
-            )),
-        };
-
-        let error =
-            <StoredAssetLockInfo as FromProof<GetAssetLockOutpointInfoRequest>>::check_request(
-                &request,
-                PlatformVersion::latest(),
-            )
-            .expect_err("unproved requests cannot be verified");
-        assert!(matches!(error, Error::RequestError { .. }));
-    }
-}
+mod tests;
