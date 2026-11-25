@@ -8498,7 +8498,7 @@ mod select_recorded_spends_tests {
     /// A selected note appended after the latest checkpoint (a sync pass that
     /// appended and stopped before its checkpoint) is the one case the next
     /// sync resolves: `ShieldedMerkleWitnessUnavailable`, which hosts get as
-    /// retryable code 85.
+    /// retryable code 88.
     #[test]
     fn should_refuse_a_note_past_the_latest_checkpoint_as_witness_unavailable() {
         let path = temp_tree_path("past_checkpoint");

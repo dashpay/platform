@@ -335,7 +335,7 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// tree. A store that cannot produce the path is not this case: it stays
     /// `errorWalletOperation`. Distinct from
     /// `errorShieldedSpendUnconfirmed`, which must NOT be retried.
-    case errorShieldedMerkleWitnessUnavailable = 85
+    case errorShieldedMerkleWitnessUnavailable = 88
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -797,7 +797,7 @@ public enum PlatformWalletError: LocalizedError {
     /// which must NOT be retried.
     case shieldedNoRecordedAnchor(String)
     /// A shielded spend selected a note no checkpoint of the local commitment
-    /// tree covers yet (code 85). Nothing was proved or broadcast and the notes
+    /// tree covers yet (code 88). Nothing was proved or broadcast and the notes
     /// were released: retryable once the next shielded sync checkpoints the
     /// tree. Distinct from `shieldedSpendUnconfirmed`, which must NOT be
     /// retried.

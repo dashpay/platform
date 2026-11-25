@@ -612,7 +612,7 @@ final class ErrorHandlingTests: XCTestCase {
             ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_MERKLE_WITNESS_UNAVAILABLE
         )
         XCTAssertEqual(code, .errorShieldedMerkleWitnessUnavailable)
-        XCTAssertEqual(code.rawValue, 85)
+        XCTAssertEqual(code.rawValue, 88)
         let detail = "shielded withdraw failed: Shielded Merkle witness unavailable: position 7"
         guard case .shieldedMerkleWitnessUnavailable(let message) =
             PlatformWalletError(code: code, message: detail) else {

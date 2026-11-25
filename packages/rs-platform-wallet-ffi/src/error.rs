@@ -797,7 +797,7 @@ pub enum PlatformWalletFFIResultCode {
     /// note spend (transfer, unshield, withdrawal, identity top-up and identity
     /// create from the pool, private document create). Distinct from
     /// [`Self::ErrorShieldedSpendUnconfirmed`] (18), which must NOT be retried.
-    ErrorShieldedMerkleWitnessUnavailable = 85,
+    ErrorShieldedMerkleWitnessUnavailable = 88,
 
     /// The named thing does not exist.
     ///
@@ -1050,7 +1050,7 @@ fn trade_error_json_detail(
 }
 
 /// The message of a shielded spend refused until the next shielded sync
-/// (codes 19 and 85): what a host can show the user, with the wallet's own
+/// (codes 19 and 88): what a host can show the user, with the wallet's own
 /// diagnostic after it.
 pub(crate) fn retry_after_sync_message(error: &PlatformWalletError) -> String {
     format!("Wallet is still syncing to a confirmed state — try again shortly. ({error})")
@@ -3258,7 +3258,7 @@ mod private_contact_request_error_tests {
             result.code,
             PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable
         );
-        assert_eq!(result.code as u32, 85);
+        assert_eq!(result.code as u32, 88);
         let message = unsafe { std::ffi::CStr::from_ptr(result.message) }.to_string_lossy();
         assert!(message.contains("try again shortly"), "{message}");
     }

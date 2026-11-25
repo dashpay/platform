@@ -3175,12 +3175,12 @@ mod tests {
 
     /// A note no checkpoint covers yet is refused before the proof and the
     /// broadcast, so every note spend reports it by its own retryable code
-    /// (85) and code 19's wording, never as the generic failure (6) a host
+    /// (88) and code 19's wording, never as the generic failure (6) a host
     /// must read as possibly sent: every operation the spend contract maps,
     /// the identity create from the pool included (it delegates here). A
     /// store that cannot produce the path keeps the generic code.
     #[test]
-    fn should_report_an_unavailable_merkle_witness_as_code_85_on_every_spend() {
+    fn should_report_an_unavailable_merkle_witness_as_code_88_on_every_spend() {
         for operation in [
             "shielded transfer",
             "shielded unshield",
@@ -3202,7 +3202,7 @@ mod tests {
                 PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable,
                 "{operation}"
             );
-            assert_eq!(result.code as u32, 85);
+            assert_eq!(result.code as u32, 88);
             let message = message_of(&result);
             assert!(message.contains("try again shortly"), "{message}");
             assert!(message.contains("position 7395"), "{message}");

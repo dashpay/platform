@@ -276,7 +276,7 @@ sealed class DashSdkError(
         }
 
         /**
-         * `ErrorShieldedMerkleWitnessUnavailable` (native code 85). A shielded
+         * `ErrorShieldedMerkleWitnessUnavailable` (native code 88). A shielded
          * spend selected a note no checkpoint of the wallet's local commitment
          * tree covers yet. Refused before any proof or broadcast, with the
          * notes released, so this **is** retryable once the next shielded sync
@@ -965,7 +965,7 @@ sealed class DashSdkError(
             16 -> PlatformWallet.ShieldedBroadcastFailed(message, cause) // ErrorShieldedBroadcastFailed
             18 -> PlatformWallet.ShieldedSpendUnconfirmed(message, cause) // ErrorShieldedSpendUnconfirmed
             19 -> PlatformWallet.ShieldedNoRecordedAnchor(message, cause) // ErrorShieldedNoRecordedAnchor
-            85 -> PlatformWallet.ShieldedMerkleWitnessUnavailable(message, cause) // ErrorShieldedMerkleWitnessUnavailable
+            88 -> PlatformWallet.ShieldedMerkleWitnessUnavailable(message, cause) // ErrorShieldedMerkleWitnessUnavailable
             20 -> PlatformWallet.TransactionBroadcastUnconfirmed(message, cause) // ErrorTransactionBroadcastUnconfirmed
             42 -> PlatformWallet.MasternodeWithdrawalUnconfirmed(message, cause) // ErrorMasternodeWithdrawalUnconfirmed
             22 -> PlatformWallet.CoreInsufficientFunds(message, cause) // ErrorCoreInsufficientFunds
