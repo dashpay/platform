@@ -4868,6 +4868,47 @@ mod tests {
         );
     }
 
+    /// An assignment the backend has committed is published even when the
+    /// call is dropped while it waits for the manager lock: memory would
+    /// otherwise show no recipient where the store holds one, so a resume
+    /// would refuse the lock and an assignment of another identity would pass
+    /// the in-memory check only to be refused by the store.
+    #[tokio::test]
+    async fn should_publish_a_committed_assignment_whose_call_was_dropped() {
+        let identity = dpp::prelude::Identifier::from([0x5f; 32]);
+        let persistence = Arc::new(CapturingPersistence {
+            records_identity_recipients: true,
+            commits_inline: true,
+            ..Default::default()
+        });
+        let (manager, out_point) =
+            unassigned_top_up_lock(Arc::clone(&persistence), AssetLockStatus::Broadcast).await;
+
+        let held = manager.wallet_manager.read().await;
+        let assignment = assign_on_current_generation(&manager, &out_point, identity);
+        let timed_out = tokio::time::timeout(Duration::from_millis(200), assignment).await;
+        assert!(
+            timed_out.is_err(),
+            "the publication waits for the held lock"
+        );
+        assert_eq!(
+            *persistence.assigned.lock().unwrap(),
+            vec![(out_point, identity)],
+            "the backend committed before the call was dropped"
+        );
+        drop(held);
+
+        let mut published = None;
+        for _ in 0..100 {
+            published = manager.list_tracked_locks().await[0].identity_recipient;
+            if published.is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert_eq!(published, Some(identity));
+    }
+
     /// A recipient-less lock whose Platform consumption is unknown (rebuilt
     /// from a finalized transaction after a restore) is not listed as
     /// unassigned and cannot be assigned: Platform may have consumed it long

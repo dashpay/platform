@@ -220,22 +220,40 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                      stored: {error}"
                 ))
             })?;
-        // Still under the lifecycle gate, so the generation checked above is
-        // still the wallet's; the serial gate keeps any other assignment out,
-        // and nothing else sets a recipient on a tracked lock. Sync may have
-        // moved the lock meanwhile: it is published only where it still
-        // applies.
-        let mut wm = self.wallet_manager.write().await;
-        let lock = wm
-            .get_wallet_info_mut(&self.wallet_id)
-            .filter(|info| Arc::ptr_eq(&info.generation, generation))
-            .and_then(|info| info.tracked_asset_locks.get_mut(out_point))
-            .ok_or(PlatformWalletError::AssetLockNotTracked(*out_point))?;
-        if lock.status.is_consumed() {
-            return Err(PlatformWalletError::AssetLockAlreadyConsumed(*out_point));
-        }
-        lock.identity_recipient = Some(identity);
-        Ok(())
+        // The backend has committed the recipient, so it is published even if
+        // this call is dropped while it waits for the manager lock: memory
+        // would otherwise show no recipient where the store holds one, and a
+        // resume would refuse the lock until a reload. A spawned task runs to
+        // its end whatever happens to this future. While this call is not
+        // dropped it is still under the lifecycle gate, so the generation
+        // checked above is still the wallet's, and the serial gate keeps any
+        // other assignment out; once dropped, the generation check below
+        // still keeps a replacement wallet from taking the recipient. Nothing
+        // else sets a recipient on a tracked lock. Sync may have moved the
+        // lock meanwhile: it is published only where it still applies.
+        let wallet_manager = Arc::clone(&self.wallet_manager);
+        let wallet_id = self.wallet_id;
+        let generation = Arc::clone(generation);
+        let out_point = *out_point;
+        tokio::spawn(async move {
+            let mut wm = wallet_manager.write().await;
+            let lock = wm
+                .get_wallet_info_mut(&wallet_id)
+                .filter(|info| Arc::ptr_eq(&info.generation, &generation))
+                .and_then(|info| info.tracked_asset_locks.get_mut(&out_point))
+                .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
+            if lock.status.is_consumed() {
+                return Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point));
+            }
+            lock.identity_recipient = Some(identity);
+            Ok(())
+        })
+        .await
+        .map_err(|error| {
+            PlatformWalletError::AssetLockTransaction(format!(
+                "the committed identity recipient of {out_point} was not published: {error}"
+            ))
+        })?
     }
 
     /// Track a new asset lock in memory, returning a changeset describing

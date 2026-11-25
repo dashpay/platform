@@ -249,3 +249,93 @@ fn should_restore_an_asset_lock_funding_pool_beyond_its_initial_window() {
     assert_eq!(pool.address_index(&deep_info.address), Some(deep));
     assert_eq!(pool.highest_used(), Some(deep));
 }
+
+/// A funding pool whose every address is marked used, by locks that never
+/// reached the chain (rejected at broadcast, or abandoned before it), comes
+/// back with fresh unused addresses beyond them. The stored used marks
+/// survive the in-memory hand-back of such an index, and no transaction
+/// refills the pool, so without the load-time refill each restart would
+/// leave the account with nothing to fund the next lock from.
+#[test]
+fn should_refill_an_asset_lock_funding_pool_whose_every_address_is_used() {
+    use key_wallet::account::AccountType;
+    use platform_wallet::changeset::AccountAddressPoolEntry;
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xDF);
+    let wallet = Wallet::from_seed_bytes(
+        [0x44; 64],
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .unwrap();
+    let mut info = ManagedWalletInfo::from_wallet(&wallet, 7);
+    let manifest: Vec<AccountRegistrationEntry> = wallet
+        .accounts
+        .all_accounts()
+        .into_iter()
+        .map(|a| AccountRegistrationEntry {
+            account_type: a.account_type,
+            account_xpub: a.account_xpub,
+        })
+        .collect();
+    let pool = info
+        .accounts
+        .identity_topup_not_bound
+        .as_mut()
+        .expect("managed unbound top-up account")
+        .managed_account_type_mut()
+        .address_pools_mut()
+        .into_iter()
+        .next()
+        .expect("one pool");
+    for address in pool.all_addresses() {
+        assert!(pool.mark_used(&address));
+    }
+    assert!(pool.unused_addresses().is_empty());
+    let highest = pool.highest_generated().expect("an initial window");
+    let snapshot = AccountAddressPoolEntry {
+        account_type: AccountType::IdentityTopUpNotBoundToIdentity,
+        pool_type: pool.pool_type(),
+        addresses: pool.addresses().values().cloned().collect(),
+    };
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                wallet_metadata: Some(WalletMetadataEntry {
+                    network: key_wallet::Network::Testnet,
+                    wallet_group_id: [0u8; 32],
+                    birth_height: 7,
+                }),
+                account_registrations: manifest,
+                account_address_pools: vec![snapshot],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let state = reopen(&path).load().expect("load");
+    let mut restored = state.wallets[&w].wallet_info.clone();
+    let pool = restored
+        .accounts
+        .identity_topup_not_bound
+        .as_mut()
+        .expect("restored unbound top-up account")
+        .managed_account_type_mut()
+        .address_pools_mut()
+        .into_iter()
+        .next()
+        .expect("one pool");
+    assert!(
+        (0..=highest).all(|index| pool.addresses()[&index].is_used()),
+        "every stored used mark is kept"
+    );
+    assert!(
+        pool.addresses()
+            .values()
+            .any(|info| info.index > highest && !info.is_used()),
+        "the pool is refilled beyond the used addresses"
+    );
+}
