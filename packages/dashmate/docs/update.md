@@ -178,7 +178,9 @@ Check that `dashmate --version` shows the new version before you reset platform 
 What to do after a failure depends on whether the reset has run:
 
 * Before `dashmate reset --platform --hard`, no Platform data has been removed: `dashmate start` brings the node back up on the dashmate version now installed.
-* After it, `dashmate start` does not bring the old node back. The reset deletes Platform data and resets the Platform part of the configuration to its defaults, or removes a configuration that has no defaults, and nothing restores them. Fix the problem and finish the remaining steps: `dashmate update`, then `dashmate setup` to configure Platform again, then `dashmate start`.
+* After it, `dashmate start` does not bring the old node back. The reset deletes Platform data, and nothing restores it. What to run next depends on what the reset did to the configuration:
+  * A configuration that has defaults (the `mainnet` and `testnet` presets, and the `local` group) is reset in place: its Platform part goes back to the defaults, and the configuration still exists. Fix the problem and finish the remaining steps in order: `dashmate update`, then `dashmate setup` to configure Platform again, then `dashmate start`.
+  * A configuration with any other name has no defaults to reset to, so the reset removes it, and `dashmate update` refuses to run without a configuration. Run `dashmate setup` first to create a configuration again, then `dashmate update` and `dashmate start`.
 
 The process:
 
@@ -188,6 +190,7 @@ $ dashmate stop
 # Install the new dashmate version (Debian package or NPM, see above)
 $ dashmate --version
 $ dashmate reset --platform --hard
+# If the reset removed the configuration (see above), run dashmate setup before dashmate update
 $ dashmate update
 $ dashmate setup
 $ dashmate start
