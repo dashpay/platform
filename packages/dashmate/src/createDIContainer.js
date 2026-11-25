@@ -18,6 +18,7 @@ import RenewalRecordRepository from './ssl/renewalRecord/RenewalRecordRepository
 import createConfigFileFactory from './config/configFile/createConfigFileFactory.js';
 import migrateConfigFileFactory from './config/configFile/migrateConfigFileFactory.js';
 import DefaultConfigs from './config/DefaultConfigs.js';
+import analyseActivationFactory from './doctor/analyse/analyseActivationFactory.js';
 import analyseConfigFactory from './doctor/analyse/analyseConfigFactory.js';
 import analyseGatewayCertificateFactory from './doctor/analyse/analyseGatewayCertificateFactory.js';
 import analyseCoreFactory from './doctor/analyse/analyseCoreFactory.js';
@@ -377,6 +378,7 @@ export default async function createDIContainer(options = {}) {
     analyseGatewayCertificate: asFunction(analyseGatewayCertificateFactory).singleton(),
     analyseCore: asFunction(analyseCoreFactory).singleton(),
     analysePlatform: asFunction(analysePlatformFactory).singleton(),
+    analyseActivation: asFunction(analyseActivationFactory).singleton(),
     unarchiveSamples: asFunction(unarchiveSamplesFactory).singleton(),
     archiveSamples: asValue(archiveSamples),
   });
