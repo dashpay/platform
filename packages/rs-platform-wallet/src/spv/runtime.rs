@@ -212,6 +212,19 @@ impl SpvRuntime {
             return Err(PlatformWalletError::SpvAlreadyRunning);
         }
         self.ensure_no_live_run_loop()?;
+        // Limited to its configured peers and able to dial none of them, a
+        // client would run without ever finding a peer. An empty list is
+        // allowed: that is an offline start.
+        if config.restrict_to_configured_peers
+            && !config.peers.is_empty()
+            && config.peers.iter().all(|peer| peer.port() == 0)
+        {
+            return Err(PlatformWalletError::InvalidParameter(
+                "restrict_to_configured_peers is set, but every configured peer has port 0, \
+                 so the SPV client could reach none of them"
+                    .to_string(),
+            ));
+        }
         let network = self.wallet_manager.read().await.network();
         if config.network != network {
             return Err(PlatformWalletError::InvalidParameter(format!(
@@ -1833,6 +1846,47 @@ mod tests {
             0,
             "the store must not be opened for another network's client"
         );
+    }
+
+    /// A client limited to configured peers that all have port 0 could never
+    /// find a peer. Both starts refuse it before they open the store. A list
+    /// with one peer that can be dialed is not refused on those grounds.
+    #[tokio::test]
+    async fn should_refuse_a_restricted_start_whose_peers_all_have_port_zero() {
+        let storage = tempfile::tempdir().unwrap();
+        let runtime = Arc::new(unstarted_runtime());
+        let mut config = ClientConfig::testnet()
+            .with_storage_path(storage.path())
+            .with_restrict_to_configured_peers(true);
+        config.peers = vec![
+            "192.0.2.1:0".parse().unwrap(),
+            "[2001:db8::1]:0".parse().unwrap(),
+        ];
+
+        let refused = runtime.start(config.clone()).await;
+        assert!(
+            matches!(&refused, Err(PlatformWalletError::InvalidParameter(m)) if m.contains("port 0")),
+            "{refused:?}"
+        );
+        let refused = runtime
+            .start_and_spawn(config.clone(), || {
+                panic!("publish must not run for a client that was never built")
+            })
+            .await;
+        assert!(
+            matches!(&refused, Err(PlatformWalletError::InvalidParameter(m)) if m.contains("port 0")),
+            "{refused:?}"
+        );
+        assert!(!runtime.is_started());
+        assert_eq!(std::fs::read_dir(storage.path()).unwrap().count(), 0);
+
+        // Not restricted, the same list is the client's to deal with.
+        config.restrict_to_configured_peers = false;
+        assert!(runtime.ensure_startable(&config).await.is_ok());
+        // Restricted with one peer that can be dialed is fine too.
+        config.restrict_to_configured_peers = true;
+        config.peers.push("192.0.2.2:19999".parse().unwrap());
+        assert!(runtime.ensure_startable(&config).await.is_ok());
     }
 
     /// The network check comes after the running-client check: a start on a

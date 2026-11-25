@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build:
@@ -41,14 +42,29 @@ jobs:
             *) echo '::error::NPM release runners accept only release tags or protected-branch dispatches'; exit 1 ;;
           esac
 
-      - uses: softwareforgood/check-artifact-v4-existence@v0
+      # An earlier attempt of this run may have built the packages already. The
+      # artifacts API says so without downloading them, and when it cannot be
+      # asked the job fails instead of rebuilding.
+      - name: Check for packages built by an earlier attempt
         id: check-artifact
-        with:
-          name: js-build-${{ github.sha }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: js-build-${{ github.sha }}
+        run: |
+          set -euo pipefail
+          count="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?name=${ARTIFACT}" \
+            --jq '.artifacts | if type == "array" and all(.[]; (.expired | type) == "boolean")
+              then map(select(.expired == false)) | length else "unexpected" end')"
+          case "${count}" in
+            '' | *[!0-9]*) echo "::error::Unexpected answer from the artifacts API: ${count}"; exit 1 ;;
+            0) echo "exists=false" >> "${GITHUB_OUTPUT}" ;;
+            *) echo "exists=true" >> "${GITHUB_OUTPUT}" ;;
+          esac
 
       # The entire runner, including HOME and Git state, is new for this job.
       - name: Check out repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
@@ -68,7 +84,7 @@ jobs:
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Upload the archive of built files
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: js-build-${{ github.sha }}
           path: |

@@ -18,7 +18,7 @@ impl DriveDocumentSumQuery<'_> {
         contract_id: [u8; 32],
         document_type_name: &str,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, i64), Error> {
+    ) -> Result<(RootHash, i128), Error> {
         let path_query = Self::primary_key_sum_path_query(contract_id, document_type_name);
         let (root_hash, elements) =
             GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)
@@ -29,10 +29,15 @@ impl DriveDocumentSumQuery<'_> {
         // (SumTree absent) or has a single
         // `(path, [SUM_TREE_KEY], Some(SumTree))` triple. Extract the
         // sum if present; 0 otherwise.
-        let sum = elements
-            .into_iter()
-            .find_map(|(_, _, elem)| elem.map(|e| e.sum_value_or_default()))
-            .unwrap_or(0);
+        // At 128 bits, whatever width the type keeps its sums in: for an element holding a 64-bit
+        // sum (every element before protocol version 15) this is that sum widened
+        // (`crate::query::sum_width`). Edited in place in this shipped generation: it returned the
+        // sum at 64 bits and refused a wider one; a verifier runs on the client and decides nothing
+        // in a block, and every sum it verified before is returned as the same number.
+        let sum = match elements.into_iter().find_map(|(_, _, elem)| elem) {
+            Some(element) => element.big_sum_value_or_default(),
+            None => 0,
+        };
         Ok((root_hash, sum))
     }
 }

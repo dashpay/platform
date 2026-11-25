@@ -95,6 +95,7 @@ final class AppStateSdkRebuildTests: XCTestCase {
         await appState.rebuildSdk(
             from: appState.currentNetwork,
             to: .regtest,
+            fundingInFlight: { false },
             stopSpv: {
                 recorder.steps.append(.stopSpv)
                 return await stopSpv()

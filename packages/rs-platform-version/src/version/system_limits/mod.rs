@@ -9,6 +9,17 @@ pub struct SystemLimits {
     /// Maximum retained revisions removed by one erase, read by
     /// `erase_document_for_contract_operations` 0; absent before lifecycle activation.
     pub max_document_revisions_erased_per_transition: Option<u16>,
+    /// Most allowed values a document's `enum` violation lists in its parameters and its
+    /// message, the first the schema writes; the others are counted, not listed. Read by the
+    /// native document validator (`validation_schema` 0, which `validate_document` 2 of
+    /// protocol version 15 runs). `None` in the earlier tables, whose document validation
+    /// never reaches it.
+    pub max_enum_violation_listed_values: Option<u16>,
+    /// Most bytes the JSON of the allowed values a document's `enum` violation lists takes
+    /// together; listing stops before the first value that would go past it, or that is an
+    /// array or an object. Read with `max_enum_violation_listed_values`, and `None` where it
+    /// is.
+    pub max_enum_violation_listed_bytes: Option<u16>,
     /// Maximum ordered note page read by the CREDIT nullifier activation migration.
     pub credit_pool_nullifier_backfill_page_size: u16,
     /// Maximum insert operations per batch in the CREDIT nullifier activation migration.
@@ -35,8 +46,9 @@ pub struct SystemLimits {
     /// under a `pattern` key, and every `regexPattern` of a contested index's `fieldMatches`,
     /// one in `$defs` counted once for each document type.
     /// Each is compiled when the contract is parsed and again for the validator its documents
-    /// are checked with, so this and `max_schema_pattern_compiled_size` bound the work and the
-    /// memory one contract costs every node. Read by `DataContract::validate_schema_patterns`
+    /// are checked with, so this, `max_schema_pattern_compiled_size` and the pattern length and
+    /// case-folding bounds below bound the work compiling one contract's patterns takes every
+    /// node. Read by `DataContract::validate_schema_patterns`
     /// 0, which contract registration and update run under full validation from protocol
     /// version 15 and never before; `check_tx` holds a contract to the same bound at every
     /// protocol version, as mempool policy where consensus has no such rule.
@@ -44,6 +56,22 @@ pub struct SystemLimits {
     /// The `regex` size limit, in bytes, every such pattern must compile within. Read with
     /// `max_contract_schema_patterns`.
     pub max_schema_pattern_compiled_size: u32,
+    /// Most bytes one such pattern may take as written. Read with
+    /// `max_contract_schema_patterns`, before any pattern is compiled.
+    pub max_schema_pattern_bytes: u16,
+    /// Most bytes the patterns of one contract may take together as written, one in `$defs`
+    /// counted once for each document type, as the schema check reads every definition for
+    /// each type it checks. Compiling a pattern takes time in proportion to its length as well
+    /// as to its compiled size, so this bounds the time compiling a contract's patterns takes.
+    /// Read with `max_contract_schema_patterns`, before any pattern is compiled.
+    pub max_contract_schema_pattern_bytes: u32,
+    /// Most code points translating one such pattern may case-fold, as
+    /// `validate_schema_patterns` 0 estimates them from the pattern's syntax (an estimate, not
+    /// an exact count: the walk it bounds stays within a small multiple of it): under
+    /// case-insensitive matching the `regex` crate walks every code point of a class before it
+    /// compiles the pattern, a walk the compiled size does not reflect. Read with
+    /// `max_contract_schema_patterns`, before any pattern is compiled.
+    pub max_schema_pattern_case_folded_code_points: u32,
     /// Maximum bytes of a contract stored compiled (format version 2, its document types
     /// compiled beside its schemas): 1 MiB from `SYSTEM_LIMITS_V5` (protocol version 15),
     /// `None` in the earlier tables, which store no contract compiled. The format transitions
@@ -532,6 +560,33 @@ pub struct SystemLimits {
     ///
     /// `None` preserves the behavior of protocol versions whose parsers do not read it.
     pub max_expiring_signed_summed_value_magnitude: Option<u64>,
+    /// The largest magnitude a summed property may admit on a document type that keeps no
+    /// total a write can be checked against, enforced when a contract is registered or updated
+    /// (full validation only, like `max_contested_summed_value_magnitude`): unless the
+    /// property's schema declares a `maximum` of at most this and a `minimum` of at least its
+    /// negation, it must declare a `minimum` of at least 0 and the type must keep the total of
+    /// the property over all its documents (`documentsSummable` or `documentsAverageable`).
+    /// With every value this small, a sum of fewer than 2^36 documents stays in `i64`. With
+    /// values that are never negative, no sum of the type exceeds the type's total times the
+    /// entries one document adds to an index, so state validation holds every sum in `i64` by
+    /// reading that one total before a create or a replace. Read by the document type parser
+    /// from generation 3 on and by the document create and replace state validation of
+    /// protocol version 15.
+    ///
+    /// `None` preserves the behavior of protocol versions that do not read it.
+    pub max_summed_value_magnitude_without_type_total: Option<u64>,
+    /// The largest magnitude a summed property may declare for its document type to keep its
+    /// sums in 64 bits. A type whose summed property declares a `maximum` of at most this and a
+    /// `minimum` of at least its negation keeps every sum in the trees with an `i64` total,
+    /// where a sum of fewer than 2^36 documents cannot leave the range. Any other summed
+    /// property, one that declares no bound included, has its type keep every sum in the trees
+    /// with an `i128` total, which no number of `i64` values can leave. Read by the document
+    /// type parser from generation 3 on, which records the outcome on the type
+    /// (`DocumentTypeV2Getters::uses_big_sums`) and on its index levels
+    /// (`IndexLevelTypeInfo::big_sums`).
+    ///
+    /// `None` keeps every sum in 64 bits, as the protocol versions that do not read it do.
+    pub max_summed_value_magnitude_in_64_bit_sums: Option<u64>,
     /// The highest `maxItems` a typed array may declare when an index keys the document by
     /// its elements, enforced when a contract is registered or updated (full validation only,
     /// like `max_typed_array_items`). Each distinct element is one index entry, so this is the
@@ -583,6 +638,22 @@ pub struct SystemLimits {
     ///
     /// `None` in the tables of protocol versions that never run the rewrite.
     pub max_rekey_batch_moves: Option<u32>,
+    /// How many GroveDB operations the move of retained document histories to the composite-key
+    /// layout on the first block of protocol version 15
+    /// (`Drive::migrate_document_history_storage`) gathers before it applies them, across
+    /// documents, types and contracts: one batch per document would propagate to the root once
+    /// per document. A document's operations are never split, so a batch holds at most one
+    /// document's operations more. Part of what that block writes, since the batch boundaries
+    /// shape the Merk trees the documents' keys are deleted from and inserted into.
+    ///
+    /// It also bounds the block's stack: a batch deletes the keys of up to about a sixth of
+    /// this many documents from a type's primary-key tree, and Merk's batch delete recurses
+    /// about once per key it removes from a tree. 500 operations stay under 512 KiB of stack
+    /// for a type of 32,000 documents; 10,000 need more than 2 MiB.
+    ///
+    /// `None` in the tables of protocol versions before 15, which never run the migration; every
+    /// table from protocol version 15 on sets it.
+    pub max_history_migration_batch_operations: Option<u32>,
 }
 
 #[cfg(test)]

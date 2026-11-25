@@ -70,6 +70,75 @@ impl Default for ShieldedLocalBalanceSnapshotFFI {
     }
 }
 
+/// One account in a [`ShieldedBalanceUpdateFFI`].
+#[repr(C)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ShieldedBalanceAccountFFI {
+    pub account_index: u32,
+    /// Credits a send from this account can select now.
+    pub spendable_credits: u64,
+    /// Whether `spendable_credits` is a known amount for this account, as
+    /// the wallet decides it (`ShieldedLocalAccountBalance::is_established`).
+    /// When false the amount must not be shown as the account's balance. A
+    /// host reads this flag and does not derive it from `source`.
+    pub established: bool,
+    pub last_scanned_index: u64,
+    /// Preserves the distinction between no watermark and an explicit zero.
+    pub has_last_scanned_index: bool,
+    /// What backs the amount, for diagnostics.
+    pub source: ShieldedBalanceSourceFFI,
+}
+
+/// One wallet's local shielded balance state, pushed by
+/// `on_shielded_balance_changed_fn` whenever it changes. Valid only for the
+/// duration of the callback: `accounts` is borrowed and must be copied.
+///
+/// `revision` starts at 1 per wallet and strictly increases; a wallet's
+/// updates arrive in revision order, so a host keeps the latest one and holds
+/// no balance of its own.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ShieldedBalanceUpdateFFI {
+    pub wallet_id: [u8; 32],
+    pub revision: u64,
+    pub status: ShieldedLocalBalanceStatusFFI,
+    /// Spendable credits of the wallet's ordinary accounts, as the wallet
+    /// computes them (`ShieldedLocalBalanceSnapshot::ordinary_balance`).
+    /// Identity accounts are in `accounts` but not in this total. Zero unless
+    /// `status` is Ready, and zero when the total does not fit in `u64`.
+    ///
+    /// It is the wallet's shielded balance only when
+    /// `ordinary_balance_established` is true. When it is false the number is
+    /// what is selectable locally so far and may be partial (one ordinary
+    /// account restored with 100 and another with no history gives 100), so
+    /// it must not be shown as the wallet's balance.
+    pub ordinary_spendable_credits: u64,
+    /// Whether `ordinary_spendable_credits` is a known balance: every
+    /// ordinary account's ledger rests on a restored history or a completed
+    /// scan. False for a ledger that holds no history yet (its zero is not a
+    /// known zero) and for a total that does not fit in `u64`. Ready only;
+    /// false otherwise.
+    pub ordinary_balance_established: bool,
+    /// Ready only: every bound account, identity accounts included. Borrowed
+    /// for the callback; null when `accounts_count` is zero.
+    pub accounts: *const ShieldedBalanceAccountFFI,
+    pub accounts_count: usize,
+}
+
+impl Default for ShieldedBalanceUpdateFFI {
+    fn default() -> Self {
+        Self {
+            wallet_id: [0; 32],
+            revision: 0,
+            status: ShieldedLocalBalanceStatusFFI::Unbound,
+            ordinary_spendable_credits: 0,
+            ordinary_balance_established: false,
+            accounts: std::ptr::null(),
+            accounts_count: 0,
+        }
+    }
+}
+
 /// Cached Platform-to-shielded capacity for one payment account.
 ///
 /// The Rust wallet planner computes every field from the same lexicographic
@@ -160,7 +229,10 @@ pub struct ShieldedSyncWalletResultFFI {
     pub total_scanned: u64,
     /// Notes newly detected as spent this pass.
     pub newly_spent: u32,
-    /// Current unspent shielded balance after the pass.
+    /// Unspent shielded balance of the wallet's ordinary accounts after the
+    /// pass: what a send from those accounts can spend. Identity accounts,
+    /// which the wallet binds and scans too, are left out
+    /// (`ShieldedSyncSummary::ordinary_balance_total`).
     pub balance: u64,
     /// NUL-terminated UTF-8 error message; valid until the callback
     /// returns. NULL on success and skipped wallets.

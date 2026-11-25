@@ -127,6 +127,8 @@ use crate::version::system_limits::SystemLimits;
 ///   (`max_rekey_batch_moves`). `None` in the earlier tables, which never run the rewrite.
 pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_document_revisions_erased_per_transition: None,
+    max_enum_violation_listed_values: None,
+    max_enum_violation_listed_bytes: None,
     // The page matches one notes-tree chunk (2^11). A batch holds at most that
     // page's missing rhos; GroveDB accepts a Vec of operations with no smaller API cap.
     credit_pool_nullifier_backfill_page_size: 2048,
@@ -140,6 +142,9 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_index_property_name_bytes: 255, // native registration checks (new in v15): an index property name holds at most the 255 bytes of a GroveDB key
     max_contract_schema_patterns: 32, // schema pattern bounds (consensus from v15, mempool policy before): a contract holds at most 32 patterns
     max_schema_pattern_compiled_size: 131_072, // and each compiles within 128 KiB
+    max_schema_pattern_bytes: 256,    // each takes at most 256 bytes as written
+    max_contract_schema_pattern_bytes: 4096, // and all of them at most 4 KiB together, one in `$defs` once for each document type
+    max_schema_pattern_case_folded_code_points: 4096, // and each is estimated to case-fold at most 4096 code points when it is translated
     max_compiled_contract_size: None, // no contract is stored compiled before protocol version 15
     max_private_document_entry_size: None, // no private document type before protocol version 15
     private_document_store_target_chunk_bytes: None,
@@ -217,9 +222,12 @@ pub const SYSTEM_LIMITS_V4: SystemLimits = SystemLimits {
     max_document_expiration_weight_per_block: 1_024, // document ttl (new in v14): deleted documents plus their index levels per block
     max_contested_summed_value_magnitude: Some(1 << 27), // contested summed types (new in v14): values within ±2^27
     max_expiring_signed_summed_value_magnitude: Some(1 << 27), // expiring summed types (new in v14): values within ±2^27 unless never negative
+    max_summed_value_magnitude_without_type_total: None,       // read from protocol version 15
+    max_summed_value_magnitude_in_64_bit_sums: None,           // read from protocol version 15
     max_indexed_array_items: Some(16), // typed array element indexes (new in v14): an indexed typed array holds at most 16 elements
     max_windowed_indexed_array_items: Some(4), // typed array element indexes (new in v14): at most 4 when the index also has a timeRange or integerRange window
     max_index_entries_per_document: Some(256), // typed array element indexes (new in v14): one document of a type with an indexed array writes at most 256 index entries
     max_choose_first_candidates: 1_000, // refersTo chooseFirst (new in v14): competitors a create reads, oldest first
     max_rekey_batch_moves: Some(10_000), // the protocol version 14 rewrite of unsigned index value keys applies its moves in batches of this many moves
+    max_history_migration_batch_operations: None, // read only by the protocol version 15 upgrade
 };

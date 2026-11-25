@@ -162,13 +162,13 @@ final class ShieldedSpendPlanTests: XCTestCase {
     func testShouldSendTheSwiftInputsToTheNativePlanner() async throws {
         let manager = makeManager()
         let recorder = PlanSpendRecorder()
-        manager.nativeShieldedSpendCalls.planSpend = {
+        manager.nativeShieldedSpendCalls = Self.recordingCalls(SpendLog()) {
             _, walletId, account, kind, credits, sweepAll, coreFeePerByte, out in
             recorder.record(PlanSpendArguments(
-                walletId: Data(bytes: walletId, count: 32), account: account, kind: kind,
-                credits: credits, sweepAll: sweepAll, coreFeePerByte: coreFeePerByte))
-            out.pointee.kind = kind
-            out.pointee.core_fee_per_byte = coreFeePerByte
+                walletId: walletId.map { Data(bytes: $0, count: 32) } ?? Data(), account: account,
+                kind: kind, credits: credits, sweepAll: sweepAll, coreFeePerByte: coreFeePerByte))
+            out?.pointee.kind = kind
+            out?.pointee.core_fee_per_byte = coreFeePerByte
             return PlatformWalletFFIResult(
                 code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil)
         }
@@ -315,22 +315,40 @@ final class ShieldedSpendPlanTests: XCTestCase {
         var coreFeeRates: [UInt32] { lock.withLock { rates } }
     }
 
-    private nonisolated static func recordingCalls(_ log: SpendLog) -> PlatformWalletNativeShieldedSpendCalls {
+    /// Every export records itself in `log`; `planSpend`, when given, replaces
+    /// the recording planner.
+    private nonisolated static func recordingCalls(
+        _ log: SpendLog,
+        planSpend: PlatformWalletNativeShieldedSpendCalls.PlanSpend? = nil
+    ) -> PlatformWalletNativeShieldedSpendCalls {
         @Sendable func ok() -> PlatformWalletFFIResult {
             PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil)
         }
         return PlatformWalletNativeShieldedSpendCalls(
-            planSpend: { _, _, _, _, _, _, _, _ in log.record("planSpend", nil); return ok() },
+            planSpend: planSpend
+                ?? { _, _, _, _, _, _, _, _ in log.record("planSpend", nil); return ok() },
             transfer: { _, _, _, _, _, _, _ in log.record("transfer", nil); return ok() },
             transferWithPlan: { _, _, _, _, _, _, _, d in log.record("transferWithPlan", d); return ok() },
+            shield: { _, _, _, _, _, _ in log.record("shield", nil); return ok() },
+            shieldFromIdentity: { _, _, _, _, _, _, _ in log.record("shieldFromIdentity", nil); return ok() },
+            shieldToRecipient: { _, _, _, _, _, _, _, _ in log.record("shieldToRecipient", nil); return ok() },
             unshield: { _, _, _, _, _, _ in log.record("unshield", nil); return ok() },
             unshieldWithPlan: { _, _, _, _, _, _, d in log.record("unshieldWithPlan", d); return ok() },
-            topUp: { _, _, _, _, _, _ in log.record("topUp", nil); return ok() },
-            topUpWithPlan: { _, _, _, _, _, _, d in log.record("topUpWithPlan", d); return ok() },
+            identityTopUpFromPool: { _, _, _, _, _, _ in log.record("topUp", nil); return ok() },
+            identityTopUpFromPoolWithPlan: { _, _, _, _, _, _, d in
+                log.record("topUpWithPlan", d); return ok()
+            },
+            tokenPurchaseFromPool: { _, _, _, _, _, _, _, _ in
+                log.record("tokenPurchaseFromPool", nil); return ok()
+            },
             withdraw: { _, _, _, _, _, _, rate in log.record("withdraw", nil, rate: rate); return ok() },
             withdrawWithPlan: { _, _, _, _, _, _, rate, d in
                 log.record("withdrawWithPlan", d, rate: rate); return ok()
-            })
+            },
+            identityCreateFromPool: { _, _, _, _, _, _, _, _, _, _, _ in
+                log.record("identityCreateFromPool", nil); return ok()
+            },
+            abandonIdentityDebit: { _, _, _, _, _ in log.record("abandonIdentityDebit", nil); return ok() })
     }
 
     /// Each `plan:` overload calls its `_with_plan` export exactly once with

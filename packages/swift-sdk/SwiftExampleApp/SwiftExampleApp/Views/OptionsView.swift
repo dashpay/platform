@@ -370,8 +370,11 @@ struct OptionsView: View {
                                 // Another rebuild running, a network switch
                                 // included, may fail and leave the app on
                                 // devnet: keep the edits pending for the next
-                                // close, as after a failed rebuild.
-                                if outcome == .busy || outcome == .stopFailed || outcome == .failed {
+                                // close, as after a failed rebuild. A refusal
+                                // for a funding in progress is kept pending
+                                // the same way.
+                                if outcome == .busy || outcome == .fundingInFlight
+                                    || outcome == .stopFailed || outcome == .failed {
                                     devnetRebuildPending = true
                                 }
                             }
@@ -667,7 +670,9 @@ struct OptionsView: View {
     /// Rebuild the SDK for `newNetwork` (by default `network`, the network the
     /// flow started on), move the wallet manager onto it, then publish the
     /// SDK and its network, through `AppState.rebuildSdk`: `.busy`, with
-    /// nothing done, while another rebuild runs from any window. See
+    /// nothing done, while another rebuild runs from any window, and
+    /// `.fundingInFlight`, with nothing done and the reason shown, while
+    /// the active manager runs a funding or an identity registration. See
     /// `rebuildSdkAndMoveWalletManager` for the order and the rollback:
     /// `prepare` writes the settings the build reads, `rollBack` restores them
     /// if the build or the move fails, and `beforePublish` runs just before a
@@ -681,9 +686,14 @@ struct OptionsView: View {
         rollBack: @MainActor () -> Void = {},
         beforePublish: @MainActor () -> Void = {}
     ) async -> SdkRebuildOutcome {
-        await appState.rebuildSdk(
+        let outcome = await appState.rebuildSdk(
             from: network,
             to: newNetwork ?? network,
+            fundingInFlight: {
+                walletManager.shieldedFundFromAssetLockCoordinator.hasInFlightFundings
+                    || walletManager.addressFundFromAssetLockCoordinator.hasInFlightFundings
+                    || walletManager.registrationCoordinator.hasInFlightRegistrations
+            },
             stopSpv: { await stopSpvForReconfiguration(failurePrefix: failurePrefix) },
             prepare: prepare,
             activateManager: { (target: Network, sdk: SDK) async -> Bool in
@@ -707,6 +717,14 @@ struct OptionsView: View {
             rollBack: rollBack,
             beforePublish: beforePublish
         )
+        if outcome == .fundingInFlight {
+            // Nothing ran, so every caller is left as it was; only the
+            // reason is shown here, once for all of them.
+            appState.showError(
+                message: "The change was not applied because a funding (shield, top-up or identity registration) is in progress. Try again after it finishes."
+            )
+        }
+        return outcome
     }
 
     /// Stop the active manager's SPV before a flow replaces or reconfigures

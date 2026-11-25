@@ -24,6 +24,7 @@ struct DPNSTestView: View {
                         HStack {
                             TextField("Search prefix", text: $searchPrefix)
                                 .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .machineTextEntry()
 
                             Button("Search") {
                                 Task {
@@ -44,6 +45,7 @@ struct DPNSTestView: View {
                         HStack {
                             TextField("Name to check", text: $checkName)
                                 .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .machineTextEntry()
 
                             Button("Check") {
                                 Task {
@@ -64,6 +66,7 @@ struct DPNSTestView: View {
                         HStack {
                             TextField("Identity ID (hex)", text: $identityId)
                                 .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .machineTextEntry()
 
                             Button("Get") {
                                 Task {

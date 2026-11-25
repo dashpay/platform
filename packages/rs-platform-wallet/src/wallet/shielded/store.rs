@@ -151,7 +151,9 @@ pub type StalePendingSpend = ([u8; 32], [u8; 32], Option<[u8; 32]>, Option<u64>)
 /// byte-identical transition is fund-safe (identical nullifiers cannot be
 /// spent twice) and converts silence into a confirmation (next scan sees the
 /// nullifiers spent); a spend that never lands keeps its notes held until its
-/// anchor is proven pruned.
+/// anchor is proven pruned, or until the note scan reads another transition's
+/// action spending one of them, which the saved transition's own actions tell
+/// apart (`sync::SavedSpendInput`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingRedrive {
     /// Activity-entry id of the spend (sha256 of visible output cmxs);
@@ -218,7 +220,7 @@ impl SpendContext {
     /// The bytes the file store keeps it as: the format byte, then the operation version,
     /// the network version (0 when unknown), the fee model's tag and parameter and the
     /// planned fee, little-endian. `None` for a fee model with no layout (a private
-    /// document create, which has no such context).
+    /// document create or a token pool spend, which have no such context).
     pub(super) fn to_bytes(self) -> Option<[u8; Self::LEN]> {
         use super::note_selection::ShieldedFeeKind as Kind;
         let (tag, parameter) = match self.fee_kind {
@@ -227,7 +229,9 @@ impl SpendContext {
             Kind::Withdrawal => (2, 0),
             Kind::IdentityCreate { num_keys } => (3, u32::try_from(num_keys).ok()?),
             Kind::IdentityTopUp => (4, 0),
-            Kind::PrivateDocumentCreate { .. } => return None,
+            Kind::PrivateDocumentCreate { .. }
+            | Kind::TokenPurchase
+            | Kind::TokenPoolSpend { .. } => return None,
         };
         let mut bytes = [0u8; Self::LEN];
         bytes[0] = Self::FORMAT;
@@ -583,6 +587,17 @@ pub trait ShieldedStore: Send + Sync + 'static {
     /// Mark `id`'s note with `nullifier` as spent. Returns `true`
     /// if a matching unspent note was found.
     fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error>;
+
+    /// Keep, durably, that a credit pool scan proven at `height` is about to
+    /// mark notes spent, before it does: marking a fee note spent drops the
+    /// saved record of the spend it paid for, and the token note sweep must
+    /// not judge that spend's token notes from a token pool scan below the
+    /// height that dropped it, even after a restart. A store without token
+    /// pool notes keeps nothing.
+    fn note_spend_scan_height(&mut self, height: u64) -> Result<(), Self::Error> {
+        let _ = height;
+        Ok(())
+    }
 
     /// Reserve `id`'s note with `nullifier` against an in-flight
     /// spend so concurrent callers can't pick the same note.

@@ -170,6 +170,12 @@ pub(super) enum StoredAggregateBinding {
     Id,
     Integer(i128),
     Constant(String),
+    /// Appended for `parse_property_constraints` 1 (protocol version 15); the
+    /// variants keep their order, which is their stored tag.
+    Elements {
+        path: String,
+        kind: Option<StoredEqualityKind>,
+    },
 }
 
 /// [`EqualityKind`].
@@ -706,11 +712,7 @@ impl From<&AggregateRead> for StoredAggregateRead {
                             AggregateBinding::Property { path, kind } => {
                                 StoredAggregateBinding::Property {
                                     path: path.clone(),
-                                    kind: kind.map(|kind| match kind {
-                                        EqualityKind::Text => StoredEqualityKind::Text,
-                                        EqualityKind::Identifier => StoredEqualityKind::Identifier,
-                                        EqualityKind::Bytes => StoredEqualityKind::Bytes,
-                                    }),
+                                    kind: kind.map(stored_equality_kind),
                                 }
                             }
                             AggregateBinding::Owner => StoredAggregateBinding::Owner,
@@ -721,12 +723,36 @@ impl From<&AggregateRead> for StoredAggregateRead {
                             AggregateBinding::Constant(text) => {
                                 StoredAggregateBinding::Constant(text.clone())
                             }
+                            AggregateBinding::Elements { path, kind } => {
+                                StoredAggregateBinding::Elements {
+                                    path: path.clone(),
+                                    kind: kind.map(stored_equality_kind),
+                                }
+                            }
                         },
                     )
                 })
                 .collect(),
             of_own_type: *of_own_type,
         }
+    }
+}
+
+/// How an [`EqualityKind`] is stored.
+fn stored_equality_kind(kind: EqualityKind) -> StoredEqualityKind {
+    match kind {
+        EqualityKind::Text => StoredEqualityKind::Text,
+        EqualityKind::Identifier => StoredEqualityKind::Identifier,
+        EqualityKind::Bytes => StoredEqualityKind::Bytes,
+    }
+}
+
+/// The [`EqualityKind`] a stored one is.
+fn equality_kind(kind: StoredEqualityKind) -> EqualityKind {
+    match kind {
+        StoredEqualityKind::Text => EqualityKind::Text,
+        StoredEqualityKind::Identifier => EqualityKind::Identifier,
+        StoredEqualityKind::Bytes => EqualityKind::Bytes,
     }
 }
 
@@ -753,11 +779,7 @@ impl From<StoredAggregateRead> for AggregateRead {
                             StoredAggregateBinding::Property { path, kind } => {
                                 AggregateBinding::Property {
                                     path,
-                                    kind: kind.map(|kind| match kind {
-                                        StoredEqualityKind::Text => EqualityKind::Text,
-                                        StoredEqualityKind::Identifier => EqualityKind::Identifier,
-                                        StoredEqualityKind::Bytes => EqualityKind::Bytes,
-                                    }),
+                                    kind: kind.map(equality_kind),
                                 }
                             }
                             StoredAggregateBinding::Owner => AggregateBinding::Owner,
@@ -767,6 +789,12 @@ impl From<StoredAggregateRead> for AggregateRead {
                             }
                             StoredAggregateBinding::Constant(text) => {
                                 AggregateBinding::Constant(text)
+                            }
+                            StoredAggregateBinding::Elements { path, kind } => {
+                                AggregateBinding::Elements {
+                                    path,
+                                    kind: kind.map(equality_kind),
+                                }
                             }
                         },
                     )

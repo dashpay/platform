@@ -12,8 +12,10 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.junit.Before
 import org.junit.Test
 
@@ -89,6 +91,39 @@ class CreateDecisionProposalViewModelTest {
         advanceUntilIdle()
         assertNull(submission.error)
         assertEquals("8vLzWy3oPYAwJ9W8TjWZ3vSJMy7bDqyuvbMvzQMxVjPN", submission.createdProposalId)
+    }
+
+    /**
+     * A create whose outcome is unconfirmed may have filed the proposal and paid its fund:
+     * the form is held from then on, without the failure alert, and never submits again.
+     */
+    @Test
+    fun shouldHoldTheFormAfterAnUnconfirmedCreate() = runTest(dispatcher) {
+        val submission = CreateDecisionProposalViewModel()
+        var creates = 0
+
+        submission.submit {
+            creates++
+            throw DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed(
+                "state transition outcome is unconfirmed",
+            )
+        }
+        advanceUntilIdle()
+        assertFalse(submission.isSubmitting)
+        assertNull(submission.error)
+        assertNull(submission.createdProposalId)
+        val held = submission.unconfirmedMessage
+        assertNotNull(held)
+        assertTrue(held!!.startsWith("state transition outcome is unconfirmed"))
+
+        submission.submit {
+            creates++
+            "8vLzWy3oPYAwJ9W8TjWZ3vSJMy7bDqyuvbMvzQMxVjPN"
+        }
+        advanceUntilIdle()
+        assertEquals(1, creates)
+        assertNull(submission.createdProposalId)
+        assertEquals(held, submission.unconfirmedMessage)
     }
 
     /**

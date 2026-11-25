@@ -94,6 +94,17 @@ class DashSdkErrorTest {
     }
 
     @Test
+    fun shouldMapAnUnreadableIdentityBalanceToItsOwnType() {
+        val message = "identity balance unavailable for 7y3Q"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 58, message)
+        val mapped = DashSdkError.fromNative(native)
+
+        assertTrue(mapped is DashSdkError.PlatformWallet.IdentityBalanceUnavailable)
+        assertEquals(message, mapped.message)
+        assertEquals(native, mapped.cause)
+    }
+
+    @Test
     fun unknownNativeCodesFallBackToInternalError() {
         // A code in the rs-sdk-ffi range (< the platform-wallet offset) with
         // no dedicated mapping stays an InternalError.
@@ -485,6 +496,80 @@ class DashSdkErrorTest {
         assertTrue(mapped is DashSdkError.PlatformWallet.IdentityBalanceUnavailable)
         assertEquals(detail, mapped.message)
         assertTrue("nothing was sent, so the read may be retried", mapped.isRetryable)
+    }
+
+    /**
+     * A balance history read that could not reach consistent heights has its own,
+     * retryable code (83), as Swift's `balanceHistoryInconsistentHeights`.
+     */
+    @Test
+    fun shouldReportInconsistentBalanceHistoryHeightsByTheirOwnRetryableCode() {
+        val detail = "page proved at height 11, below height 12"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 83, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.BalanceHistoryInconsistentHeights)
+        assertEquals(detail, mapped.message)
+        assertTrue("the read can be made again", mapped.isRetryable)
+    }
+
+    /**
+     * Code 84: a shielded Clear refused while a shielded operation is in
+     * flight. Typed and retryable, so a host tells it apart from a Clear that
+     * failed and offers the Clear again.
+     */
+    @Test
+    fun shouldReportAShieldedClearRefusedDuringAnOperationByItsOwnRetryableCode() {
+        val detail =
+            "A shielded operation is in progress; clear the shielded state once it has finished"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 84, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedOperationInProgress)
+        assertEquals(detail, mapped.message)
+        assertTrue("Clear can be requested again", mapped.isRetryable)
+    }
+
+    /**
+     * A refused tip has its own code (85), apart from a spend that may have
+     * left the wallet (18): nothing was sent, and a shielded sync lifts it.
+     */
+    @Test
+    fun shouldReportARefusedShieldedTipByItsOwnCode() {
+        val detail = "A shielded payment to this recipient is still being sent or is unresolved"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 85, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedTipPending)
+        assertFalse(mapped is DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed)
+        assertEquals(detail, mapped.message)
+        assertFalse("a shielded sync lifts it, not a retry", mapped.isRetryable)
+    }
+
+    /**
+     * A tip refused because the contact's name moved to another identity has
+     * its own code (86): nothing was sent, and sending again does not help.
+     */
+    @Test
+    fun shouldReportATipToAMovedContactNameByItsOwnCode() {
+        val detail = "This username now belongs to identity B, not to the expected identity A"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 86, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedTipRecipientMismatch)
+        assertEquals(detail, mapped.message)
+        assertFalse("the recipient is picked again, not retried", mapped.isRetryable)
+    }
+
+    /**
+     * A busy shielded balance read has its own retryable code (87), apart
+     * from a read that failed (6): the host keeps the last state and reads
+     * again.
+     */
+    @Test
+    fun shouldReportABusyShieldedBalanceReadByItsOwnRetryableCode() {
+        val detail = "shielded identity balance busy; retry after sync releases its locks"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 87, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedBalanceBusy)
+        assertEquals(detail, mapped.message)
+        assertTrue("the read can be made again", mapped.isRetryable)
     }
 
     @Test

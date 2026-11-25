@@ -1548,7 +1548,7 @@ mod tests {
                 "type": "object",
                 "documentsCountable": true,
                 "properties": {
-                    "price": { "type": "integer", "minimum": 0, "maximum": 1000000000, "position": 0 },
+                    "price": { "type": "integer", "minimum": 0, "maximum": 100000000, "position": 0 },
                     "category": { "type": "integer", "minimum": 0, "maximum": 100, "position": 1 }
                 },
                 "required": ["price", "category"],

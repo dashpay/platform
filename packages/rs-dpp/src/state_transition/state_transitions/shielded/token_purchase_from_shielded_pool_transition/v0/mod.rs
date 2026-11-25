@@ -5,6 +5,7 @@ pub(super) mod v0_methods;
 mod version;
 
 use crate::balances::credits::TokenAmount;
+use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::MAX_DISTRIBUTION_PARAM;
 use crate::data_contract::TokenContractPosition;
 use crate::fee::Credits;
 use crate::prelude::Identifier;
@@ -21,9 +22,10 @@ use serde::{Deserialize, Serialize};
 ///
 /// Tokens bought at the token's direct purchase price and minted straight into the token's shielded pool, paid out of the credit shielded pool: an outputs-only Orchard bundle in the token pool (value balance minus `token_count`) and a spend bundle in the credit pool whose value balance is the price plus the fee. The price goes to the contract owner; no identity signs.
 ///
-/// The token bundle binds the token id and the transition's transparent fields into its
-/// sighash; the fee bundle binds the token id and a digest of the token bundle's actions, so
-/// neither bundle can be paired with another.
+/// The token bundle binds the token id, the transition's transparent fields and, from protocol
+/// version 15, the fee bundle's commitment into its sighash; the fee bundle binds the token id
+/// and a digest of the token bundle's actions. From protocol version 15 neither bundle can be
+/// paired with a bundle of different effects.
 #[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[derive(
     Debug,
@@ -80,4 +82,12 @@ pub struct TokenPurchaseFromShieldedPoolTransitionV0 {
     pub fee_binding_signature: [u8; 64],
     /// Credits leaving the credit pool: the fee bundle's value balance.
     pub credit_amount: Credits,
+}
+
+impl TokenPurchaseFromShieldedPoolTransitionV0 {
+    /// Whether `token_count` is a count this transition's structure validation accepts: from 1
+    /// to [`MAX_DISTRIBUTION_PARAM`]. A wallet asks it before reserving notes for a purchase.
+    pub fn is_valid_token_count(token_count: TokenAmount) -> bool {
+        token_count != 0 && token_count <= MAX_DISTRIBUTION_PARAM
+    }
 }

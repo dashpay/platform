@@ -12,6 +12,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::document_history_drive_query::{
     DocumentHistoryDriveQuery, DocumentHistoryDriveQueryExecutionResult,
+    SerializedDocumentHistoryDriveQueryExecutionResult,
 };
 use crate::verify::grovedb_proof_envelope::require_supported_grovedb_proof_envelope;
 use crate::verify::RootHash;
@@ -83,6 +84,36 @@ impl Drive {
             1 => Drive::verify_document_history_v1(query, proof, document_type, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "verify_document_history".to_string(),
+                known_versions: vec![1],
+                received: version,
+            })),
+        }
+    }
+
+    /// Verifies a proved page and lifecycle from the per-type composite-keyed history tree,
+    /// validating revision headers without decoding document properties so callers can
+    /// authenticate the reconstructed root hash before materializing revision bodies.
+    pub fn verify_document_history_serialized(
+        query: &DocumentHistoryDriveQuery,
+        proof: &[u8],
+        document_type: DocumentTypeRef,
+        platform_version: &PlatformVersion,
+    ) -> Result<(RootHash, SerializedDocumentHistoryDriveQueryExecutionResult), Error> {
+        match platform_version
+            .drive
+            .methods
+            .verify
+            .document
+            .verify_document_history
+        {
+            1 => Drive::verify_document_history_serialized_v1(
+                query,
+                proof,
+                document_type,
+                platform_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "verify_document_history_serialized".to_string(),
                 known_versions: vec![1],
                 received: version,
             })),

@@ -45,6 +45,7 @@ import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.ContestDetail
 import org.dashfoundation.example.navigation.DashPayHome
 import org.dashfoundation.example.navigation.DpnsMarketplace
+import org.dashfoundation.example.navigation.GiveUpName
 import org.dashfoundation.example.navigation.KeysList
 import org.dashfoundation.example.navigation.RegisterName
 import org.dashfoundation.example.navigation.SelectMainName
@@ -52,10 +53,12 @@ import org.dashfoundation.example.navigation.TopUpIdentity
 import org.dashfoundation.example.navigation.TopUpIdentityFromCore
 import org.dashfoundation.example.navigation.TransferCredits
 import org.dashfoundation.example.navigation.TransferToAddress
+import org.dashfoundation.example.navigation.IdentityWithdrawals
 import org.dashfoundation.example.navigation.WithdrawCredits
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
@@ -100,9 +103,9 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
     // so both encodings resolve (matches KeyDetailScreen's resolution).
     val idBase58 = remember(idBytes) { Base58.encode(idBytes) }
 
-    val identity by container.database.identityDao()
-        .observeByIdentityId(idBytes)
-        .collectAsStateWithLifecycle(initialValue = null)
+    val identity by remember(idBytes) {
+        container.database.identityDao().observeByIdentityId(idBytes)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
     val dpnsNames by container.database.dpnsNameDao()
         .observeByIdentity(idBytes)
         .collectAsStateWithLifecycle(initialValue = emptyList())
@@ -116,6 +119,7 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
 
     val sdk by appState.sdk.collectAsStateWithLifecycle()
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
+    val hasLoadedWallet = identity?.walletId?.let { manager?.wallet(forWalletId = it) != null } == true
     var contestedNamesState by remember { mutableStateOf<ContestedNamesState>(ContestedNamesState.Loading) }
     var contestedNamesRetry by remember { mutableStateOf(0) }
 
@@ -285,6 +289,15 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
                         .clickable { navController.navigate(WithdrawCredits(identityIdHex)) }
                         .testTag("identityDetail.withdraw"),
                 )
+                // Where this identity's withdrawals to Core stand, read from the
+                // withdrawals system contract (← IdentityDetailView's Withdrawals link).
+                ListItem(
+                    headlineContent = { Text("Withdrawals") },
+                    supportingContent = { Text("Where each withdrawal to Core stands") },
+                    modifier = Modifier
+                        .clickable { navController.navigate(IdentityWithdrawals(identityIdHex)) }
+                        .testTag("identity.withdrawals"),
+                )
             }
 
             FormSection(title = "DPNS Names") {
@@ -293,7 +306,21 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
                     LabeledContent(
                         label = if (isMain) "${name.label} ★" else name.label,
                         value = name.parentDomainName,
+                        modifier = Modifier.testTag("identity.dpnsName.${name.normalizedLabel}"),
                     )
+                    // Giving up signs through the loaded wallet (← IdentityDetailView's
+                    // "Give Up Name…" swipe action). The row leaves only when
+                    // persistence drops it after Platform confirmed the name gone.
+                    if (hasLoadedWallet) {
+                        TextButton(
+                            onClick = { navController.navigate(GiveUpName(identityIdHex, name.label)) },
+                            modifier = Modifier.testTag(
+                                "identity.dpnsName.${name.normalizedLabel}.giveUp",
+                            ),
+                        ) {
+                            Text("Give Up Name…", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
                 }
                 when (val contested = contestedNamesState) {
                     ContestedNamesState.Loading -> {

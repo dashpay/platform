@@ -13,6 +13,9 @@ use crate::version::drive_versions::drive_vote_method_versions::{
 /// * `remove_all_votes_given_by_identities` 1 also removes the yes/no votes of a masternode
 ///   that left the list, and deletes a contested resource vote a reference points at while
 ///   that vote is stored.
+/// * `cleanup.remove_contested_resource_vote_poll_documents_operations` 2 finds each contender's
+///   document of an ended contest by the id its reference names, where 1 decoded every
+///   contender's document to read its id.
 /// * `cleanup.remove_vote_poll_end_date_query_operations` is `Some(0)`: the yes/no clean-up
 ///   removes finished polls from the end date index with it (`None`, not active, before).
 /// * every `yes_no` method is `Some(0)`: yes/no polls can be opened and voted on from this
@@ -36,6 +39,7 @@ pub const DRIVE_VOTE_METHOD_VERSIONS_V4: DriveVoteMethodVersions = DriveVoteMeth
     },
     cleanup: DriveVoteCleanupMethodVersions {
         remove_all_votes_given_by_identities: 1,
+        remove_contested_resource_vote_poll_documents_operations: 2,
         remove_vote_poll_end_date_query_operations: Some(0),
         ..DRIVE_VOTE_METHOD_VERSIONS_V3.cleanup
     },

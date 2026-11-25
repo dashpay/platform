@@ -9,6 +9,11 @@ struct QueryDetailView: View {
     @State private var result: String = ""
     @State private var error: String = ""
     @State private var showResult = false
+    /// The token of each Execute; editing an input of a route that ties its
+    /// result to its inputs (``resultFollowsInputs``) invalidates it, so a
+    /// running read's completion, which answers the inputs it was submitted
+    /// with, is dropped.
+    @State private var submissions = InputBoundSubmissions()
 
     var body: some View {
         ScrollView {
@@ -24,6 +29,16 @@ struct QueryDetailView: View {
                 .padding()
                 .background(Color.gray.opacity(0.1))
                 .cornerRadius(10)
+
+                if Self.transitionStatusQueries.contains(query.name) {
+                    Label(TransitionStatusPrivacy.note, systemImage: "eye.trianglebadge.exclamationmark")
+                        .font(.callout)
+                        .foregroundColor(.orange)
+                        .padding()
+                        .background(Color.orange.opacity(0.1))
+                        .cornerRadius(10)
+                        .accessibilityIdentifier("queryDetail.privacyNote")
+                }
 
                 // Input Fields
                 VStack(alignment: .leading, spacing: 16) {
@@ -48,10 +63,16 @@ struct QueryDetailView: View {
                                     .foregroundColor(.secondary)
                             }
 
-                            TextField(input.label, text: binding(for: input.name))
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                                .autocapitalization(.none)
-                                .disableAutocorrection(true)
+                            // Every query input is machine text (ids, numbers,
+                            // keys, and JSON for where / orderBy / index
+                            // values), so none of them get smart quotes.
+                            PlainTextField(
+                                placeholder: input.label,
+                                text: binding(for: input.name),
+                                textStyle: .body,
+                                monospaced: false,
+                                borderStyle: .roundedRect
+                            )
                         }
                     }
                 }
@@ -121,6 +142,7 @@ struct QueryDetailView: View {
                 }
             }
         }
+        .onChange(of: appState.sdkGeneration) { _, _ in connectionReplaced() }
         .navigationTitle(query.label)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -132,9 +154,68 @@ struct QueryDetailView: View {
     private func binding(for key: String) -> Binding<String> {
         Binding(
             get: { queryInputs[key] ?? "" },
-            set: { queryInputs[key] = $0 }
+            set: { newValue in
+                guard queryInputs[key] ?? "" != newValue else { return }
+                queryInputs[key] = newValue
+                if resultFollowsInputs {
+                    // The result shown, and the read running, answer the old inputs
+                    submissions.invalidate()
+                    result = ""
+                    error = ""
+                    showResult = false
+                    isLoading = false
+                }
+            }
         )
     }
+
+    /// Whether the result shown names the inputs it answers and is cleared
+    /// when they change: the contract moderation and fee pot reads, whose
+    /// answers name neither the contract nor most of what was asked, and the
+    /// block and transition status reads, whose answers would otherwise sit
+    /// beside an edited height, identity or hash.
+    private var resultFollowsInputs: Bool {
+        Self.inputBoundQueries.contains(query.name)
+    }
+
+    /// Whether `submission`'s result may still be shown: it answers the inputs
+    /// on screen and, for an input-bound read, was read through the current SDK.
+    private func stillAnswers(_ submission: InputBoundSubmission) -> Bool {
+        guard resultFollowsInputs else { return submissions.isCurrent(submission) }
+        return submissions.isCurrent(submission, connection: appState.sdkGeneration)
+    }
+
+    /// The SDK was replaced: an input-bound result shown, or still being read,
+    /// answered for the old connection.
+    private func connectionReplaced() {
+        guard resultFollowsInputs else { return }
+        submissions.invalidate()
+        result = ""
+        error = ""
+        showResult = false
+        isLoading = false
+    }
+
+    private static let inputBoundQueries: Set<String> = [
+        "getContractModerationStatus",
+        "getContractModerationEntries",
+        "getContractDocumentRemovals",
+        "getContractTeamActions",
+        "getContractTeamActionSigners",
+        "getContractModerationActionCounts",
+        "getContractFeePots",
+        "getBlocks",
+        "getOwnerTransactionsInBlock",
+        "getRecentStateTransitionStatus",
+        "getStateTransitionStatusByHash",
+    ]
+
+    /// The reads that send a state transition hash to the app's nodes; their
+    /// form says so before anything is sent (``TransitionStatusPrivacy``).
+    private static let transitionStatusQueries: Set<String> = [
+        "getRecentStateTransitionStatus",
+        "getStateTransitionStatusByHash",
+    ]
 
     private func hasRequiredInputs() -> Bool {
         let fields = inputFields(for: query.name)
@@ -156,21 +237,33 @@ struct QueryDetailView: View {
         }
 
         print("🔵 QueryDetailView: SDK is initialized, preparing to execute query")
-        print("🔵 QueryDetailView: Query inputs: \(queryInputs)")
 
         isLoading = true
         error = ""
         result = ""
         showResult = false
+        // An input-bound read is built from its inputs as they are now, so an
+        // edit made before the task runs cannot change what it sends; a
+        // moderation result echoes the same snapshot
+        let submission = submissions.submit(
+            resultFollowsInputs ? submittedInputs() : [:],
+            connection: appState.sdkGeneration
+        )
 
         Task {
             do {
                 print("🔵 QueryDetailView: Calling performQuery...")
-                let queryResult = try await performQuery(sdk: sdk)
+                let queryResult: Any
+                if resultFollowsInputs {
+                    queryResult = try await performInputBoundQuery(sdk: sdk, inputs: submission.inputs)
+                } else {
+                    queryResult = try await performQuery(sdk: sdk)
+                }
                 print("✅ QueryDetailView: performQuery returned successfully")
                 print("🔵 QueryDetailView: Query result type: \(type(of: queryResult))")
 
                 await MainActor.run {
+                    guard stillAnswers(submission) else { return }
                     result = formatResult(queryResult)
                     showResult = true
                     isLoading = false
@@ -179,6 +272,7 @@ struct QueryDetailView: View {
             } catch let sdkError as SDKError {
                 print("❌ QueryDetailView: SDK error occurred: \(sdkError)")
                 await MainActor.run {
+                    guard stillAnswers(submission) else { return }
                     // Handle SDK errors with more detail
                     switch sdkError {
                     case .invalidParameter(let message):
@@ -214,6 +308,7 @@ struct QueryDetailView: View {
             } catch {
                 print("❌ QueryDetailView: General error occurred: \(error)")
                 await MainActor.run {
+                    guard stillAnswers(submission) else { return }
                     // For non-SDK errors, try to get more information
                     let nsError = error as NSError
                     var errorMessage = ""
@@ -442,45 +537,21 @@ struct QueryDetailView: View {
 
         // Contested DPNS Queries
         case "getContestedDpnsNames":
-            let startName = queryInputs["startName"]
             let limitStr = queryInputs["limit"] ?? ""
             let limit = limitStr.isEmpty ? 100 : (UInt32(limitStr) ?? 100)
+            let startAfterInput = (queryInputs["startAfter"] ?? "").trimmingCharacters(in: .whitespaces)
+            let startAfter = startAfterInput.isEmpty ? nil : startAfterInput
 
-            // Query contested resources for DPNS contract
-            let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec" // DPNS contract ID
-            let result = try await sdk.getContestedResources(
-                documentTypeName: "domain",
-                dataContractId: dpnsContractId,
-                indexName: "parentNameAndLabel",
-                resultType: "contenders",
-                allowIncludeLockedAndAbstainingVoteTally: true,
-                startAtValue: startName,
-                limit: limit,
-                offset: 0,
-                orderAscending: true
-            )
-            return result
+            return try await sdk.dpnsGetAllContestedUsernames(limit: limit, startAfter: startAfter)
 
         case "getContestedDpnsNameVoteState":
             let name = queryInputs["name"] ?? ""
             guard !name.isEmpty else {
                 throw SDKError.internalError("DPNS name is required")
             }
-
-            let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
-
-            let result = try await sdk.getContestedResourceVoteState(
-                dataContractId: dpnsContractId,
-                documentTypeName: "domain",
-                indexName: "parentNameAndLabel",
-                indexValues: ["dash", name],
-                resultType: "contenders",
-                allowIncludeLockedAndAbstainingVoteTally: true,
-                startAtIdentifierInfo: nil,
-                count: 100,
-                orderAscending: true
-            )
-            return result
+            // 0 reads every contender (the SDK pages them)
+            return try await sdk.dpnsGetContestedVoteState(
+                name: name.trimmingCharacters(in: .whitespaces), limit: 0)
 
         case "getContestedDpnsNameVotersForIdentity":
             let name = queryInputs["name"] ?? ""
@@ -492,18 +563,12 @@ struct QueryDetailView: View {
                 throw SDKError.internalError("Identity ID is required")
             }
 
-            let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
-            let result = try await sdk.getContestedResourceVotersForIdentity(
-                dataContractId: dpnsContractId,
-                documentTypeName: "domain",
-                indexName: "parentNameAndLabel",
-                indexValues: ["dash", name],
-                contestantId: identityId,
-                startAtIdentifierInfo: nil,
-                count: 100,
-                orderAscending: true
+            // 0 reads every voter (the SDK pages them)
+            return try await sdk.dpnsGetContestedVotersForIdentity(
+                name: name.trimmingCharacters(in: .whitespaces),
+                contestantId: identityId.trimmingCharacters(in: .whitespaces),
+                limit: 0
             )
-            return result
 
         case "getContestedDpnsNameIdentityVotes":
             let identityId = queryInputs["identityId"] ?? ""
@@ -578,23 +643,18 @@ struct QueryDetailView: View {
             let documentTypeName = queryInputs["documentTypeName"] ?? ""
             let dataContractId = queryInputs["dataContractId"] ?? ""
             let indexName = queryInputs["indexName"] ?? ""
-            let resultType = queryInputs["resultType"] ?? "documents"
-            let allowIncludeLockedAndAbstainingVoteTally = queryInputs["allowIncludeLockedAndAbstainingVoteTally"] == "true"
-            let startAtValue = queryInputs["startAtValue"]
+            let startIndexValues = try parseIndexValues(queryInputs["startIndexValues"])
+            let endIndexValues = try parseIndexValues(queryInputs["endIndexValues"])
             let limitStr = queryInputs["limit"] ?? ""
-            let offsetStr = queryInputs["offset"] ?? ""
             let limit = limitStr.isEmpty ? nil : UInt32(limitStr)
-            let offset = offsetStr.isEmpty ? nil : UInt32(offsetStr)
             let orderAscending = queryInputs["orderAscending"] == "true"
             return try await sdk.getContestedResources(
                 documentTypeName: documentTypeName,
                 dataContractId: dataContractId,
                 indexName: indexName,
-                resultType: resultType,
-                allowIncludeLockedAndAbstainingVoteTally: allowIncludeLockedAndAbstainingVoteTally,
-                startAtValue: startAtValue,
+                startIndexValues: startIndexValues,
+                endIndexValues: endIndexValues,
                 limit: limit,
-                offset: offset,
                 orderAscending: orderAscending
             )
 
@@ -602,29 +662,28 @@ struct QueryDetailView: View {
             let dataContractId = queryInputs["dataContractId"] ?? ""
             let documentTypeName = queryInputs["documentTypeName"] ?? ""
             let indexName = queryInputs["indexName"] ?? ""
-            let resultType = queryInputs["resultType"] ?? "contenders"
+            let indexValues = try parseIndexValues(queryInputs["indexValues"]) ?? []
+            let resultTypeInput = (queryInputs["resultType"] ?? "").trimmingCharacters(in: .whitespaces)
+            let resultType = resultTypeInput.isEmpty ? "documents_and_vote_tally" : resultTypeInput
             let allowIncludeLockedAndAbstainingVoteTally = queryInputs["allowIncludeLockedAndAbstainingVoteTally"] == "true"
-            let startAtIdentifierInfo = queryInputs["startAtIdentifierInfo"]
             let countStr = queryInputs["count"] ?? ""
             let count = countStr.isEmpty ? nil : UInt32(countStr)
-            let orderAscending = queryInputs["orderAscending"] == "true"
             return try await sdk.getContestedResourceVoteState(
                 dataContractId: dataContractId,
                 documentTypeName: documentTypeName,
                 indexName: indexName,
+                indexValues: indexValues,
                 resultType: resultType,
                 allowIncludeLockedAndAbstainingVoteTally: allowIncludeLockedAndAbstainingVoteTally,
-                startAtIdentifierInfo: startAtIdentifierInfo,
-                count: count,
-                orderAscending: orderAscending
+                count: count
             )
 
         case "getContestedResourceVotersForIdentity":
             let dataContractId = queryInputs["dataContractId"] ?? ""
             let documentTypeName = queryInputs["documentTypeName"] ?? ""
             let indexName = queryInputs["indexName"] ?? ""
+            let indexValues = try parseIndexValues(queryInputs["indexValues"]) ?? []
             let contestantId = queryInputs["contestantId"] ?? ""
-            let startAtIdentifierInfo = queryInputs["startAtIdentifierInfo"]
             let countStr = queryInputs["count"] ?? ""
             let count = countStr.isEmpty ? nil : UInt32(countStr)
             let orderAscending = queryInputs["orderAscending"] == "true"
@@ -632,8 +691,8 @@ struct QueryDetailView: View {
                 dataContractId: dataContractId,
                 documentTypeName: documentTypeName,
                 indexName: indexName,
+                indexValues: indexValues,
                 contestantId: contestantId,
-                startAtIdentifierInfo: startAtIdentifierInfo,
                 count: count,
                 orderAscending: orderAscending
             )
@@ -850,7 +909,28 @@ struct QueryDetailView: View {
         }
     }
 
+    /// `value` as a JSON object for ``formatResult(_:)``, in the snake_case keys the FFI wrote.
+    private func encodedJSON<T: Encodable>(_ value: T) throws -> Any {
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        return try JSONSerialization.jsonObject(with: encoder.encode(value))
+    }
+
+    /// The submitted input `key` read as an unsigned integer of type `T`.
+    private func requiredUnsigned<T: FixedWidthInteger & UnsignedInteger>(
+        _ inputs: [String: String], _ key: String, label: String
+    ) throws -> T {
+        guard let value = T(inputs[key] ?? "") else {
+            throw SDKError.invalidParameter("\(label) must be a whole number")
+        }
+        return value
+    }
+
     private func formatResult(_ result: Any) -> String {
+        // JSON already written for display
+        if let json = result as? PreformattedJSON {
+            return json.text
+        }
         // Handle primitive types that can't be directly serialized as JSON
         if result is String || result is NSNumber || result is Bool ||
            result is Int || result is Int32 || result is Int64 ||
@@ -872,6 +952,238 @@ struct QueryDetailView: View {
 
         // Fallback to string description
         return String(describing: result)
+    }
+
+    /// Parse an index-values input: a JSON string array when it starts with
+    /// "[", otherwise comma-separated values, trimmed. Values pass through
+    /// unchanged: the FFI reads a leading backslash as text with that
+    /// backslash removed, else a "0x" prefix as hex bytes, else text. So a
+    /// text value starting with "0x" or a backslash is typed with one more
+    /// backslash in front (the DPNS label oxford is `\0xf0rd`). Empty input
+    /// is nil.
+    /// A comma-separated list refuses an empty value (a stray or trailing
+    /// comma); an empty string can only be given in a JSON array.
+    private func parseIndexValues(_ input: String?) throws -> [String]? {
+        let trimmed = (input ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return nil }
+        if trimmed.hasPrefix("[") {
+            guard let data = trimmed.data(using: .utf8),
+                  let values = try? JSONSerialization.jsonObject(with: data) as? [String] else {
+                throw SDKError.invalidParameter("Index values must be a JSON array of strings")
+            }
+            return values
+        }
+        let values = trimmed
+            .split(separator: ",", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        if let emptyIndex = values.firstIndex(where: { $0.isEmpty }) {
+            throw SDKError.invalidParameter(
+                "Index values: empty value at position \(emptyIndex + 1); use a JSON array for an empty string"
+            )
+        }
+        return values
+    }
+
+    // MARK: - Input-bound reads (blocks, transition status, contract moderation)
+
+    /// A read whose result follows its inputs (``inputBoundQueries``), built
+    /// from `inputs`, the snapshot ``submittedInputs()`` took at Execute: the
+    /// block and transition status reads here, the moderation reads in
+    /// ``performModerationQuery(sdk:inputs:)``.
+    private func performInputBoundQuery(sdk: SDK, inputs: [String: String]) async throws -> Any {
+        switch query.name {
+        case "getBlocks":
+            return try encodedJSON(try await sdk.getBlocks(
+                startHeight: try requiredUnsigned(inputs, "startHeight", label: "Start Height"),
+                count: try requiredUnsigned(inputs, "count", label: "Count")
+            ))
+
+        case "getOwnerTransactionsInBlock":
+            return try encodedJSON(try await sdk.getOwnerTransactionsInBlock(
+                height: try requiredUnsigned(inputs, "height", label: "Block Height"),
+                ownerId: inputs["ownerId"] ?? ""
+            ))
+
+        case "getRecentStateTransitionStatus":
+            return try encodedJSON(try await sdk.getRecentStateTransitionStatus(
+                transitionHash: inputs["transitionHash"] ?? ""
+            ))
+
+        case "getStateTransitionStatusByHash":
+            return try encodedJSON(try await sdk.getStateTransitionStatusByHash(
+                transitionHash: inputs["transitionHash"] ?? ""
+            ))
+
+        default:
+            return try await performModerationQuery(sdk: sdk, inputs: inputs)
+        }
+    }
+
+    /// Runs one of the contract moderation and fee pot reads (protocol
+    /// version 14) from `inputs`, the snapshot ``submittedInputs()`` took at
+    /// Execute, and nothing else: the form may have changed since. The result
+    /// names the same inputs.
+    private func performModerationQuery(sdk: SDK, inputs: [String: String]) async throws -> Any {
+        let contractId = inputs["contractId"] ?? ""
+        switch query.name {
+        case "getContractModerationStatus":
+            let lists = try inputs["lists"].map { try parseModerationLists($0) }
+            return try moderationResult(inputs, await sdk.contractModerationStatus(
+                contractId: contractId,
+                identityId: inputs["identityId"] ?? "",
+                lists: lists
+            ))
+
+        case "getContractModerationEntries":
+            return try moderationResult(inputs, await sdk.contractModerationEntries(
+                contractId: contractId,
+                list: try parseModerationList(inputs["list"] ?? ""),
+                startAfter: inputs["startAfter"],
+                limit: try moderationLimit(inputs)
+            ))
+
+        case "getContractDocumentRemovals":
+            let documentTypeName = inputs["documentTypeName"] ?? ""
+            // Two reads: the records of the ids named, or one page of them all.
+            if let documentIds = inputs["documentIds"] {
+                if inputs["startAfter"] != nil || inputs["limit"] != nil {
+                    throw SDKError.invalidParameter("Give either Document IDs or Start After and Limit")
+                }
+                return try await removalsResult(inputs, await sdk.contractDocumentRemovals(
+                    contractId: contractId,
+                    documentTypeName: documentTypeName,
+                    documentIds: documentIds.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+                ))
+            }
+            return try await removalsResult(inputs, await sdk.contractDocumentRemovals(
+                contractId: contractId,
+                documentTypeName: documentTypeName,
+                startAfter: inputs["startAfter"],
+                limit: try moderationLimit(inputs)
+            ))
+
+        case "getContractTeamActions":
+            return try moderationResult(inputs, await sdk.contractTeamActions(
+                contractId: contractId,
+                status: try parseTeamActionStatus(inputs["status"] ?? ""),
+                startAtActionId: inputs["startAtActionId"],
+                startAtActionIdIncluded: try parseStrictBool(
+                    inputs["startAtActionIdIncluded"], field: "Include Start Action"),
+                limit: try moderationLimit(inputs)
+            ))
+
+        case "getContractTeamActionSigners":
+            return try moderationResult(inputs, await sdk.contractTeamActionSigners(
+                contractId: contractId,
+                status: try parseTeamActionStatus(inputs["status"] ?? ""),
+                actionId: inputs["actionId"] ?? ""
+            ))
+
+        case "getContractModerationActionCounts":
+            return try moderationResult(inputs, await sdk.contractModerationActionCounts(
+                contractId: contractId
+            ))
+
+        case "getContractFeePots":
+            return try moderationResult(inputs, await sdk.contractFeePots(contractId: contractId))
+
+        default:
+            throw SDKError.notImplemented("Query \(query.name) is not a moderation read")
+        }
+    }
+
+    /// The trimmed form input `name`, `nil` when empty.
+    private func moderationInput(_ name: String) -> String? {
+        let value = (queryInputs[name] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    /// The `limit` input of `inputs`, `nil` when absent (the SDK's default
+    /// page).
+    private func moderationLimit(_ inputs: [String: String]) throws -> UInt32? {
+        guard let raw = inputs["limit"] else { return nil }
+        guard let limit = UInt32(raw) else {
+            throw SDKError.invalidParameter("Limit must be a non-negative integer")
+        }
+        return limit
+    }
+
+    /// A yes/no input read strictly: absent is `false`, and only `true` or
+    /// `false` (any case) is accepted, so a typo is shown as an input error
+    /// before anything is sent rather than read as `false`.
+    private func parseStrictBool(_ raw: String?, field: String) throws -> Bool {
+        guard let raw else { return false }
+        switch raw.lowercased() {
+        case "true": return true
+        case "false": return false
+        default:
+            throw SDKError.invalidParameter("\(field) must be true or false, got '\(raw)'")
+        }
+    }
+
+    private func parseModerationList(_ raw: String) throws -> ContractModerationList {
+        let name = raw.trimmingCharacters(in: .whitespaces).lowercased()
+        guard let list = ContractModerationList(rawValue: name) else {
+            throw SDKError.invalidParameter("List must be banlist, suspensions or warnings, got '\(raw)'")
+        }
+        return list
+    }
+
+    private func parseModerationLists(_ raw: String) throws -> [ContractModerationList] {
+        try raw.split(separator: ",").map { try parseModerationList(String($0)) }
+    }
+
+    private func parseTeamActionStatus(_ raw: String) throws -> ContractTeamActionStatus {
+        let name = raw.trimmingCharacters(in: .whitespaces).lowercased()
+        guard let status = ContractTeamActionStatus(rawValue: name) else {
+            throw SDKError.invalidParameter("Status must be active or closed, got '\(raw)'")
+        }
+        return status
+    }
+
+    /// The inputs of this query as submitted, by name, each trimmed; an
+    /// empty input is left out.
+    private func submittedInputs() -> [String: String] {
+        var inputs: [String: String] = [:]
+        for field in inputFields(for: query.name) {
+            if let value = moderationInput(field.name) {
+                inputs[field.name] = value
+            }
+        }
+        return inputs
+    }
+
+    /// A moderation result as JSON: `{"inputs": ..., "result": ...}`, the
+    /// inputs it was read for beside the answer, `null` when the FFI returned
+    /// none. The answer is re-encoded from the decoded value as `JSONEncoder`
+    /// writes it, the models' `Codable` form, so a removal record's kept
+    /// values appear tagged (`{"type": "double", "value": 1}`).
+    private func moderationResult<T: Encodable>(_ inputs: [String: String], _ answer: T?) throws -> Any {
+        PreformattedJSON(text: try catalogJSON(ModerationCatalogResult(inputs: inputs, result: answer)))
+    }
+
+    /// `value` as the catalog shows it: pretty, sorted JSON, with bidi controls
+    /// in the values as JSON escapes, so the text shown cannot reorder itself
+    /// and, copied, is still the same JSON.
+    private func catalogJSON<T: Encodable>(_ value: T) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        return BidiControls.jsonEscaped(String(decoding: try encoder.encode(value), as: UTF8.self))
+    }
+
+    /// A removal records page as the catalog shows it, formatted off the main
+    /// actor by ``RemovalsPreviewFormatter`` (record by record, stopping once
+    /// its budget is spent). The caller shows it only while the submission is
+    /// still current.
+    private func removalsResult(
+        _ inputs: [String: String],
+        _ page: ContractDocumentRemovalsPage?
+    ) async throws -> Any {
+        guard let page else { return try moderationResult(inputs, page) }
+        let text = try await Task.detached(priority: .userInitiated) {
+            try RemovalsPreviewFormatter.format(inputs: inputs, page: page)
+        }.value
+        return PreformattedJSON(text: text)
     }
 
     private func inputFields(for queryName: String) -> [QueryInput] {
@@ -948,6 +1260,52 @@ struct QueryDetailView: View {
                 QueryInput(name: "idsOnly", label: "IDs Only", required: false, placeholder: "true/false")
             ]
 
+        // Contract Moderation Queries
+        case "getContractModerationStatus":
+            return [
+                QueryInput(name: "contractId", label: "Contract ID", required: true),
+                QueryInput(name: "identityId", label: "Identity ID", required: true),
+                QueryInput(name: "lists", label: "Lists (comma-separated)", required: false, placeholder: "banlist, suspensions, warnings; empty reads every list the contract keeps")
+            ]
+
+        case "getContractModerationEntries":
+            return [
+                QueryInput(name: "contractId", label: "Contract ID", required: true),
+                QueryInput(name: "list", label: "List", required: true, placeholder: "banlist, suspensions or warnings"),
+                QueryInput(name: "startAfter", label: "Start After (Identity ID)", required: false, placeholder: "The previous page's nextStartAfter"),
+                QueryInput(name: "limit", label: "Limit", required: false, placeholder: "Empty for the network's page cap")
+            ]
+
+        case "getContractDocumentRemovals":
+            return [
+                QueryInput(name: "contractId", label: "Contract ID", required: true),
+                QueryInput(name: "documentTypeName", label: "Document Type", required: true),
+                QueryInput(name: "documentIds", label: "Document IDs (comma-separated)", required: false, placeholder: "Read these records instead of a page"),
+                QueryInput(name: "startAfter", label: "Start After (Document ID)", required: false, placeholder: "The previous page's nextStartAfter"),
+                QueryInput(name: "limit", label: "Limit", required: false, placeholder: "Empty for the network's page cap")
+            ]
+
+        case "getContractTeamActions":
+            return [
+                QueryInput(name: "contractId", label: "Contract ID", required: true),
+                QueryInput(name: "status", label: "Status", required: true, placeholder: "active or closed"),
+                QueryInput(name: "startAtActionId", label: "Start At Action ID", required: false, placeholder: "The previous page's nextStartAtActionId"),
+                QueryInput(name: "startAtActionIdIncluded", label: "Include Start Action", required: false, placeholder: "true or false; empty is false"),
+                QueryInput(name: "limit", label: "Limit", required: false, placeholder: "Empty for the network's page cap")
+            ]
+
+        case "getContractTeamActionSigners":
+            return [
+                QueryInput(name: "contractId", label: "Contract ID", required: true),
+                QueryInput(name: "status", label: "Status", required: true, placeholder: "active or closed"),
+                QueryInput(name: "actionId", label: "Action ID", required: true)
+            ]
+
+        case "getContractModerationActionCounts", "getContractFeePots":
+            return [
+                QueryInput(name: "contractId", label: "Contract ID", required: true)
+            ]
+
         // Document Queries
         case "getDocuments":
             return [
@@ -1002,18 +1360,18 @@ struct QueryDetailView: View {
         // Contested DPNS Queries
         case "getContestedDpnsNames":
             return [
-                QueryInput(name: "startName", label: "Start Name", required: false, placeholder: "Start from this name"),
-                QueryInput(name: "limit", label: "Limit", required: false, placeholder: "Default: 100")
+                QueryInput(name: "limit", label: "Limit", required: false, placeholder: "Default: 100"),
+                QueryInput(name: "startAfter", label: "Start After", required: false, placeholder: "Normalized label, exclusive (e.g., a11ce)")
             ]
 
         case "getContestedDpnsNameVoteState":
             return [
-                QueryInput(name: "name", label: "DPNS Name", required: true, placeholder: "e.g., alice")
+                QueryInput(name: "name", label: "DPNS Name", required: true, placeholder: "e.g., alice or alice.dash")
             ]
 
         case "getContestedDpnsNameVotersForIdentity":
             return [
-                QueryInput(name: "name", label: "DPNS Name", required: true, placeholder: "e.g., alice"),
+                QueryInput(name: "name", label: "DPNS Name", required: true, placeholder: "e.g., alice or alice.dash"),
                 QueryInput(name: "identityId", label: "Identity ID", required: true, placeholder: "Base58 identity ID")
             ]
 
@@ -1037,11 +1395,9 @@ struct QueryDetailView: View {
                 QueryInput(name: "documentTypeName", label: "Document Type Name", required: true),
                 QueryInput(name: "dataContractId", label: "Data Contract ID", required: true),
                 QueryInput(name: "indexName", label: "Index Name", required: true),
-                QueryInput(name: "resultType", label: "Result Type", required: true, placeholder: "documents, vote_tally, or document_with_vote_tally"),
-                QueryInput(name: "allowIncludeLockedAndAbstainingVoteTally", label: "Include Locked and Abstaining", required: false, placeholder: "true/false"),
-                QueryInput(name: "startAtValue", label: "Start At Value (hex bytes)", required: false),
+                QueryInput(name: "startIndexValues", label: "Start Index Values", required: false, placeholder: "e.g., dash or [\"dash\"]"),
+                QueryInput(name: "endIndexValues", label: "End Index Values", required: false, placeholder: "Values after the listed property"),
                 QueryInput(name: "limit", label: "Limit", required: false),
-                QueryInput(name: "offset", label: "Offset", required: false),
                 QueryInput(name: "orderAscending", label: "Order Ascending", required: false, placeholder: "true/false")
             ]
 
@@ -1050,11 +1406,10 @@ struct QueryDetailView: View {
                 QueryInput(name: "dataContractId", label: "Data Contract ID", required: true),
                 QueryInput(name: "documentTypeName", label: "Document Type Name", required: true),
                 QueryInput(name: "indexName", label: "Index Name", required: true),
-                QueryInput(name: "resultType", label: "Result Type", required: true, placeholder: "contenders, abstainers, or locked"),
+                QueryInput(name: "indexValues", label: "Index Values", required: true, placeholder: "e.g., dash, a11ce; 0x… is bytes, \\0x… is text"),
+                QueryInput(name: "resultType", label: "Result Type", required: false, placeholder: "Default: documents_and_vote_tally (or documents, vote_tally)"),
                 QueryInput(name: "allowIncludeLockedAndAbstainingVoteTally", label: "Include Locked and Abstaining", required: false, placeholder: "true/false"),
-                QueryInput(name: "startAtIdentifierInfo", label: "Start At Identifier Info (JSON)", required: false),
-                QueryInput(name: "count", label: "Count", required: false),
-                QueryInput(name: "orderAscending", label: "Order Ascending", required: false, placeholder: "true/false")
+                QueryInput(name: "count", label: "Request Limit", required: false, placeholder: "Single request; finished polls return all contenders")
             ]
 
         case "getContestedResourceVotersForIdentity":
@@ -1062,8 +1417,8 @@ struct QueryDetailView: View {
                 QueryInput(name: "dataContractId", label: "Data Contract ID", required: true),
                 QueryInput(name: "documentTypeName", label: "Document Type Name", required: true),
                 QueryInput(name: "indexName", label: "Index Name", required: true),
+                QueryInput(name: "indexValues", label: "Index Values", required: true, placeholder: "e.g., dash, a11ce; 0x… is bytes, \\0x… is text"),
                 QueryInput(name: "contestantId", label: "Contestant ID", required: true),
-                QueryInput(name: "startAtIdentifierInfo", label: "Start At Identifier Info (JSON)", required: false),
                 QueryInput(name: "count", label: "Count", required: false),
                 QueryInput(name: "orderAscending", label: "Order Ascending", required: false, placeholder: "true/false")
             ]
@@ -1117,6 +1472,18 @@ struct QueryDetailView: View {
             return [
                 QueryInput(name: "epoch", label: "Epoch", required: true),
                 QueryInput(name: "ids", label: "Evonode IDs (comma-separated)", required: true)
+            ]
+
+        case "getBlocks":
+            return [
+                QueryInput(name: "startHeight", label: "Start Height", required: true, placeholder: "The first block's height, from 1"),
+                QueryInput(name: "count", label: "Count", required: true, placeholder: "1 to 10")
+            ]
+
+        case "getOwnerTransactionsInBlock":
+            return [
+                QueryInput(name: "height", label: "Block Height", required: true),
+                QueryInput(name: "ownerId", label: "Identity ID", required: true, placeholder: "Base58 identity id")
             ]
 
         case "getEvonodesProposedEpochBlocksByRange":
@@ -1228,6 +1595,11 @@ struct QueryDetailView: View {
         case "getCurrentQuorumsInfo":
             return []
 
+        case "getRecentStateTransitionStatus", "getStateTransitionStatusByHash":
+            return [
+                QueryInput(name: "transitionHash", label: "State Transition Hash", required: true, placeholder: "64 hex characters")
+            ]
+
         case "getPrefundedSpecializedBalance":
             return [
                 QueryInput(name: "id", label: "ID", required: true, placeholder: "Base58 encoded ID")
@@ -1241,6 +1613,131 @@ struct QueryDetailView: View {
             return []
         }
     }
+}
+
+/// A moderation result of the catalog: the inputs the read answered and its
+/// answer, `null` when the FFI returned none.
+private struct ModerationCatalogResult<Answer: Encodable>: Encodable {
+    let inputs: [String: String]
+    let result: Answer?
+
+    private enum CodingKeys: String, CodingKey {
+        case inputs, result
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(inputs, forKey: .inputs)
+        try container.encode(result, forKey: .result)
+    }
+}
+
+/// Formats a removal records page for the catalog: pretty, sorted JSON of
+/// `{"inputs", "result": {"nextStartAfter"?, "preview"?, "removals"}}`, with bidi
+/// controls as JSON escapes (``BidiControls/jsonEscaped(_:)``).
+///
+/// It encodes record by record and stops once ``maxBytes`` would be passed, so
+/// a large page is never formatted whole just to be cut. The budget counts the
+/// text as emitted: each record with its indentation and separator, and the
+/// text around the records, which is always shown even when it alone passes
+/// the limit. Records are counted first against a whole page's text (the
+/// inputs and the cursor, when there is one), so a page that fits exactly is
+/// shown whole with its cursor. When records are left out, `nextStartAfter` is
+/// dropped (it is the full page's cursor: paging from it would skip the hidden
+/// records) and `preview` says so; records already counted are dropped from
+/// the end until the text with the note fits. Not isolated
+/// to the main actor: the catalog runs it in a detached task.
+enum RemovalsPreviewFormatter {
+    /// The most text a preview shows. It protects rendering only (one
+    /// selectable `Text` lays out every character); the page read is whole,
+    /// and a smaller limit shows it whole.
+    static let maxBytes = 64 * 1024
+
+    /// How far a record's lines are indented in the output.
+    private static let recordIndent = 6
+
+    static func format(
+        inputs: [String: String],
+        page: ContractDocumentRemovalsPage,
+        maxBytes: Int = maxBytes
+    ) throws -> String {
+        let inputsText = try encode(inputs)
+        let total = page.removals.count
+        let cursorLine = try page.nextStartAfter.map { "\"nextStartAfter\" : " + (try encode($0)) }
+        func noteLine(shown: Int) throws -> String {
+            let note = "Preview truncated (\(shown) of \(total) records shown). "
+                + "Reduce Limit and rerun from the same Start After to see every record; "
+                + "in by-id mode submit fewer ids."
+            return "\"preview\" : " + (try encode(note))
+        }
+
+        // The text around the records of a whole page: the inputs, the cursor
+        // when there is one, and the brackets of a non-empty list.
+        let wholeFrame = assemble(inputsText: inputsText, header: cursorLine, records: [""]).utf8.count
+
+        var records: [String] = []
+        // Each record's bytes with the separator before it.
+        var costs: [Int] = []
+        var recordBytes = 0
+        for removal in page.removals {
+            let record = indent(try encode(removal), by: recordIndent)
+            let cost = record.utf8.count + (records.isEmpty ? 0 : ",\n".utf8.count)
+            if wholeFrame + recordBytes + cost > maxBytes {
+                break
+            }
+            recordBytes += cost
+            records.append(record)
+            costs.append(cost)
+        }
+        if records.count == total {
+            return assemble(inputsText: inputsText, header: cursorLine, records: records)
+        }
+
+        // Cut: the note replaces the cursor. Its frame counts the note at
+        // `total`, its most digits, so it is never less than what is emitted.
+        let noteFrame = assemble(inputsText: inputsText, header: try noteLine(shown: total), records: [""]).utf8.count
+        while noteFrame + recordBytes > maxBytes, let cost = costs.popLast() {
+            records.removeLast()
+            recordBytes -= cost
+        }
+        return assemble(inputsText: inputsText, header: try noteLine(shown: records.count), records: records)
+    }
+
+    /// The preview text: `inputsText` under `inputs`, and under `result` the
+    /// `header` line (`nextStartAfter` or `preview`, when there is one) and the
+    /// `records`, which are already indented by ``recordIndent``.
+    private static func assemble(inputsText: String, header: String?, records: [String]) -> String {
+        let removals = records.isEmpty
+            ? "[]"
+            : "[\n" + records.joined(separator: ",\n") + "\n    ]"
+        var result: [String] = []
+        if let header {
+            result.append(indent(header, by: 4))
+        }
+        result.append("    \"removals\" : " + removals)
+        return "{\n"
+            + indent("\"inputs\" : " + inputsText, by: 2) + ",\n"
+            + "  \"result\" : {\n" + result.joined(separator: ",\n") + "\n  }"
+            + "\n}"
+    }
+
+    /// `value` as pretty, sorted JSON, bidi controls escaped.
+    private static func encode<T: Encodable>(_ value: T) throws -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        return BidiControls.jsonEscaped(String(decoding: try encoder.encode(value), as: UTF8.self))
+    }
+
+    /// `text` with every line indented by `spaces`.
+    private static func indent(_ text: String, by spaces: Int) -> String {
+        let pad = String(repeating: " ", count: spaces)
+        return pad + text.replacingOccurrences(of: "\n", with: "\n" + pad)
+    }
+}
+
+/// A query result already written as JSON text, shown as it is.
+struct PreformattedJSON {
+    let text: String
 }
 
 struct QueryInput {

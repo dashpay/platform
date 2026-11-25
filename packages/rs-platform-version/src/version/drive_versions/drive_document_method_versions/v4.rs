@@ -93,6 +93,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
     DriveDocumentMethodVersions {
         query: DriveDocumentQueryMethodVersions {
             fetch_document_lifecycle: None,
+            fetch_document_type_sum: None,
 
             query_documents: 0,
             query_chained_documents: 0,
@@ -119,6 +120,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V4: DriveDocumentMethodVersions =
         },
         delete: DriveDocumentDeleteMethodVersions {
             erase_refund_recipient_cost: None,
+            consumed_document_delete_cost: 0,
             erase_document_for_contract_operations: None,
             add_estimation_costs_for_erase_document: None,
             add_estimation_costs_for_lifecycle_record: None,

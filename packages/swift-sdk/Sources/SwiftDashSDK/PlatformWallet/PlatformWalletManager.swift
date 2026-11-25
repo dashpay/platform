@@ -512,6 +512,18 @@ public class PlatformWalletManager: ObservableObject {
     /// Rust. Every native pointer has been copied before publication.
     @Published public internal(set) var lastDpnsSyncEvent: DpnsSyncEvent?
 
+    /// The latest shielded balance update this manager accepted for each
+    /// wallet, keyed by the 32-byte wallet id. Rust emits an update when
+    /// the state it read changes and does not resend an unchanged one. This is the balance hosts show:
+    /// read `ordinaryBalance` for what the wallet holds and
+    /// `accountBalance(_:)` for what one account can spend. A wallet with
+    /// no entry has had no update yet. An update replaces the held one
+    /// only when its revision is higher. Stopping shielded sync and Clear
+    /// leave the entries to Rust (Clear's outcome arrives as an update);
+    /// shutdown empties the dictionary, because no update can arrive for
+    /// the native manager it released.
+    @Published public internal(set) var shieldedBalances: [Data: ShieldedBalanceUpdate] = [:]
+
     /// Cumulative number of encrypted notes scanned in the **current**
     /// in-flight shielded sync pass, published once per chunk (~every
     /// 2048 notes) via the Rust-side progress callback. Nil between
@@ -665,8 +677,11 @@ public class PlatformWalletManager: ObservableObject {
     /// teardown. Cleared as soon as the last admitted operation finishes.
     private var drainingNativeHandle: Handle = NULL_HANDLE
 
-    /// Async native entrypoints (create, load, and local balance snapshots)
-    /// between admission and the end of their MainActor epilogue.
+    /// Async native entrypoints (create, load, local balance snapshots,
+    /// shielded spends and shields, the resumed pool funding, wallet drains,
+    /// private documents and contact requests) between admission and the end
+    /// of their MainActor epilogue. The fresh asset-lock pool fundings and
+    /// the pool seeding are deliberately not counted (#6003).
     /// [`shutdown()`] waits for this to reach zero before destroying the
     /// captured handle: an admitted op must complete its FULL transaction (FFI +
     /// publish) or fail on its own terms — never be failed retroactively
@@ -700,6 +715,21 @@ public class PlatformWalletManager: ObservableObject {
         }
     }
 
+    /// Run `body` on a detached task with the captured handle, holding
+    /// admission through the native call and its result conversion, so
+    /// `shutdown()` waits for it and `deleteWallet` refuses meanwhile.
+    /// Cancellation of the awaiting task does not release the admission early.
+    func withAdmittedNativeOperation<T: Sendable>(
+        _ name: String, body: @escaping @Sendable (Handle) throws -> T
+    ) async throws -> T {
+        try admitNativeOp(name)
+        defer { finishNativeOp() }
+        let handle = self.handle
+        return try await Task.detached(priority: .userInitiated) {
+            try body(handle)
+        }.value
+    }
+
     /// Validate a handle captured inside a balanced admit/finish scope.
     /// Public revocation does not invalidate an operation already in that
     /// scope; native teardown cannot destroy its handle until it finishes.
@@ -722,6 +752,12 @@ public class PlatformWalletManager: ObservableObject {
     /// overload; same contract as [`nativeTeardownCalls`].
     internal var nativeLoadCalls = PlatformWalletNativeLoadCalls.live
 
+    /// Test seam for the native calls of the admitted shielded spend
+    /// wrappers (pool spends with and without a plan, the spend plan,
+    /// shields, identity-debit abandonment); same contract as
+    /// [`nativeTeardownCalls`].
+    internal var nativeShieldedSpendCalls = PlatformWalletNativeShieldedSpendCalls.live
+
     /// Native snapshot reads and their paired allocation release. Kept
     /// injectable so ownership and shutdown admission are tested together.
     internal var nativeShieldedLocalBalanceCalls = PlatformWalletNativeShieldedLocalBalanceCalls.live
@@ -732,11 +768,6 @@ public class PlatformWalletManager: ObservableObject {
     /// [`nativeTeardownCalls`].
     internal var nativeShieldFromIdentityToRecipientCall: ShieldFromIdentityToRecipientCall =
         platform_wallet_manager_shielded_shield_from_identity_to_recipient
-
-    /// Test seam for the native calls behind `shieldedPlanSpend` and the
-    /// shielded transfer, unshield, identity top-up and withdrawal spends;
-    /// same contract as [`nativeTeardownCalls`].
-    internal var nativeShieldedSpendCalls = PlatformWalletNativeShieldedSpendCalls.live
 
     /// Test-only: told the operation name each time [`admitNativeOp`] admits
     /// an operation, so a test can prove an entry point is admitted without a
@@ -984,7 +1015,9 @@ public class PlatformWalletManager: ObservableObject {
     /// Native calls run off-main. A stop that reports an incomplete drain
     /// is recorded in the metrics; shutdown still waits for admitted work
     /// to finish before destroying its handle, so completion is not bounded
-    /// if that work never returns.
+    /// if that work never returns. One such case: an admitted shield-class
+    /// payment queued behind an asset-lock funding that gets no ChainLock
+    /// because SPV was stopped first keeps shutdown waiting (#6003).
     ///
     /// Idempotent: the first caller starts the teardown, every later caller
     /// awaits the same task and receives the same metrics. Cancellation of
@@ -1013,6 +1046,9 @@ public class PlatformWalletManager: ObservableObject {
         drainingNativeHandle = h
         handle = NULL_HANDLE
         isConfigured = false
+        // Balance updates are dropped from here on; the held ones describe
+        // a native manager that is going away.
+        shieldedBalances = [:]
         // Poll/reconcile cancellation is independent of admitted local-read
         // generations. Stop remaining reads and reconcile persistence steps
         // before the blocking shielded stop.
@@ -1429,6 +1465,12 @@ public class PlatformWalletManager: ObservableObject {
     /// permit mutation before a completed read's MainActor delivery: deletion
     /// could otherwise remove the wallet while its old snapshot is still queued.
     /// Both operations remain counted through delivery to close that window.
+    /// Whether an async native operation is admitted and has not finished.
+    /// For a synchronous entrypoint that reports that refusal by a typed
+    /// error of its own instead of [`ensureSyncNativeOpAllowed`]'s
+    /// `invalidHandle`.
+    var hasAdmittedNativeOp: Bool { activeNativeOpCount > 0 }
+
     func ensureSyncNativeOpAllowed(_ name: String) throws {
         try ensureConfigured()
         guard !shutdownRequested else {
