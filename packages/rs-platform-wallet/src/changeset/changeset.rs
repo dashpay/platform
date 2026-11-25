@@ -343,6 +343,43 @@ pub struct CoreChangeSet {
     /// backward-compatible reading as [`Self::sweeps`].
     #[cfg_attr(feature = "serde", serde(default))]
     pub outpoint_locks: BTreeMap<OutPoint, bool>,
+
+    /// Wallet-held coins a processed block spent, in capture order. A coin
+    /// counts as held when an account holds it as a UTXO, a record of the
+    /// wallet spends it, or the host restored a spent claim on it.
+    ///
+    /// The durable form of what `observed_spent_outpoints` keeps only until
+    /// the finality boundary: a release must never set such a coin unspent,
+    /// even after a restart or once the spender's block is ChainLocked.
+    /// Rows are dropped only by [`Self::block_spends_truncated_above`], a
+    /// header check that finds their block replaced, a reset of the wallet's
+    /// chain data, or the wallet's removal.
+    ///
+    /// Merge appends; a persister upserts by outpoint in order, so the last
+    /// capture of an outpoint wins.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub block_spends: Vec<BlockSpend>,
+
+    /// Lowest height a chain truncation in this batch cut back to: stored
+    /// block spends above it belong to a replaced branch and are deleted
+    /// before this batch's own rows are written (merge keeps the minimum).
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub block_spends_truncated_above: Option<u32>,
+}
+
+/// One wallet-held coin spent by a transaction in a processed block — see
+/// [`CoreChangeSet::block_spends`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct BlockSpend {
+    /// The coin spent.
+    pub outpoint: OutPoint,
+    /// Height of the block that spent it.
+    pub height: u32,
+    /// Hash of that block.
+    pub block_hash: dashcore::BlockHash,
+    /// The transaction that spent it.
+    pub spender_txid: Txid,
 }
 
 /// Why the engine did not credit a `Received` / `Change` output of a
@@ -913,6 +950,17 @@ impl Merge for CoreChangeSet {
 
         // Outpoint locks: newest wins per outpoint.
         self.outpoint_locks.extend(other.outpoint_locks);
+
+        // Block spends: a newer truncation drops the older spends above its
+        // fork, then the newer spends are appended in capture order.
+        if let Some(fork) = other.block_spends_truncated_above {
+            self.block_spends.retain(|spend| spend.height <= fork);
+            self.block_spends_truncated_above = Some(
+                self.block_spends_truncated_above
+                    .map_or(fork, |existing| existing.min(fork)),
+            );
+        }
+        self.block_spends.extend(other.block_spends);
     }
 
     fn is_empty(&self) -> bool {
@@ -930,6 +978,8 @@ impl Merge for CoreChangeSet {
             && self.last_applied_chain_lock.is_none()
             && self.utxo_credit_verdicts.is_empty()
             && self.outpoint_locks.is_empty()
+            && self.block_spends.is_empty()
+            && self.block_spends_truncated_above.is_none()
     }
 }
 

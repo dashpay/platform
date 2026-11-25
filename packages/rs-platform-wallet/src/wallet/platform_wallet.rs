@@ -378,6 +378,56 @@ pub struct PlatformWalletInfo {
     /// load, so the collateral of a masternode the user stops tracking stays
     /// here until then; see `wallet::outpoint_locks`.
     pub(crate) tracked_collaterals: BTreeSet<OutPoint>,
+    /// Every outpoint the host restored a spent claim on through
+    /// [`Self::restore_spent_outpoints`] this session. Only grows: key-wallet
+    /// does not expose which claims it later released, and an outpoint kept
+    /// here after its release can only add a block spend that really
+    /// happened, never hide one.
+    pub(crate) spent_claim_mirror: std::collections::BTreeSet<OutPoint>,
+    /// Block spends of wallet-held coins captured by `check_core_transaction`
+    /// and not yet drained into a [`CoreChangeSet`](crate::changeset::CoreChangeSet).
+    /// Never pruned: only [`Self::drain_block_spends`] empties it, and a
+    /// truncation drops entries above the fork. A mutex so the event
+    /// bridge can drain it under the manager's read lock.
+    pub(crate) pending_block_spends: std::sync::Mutex<Vec<crate::changeset::BlockSpend>>,
+    /// The inputs of the wallet's unconfirmed records, read once for the
+    /// block being processed and keyed by its hash. A check outside a block,
+    /// a height advance or a truncation drops it. Within a block the live
+    /// set only shrinks, so the snapshot can add a capture, never miss one.
+    pub(crate) block_capture_inputs: Option<(
+        dashcore::BlockHash,
+        std::sync::Arc<std::collections::BTreeSet<OutPoint>>,
+    )>,
+}
+
+impl PlatformWalletInfo {
+    /// Restore spent claims exactly as
+    /// [`ManagedWalletInfo::restore_spent_outpoints`] does, and remember
+    /// the outpoints so a block that spends one of them is captured as a
+    /// [`BlockSpend`](crate::changeset::BlockSpend) even though the wallet
+    /// no longer holds the coin or the claimant's record.
+    pub fn restore_spent_outpoints(
+        &mut self,
+        outpoints: &[(OutPoint, Option<Txid>)],
+    ) -> Vec<OutPoint> {
+        self.spent_claim_mirror
+            .extend(outpoints.iter().map(|(outpoint, _)| *outpoint));
+        self.core_wallet.restore_spent_outpoints(outpoints)
+    }
+
+    /// Whether the host restored a spent claim on `outpoint` this session.
+    pub(crate) fn has_restored_claim(&self, outpoint: &OutPoint) -> bool {
+        self.spent_claim_mirror.contains(outpoint)
+    }
+
+    /// Take every captured block spend not drained yet, in capture order.
+    pub fn drain_block_spends(&self) -> Vec<crate::changeset::BlockSpend> {
+        let mut pending = self
+            .pending_block_spends
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        std::mem::take(&mut *pending)
+    }
 }
 
 /// A platform wallet that combines core UTXO functionality with identity management.
