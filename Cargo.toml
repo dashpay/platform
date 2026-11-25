@@ -141,6 +141,19 @@ opt-level = 3
 # for it in its own workspace.
 [profile.dev.package.dash-pow]
 opt-level = 3
+# The LigninDB storage engine of GroveDB. Unoptimized, the tests that write most
+# take hours on it. Debug assertions stay on: the engine checks its own store with
+# them.
+[profile.dev.package.lignindb]
+opt-level = 3
+[profile.dev.package.lignin-store]
+opt-level = 3
+[profile.dev.package.lignin-tree]
+opt-level = 3
+[profile.dev.package.lignin-format]
+opt-level = 3
+[profile.dev.package.lignin-io]
+opt-level = 3
 
 [profile.test.package.halo2_proofs]
 opt-level = 3
@@ -157,6 +170,16 @@ opt-level = 3
 [profile.test.package.argon2]
 opt-level = 3
 [profile.test.package.dash-pow]
+opt-level = 3
+[profile.test.package.lignindb]
+opt-level = 3
+[profile.test.package.lignin-store]
+opt-level = 3
+[profile.test.package.lignin-tree]
+opt-level = 3
+[profile.test.package.lignin-format]
+opt-level = 3
+[profile.test.package.lignin-io]
 opt-level = 3
 
 [workspace.package]

@@ -15,3 +15,10 @@ linker = "aarch64-linux-gnu-gcc"
 
 [target.wasm32-unknown-unknown]
 rustflags = ['--cfg', 'getrandom_backend="wasm_js"']
+
+# GroveDB compiles its RocksDB and its LigninDB engine for Drive, and with this it
+# puts `GroveDb` on the one that is chosen when a database is opened
+# (GROVEDB_STORAGE_ENGINE of drive-abci). The variable is read by GroveDB's build
+# script alone.
+[env]
+GROVEDB_DEFAULT_ENGINE = "either"

@@ -131,6 +131,7 @@ server = [
   "dpp/state-transitions",
   "fee-distribution",
   "grovedb/minimal",
+  "grovedb/lignin_storage",
   "grovedb/estimated_costs",
   "grovedb-storage",
   "grovedb-costs",
