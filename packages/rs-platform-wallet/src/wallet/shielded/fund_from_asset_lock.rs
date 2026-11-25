@@ -462,15 +462,15 @@ impl PlatformWallet {
         // Halo 2 work never occupy an async worker. Dropping the handle on
         // any exit cancels a proof that is still queued; a running one can't
         // be interrupted, and its result is dropped.
+        #[cfg(test)]
+        let fail_proof = Arc::clone(&self.fail_shield_from_asset_lock_proof);
         let spawn_proof = |out_point, shield_amount, platform_version: &'static PlatformVersion| {
             let sender_ovk = sender_ovk.clone();
+            #[cfg(test)]
+            let fail_proof = Arc::clone(&fail_proof);
             AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
                 #[cfg(test)]
-                if FAILING_PROOF_RECIPIENTS
-                    .lock()
-                    .expect("failing proof recipients")
-                    .contains(&recipient.to_raw_bytes())
-                {
+                if fail_proof.load(std::sync::atomic::Ordering::SeqCst) {
                     return Err(ProtocolError::Generic(
                         "simulated Orchard proving failure".into(),
                     ));
@@ -1164,12 +1164,6 @@ async fn join_initial_proof(
         }
     })
 }
-
-/// Recipients whose bundle proof fails, so a test can fail proving on the
-/// production path (the prover only hands out the proving key).
-#[cfg(test)]
-pub(super) static FAILING_PROOF_RECIPIENTS: std::sync::Mutex<Vec<[u8; ORCHARD_ADDRESS_SIZE]>> =
-    std::sync::Mutex::new(Vec::new());
 
 /// What a landed Type 18 submit returns to the orchestrator.
 struct LandedShield {

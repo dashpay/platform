@@ -521,6 +521,11 @@ pub struct PlatformWallet {
     /// handles share them.
     #[cfg(feature = "shielded")]
     private_payment_restores: Arc<std::sync::Mutex<PrivatePaymentRestores>>,
+    /// Test seam: while set, a shielded fund-from-asset-lock proof of this
+    /// wallet (and its clones) fails instead of proving. Per wallet, so a
+    /// test's fault reaches no other test's wallet.
+    #[cfg(all(test, feature = "shielded"))]
+    pub(crate) fail_shield_from_asset_lock_proof: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Refuse an account number of the range reserved for identity accounts in
@@ -1161,6 +1166,8 @@ impl PlatformWallet {
             shielded_binding: Arc::default(),
             #[cfg(feature = "shielded")]
             private_payment_restores: Arc::default(),
+            #[cfg(all(test, feature = "shielded"))]
+            fail_shield_from_asset_lock_proof: Arc::default(),
         }
     }
 
@@ -4147,6 +4154,8 @@ impl Clone for PlatformWallet {
             shielded_binding: self.shielded_binding.clone(),
             #[cfg(feature = "shielded")]
             private_payment_restores: self.private_payment_restores.clone(),
+            #[cfg(all(test, feature = "shielded"))]
+            fail_shield_from_asset_lock_proof: self.fail_shield_from_asset_lock_proof.clone(),
         }
     }
 }

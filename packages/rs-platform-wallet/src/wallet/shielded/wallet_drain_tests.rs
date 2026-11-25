@@ -900,10 +900,10 @@ async fn should_name_no_held_lock_when_a_resumed_shield_fails_to_prove() {
         .insert(lock.out_point, (&lock).into());
     let coordinator = Arc::new(coordinator);
     let prover: &'static super::prover::CachedOrchardProver = &super::prover::CachedOrchardProver;
-    super::fund_from_asset_lock::FAILING_PROOF_RECIPIENTS
-        .lock()
-        .unwrap()
-        .push(recipient.to_raw_bytes());
+    // Scoped to this test's wallet: no other test's wallet sees the fault.
+    wallet
+        .fail_shield_from_asset_lock_proof
+        .store(true, std::sync::atomic::Ordering::SeqCst);
 
     let result = wallet
         .shielded_fund_from_asset_lock(
@@ -922,10 +922,6 @@ async fn should_name_no_held_lock_when_a_resumed_shield_fails_to_prove() {
             None,
         )
         .await;
-    super::fund_from_asset_lock::FAILING_PROOF_RECIPIENTS
-        .lock()
-        .unwrap()
-        .retain(|raw| *raw != recipient.to_raw_bytes());
 
     let error = result.expect_err("the proof failed");
     assert!(
