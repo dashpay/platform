@@ -6,7 +6,10 @@ use std::time::Duration;
 use std::{sync::Once, time::Instant};
 
 use dapi_grpc::tonic::Code;
-use metrics::{counter, describe_counter, describe_gauge, describe_histogram, histogram, Label};
+use drive::grovedb::engine::either::lignindb::db::DbStats;
+use metrics::{
+    counter, describe_counter, describe_gauge, describe_histogram, gauge, histogram, Label,
+};
 use metrics_exporter_prometheus::PrometheusBuilder;
 
 /// Default Prometheus port (29090)
@@ -38,6 +41,23 @@ pub const GAUGE_CREDIT_WITHDRAWAL_LIMIT_TOTAL: &str = "credit_withdrawal_limit_t
 /// Credits still available to withdrawals on the Core-anchored side of the withdrawal limit
 pub const GAUGE_CREDIT_WITHDRAWAL_LIMIT_CORE_AVAILABLE: &str =
     "credit_withdrawal_limit_core_available";
+
+/// Bytes the cache of the live database was given, on LigninDB
+pub const GAUGE_LIGNINDB_CACHE_CAPACITY: &str = "grovedb_lignindb_cache_capacity_bytes";
+/// Bytes the cache of the live database holds, on LigninDB
+pub const GAUGE_LIGNINDB_CACHE_HELD: &str = "grovedb_lignindb_cache_held_bytes";
+/// 1 while the live database holds its reserve for a full disk, 0 while it does not, on
+/// LigninDB
+pub const GAUGE_LIGNINDB_RESERVE_HELD: &str = "grovedb_lignindb_reserve_held";
+/// The errors of a full disk that the live database's reserve counted since the database
+/// was opened, on LigninDB. None is counted where the configured reserve is 0.
+pub const GAUGE_LIGNINDB_RESERVE_REFUSALS: &str = "grovedb_lignindb_reserve_refusals";
+/// How often the live database gave its reserve back to the disk since it was opened, on
+/// LigninDB
+pub const GAUGE_LIGNINDB_RESERVE_RELEASES: &str = "grovedb_lignindb_reserve_releases";
+/// The fills of the live database's reserve that failed since it was opened, the one at
+/// the open among them, on LigninDB
+pub const GAUGE_LIGNINDB_RESERVE_FILLS_FAILED: &str = "grovedb_lignindb_reserve_fills_failed";
 
 /// Error returned by metrics subsystem
 #[derive(thiserror::Error, Debug)]
@@ -245,6 +265,38 @@ impl Prometheus {
                 GAUGE_CREDIT_WITHDRAWAL_LIMIT_CORE_AVAILABLE,
                 "Credits withdrawals may still take from Core's credit pool, by the stricter copy of Core's unlock limit"
             );
+
+            describe_gauge!(
+                GAUGE_LIGNINDB_CACHE_CAPACITY,
+                metrics::Unit::Bytes,
+                "Memory the cache of the live GroveDB database was given, on LigninDB"
+            );
+
+            describe_gauge!(
+                GAUGE_LIGNINDB_CACHE_HELD,
+                metrics::Unit::Bytes,
+                "Memory the cache of the live GroveDB database holds, on LigninDB"
+            );
+
+            describe_gauge!(
+                GAUGE_LIGNINDB_RESERVE_HELD,
+                "1 while the live GroveDB database holds its reserve for a full disk, on LigninDB"
+            );
+
+            describe_gauge!(
+                GAUGE_LIGNINDB_RESERVE_REFUSALS,
+                "Errors of a full disk that the reserve of the live GroveDB database counted since the database was opened, on LigninDB; none is counted where the configured reserve is 0"
+            );
+
+            describe_gauge!(
+                GAUGE_LIGNINDB_RESERVE_RELEASES,
+                "Times the live GroveDB database gave its reserve back to the disk since it was opened, on LigninDB"
+            );
+
+            describe_gauge!(
+                GAUGE_LIGNINDB_RESERVE_FILLS_FAILED,
+                "Fills of the reserve of the live GroveDB database that failed since it was opened, the one at the open among them, on LigninDB"
+            );
         });
     }
 }
@@ -281,6 +333,18 @@ pub fn abci_last_checkpoint_height(height: u64) {
 /// Count a GroveDB checkpoint attempt that failed after its block was committed.
 pub fn abci_checkpoint_failed() {
     counter!(COUNTER_CHECKPOINT_FAILURES).increment(1);
+}
+
+/// Set what LigninDB counts of the live database: the memory of its cache, and what it did
+/// with its reserve for a full disk. The counts are of one open of the database and start
+/// again at the next, so they are set as gauges.
+pub fn grovedb_lignindb_stats(stats: &DbStats) {
+    gauge!(GAUGE_LIGNINDB_CACHE_CAPACITY).set(stats.memory.capacity as f64);
+    gauge!(GAUGE_LIGNINDB_CACHE_HELD).set(stats.memory.held as f64);
+    gauge!(GAUGE_LIGNINDB_RESERVE_HELD).set(if stats.reserve.held { 1.0 } else { 0.0 });
+    gauge!(GAUGE_LIGNINDB_RESERVE_REFUSALS).set(stats.reserve.refusals as f64);
+    gauge!(GAUGE_LIGNINDB_RESERVE_RELEASES).set(stats.reserve.releases as f64);
+    gauge!(GAUGE_LIGNINDB_RESERVE_FILLS_FAILED).set(stats.reserve.fills_failed as f64);
 }
 
 /// Returns a `[HistogramTiming]` instance for measuring ABCI request duration.

@@ -332,6 +332,11 @@ where
                 );
             }
         }
+        // What LigninDB counts of the live database, at the pace of the checkpoints: the
+        // call reads every count the engine keeps.
+        if let Some(stats) = platform.drive.lignindb_stats() {
+            metrics::grovedb_lignindb_stats(&stats);
+        }
     }
 
     #[cfg(debug_assertions)]
