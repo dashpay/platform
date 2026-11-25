@@ -5,12 +5,16 @@ import path from 'path';
 import process from 'process';
 import si from 'systeminformation';
 import obfuscateConfig from '../../../config/obfuscateConfig.js';
-import { DASHMATE_VERSION } from '../../../constants.js';
+import { DASHMATE_VERSION, NETWORK_LOCAL } from '../../../constants.js';
 import LegoCertificate from '../../../ssl/letsencrypt/LegoCertificate.js';
 import Certificate from '../../../ssl/zerossl/Certificate.js';
 import probeServedCertificate, { STATE as PROBE_STATE } from '../../../ssl/probeServedCertificate.js';
 import readCertificateBundle from '../../../ssl/readCertificateBundle.js';
 import providers from '../../../status/providers.js';
+import probeActivationState, {
+  ACTIVATION_REASON,
+  probeConfigFormatMigrated,
+} from '../../../update/probeActivationState.js';
 import maskOperatorIdentity from '../../../util/maskOperatorIdentity.js';
 import obfuscateObjectRecursive from '../../../util/obfuscateObjectRecursive.js';
 import validateSslCertificateFiles from '../../prompts/validators/validateSslCertificateFiles.js';
@@ -42,6 +46,8 @@ async function fetchTextOrError(url) {
  * @param {validateLetsEncryptCertificate} validateLetsEncryptCertificate
  * @param {checkGatewayCertificate} checkGatewayCertificate
  * @param {RenewalRecordRepository} renewalRecordRepository
+ * @param {ConfigFile} configFile
+ * @param {getConfigFileMigrations} getConfigFileMigrations
  * @return {collectSamplesTask}
  */
 /**
@@ -105,7 +111,94 @@ export default function collectSamplesTaskFactory(
   validateLetsEncryptCertificate,
   checkGatewayCertificate,
   renewalRecordRepository,
+  configFile,
+  getConfigFileMigrations,
 ) {
+  /**
+   * Whether a config is a node this host runs, and so one that has to be restarted after an
+   * upgrade.
+   *
+   * `base` is the template every config is made from. Local network configs are run and
+   * restarted through their group. A config that was never set up is probed like any other:
+   * whether a node runs is read from its containers, not inferred from its settings.
+   *
+   * @param {Config} nodeConfig
+   * @return {boolean}
+   */
+  function isNodeConfig(nodeConfig) {
+    return nodeConfig.getName() !== 'base' && nodeConfig.get('network') !== NETWORK_LOCAL;
+  }
+
+  /**
+   * @param {Object} probeResult
+   * @return {Object}
+   */
+  function hideOperatorNameInMessage(probeResult) {
+    return { ...probeResult, message: hideOperatorNameIn(probeResult.message) };
+  }
+
+  /**
+   * Whether every node on the host runs this dashmate, decided by probeActivationState.
+   *
+   * Host-wide rather than only the config being doctored: one dashmate binary serves every node
+   * on the host, and an upgrade leaves each of them to be restarted.
+   *
+   * @param {Samples} samples
+   * @return {Promise<Object>}
+   */
+  async function sampleActivation(samples) {
+    if (samples.getStringifiedDockerError()) {
+      return {
+        dashmateVersion: DASHMATE_VERSION,
+        error: 'Docker is not available, see the Docker installation error',
+      };
+    }
+
+    try {
+      // One version for the whole config file, so it is read once for every node
+      const migration = await probeConfigFormatMigrated({
+        configFilePath: homeDir.joinPath('config.json'),
+        getConfigFileMigrations,
+      });
+
+      const configs = [];
+
+      for (const nodeConfig of configFile.getAllConfigs().filter(isNodeConfig)) {
+        const verdict = await probeActivationState(nodeConfig, { migration, dockerCompose });
+
+        const sampled = {
+          name: nodeConfig.getName(),
+          masternode: nodeConfig.get('core.masternode.enable') === true,
+          platform: nodeConfig.get('platform.enable') === true,
+          state: verdict.state,
+          reason: verdict.reason,
+          message: hideOperatorNameIn(verdict.message),
+          helper: hideOperatorNameInMessage(verdict.helper),
+        };
+
+        // A helper that is not running says nothing about the rest of the node, which may
+        // still run what the previous dashmate started.
+        if (verdict.helper.reason === ACTIVATION_REASON.HELPER_NOT_RUNNING) {
+          sampled.nodeRunning = await dockerCompose.isNodeRunning(nodeConfig)
+            .catch(() => null);
+        }
+
+        configs.push(sampled);
+      }
+
+      return {
+        dashmateVersion: DASHMATE_VERSION,
+        migration: hideOperatorNameInMessage(migration),
+        configs,
+      };
+    } catch (e) {
+      return {
+        dashmateVersion: DASHMATE_VERSION,
+        error: hideOperatorNameIn(e?.message ?? String(e)),
+      };
+    }
+  }
+
   /**
    * @typedef {function} collectSamplesTask
    * @param config
@@ -128,6 +221,12 @@ export default function collectSamplesTaskFactory(
             const osInfo = await getOperatingSystemInfo();
 
             ctx.samples.setSystemInfo(osInfo);
+          },
+        },
+        {
+          title: 'Dashmate version of each node',
+          task: async (ctx) => {
+            ctx.samples.setActivation(await sampleActivation(ctx.samples));
           },
         },
         {

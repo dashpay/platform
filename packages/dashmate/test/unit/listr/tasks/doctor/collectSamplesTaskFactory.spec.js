@@ -4,8 +4,15 @@ import path from 'path';
 import tls from 'node:tls';
 import { Listr } from 'listr2';
 import getBaseConfigFactory from '../../../../../configs/defaults/getBaseConfigFactory.js';
+import getLocalConfigFactory from '../../../../../configs/defaults/getLocalConfigFactory.js';
+import getMainnetConfigFactory from '../../../../../configs/defaults/getMainnetConfigFactory.js';
+import getTestnetConfigFactory from '../../../../../configs/defaults/getTestnetConfigFactory.js';
+import DefaultConfigs from '../../../../../src/config/DefaultConfigs.js';
+import Config from '../../../../../src/config/Config.js';
+import ConfigFile from '../../../../../src/config/configFile/ConfigFile.js';
 import HomeDir from '../../../../../src/config/HomeDir.js';
 import createCertificateForTest from '../../../../../src/test/createCertificateForTest.js';
+import analyseActivationFactory from '../../../../../src/doctor/analyse/analyseActivationFactory.js';
 import analyseConfigFactory from '../../../../../src/doctor/analyse/analyseConfigFactory.js';
 import { SEVERITY } from '../../../../../src/doctor/Prescription.js';
 import Samples from '../../../../../src/doctor/Samples.js';
@@ -15,6 +22,8 @@ import checkGatewayCertificateFactory from '../../../../../src/ssl/checkGatewayC
 import validateZeroSslCertificateFactory, { ERRORS as ZEROSSL_ERRORS } from '../../../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
 import providers from '../../../../../src/status/providers.js';
 import RenewalRecordRepository from '../../../../../src/ssl/renewalRecord/RenewalRecordRepository.js';
+import { DASHMATE_HELPER_DOCKER_IMAGE, DASHMATE_VERSION } from '../../../../../src/constants.js';
+import { ACTIVATION_STATE } from '../../../../../src/update/probeActivationState.js';
 
 const EXTERNAL_IP = '198.51.100.7';
 
@@ -53,6 +62,11 @@ describe('collectSamplesTaskFactory', () => {
   let dockerCompose;
   let rpcClient;
   let originalUser;
+  let configFile;
+  let defaultConfigs;
+
+  // No migration is keyed above this dashmate, so it produces its own version as the format
+  const getConfigFileMigrations = () => ({ '0.1.0': (configFileData) => configFileData });
 
   /**
    * Run the sample collection the same way the doctor command does: as a subtask
@@ -103,7 +117,28 @@ describe('collectSamplesTaskFactory', () => {
       throwErrorIfNotInstalled: this.sinon.stub().resolves(),
       inspectService: this.sinon.stub().resolves({}),
       logs: this.sinon.stub().resolves({ out: '', err: '' }),
+      getContainersList: this.sinon.stub().resolves([]),
+      isNodeRunning: this.sinon.stub().resolves(false),
     };
+
+    const getBaseConfig = getBaseConfigFactory();
+
+    defaultConfigs = new DefaultConfigs([
+      getBaseConfig,
+      getLocalConfigFactory(getBaseConfig),
+      getTestnetConfigFactory(homeDir, getBaseConfig),
+      getMainnetConfigFactory(homeDir, getBaseConfig),
+    ]);
+
+    // Holds only the base config, which is never a node, unless a test adds nodes to it
+    configFile = new ConfigFile([getBaseConfig()], DASHMATE_VERSION, 'abcdef12', null, null);
+
+    // The config file on disk is migrated to the format this dashmate produces
+    fs.writeFileSync(
+      homeDir.joinPath('config.json'),
+      JSON.stringify({ configFormatVersion: DASHMATE_VERSION }),
+      'utf8',
+    );
 
     rpcClient = {
       getBestChainLock: this.sinon.stub().resolves({ result: {} }),
@@ -126,6 +161,8 @@ describe('collectSamplesTaskFactory', () => {
       this.sinon.stub().resolves({}),
       checkGatewayCertificateFactory(homeDir),
       new RenewalRecordRepository(homeDir),
+      configFile,
+      getConfigFileMigrations,
     );
 
     analyseConfig = analyseConfigFactory();
@@ -231,6 +268,8 @@ describe('collectSamplesTaskFactory', () => {
           expiresInDays: null,
         }),
         new RenewalRecordRepository(homeDir),
+        configFile,
+        getConfigFileMigrations,
       );
 
       getCertificate.resolves(new Certificate({
@@ -356,5 +395,179 @@ describe('collectSamplesTaskFactory', () => {
     await collectSamples();
 
     expect(samples.getServiceInfo('gateway', 'metrics')).to.equal('metrics_sample 1');
+  });
+
+  describe('node activation', () => {
+    let mainnet;
+
+    /**
+     * @param {Config} node - the node set up on this host, next to the stock configs every host
+     *   carries
+     */
+    function hostConfigs(node) {
+      const localNode = new Config('local_1', defaultConfigs.get('local').getStoredOptions());
+      localNode.set('externalIp', EXTERNAL_IP);
+
+      configFile.setConfigs([
+        defaultConfigs.get('base'),
+        defaultConfigs.get('local'),
+        localNode,
+        defaultConfigs.get('testnet'),
+        node,
+      ]);
+    }
+
+    /**
+     * Only the node set up on mainnet has containers; the stock testnet config was never started.
+     *
+     * @param {string} image
+     */
+    function mainnetHelperRuns(image) {
+      dockerCompose.getContainersList.callsFake(async (probed) => (
+        probed.getName() === mainnet.getName() ? [{ State: 'running', Image: image }] : []
+      ));
+    }
+
+    /**
+     * @return {Object}
+     */
+    function sampledMainnet() {
+      return samples.getActivation().configs.find((sampled) => sampled.name === mainnet.getName());
+    }
+
+    beforeEach(() => {
+      // The doctored config's own certificate checks are not what these tests are about
+      config.set('platform.enable', false);
+
+      mainnet = defaultConfigs.get('mainnet');
+      mainnet.set('externalIp', EXTERNAL_IP);
+      mainnet.set('core.masternode.enable', true);
+
+      hostConfigs(mainnet);
+    });
+
+    it('should report a node whose helper still runs the image of the previous dashmate', async () => {
+      mainnetHelperRuns('dashpay/dashmate-helper:0.0.1');
+
+      await collectSamples();
+
+      const problems = analyseActivationFactory()(samples);
+
+      expect(problems).to.have.lengthOf(1);
+      expect(problems[0].getSeverity()).to.equal(SEVERITY.MEDIUM);
+      expect(problems[0].getSolution()).to.include('dashmate restart --config mainnet --safe');
+    });
+
+    it('should report nothing for a node that runs the installed dashmate', async () => {
+      mainnetHelperRuns(DASHMATE_HELPER_DOCKER_IMAGE);
+
+      await collectSamples();
+
+      expect(sampledMainnet().state).to.equal(ACTIVATION_STATE.ACTIVATED);
+      expect(analyseActivationFactory()(samples)).to.be.empty();
+    });
+
+    // Local presets are run and restarted through their group, and base is only a template.
+    it('should probe every config except base and the local network ones', async () => {
+      mainnetHelperRuns(DASHMATE_HELPER_DOCKER_IMAGE);
+
+      await collectSamples();
+
+      expect(dockerCompose.getContainersList.getCalls().map((call) => call.args[0].getName()))
+        .to.deep.equal(['testnet', 'mainnet']);
+      expect(samples.getActivation().configs.map((sampled) => sampled.name))
+        .to.deep.equal(['testnet', 'mainnet']);
+    });
+
+    // A config nobody set up has no containers, and is no more a problem than a stopped node.
+    it('should report nothing for a stock config that was never started', async () => {
+      mainnetHelperRuns(DASHMATE_HELPER_DOCKER_IMAGE);
+
+      await collectSamples();
+
+      const testnet = samples.getActivation().configs.find((sampled) => sampled.name === 'testnet');
+
+      expect(testnet.nodeRunning).to.be.false();
+      expect(analyseActivationFactory()(samples)).to.be.empty();
+    });
+
+    // The helper alone being down says nothing about whether the rest of the node still runs
+    // what the previous dashmate started.
+    it('should record whether the node runs when its helper does not', async () => {
+      dockerCompose.isNodeRunning.callsFake(async (probed) => probed === mainnet);
+
+      await collectSamples();
+
+      expect(sampledMainnet().nodeRunning).to.be.true();
+
+      const problems = analyseActivationFactory()(samples);
+
+      expect(problems).to.have.lengthOf(1);
+      expect(problems[0].getSeverity()).to.equal(SEVERITY.LOW);
+      expect(problems[0].getDescription()).to.include('mainnet');
+    });
+
+    it('should record that it could not tell whether a node without a helper runs', async () => {
+      dockerCompose.isNodeRunning.callsFake(async (probed) => {
+        if (probed === mainnet) {
+          throw new Error('Cannot connect to the Docker daemon');
+        }
+
+        return false;
+      });
+
+      await collectSamples();
+
+      expect(sampledMainnet().nodeRunning).to.be.null();
+      expect(analyseActivationFactory()(samples)).to.have.lengthOf(1);
+    });
+
+    it('should report nothing for a stopped node', async () => {
+      await collectSamples();
+
+      expect(sampledMainnet().nodeRunning).to.be.false();
+      expect(analyseActivationFactory()(samples)).to.be.empty();
+    });
+
+    // Docker being unavailable is already one high severity problem; it must not also become an
+    // unknown for every node on the host.
+    it('should not probe the nodes when docker is not available', async () => {
+      dockerCompose.throwErrorIfNotInstalled.rejects(new Error('Docker is not installed'));
+
+      await collectSamples();
+
+      expect(dockerCompose.getContainersList).to.not.have.been.called();
+      expect(samples.getActivation().error).to.be.a('string');
+      expect(analyseActivationFactory()(samples)).to.be.empty();
+    });
+
+    it('should not fail the collection when the configs cannot be read', async () => {
+      configFile.getAllConfigs = () => {
+        throw new Error('broken config file');
+      };
+
+      await collectSamples();
+
+      expect(samples.getActivation().error).to.include('broken config file');
+    });
+
+    // A docker error can name a path under the operator's home directory, and the report is
+    // handed to whoever is helping. The config name stays as it is: masking it would break the
+    // command the operator is told to run.
+    it('should mask the operator\'s name in probe messages but not in config names', async () => {
+      mainnet = new Config(operator, mainnet.getStoredOptions());
+      hostConfigs(mainnet);
+
+      dockerCompose.getContainersList
+        .rejects(new Error(`Cannot connect to /home/${operator}/.docker/run/docker.sock`));
+
+      await collectSamples();
+
+      const sampled = sampledMainnet();
+
+      expect(sampled.name).to.equal(operator);
+      expect(sampled.message).to.not.include(`/home/${operator}/`);
+      expect(sampled.helper.message).to.not.include(`/home/${operator}/`);
+    });
   });
 });

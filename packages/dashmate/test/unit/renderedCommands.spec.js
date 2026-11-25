@@ -55,7 +55,7 @@ const PRESENTED_IN_SOURCE = new RegExp(
  * whole point of the sweep below.
  */
 /**
- * Where telling an operator to restart Platform is the right advice, and why.
+ * Where telling an operator to restart a node or its Platform is the right advice, and why.
  *
  * A restart makes the gateway re-read the certificate files already on disk, so
  * it helps only where those files are known to be the better ones. Anywhere
@@ -63,6 +63,11 @@ const PRESENTED_IN_SOURCE = new RegExp(
  * node off the network.
  */
 const RESTART_ADVICE_ALLOWED = {
+  'src/doctor/analyse/analyseActivationFactory.js':
+    'dashmate was upgraded but the node still runs the services the previous version started, '
+    + 'and only a restart brings it up on the installed one - there is no other remedy. It is '
+    + 'not certificate advice: the certificate a node will load is judged by `dashmate doctor` '
+    + 'run with that node\'s own --config',
   'src/doctor/analyse/analyseGatewayCertificateFactory.js':
     'a renewed certificate is already on disk, verified newer and usable than the one being '
     + 'served, and only the gateway has not picked it up - re-reading the files is the entire '

@@ -44,6 +44,7 @@ export default async function archiveSamples(samples, folderPath) {
   writeSampleFile(archiveDir, null, 'dockerError', samples.getStringifiedDockerError());
   writeSampleFile(archiveDir, null, 'dashmateConfig', samples.getDashmateConfig());
   writeSampleFile(archiveDir, null, 'dashmateVersion', samples.getDashmateVersion());
+  writeSampleFile(archiveDir, null, 'activation', samples.getActivation());
 
   for (const [serviceName, service] of Object.entries(samples.getServices())) {
     for (const [key, data] of Object.entries(service)) {

@@ -8,6 +8,7 @@ import Problem from './Problem.js';
  * @param {analyseGatewayCertificate} analyseGatewayCertificate
  * @param {analyseCore} analyseCore
  * @param {analysePlatform} analysePlatform
+ * @param {analyseActivation} analyseActivation
  * @return {analyseSamples}
  */
 export default function analyseSamplesFactory(
@@ -17,6 +18,7 @@ export default function analyseSamplesFactory(
   analyseGatewayCertificate,
   analyseCore,
   analysePlatform,
+  analyseActivation,
 ) {
   /**
    * @typedef {Function} analyseSamples
@@ -48,6 +50,8 @@ export default function analyseSamplesFactory(
     problems.push(...analyseCore(samples));
 
     problems.push(...analysePlatform(samples));
+
+    problems.push(...analyseActivation(samples));
 
     return new Prescription(problems);
   }

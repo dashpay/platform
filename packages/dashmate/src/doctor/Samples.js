@@ -29,6 +29,14 @@ export default class Samples {
    */
   #services = {};
 
+  /**
+   * Whether each node on the host runs this dashmate. Host-wide, so it is kept apart from the
+   * selected config's services.
+   *
+   * @type {Object}
+   */
+  #activation;
+
   constructor() {
     this.date = new Date();
   }
@@ -97,5 +105,19 @@ export default class Samples {
 
   getServiceInfo(service, key) {
     return this.#services[service]?.[key];
+  }
+
+  /**
+   * @param {Object} activation
+   */
+  setActivation(activation) {
+    this.#activation = activation;
+  }
+
+  /**
+   * @return {Object|undefined}
+   */
+  getActivation() {
+    return this.#activation;
   }
 }

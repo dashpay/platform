@@ -24,6 +24,7 @@ The archive contains:
 - Node configuration (with sensitive data obfuscated)
 - Service logs, metrics, and status
 - Docker container information
+- The name of every node configured on the host and the helper image it runs
 
 All sensitive data like private keys and passwords is automatically obfuscated to protect your security and privacy.
 
