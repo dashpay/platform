@@ -707,9 +707,11 @@ pub enum PlatformWalletFFIResultCode {
     /// cannot be used yet: its transaction has not reached the queried node,
     /// or it needs a ChainLock proof and is not chain-locked yet. Produced
     /// today by the DashPay invitation claim. The result's class says when:
-    /// `NotSent` and retryable before anything was sent (retry once the lock
-    /// propagates or is chain-locked), `MaybeSent` when Platform refused the
-    /// claim sent with its islock proof.
+    /// `NotSent` and retryable before the claim was built (retry once the lock
+    /// propagates or is chain-locked), `MaybeSent` and not retryable when the
+    /// claim was submitted with its islock proof and refused (stale islock,
+    /// input cap, or a size verdict that may be a node's): it may have been
+    /// sent, so check the invitation's identity before claiming again.
     ErrorAssetLockNotChainLocked = 66,
 
     /// Maps `PlatformWalletError::PrivateContactRequestNeedsPrivateReply`:

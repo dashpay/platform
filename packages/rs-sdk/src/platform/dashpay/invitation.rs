@@ -168,12 +168,15 @@ pub enum InvitationError {
     /// no islock, or Platform refused the claim submitted with its islock
     /// proof). The message says which.
     ///
-    /// `after_broadcast` says when it happened: `false` before the claim was
-    /// sent (the funding transaction was not found, a ChainLock invitation is
-    /// not chain-locked yet, or the islock proof makes the claim too large to
-    /// send), `true` when Platform refused a claim already sent with the
-    /// islock proof (a stale islock, or a funding transaction over the input
-    /// cap) and no ChainLock fallback could be built.
+    /// `after_broadcast` says when it happened: `false` only where no node
+    /// could have answered, before the claim was built (the funding
+    /// transaction was not found, or a ChainLock invitation is not
+    /// chain-locked yet): retry once usable. `true` when the claim was
+    /// submitted with its islock proof and refused (a stale islock, a funding
+    /// transaction over the input cap, or a size verdict, which reads the same
+    /// from the SDK's own check and from a node) with no ChainLock fallback:
+    /// the claim may have been sent, so check whether the invitation's
+    /// identity exists before claiming again.
     #[error("{message}")]
     NotChainLocked {
         message: String,
@@ -1022,7 +1025,9 @@ impl Sdk {
     /// size case only if the claim fits with it, and for the input cap case
     /// only if the islock proof's own transaction is over the cap. If the tx is not yet
     /// chain-locked no fallback is possible and the claim returns
-    /// [`InvitationError::NotChainLocked`] as a retry signal.
+    /// [`InvitationError::NotChainLocked`] with `after_broadcast: true`: the
+    /// refused claim may have been sent, so check the invitation's identity
+    /// before claiming again.
     ///
     /// The invitee's own identity keys (`keys_map`) are signed by
     /// `identity_signer`; the asset-lock's outer state-transition signature is
@@ -1431,8 +1436,9 @@ where
 /// On that rejection the ChainLock `chain_fallback` over the SAME credit output
 /// is submitted —
 /// or, when the funding tx was not yet chain-locked so no fallback could be
-/// built, [`InvitationError::NotChainLocked`] surfaces a clear retry signal instead of
-/// the raw consensus error. Every other error — from the primary or from the
+/// built, [`InvitationError::NotChainLocked`] with `after_broadcast: true`
+/// surfaces instead of the raw consensus error (the refusal may be a node's
+/// answer to the sent claim). Every other error — from the primary or from the
 /// fallback itself — propagates as [`InvitationError::Sdk`] with no
 /// further submission.
 async fn submit_claim_with_chain_lock_fallback<T, F, Fut>(
@@ -1456,30 +1462,29 @@ where
                 .is_some_and(|proof| needs_chain_lock_proof(&e, proof)) =>
         {
             let Some(chain_proof) = chain_fallback else {
-                // Platform refused a stale islock or the input cap after the
-                // claim was sent; the size refusal is the SDK's own check
-                // before anything is sent (`checked_broadcast_request`).
-                let (reason, after_broadcast) = if is_instant_lock_proof_invalid(&e) {
-                    (
-                        "was rejected by Platform (stale — quorum rotated or no longer recent)",
-                        true,
-                    )
+                // Every refusal here may come from a node that received the
+                // signed claim: a stale islock and the input cap are
+                // Platform's verdicts, and a size verdict decodes the same
+                // whether `checked_broadcast_request` raised it before sending
+                // or an endpoint returned it after (#6284 tracks evidence that
+                // tells the two apart). So the claim may have been sent.
+                let reason = if is_instant_lock_proof_invalid(&e) {
+                    "was rejected by Platform (stale — quorum rotated or no longer recent)"
                 } else if as_asset_lock_transaction_too_many_inputs(&e).is_some() {
-                    (
-                        "was rejected by Platform (the funding transaction has more inputs \
-                         than an islock proof may carry)",
-                        true,
-                    )
+                    "was rejected by Platform (the funding transaction has more inputs than \
+                     an islock proof may carry)"
                 } else {
-                    ("makes the claim too large to submit", false)
+                    "was refused as too large (by this SDK's size check, or by a node that \
+                     received it)"
                 };
                 return Err(InvitationError::NotChainLocked {
                     message: format!(
-                        "invitation islock proof {reason} and the funding transaction is not \
-                         yet chain-locked, so no ChainLock fallback is possible; retry once \
-                         the funding block is chain-locked"
+                        "invitation claim with its islock proof {reason}, and the funding \
+                         transaction is not yet chain-locked, so no ChainLock fallback is \
+                         possible. The claim may have been sent: check whether the \
+                         invitation's identity exists before claiming again"
                     ),
-                    after_broadcast,
+                    after_broadcast: true,
                 });
             };
             tracing::warn!(
@@ -3679,7 +3684,10 @@ mod tests {
         }
 
         /// An oversized IS primary with no fallback (funding tx not yet
-        /// chain-locked) surfaces the retry signal after one submission.
+        /// chain-locked) is after the broadcast: the size verdict reads the
+        /// same from `checked_broadcast_request` and from an endpoint's gRPC
+        /// consensus metadata (`From<DapiClientError>` decodes both to this
+        /// `Protocol(ConsensusError)`), so the claim may have been sent.
         #[tokio::test]
         async fn should_surface_the_retry_signal_for_a_too_large_islock_proof_without_fallback() {
             let (result, submitted) = run(None, vec![Err(oversized_rejection())]).await;
@@ -3687,11 +3695,16 @@ mod tests {
             match result {
                 Err(InvitationError::NotChainLocked {
                     message,
-                    after_broadcast: false,
+                    after_broadcast: true,
                 }) => {
                     assert!(
                         message.contains("too large"),
                         "unexpected message: {message}"
+                    );
+                    assert!(
+                        message.contains("may have been sent") && !message.contains("retry"),
+                        "an after-broadcast refusal must send the caller to check the claim, \
+                         not to retry: {message}"
                     );
                 }
                 other => panic!("expected the not-chain-locked retry signal, got {other:?}"),

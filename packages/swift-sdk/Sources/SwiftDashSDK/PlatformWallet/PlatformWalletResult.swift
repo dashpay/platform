@@ -290,7 +290,9 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// was broadcast. Retry once synced.
     case errorInvitationNotReady = 65
     /// The asset lock is not usable yet (not propagated, or not chain-locked
-    /// for a ChainLock proof). Retry later.
+    /// for a ChainLock proof). Read the error's `payment`: `.notSent` means
+    /// retry later; `.maybeSent` means the claim may have been sent, so
+    /// check the invitation's identity before claiming again.
     case errorAssetLockNotChainLocked = 66
     /// The contact requests with that identity came or went privately, so a
     /// public request to it, in reply or as a rotation, would publish the
@@ -907,9 +909,12 @@ public enum PlatformWalletError: LocalizedError {
     /// The asset lock cannot be used yet: its transaction has not reached the
     /// queried node, or it needs a ChainLock proof and is not chain-locked
     /// yet. Produced today by `claimInvitation`. `payment` says when:
-    /// `.notSent` and retryable before anything was sent (retry once the
-    /// lock propagates or is chain-locked), `.maybeSent` when Platform
-    /// refused the claim sent with its islock proof.
+    /// `.notSent` and retryable before the claim was built (retry once the
+    /// lock propagates or is chain-locked), `.maybeSent` and not retryable
+    /// when the claim submitted with its islock proof was refused (stale
+    /// islock, input cap, or a size verdict that may be a node's): it may
+    /// have been sent, so check the invitation's identity before claiming
+    /// again.
     case assetLockNotChainLocked(String, payment: PlatformPaymentClass? = nil)
     /// A key of the DashPay invitation claim is already registered to
     /// another identity (base58 `identityId`, `nil` when Platform refused the

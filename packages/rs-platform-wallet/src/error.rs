@@ -1204,9 +1204,11 @@ pub enum PlatformWalletError {
 
     /// The asset lock cannot be used yet: its transaction has not reached the
     /// queried node, or it is not chain-locked and the operation needs a
-    /// ChainLock proof. `after_broadcast` is `false` when nothing was sent
-    /// (retry once the lock is usable), `true` when Platform refused what
-    /// was already sent with the islock proof.
+    /// ChainLock proof. `after_broadcast` is `false` only where no node could
+    /// have answered (retry once the lock is usable), `true` when the claim
+    /// was submitted with its islock proof and refused (a stale islock, the
+    /// input cap, or a size verdict that may be a node's): it may have been
+    /// sent, so check the invitation's identity before claiming again.
     #[error("Asset lock transaction not chain-locked, cannot fall back to CL proof: {message}")]
     AssetLockNotChainLocked {
         message: String,

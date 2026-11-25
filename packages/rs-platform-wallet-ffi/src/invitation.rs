@@ -327,8 +327,10 @@ fn voucher_handoff_failure(
 /// the broadcast: that one carries the consensus error and an unknown owner,
 /// and the voucher may have been charged. `ErrorAssetLockNotChainLocked` with a
 /// `NotSent` class asks to retry once the funding transaction propagates or is
-/// chain-locked; with `MaybeSent`, Platform refused the claim sent with its
-/// islock proof and no ChainLock fallback could be built yet.
+/// chain-locked; with `MaybeSent`, the claim submitted with its islock proof
+/// was refused (stale islock, input cap, or a size verdict that may be a
+/// node's) and no ChainLock fallback could be built yet: the claim may have
+/// been sent, so check the invitation's identity before claiming again.
 ///
 /// On success writes the new identity id to `*out_identity_id` and a handle into
 /// `MANAGED_IDENTITY_STORAGE` to `*out_identity_handle` (release via
