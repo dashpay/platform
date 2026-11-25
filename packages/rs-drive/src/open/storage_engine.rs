@@ -15,7 +15,7 @@
 use crate::config::{DriveConfig, LigninDbSync, StorageEngine};
 use crate::drive::Drive;
 use crate::error::Error;
-use grovedb::engine::either::lignindb::checkpoint::CREATING_SUFFIX;
+use grovedb::engine::either::lignindb::checkpoint::{CREATING_SUFFIX, DELETING_FILE_NAME};
 use grovedb::engine::either::lignindb::db::DbStats;
 use grovedb::engine::either::lignindb::Options;
 use grovedb::engine::either::SyncPolicy;
@@ -262,6 +262,26 @@ pub(crate) fn delete_closed_checkpoint(path: &Path, engine: StorageEngine) -> st
             removal().map_err(told)
         }
     }
+}
+
+/// Removes the directory at `path` where it is what LigninDB left of a checkpoint whose
+/// creation or deletion was cut short: a directory under the name a checkpoint of a height
+/// is built under, or a directory named after a height that holds the mark of a deletion
+/// that began. The removal is the engine's own, which takes the lock of the directory
+/// first. `None` where `path` is neither, or where `config` does not name LigninDB.
+pub(crate) fn remove_checkpoint_leftover(
+    path: &Path,
+    config: &DriveConfig,
+) -> Option<std::io::Result<()>> {
+    if config.grovedb_storage_engine != StorageEngine::LigninDb {
+        return None;
+    }
+    let is_a_height = |name: &str| name.parse::<u64>().is_ok();
+    let name = path.file_name()?.to_str()?;
+    let left_by_a_creation = name.strip_suffix(CREATING_SUFFIX).is_some_and(is_a_height);
+    let left_by_a_deletion = is_a_height(name) && path.join(DELETING_FILE_NAME).is_file();
+    (left_by_a_creation || left_by_a_deletion)
+        .then(|| delete_closed_checkpoint(path, StorageEngine::LigninDb))
 }
 
 impl Drive {
@@ -592,6 +612,74 @@ mod tests {
                 b"a file"
             );
         }
+    }
+
+    /// At a start on LigninDB the engine removes what a creation or a deletion of a
+    /// checkpoint that was cut short left: the directory a checkpoint was being built in,
+    /// and a checkpoint whose deletion had begun. A checkpoint beside them is loaded, and a
+    /// directory that is neither is left as it was.
+    #[test]
+    fn a_start_on_lignindb_removes_what_an_interrupted_creation_or_deletion_left() {
+        if !the_engine_is_chosen_at_the_open() {
+            return;
+        }
+        let engine = StorageEngine::LigninDb;
+        let directory = tempfile::tempdir().expect("a directory");
+        let path = directory.path().join("db");
+        let checkpoints = path.join("checkpoints");
+        {
+            let (drive, _) = Drive::open(&path, Some(on(engine))).expect("a database");
+            std::fs::create_dir(&checkpoints).expect("the directory of checkpoints");
+            for height in ["5", "7"] {
+                (drive.grove.create_checkpoint(checkpoints.join(height))).expect("a checkpoint");
+            }
+        }
+        let being_made = checkpoints.join(format!("6{CREATING_SUFFIX}"));
+        std::fs::create_dir(&being_made).expect("the directory a checkpoint is built in");
+        std::fs::write(being_made.join("part"), b"a part").expect("a file in it");
+        let being_deleted = checkpoints.join("7");
+        std::fs::rename(
+            being_deleted.join("MANIFEST"),
+            being_deleted.join(DELETING_FILE_NAME),
+        )
+        .expect("the mark of a deletion that began");
+        let neither = checkpoints.join("8");
+        std::fs::create_dir(&neither).expect("a directory with no database");
+        std::fs::write(neither.join("note"), b"a note").expect("a file in it");
+
+        let (drive, _) = Drive::open(&path, Some(on(engine))).expect("the database again");
+        let loaded = drive.checkpoints.load();
+        assert_eq!(loaded.keys().copied().collect::<Vec<_>>(), [5]);
+        assert!(
+            !being_made.exists(),
+            "what the creation left is still there"
+        );
+        assert!(
+            !being_deleted.exists(),
+            "what the deletion left is still there"
+        );
+        assert_eq!(
+            std::fs::read(neither.join("note")).expect("the file"),
+            b"a note"
+        );
+    }
+
+    /// On RocksDB a start removes nothing: a directory with the name LigninDB builds a
+    /// checkpoint under is left as it was.
+    #[test]
+    fn a_start_on_rocksdb_leaves_a_directory_with_the_name_of_lignindbs_staging() {
+        let directory = tempfile::tempdir().expect("a directory");
+        let path = directory.path().join("db");
+        let being_made = path.join("checkpoints").join(format!("6{CREATING_SUFFIX}"));
+        drop(Drive::open(&path, Some(on(StorageEngine::RocksDb))).expect("a database"));
+        std::fs::create_dir_all(&being_made).expect("a directory");
+        std::fs::write(being_made.join("part"), b"a part").expect("a file in it");
+
+        drop(Drive::open(&path, Some(on(StorageEngine::RocksDb))).expect("the database again"));
+        assert_eq!(
+            std::fs::read(being_made.join("part")).expect("the file"),
+            b"a part"
+        );
     }
 
     #[test]

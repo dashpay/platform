@@ -5,7 +5,9 @@ use std::sync::Arc;
 use arc_swap::ArcSwap;
 use dpp::prelude::{BlockHeight, TimestampMillis};
 
-use super::storage_engine::{no_entry_says_a_database, open_grove, Role};
+use super::storage_engine::{
+    no_entry_says_a_database, open_grove, remove_checkpoint_leftover, Role,
+};
 use crate::config::DriveConfig;
 use crate::drive::{Checkpoint, CheckpointInfo, CheckpointsMap};
 use crate::error::Error;
@@ -18,6 +20,9 @@ use crate::error::Error;
 /// that holds no database of that engine is skipped, and none is made in it. Each skip is
 /// logged with the directory: as a warning with the error of the open, or as information
 /// where no entry of the directory says a database, which every start meets again.
+///
+/// On LigninDB, what a creation or a deletion of a checkpoint that was cut short left in
+/// the directory is removed first, by the engine.
 ///
 /// # Arguments
 /// * `db_path` - The path to the database directory (parent of the checkpoints directory)
@@ -49,6 +54,23 @@ pub fn load_current_checkpoints<P: AsRef<Path>>(
 
         // Skip if not a directory
         if !path.is_dir() {
+            continue;
+        }
+
+        if let Some(removed) = remove_checkpoint_leftover(&path, config) {
+            match removed {
+                Ok(()) => tracing::info!(
+                    "removed the directory {}, left by a creation or a deletion of a \
+                     checkpoint that was cut short",
+                    path.display()
+                ),
+                Err(error) => tracing::warn!(
+                    %error,
+                    "the directory {}, left by a creation or a deletion of a checkpoint that \
+                     was cut short, could not be removed",
+                    path.display()
+                ),
+            }
             continue;
         }
 
