@@ -16017,7 +16017,8 @@ typedef GPB_ENUM(SubscribeToStateTransitionsRequest_Version_OneOfCase) {
  * filters matches it; within one filter every given constraint must hold.
  * Matching reads only the transition itself: what it names, not state it
  * changed. Nothing is known about a document before the transition changed it
- * beyond its `$id`.
+ * beyond its `$id`. A transition that failed is never delivered, even one that
+ * was charged for and still changed the balance of an address it names.
  **/
 GPB_FINAL @interface SubscribeToStateTransitionsRequest : GPBMessage
 
@@ -16056,7 +16057,11 @@ GPB_FINAL @interface SubscribeToStateTransitionsRequest_DocumentFilter : GPBMess
 /** Test to see if @c documentTypeName has been set. */
 @property(nonatomic, readwrite) BOOL hasDocumentTypeName;
 
-/** Empty: every action. */
+/**
+ * Empty: every document transition, including an erase (the purge of a
+ * deleted document's retained revisions). No action names an erase, so a
+ * filter that lists actions never delivers one.
+ **/
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<SubscribeToStateTransitionsRequest_DocumentFilter_ActionMatch*> *actionsArray;
 /** The number of items in @c actionsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger actionsArray_Count;

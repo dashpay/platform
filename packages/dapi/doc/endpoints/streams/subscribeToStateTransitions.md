@@ -11,7 +11,9 @@ filters, block by block, from a chosen height onward.
   - `documents`: document transitions (in batch transitions) on one data contract
     - `dataContractId` (required)
     - `documentTypeName`: unset for every document type (actions may then carry no clauses)
-    - `actions`: unset for every action, otherwise up to 12 alternatives, each with:
+    - `actions`: unset for every document transition, including an erase (the purge of a
+      deleted document's retained revisions), which no action names; otherwise up to 12
+      alternatives, none of which delivers an erase, each with:
       - `action`: `CREATE`, `REPLACE`, `DELETE` (also indexOnly deletes), `TRANSFER`,
         `UPDATE_PRICE`, `PURCHASE`
       - `newDocumentWhere`: `CREATE`/`REPLACE` clauses on the document data, typed like
@@ -70,6 +72,11 @@ Filters are evaluated against what a transition itself names, so:
   known, so a query's result set cannot be maintained from transitions alone: track the ids of
   matching documents and subscribe to them by `$id`;
 - shielded senders and recipients are not public;
+- a transition that failed is never delivered, even one that was charged for. Such a transition
+  can still change the balance of an address it names: the fee taken from an address input, or
+  the address credited when an identity cannot be created from the shielded pool. A wallet
+  learns of those from `getRecentAddressBalanceChanges` or a proved balance read, not from this
+  stream;
 - a filter is bound to the contract version current at subscribe time, which later updates
   cannot invalidate from protocol 14 on (on earlier protocol versions an update that widens an
   integer field may need a resubscribe).

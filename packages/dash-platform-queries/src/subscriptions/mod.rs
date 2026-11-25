@@ -134,14 +134,16 @@ pub struct DocumentFilter {
     pub data_contract_id: Identifier,
     /// `None`: every document type of the contract; the actions may then carry no clauses.
     pub document_type_name: Option<String>,
-    /// Empty: every action.
+    /// Empty: every document transition, including an erase (the purge of a deleted document's
+    /// retained revisions). No [`DocumentAction`] names an erase, so a filter that lists
+    /// actions never delivers one.
     pub actions: Vec<DocumentActionMatch>,
     /// The identity that owns (signs) the batch.
     pub batch_owner_id: Option<Identifier>,
 }
 
 impl DocumentFilter {
-    /// Every document transition on `data_contract_id`.
+    /// Every document transition on `data_contract_id`, erases included.
     pub fn new(data_contract_id: Identifier) -> Self {
         Self {
             data_contract_id,

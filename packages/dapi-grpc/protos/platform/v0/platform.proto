@@ -4751,7 +4751,8 @@ message GetBlocksResponse {
 // filters matches it; within one filter every given constraint must hold.
 // Matching reads only the transition itself: what it names, not state it
 // changed. Nothing is known about a document before the transition changed it
-// beyond its `$id`.
+// beyond its `$id`. A transition that failed is never delivered, even one that
+// was charged for and still changed the balance of an address it names.
 message SubscribeToStateTransitionsRequest {
   // Which side of a transition a watched address must be on.
   enum Role {
@@ -4806,7 +4807,9 @@ message SubscribeToStateTransitionsRequest {
     // Unset: every document type of the contract; `actions` must then carry
     // no clauses.
     optional string document_type_name = 2;
-    // Empty: every action.
+    // Empty: every document transition, including an erase (the purge of a
+    // deleted document's retained revisions). No action names an erase, so a
+    // filter that lists actions never delivers one.
     repeated ActionMatch actions = 3;
     // The identity that owns (signs) the batch: the document owner for every
     // action but PURCHASE, where it is the buyer.
