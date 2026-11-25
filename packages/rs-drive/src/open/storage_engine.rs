@@ -176,8 +176,9 @@ pub(crate) fn open_grove(path: &Path, config: &DriveConfig, role: Role) -> Resul
     Ok(GroveDb::from_engine(engine))
 }
 
-/// Whether no entry of the directory at `path` says a database of either engine, as in a
-/// directory in which none was ever made. A directory that cannot be listed is not one.
+/// Whether no entry of the directory at `path` says a database of either engine. An empty
+/// directory and one that has lost every entry that says a database give the same answer.
+/// A directory that cannot be listed is not one.
 pub(crate) fn no_entry_says_a_database(path: &Path) -> bool {
     matches!(EitherEngine::found_at(path), Ok(None))
 }
@@ -264,11 +265,23 @@ pub(crate) fn delete_closed_checkpoint(path: &Path, engine: StorageEngine) -> st
     }
 }
 
-/// Removes the directory at `path` where it is what LigninDB left of a checkpoint whose
-/// creation or deletion was cut short: a directory under the name a checkpoint of a height
-/// is built under, or a directory named after a height that holds the mark of a deletion
-/// that began. The removal is the engine's own, which takes the lock of the directory
-/// first. `None` where `path` is neither, or where `config` does not name LigninDB.
+/// The name of LigninDB's manifest in the directory of a database.
+const LIGNINDB_MANIFEST: &str = "MANIFEST";
+
+/// Hands the directory at `path` to LigninDB's removal where it looks like what a creation
+/// or a deletion of a checkpoint left that was cut short:
+///
+/// - a directory under the name a checkpoint of a height is built under, whatever it
+///   holds, or
+/// - a directory named after a height that holds a file with the name of a deletion's
+///   mark and nothing with the name of the manifest. LigninDB then removes it only where
+///   the mark holds a manifest.
+///
+/// A directory named after a height that holds both names is not handed over: the removal
+/// would take a manifest that is whole for the database to delete, and the mark may be a
+/// file of something else. It is left for the open to refuse and an operator to look at.
+/// Nor is a symbolic link, whatever it names. `None` where `path` is none of these, or
+/// where `config` does not name LigninDB.
 pub(crate) fn remove_checkpoint_leftover(
     path: &Path,
     config: &DriveConfig,
@@ -276,11 +289,18 @@ pub(crate) fn remove_checkpoint_leftover(
     if config.grovedb_storage_engine != StorageEngine::LigninDb {
         return None;
     }
+    let is_a_directory = std::fs::symlink_metadata(path).is_ok_and(|entry| entry.is_dir());
     let is_a_height = |name: &str| name.parse::<u64>().is_ok();
     let name = path.file_name()?.to_str()?;
-    let left_by_a_creation = name.strip_suffix(CREATING_SUFFIX).is_some_and(is_a_height);
-    let left_by_a_deletion = is_a_height(name) && path.join(DELETING_FILE_NAME).is_file();
-    (left_by_a_creation || left_by_a_deletion)
+    let named_as_being_built = name.strip_suffix(CREATING_SUFFIX).is_some_and(is_a_height);
+    let marked_as_being_deleted = || {
+        let mark = std::fs::symlink_metadata(path.join(DELETING_FILE_NAME));
+        let manifest = std::fs::symlink_metadata(path.join(LIGNINDB_MANIFEST));
+        is_a_height(name)
+            && mark.is_ok_and(|mark| mark.is_file())
+            && manifest.is_err_and(|error| not_found(&error))
+    };
+    (is_a_directory && (named_as_being_built || marked_as_being_deleted()))
         .then(|| delete_closed_checkpoint(path, StorageEngine::LigninDb))
 }
 
@@ -616,8 +636,9 @@ mod tests {
 
     /// At a start on LigninDB the engine removes what a creation or a deletion of a
     /// checkpoint that was cut short left: the directory a checkpoint was being built in,
-    /// and a checkpoint whose deletion had begun. A checkpoint beside them is loaded, and a
-    /// directory that is neither is left as it was.
+    /// and a checkpoint whose deletion had begun. The first stands beside a checkpoint of
+    /// its own height, which is loaded: a removal that named the checkpoint in place of
+    /// the directory would take it. A directory that is neither is left as it was.
     #[test]
     fn a_start_on_lignindb_removes_what_an_interrupted_creation_or_deletion_left() {
         if !the_engine_is_chosen_at_the_open() {
@@ -634,12 +655,12 @@ mod tests {
                 (drive.grove.create_checkpoint(checkpoints.join(height))).expect("a checkpoint");
             }
         }
-        let being_made = checkpoints.join(format!("6{CREATING_SUFFIX}"));
+        let being_made = checkpoints.join(format!("5{CREATING_SUFFIX}"));
         std::fs::create_dir(&being_made).expect("the directory a checkpoint is built in");
         std::fs::write(being_made.join("part"), b"a part").expect("a file in it");
         let being_deleted = checkpoints.join("7");
         std::fs::rename(
-            being_deleted.join("MANIFEST"),
+            being_deleted.join(LIGNINDB_MANIFEST),
             being_deleted.join(DELETING_FILE_NAME),
         )
         .expect("the mark of a deletion that began");
@@ -661,6 +682,104 @@ mod tests {
         assert_eq!(
             std::fs::read(neither.join("note")).expect("the file"),
             b"a note"
+        );
+    }
+
+    /// A checkpoint with its manifest in place, beside a file that has the name of a
+    /// deletion's mark, is not removed at a start, whether that file is no manifest or a
+    /// copy of the manifest. It is not opened either, and with the file gone the next
+    /// start loads it.
+    #[test]
+    fn a_start_on_lignindb_keeps_a_checkpoint_whose_manifest_is_beside_a_deletions_mark() {
+        if !the_engine_is_chosen_at_the_open() {
+            return;
+        }
+        let engine = StorageEngine::LigninDb;
+        for the_stray_file_is_a_manifest in [false, true] {
+            let directory = tempfile::tempdir().expect("a directory");
+            let path = directory.path().join("db");
+            let checkpoint = path.join("checkpoints").join("7");
+            {
+                let (drive, _) = Drive::open(&path, Some(on(engine))).expect("a database");
+                std::fs::create_dir(path.join("checkpoints"))
+                    .expect("the directory of checkpoints");
+                (drive.grove.create_checkpoint(&checkpoint)).expect("a checkpoint");
+            }
+            let stray = checkpoint.join(DELETING_FILE_NAME);
+            let held = match the_stray_file_is_a_manifest {
+                true => std::fs::read(checkpoint.join(LIGNINDB_MANIFEST)).expect("the manifest"),
+                false => b"no manifest".to_vec(),
+            };
+            std::fs::write(&stray, held).expect("a file with the name of the mark");
+            {
+                let (drive, _) = Drive::open(&path, Some(on(engine))).expect("the database again");
+                assert!(
+                    drive.checkpoints.load().is_empty(),
+                    "a manifest: {the_stray_file_is_a_manifest}"
+                );
+                assert!(
+                    checkpoint.join(LIGNINDB_MANIFEST).is_file(),
+                    "a manifest: {the_stray_file_is_a_manifest}"
+                );
+            }
+            std::fs::remove_file(&stray).expect("remove the file");
+            let (drive, _) =
+                Drive::open(&path, Some(on(engine))).expect("the database a third time");
+            let loaded = drive.checkpoints.load();
+            assert_eq!(
+                loaded.keys().copied().collect::<Vec<_>>(),
+                [7],
+                "a manifest: {the_stray_file_is_a_manifest}"
+            );
+        }
+    }
+
+    /// A symbolic link is not removed at a start, whatever its name and whatever it names:
+    /// neither one with the name a checkpoint is built under, nor one named after a height
+    /// to a directory that holds a deletion's mark.
+    #[cfg(unix)]
+    #[test]
+    fn a_start_on_lignindb_leaves_a_symbolic_link_with_the_looks_of_a_leftover() {
+        if !the_engine_is_chosen_at_the_open() {
+            return;
+        }
+        let engine = StorageEngine::LigninDb;
+        let directory = tempfile::tempdir().expect("a directory");
+        let path = directory.path().join("db");
+        let checkpoints = path.join("checkpoints");
+        drop(Drive::open(&path, Some(on(engine))).expect("a database"));
+        std::fs::create_dir(&checkpoints).expect("the directory of checkpoints");
+        let built_elsewhere = directory.path().join("built");
+        std::fs::create_dir(&built_elsewhere).expect("a directory");
+        std::fs::write(built_elsewhere.join("part"), b"a part").expect("a file in it");
+        let marked_elsewhere = directory.path().join("marked");
+        std::fs::create_dir(&marked_elsewhere).expect("a directory");
+        std::fs::write(marked_elsewhere.join(DELETING_FILE_NAME), b"no manifest")
+            .expect("a file with the name of the mark");
+        let links = [
+            (
+                checkpoints.join(format!("6{CREATING_SUFFIX}")),
+                &built_elsewhere,
+            ),
+            (checkpoints.join("9"), &marked_elsewhere),
+        ];
+        for (link, named) in &links {
+            std::os::unix::fs::symlink(named, link).expect("a symbolic link");
+        }
+
+        let (drive, _) = Drive::open(&path, Some(on(engine))).expect("the database again");
+        assert!(drive.checkpoints.load().is_empty());
+        for (link, _) in &links {
+            let entry = std::fs::symlink_metadata(link).expect("the link");
+            assert!(entry.file_type().is_symlink(), "{}", link.display());
+        }
+        assert_eq!(
+            std::fs::read(built_elsewhere.join("part")).expect("the file"),
+            b"a part"
+        );
+        assert_eq!(
+            std::fs::read(marked_elsewhere.join(DELETING_FILE_NAME)).expect("the file"),
+            b"no manifest"
         );
     }
 

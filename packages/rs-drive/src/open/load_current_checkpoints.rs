@@ -21,8 +21,10 @@ use crate::error::Error;
 /// logged with the directory: as a warning with the error of the open, or as information
 /// where no entry of the directory says a database, which every start meets again.
 ///
-/// On LigninDB, what a creation or a deletion of a checkpoint that was cut short left in
-/// the directory is removed first, by the engine.
+/// On LigninDB, a directory is handed to the engine's removal first where its name is a
+/// height with the suffix a checkpoint is built under, or where its name is a height and
+/// it holds the mark of a deletion and no manifest. Every other entry goes on through the
+/// scan: one whose name is a height is opened, and the rest are passed over.
 ///
 /// # Arguments
 /// * `db_path` - The path to the database directory (parent of the checkpoints directory)
@@ -60,14 +62,15 @@ pub fn load_current_checkpoints<P: AsRef<Path>>(
         if let Some(removed) = remove_checkpoint_leftover(&path, config) {
             match removed {
                 Ok(()) => tracing::info!(
-                    "removed the directory {}, left by a creation or a deletion of a \
-                     checkpoint that was cut short",
+                    "removed the directory {}: it had the name a checkpoint is built under, \
+                     or held the mark of a deletion and no manifest",
                     path.display()
                 ),
                 Err(error) => tracing::warn!(
                     %error,
-                    "the directory {}, left by a creation or a deletion of a checkpoint that \
-                     was cut short, could not be removed",
+                    "the removal of the directory {} returned an error: it was chosen for \
+                     the name a checkpoint is built under, or for the mark of a deletion \
+                     and no manifest",
                     path.display()
                 ),
             }
