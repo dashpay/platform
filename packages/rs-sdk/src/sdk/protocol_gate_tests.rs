@@ -87,6 +87,8 @@ use dapi_grpc::platform::v0::{
 use dapi_grpc::tonic::Status;
 use dapi_grpc::Message;
 use dash_context_provider::{ContextProvider, ContextProviderError};
+use dash_platform_queries::subscriptions::{subscribe_request, Role, StateTransitionFilter};
+use dpp::address_funds::PlatformAddress;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::TokenConfiguration;
@@ -105,6 +107,7 @@ use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::version::v13::PROTOCOL_VERSION_13;
 use dpp::version::v14::PROTOCOL_VERSION_14;
 use dpp::version::v15::PROTOCOL_VERSION_15;
+use dpp::version::v16::PROTOCOL_VERSION_16;
 use dpp::version::{PlatformVersion, PLATFORM_VERSIONS};
 use dpp::voting::vote_polls::yes_no_vote_poll::{
     YesNoMinimumVotingPower, YesNoVotePoll, YesNoVotePollPurpose,
@@ -3899,4 +3902,52 @@ mod document_history {
         }
         assert_eq!(probes(&sdk).await, 0);
     }
+}
+
+/// A 5.1 node does not know `subscribeToStateTransitions`. An SDK at protocol version 16,
+/// seeded or pinned, on a network a verified answer shows below it opens no stream; once the
+/// network is verified at 16 it does.
+#[tokio::test]
+async fn should_open_no_state_transition_stream_until_the_network_is_verified_at_16() {
+    let filters = vec![StateTransitionFilter::Addresses {
+        addresses: vec![PlatformAddress::P2pkh([1; 20])],
+        role: Role::Any,
+    }];
+    let request = subscribe_request(&filters, Some(42)).unwrap();
+
+    for pinned in [false, true] {
+        let sdk = mock_sdk(PROTOCOL_VERSION_16, pinned, V14);
+        answer_probe(&sdk, "pv14").await;
+        match sdk
+            .subscribe_to_state_transitions(filters.clone(), Some(42), None)
+            .await
+            .map(drop)
+        {
+            Err(Error::ProtocolVersionNotActive {
+                method: "subscribe_to_state_transitions",
+                required: PROTOCOL_VERSION_16,
+                network: V14,
+                pinned: false,
+                cause: None,
+                ..
+            }) => {}
+            other => panic!("pinned {pinned}: expected a local refusal, got {other:?}"),
+        }
+        assert_eq!(probes(&sdk).await, 1, "pinned {pinned}");
+        assert_eq!(sent(&sdk, &request).await, 0, "pinned {pinned}");
+        assert!(!sdk.address_list().is_banned(&node()), "pinned {pinned}");
+    }
+
+    // The mock holds no stream to answer with, so the open fails, but it was sent.
+    let sdk = mock_sdk(PROTOCOL_VERSION_16, false, PROTOCOL_VERSION_16);
+    let result = sdk
+        .subscribe_to_state_transitions(filters, Some(42), None)
+        .await
+        .map(drop);
+    assert!(
+        matches!(&result, Err(Error::DapiClientError(_))),
+        "the node's own answer surfaces, got {result:?}"
+    );
+    assert_eq!(probes(&sdk).await, 0);
+    assert_eq!(sent(&sdk, &request).await, 1);
 }

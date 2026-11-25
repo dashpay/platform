@@ -2,7 +2,8 @@
 //!
 //! [`Sdk::subscribe_to_state_transitions`] opens a `subscribeToStateTransitions` stream and
 //! returns a [`StateTransitionSubscription`] yielding the transitions that match any of the
-//! filters, as the node evaluated them, block by block, plus checkpoints.
+//! filters, as the node evaluated them, block by block, plus checkpoints. Nodes serve the stream
+//! from protocol version 16; on a network not proven to run it, subscribing is refused.
 //!
 //! What a subscription is worth:
 //! - delivery is at least once, and may be incomplete: a node can leave a match out;
@@ -44,6 +45,7 @@
 //! }
 //! ```
 
+use crate::platform::ProtocolRequirement;
 use crate::{Error, Sdk};
 use dapi_grpc::platform::v0::subscribe_to_state_transitions_response::subscribe_to_state_transitions_response_v0::{
     Responses, StateTransitionMatch,
@@ -254,6 +256,9 @@ impl Sdk {
     /// `from_block_height` (inclusive), or from after the current tip when `None`. The first
     /// stream is opened as a reopen would be: a refused request fails here, a transient failure
     /// is retried by [`StateTransitionSubscription::next`].
+    ///
+    /// Nodes serve the stream from protocol version 16. Before the network is proven to run it,
+    /// the call is refused with [`Error::ProtocolVersionNotActive`] and no stream is opened.
     pub async fn subscribe_to_state_transitions(
         &self,
         filters: Vec<StateTransitionFilter>,
@@ -261,6 +266,14 @@ impl Sdk {
         config: Option<SubscriptionConfig>,
     ) -> Result<StateTransitionSubscription, Error> {
         let config = config.unwrap_or_default();
+        // A node of an older release does not know the method. Checked once: a network's
+        // protocol version never goes down, so every reopen is served too.
+        let first_request = subscribe_request(&filters, from_block_height)?;
+        self.ensure_network_serves(
+            ProtocolRequirement::of_request(&first_request),
+            Some(config.request_settings),
+        )
+        .await?;
         let sdk = self.clone();
         let settings = config.request_settings;
         let open: Opener = Box::new(move |request| {
