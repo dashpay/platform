@@ -286,7 +286,7 @@ impl DashpayGenerations {
         let derives = |account: &Account| {
             account
                 .derive_address_at(pool_type, info.index, None)
-                .is_ok_and(|address| address.script_pubkey() == info.script_pubkey)
+                .is_ok_and(|address| address.script_pubkey() == info.address.script_pubkey())
         };
         if derives(&self.current) {
             return Generation::Current;
@@ -428,7 +428,7 @@ fn write_pools(
                         xpub,
                         pool_type,
                         i64::from(info.index),
-                        info.script_pubkey.as_bytes(),
+                        script_pubkey.as_bytes(),
                         info.is_used(),
                         public_key,
                         key_type,
