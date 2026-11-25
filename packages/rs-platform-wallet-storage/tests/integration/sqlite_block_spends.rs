@@ -979,11 +979,13 @@ async fn a_spend_the_host_stored_after_a_truncation_survives_the_truncation_even
     );
 }
 
-/// The manager truncates wallet by wallet and emits the `ChainTruncated`
-/// events only once every wallet's truncation returned Ok, so a later
-/// wallet's failure leaves an earlier wallet truncated with no event. That
-/// truncation's captures and the next truncation's must both survive the
-/// next `ChainTruncated` round when a late older event drained them first.
+/// A wrapper truncation that returned Ok but whose `ChainTruncated` never
+/// comes: what a direct call leaves, and what the manager would leave if a
+/// later wallet's truncation failed after this one's (it emits the events
+/// only once every wallet's returned Ok; at the pinned rev its pre-check
+/// makes that failure unreachable). The spends captured after it and after
+/// the next truncation must both survive the next `ChainTruncated` round
+/// when a late older event drained them first.
 #[tokio::test]
 async fn a_truncation_without_its_event_keeps_every_later_spend_through_the_next_one() {
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
@@ -1064,6 +1066,65 @@ async fn a_truncation_without_its_event_keeps_every_later_spend_through_the_next
         stored(&persister.inner, &wallet_id),
         BTreeSet::from([base, first, second]),
         "every spend captured after either truncation is kept"
+    );
+}
+
+/// Two truncations, the second deeper, and a late older event, all stored
+/// in one adapter drain: the spend captured after the deeper truncation is
+/// kept, and every spend above it from before is gone.
+#[tokio::test]
+async fn a_deeper_second_truncation_in_one_drain_keeps_only_the_spends_captured_after_it() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let wallet = Wallet::new_random(
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .expect("wallet");
+    let manifest_wallet = wallet.clone();
+    let (manager, wallet_id, mut queued) = wallet_manager_with_persistence(wallet);
+    register(&persister, wallet_id, &manifest_wallet);
+    let persister = Arc::new(Recording {
+        inner: persister,
+        truncations: Mutex::new(Vec::new()),
+    });
+    let (base, old_101, old_102, between, after) =
+        (coin(0x80), coin(0x81), coin(0x82), coin(0x83), coin(0x84));
+    {
+        let mut wm = manager.write().await;
+        wm.get_wallet_info_mut(&wallet_id)
+            .unwrap()
+            .restore_spent_outpoints(&[
+                (base, None),
+                (old_101, None),
+                (old_102, None),
+                (between, None),
+                (after, None),
+            ]);
+        process_spend(&mut wm, wallet_id, 100, base).await;
+        process_spend(&mut wm, wallet_id, 101, old_101).await;
+    }
+    persist_queued(&manager, &mut queued, &persister).await;
+    persister.flush(wallet_id).expect("flush");
+    assert_eq!(
+        stored(&persister.inner, &wallet_id),
+        BTreeSet::from([base, old_101])
+    );
+
+    {
+        let mut wm = manager.write().await;
+        process_spend(&mut wm, wallet_id, 102, old_102).await;
+        wm.truncate_above(101).expect("truncates");
+        process_spend(&mut wm, wallet_id, 102, between).await;
+        wm.truncate_above(100).expect("truncates");
+        process_spend(&mut wm, wallet_id, 101, after).await;
+    }
+    persist_queued(&manager, &mut queued, &persister).await;
+    persister.flush(wallet_id).expect("flush");
+
+    assert_eq!(
+        stored(&persister.inner, &wallet_id),
+        BTreeSet::from([base, after]),
+        "only the spend captured after the deeper truncation is kept above it"
     );
 }
 
