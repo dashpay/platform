@@ -13,16 +13,21 @@
 //! A broken stream (including the transport's periodic streaming timeout) is resumed from the
 //! height after the last checkpoint, possibly on another node, so transitions after it may be
 //! delivered again. A node that sends something invalid (a wrong hash, indexes or positions out
-//! of range, a stream that does not open with the checkpoint before its start, a checkpoint
-//! going backwards) is banned (only moved out of the rotation when `ban_failed_address` is off)
-//! and the stream resumed elsewhere. A node that lacks the heights asked for, or has no room
-//! for another stream, still serves other requests: the stream moves off it and it is not
-//! banned. A transition this SDK cannot decode is asked of another node first; when a second
-//! stream delivers the same bytes the subscription ends: the SDK is likely older than the
-//! network. A checkpoint is the node's word like the rest of the stream, and one ahead of the
-//! chain is taken as it is. Nodes that have not reached the height then refuse the stream, as
-//! nodes that pruned a height do: once 8 in a row lack the heights asked for, the subscription
-//! ends, and the app catches up from a proved read.
+//! of range, a stream that opens above the height it was asked to start at or with anything
+//! but a checkpoint, a later checkpoint going backwards) is banned (only moved out of the
+//! rotation when `ban_failed_address` is off) and the stream resumed elsewhere. A node that
+//! lacks the heights asked for, or has no room for another stream, still serves other requests:
+//! the stream moves off it and it is not banned. A transition this SDK cannot decode is asked
+//! of another node first; when a second node delivers the same bytes the subscription ends:
+//! the SDK is likely older than the network.
+//!
+//! A checkpoint is the node's word like the rest of the stream, and one that names a height
+//! the chain has not reached is taken as it is. It does not outlast its node: a node starts a
+//! stream no higher than the block after its own tip and opens with the checkpoint there, and
+//! the place to resume from follows it down, so the blocks committed since are scanned. A node
+//! more than 1,000 blocks short of the height refuses the stream, as a node that pruned a
+//! height does: once 8 in a row lack the heights asked for, the subscription ends, and the app
+//! catches up from a proved read.
 //!
 //! ```no_run
 //! use dash_sdk::dash_platform_queries::subscriptions::{DocumentFilter, StateTransitionFilter};
@@ -82,6 +87,10 @@ const FIRST_RETRY_DELAY: Duration = Duration::from_secs(1);
 /// Nodes in a row that may lack the heights asked for, without the place to resume from
 /// moving, before the subscription ends.
 const MAX_NODES_LACKING_HEIGHTS_IN_A_ROW: u32 = 8;
+
+/// Times one node may send a transition this SDK cannot decode, with no other node sending
+/// it, before the subscription ends.
+const MAX_UNDECODABLE_FROM_ONE_NODE: u32 = 3;
 
 /// Settings of a state transition subscription.
 #[derive(Debug, Clone)]
@@ -151,10 +160,11 @@ struct OpenStream {
 /// What a stream must send before anything else: the checkpoint that says where it starts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FirstMessage {
-    /// A checkpoint at this height, the one before the height the stream was opened at. A
-    /// node that starts anywhere else would move the place to resume from past blocks it
-    /// never scanned, or back.
-    CheckpointAt(u64),
+    /// A checkpoint no higher than this height, the one before the height the stream was
+    /// opened at. A node starts there, or lower when its chain has not reached it, which only
+    /// delivers again. One that starts higher would move the place to resume from past blocks
+    /// nobody scanned.
+    CheckpointUpTo(u64),
     /// A checkpoint at the height the node starts after: a live start names none.
     AnyCheckpoint,
     /// It was sent.
@@ -169,7 +179,7 @@ impl OpenStream {
             address,
             opened: Clock::now(),
             first_message: match from_block_height {
-                Some(height) => FirstMessage::CheckpointAt(height.saturating_sub(1)),
+                Some(height) => FirstMessage::CheckpointUpTo(height.saturating_sub(1)),
                 None => FirstMessage::AnyCheckpoint,
             },
         }
@@ -212,8 +222,8 @@ enum Refusal {
     /// This SDK cannot decode the node's bytes. Their hash is the node's word too, so they
     /// may be this node's alone: resume on another node, without blaming this one.
     AskAnotherNode(Error),
-    /// A second stream delivered the bytes this SDK cannot decode: they are not one node's,
-    /// so the subscription ends.
+    /// A second node delivered the bytes this SDK cannot decode, or the only node that
+    /// answers keeps delivering them: the subscription ends.
     Undecodable(Error),
 }
 
@@ -222,6 +232,15 @@ enum Refusal {
 struct UndecodedTransition {
     block_height: u64,
     state_transition_hash: [u8; 32],
+}
+
+/// A transition this SDK could not decode, the node that sent it first, and how many times
+/// that node has sent it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Undecoded {
+    transition: UndecodedTransition,
+    node: Option<Address>,
+    times: u32,
 }
 
 impl From<Error> for Refusal {
@@ -253,9 +272,9 @@ pub struct StateTransitionSubscription {
     stream: Option<OpenStream>,
     /// Where the next stream starts; `None` until the first checkpoint of a live start.
     resume_from: Option<u64>,
-    /// The transition the last stream sent that this SDK could not decode, until a checkpoint
-    /// passes its block.
-    undecoded: Option<UndecodedTransition>,
+    /// The transition a stream sent that this SDK could not decode, until a checkpoint passes
+    /// its block.
+    undecoded: Option<Undecoded>,
     /// Nodes in a row that lacked the heights asked for, since the place to resume from moved.
     lacking_heights_in_a_row: u32,
     /// The wait before the next reconnect, and the one after it.
@@ -378,9 +397,12 @@ impl StateTransitionSubscription {
 
     /// The next matching transition or checkpoint. Cancel-safe. Broken streams are resumed
     /// without limit; an error means the subscription cannot continue (the request was refused,
-    /// a live start broke before its first checkpoint, two streams delivered a transition this
-    /// SDK cannot decode, or no node holds the heights asked for), and every later call fails
-    /// too.
+    /// a live start broke before its first checkpoint, two nodes delivered a transition this
+    /// SDK cannot decode or the only node that answers kept delivering it, or no node holds the
+    /// heights asked for), and every later call fails too.
+    ///
+    /// A checkpoint can be lower than one before it: a stream that resumes on a node whose
+    /// chain has not reached the place to resume from starts at that node's tip.
     pub async fn next(&mut self) -> Result<SubscriptionEvent, Error> {
         if let Some(reason) = &self.terminated {
             return Err(Error::Cancelled(format!(
@@ -575,40 +597,45 @@ impl StateTransitionSubscription {
             Some(stream) => std::mem::replace(&mut stream.first_message, FirstMessage::Sent),
             None => FirstMessage::Sent,
         };
-        match (first_message, &response.responses) {
-            (FirstMessage::Sent, _)
-            | (FirstMessage::AnyCheckpoint, Some(Responses::Checkpoint(_))) => {}
-            (FirstMessage::CheckpointAt(height), Some(Responses::Checkpoint(checkpoint)))
-                if checkpoint.block_height == height => {}
+        let opens = match (first_message, &response.responses) {
+            (FirstMessage::Sent, _) => false,
+            (FirstMessage::AnyCheckpoint, Some(Responses::Checkpoint(_))) => true,
+            (FirstMessage::CheckpointUpTo(height), Some(Responses::Checkpoint(checkpoint)))
+                if checkpoint.block_height <= height =>
+            {
+                true
+            }
             _ => {
                 return Err(node_fault(
-                    "the stream did not open with the checkpoint before its start",
+                    "the stream did not open with a checkpoint at or before its start",
                 )
                 .into())
             }
-        }
+        };
         match response.responses {
             Some(Responses::Checkpoint(checkpoint)) => {
                 let resume_from = checkpoint
                     .block_height
                     .checked_add(1)
                     .ok_or_else(|| node_fault("checkpoint at the maximum height"))?;
-                if self
+                let behind = self
                     .resume_from
-                    .is_some_and(|current| resume_from < current)
-                {
+                    .is_some_and(|current| resume_from < current);
+                // Only the checkpoint a stream opens with may be behind: its node starts at
+                // its own tip when the chain it sees has not reached the height asked for,
+                // and the place to resume from follows it, so nothing in between is skipped.
+                if behind && !opens {
                     return Err(node_fault("checkpoint before the previous one").into());
                 }
-                if self.resume_from != Some(resume_from) {
+                if self.resume_from.is_none_or(|current| resume_from > current) {
                     self.retry_delay = FIRST_RETRY_DELAY;
                     self.lacking_heights_in_a_row = 0;
                 }
                 self.resume_from = Some(resume_from);
                 // A stream got past the block: what an earlier one sent of it is settled.
-                if self
-                    .undecoded
-                    .is_some_and(|undecoded| undecoded.block_height <= checkpoint.block_height)
-                {
+                if self.undecoded.as_ref().is_some_and(|undecoded| {
+                    undecoded.transition.block_height <= checkpoint.block_height
+                }) {
                     self.undecoded = None;
                 }
                 Ok(SubscriptionEvent::Checkpoint {
@@ -638,7 +665,7 @@ impl StateTransitionSubscription {
         }
         let state_transition = decode(&matched.state_transition, matched.protocol_version)
             .map_err(|cause| {
-                let undecoded = UndecodedTransition {
+                let transition = UndecodedTransition {
                     block_height: matched.block_height,
                     state_transition_hash,
                 };
@@ -647,16 +674,38 @@ impl StateTransitionSubscription {
                      {cause}",
                     matched.block_height, matched.protocol_version
                 );
-                if self.undecoded.replace(undecoded) == Some(undecoded) {
-                    Refusal::Undecodable(Error::Protocol(ProtocolError::DecodingError(format!(
-                        "{cannot_decode}; two streams in a row delivered these bytes, so this \
-                         SDK is likely older than the network: upgrade it"
-                    ))))
-                } else {
-                    Refusal::AskAnotherNode(Error::Protocol(ProtocolError::DecodingError(
-                        cannot_decode,
-                    )))
+                let undecodable =
+                    |why| Refusal::Undecodable(Error::Protocol(ProtocolError::DecodingError(why)));
+                let node = self.stream.as_ref().map(|stream| stream.address.clone());
+                let times = match self.undecoded.take() {
+                    // Two nodes agree on the bytes: they are the chain's, and it is this SDK
+                    // that cannot read them.
+                    Some(seen) if seen.transition == transition && seen.node != node => {
+                        return undecodable(format!(
+                            "{cannot_decode}; a second node delivered these bytes, so this SDK \
+                             is likely older than the network: upgrade it"
+                        ));
+                    }
+                    Some(seen) if seen.transition == transition => seen.times + 1,
+                    _ => 1,
+                };
+                // One node's word does not tell a faulty node from an SDK too old, however
+                // often it repeats it, so the error names both.
+                if times >= MAX_UNDECODABLE_FROM_ONE_NODE {
+                    return undecodable(format!(
+                        "{cannot_decode}; one node delivered these bytes {times} times and no \
+                         other node could be asked: that node is faulty, or this SDK is older \
+                         than the network"
+                    ));
                 }
+                self.undecoded = Some(Undecoded {
+                    transition,
+                    node,
+                    times,
+                });
+                Refusal::AskAnotherNode(Error::Protocol(ProtocolError::DecodingError(
+                    cannot_decode,
+                )))
             })?;
         // Positions index the batch's transitions; any other transition has none.
         let transitions = match &state_transition {
@@ -764,6 +813,16 @@ mod tests {
 
     fn node() -> Address {
         "https://127.0.0.1:1".parse().expect("address")
+    }
+
+    /// A node other than the one every reopened stream comes from.
+    fn first_node() -> Address {
+        "https://127.0.0.1:7".parse().expect("address")
+    }
+
+    /// Have the open stream of `subscription` come from `address`.
+    fn served_by(subscription: &mut StateTransitionSubscription, address: Address) {
+        subscription.stream.as_mut().expect("a stream").address = address;
     }
 
     /// A subscription with two filters and no stream yet, whose opens yield `opens` in turn
@@ -1030,9 +1089,9 @@ mod tests {
                 ))))
             };
             assert_eq!(accept(16), Ok(()), "protocol version {protocol_version}");
-            // The SDK's own bound refuses them, whichever node sends them: the first is not
-            // blamed, and the second shows they are not one node's.
-            for refusal in ["another node", "undecodable"] {
+            // The SDK's own bound refuses them, and no node is blamed for it: another is
+            // asked until the same one has sent them three times.
+            for refusal in ["another node", "another node", "undecodable"] {
                 let error = accept(300).expect_err("too deep");
                 assert!(
                     error.starts_with(refusal) && error.contains("exceeds maximum 256"),
@@ -1046,7 +1105,7 @@ mod tests {
     fn should_not_blame_the_node_for_a_protocol_version_this_sdk_does_not_know() {
         let mut subscription = opened(42);
         let unknown = PlatformVersion::latest().protocol_version + 1;
-        let mut accept = || {
+        let accept = |subscription: &mut StateTransitionSubscription| {
             outcome(subscription.accept(response(Responses::StateTransition(
                 StateTransitionMatch {
                     protocol_version: unknown,
@@ -1056,9 +1115,11 @@ mod tests {
             .expect_err("unknown version")
         };
         // The version is the node's word: another node is asked before it is believed.
-        let first = accept();
+        served_by(&mut subscription, first_node());
+        let first = accept(&mut subscription);
         assert!(first.starts_with("another node"), "{first}");
-        let second = accept();
+        served_by(&mut subscription, node());
+        let second = accept(&mut subscription);
         assert!(
             second.starts_with("undecodable") && second.contains("upgrade"),
             "{second}"
@@ -1101,8 +1162,8 @@ mod tests {
 
     /// The hash of bytes this SDK cannot decode is the node's word like the bytes, so one
     /// node sending them proves nothing about the others: the stream moves to another node,
-    /// and the first is not blamed. When that one delivers the same bytes, they are not one
-    /// node's, and the subscription ends.
+    /// and the first is not blamed. When a second node delivers the same bytes, they are the
+    /// chain's, and the subscription ends: this SDK cannot read them.
     #[tokio::test(start_paused = true)]
     async fn should_ask_another_node_before_ending_on_a_transition_it_cannot_decode() {
         let undecodable = || {
@@ -1113,6 +1174,7 @@ mod tests {
         let watched = |subscription: &StateTransitionSubscription| {
             let mut addresses = subscription.sdk.address_list().clone();
             addresses.add(node());
+            addresses.add(first_node());
             addresses
         };
 
@@ -1124,6 +1186,7 @@ mod tests {
             checkpoint(77),
         ]);
         let (mut recovered, opened) = subscription(Some(42), first, vec![second]);
+        served_by(&mut recovered, first_node());
         let addresses = watched(&recovered);
         for _ in 0..2 {
             assert!(matches!(
@@ -1142,13 +1205,14 @@ mod tests {
         ));
         assert!(recovered.undecoded.is_none());
         assert_eq!(opens(&opened), vec![Some(42)]);
-        assert!(!addresses.is_banned(&node()));
+        assert!(!addresses.is_banned(&first_node()) && !addresses.is_banned(&node()));
 
-        // The next node sends the same bytes: this SDK cannot read the transition.
+        // A second node sends the same bytes: this SDK cannot read the transition.
         let first = silent(vec![checkpoint(41), undecodable()]);
         let second = silent(vec![checkpoint(41), undecodable()]);
         let third = silent(vec![checkpoint(41)]);
         let (mut repeated, reopened) = subscription(Some(42), first, vec![second, third]);
+        served_by(&mut repeated, first_node());
         let addresses = watched(&repeated);
         for _ in 0..2 {
             assert!(repeated.next().await.is_ok());
@@ -1160,17 +1224,51 @@ mod tests {
         );
         assert!(repeated.next().await.is_err());
         assert_eq!(opens(&reopened), vec![Some(42)], "no third node is tried");
-        assert!(!addresses.is_banned(&node()));
+        assert!(!addresses.is_banned(&first_node()) && !addresses.is_banned(&node()));
     }
 
-    /// A stream opened at a height starts with the checkpoint before it, and a live one with
-    /// a checkpoint. A node that starts anywhere else would move the place to resume from
-    /// past blocks nobody scanned: it is at fault, and the place to resume from stays.
+    /// The same node sending the bytes again adds nothing to its word: the reopened stream
+    /// can land on it when no other node is live. It is asked three times, and the error then
+    /// says what one node's word leaves open, not that the SDK must be upgraded.
     #[tokio::test(start_paused = true)]
-    async fn should_refuse_a_stream_that_does_not_open_with_the_checkpoint_before_its_start() {
+    async fn should_not_take_one_nodes_repeated_bytes_as_a_reason_to_upgrade() {
+        let undecodable = || {
+            let mut undecodable = transition(vec![0xff, 0x00, 0x13]);
+            undecodable.block_height = 77;
+            silent(vec![
+                checkpoint(41),
+                Ok(Responses::StateTransition(undecodable)),
+            ])
+        };
+        let (mut subscription, opened) = subscription(
+            Some(42),
+            undecodable(),
+            vec![undecodable(), undecodable(), silent(vec![checkpoint(41)])],
+        );
+        // Every stream comes from the one node, and each opens with its checkpoint.
+        for _ in 0..3 {
+            assert!(matches!(
+                subscription.next().await,
+                Ok(SubscriptionEvent::Checkpoint { block_height: 41 })
+            ));
+        }
+        let error = subscription.next().await.expect_err("undecodable");
+        let error = error.to_string();
+        assert!(
+            error.contains("3 times") && error.contains("faulty") && !error.contains("upgrade it"),
+            "{error}"
+        );
+        assert_eq!(opens(&opened), vec![Some(42), Some(42)]);
+    }
+
+    /// A stream opens with a checkpoint, no higher than the height before the one it was
+    /// opened at. A node that opens higher would move the place to resume from past blocks
+    /// nobody scanned: it is at fault, and the place to resume from stays.
+    #[tokio::test(start_paused = true)]
+    async fn should_refuse_a_stream_that_opens_above_its_start_or_without_a_checkpoint() {
         for opening in [
             checkpoint(5_000_000),
-            checkpoint(40),
+            checkpoint(42),
             Ok(Responses::StateTransition(transition(transfer()))),
         ] {
             let first = silent(vec![opening, checkpoint(6_000_000)]);
@@ -1195,6 +1293,65 @@ mod tests {
         let (mut live, _) = subscription(None, unannounced, vec![]);
         assert!(live.next().await.is_err());
         assert_eq!(live.resume_height(), None);
+    }
+
+    /// A node whose chain has not reached the height it is asked to start at starts at its
+    /// own tip and says so with its opening checkpoint. The place to resume from follows it
+    /// down, which only delivers again. After the opening, a checkpoint never goes back.
+    #[tokio::test(start_paused = true)]
+    async fn should_follow_a_stream_that_opens_below_its_start_and_no_other_checkpoint_back() {
+        let first = silent(vec![checkpoint(30), checkpoint(35), checkpoint(34)]);
+        let second = silent(vec![checkpoint(35)]);
+        let (mut subscription, opened) = subscription(Some(42), first, vec![second]);
+        for expected in [30, 35] {
+            assert!(matches!(
+                subscription.next().await,
+                Ok(SubscriptionEvent::Checkpoint { block_height }) if block_height == expected
+            ));
+            assert_eq!(subscription.resume_height(), Some(expected + 1));
+        }
+        // 34 after 35 is a node fault: the stream resumes from 36 on another node.
+        assert!(matches!(
+            subscription.next().await,
+            Ok(SubscriptionEvent::Checkpoint { block_height: 35 })
+        ));
+        assert_eq!(opens(&opened), vec![Some(36)]);
+    }
+
+    /// A node names a height the chain has not reached in a checkpoint, and the stream then
+    /// breaks. The next node is honest and 5 blocks behind that height: it starts at its own
+    /// tip, so the block committed since, and its match, is not skipped.
+    #[tokio::test(start_paused = true)]
+    async fn should_not_skip_blocks_committed_after_a_checkpoint_ahead_of_the_chain() {
+        let lying = ending(vec![
+            checkpoint(41),
+            checkpoint(1_000),
+            Err(Status::unavailable("gone")),
+        ]);
+        let mut committed_since = transition(transfer());
+        committed_since.block_height = 996;
+        let honest = silent(vec![
+            checkpoint(995),
+            Ok(Responses::StateTransition(committed_since)),
+            checkpoint(996),
+        ]);
+        let (mut subscription, opened) = subscription(Some(42), lying, vec![honest]);
+        for expected in [41, 1_000, 995] {
+            assert!(matches!(
+                subscription.next().await,
+                Ok(SubscriptionEvent::Checkpoint { block_height }) if block_height == expected
+            ));
+        }
+        assert_eq!(opens(&opened), vec![Some(1_001)]);
+        let Ok(SubscriptionEvent::StateTransition(event)) = subscription.next().await else {
+            panic!("expected the transition committed since");
+        };
+        assert_eq!(event.block_height, 996);
+        assert!(matches!(
+            subscription.next().await,
+            Ok(SubscriptionEvent::Checkpoint { block_height: 996 })
+        ));
+        assert_eq!(subscription.resume_height(), Some(997));
     }
 
     #[test]

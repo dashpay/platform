@@ -41,21 +41,28 @@ pub const MAX_CLAUSES_PER_ACTION: usize = 16;
 /// (`platform_version`) decoded it for execution: from the version whose
 /// `decode_raw_state_transitions` takes a raw transition to be exactly one encoded
 /// transition, bytes left over after it are refused; before, they were ignored, and a
-/// transition with something appended executed.
+/// transition with something appended executed. A generation of that method this build does
+/// not know is refused, as execution refuses it: its rules are not known here.
 pub fn decode_committed_state_transition(
     bytes: &[u8],
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError> {
-    let ignores_leftover_bytes = platform_version
+    match platform_version
         .drive_abci
         .methods
         .state_transition_processing
         .decode_raw_state_transitions
-        == 0;
-    if ignores_leftover_bytes {
-        StateTransition::deserialize_from_bytes_untrusted_in_version(bytes, platform_version)
-    } else {
-        StateTransition::deserialize_from_bytes_untrusted_exact_in_version(bytes, platform_version)
+    {
+        0 => StateTransition::deserialize_from_bytes_untrusted_in_version(bytes, platform_version),
+        1 => StateTransition::deserialize_from_bytes_untrusted_exact_in_version(
+            bytes,
+            platform_version,
+        ),
+        version => Err(ProtocolError::UnknownVersionMismatch {
+            method: "decode_committed_state_transition".to_string(),
+            known_versions: vec![0, 1],
+            received: version,
+        }),
     }
 }
 

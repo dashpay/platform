@@ -12,6 +12,7 @@ use dpp::data_contract::{DataContract, DataContractFactory};
 use dpp::platform_value::platform_value;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::Value;
+use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::address_credit_withdrawal_transition::v0::AddressCreditWithdrawalTransitionV0;
 use dpp::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
 use dpp::state_transition::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
@@ -1084,5 +1085,44 @@ fn should_match_a_u16_array_against_a_list_given_as_bytes_after_the_wire() {
         };
         assert!(matches(&filters, &ranked(&[1, 500])).is_some());
         assert!(matches(&filters, &ranked(&[3])).is_none());
+    }
+}
+
+/// A committed transition decodes as its block's protocol version decoded it: bytes left over
+/// after it are ignored by the first generation of the raw transition decoder and refused by
+/// the second. A generation this build does not know has rules it does not know either, so it
+/// is refused, as execution refuses it, and not read with today's.
+#[test]
+fn should_decode_a_committed_transition_by_the_generation_its_block_decoded_with() {
+    let contract = contract();
+    let mut padded = batch(id(1), vec![create_document(&contract, 10, "alice")])
+        .serialize_to_bytes()
+        .expect("serializable");
+    let exact = padded.clone();
+    padded.push(0);
+    let with_generation = |generation| {
+        let mut version = PlatformVersion::latest().clone();
+        version
+            .drive_abci
+            .methods
+            .state_transition_processing
+            .decode_raw_state_transitions = generation;
+        version
+    };
+
+    for generation in [0, 1] {
+        let version = with_generation(generation);
+        assert!(
+            decode_committed_state_transition(&exact, &version).is_ok(),
+            "generation {generation}"
+        );
+    }
+    assert!(decode_committed_state_transition(&padded, &with_generation(0)).is_ok());
+    assert!(decode_committed_state_transition(&padded, &with_generation(1)).is_err());
+    for bytes in [&exact, &padded] {
+        assert!(matches!(
+            decode_committed_state_transition(bytes, &with_generation(2)),
+            Err(ProtocolError::UnknownVersionMismatch { received: 2, .. })
+        ));
     }
 }
