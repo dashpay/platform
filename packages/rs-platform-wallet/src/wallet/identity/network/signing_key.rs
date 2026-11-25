@@ -96,7 +96,8 @@ pub(super) fn master_signing_key<'a>(
 const CREDIT_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::CRITICAL];
 
 /// The key that signs a credit transfer or withdrawal: a CRITICAL TRANSFER key, or a CRITICAL
-/// OWNER key when `allow_owner`, which only a withdrawal to the identity's payout address sets.
+/// OWNER key when `allow_owner`. Automatic selection only sets it for a withdrawal to the
+/// identity's payout address.
 /// An explicit key is never substituted; it is checked by the rules automatic selection
 /// applies, and refused with Platform's typed error. Automatic withdrawals exhaust TRANSFER
 /// keys before OWNER. Among keys of one purpose the automatic choice follows
@@ -156,8 +157,11 @@ pub(super) mod tests {
     use crate::{PlatformWallet, PlatformWalletError};
     use async_trait::async_trait;
     use dpp::address_funds::AddressWitness;
+    use dpp::consensus::basic::identity::WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError;
     use dpp::consensus::signature::SignatureError;
+    use dpp::consensus::ConsensusError;
     use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::core_script::CoreScript;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeySettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::KeyType;
@@ -680,7 +684,7 @@ pub(super) mod tests {
     }
 
     #[tokio::test]
-    async fn should_not_sign_a_withdrawal_to_an_address_with_an_owner_key() {
+    async fn should_refuse_an_owner_key_for_credit_withdrawal_to_an_address() {
         use dashcore::{Address as DashAddress, Network};
 
         let wallet = wallet_with_signing_keys().await;
@@ -689,12 +693,12 @@ pub(super) mod tests {
             SecurityLevel::CRITICAL,
             KeyType::ECDSA_HASH160,
         );
-        let to_address = Some(DashAddress::dummy(Network::Testnet, 1));
+        let to_address = DashAddress::dummy(Network::Testnet, 1);
         let automatic = wallet
             .identity()
             .withdraw_credits_with_signer(
                 &identity,
-                to_address.clone(),
+                Some(to_address.clone()),
                 1,
                 None,
                 available(&[1, 2]),
@@ -710,22 +714,65 @@ pub(super) mod tests {
             ),
             "only an OWNER key is held, and it cannot sign this withdrawal: {automatic:?}"
         );
+        let owner_key = identity.public_keys().get(&1).unwrap();
+        let output_script = CoreScript::new(to_address.script_pubkey());
         let explicit = wallet
             .identity()
             .withdraw_credits_with_signer(
                 &identity,
-                to_address,
+                Some(to_address),
                 1,
-                identity.public_keys().get(&1),
+                Some(owner_key),
                 available(&[1, 2]),
                 None,
             )
-            .await;
-        assert_eq!(
-            explicit.as_ref().err().and_then(refused_purposes),
-            Some(vec![Purpose::TRANSFER]),
-            "Platform refuses an OWNER key for a withdrawal to a chosen address: {explicit:?}"
+            .await
+            .unwrap_err();
+        let expected = ConsensusError::from(
+            WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError::new(
+                output_script,
+                owner_key.id(),
+            ),
         );
+        assert_eq!(explicit.consensus_error(), Some(&expected));
+    }
+
+    #[tokio::test]
+    async fn should_refuse_an_expired_owner_key_for_a_withdrawal_to_an_address_as_drive_does() {
+        use dashcore::{Address as DashAddress, Network};
+
+        let wallet = wallet_with_signing_keys().await;
+        let mut identity = identity(
+            Purpose::OWNER,
+            SecurityLevel::CRITICAL,
+            KeyType::ECDSA_HASH160,
+        );
+        let owner_key = identity.public_keys()[&1]
+            .clone()
+            .with_limits(None, Some(1));
+        identity.add_public_key(owner_key);
+        let owner_key = &identity.public_keys()[&1];
+        let to_address = DashAddress::dummy(Network::Testnet, 1);
+        let output_script = CoreScript::new(to_address.script_pubkey());
+        let error = wallet
+            .identity()
+            .withdraw_credits_with_signer(
+                &identity,
+                Some(to_address),
+                1,
+                Some(owner_key),
+                available(&[1]),
+                None,
+            )
+            .await
+            .unwrap_err();
+        let expected = ConsensusError::from(
+            WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError::new(
+                output_script,
+                owner_key.id(),
+            ),
+        );
+        assert_eq!(error.consensus_error(), Some(&expected));
     }
 
     /// Records every changeset, so a test can read what reached the store.

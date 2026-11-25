@@ -3,6 +3,11 @@
 use async_trait::async_trait;
 use dashcore::Address as DashAddress;
 use dpp::address_funds::AddressWitness;
+use dpp::consensus::basic::identity::WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError;
+use dpp::consensus::signature::SignatureError;
+use dpp::consensus::ConsensusError;
+use dpp::identity::core_script::CoreScript;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Identity;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::Purpose;
@@ -181,14 +186,39 @@ impl IdentityWallet {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<u64, dash_sdk::Error> {
-        // Platform takes an OWNER key only for a withdrawal to the identity's payout address
-        // (no `to_address`).
+        // Validate an explicit key against both withdrawal purposes. Automatic selection
+        // considers OWNER only for a withdrawal to the identity's payout address.
         let signing_key = credit_signing_key(
             identity,
             signing_withdrawal_key_to_use,
             &signer,
-            to_address.is_none(),
-        )?;
+            signing_withdrawal_key_to_use.is_some() || to_address.is_none(),
+        );
+        if let Some((address, owner_key)) = to_address
+            .as_ref()
+            .zip(signing_withdrawal_key_to_use)
+            .filter(|(_, key)| key.purpose() == Purpose::OWNER)
+        {
+            // Drive rejects the output script before fee validation checks key expiry.
+            if signing_key.as_ref().err().is_none_or(|error| {
+                matches!(
+                    error.consensus_error(),
+                    Some(ConsensusError::SignatureError(
+                        SignatureError::PublicKeyExpiredError(_)
+                    ))
+                )
+            }) {
+                return Err(ConsensusError::from(
+                    WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError::new(
+                        CoreScript::new(address.script_pubkey()),
+                        owner_key.id(),
+                    ),
+                )
+                .into());
+            }
+        }
+
+        let signing_key = signing_key?;
         identity
             .withdraw(
                 &self.sdk,
