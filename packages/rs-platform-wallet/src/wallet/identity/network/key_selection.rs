@@ -5,7 +5,8 @@ use dpp::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
 use dpp::consensus::signature::{
     ContractBoundedKeyNonBatchError, ContractBoundedKeyOutOfBoundsError,
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyPurposeError,
-    PublicKeyExpiredError, PublicKeyIsDisabledError, SignatureError,
+    PublicKeyExpiredError, PublicKeyIsDisabledError,
+    PublicKeyWithLimitsCannotSignDataContractTransitionError, SignatureError,
 };
 use dpp::consensus::ConsensusError;
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -19,18 +20,25 @@ use dpp::identity::identity_public_key::contract_bounds::{
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::prelude::Identifier;
+use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 
 use super::signing_key::{first_available, require_available};
 use std::cmp::Reverse;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// What a signature authorizes, as far as a key's contract bounds go.
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// What a signature authorizes, as far as a key's contract bounds and limits go.
+#[derive(Debug, Clone, Copy)]
 pub enum SigningScope<'a> {
-    /// A transition that is not a batch: identity update, credit transfer or withdrawal,
-    /// contract create or update. A contract-bound AUTHENTICATION key cannot sign it.
+    /// A transition that is not a batch and not a contract create or update: identity update,
+    /// credit transfer or withdrawal. A contract-bound AUTHENTICATION key cannot sign it.
     NonBatch,
+    /// A data contract create or update on a network at `platform_version`. Not a batch, so a
+    /// contract-bound AUTHENTICATION key cannot sign it; from protocol version 15 neither can
+    /// a key with a budget or an expiry.
+    ContractCreateOrUpdate {
+        platform_version: &'a PlatformVersion,
+    },
     /// A batch creating a `document_type` document. The key's bounds must cover the type and
     /// every type the create may consume, as Platform checks.
     DocumentCreate { document_type: DocumentTypeRef<'a> },
@@ -50,16 +58,31 @@ pub enum SigningScope<'a> {
 }
 
 impl SigningScope<'_> {
+    /// Whether Platform refuses a key with a budget or an expiry in this scope: on a contract
+    /// create or update from `validate_state_transition_identity_signed` 2 (protocol version 15).
+    pub(crate) fn refuses_keys_with_limits(&self) -> bool {
+        matches!(self, Self::ContractCreateOrUpdate { platform_version }
+            if platform_version
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .common_validation_methods
+                .validate_state_transition_identity_signed >= 2)
+    }
+
     /// What `key`'s contract bounds say about signing in this scope: `Allowed`, `Denied`, or
     /// `RequiresContractGroupMembership` for a group-bound key, which only Platform can answer.
     /// Bounds limit only AUTHENTICATION keys, as in consensus, and a contract-bound
     /// AUTHENTICATION key is `Denied` outside a batch ([`IdentityPublicKey::can_sign_non_batch`]).
     pub fn bounds_check(&self, key: &IdentityPublicKey) -> BatchedTransitionBoundsCheck {
         let (contract_id, bounds_scope) = match *self {
-            SigningScope::NonBatch if key.can_sign_non_batch() => {
-                return BatchedTransitionBoundsCheck::Allowed
+            SigningScope::NonBatch | SigningScope::ContractCreateOrUpdate { .. } => {
+                return if key.can_sign_non_batch() {
+                    BatchedTransitionBoundsCheck::Allowed
+                } else {
+                    BatchedTransitionBoundsCheck::Denied
+                };
             }
-            SigningScope::NonBatch => return BatchedTransitionBoundsCheck::Denied,
             SigningScope::DocumentCreate { document_type } => {
                 return authentication_bounds(key)
                     .map_or(BatchedTransitionBoundsCheck::Allowed, |bounds| {
@@ -101,16 +124,16 @@ fn authentication_bounds(key: &IdentityPublicKey) -> Option<&ContractBounds> {
 /// A key whose contract bounds do not cover `scope` is skipped, and so is a key bound to a
 /// contract group: membership is state the wallet does not hold. A key without limits is
 /// preferred over any key with limits, whatever their security levels: a key with a budget or
-/// an expiry is an application key, taken only when no unlimited key qualifies. Within each
-/// group a key of a type DIP-11 defines (`ECDSA_SECP256K1`, `BLS12_381`) goes before an
-/// `ECDSA_HASH160` one, which holds only the hash of its public key and is the layout older
-/// Dash Evo Tool versions created; then the weakest qualifying security level, then the
-/// lowest key id: DIP-11 has clients ask for stronger authentication the stronger the key, so
-/// a HIGH write signs with a HIGH key rather than a CRITICAL one, and a stronger key signs
-/// only when the signer cannot reach a weaker one. A disabled key is skipped, and so is a key
-/// whose expiry has passed the wall clock (the block time trails it by seconds at most), or
-/// any key with an expiry when the system clock reads before the Unix epoch. What is left of
-/// a budget is not known offline; a spent key is refused by Platform.
+/// an expiry is an application key, taken only when no unlimited key qualifies, and never in a
+/// scope that refuses it ([`SigningScope::ContractCreateOrUpdate`]). Within each
+/// group a key of a type DIP-11 defines goes before an `ECDSA_HASH160` one, which holds only
+/// the hash of its public key; then the weakest qualifying security level, then the lowest key
+/// id: DIP-11 has clients ask for stronger authentication the stronger the key, so a HIGH
+/// write signs with a HIGH key rather than a CRITICAL one, and a stronger key signs only when
+/// the signer cannot reach a weaker one. A disabled key is skipped, and so is a key whose expiry has
+/// passed the wall clock (the block time trails it by seconds at most), or any key with an
+/// expiry when the system clock reads before the Unix epoch. What is left of a
+/// budget is not known offline; a spent key is refused by Platform.
 ///
 /// `Ok(None)` means no key is eligible at all; `Err` means at least one eligible key exists
 /// but the signer cannot reach any of them.
@@ -153,6 +176,7 @@ fn usable_signing_key_at<'a>(
             && key.key_type().can_sign_identity_signed_transition()
             && !key.is_disabled()
             && !expired_or_unknown(key, now)
+            && !(scope.refuses_keys_with_limits() && key.has_limits())
             && scope.bounds_check(key) == BatchedTransitionBoundsCheck::Allowed
     };
     let mut candidates: Vec<&IdentityPublicKey> = identity
@@ -178,11 +202,10 @@ fn usable_signing_key_at<'a>(
 /// applies, so an explicit choice is refused before anything is built or signed.
 ///
 /// Each refusal is the consensus signature error Platform itself returns for it, checked in
-/// Drive's order: a key type Platform does not verify an identity signature by
-/// ([`KeyType::can_sign_identity_signed_transition`]), a purpose outside `purposes`, a security
-/// level outside `security_levels`, a disabled key (identity-signed validation); then contract
-/// bounds that do not cover `scope` (structure validation); then an expired key (fee
-/// validation). A key bound to
+/// Drive's order: a key type Platform does not verify an identity signature by, a purpose
+/// outside `purposes`, a security level outside `security_levels`, a disabled key, contract
+/// bounds that do not cover `scope`, then limits where the scope refuses them, then expiry.
+/// A key bound to
 /// a contract group is accepted: only Platform can read the group's memberships. A key
 /// `signer` cannot sign with is refused with the signer-unavailable error. A key with an
 /// expiry is refused with [`dash_sdk::Error::Config`] when the system clock reads before the
@@ -215,7 +238,7 @@ fn check_signing_key_at(
     now: Option<u64>,
 ) -> Result<(), dash_sdk::Error> {
     // Drive's identity-signed validation checks in this order: key type, purpose, security
-    // level, disabled.
+    // level, disabled, non-batch contract bounds, limits.
     if !key.key_type().can_sign_identity_signed_transition() {
         return Err(signature_refusal(
             SignatureError::InvalidIdentityPublicKeyTypeError(
@@ -248,7 +271,12 @@ fn check_signing_key_at(
     match scope.bounds_check(key) {
         BatchedTransitionBoundsCheck::Allowed
         | BatchedTransitionBoundsCheck::RequiresContractGroupMembership { .. } => {}
-        BatchedTransitionBoundsCheck::Denied if scope == SigningScope::NonBatch => {
+        BatchedTransitionBoundsCheck::Denied
+            if matches!(
+                scope,
+                SigningScope::NonBatch | SigningScope::ContractCreateOrUpdate { .. }
+            ) =>
+        {
             return Err(signature_refusal(
                 SignatureError::ContractBoundedKeyNonBatchError(
                     ContractBoundedKeyNonBatchError::new(key.id()),
@@ -262,6 +290,13 @@ fn check_signing_key_at(
                 ),
             ));
         }
+    }
+    if scope.refuses_keys_with_limits() && key.has_limits() {
+        return Err(signature_refusal(
+            SignatureError::PublicKeyWithLimitsCannotSignDataContractTransitionError(
+                PublicKeyWithLimitsCannotSignDataContractTransitionError::new(key.id()),
+            ),
+        ));
     }
     if let Some(expires_at) = key.expires_at() {
         let Some(now) = now else {
@@ -1020,6 +1055,114 @@ pub(super) mod tests {
         ));
     }
 
+    fn contract_scope(platform_version: &PlatformVersion) -> SigningScope<'_> {
+        SigningScope::ContractCreateOrUpdate { platform_version }
+    }
+
+    #[test]
+    fn should_refuse_explicit_limited_contract_keys_before_signing() {
+        let scope = contract_scope(PlatformVersion::latest());
+        for limited in [
+            key(1, SecurityLevel::CRITICAL).with_limits(Some(1_000), None),
+            key(2, SecurityLevel::HIGH).with_limits(None, Some(now_ms() + 1_000_000)),
+        ] {
+            assert_eq!(
+                signature_error(check(&limited, scope)),
+                SignatureError::PublicKeyWithLimitsCannotSignDataContractTransitionError(
+                    PublicKeyWithLimitsCannotSignDataContractTransitionError::new(limited.id())
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn should_report_contract_bounds_before_limits_as_drive_does() {
+        let limited_bound = bound_key(
+            1,
+            SecurityLevel::CRITICAL,
+            Some(ContractBounds::SingleContract {
+                id: Identifier::from(CONTRACT),
+            }),
+        )
+        .with_limits(Some(1_000), None);
+        assert_eq!(
+            signature_error(check(
+                &limited_bound,
+                contract_scope(PlatformVersion::latest())
+            )),
+            SignatureError::ContractBoundedKeyNonBatchError(ContractBoundedKeyNonBatchError::new(
+                limited_bound.id()
+            ))
+        );
+    }
+
+    #[test]
+    fn should_exclude_limited_contract_keys_from_automatic_selection() {
+        let scope = contract_scope(PlatformVersion::latest());
+        for limited in [
+            key(1, SecurityLevel::CRITICAL).with_limits(Some(1_000), None),
+            key(2, SecurityLevel::HIGH).with_limits(None, Some(now_ms() + 1_000_000)),
+        ] {
+            assert_eq!(
+                pick_in(&identity(vec![limited]), Purpose::AUTHENTICATION, scope),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn should_accept_unlimited_contract_keys_and_preserve_other_refusals() {
+        let scope = contract_scope(PlatformVersion::latest());
+        let unlimited = key(1, SecurityLevel::CRITICAL);
+        check(&unlimited, scope).expect("an unlimited contract key qualifies");
+        assert_eq!(
+            pick_in(&identity(vec![unlimited]), Purpose::AUTHENTICATION, scope),
+            Some(1)
+        );
+        let bound = bound_key(
+            2,
+            SecurityLevel::CRITICAL,
+            Some(ContractBounds::SingleContract {
+                id: Identifier::from(CONTRACT),
+            }),
+        );
+        assert!(matches!(
+            signature_error(check(&bound, scope)),
+            SignatureError::ContractBoundedKeyNonBatchError(_)
+        ));
+        assert_eq!(
+            pick_in(&identity(vec![bound]), Purpose::AUTHENTICATION, scope),
+            None
+        );
+        let mut disabled = key(3, SecurityLevel::CRITICAL).with_limits(Some(1_000), None);
+        disabled.set_disabled_at(5);
+        assert!(matches!(
+            signature_error(check(&disabled, scope)),
+            SignatureError::PublicKeyIsDisabledError(_)
+        ));
+    }
+
+    #[test]
+    fn should_accept_limited_contract_keys_on_protocol_version_14() {
+        let scope = contract_scope(PlatformVersion::get(14).unwrap());
+        for limited in [
+            key(1, SecurityLevel::CRITICAL).with_limits(Some(1_000), None),
+            key(2, SecurityLevel::HIGH).with_limits(None, Some(now_ms() + 1_000_000)),
+        ] {
+            check(&limited, scope).expect("PV14 accepts limited contract keys");
+            assert_eq!(
+                pick_in(
+                    &identity(vec![limited.clone()]),
+                    Purpose::AUTHENTICATION,
+                    scope
+                ),
+                Some(limited.id())
+            );
+            check(&limited, SigningScope::NonBatch)
+                .expect("other non-batch transitions still accept limited keys");
+        }
+    }
+
     #[test]
     fn should_refuse_an_explicit_key_the_signer_cannot_use() {
         let err = check_signing_key(
@@ -1238,7 +1381,6 @@ pub(super) mod tests {
     fn should_require_a_create_key_to_cover_the_types_the_create_consumes() {
         use dpp::data_contract::accessors::v0::DataContractV0Getters;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
-        use dpp::version::PlatformVersion;
 
         let dpns = load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
             .expect("bundled DPNS contract");

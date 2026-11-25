@@ -27,7 +27,8 @@
 //!     memory unsafety.
 
 use super::signing_key::{
-    contract_signing_key, CONTRACT_CREATE_SIGNING_LEVELS, CONTRACT_UPDATE_SIGNING_LEVELS,
+    contract_signing_key, contract_transition, CONTRACT_CREATE_SIGNING_LEVELS,
+    CONTRACT_UPDATE_SIGNING_LEVELS,
 };
 use async_trait::async_trait;
 
@@ -166,14 +167,19 @@ impl IdentityWallet {
                 .map(|m| m.identity.clone())
                 .ok_or(PlatformWalletError::IdentityNotFound(*owner_identity_id))?;
             drop(wm);
-            contract_signing_key(&identity, signer, &CONTRACT_CREATE_SIGNING_LEVELS)?
-                .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
-                    identity_id: *owner_identity_id,
-                    purpose: Purpose::AUTHENTICATION,
-                    security_levels: CONTRACT_CREATE_SIGNING_LEVELS.to_vec(),
-                    transition: "a contract-create state transition".to_string(),
-                })?
-                .clone()
+            contract_signing_key(
+                &identity,
+                signer,
+                &CONTRACT_CREATE_SIGNING_LEVELS,
+                self.sdk.version(),
+            )?
+            .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
+                identity_id: *owner_identity_id,
+                purpose: Purpose::AUTHENTICATION,
+                security_levels: CONTRACT_CREATE_SIGNING_LEVELS.to_vec(),
+                transition: contract_transition("create", self.sdk.version()),
+            })?
+            .clone()
         };
 
         // Protocol-required config version. Since protocol v12 the
@@ -381,14 +387,19 @@ impl IdentityWallet {
                 .map(|m| m.identity.clone())
                 .ok_or(PlatformWalletError::IdentityNotFound(*owner_identity_id))?;
             drop(wm);
-            contract_signing_key(&identity, signer, &CONTRACT_UPDATE_SIGNING_LEVELS)?
-                .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
-                    identity_id: *owner_identity_id,
-                    purpose: Purpose::AUTHENTICATION,
-                    security_levels: CONTRACT_UPDATE_SIGNING_LEVELS.to_vec(),
-                    transition: "a contract-update state transition".to_string(),
-                })?
-                .clone()
+            contract_signing_key(
+                &identity,
+                signer,
+                &CONTRACT_UPDATE_SIGNING_LEVELS,
+                self.sdk.version(),
+            )?
+            .ok_or_else(|| PlatformWalletError::NoUsableSigningKey {
+                identity_id: *owner_identity_id,
+                purpose: Purpose::AUTHENTICATION,
+                security_levels: CONTRACT_UPDATE_SIGNING_LEVELS.to_vec(),
+                transition: contract_transition("update", self.sdk.version()),
+            })?
+            .clone()
         };
 
         // 2. Fetch the live contract. We seed the update payload from
