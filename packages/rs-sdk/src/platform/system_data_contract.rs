@@ -40,6 +40,13 @@ impl Sdk {
     /// necessarily the one that verified the proof. A provider swapped in with
     /// [`Sdk::set_context_provider`] while the fetch is in flight receives a contract it did
     /// not authenticate itself; avoid swapping providers while a fetch is pending.
+    ///
+    /// Limitation: a registered contract is sticky. A provider that checks its id-keyed cache
+    /// first keeps returning the registered generation after a protocol upgrade (e.g. DashPay
+    /// v1 registered at protocol version 13 still served at 14, without v2's fields), and the
+    /// cached generation is not checked against the SDK's protocol version. If a concurrent
+    /// request registers a newer contract while this fetch is pending, the provider may keep
+    /// that one while this method returns the older snapshot it fetched.
     pub async fn fetch_system_data_contract(
         &self,
         contract_id: Identifier,
