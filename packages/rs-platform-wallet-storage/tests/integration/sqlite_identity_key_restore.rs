@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use dash_sdk::platform::types::identity::PublicKeyHash;
+use dash_sdk::platform::types::identity::{NonUniquePublicKeyHashQuery, PublicKeyHash};
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::identity_public_key::accessors::v0::{
     IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
@@ -294,6 +294,17 @@ async fn platform(
         .expect_fetch(probe(phrase, 1), None::<Identity>)
         .await
         .unwrap();
+    // The non-unique tree answers empty too, so index 1 is a miss.
+    sdk.mock()
+        .expect_fetch(
+            NonUniquePublicKeyHashQuery {
+                key_hash: probe(phrase, 1).0,
+                after: None,
+            },
+            None::<Identity>,
+        )
+        .await
+        .unwrap();
     if let Some(identity) = by_id {
         sdk.mock()
             .expect_fetch(identity.id(), Some(identity))
@@ -504,6 +515,10 @@ async fn should_store_a_key_a_refresh_finds_so_it_survives_a_restart() {
         .discover_from_master(scan_from_zero(), &master(MNEMONIC_A))
         .await
         .expect("restore");
+    assert!(
+        startup_takes_warm_shortcut(&manager, &w).await,
+        "the restore answered every index, so the next launch skips discovery"
+    );
     iw.identity().refresh_identity(&id).await.expect("refresh");
     assert_eq!(held_key_ids(&manager, &w, &id).await, vec![0, 1, 2, 3]);
     let rows = disk.key_rows(&w, &id);

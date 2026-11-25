@@ -213,8 +213,7 @@ pub enum PlatformWalletError {
     /// single out one that belongs to this wallet, so nothing was imported.
     /// See [`AmbiguousIdentity`] for what a candidate is and how ownership is
     /// verified. Retrying does not change the answer while Platform's state is
-    /// the same; a user who knows which identity is theirs can import it by
-    /// its identity id. Discovery reports such indices in its result instead.
+    /// the same. Discovery reports such indices in its result instead.
     #[error("{0}")]
     AmbiguousIdentityForKey(AmbiguousIdentity),
 
