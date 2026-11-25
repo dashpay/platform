@@ -375,6 +375,19 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorShieldedMerkleWitnessUnavailable` (native code 88). A shielded
+         * spend selected a note no checkpoint of the wallet's local commitment
+         * tree covers yet. Refused before any proof or broadcast, with the
+         * notes released: Rust classes it [PaymentDelivery.NOT_SENT] and
+         * retryable once the next shielded sync checkpoints the tree. Only that
+         * case: a store that cannot produce the path arrives as the generic
+         * wallet failure, not as this.
+         * ← Swift `PlatformWalletError.shieldedMerkleWitnessUnavailable`.
+         */
+        class ShieldedMerkleWitnessUnavailable(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * `ErrorShieldedSpendUnconfirmed` (native code 18). A shielded spend
          * (transfer / unshield / withdraw / shield from Platform addresses)
          * may have reached a node and its result is not proved (a failed
@@ -1116,6 +1129,7 @@ sealed class DashSdkError(
             16 -> PlatformWallet.ShieldedBroadcastFailed(message, cause) // ErrorShieldedBroadcastFailed
             18 -> PlatformWallet.ShieldedSpendUnconfirmed(message, cause) // ErrorShieldedSpendUnconfirmed
             19 -> PlatformWallet.ShieldedNoRecordedAnchor(message, cause) // ErrorShieldedNoRecordedAnchor
+            88 -> PlatformWallet.ShieldedMerkleWitnessUnavailable(message, cause) // ErrorShieldedMerkleWitnessUnavailable
             20 -> PlatformWallet.TransactionBroadcastUnconfirmed(message, cause) // ErrorTransactionBroadcastUnconfirmed
             42 -> PlatformWallet.MasternodeWithdrawalUnconfirmed(message, cause) // ErrorMasternodeWithdrawalUnconfirmed
             22 -> PlatformWallet.CoreInsufficientFunds(message, cause) // ErrorCoreInsufficientFunds

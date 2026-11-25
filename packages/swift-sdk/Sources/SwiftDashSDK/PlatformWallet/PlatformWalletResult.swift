@@ -382,6 +382,14 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// nothing changed: keep the last state shown and read again later. The
     /// only code of that read that means retry.
     case errorShieldedBalanceBusy = 87
+    /// A shielded spend selected a note no checkpoint of the wallet's local
+    /// commitment tree covers yet. Refused while the spend was assembled,
+    /// before any proof or broadcast, and the notes were released: nothing was
+    /// sent. Retryable after the next shielded sync, which checkpoints the
+    /// tree. A store that cannot produce the path is not this case: it stays
+    /// `errorWalletOperation`. Distinct from
+    /// `errorShieldedSpendUnconfirmed`, which must NOT be retried.
+    case errorShieldedMerkleWitnessUnavailable = 88
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -553,6 +561,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorShieldedTipRecipientMismatch
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_BALANCE_BUSY:
             self = .errorShieldedBalanceBusy
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_MERKLE_WITNESS_UNAVAILABLE:
+            self = .errorShieldedMerkleWitnessUnavailable
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -1087,6 +1097,12 @@ public enum PlatformWalletError: LocalizedError {
     /// sync reaches a confirmed state. Distinct from `shieldedSpendUnconfirmed`,
     /// which must NOT be retried.
     case shieldedNoRecordedAnchor(String, payment: PlatformPaymentClass? = nil)
+    /// A shielded spend selected a note no checkpoint of the local commitment
+    /// tree covers yet (code 88). Nothing was proved or broadcast and the notes
+    /// were released: Rust classes it `.notSent` and retryable once the next
+    /// shielded sync checkpoints the tree. Distinct from
+    /// `shieldedSpendUnconfirmed`, which must NOT be retried.
+    case shieldedMerkleWitnessUnavailable(String, payment: PlatformPaymentClass? = nil)
     /// The cached Platform Payment-account input set cannot cover a shield's
     /// requested amount plus the fee reserve retained on input 0. Despite the
     /// retained public Swift/FFI name, this is not a shielded-pool balance
@@ -1342,7 +1358,7 @@ public enum PlatformWalletError: LocalizedError {
              .shieldedBroadcastFailed(_, let payment),
              .shieldedBroadcastUnconfirmed(_, let payment),
              .shieldedSpendUnconfirmed(_, let payment),
-             .shieldedNoRecordedAnchor(_, let payment),
+             .shieldedNoRecordedAnchor(_, let payment), .shieldedMerkleWitnessUnavailable(_, let payment),
              .shieldedInsufficientBalance(_, let payment),
              .transactionBroadcastUnconfirmed(_, let payment),
              .masternodeWithdrawalUnconfirmed(_, let payment),
@@ -1421,7 +1437,8 @@ public enum PlatformWalletError: LocalizedError {
              .shieldedBalanceBusy(let m, _),
              .walletAlreadyExists(let m, _), .shieldedBroadcastFailed(let m, _),
              .shieldedBroadcastUnconfirmed(let m, _), .shieldedSpendUnconfirmed(let m, _),
-             .shieldedNoRecordedAnchor(let m, _), .shieldedInsufficientBalance(let m, _),
+             .shieldedNoRecordedAnchor(let m, _), .shieldedMerkleWitnessUnavailable(let m, _),
+             .shieldedInsufficientBalance(let m, _),
              .shieldedIdentityDebitPending(let m, _),
              .shieldedRecoveryCorrupted(let m, _), .shieldedRecoveryKeysRequired(let m, _),
              .transactionBroadcastUnconfirmed(let m, _),
@@ -1614,6 +1631,8 @@ public enum PlatformWalletError: LocalizedError {
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail, payment: payment)
         case .errorShieldedSpendUnconfirmed: self = .shieldedSpendUnconfirmed(detail, payment: payment)
         case .errorShieldedNoRecordedAnchor: self = .shieldedNoRecordedAnchor(detail, payment: payment)
+        case .errorShieldedMerkleWitnessUnavailable:
+            self = .shieldedMerkleWitnessUnavailable(detail, payment: payment)
         case .errorShieldedInsufficientBalance: self = .shieldedInsufficientBalance(detail, payment: payment)
         case .errorTransactionBroadcastUnconfirmed:
             self = .transactionBroadcastUnconfirmed(detail, payment: payment)

@@ -710,8 +710,19 @@ fn spend_result_code(
         // released, so the host may retry after the next shielded sync.
         Err(e @ PlatformWalletError::ShieldedNoRecordedAnchor(_)) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor,
-            format!("Wallet is still syncing to a confirmed state — try again shortly. ({e})"),
+            retry_after_sync_message(&e),
         ),
+        // Retryable: no checkpoint of the local commitment tree covers a
+        // selected note yet. Refused while the spend was assembled, before the
+        // proof and the broadcast, with the notes released; the next shielded
+        // sync checkpoints the tree. A store that cannot produce the path is
+        // `ShieldedStoreError` and keeps the generic code below.
+        Err(e @ PlatformWalletError::ShieldedMerkleWitnessUnavailable(_)) => {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable,
+                retry_after_sync_message(&e),
+            )
+        }
         // Definitive failure: the transition never left the wallet (refused
         // before anything was sent); a spend's notes were released and the
         // host may retry.
@@ -1115,31 +1126,9 @@ fn map_identity_create_result(
                 ),
             )
         }
-        // Retryable: no Platform-recorded anchor covered the selected notes yet
-        // (the commitment tree is mid-block after an index-chunk sync). Nothing
-        // was broadcast and the notes were released, so the host may retry after
-        // the next shielded sync.
-        Err(e @ PlatformWalletError::ShieldedNoRecordedAnchor(_)) => PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorShieldedNoRecordedAnchor,
-            format!("Wallet is still syncing to a confirmed state — try again shortly. ({e})"),
-        ),
-        // Definitive failure: the transition was not executed and the spent notes were released.
-        Err(e @ PlatformWalletError::ShieldedBroadcastFailed(_)) => PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorShieldedBroadcastFailed,
-            outcome_message("shielded identity-create-from-pool", &e),
-        ),
-        // The spend admission's refusals (a wallet removed before the spend
-        // started, keys not bound since the last Clear): nothing was read,
-        // signed or sent. Converted as every other credit-pool spend converts
-        // them, so a removed wallet keeps `NotFound` here too.
-        Err(e @ PlatformWalletError::WalletRemovedBeforeSend(_))
-        | Err(e @ PlatformWalletError::ShieldedNotBound) => {
-            map_spend_result(Err(e), IDENTITY_CREATE_FROM_POOL_OPERATION)
-        }
-        Err(e) => PlatformWalletFFIResult::err(
-            PlatformWalletFFIResultCode::ErrorWalletOperation,
-            outcome_message("shielded identity-create-from-pool", &e),
-        ),
+        // Everything else is a note spend's outcome like any other, so it
+        // takes the spend contract's codes and messages.
+        Err(e) => map_spend_result(Err(e), IDENTITY_CREATE_FROM_POOL_OPERATION),
     };
     let mapped = match class {
         Some(class) => mapped.with_payment_class(class),
@@ -4439,6 +4428,90 @@ mod tests {
         assert_eq!(
             map_spend_result(Ok(()), "shielded transfer").code,
             PlatformWalletFFIResultCode::Success
+        );
+    }
+
+    /// A note no checkpoint covers yet is refused before the proof and the
+    /// broadcast, so every note spend reports it by its own retryable code
+    /// (88) and code 19's wording, never as the generic failure (6) a host
+    /// must read as possibly sent: every operation the spend contract maps,
+    /// the identity create from the pool included (it delegates here). A
+    /// store that cannot produce the path keeps the generic code.
+    #[test]
+    fn should_report_an_unavailable_merkle_witness_as_code_88_on_every_spend() {
+        for operation in [
+            "shielded transfer",
+            "shielded unshield",
+            "shielded withdraw",
+            "shielded identity top up from pool",
+            "shielded identity-create-from-pool",
+            "private contact request",
+            "private contact request accept",
+            "contact request accept",
+        ] {
+            let result = map_spend_result(
+                Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(
+                    "no checkpoint covers the note at position 7395 yet".to_string(),
+                )),
+                operation,
+            );
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable,
+                "{operation}"
+            );
+            assert_eq!(result.code as u32, 88);
+            let message = message_of(&result);
+            assert!(message.contains("try again shortly"), "{message}");
+            assert!(message.contains("position 7395"), "{message}");
+
+            let store_failure = map_spend_result(
+                Err(PlatformWalletError::ShieldedStoreError(
+                    "witness for the note at position 7395: sqlite error".to_string(),
+                )),
+                operation,
+            );
+            assert_eq!(
+                store_failure.code,
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                "{operation}"
+            );
+        }
+    }
+
+    /// The identity create from the pool, through the result handling its
+    /// export uses: a witness refusal returns 88 and hands back no id to
+    /// write, so the host's buffer stays as the host set it, while an
+    /// unconfirmed broadcast (17) still hands back the derived id, which Swift
+    /// and JNI read to hold the slot.
+    #[test]
+    fn should_keep_the_id_buffer_on_a_witness_refusal_and_write_it_on_code_17() {
+        let (refused, written) =
+            map_identity_create_result(Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(
+                "no checkpoint covers the note at position 7395 yet".to_string(),
+            )));
+        assert_eq!(
+            refused.code,
+            PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable
+        );
+        let message = message_of(&refused);
+        assert!(message.contains("try again shortly"), "{message}");
+        assert_eq!(written, None, "a refusal must not write the id");
+
+        let derived = dpp::prelude::Identifier::from([0x17; 32]);
+        let (unconfirmed, written) =
+            map_identity_create_result(Err(PlatformWalletError::ShieldedBroadcastUnconfirmed {
+                identity_id: derived,
+                reason: "no execution result".to_string(),
+            }));
+        assert_eq!(
+            unconfirmed.code,
+            PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed
+        );
+        assert_eq!(
+            written,
+            Some(derived.to_buffer()),
+            "code 17 must write the derived id"
         );
     }
 

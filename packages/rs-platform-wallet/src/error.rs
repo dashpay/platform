@@ -1430,6 +1430,18 @@ pub enum PlatformWalletError {
     #[error("Shielded store error: {0}")]
     ShieldedStoreError(String),
 
+    /// No checkpoint of the local commitment tree covers a note selected for a
+    /// shielded spend yet: the note's position was appended after the latest
+    /// checkpoint (a sync pass that appended and stopped before checkpointing).
+    ///
+    /// Raised while the spend is assembled, **before** any proof is built or
+    /// anything is broadcast; the caller's generic error path releases the
+    /// note reservations, so nothing left the wallet. **Retryable**: the next
+    /// shielded sync checkpoints the tree at its size. Only this case: a store
+    /// that cannot produce the path (unreadable, poisoned, a position the tree
+    /// does not hold, or a covered position the tree cannot witness) is [`Self::ShieldedStoreError`],
+    /// which no sync repairs. FFI mirror:
+    /// `PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable`.
     #[error("Shielded Merkle witness unavailable: {0}")]
     ShieldedMerkleWitnessUnavailable(String),
 
@@ -2068,8 +2080,11 @@ impl PlatformWalletError {
             // Every variant states its decision; no wildcard arm, so a new
             // variant does not compile until it is given one.
             PaymentDelivery::NotSent => match self {
-                // Transient: the same call gets past it by running again.
+                // Transient: the same call gets past it by running again
+                // (once the next shielded sync has recorded an anchor, or
+                // checkpointed the tree over the selected note).
                 Self::ShieldedNoRecordedAnchor(_)
+                | Self::ShieldedMerkleWitnessUnavailable(_)
                 // A read before anything was signed: Platform had no balance
                 // for the identity yet, or could not be asked.
                 | Self::IdentityBalanceUnavailable(_)
@@ -2179,7 +2194,6 @@ impl PlatformWalletError {
                 | Self::ShieldedNoUnspentNotes
                 | Self::ShieldedInsufficientBalance { .. }
                 | Self::PlatformShieldCapacityExceeded { .. }
-                | Self::ShieldedMerkleWitnessUnavailable(_)
                 | Self::ShieldedKeyDerivation(_)
                 | Self::ShieldedNotBound
                 | Self::ShieldedSyncFailed(_)
@@ -3918,6 +3932,7 @@ mod payment_delivery_tests {
         matches!(
             error,
             PlatformWalletError::ShieldedNoRecordedAnchor(_)
+                | PlatformWalletError::ShieldedMerkleWitnessUnavailable(_)
                 | PlatformWalletError::ShieldedBroadcastFailed(_)
                 | PlatformWalletError::ShutdownIncomplete(_)
                 | PlatformWalletError::PrivateContactStoreNotRead(_)
