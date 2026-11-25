@@ -37,11 +37,13 @@ const META_PAGE_CACHE_PAGES: usize = 256;
 /// Tenderdash RPCs in flight at once, across all subscriptions and the tip tracker. A block
 /// being decoded counts as the two calls that read it.
 pub const MAX_CONCURRENT_FETCHES: usize = 8;
-/// How long a subscription waits for a read it asked Tenderdash for. The calls that read a
-/// block have no deadline of their own, because the block queries that share them wait for
-/// as long as Tenderdash works. A stream that waited forever would stall without an error,
-/// so it stops waiting, ends with `UNAVAILABLE`, and the client resumes on another node. The
-/// read itself goes on, and keeps its share of [`MAX_CONCURRENT_FETCHES`] until it ends.
+/// How long a subscription waits for a read, from when it asks: for another subscription
+/// reading the same block, for the fetch budget and for Tenderdash together. The calls that
+/// read a block or its metas have no deadline of their own, because the block queries that
+/// share them wait for as long as Tenderdash works. A stream that waited forever would
+/// stall without an error, so it stops waiting, ends with `UNAVAILABLE`, and the client
+/// resumes on another node. The read itself goes on, and keeps its share of
+/// [`MAX_CONCURRENT_FETCHES`] until it ends.
 const BLOCK_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The Tenderdash RPCs the block source reads.
@@ -168,19 +170,19 @@ impl BlockSource {
 
     /// The highest height Tenderdash reports stored. Its results may not be saved yet.
     pub async fn latest_height(&self) -> DAPIResult<u64> {
-        self.dispatch(
+        let asked = self.dispatch(
             1,
             |tenderdash| async move { tenderdash.latest_height().await },
-        )
-        .await
+        );
+        within_read_deadline(asked).await
     }
 
     /// Succeeds once the execution results of `height` are saved, so the height is readable.
     pub async fn results_saved(&self, height: u64) -> DAPIResult<()> {
-        self.dispatch(1, move |tenderdash| async move {
+        let asked = self.dispatch(1, move |tenderdash| async move {
             tenderdash.block_results(height).await.map(drop)
-        })
-        .await
+        });
+        within_read_deadline(asked).await
     }
 
     /// The metas of the aligned page holding `height` (heights `page_start..page_start + 20`),
@@ -192,29 +194,29 @@ impl BlockSource {
     ) -> DAPIResult<(u64, Arc<Vec<HeightMeta>>)> {
         let page_start = (height.saturating_sub(1) / META_PAGE) * META_PAGE + 1;
         let page_end = (page_start + META_PAGE - 1).min(tip);
-        let page = self
-            .meta_pages
-            .get_or_insert_async(&(page_start, page_end), async {
-                let metas = self
-                    .dispatch(1, move |tenderdash| {
-                        stored_metas(tenderdash, page_start, page_end)
-                    })
-                    .await?;
-                Ok::<_, DapiError>(Arc::new(page_from_metas(page_start, page_end, &metas)?))
-            })
-            .await?;
-        Ok((page_start, page))
+        let page = (page_start, page_end);
+        let stored = self.meta_pages.get_or_insert_async(&page, async {
+            let metas = self
+                .dispatch(1, move |tenderdash| {
+                    stored_metas(tenderdash, page_start, page_end)
+                })
+                .await?;
+            Ok::<_, DapiError>(Arc::new(page_from_metas(page_start, page_end, &metas)?))
+        });
+        Ok((page_start, within_read_deadline(stored).await?))
     }
 
     /// Read the committed block at `height`, which must be at or below the published tip.
+    ///
+    /// Readers of one height share one read: the first to ask makes it and the others wait for
+    /// it, each for as long as its own deadline allows.
     pub async fn read(&self, height: u64) -> DAPIResult<Arc<CommittedBlock>> {
-        self.blocks
-            .get_or_insert_async(&height, self.fetch(height))
-            .await
+        let stored = self.blocks.get_or_insert_async(&height, self.fetch(height));
+        within_read_deadline(stored).await
     }
 
     /// Ask Tenderdash for something that takes `calls` of the fetch budget, in a task of its
-    /// own, and wait up to [`BLOCK_READ_TIMEOUT`] for it, queueing for the budget included.
+    /// own.
     ///
     /// A caller that goes away, or stops waiting, while it queues for the budget has asked
     /// Tenderdash for nothing. Once asked, Tenderdash works on the request whoever still
@@ -229,37 +231,59 @@ impl BlockSource {
         T: Send + 'static,
         F: Future<Output = DAPIResult<T>> + Send + 'static,
     {
-        let answer = async {
-            let permit = Arc::clone(&self.fetches)
-                .acquire_many_owned(calls)
-                .await
-                .map_err(|_| DapiError::Internal("the block source is closed".to_string()))?;
-            let asked = ask(Arc::clone(&self.tenderdash));
-            tokio::spawn(async move {
-                let _permit = permit;
-                asked.await
-            })
-            .await?
-        };
-        timeout(BLOCK_READ_TIMEOUT, answer)
+        let permit = Arc::clone(&self.fetches)
+            .acquire_many_owned(calls)
             .await
-            .unwrap_or_else(|_| {
-                Err(DapiError::Timeout(format!(
-                    "Tenderdash did not answer in {BLOCK_READ_TIMEOUT:?}"
-                )))
-            })
+            .map_err(|_| DapiError::Internal("the block source is closed".to_string()))?;
+        let asked = ask(Arc::clone(&self.tenderdash));
+        tokio::spawn(async move {
+            let _permit = permit;
+            asked.await
+        })
+        .await?
     }
 
     async fn fetch(&self, height: u64) -> DAPIResult<Arc<CommittedBlock>> {
         self.dispatch(2, move |tenderdash| async move {
-            let (block, results) =
-                tokio::join!(tenderdash.block(height), tenderdash.block_results(height));
-            let (block, results) = (block?, results?);
-            // Decoding and hashing every transaction of a full block would hold up the other
-            // requests an async thread serves, so it runs on the blocking pool.
-            tokio::task::spawn_blocking(move || committed_block(height, block, results)).await?
+            let read = async {
+                let (block, results) =
+                    tokio::join!(tenderdash.block(height), tenderdash.block_results(height));
+                let (block, results) = (block?, results?);
+                // Decoding and hashing every transaction of a full block would hold up the
+                // other requests an async thread serves, so it runs on the blocking pool.
+                tokio::task::spawn_blocking(move || committed_block(height, block, results)).await?
+            };
+            match read.await {
+                Ok(block) => Ok(block),
+                Err(failure) => Err(pruned_or(failure, tenderdash.as_ref(), height).await),
+            }
         })
         .await
+    }
+}
+
+/// `read`, for as long as a subscription waits for one; see [`BLOCK_READ_TIMEOUT`].
+async fn within_read_deadline<T>(read: impl Future<Output = DAPIResult<T>>) -> DAPIResult<T> {
+    timeout(BLOCK_READ_TIMEOUT, read).await.unwrap_or_else(|_| {
+        Err(DapiError::Timeout(format!(
+            "Tenderdash did not answer in {BLOCK_READ_TIMEOUT:?}"
+        )))
+    })
+}
+
+/// What the failed read of `height` says: that the store no longer keeps the height, when it
+/// does not, and `failure` otherwise. A block can be pruned after its metas were read, and
+/// Tenderdash refuses to read one it pruned as it refuses anything else.
+async fn pruned_or(
+    failure: DapiError,
+    tenderdash: &dyn TenderdashBlocks,
+    height: u64,
+) -> DapiError {
+    match tenderdash.earliest_height().await {
+        Ok(earliest) if height < earliest => {
+            DapiError::FailedPrecondition(format!("block {height} is not available on this node"))
+        }
+        _ => failure,
     }
 }
 
@@ -482,6 +506,13 @@ mod tests {
         }
         async fn block(&self, height: u64) -> DAPIResult<ResultBlock> {
             drop(self.held.lock().await);
+            // As Tenderdash refuses to read a height below its base.
+            if height < self.base {
+                return Err(DapiError::Client(format!(
+                    "height {height} is not available, lowest height is {}",
+                    self.base
+                )));
+            }
             Ok(ResultBlock {
                 block: Some(Block {
                     header: BlockHeader {
@@ -589,6 +620,64 @@ mod tests {
         tokio::time::sleep(Duration::from_secs(1)).await;
         assert_eq!(free(), MAX_CONCURRENT_FETCHES, "Tenderdash answered");
         assert!(source.read(1).await.is_ok());
+    }
+
+    /// A reader waits its own 30 seconds, from when it asked. Readers of one height share one
+    /// read, and the one that makes it gives up first; the next would otherwise start over
+    /// with a deadline of its own, having already waited.
+    #[tokio::test(start_paused = true)]
+    async fn should_time_a_reader_from_when_it_asked_whoever_makes_the_read() {
+        let chain = Arc::new(OneBlock {
+            txs: vec![BASE64_STANDARD.encode(b"tx")],
+            results: Some(vec![result(0)]),
+            ..Default::default()
+        });
+        let source = Arc::new(BlockSource::new(chain.clone()));
+        let _held = chain.held.lock().await;
+
+        let started = Instant::now();
+        let first = tokio::spawn({
+            let source = source.clone();
+            async move { (source.read(1).await.map(drop), started.elapsed()) }
+        });
+        let later = Duration::from_secs(10);
+        tokio::time::sleep(later).await;
+        let second = source.read(1).await;
+
+        assert!(matches!(second, Err(DapiError::Timeout(_))), "{second:?}");
+        assert_eq!(started.elapsed(), later + BLOCK_READ_TIMEOUT);
+        let (first, waited) = first.await.unwrap();
+        assert!(matches!(first, Err(DapiError::Timeout(_))), "{first:?}");
+        assert_eq!(waited, BLOCK_READ_TIMEOUT);
+    }
+
+    /// A page of metas is kept once read, and the store can prune a block afterwards.
+    /// Tenderdash then refuses to read the block. That is a height this node does not keep,
+    /// which another node may, not a failure of this one.
+    #[tokio::test]
+    async fn should_read_a_block_pruned_after_its_metas_as_a_height_the_node_lacks() {
+        let pruned = BlockSource::new(Arc::new(OneBlock {
+            txs: vec![BASE64_STANDARD.encode(b"tx")],
+            results: Some(vec![result(0)]),
+            base: 5,
+            ..Default::default()
+        }));
+        let lacking = pruned.read(1).await;
+        assert!(
+            matches!(lacking, Err(DapiError::FailedPrecondition(_))),
+            "{lacking:?}"
+        );
+        assert!(pruned.read(5).await.is_ok(), "the base itself is kept");
+
+        // A read that fails at a height the store keeps is a failure.
+        let failing = BlockSource::new(Arc::new(OneBlock {
+            txs: vec![BASE64_STANDARD.encode(b"tx")],
+            results: None,
+            base: 1,
+            ..Default::default()
+        }));
+        let failed = failing.read(1).await;
+        assert!(matches!(failed, Err(DapiError::Client(_))), "{failed:?}");
     }
 
     /// Tenderdash refuses a range of metas that lies wholly below its store's base, where it

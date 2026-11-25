@@ -2,6 +2,7 @@
 
 use super::CHECKPOINT_INTERVAL;
 use super::block_source::{BlockSource, CommittedBlock, HeightMeta};
+use crate::DapiError;
 use crate::error::DAPIResult;
 use crate::services::platform_service::shielded_proof_failure_budget::SourceKey;
 use dapi_grpc::platform::v0::SubscribeToStateTransitionsResponse;
@@ -64,9 +65,11 @@ const SEND_DEADLINE: Duration = Duration::from_secs(60);
 const TIP_POLL_INTERVAL: Duration = Duration::from_secs(5);
 /// How long the tip may fail to be read before the node says so; see [`Tip::unreadable`].
 const TIP_FAILURE_DEADLINE: Duration = Duration::from_secs(30);
-/// Blocks being matched against a subscription's filters at once, across all subscriptions.
-/// Matching is CPU work on the blocking pool; this keeps it from taking the node's cores
-/// from the requests its async threads serve.
+/// Blocks that subscriptions hold at once to match them against their filters, each from
+/// before it is read until its matches are ready to send. Matching is CPU work on the
+/// blocking pool, and this keeps it from taking the node's cores from the requests its async
+/// threads serve. A block a subscription holds is also outside the budget of the block
+/// cache, so this bounds how many are.
 const MAX_CONCURRENT_MATCHES: usize = 2;
 
 /// What the tip tracker last read of the node's chain.
@@ -134,7 +137,7 @@ pub struct SubscriptionService {
     tip: watch::Receiver<Tip>,
     limits: SubscriptionLimits,
     subscriptions: Arc<Semaphore>,
-    /// One permit per block being matched; see [`MAX_CONCURRENT_MATCHES`].
+    /// One permit per block a subscription holds to match; see [`MAX_CONCURRENT_MATCHES`].
     matching: Arc<Semaphore>,
     per_source: Arc<Mutex<HashMap<SourceKey, usize>>>,
 }
@@ -251,7 +254,12 @@ impl SubscriptionService {
                         self.limits.max_blocks_ahead
                     )));
                 }
-                height
+                // Never above the block after the tip: the opening checkpoint says every
+                // height below the start was scanned, and this node cannot say that of a
+                // height it has not reached. A client sent here with a checkpoint from a
+                // node further along, or from one that named a height the chain had not
+                // reached, is served from this node's tip, and may see matches again.
+                height.min(tip + 1)
             }
         };
 
@@ -453,13 +461,14 @@ impl Scan {
     /// Send the matches of the block at `height`, then a checkpoint at it. Returns whether
     /// anything matched.
     async fn scan_block(&mut self, height: u64) -> Result<bool, Stop> {
+        // Taken before the block is read, so a scan that waits for its turn holds no block.
+        let matching = Arc::clone(&self.matching).acquire_owned();
+        let turn = unless_closed(&self.sender, matching)
+            .await?
+            .map_err(|_| Stop::Fail(Status::unavailable("the node is shutting down")))?;
         let block = unless_closed(&self.sender, self.blocks.read(height))
             .await?
-            .map_err(|error| {
-                Stop::Fail(Status::unavailable(format!(
-                    "cannot read block {height}: {error}; resume from {height}"
-                )))
-            })?;
+            .map_err(|error| Stop::Fail(read_failure(height, error)))?;
         let matches = self.match_block(Arc::clone(&block)).await?;
         if matches.is_empty() {
             return Ok(false);
@@ -481,6 +490,7 @@ impl Scan {
             })
             .collect();
         drop(block);
+        drop(turn);
         for response in responses {
             self.send(response).await?;
         }
@@ -489,24 +499,18 @@ impl Scan {
     }
 
     /// The positions, in `block.txs`, of the block's transitions that match, in block order,
-    /// with what they matched. Matched on the blocking pool, [`MAX_CONCURRENT_MATCHES`]
-    /// blocks at a time: a full block against document clauses would hold up the other
-    /// requests an async thread serves.
+    /// with what they matched. Matched on the blocking pool: a full block against document
+    /// clauses would hold up the other requests an async thread serves.
     async fn match_block(
         &self,
         block: Arc<CommittedBlock>,
     ) -> Result<Vec<(usize, FilterMatch)>, Stop> {
-        let matching = Arc::clone(&self.matching).acquire_owned();
-        let permit = unless_closed(&self.sender, matching)
-            .await?
-            .map_err(|_| Stop::Fail(Status::unavailable("the node is shutting down")))?;
         let filters = Arc::clone(&self.filters);
-        tokio::task::spawn_blocking(move || {
-            let _permit = permit;
-            matches_in(&block, &filters)
-        })
-        .await
-        .map_err(|error| Stop::Fail(Status::internal(format!("cannot match a block: {error}"))))?
+        tokio::task::spawn_blocking(move || matches_in(&block, &filters))
+            .await
+            .map_err(|error| {
+                Stop::Fail(Status::internal(format!("cannot match a block: {error}")))
+            })?
     }
 
     /// A checkpoint at the highest fully scanned height.
@@ -532,6 +536,18 @@ impl Scan {
             Ok(Err(_)) => Err(Stop::Closed),
             Err(_) => Err(Stop::SlowClient),
         }
+    }
+}
+
+/// The status a failed read of the block at `height` ends a stream with. A block the store
+/// no longer keeps is a height this node lacks, which another node may serve; any other
+/// failure is this node failing to read.
+fn read_failure(height: u64, error: DapiError) -> Status {
+    match error {
+        DapiError::FailedPrecondition(lacking) => Status::failed_precondition(lacking),
+        error => Status::unavailable(format!(
+            "cannot read block {height}: {error}; resume from {height}"
+        )),
     }
 }
 

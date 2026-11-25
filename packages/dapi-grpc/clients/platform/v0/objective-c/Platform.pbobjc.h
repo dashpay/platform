@@ -16257,7 +16257,13 @@ GPB_FINAL @interface SubscribeToStateTransitionsRequest_SubscribeToStateTransiti
 /** The number of items in @c filtersArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger filtersArray_Count;
 
-/** First block height to scan. Unset: start after the current tip. */
+/**
+ * First block height to scan. Unset: start after the current tip. A node
+ * asked for a height above the block after its tip scans from that block:
+ * it says of no height it has not reached that it was scanned. Its first
+ * checkpoint is then lower than this height minus one, and matches below
+ * this height can be delivered again.
+ **/
 @property(nonatomic, readwrite) uint64_t fromBlockHeight;
 
 @property(nonatomic, readwrite) BOOL hasFromBlockHeight;

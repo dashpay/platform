@@ -1,5 +1,4 @@
 use super::*;
-use crate::DapiError;
 use crate::clients::tenderdash_client::{
     Block, BlockData, BlockHeader, BlockMeta, BlockTxResult, ConsensusVersion, ResultBlock,
     ResultBlockResults, ResultBlockchainInfo,
@@ -294,19 +293,26 @@ async fn should_start_after_the_tip_when_no_height_is_given() {
     expect_match(&mut stream, height, &transfer_to(7)).await;
 }
 
+/// A checkpoint says every height up to it was scanned. A node asked to start above the
+/// block after its tip cannot say that of the heights in between, so it starts at its tip:
+/// a client that was given a checkpoint the chain had not reached loses none of the blocks
+/// committed since.
 #[tokio::test]
-async fn should_checkpoint_just_before_a_start_ahead_of_the_tip() {
+async fn should_start_at_the_tip_when_asked_to_start_ahead_of_it() {
     let harness = harness(SubscriptionLimits::default());
     harness.commit(vec![]);
     let mut stream = harness.subscribe(7, Some(5)).await;
-    expect_checkpoint(&mut stream, 4).await;
-    // Matches before the start are not delivered.
-    for _ in 2..5 {
-        harness.commit(vec![transfer_to(7)]);
+    expect_checkpoint(&mut stream, 1).await;
+    // Heights 2 to 4 are below the start that was asked for, and are scanned all the same.
+    for _ in 2..=5 {
+        let height = harness.commit(vec![transfer_to(7)]);
+        expect_match(&mut stream, height, &transfer_to(7)).await;
+        expect_checkpoint(&mut stream, height).await;
     }
-    let height = harness.commit(vec![transfer_to(7)]);
-    expect_match(&mut stream, height, &transfer_to(7)).await;
-    expect_checkpoint(&mut stream, height).await;
+
+    // The block after the tip is where a caught-up client resumes: nothing to hold back.
+    let mut stream = harness.subscribe(7, Some(6)).await;
+    expect_checkpoint(&mut stream, 5).await;
 }
 
 #[tokio::test]

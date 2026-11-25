@@ -30,7 +30,11 @@ filters, block by block, from a chosen height onward.
     for it, which can be nothing: a shield from an asset lock names where its surplus goes and
     may leave none)
 - `fromBlockHeight`: first height to scan (inclusive); unset to start after the current tip.
-  At most 50,000 blocks behind or 1,000 ahead of the node's tip.
+  At most 50,000 blocks behind or 1,000 ahead of the node's tip. A node asked for a height
+  above the block after its tip scans from that block: a checkpoint says every height up to it
+  was scanned, and the node does not say that of a height it has not reached. So a client
+  that resumes on a node a few blocks behind, or with a checkpoint that named a height the
+  chain had not reached, misses nothing; it can see matches again.
 
 **Response Parameters**: a stream of one of
 - `stateTransition`: `blockHeight`, `blockTimeMs`, `protocolVersion`,
@@ -38,7 +42,8 @@ filters, block by block, from a chosen height onward.
   `matchedFilters` (indexes into the request), `matchedBatchPositions` (for batches)
 - `checkpoint`: `blockHeight`
 
-The first message is a checkpoint at the height before the first scanned block. A checkpoint
+The first message is a checkpoint at the height before the first scanned block: at
+`fromBlockHeight - 1`, or lower when the node starts at its tip. A checkpoint
 follows every block with a match and repeats every 10 seconds otherwise. A checkpoint at `h`
 means every match from the first scanned block through `h` was sent: resume with
 `fromBlockHeight = h + 1`. Any end of the stream, including one with status `OK` (for example
@@ -104,8 +109,9 @@ starts, by `dash_platform_queries::subscriptions`.
 
 Reads and matching are bounded work. A Tenderdash call keeps its place among the 8 in flight
 until Tenderdash has answered it, whether or not a stream still waits for it; a stream waits
-30 seconds for a read and then ends. Blocks are decoded and matched on the blocking pool, two
-blocks being matched at a time. While the node cannot read its chain tip for 30 seconds,
+30 seconds for a read, from when it asks, and then ends. Blocks are decoded and matched on the
+blocking pool, and a subscription holds a decoded block only while it has one of two places
+to match it. While the node cannot read its chain tip for 30 seconds,
 streams that have caught up end and new ones are refused: a checkpoint then would say the
 chain is quiet, which the node does not know.
 

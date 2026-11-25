@@ -997,6 +997,9 @@ impl TenderdashClient {
     /// List the block metas of heights `min_height..=max_height`, highest first.
     ///
     /// Tenderdash returns at most 20 metas per call, keeping the highest heights of the range.
+    /// Like the calls that read a block, this one has no deadline: Tenderdash reads the metas
+    /// from its store whoever still waits, so a caller that counts its calls in flight must
+    /// not see one end before Tenderdash is done with it.
     pub async fn blockchain(
         &self,
         min_height: u64,
@@ -1008,7 +1011,7 @@ impl TenderdashClient {
         };
         let request = JsonRpcRequest::new("blockchain", params);
 
-        self.post(&request).await
+        self.post_for_block_query(&request).await
     }
 
     /// Get the header of the block at a height and the quorum's signature of it

@@ -4835,7 +4835,11 @@ message SubscribeToStateTransitionsRequest {
 
   message SubscribeToStateTransitionsRequestV0 {
     repeated StateTransitionFilter filters = 1;
-    // First block height to scan. Unset: start after the current tip.
+    // First block height to scan. Unset: start after the current tip. A node
+    // asked for a height above the block after its tip scans from that block:
+    // it says of no height it has not reached that it was scanned. Its first
+    // checkpoint is then lower than this height minus one, and matches below
+    // this height can be delivered again.
     optional uint64 from_block_height = 2 [jstype = JS_STRING];
   }
 
