@@ -2252,7 +2252,7 @@
           "sdk": "supported",
           "example_app": "partial",
           "restart": "not_applicable",
-          "reason": "Tokens.updateConfig returns Rust's outcome (pending, applied with the proof-verified contract fetched at the version the update produced, or applied but not refreshed) and the Update Max Supply form stores the contract; no device gate has run the applied and not-refreshed paths yet."
+          "reason": "Tokens.updateConfig returns Rust's outcome (pending, applied with the proof-verified contract fetched from the update's confirming block or later, or applied but not refreshed) and the Update Max Supply form stores the contract; no device gate has run the applied and not-refreshed paths yet."
         }
       },
       "verification": [

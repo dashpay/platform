@@ -80,10 +80,7 @@ pub use masternode::{
     MasternodeStatus, TrackedMasternode, TrackedMasternodeSnapshot, WalletMasternodes,
 };
 pub use wallet::core_address_key::{CoreAddressKeyError, CoreAddressPrivateKey};
-pub use wallet::identity::network::{
-    config_update_applied, TokenConfigUpdateOutcome, CONFIG_UPDATE_REFRESH_ATTEMPTS,
-    CONFIG_UPDATE_REFRESH_DELAY,
-};
+pub use wallet::identity::network::TokenConfigUpdateOutcome;
 pub use wallet::identity::network::{
     contract_fee_claim_eligibility, contract_moderation_offer, derive_identity_auth_keypair,
     fetch_identity_public_keys, AutoAcceptProofSource, ContactCryptoProvider, ContactInfoOpened,

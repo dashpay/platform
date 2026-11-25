@@ -996,10 +996,12 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenCla
 /// `{"newMaxSupply":"<u64>"}` or `{"newMaxSupply":null}` to remove the cap).
 /// Returns the outcome JSON of `platform_wallet_token_update_config_and_refresh`
 /// (pending, applied with the refreshed contract, or applied but not
-/// refreshed), or null after throwing.
+/// refreshed), or null after throwing. Named apart from the void
+/// `tokenUpdateConfig` export it replaces, so an older native library fails to
+/// link here instead of sending the update and returning no outcome.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenUpdateConfig(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TokensNative_tokenUpdateConfigAndRefresh(
     mut env: JNIEnv,
     _class: JClass,
     wallet_handle: jlong,

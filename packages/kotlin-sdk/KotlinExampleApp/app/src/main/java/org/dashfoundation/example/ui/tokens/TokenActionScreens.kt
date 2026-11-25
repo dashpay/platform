@@ -1121,7 +1121,6 @@ private fun UpdateMaxSupplyForm(
 ) {
     val token = context.token
     val container = LocalAppContainer.current
-    val sdk by LocalAppState.current.sdk.collectAsStateWithLifecycle()
     var removeCap by rememberSaveable { mutableStateOf(false) }
     var amountText by rememberSaveable { mutableStateOf("") }
     var note by rememberSaveable { mutableStateOf("") }
@@ -1177,9 +1176,8 @@ private fun UpdateMaxSupplyForm(
                 val notice = when (outcome) {
                     TokenConfigUpdateOutcome.Pending -> null
                     is TokenConfigUpdateOutcome.Applied -> try {
-                        val activeSdk = sdk ?: throw IllegalStateException("the SDK is not connected")
                         ContractDownloader.storeFetchedContract(
-                            outcome.contract, token.contractId, activeSdk, container.database,
+                            outcome.contract, token.contractId, container.database,
                             Network.fromFfiValue(context.identity.networkRaw),
                         )
                         null

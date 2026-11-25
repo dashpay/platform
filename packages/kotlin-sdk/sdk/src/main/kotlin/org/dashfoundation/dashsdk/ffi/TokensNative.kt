@@ -195,7 +195,7 @@ internal object TokensNative {
      * [changeItemPayloadJson] is the per-tag JSON payload. Group-gatable.
      * Returns the outcome JSON (see `TokenConfigUpdateOutcome.fromJson`).
      */
-    external fun tokenUpdateConfig(
+    external fun tokenUpdateConfigAndRefresh(
         walletHandle: Long,
         identityId: ByteArray,
         tokenContractId: ByteArray,

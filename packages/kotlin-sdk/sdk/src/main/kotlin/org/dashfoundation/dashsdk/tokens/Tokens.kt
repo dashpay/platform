@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
 import org.dashfoundation.dashsdk.ffi.TokensNative
+import org.dashfoundation.dashsdk.wallet.opReturningCompletedResult
 
 /**
  * Token state-transition surface — the Android analog of the Swift
@@ -299,7 +300,10 @@ class Tokens internal constructor(private val walletHandle: Long,
      * tag + JSON payload (only [TokenConfigChange.MaxSupply] is wired in this
      * release, matching the FFI). Returns what the update did: still pending
      * (a group action), or applied with the contract it produced (or why
-     * that contract could not be fetched), for the host to store.
+     * that contract could not be fetched), for the host to store. If the
+     * caller is cancelled after the native call completed, the outcome is
+     * still returned (see `opReturningCompletedResult`), so a confirmed
+     * update is never reported only as a cancellation.
      */
     suspend fun updateConfig(
         identityId: ByteArray,
@@ -310,11 +314,11 @@ class Tokens internal constructor(private val walletHandle: Long,
         groupAction: GroupAction = GroupAction.None,
         signingKeyId: Int,
         signerHandle: Long,
-    ): TokenConfigUpdateOutcome = gate.op {
+    ): TokenConfigUpdateOutcome = gate.opReturningCompletedResult {
         validateSelectors(tokenPosition, signingKeyId)
         val g = groupAction.flatten()
         val outcome = mapNativeErrors {
-            TokensNative.tokenUpdateConfig(
+            TokensNative.tokenUpdateConfigAndRefresh(
                 walletHandle, identityId, tokenContractId, tokenPosition,
                 change.tag, change.payloadJson, publicNote,
                 g.kind, g.position, g.actionId, g.actionIsProposer,

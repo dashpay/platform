@@ -184,13 +184,13 @@ object ContractDownloader {
      * Store [fetched], a contract Rust fetched and verified for [contractId]
      * (the one a confirmed token configuration update produced), over the
      * stored row and its token rows. A stored row that is already newer is
-     * kept. Throws when the contract is for another id or has no version or
-     * binary serialization.
+     * kept. Only Room is written: the wallet registered the contract with the
+     * SDK's context provider when it fetched it. Throws when the contract is
+     * for another id or has no binary serialization.
      */
     suspend fun storeFetchedContract(
         fetched: ContractWithSerialization,
         contractId: ByteArray,
-        sdk: Sdk,
         database: DashDatabase,
         network: Network,
     ): DataContractEntity {
@@ -201,7 +201,7 @@ object ContractDownloader {
         }
         val binary = fetched.binarySerialization
             ?: throw Exception("The updated contract has no binary serialization")
-        return replaceStored(root, fetched.json, binary, contractId, sdk, database, network)
+        return replaceStored(root, fetched.json, binary, contractId, sdk = null, database, network)
     }
 
     /**
@@ -211,14 +211,15 @@ object ContractDownloader {
      * contract with the old token rows. A stored row whose version is newer
      * than the fetched one is kept as it is. Once written, the serialization
      * is registered with the SDK's trusted context, so proof verification
-     * reads this version. Returns the row now stored.
+     * reads this version (skipped without [sdk], when the caller already
+     * registered it). Returns the row now stored.
      */
     private suspend fun replaceStored(
         root: JsonObject,
         json: String,
         binary: ByteArray,
         contractId: ByteArray,
-        sdk: Sdk,
+        sdk: Sdk?,
         database: DashDatabase,
         network: Network,
     ): DataContractEntity {
@@ -245,7 +246,7 @@ object ContractDownloader {
             written = true
             entity
         }
-        if (written) sdk.contracts.loadKnownContracts(listOf(contractIdBase58 to binary))
+        if (written) sdk?.contracts?.loadKnownContracts(listOf(contractIdBase58 to binary))
         return stored
     }
 

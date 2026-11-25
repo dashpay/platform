@@ -240,26 +240,27 @@ pub unsafe extern "C" fn platform_wallet_token_update_config_and_refresh(
     ));
 
     let signer_addr = signer_handle as usize;
+    // Clone the identity wallet under the registry guard and run the update
+    // and its contract refetch outside it, so the broadcast, the proofs and
+    // the retry waits do not hold the registry lock.
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity_wallet = wallet.identity().clone();
-        let platform_version = wallet.sdk().version();
-        let outcome = block_on_worker(async move {
-            let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
-            identity_wallet
-                .token_update_config_and_refresh_with_external_signer(
-                    id,
-                    contract_id,
-                    token_position,
-                    change_item,
-                    public_note_str,
-                    group_info,
-                    signer,
-                )
-                .await
-        });
-        (outcome, platform_version)
+        (wallet.identity().clone(), wallet.sdk().version())
     });
-    let (result, platform_version) = unwrap_option_or_return!(option);
+    let (identity_wallet, platform_version) = unwrap_option_or_return!(option);
+    let result = block_on_worker(async move {
+        let signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
+        identity_wallet
+            .token_update_config_and_refresh_with_external_signer(
+                id,
+                contract_id,
+                token_position,
+                change_item,
+                public_note_str,
+                group_info,
+                signer,
+            )
+            .await
+    });
     let outcome = unwrap_result_or_return!(result);
     let value = unwrap_result_or_return!(outcome_json(outcome, platform_version));
     let serialized = unwrap_result_or_return!(serde_json::to_string(&value));
