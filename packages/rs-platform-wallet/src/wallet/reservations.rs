@@ -19,32 +19,36 @@
 //! [`release_reservation_after_rejected_broadcast`] for the order they must run
 //! in.
 //!
-//! Two functions release a rejected transaction's inputs, and each caller is
-//! protected against freeing a reservation that is no longer its own — after
-//! key-wallet's TTL swept it and a newer build re-took the inputs, or after the
-//! wallet was removed and re-created under the same id — by one of three
-//! things:
+//! Rejection cleanup must not free a reservation that is no longer the
+//! build's own. That can happen in two ways: key-wallet's TTL swept the
+//! reservation and a newer build re-took the inputs, or the wallet was removed
+//! and re-created under the same id. Each release path covers both:
 //!
-//! * **The build's owner token.** `ReservationToken`s are unique within the
+//! * **Asset lock** — [`release_reservation_after_rejected_broadcast`] with
+//!   the build's owner token. `ReservationToken`s are unique within the
 //!   process, so `release_reservation_if_owner` frees only what that build
-//!   still owns, on any wallet generation. The asset-lock flow calls
-//!   [`release_reservation_after_rejected_broadcast`] with its token, after
-//!   its own rejection cleanup (it untracks its `Built` row first).
-//! * **The generation's lifecycle gate.** The DashPay contact send has no
-//!   token and releases by outpoint through
-//!   [`release_reservation_after_rejected_broadcast`]. It holds
-//!   `WalletGeneration::payment_guard` from before the build until after the
-//!   release, so the wallet cannot be removed or re-created in between, and it
-//!   releases under its in-broadcast fence (see the ordering contract on the
-//!   function).
-//! * **A generation check.** A finalized transaction and a deferred payment
-//!   outlive the locks their build held, so
-//!   `CoreWallet::release_transaction_reservation` compares the registered
-//!   generation with the handle's own before releasing, and is owner-guarded
-//!   by the token as well.
+//!   still owns, in either case. The flow runs its own rejection cleanup
+//!   first (it untracks its `Built` row).
+//! * **DashPay contact send** — [`release_reservation_after_rejected_broadcast`]
+//!   with no token, so it releases by outpoint, and needs two things held
+//!   through the cleanup. The generation's lifecycle gate
+//!   (`WalletGeneration::payment_guard`), taken before the build with the
+//!   generation checked current, keeps the wallet from being removed or
+//!   re-created. The gate is shared and excludes teardown only, not other
+//!   builds, so the in-broadcast fence (`WalletGeneration::pin_in_broadcast`)
+//!   covers the sweep: a build that selects a fenced input rolls its own
+//!   selection back, so no newer reservation exists to be freed (see the
+//!   ordering contract on the function).
+//! * **Finalized transaction and deferred payment** — these outlive the
+//!   locks their build held and release through
+//!   `CoreWallet::release_transaction_reservation`. It compares the
+//!   registered generation with the handle's own, which covers re-creation,
+//!   and releases with the build's owner token, which covers the sweep.
 //!
-//! [`release_reservation_after_rejected_broadcast`] does not check the
-//! generation itself: a new caller must bring a token or hold the gate.
+//! [`release_reservation_after_rejected_broadcast`] checks neither the
+//! generation nor, without a token, ownership. A new caller must pass the
+//! build's owner token, or else hold the lifecycle gate of a generation it
+//! checked current and keep the inputs fenced until the call returns.
 
 use dashcore::Transaction;
 use key_wallet::account::AccountType;

@@ -5,10 +5,11 @@
 //! ([`CoreWallet::finalize_transaction`](crate::CoreWallet::finalize_transaction)
 //! then
 //! [`CoreWallet::broadcast_finalized_transaction`](crate::CoreWallet::broadcast_finalized_transaction))
-//! builds, signs, and broadcasts in one uninterrupted step. BIP70-style flows
-//! must split that: sign now (reserving the funding UTXOs), hand the raw bytes
-//! to a merchant server, and broadcast **only** once the server acks — or
-//! release the reservation if it nacks / the user abandons.
+//! builds and signs in one call and broadcasts in the next, with nothing in
+//! between. BIP70-style flows must put a wait there: sign now (reserving the
+//! funding UTXOs), hand the raw bytes to a merchant server, and broadcast
+//! **only** once the server acks — or release the reservation if it nacks /
+//! the user abandons.
 //!
 //! `TransactionBuilder::build_signed` already reserves the selected UTXOs in the
 //! funding account's `ReservationSet` and leaves the reservation held on

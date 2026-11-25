@@ -279,6 +279,14 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// inputs; send it with
     /// [`broadcast_finalized_transaction`](Self::broadcast_finalized_transaction),
     /// which releases them on a definitive rejection.
+    ///
+    /// Neither method checks that the wallet is still registered: a
+    /// transaction of a removed or re-created wallet is sent all the same.
+    /// The caller establishes that, as the FFI entry point does: on the
+    /// `CoreWallet` that finalized the transaction, hold
+    /// [`generation_payment_guard`](Self::generation_payment_guard) from an
+    /// [`is_current_generation`](Self::is_current_generation) check until the
+    /// broadcast returns.
     pub async fn broadcast_transaction(
         &self,
         transaction: &Transaction,
