@@ -22,7 +22,8 @@ findings in its review summary alone shows up as a round with few or no
 threads, so read the summaries. A change between two heads counts only files
 that are in the pull request's diff today, which drops a file that was added
 and later removed again. Merges from the base branch are subtracted from those
-changes by line count, which is close but not exact. After a rebase or a
+changes by line count, which is close but not exact; a merge of any other
+branch counts as the author's change. After a rebase or a
 force-push the change between two heads can include base-branch changes to the
 same files, and a head that is gone cannot be compared at all: both are
 flagged instead of guessed.
@@ -235,18 +236,21 @@ def review_passes(pr, reviews, comments):
     return list(passes.values())
 
 
+def is_merge(commit):
+    return len(commit.get("parents") or []) > 1
+
+
 def merges_between(commits, old, new):
     """The merge commits after `old` up to `new`, or None when unknowable."""
     order = [item["sha"] for item in commits]
     if old not in order or new not in order:
         return None
     return [
-        item for item in commits[order.index(old) + 1: order.index(new) + 1]
-        if len(item.get("parents") or []) > 1
+        item for item in commits[order.index(old) + 1: order.index(new) + 1] if is_merge(item)
     ]
 
 
-def compare_pairs(pr, passes, commits):
+def compare_pairs(pr, passes, commits, base_merges):
     """The (from, to) commit pairs whose difference the report needs."""
     heads = [entry["head"] for entry in passes if entry["head"] != "unknown"]
     if not heads:
@@ -261,7 +265,7 @@ def compare_pairs(pr, passes, commits):
     # pull request's side.
     pairs += [
         (item["parents"][0]["sha"], item["sha"])
-        for item in commits if len(item.get("parents") or []) > 1
+        for item in commits if base_merges.get(item["sha"])
     ]
     return list(OrderedDict.fromkeys(
         pair for pair in pairs if pair[0] != pair[1] and "unknown" not in pair
@@ -271,7 +275,9 @@ def compare_pairs(pr, passes, commits):
 def own_change(raw, old, new):
     """The change from `old` to `new` without what merges from base brought in.
 
-    Returns None when the two commits cannot be compared.
+    A merge of another branch, such as the pull request this one is stacked
+    on, is the author's change and stays in. Returns None when the two commits
+    cannot be compared.
     """
     change = raw["compares"].get((old, new))
     if change is None:
@@ -280,7 +286,12 @@ def own_change(raw, old, new):
     files = {path: dict(item) for path, item in change["files"].items()}
     merged, partial = False, change["truncated"]
     for merge in merges or []:
+        from_base = raw["base_merges"].get(merge["sha"])
+        if from_base is False:
+            continue
         brought = raw["compares"].get((merge["parents"][0]["sha"], merge["sha"]))
+        if from_base is None:
+            brought = None
         if brought is None or brought["truncated"]:
             partial = True
             continue
@@ -500,6 +511,23 @@ def fetch_resolved(repo, number):
         return None
 
 
+def fetch_base_merges(repo, base, commits):
+    """For each merge commit: whether everything it merged in is on `base`.
+
+    None when GitHub cannot say, for example once the base branch is deleted.
+    """
+    found = {}
+    for item in filter(is_merge, commits):
+        try:
+            found[item["sha"]] = all(
+                json.loads(gh("api", f"repos/{repo}/compare/{base}...{parent['sha']}"))["ahead_by"] == 0
+                for parent in item["parents"][1:]
+            )
+        except (GhError, KeyError):
+            found[item["sha"]] = None
+    return found
+
+
 def fetch(repo, number):
     base = f"repos/{repo}/pulls/{number}"
     raw = {
@@ -511,10 +539,11 @@ def fetch(repo, number):
         "commits": gh_list(base + "/commits"),
         "resolved": fetch_resolved(repo, number),
     }
+    raw["base_merges"] = fetch_base_merges(repo, raw["pr"]["base"]["ref"], raw["commits"])
     passes = review_passes(raw["pr"], raw["reviews"], raw["comments"])
     raw["compares"] = {
         pair: fetch_compare(repo, *pair)
-        for pair in compare_pairs(raw["pr"], passes, raw["commits"])
+        for pair in compare_pairs(raw["pr"], passes, raw["commits"], raw["base_merges"])
     }
     return raw
 
@@ -589,9 +618,9 @@ def render_pass(entry, last, body_chars, full=False):
             )
     for review in entry["reviews"]:
         if review["body"] and (full or body_chars):
-            body = review["body"] if full else shorten(
-                review["body"], body_chars, f"--round {entry['round'] or 0}"
-            )
+            # A pass without findings has no round number to ask for.
+            hint = f"--round {entry['round']}" if entry["round"] else "--body-chars -1"
+            body = review["body"] if full else shorten(review["body"], body_chars, hint)
             out += ["" if full else None, f"Summary by {review['reviewer']}:"] + indent(body)
     change = entry["response"]
     label = "Change since this review" if last else "Change before the next reviewed head"
@@ -604,7 +633,7 @@ def render_pass(entry, last, body_chars, full=False):
             note for flag, note in (
                 ("merged", "a merge from the base branch is left out"),
                 ("rewritten", "history was rewritten in between, so this can include base-branch changes"),
-                ("truncated", "partial: GitHub cut a file list"),
+                ("truncated", "partial: a file list was cut short or a merge could not be traced"),
             ) if change[flag]
         ]
         out.append(
@@ -741,6 +770,9 @@ def target(argument, repo):
     match = PR_URL.search(argument or "")
     if match:
         return match.group(1), int(match.group(2))
+    if repo and not argument:
+        # The current branch's pull request belongs to the current repository.
+        raise ValueError("give a pull request number or URL together with --repo")
     repo = repo or gh("repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner").strip()
     if argument:
         return repo, int(argument.lstrip("#"))
@@ -757,7 +789,7 @@ def main():
                         help="print in full every thread on the files whose path contains PATH")
     parser.add_argument("--json", action="store_true", help="print the whole report as JSON")
     parser.add_argument("--body-chars", type=int, default=1000,
-                        help="characters of each review summary in the overview; 0 for none")
+                        help="characters of each review summary in the overview; 0 for none, -1 for all")
     args = parser.parse_args()
     try:
         report = build_report(fetch(*target(args.pr, args.repo)))

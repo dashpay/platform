@@ -92,6 +92,7 @@ def history():
             commit("h3", "fix: keep the old key"),
         ],
         "resolved": {1: True, 2: True, 5: False, 6: True, 7: True},
+        "base_merges": {},
         "compares": {
             ("base", "h1"): compared({
                 "src/store.rs": changed(40, 0, status="added"),
@@ -187,6 +188,7 @@ class ReviewRoundsTest(unittest.TestCase):
         raw["commits"].insert(1, commit("merge", "Merge branch 'v5.1-dev'", "h1", "tip"))
         raw["compares"][("h1", "h2")]["files"]["src/view.rs"] = changed(7, 3)
         raw["compares"][("h1", "merge")] = compared({"src/view.rs": changed(7, 3)})
+        raw["base_merges"] = {"merge": True}
         report = rounds.build_report(raw)
         response = report["passes"][0]["response"]
         self.assertEqual([item["path"] for item in response["files"]], ["src/store.rs"])
@@ -194,7 +196,35 @@ class ReviewRoundsTest(unittest.TestCase):
         self.assertEqual(report["passes"][1]["threads"][2]["place"], rounds.OLD_CODE)
         self.assertIn("a merge from the base branch is left out", rounds.render(report, 0))
         passes = rounds.review_passes(raw["pr"], raw["reviews"], raw["comments"])
-        self.assertIn(("h1", "merge"), rounds.compare_pairs(raw["pr"], passes, raw["commits"]))
+        self.assertIn(
+            ("h1", "merge"),
+            rounds.compare_pairs(raw["pr"], passes, raw["commits"], raw["base_merges"]),
+        )
+
+    def test_should_keep_a_merge_of_another_branch_as_the_authors_change(self):
+        raw = history()
+        raw["commits"].insert(1, commit("merge", "Merge branch 'feat/stacked'", "h1", "tip"))
+        raw["compares"][("h1", "h2")]["files"]["src/view.rs"] = changed(7, 3)
+        raw["base_merges"] = {"merge": False}
+        report = rounds.build_report(raw)
+        response = report["passes"][0]["response"]
+        self.assertEqual(
+            sorted(item["path"] for item in response["files"]), ["src/store.rs", "src/view.rs"]
+        )
+        self.assertFalse(response["merged"])
+        self.assertEqual(report["passes"][1]["threads"][2]["place"], rounds.CHANGED_FILE)
+        passes = rounds.review_passes(raw["pr"], raw["reviews"], raw["comments"])
+        self.assertNotIn(
+            ("h1", "merge"),
+            rounds.compare_pairs(raw["pr"], passes, raw["commits"], raw["base_merges"]),
+        )
+
+    def test_should_call_a_response_partial_when_a_merge_cannot_be_traced(self):
+        raw = history()
+        raw["commits"].insert(1, commit("merge", "Merge branch 'gone'", "h1", "tip"))
+        raw["base_merges"] = {"merge": None}
+        report = rounds.build_report(raw)
+        self.assertTrue(report["passes"][0]["response"]["truncated"])
 
     def test_should_flag_a_response_that_rewrote_history(self):
         raw = history()
@@ -238,6 +268,14 @@ class ReviewRoundsTest(unittest.TestCase):
         text = rounds.render(rounds.build_report(raw), 40)
         self.assertIn("  First line of the summary.\n  [81 more characters: --round 1]", text)
 
+    def test_should_point_a_cut_summary_of_a_pass_without_findings_at_a_working_option(self):
+        raw = history()
+        raw["reviews"][4]["body"] = "Looks right now.\n" + "x" * 80
+        report = rounds.build_report(raw)
+        self.assertIn("[81 more characters: --body-chars -1]", rounds.render(report, 30))
+        self.assertIn("x" * 80, rounds.render(report, -1))
+        self.assertNotIn("Looks right now.", rounds.render(report, 0))
+
     def test_should_drop_sections_about_the_run_and_keep_findings(self):
         body = (
             "Two findings.\n<details>\n<summary>Review info</summary>\n"
@@ -271,7 +309,7 @@ class ReviewRoundsTest(unittest.TestCase):
         raw = history()
         passes = rounds.review_passes(raw["pr"], raw["reviews"], raw["comments"])
         self.assertEqual(
-            rounds.compare_pairs(raw["pr"], passes, raw["commits"]),
+            rounds.compare_pairs(raw["pr"], passes, raw["commits"], raw["base_merges"]),
             [("base", "h1"), ("h1", "h2"), ("h2", "h3")],
         )
 
@@ -292,6 +330,10 @@ class ReviewRoundsTest(unittest.TestCase):
             ("dashpay/grovedb", 1042),
         )
         self.assertEqual(rounds.target("#6057", "dashpay/platform"), ("dashpay/platform", 6057))
+
+    def test_should_refuse_another_repository_without_a_pull_request(self):
+        with self.assertRaises(ValueError):
+            rounds.target(None, "dashpay/grovedb")
 
 
 if __name__ == "__main__":

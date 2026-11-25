@@ -174,5 +174,5 @@ Lead with the verdict in one line: `architectural`, `partly architectural` or
 4. **Advice**: what to do now, in order, and what to do differently next time.
 
 State what was not read (threads seen only as headlines, a head that could not
-be compared, a file list GitHub cut short), since a diagnosis from partial
+be compared, a change the overview marks partial), since a diagnosis from partial
 history can miss the cause.
