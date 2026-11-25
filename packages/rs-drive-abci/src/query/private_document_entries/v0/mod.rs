@@ -69,7 +69,7 @@ impl<C> Platform<C> {
 
         let maybe_contract_fetch_info = self.drive.get_contract_with_fetch_info(
             contract_id.to_buffer(),
-            false,
+            true,
             None,
             platform_version,
         )?;
@@ -162,7 +162,7 @@ mod tests {
     use std::sync::Arc;
 
     /// Platform at the latest protocol version with the contract declaring the private
-    /// `secret` type (512-byte entries, so 512 entries to a chunk of its store) and three
+    /// `secret` type (512-byte entries, so 1024 entries to a chunk of its store) and three
     /// entries appended to that store, entry `i` behind the header of block `10 + i` at time
     /// `500 * i` and filled with byte `i`.
     fn platform_with_private_entries() -> (

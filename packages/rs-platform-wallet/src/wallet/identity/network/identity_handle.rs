@@ -45,6 +45,7 @@ use zeroize::Zeroizing;
 use crate::broadcaster::{SpvBroadcaster, TransactionBroadcaster};
 use crate::error::PlatformWalletError;
 use crate::wallet::asset_lock::manager::AssetLockManager;
+use crate::wallet::core::WalletGeneration;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
 /// Default gap limit for identity discovery scanning.
@@ -508,6 +509,11 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     /// adapter and the DashPay rescan reconcile. See
     /// [`DurableCursors`](crate::changeset::DurableCursors).
     pub(crate) durable_cursors: crate::changeset::DurableCursors,
+    /// The wallet generation this handle belongs to: a public contact
+    /// request is sent only while it is the live one, under its lifecycle
+    /// gate, so a send started on a wallet since removed and re-created under
+    /// the same id never publishes or records on the replacement.
+    pub(crate) generation: Arc<WalletGeneration>,
     /// Broadcaster for DashPay payment transactions. Distinct from the
     /// asset-lock broadcaster — the asset-lock manager is always
     /// `SpvBroadcaster`-pinned, while this one picks the broadcaster
@@ -520,6 +526,8 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     /// signer-generic `PutDocument` trait) behind two by-value methods
     /// so the call sites stay simple.
     pub(crate) sdk_writer: Arc<super::sdk_writer::SdkWriter>,
+    /// Prevents overlapping erase attempts for a document across cloned handles.
+    pub(crate) document_erase_gate: Arc<super::DocumentEraseGate>,
     /// Serializes DPNS marketplace mutations and sync reconciliation for
     /// this wallet. Every cloned handle shares the same gate.
     pub(crate) dpns_operation_gate: Arc<tokio::sync::Mutex<()>>,
@@ -551,8 +559,10 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
             persister: self.persister.clone(),
             sync_fault: Arc::clone(&self.sync_fault),
             durable_cursors: Arc::clone(&self.durable_cursors),
+            generation: Arc::clone(&self.generation),
             broadcaster: Arc::clone(&self.broadcaster),
             sdk_writer: Arc::clone(&self.sdk_writer),
+            document_erase_gate: Arc::clone(&self.document_erase_gate),
             dpns_operation_gate: Arc::clone(&self.dpns_operation_gate),
             dpns_sync_progress: Arc::clone(&self.dpns_sync_progress),
         }
@@ -560,6 +570,43 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
 }
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+    /// This handle's wallet in `wm`, the wallet manager under its write lock,
+    /// while it is still this handle's generation: refused, as not found, once
+    /// the wallet was removed, or re-created under its id, since the handle
+    /// was taken. Work that ran without the wallet's lifecycle gate (network
+    /// reads, host key resolution) applies its results through this, so a
+    /// replacement never receives a stale handle's state: the check and the
+    /// write are under the one lock a removal takes.
+    pub(crate) fn current_wallet_info_mut<'w>(
+        &self,
+        wm: &'w mut WalletManager<PlatformWalletInfo>,
+    ) -> Result<&'w mut PlatformWalletInfo, PlatformWalletError> {
+        wm.get_wallet_info_mut(&self.wallet_id)
+            .filter(|info| Arc::ptr_eq(&info.generation, &self.generation))
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))
+    }
+
+    /// [`Self::current_wallet_info_mut`], for a read: under the manager's
+    /// read lock.
+    pub(crate) fn current_wallet_info<'w>(
+        &self,
+        wm: &'w WalletManager<PlatformWalletInfo>,
+    ) -> Result<&'w PlatformWalletInfo, PlatformWalletError> {
+        wm.get_wallet_info(&self.wallet_id)
+            .filter(|info| Arc::ptr_eq(&info.generation, &self.generation))
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))
+    }
+
+    /// [`Self::current_wallet_info_mut`], with the wallet itself.
+    pub(crate) fn current_wallet_and_info_mut<'w>(
+        &self,
+        wm: &'w mut WalletManager<PlatformWalletInfo>,
+    ) -> Result<(&'w mut Wallet, &'w mut PlatformWalletInfo), PlatformWalletError> {
+        wm.get_wallet_mut_and_info_mut(&self.wallet_id)
+            .filter(|(_, info)| Arc::ptr_eq(&info.generation, &self.generation))
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))
+    }
+
     /// Build the DIP-9 identity authentication derivation path.
     ///
     /// Path format: `m/9'/coin_type'/5'/0'/key_type'/identity_index'/key_id'`

@@ -26,10 +26,14 @@ export default function restartNodeTaskFactory(startNodeTask, stopNodeTask, buil
           return buildServicesTask(config);
         },
       },
+      // Titled, because listr leaves out a subtree whose tasks all lack one,
+      // and with it what stopping prints while it waits or why it failed.
       {
+        title: 'Stop node',
         task: () => stopNodeTask(config),
       },
       {
+        title: 'Start node',
         task: () => startNodeTask(config),
       },
     ]);

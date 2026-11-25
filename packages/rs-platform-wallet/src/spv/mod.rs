@@ -1,6 +1,7 @@
 mod peers;
 mod runtime;
 
+pub use crate::wallet::asset_lock::sync::locate::HeaderLookup;
 pub use peers::{SpvPeerInfo, SpvPeerNodeType};
 pub use runtime::{SpvQuorumPublicKey, SpvRuntime};
 

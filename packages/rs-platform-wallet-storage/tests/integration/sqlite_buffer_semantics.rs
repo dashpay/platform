@@ -193,7 +193,6 @@ fn tc016_buffer_merge_oracle_smoke() {
 #[test]
 fn tc001_get_core_tx_record_roundtrip() {
     use dashcore::blockdata::transaction::Transaction;
-    use dashcore::Txid;
     use key_wallet::managed_account::transaction_record::{
         TransactionDirection, TransactionRecord,
     };
@@ -201,7 +200,6 @@ fn tc001_get_core_tx_record_roundtrip() {
     let (persister, _tmp, _path) = fresh_persister();
     let w = wid(0x50);
     ensure_wallet_meta(&persister, &w);
-    let txid = Txid::from_byte_array([9u8; 32]);
     let dummy_tx = Transaction {
         version: 3,
         lock_time: 0,
@@ -209,7 +207,7 @@ fn tc001_get_core_tx_record_roundtrip() {
         output: vec![],
         special_transaction_payload: None,
     };
-    let mut record = TransactionRecord::new(
+    let record = TransactionRecord::new(
         dummy_tx,
         key_wallet::account::AccountType::Standard {
             index: 0,
@@ -226,7 +224,7 @@ fn tc001_get_core_tx_record_roundtrip() {
         Vec::new(),
         100,
     );
-    record.txid = txid;
+    let txid = record.txid;
     let mut cs = PlatformWalletChangeSet::default();
     cs.core = Some(CoreChangeSet {
         records: vec![record],
@@ -459,7 +457,7 @@ fn tc023_one_flush_is_one_transaction() {
     let commits = Arc::new(AtomicUsize::new(0));
     {
         let commits_clone = Arc::clone(&commits);
-        let conn = persister.lock_conn_for_test();
+        let mut conn = persister.lock_conn_for_test();
         conn.commit_hook(Some(move || {
             commits_clone.fetch_add(1, Ordering::SeqCst);
             false
@@ -471,7 +469,7 @@ fn tc023_one_flush_is_one_transaction() {
 
     // Remove the hook so the persister is reusable elsewhere.
     {
-        let conn = persister.lock_conn_for_test();
+        let mut conn = persister.lock_conn_for_test();
         conn.commit_hook(None::<fn() -> bool>)
             .expect("remove commit hook");
     }
@@ -515,7 +513,7 @@ fn install_commit_counter(
     use std::sync::Arc;
     let counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let counter_clone = Arc::clone(&counter);
-    let conn = persister.lock_conn_for_test();
+    let mut conn = persister.lock_conn_for_test();
     conn.commit_hook(Some(move || {
         counter_clone.fetch_add(1, Ordering::SeqCst);
         false

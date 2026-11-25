@@ -10,7 +10,6 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::fee::Credits;
 
 use crate::drive::tokens::paths::token_balances_path_vec;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::version::PlatformVersion;
 use grovedb::{Element, TransactionArg};
 
@@ -26,7 +25,6 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-        previous_fee_versions: Option<&CachedEpochIndexFeeVersions>,
     ) -> Result<FeeResult, Error> {
         let mut estimated_costs_only_with_layer_info = (!apply).then(EstimatedLayers::new);
 
@@ -47,13 +45,11 @@ impl Drive {
             &mut drive_operations,
             &platform_version.drive,
         )?;
-        let fees = Drive::calculate_fee(
+        let fees = self.calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
-            self.config.epochs_per_era,
             platform_version,
-            previous_fee_versions,
         )?;
         Ok(fees)
     }
@@ -166,7 +162,6 @@ mod tests {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("expected to seed balance");
         }
@@ -188,7 +183,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to remove partial balance");
 
@@ -212,7 +206,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to remove full balance");
 
@@ -235,7 +228,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(matches!(
@@ -279,7 +271,6 @@ mod tests {
             true,
             None,
             platform_version,
-            None,
         );
 
         assert!(matches!(
@@ -328,7 +319,6 @@ mod tests {
                 false, // apply=false, cost-only branch
                 None,
                 platform_version,
-                None,
             )
             .expect("expected estimation to succeed");
 

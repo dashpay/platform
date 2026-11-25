@@ -164,6 +164,29 @@ pub enum ProtocolError {
     #[error("Shielded transaction build error: {0}")]
     ShieldedBuildError(String),
 
+    /// A private document type's `entrySize` is smaller than its largest payload needs in the
+    /// standard private document envelope. The chain registers such a type, but clients refuse to.
+    #[error(
+        "private document type {document_type_name} takes entries of {entry_size} bytes, fewer than \
+         the {minimum_entry_size} its largest payload needs in the private document envelope"
+    )]
+    PrivateDocumentEntrySizeTooSmall {
+        document_type_name: String,
+        entry_size: u32,
+        minimum_entry_size: u32,
+    },
+
+    /// A property of a private document type sets no largest value, so no entry size holds every
+    /// payload of the type.
+    #[error(
+        "property {property_name} of private document type {document_type_name} sets no largest \
+         value, so no entry size holds every payload"
+    )]
+    UnboundedPrivateDocumentProperty {
+        document_type_name: String,
+        property_name: String,
+    },
+
     #[error("Not supported Error: {0}")]
     NotSupported(String),
 

@@ -106,6 +106,7 @@ impl Drive {
             path_queries.extend(document_queries.iter().filter_map(|drive_query| {
                 // The path query construction can only fail in extremely rare circumstances.
                 let mut path_query = drive_query.construct_path_query(platform_version).ok()?;
+                // Timed single-document queries need a subquery cap here or verification fails closed.
                 path_query.query.limit = None;
                 Some(path_query)
             }));

@@ -161,6 +161,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V6: DriveAbciValidationVersions =
                 document_create_transition_structure_validation: 0,
                 document_delete_transition_structure_validation: 0,
                 document_index_only_delete_transition_structure_validation: 0,
+                document_erase_transition_structure_validation: None,
                 document_replace_transition_structure_validation: 0,
                 document_transfer_transition_structure_validation: 0,
                 document_purchase_transition_structure_validation: 0,
@@ -169,6 +170,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V6: DriveAbciValidationVersions =
                 document_create_transition_state_validation: 1,
                 document_delete_transition_state_validation: 0,
                 document_index_only_delete_transition_state_validation: 0,
+                document_erase_transition_state_validation: None,
                 document_replace_transition_state_validation: 0,
                 document_transfer_transition_state_validation: 0,
                 document_purchase_transition_state_validation: 0,
@@ -341,6 +343,15 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V6: DriveAbciValidationVersions =
                     transform_into_action: 0,
                 },
             token_purchase_from_shielded_pool_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: None,
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
+            private_document_create_from_shielded_pool_state_transition:
                 DriveAbciStateTransitionValidationVersion {
                     basic_structure: None,
                     advanced_structure: None,

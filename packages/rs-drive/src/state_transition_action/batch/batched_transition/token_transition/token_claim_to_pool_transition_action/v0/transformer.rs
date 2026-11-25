@@ -71,13 +71,11 @@ impl TokenClaimToPoolTransitionActionV0 {
                 platform_version,
             )?;
 
-        let mut fee_result = Drive::calculate_fee(
+        let mut fee_result = drive.calculate_fee(
             None,
             Some(drive_operations),
             &block_info.epoch,
-            drive.config.epochs_per_era,
             platform_version,
-            None,
         )?;
 
         // The Halo 2 verification and per-action work GroveDB cannot meter, charged here so

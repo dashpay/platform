@@ -45,6 +45,8 @@ use platform_wallet_storage::{
 };
 use zeroize::Zeroizing;
 
+use crate::common;
+
 const MNEMONIC_A: &str = "abandon abandon abandon abandon abandon abandon \
      abandon abandon abandon abandon abandon about";
 const NET: Network = Network::Testnet;
@@ -394,7 +396,7 @@ fn scan_from_zero() -> IdentityDiscoveryOptions {
 /// identity is on file), and its discovery restores every breadcrumb.
 #[tokio::test]
 async fn should_not_leave_watch_only_key_rows_when_the_disk_fills_during_a_restore() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("wallet.db");
     let identity = registered_identity();
     let id = identity.id();
@@ -484,7 +486,7 @@ fn with_key_from_other_device(identity: &Identity) -> Identity {
 /// a restart the identity holds the key set its stored revision claims.
 #[tokio::test]
 async fn should_store_a_key_a_refresh_finds_so_it_survives_a_restart() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("wallet.db");
     let identity = registered_identity();
     let id = identity.id();
@@ -548,7 +550,7 @@ async fn should_store_a_key_a_refresh_finds_so_it_survives_a_restart() {
 /// is stored with its breadcrumb kept and survives a restart.
 #[tokio::test]
 async fn should_store_a_key_core_re_enabled_so_it_survives_a_restart() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("wallet.db");
     let mut active = registered_identity();
     active.set_revision(0);
@@ -607,7 +609,7 @@ async fn should_store_a_key_core_re_enabled_so_it_survives_a_restart() {
 /// when it derives from the seed, a key another device added included.
 #[tokio::test]
 async fn should_store_a_key_a_load_at_index_finds_with_its_breadcrumb() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = common::secure_tempdir().unwrap();
     let path = tmp.path().join("wallet.db");
     let identity = registered_identity();
     let id = identity.id();

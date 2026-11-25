@@ -53,6 +53,15 @@ pub(crate) fn grpc_web_base_url(uri: &str) -> &str {
     uri.trim_end_matches('/')
 }
 
+/// Request-specific disposition of a failed dispatched attempt.
+#[derive(Debug, Clone, Copy)]
+pub struct RequestErrorClassification {
+    /// Delivery may have happened; this is not an execution verdict.
+    pub possibly_accepted: bool,
+    /// Whether another transport attempt is eligible within the existing budget.
+    pub retry: bool,
+}
+
 /// Generic transport layer request.
 /// Requires [Clone] as could be retried and a client in general consumes a request.
 pub trait TransportRequest: Clone + Send + Sync + Debug + Mockable {
@@ -101,6 +110,14 @@ pub trait TransportRequest: Clone + Send + Sync + Debug + Mockable {
     /// (in `dash-platform-queries`) reads from the version tables before the query is encoded.
     fn needs_protocol_version(&self) -> Option<u32> {
         None
+    }
+
+    /// Classify a dispatched failure. Reads retain their existing retry behavior.
+    fn classify_error(&self, error: &TransportError) -> RequestErrorClassification {
+        RequestErrorClassification {
+            possibly_accepted: false,
+            retry: error.can_retry(),
+        }
     }
 
     /// Perform transport request asynchronously.
@@ -158,6 +175,12 @@ impl CanRetry for TransportError {
     fn rate_limit_ban_duration(&self) -> Option<std::time::Duration> {
         match self {
             TransportError::Grpc(status) => status.rate_limit_ban_duration(),
+        }
+    }
+
+    fn is_node_busy(&self) -> bool {
+        match self {
+            TransportError::Grpc(status) => status.is_node_busy(),
         }
     }
 }

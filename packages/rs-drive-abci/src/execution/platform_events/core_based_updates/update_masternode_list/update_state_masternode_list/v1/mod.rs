@@ -393,8 +393,10 @@ mod tests {
     fn state_with_one_masternode_and_diff(
         state_diff: DMNStateDiff,
     ) -> (TempPlatform<MockCoreRPCLike>, PlatformState, ProTxHash) {
-        let platform_version = PlatformVersion::latest();
-        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc();
 
         let pro_tx_hash = ProTxHash::from_byte_array([0x77u8; 32]);
         let mut state = PlatformState::default_with_protocol_versions(
@@ -509,8 +511,10 @@ mod tests {
 
     #[test]
     fn should_only_upsert_changed_entries_in_a_mixed_masternode_diff() {
-        let platform_version = PlatformVersion::latest();
-        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc();
         let mut state = PlatformState::default_with_protocol_versions(
             platform_version.protocol_version,
             platform_version.protocol_version,
@@ -637,8 +641,10 @@ mod tests {
         mut evonode: MasternodeListItem,
         diffs: Vec<DMNStateDiff>,
     ) -> PlatformState {
-        let platform_version = PlatformVersion::latest();
-        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
+            .build_with_mock_rpc();
 
         let pro_tx_hash = evonode.pro_tx_hash;
         let quorum_hash = QuorumHash::from_byte_array(VALIDATOR_QUORUM_HASH);
@@ -748,8 +754,9 @@ mod tests {
     /// `addresses`.
     #[test]
     fn should_hold_after_every_update_the_masternode_lists_a_restarted_node_loads() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
             .with_config(PlatformConfig {
                 testing_configs: PlatformTestConfig {
                     store_platform_state: true,
@@ -1194,7 +1201,7 @@ mod port_resolution_tests {
     }
 
     fn validator_for(dmn_state: DMNState) -> Option<ValidatorV0> {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let mut state = PlatformState::default_with_protocol_versions(
             platform_version.protocol_version,
             platform_version.protocol_version,

@@ -11,7 +11,7 @@ use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 
 impl Drive {
-    /// Version 2 (protocol version 15): the token marketplace escrow BigSumTree joins the
+    /// Version 2 (protocol version 16): the token marketplace escrow BigSumTree joins the
     /// identity balances and the shielded pools on the balance side, so `identity balances +
     /// shielded pool balances + escrowed listings` must equal the total supplies. Listing a token
     /// moves it from its holder's balance into escrow without touching supply.

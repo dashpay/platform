@@ -7,6 +7,7 @@ use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 use crate::util::estimated_layers::EstimatedLayers;
 use dpp::version::drive_versions::DriveVersion;
 use grovedb::TransactionArg;
+use std::collections::BTreeSet;
 
 impl Drive {
     /// Applies a batch of Drive operations to groveDB.
@@ -20,14 +21,17 @@ impl Drive {
         estimated_costs_only_with_layer_info: Option<EstimatedLayers>,
         transaction: TransactionArg,
         mut batch_operations: Vec<LowLevelDriveOperation>,
+        owner_handover: Option<BTreeSet<[u8; 32]>>,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         coalesce_current_key_alias_operations(&mut batch_operations);
-        let (grove_db_operations, ephemeral_batches, mut other_operations) =
+        let (mut grove_db_operations, ephemeral_batches, mut other_operations) =
             LowLevelDriveOperation::grovedb_operations_batch_consume_split_ephemeral(
                 batch_operations,
             );
+        // Ephemeral operations carry no storage flags, so only the ordinary batch needs them.
+        grove_db_operations.owner_handover = owner_handover;
         // Ephemeral operations (a `timeRange` index's TTL'd sub-levels, the
         // writes of a document whose type declares a `ttl`) apply as their
         // own batch per pricing rule, so each batch's cost is known

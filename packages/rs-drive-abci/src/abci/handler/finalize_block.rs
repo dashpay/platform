@@ -281,6 +281,16 @@ where
                     "flushed pending prefix drops"
                 );
             }
+            // A record whose liveness check failed stays queued and is
+            // retried on the next flush; a count that keeps coming back
+            // points at a storage fault or undecodable bytes.
+            if report.unresolved_records > 0 {
+                tracing::warn!(
+                    unresolved_records = report.unresolved_records,
+                    first_unresolved_error = report.first_unresolved_error.as_deref(),
+                    "pending prefix drops left unresolved; records persist and will be retried"
+                );
+            }
         }
         Err(error) => {
             tracing::warn!(
@@ -949,7 +959,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply the enqueue operations");
         platform

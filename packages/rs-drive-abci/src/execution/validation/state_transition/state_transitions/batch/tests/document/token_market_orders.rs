@@ -1,4 +1,4 @@
-//! The token market contract's orders (`ask` and `bid`, protocol version 15) through block
+//! The token market contract's orders (`ask` and `bid`, protocol version 16) through block
 //! processing. Only the token marketplace transitions write an order, so a document
 //! transition replacing or deleting a stored order is refused by the reject data trigger,
 //! even when its owner signs it, and the order stays as stored.
@@ -17,10 +17,17 @@ mod token_market_orders_tests {
     use dpp::state_transition::StateTransition;
     use dpp::system_data_contracts::token_market_contract;
     use dpp::system_data_contracts::token_market_contract::v1::document_types::{ask, bid};
+    use dpp::version::feature_initial_protocol_versions::TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION;
     use drive::util::object_size_info::{
         DocumentAndContractInfo, DocumentInfo::DocumentRefInfo, OwnedDocumentInfo,
     };
     use std::collections::BTreeMap;
+
+    /// The token market contract exists from protocol version 16.
+    fn token_marketplace_version() -> &'static PlatformVersion {
+        PlatformVersion::get(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION)
+            .expect("expected the token marketplace's first protocol version")
+    }
 
     /// An order of `document_type_name` owned by `owner_id`, for 10 units of `token_id` (a
     /// token of 6 decimals) at a price of 5, as the marketplace stores it.
@@ -63,7 +70,7 @@ mod token_market_orders_tests {
             &format!("select * from {document_type_name}"),
             market,
             Some(&platform.config.drive),
-            PlatformVersion::latest(),
+            token_marketplace_version(),
         )
         .expect("expected an order query");
         platform
@@ -89,7 +96,7 @@ mod token_market_orders_tests {
                 &platform.state.load(),
                 &BlockInfo::default(),
                 &transaction,
-                PlatformVersion::latest(),
+                token_marketplace_version(),
                 false,
                 None,
             )
@@ -108,8 +115,9 @@ mod token_market_orders_tests {
     /// leaves both orders as stored.
     #[tokio::test]
     async fn should_refuse_a_signed_replace_or_delete_of_a_stored_order() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = token_marketplace_version();
         let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(platform_version.protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
         let (owner, signer, key) = setup_identity(&mut platform, 961, dash_to_credits!(0.5));
@@ -160,7 +168,6 @@ mod token_market_orders_tests {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("expected to store the order");
             let before = stored_orders(&platform, &market, name);

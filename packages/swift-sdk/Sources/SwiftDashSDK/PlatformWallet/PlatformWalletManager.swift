@@ -109,6 +109,29 @@ public struct PlatformWalletPersistenceCapabilities: Equatable, Sendable {
     public static let dashpayPayments: UInt64 = 1 << 12
     /// Durable operation UUIDs, including consumed asset-lock tombstones.
     public static let assetLockOperationIds: UInt64 = 1 << 13
+    /// The Orchard recipient of a shielded asset-lock funding survives store
+    /// and load with its row, so a resume after restart pays the confirmed
+    /// recipient. Mirrors `PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS`;
+    /// Rust only honours the declaration when both recipient slots are wired.
+    public static let assetLockShieldedRecipients: UInt64 = 1 << 14
+    /// The private contact request sync's scan state (each identity's read
+    /// position in DashPay's private contact request store, and its private
+    /// contacts' shielded addresses) is stored on its round and restored at
+    /// load, so a relaunch resumes the sync where it stopped. A store
+    /// declaring it keeps a position record marked unresolved through its
+    /// wallet's removal, until a record stored cleared for the same wallet
+    /// and identity replaces it, and lists that wallet so Rust holds the
+    /// identity again if the wallet comes back. Mirrors
+    /// `PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE`; Rust
+    /// only honours the declaration when the extension carries the five
+    /// scan-state callbacks.
+    public static let privateContactRequestScanState: UInt64 = 1 << 15
+    /// Locked outpoints (masternode collateral, and outpoints locked by
+    /// hand) are persisted and restored across restarts, through the
+    /// persistence extension's outpoint-lock persist / load / free slots.
+    /// Mirrors `PersistenceCapabilities::OUTPOINT_LOCKS`; Rust only honours
+    /// the declaration when all three slots are wired.
+    public static let outpointLocks: UInt64 = 1 << 16
 
     public let version: UInt32
     public let bits: UInt64
@@ -329,6 +352,8 @@ struct PlatformWalletPollSnapshot: Sendable {
     var shieldedSyncIsSyncing: Bool?
     var dashPaySyncIsSyncing: Bool?
     var spvTipBlockTime: Date??
+    /// The wallets the TXO-store reconcile schedule reports due this tick.
+    var txoReconcileDueWallets: [Data]?
 }
 
 /// One wallet's needs-unlock count, tagged with the handle it was read
@@ -395,6 +420,9 @@ struct PlatformWalletNativePollCalls: @unchecked Sendable {
     /// Takes the WALLET handle (`ManagedPlatformWallet.handle`), not the
     /// manager's.
     let pendingAccountBuildCount: Read<UInt32>
+    /// The TXO-store reconcile schedule's clock: read every tick, SPV
+    /// running or not.
+    let txoReconcileDueWallets: Read<[Data]>
 
     static let live = PlatformWalletNativePollCalls(
         syncProgress: PlatformWalletManager.readSyncProgress,
@@ -404,7 +432,8 @@ struct PlatformWalletNativePollCalls: @unchecked Sendable {
         isPlatformAddressSyncing: PlatformWalletManager.readIsPlatformAddressSyncing,
         isShieldedSyncing: PlatformWalletManager.readIsShieldedSyncing,
         isDashPaySyncing: PlatformWalletManager.readIsDashPaySyncing,
-        pendingAccountBuildCount: PlatformWalletManager.readPendingAccountBuildCount
+        pendingAccountBuildCount: PlatformWalletManager.readPendingAccountBuildCount,
+        txoReconcileDueWallets: CoreTxoReconcileFFI.dueWallets
     )
 }
 
@@ -696,6 +725,13 @@ public class PlatformWalletManager: ObservableObject {
     /// injectable so ownership and shutdown admission are tested together.
     internal var nativeShieldedLocalBalanceCalls = PlatformWalletNativeShieldedLocalBalanceCalls.live
 
+    /// Test seam for the native call behind
+    /// `shieldedShieldFromIdentityToRecipient`, so its shutdown admission is
+    /// tested without a signer or network; same contract as
+    /// [`nativeTeardownCalls`].
+    internal var nativeShieldFromIdentityToRecipientCall: ShieldFromIdentityToRecipientCall =
+        platform_wallet_manager_shielded_shield_from_identity_to_recipient
+
     /// Test seam for the native reads behind the progress poller; same
     /// contract as [`nativeTeardownCalls`].
     internal var nativePollCalls = PlatformWalletNativePollCalls.live
@@ -722,14 +758,21 @@ public class PlatformWalletManager: ObservableObject {
 
     // MARK: Core TXO store reconcile state (see PlatformWalletManagerTxoReconcile.swift)
 
-    /// Wallets with a reconcile run in flight; a second run for the same
-    /// wallet is refused rather than overlapped.
+    /// Wallets whose automatically launched reconcile has not returned yet,
+    /// so the poll does not queue a second launch behind it. Bookkeeping of
+    /// this manager's own tasks only: whether and when a run may start is
+    /// the engine's schedule and start gate.
+    var coreTxoReconcileLaunched: Set<Data> = []
+    /// Wallets with a `reconcileCoreTxoStore(for:)` call between its checks
+    /// and its return, whoever called it. Runs execute one at a time on the
+    /// serial `coreTxoReconcileQueue`, so a second request for the same
+    /// wallet would queue behind the first and run in full after it — the
+    /// engine's own one-run-per-wallet check never sees the two overlap.
+    /// This set answers that request `alreadyRunning` instead.
     var coreTxoReconcileInFlight: Set<Data> = []
-    /// When each wallet's last automatic run was scheduled, for the cadence.
-    var coreTxoReconcileLastRunAt: [Data: ContinuousClock.Instant] = [:]
-    /// Whether the last progress tick was in steady state, for the
-    /// rising-edge trigger.
-    var coreTxoReconcileWasSteady = false
+    /// Test seam for the native calls that bracket a reconcile run; same
+    /// contract as [`nativeTeardownCalls`].
+    internal var nativeTxoReconcileCalls = PlatformWalletNativeTxoReconcileCalls.live
     /// Bumped by [`shutdown()`] and [`deleteWallet`]; an in-flight run
     /// re-checks it between pages and stops.
     nonisolated let coreTxoReconcileEpoch = SyncGenerationCounter()
@@ -975,6 +1018,7 @@ public class PlatformWalletManager: ObservableObject {
         let stopQueue = shieldedStopQueue
         let queue = pollQueue
         let walletQueue = walletPollQueue
+        let reconcileQueue = coreTxoReconcileQueue
         let drainTimeout = pollDrainTimeout
         let task = Task {
             let shieldedStop = await withCheckedContinuation { continuation in
@@ -1002,6 +1046,11 @@ public class PlatformWalletManager: ObservableObject {
             // waits are bounded rather than unconditional.
             await Self.drainQueue(queue, within: drainTimeout)
             await Self.drainQueue(walletQueue, within: drainTimeout)
+            // A TXO-store reconcile staled by the epoch above stops at its
+            // next page boundary and releases its native claim; the same
+            // bounded window usually lets that release land before destroy,
+            // which would otherwise drop the claim with the manager.
+            await Self.drainQueue(reconcileQueue, within: drainTimeout)
             return await withCheckedContinuation { (continuation: CheckedContinuation<PlatformWalletShutdownMetrics, Never>) in
                 Self.destroyQueue.async {
                     continuation.resume(returning: Self.performNativeTeardown(
@@ -1116,10 +1165,11 @@ public class PlatformWalletManager: ObservableObject {
     /// is the only production path that assigns a handle).
     static func makeForTesting(
         handle: Handle,
-        calls: PlatformWalletNativeTeardownCalls
+        calls: PlatformWalletNativeTeardownCalls,
+        persistenceHandler: PlatformWalletPersistenceHandler? = nil
     ) -> PlatformWalletManager {
         let manager = PlatformWalletManager()
-        try! manager.configureForTesting(handle: handle, calls: calls)
+        try! manager.configureForTesting(handle: handle, calls: calls, persistenceHandler: persistenceHandler)
         return manager
     }
 
@@ -1134,13 +1184,17 @@ public class PlatformWalletManager: ObservableObject {
     /// separate from the factory lets tests cover shutdown-before-configure.
     func configureForTesting(
         handle: Handle,
-        calls: PlatformWalletNativeTeardownCalls
+        calls: PlatformWalletNativeTeardownCalls,
+        persistenceHandler: PlatformWalletPersistenceHandler? = nil
     ) throws {
         try ensureConfigurationAllowed()
         precondition(handle != NULL_HANDLE)
         self.handle = handle
         isConfigured = true
         nativeTeardownCalls = calls
+        // Not registered with Rust: only the paths that read the handler
+        // directly (the TXO-store reconcile) see it.
+        self.persistenceHandler = persistenceHandler
     }
 
     // MARK: - Configuration
@@ -1167,6 +1221,7 @@ public class PlatformWalletManager: ObservableObject {
         // network, matching the per-network manager design.
         try configure(
             sdkPointer: UnsafeRawPointer(innerSdkPtr),
+            sdkHandle: sdkHandle,
             modelContainer: modelContainer,
             network: sdk.network
         )
@@ -1177,6 +1232,20 @@ public class PlatformWalletManager: ObservableObject {
         sdkPointer: UnsafeRawPointer,
         modelContainer: ModelContainer? = nil,
         network: Network? = nil
+    ) throws {
+        try configure(
+            sdkPointer: sdkPointer,
+            sdkHandle: nil,
+            modelContainer: modelContainer,
+            network: network
+        )
+    }
+
+    private func configure(
+        sdkPointer: UnsafeRawPointer,
+        sdkHandle: OpaquePointer?,
+        modelContainer: ModelContainer?,
+        network: Network?
     ) throws {
         try ensureConfigurationAllowed()
         SDKLogger.event(
@@ -1221,15 +1290,27 @@ public class PlatformWalletManager: ObservableObject {
         var eventHandlerExtension = eventHandler.makeCallbacksExtension()
 
         do {
-            try platform_wallet_manager_create_with_extensions(
-                sdkPointer,
-                &persistence,
-                &eventHandlerCallbacks,
-                &declaredCapabilities,
-                &persistenceExtension,
-                &eventHandlerExtension,
-                &handle
-            ).check()
+            if let sdkHandle {
+                try platform_wallet_manager_create_with_sdk(
+                    sdkHandle,
+                    &persistence,
+                    &eventHandlerCallbacks,
+                    &declaredCapabilities,
+                    &persistenceExtension,
+                    &eventHandlerExtension,
+                    &handle
+                ).check()
+            } else {
+                try platform_wallet_manager_create_with_extensions(
+                    sdkPointer,
+                    &persistence,
+                    &eventHandlerCallbacks,
+                    &declaredCapabilities,
+                    &persistenceExtension,
+                    &eventHandlerExtension,
+                    &handle
+                ).check()
+            }
         } catch {
             // A failed create never took ownership of the retained callback
             // contexts (`makeCallbacks` pre-retains for the transfer), so
@@ -1315,7 +1396,8 @@ public class PlatformWalletManager: ObservableObject {
     // MARK: - Wallet creation
 
     /// Admission gate for the SYNCHRONOUS native entrypoints (`createWallet`,
-    /// `createWalletFromSeed`, `loadFromPersistor`, `deleteWallet`). Rejects:
+    /// `createWalletFromSeed`, `loadFromPersistor`, `deleteWallet`,
+    /// `clearShielded`). Rejects:
     ///
     /// - once shutdown has closed admission — including the drain window,
     ///   where the captured native handle remains live for an
@@ -1336,7 +1418,7 @@ public class PlatformWalletManager: ObservableObject {
     /// permit mutation before a completed read's MainActor delivery: deletion
     /// could otherwise remove the wallet while its old snapshot is still queued.
     /// Both operations remain counted through delivery to close that window.
-    private func ensureSyncNativeOpAllowed(_ name: String) throws {
+    func ensureSyncNativeOpAllowed(_ name: String) throws {
         try ensureConfigured()
         guard !shutdownRequested else {
             throw PlatformWalletError.invalidHandle(
@@ -2488,6 +2570,11 @@ public class PlatformWalletManager: ObservableObject {
                     let maxConcurrent = 4
                     var nextIndex = 0
                     var published = false
+                    // The input-cap refusal is held back, not published
+                    // on arrival: it returns at once, with no proof wait,
+                    // and would otherwise take the one slot ahead of a
+                    // sibling's double-spend verdict on every launch.
+                    var capRefusal: PlatformWalletError?
                     // Seed the group with up to `maxConcurrent` tasks.
                     // Each `group.addTask` closure captures
                     // `assetLockManager` — that retain keeps the
@@ -2520,10 +2607,23 @@ public class PlatformWalletManager: ObservableObject {
                     // would strand a lock that is free to confirm. The
                     // wait it runs under is capped below this call's 300s
                     // ceiling for exactly that case.
+                    //
+                    // An input-cap refusal (60) is the fallback: it is
+                    // published once the batch has drained, and only if
+                    // no double-spend verdict was. A row over the cap is
+                    // refused again on every pass, so nothing is lost by
+                    // the wait, while a contested lock's verdict is what
+                    // stops its UI from spinning.
                     while let outcome = await group.next() {
-                        if !published, let verdict = outcome {
-                            published = true
-                            await publishConflict(verdict)
+                        if let verdict = outcome {
+                            if case .assetLockTooManyInputs = verdict {
+                                if capRefusal == nil {
+                                    capRefusal = verdict
+                                }
+                            } else if !published {
+                                published = true
+                                await publishConflict(verdict)
+                            }
                         }
                         if nextIndex < outpoints.count {
                             let (txid, vout) = outpoints[nextIndex]
@@ -2532,6 +2632,9 @@ public class PlatformWalletManager: ObservableObject {
                             }
                             nextIndex += 1
                         }
+                    }
+                    if !published, let refusal = capRefusal {
+                        await publishConflict(refusal)
                     }
                 }
             }
@@ -2552,12 +2655,17 @@ public class PlatformWalletManager: ObservableObject {
     /// runs off the main actor — the FFI call is synchronous and
     /// reads no `PlatformWalletManager` state.
     /// Returns the typed double-spend verdict when the catch-up hits one —
-    /// the one outcome a host must see so its UI can explain why the lock
-    /// is stuck instead of spinning — and `nil` for every expected failure.
+    /// the outcome a host must see so its UI can explain why the lock
+    /// is stuck instead of spinning — or the input-cap refusal, and `nil`
+    /// for every expected failure.
     /// In practice that verdict is always the provisional
     /// `assetLockInputContested`; the terminal `assetLockInputConflict` is
     /// reserved with no emitter and is matched so it would surface intact
-    /// if that ever changes.
+    /// if that ever changes. The input-cap refusal
+    /// (`assetLockTooManyInputs`) is returned the same way: such a lock is
+    /// never re-sent and stays tracked, so this error is how the host
+    /// learns that the row will not complete. Consolidating coins does not
+    /// change that row; it lets a new lock fit.
     nonisolated private static func runCatchUp(assetLockManager: ManagedAssetLockManager, txid: Data, vout: UInt32) -> PlatformWalletError? {
         // Build the txid tuple inline so the Task body captures only
         // Sendable values.
@@ -2595,7 +2703,8 @@ public class PlatformWalletManager: ObservableObject {
                 vout
             )
             return nil
-        case .errorAssetLockInputConflict, .errorAssetLockInputContested:
+        case .errorAssetLockInputConflict, .errorAssetLockInputContested,
+             .errorAssetLockTooManyInputs:
             return PlatformWalletError(result: result)
         default:
             return nil
@@ -2696,9 +2805,9 @@ public class PlatformWalletManager: ObservableObject {
         dashPayUnlockStatus.removeValue(forKey: walletId)
         // A store reconcile in flight for any wallet stops between pages:
         // its next step would read rows `deleteWalletData` is about to
-        // remove. Coarse on purpose — the cadence re-runs the others.
+        // remove. Coarse on purpose — the cadence re-runs the others. The
+        // engine forgot this wallet's cadence when it removed the wallet.
         coreTxoReconcileEpoch.bump()
-        coreTxoReconcileLastRunAt.removeValue(forKey: walletId)
 
         try persistenceHandler.deleteWalletData(walletId: walletId)
 
@@ -3128,6 +3237,11 @@ public class PlatformWalletManager: ObservableObject {
         } catch {
             snapshot.spvTipBlockTime = nil
         }
+        guard !isStale() else { return snapshot }
+        // Every tick, SPV running or not: the poll is the reconcile
+        // schedule's clock, and a stopped client arms its next steady-state
+        // edge.
+        snapshot.txoReconcileDueWallets = try? calls.txoReconcileDueWallets(handle)
         logSlowStage("manager", since: start, walletCount: 0)
         return snapshot
     }
@@ -3195,10 +3309,6 @@ public class PlatformWalletManager: ObservableObject {
             if value != spvProgress {
                 spvProgress = value
             }
-            // Every accepted read, not only a changed one: the note is the
-            // reconcile's only clock, and a quiet steady-state wallet's
-            // progress does not change for the whole cadence.
-            noteSpvProgressForCoreTxoReconcile(value)
         }
         if let value = snapshot.spvIsRunning,
            spvIsRunning == baseline.spvIsRunning, value != spvIsRunning {
@@ -3226,6 +3336,9 @@ public class PlatformWalletManager: ObservableObject {
         if let value = snapshot.spvTipBlockTime,
            spvTipBlockTime == baseline.spvTipBlockTime, value != spvTipBlockTime {
             spvTipBlockTime = value
+        }
+        if let due = snapshot.txoReconcileDueWallets, !due.isEmpty {
+            launchDueCoreTxoReconciles(due)
         }
     }
 

@@ -3441,3 +3441,206 @@ mod action_fees {
         assert_eq!(removed, Some((id(5), MAX_CREDITS)));
     }
 }
+
+mod erase_action {
+    use super::*;
+    use crate::state_transition_action::batch::batched_transition::document_transition::document_erase_transition_action::v0::DocumentEraseTransitionActionV0;
+    use crate::state_transition_action::batch::batched_transition::document_transition::document_erase_transition_action::DocumentEraseTransitionAction;
+    use crate::state_transition_action::batch::v0::BatchTransitionActionV0;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::identity::SecurityLevel;
+
+    fn erase() -> BatchedTransitionAction {
+        BatchedTransitionAction::DocumentAction(DocumentTransitionAction::EraseAction(
+            DocumentEraseTransitionAction::V0(DocumentEraseTransitionActionV0 {
+                base: test_document_base(),
+            }),
+        ))
+    }
+
+    fn delete() -> BatchedTransitionAction {
+        BatchedTransitionAction::DocumentAction(DocumentTransitionAction::DeleteAction(
+            DocumentDeleteTransitionAction::V0(DocumentDeleteTransitionActionV0 {
+                base: test_document_base(),
+            }),
+        ))
+    }
+
+    fn batch(transitions: Vec<BatchedTransitionAction>) -> BatchTransitionAction {
+        BatchTransitionAction::V0(BatchTransitionActionV0 {
+            owner_id: Identifier::from([0x11; 32]),
+            transitions,
+            user_fee_increase: 10,
+            ..Default::default()
+        })
+    }
+
+    /// An erase is signed like any other action on its document type: the
+    /// key it demands is the one the type demands, exactly as for a delete.
+    #[test]
+    fn should_require_the_erased_types_security_level() {
+        let domain_level = test_dpns_contract_info()
+            .contract
+            .document_type_for_name("domain")
+            .expect("the DPNS contract has a domain type")
+            .security_level_requirement();
+        assert_ne!(
+            domain_level,
+            SecurityLevel::MASTER,
+            "the test needs a type whose requirement spans more than one level"
+        );
+
+        let expected: Vec<SecurityLevel> = (SecurityLevel::CRITICAL as u8..=domain_level as u8)
+            .map(|level| SecurityLevel::try_from(level).unwrap())
+            .collect();
+        assert_eq!(
+            batch(vec![erase()])
+                .combined_security_level_requirement()
+                .unwrap(),
+            expected
+        );
+        assert_eq!(
+            batch(vec![erase()])
+                .combined_security_level_requirement()
+                .unwrap(),
+            batch(vec![delete()])
+                .combined_security_level_requirement()
+                .unwrap(),
+            "an erase and a delete of the same type demand the same key"
+        );
+    }
+
+    /// The credits a batch commits up front decide whether the signer can
+    /// afford it; an erase commits none, so its presence changes no sum.
+    #[test]
+    fn should_commit_no_credits_up_front() {
+        let erase_only = batch(vec![erase()]);
+        assert_eq!(erase_only.all_purchases_amount().unwrap(), None);
+        assert_eq!(
+            erase_only
+                .all_conflicting_index_collateral_voting_funds()
+                .unwrap(),
+            None
+        );
+        assert_eq!(erase_only.all_used_balances().unwrap(), None);
+
+        let purchases = || {
+            vec![
+                BatchedTransitionAction::DocumentAction(make_purchase().into()),
+                BatchedTransitionAction::TokenAction(make_direct_purchase().into()),
+            ]
+        };
+        let without_erase = batch(purchases());
+        let mut with_erase_transitions = vec![erase()];
+        with_erase_transitions.extend(purchases());
+        let with_erase = batch(with_erase_transitions);
+        assert_eq!(
+            with_erase.all_purchases_amount().unwrap(),
+            without_erase.all_purchases_amount().unwrap()
+        );
+        assert_eq!(with_erase.all_purchases_amount().unwrap(), Some(15_000));
+        assert_eq!(
+            with_erase.all_used_balances().unwrap(),
+            without_erase.all_used_balances().unwrap()
+        );
+    }
+}
+
+#[test]
+fn should_credit_a_sponsored_history_delete_record_to_the_sponsor() {
+    use crate::state_transition_action::batch::record_gas_sponsor_as_storage_owner;
+    use crate::util::batch::{DocumentOperationType, DriveOperation};
+    use crate::util::object_size_info::{DataContractInfo, DocumentTypeInfo};
+    let sponsor = Identifier::from([8; 32]);
+    let mut operations = vec![DriveOperation::DocumentOperation(
+        DocumentOperationType::DeleteDocument {
+            document_id: [1; 32].into(),
+            deleter_id: Some([7; 32].into()),
+            contract_info: DataContractInfo::DataContractId([2; 32].into()),
+            document_type_info: DocumentTypeInfo::DocumentTypeName("person".into()),
+        },
+    )];
+    record_gas_sponsor_as_storage_owner(&mut operations, sponsor);
+    let DriveOperation::DocumentOperation(DocumentOperationType::DeleteDocument {
+        deleter_id, ..
+    }) = &operations[0]
+    else {
+        panic!("expected the delete operation");
+    };
+    assert_eq!(
+        *deleter_id,
+        Some(sponsor),
+        "the identity paying for the lifecycle record owns its refund"
+    );
+}
+
+#[test]
+fn should_preserve_shielded_token_payment_when_deleting_with_lifecycle_conversion() {
+    use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
+    use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentShieldedTokenPayment;
+    use crate::util::batch::drive_op_batch::TokenOperationType;
+    use crate::util::batch::{DocumentOperationType, DriveOperation};
+    use dpp::tokens::token_amount_on_contract_token::DocumentActionTokenEffect;
+    use dpp::tokens::token_payment_info::v1::TokenShieldedPayment;
+
+    let owner = Identifier::from([7; 32]);
+    for effect in [
+        DocumentActionTokenEffect::TransferTokenToContractOwner,
+        DocumentActionTokenEffect::BurnToken,
+    ] {
+        let mut base = test_document_base_v0();
+        base.token_cost = Some(([8; 32].into(), effect, 9));
+        base.shielded_token_payment = Some(Box::new(DocumentShieldedTokenPayment {
+            payment: TokenShieldedPayment {
+                amount: 9,
+                ..Default::default()
+            },
+            token_contract_id: [10; 32].into(),
+            token_contract_position: 0,
+        }));
+        let action = DocumentDeleteTransitionAction::V0(DocumentDeleteTransitionActionV0 {
+            base: base.into(),
+        });
+        for generation in [0, 1] {
+            let mut version = PlatformVersion::latest().clone();
+            version
+                .drive
+                .methods
+                .state_transitions
+                .convert_to_high_level_operations
+                .document_delete_transition = generation;
+            let batch = BatchTransitionAction::V0(BatchTransitionActionV0 {
+                owner_id: owner,
+                transitions: vec![BatchedTransitionAction::DocumentAction(
+                    DocumentTransitionAction::DeleteAction(action.clone()),
+                )],
+                ..Default::default()
+            });
+            let operations = batch
+                .into_high_level_drive_operations(&BlockInfo::default().epoch, &version)
+                .unwrap();
+            assert!(
+                matches!(&operations[1], DriveOperation::DocumentOperation(DocumentOperationType::DeleteDocument { deleter_id, .. }) if *deleter_id == (generation == 1).then_some(owner))
+            );
+            match (&operations[2], effect) {
+                (
+                    DriveOperation::TokenOperation(TokenOperationType::TokenUnshield {
+                        amount,
+                        ..
+                    }),
+                    DocumentActionTokenEffect::TransferTokenToContractOwner,
+                )
+                | (
+                    DriveOperation::TokenOperation(TokenOperationType::TokenBurnFromPool {
+                        amount,
+                        ..
+                    }),
+                    DocumentActionTokenEffect::BurnToken,
+                ) => assert_eq!(*amount, 9),
+                (operation, _) => {
+                    panic!("the shielded token payment must survive conversion: {operation:?}")
+                }
+            }
+        }
+    }
+}

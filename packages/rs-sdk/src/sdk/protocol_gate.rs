@@ -178,8 +178,8 @@ pub(super) fn decide(required: u32, state: &GateState<'_>) -> Gate {
     }
     // Asking raises the verified version, and the version of an unpinned SDK; a pinned SDK
     // below `required` stays below it whatever the answer. Without a context provider the
-    // answer cannot be verified, and an answer the SDK cannot verify bans the node that
-    // sent it. While a probe's epoch has not ended, asking again would show the same version.
+    // answer cannot be verified, so asking cannot show the network's version. While a
+    // probe's epoch has not ended, asking again would show the same version.
     if pinned_below(required, state)
         || !state.has_context_provider
         || state.hold.is_some_and(|hold| {
@@ -254,6 +254,87 @@ impl Sdk {
         self
     }
 
+    /// The refusal [`Self::ensure_network_serves`] gives a request that needs `required`,
+    /// for a caller that finds what `required` introduced missing from the network's data
+    /// while this SDK runs below it: the network does not serve it yet. `cause` is why the
+    /// SDK could not learn the network's version just now, when it tried and failed, as a
+    /// failed probe is the refusal's cause there
+    /// ([`Error::is_transient_protocol_version_refusal`]).
+    pub(crate) fn protocol_version_not_active(
+        &self,
+        required: u32,
+        method: &'static str,
+        feature: Option<&'static str>,
+        cause: Option<Error>,
+    ) -> Error {
+        Error::ProtocolVersionNotActive {
+            method,
+            required,
+            feature,
+            network: self.query_settings().network_protocol_basis(),
+            pinned: pinned_below(required, &self.gate_state()),
+            cause: cause.map(Box::new),
+        }
+    }
+
+    /// Whether a verified answer shows the network below `protocol_version`. A refusal
+    /// ([`Error::ProtocolVersionNotActive`]) does not tell on its own: its `network` is the
+    /// lower of this SDK's version and the network's, so an SDK pinned below the version
+    /// refuses what the network serves. A caller that takes a refusal as "not there yet"
+    /// rather than as this SDK's limit checks this first.
+    ///
+    /// A version shown below by the last probe's epoch hold ([`ProbeHold`]) is taken as it
+    /// is. Otherwise the network is asked with the gate's probe, one proved query, pinned SDK
+    /// or not, and the call fails when the probe does. `false` when the network is shown at
+    /// or above `protocol_version`, and when nothing can show it now: an SDK without a context
+    /// provider, or a mock SDK, whose expectations are not verified answers, unless a test set
+    /// one ([`Self::mock_verified_protocol_version`]). A version verified earlier, by this SDK
+    /// or a clone, shows nothing then without a hold: the network may have upgraded since.
+    pub async fn network_proven_below(&self, protocol_version: u32) -> Result<bool, Error> {
+        let state = self.gate_state();
+        let verified = state.settings.verified_protocol_version;
+        if verified >= protocol_version {
+            return Ok(false);
+        }
+        if state
+            .hold
+            .is_some_and(|hold| hold.covers(protocol_version, verified, state.now_ms))
+        {
+            return Ok(true);
+        }
+        if !state.enforced || !state.has_context_provider {
+            return Ok(false);
+        }
+        self.probe_network_protocol_version(protocol_version, None)
+            .await?;
+        let verified = self.query_settings().verified_protocol_version;
+        Ok(verified != 0 && verified < protocol_version)
+    }
+
+    /// Take `protocol_version` as the network's verified version, as if a proved answer had
+    /// shown it, for a mock SDK in a test that needs the network's version known: a mock's
+    /// expectations are not verified answers. It never lowers the version. The network then
+    /// reads as proven at that version for the rest of the test, as a probe in an epoch that
+    /// outlasts the test shows it ([`Self::network_proven_below`]). A network SDK refuses it
+    /// with [`Error::Config`].
+    #[cfg(feature = "mocks")]
+    pub fn mock_verified_protocol_version(&self, protocol_version: u32) -> Result<(), Error> {
+        match self.inner {
+            SdkInstance::Mock { .. } => {
+                self.record_verified_protocol_version(protocol_version);
+                self.probe_hold.set(ProbeHold {
+                    network: protocol_version,
+                    epoch: 0,
+                    until_ms: u64::MAX,
+                });
+                Ok(())
+            }
+            SdkInstance::Dapi { .. } => Err(Error::Config(
+                "only a mock SDK takes a verified protocol version from a test".to_string(),
+            )),
+        }
+    }
+
     /// Refuse a request that needs `requirement` (see [`Query::protocol_requirement`]),
     /// unless a verified answer shows the network runs its protocol version and this SDK
     /// speaks it. When the network may have reached it since, ask it first with one proved
@@ -291,6 +372,38 @@ impl Sdk {
             pinned,
             cause,
         })
+    }
+
+    /// Establish, before a request built against the network's protocol version, that the
+    /// network serves `requirement` and this SDK speaks it. The gate decides first, under the
+    /// caller's `settings` ([`Self::ensure_network_serves`]): its probe asks with a proof
+    /// whatever this SDK's proof setting and raises an unpinned SDK's version, and it refuses
+    /// with [`Error::ProtocolVersionNotActive`], the probe's failure as its cause when it
+    /// failed. An SDK that enforces no gate (a mock) is checked on its own version instead,
+    /// refreshed first when it is below, under the same settings, the refresh's failure as the
+    /// refusal's cause.
+    pub(crate) async fn establish_protocol_requirement(
+        &self,
+        requirement: ProtocolRequirement,
+        settings: Option<RequestSettings>,
+    ) -> Result<(), Error> {
+        self.ensure_network_serves(Some(requirement), settings)
+            .await?;
+        if self.enforces_protocol_gate()
+            || self.protocol_version_number() >= requirement.protocol_version
+        {
+            return Ok(());
+        }
+        let (version, failure) = self.refresh_protocol_version_or_failure(settings).await;
+        if version < requirement.protocol_version {
+            return Err(self.protocol_version_not_active(
+                requirement.protocol_version,
+                requirement.method,
+                requirement.feature,
+                failure,
+            ));
+        }
+        Ok(())
     }
 
     /// Probe for `required` ([`Self::probe_network_protocol_version`]) and return why the

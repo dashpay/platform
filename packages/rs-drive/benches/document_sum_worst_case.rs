@@ -21,7 +21,7 @@
 //! - `DASH_PLATFORM_SUM_BENCH_REBUILD=1`: remove and rebuild the fixture.
 //! - `DASH_PLATFORM_SUM_BENCH_BATCH_SIZE`: inserts per transaction; defaults to 10,000.
 
-use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -32,6 +32,7 @@ use dpp::platform_value::{platform_value, Value};
 use dpp::version::PlatformVersion;
 use drive::config::DriveConfig;
 use drive::drive::Drive;
+use std::hint::black_box;
 // NOTE: these types are the proposed sum-query surface. They don't exist
 // in `drive::query` yet — landing them is part of the sum-tree feature.
 // Named to parallel the count surface (`DriveDocumentCountQuery`,
@@ -349,7 +350,6 @@ fn insert_tip_document(
             true,
             transaction,
             platform_version,
-            None,
         )
         .expect("expected to insert sum bench document");
 }

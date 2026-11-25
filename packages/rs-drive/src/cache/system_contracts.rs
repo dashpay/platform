@@ -251,7 +251,7 @@ impl SystemDataContracts {
             SystemDataContract::DecisionProposals => {
                 DECISION_PROPOSALS_CONTRACT_INITIAL_PROTOCOL_VERSION
             }
-            // Written to state by the transition to protocol version 15.
+            // Written to state by the transition to protocol version 16.
             SystemDataContract::TokenMarket => TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION,
             // Never served from this cache: `WalletUtils` is only ever read from grovedb, and
             // the reserved `FeatureFlags` slot has no implementation.
@@ -513,19 +513,30 @@ mod tests {
     fn should_serve_token_market_only_from_its_activation_version() {
         let contracts = SystemDataContracts::new();
 
-        assert!(contracts
-            .find_by_id(SystemDataContract::TokenMarket.id(), platform_version(14))
-            .expect("expected the pre-activation lookup to succeed")
-            .is_none());
+        let token_marketplace_version =
+            platform_version(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION);
+
+        for before in [14, TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION - 1] {
+            assert!(contracts
+                .find_by_id(
+                    SystemDataContract::TokenMarket.id(),
+                    platform_version(before)
+                )
+                .expect("expected the pre-activation lookup to succeed")
+                .is_none());
+        }
         assert!(contracts
             .find_by_id(
                 SystemDataContract::TokenMarket.id(),
-                platform_version(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION)
+                token_marketplace_version
             )
-            .expect("expected the v15 lookup to succeed")
+            .expect("expected the lookup from the activation version to succeed")
             .is_some());
         assert!(contracts
-            .find_by_id(SystemDataContract::TokenMarket.id(), platform_version(14))
+            .find_by_id(
+                SystemDataContract::TokenMarket.id(),
+                platform_version(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION - 1)
+            )
             .expect("an old-version lookup after materialization must succeed")
             .is_none());
     }
@@ -567,7 +578,7 @@ mod tests {
     fn committing_a_block_releases_the_outgoing_protocol_version() {
         let contracts = SystemDataContracts::new();
 
-        for committed_protocol_version in 9..=14 {
+        for committed_protocol_version in 9..=15 {
             // The block that switches protocol version executes at the candidate while
             // `check_tx` still validates against the committed one, so both are live at once.
             contracts
@@ -592,7 +603,7 @@ mod tests {
     fn memoization_is_bounded_to_the_live_protocol_versions() {
         let contracts = SystemDataContracts::new();
 
-        for protocol_version in [9, 10, 11, 12, 13, 14] {
+        for protocol_version in [9, 10, 11, 12, 13, 14, 15] {
             contracts
                 .load_dpns(platform_version(protocol_version))
                 .expect("materialize DPNS");
@@ -600,7 +611,7 @@ mod tests {
 
         assert_eq!(
             memoized_protocol_versions(&contracts),
-            vec![13, 14],
+            vec![14, 15],
             "only the most recent protocol versions stay memoized"
         );
 

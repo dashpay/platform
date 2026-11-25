@@ -3,10 +3,12 @@
 //! Validator-verified proof. Production batches remain capped at one.
 
 use super::token_shielded_pool_tests::{
-    assert_tokens_conserved, build_shield_bundle, build_spend_bundle, enable_shielded_pool,
-    insert_token_pool_anchor, nullifier_is_spent, platform_with_latest_version, pool_balance,
-    pool_notes_count, process, spendable_note, SHIELD_AMOUNT,
+    assert_tokens_conserved, assert_tokens_conserved_at_protocol_version, build_shield_bundle,
+    build_spend_bundle, enable_shielded_pool, insert_token_pool_anchor, nullifier_is_spent,
+    platform_with_latest_version, pool_balance, pool_notes_count, process,
+    process_at_protocol_version, spendable_note, SHIELD_AMOUNT,
 };
+use crate::test::helpers::setup::TestPlatformBuilder;
 use super::*;
 use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::validation::state_transition::processor::traits::identity_balance::StateTransitionIdentityBalanceValidationV0;
@@ -24,7 +26,6 @@ use dpp::data_contract::accessors::v0::DataContractV0Setters;
 use dpp::data_contract::accessors::v1::DataContractV1Setters;
 use dpp::data_contract::associated_token::token_configuration::accessors::v1::TokenConfigurationV1Setters;
 use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -39,7 +40,7 @@ use dpp::tokens::gas_fees_paid_by::GasFeesPaidBy;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
 use dpp::tests::json_document::json_document_to_json_value;
-use dpp::system_data_contracts::dashpay_contract;
+use dpp::system_data_contracts::dpns_contract;
 use dpp::validation::ConsensusValidationResult;
 use dpp::util::hash::hash_single;
 use dpp::version::DefaultForPlatformVersion;
@@ -68,9 +69,11 @@ struct FundedPool {
 }
 
 impl FundedPool {
-    async fn sponsored_card(shielded: bool) -> Self {
-        let version = PlatformVersion::latest();
-        let mut platform = platform_with_latest_version();
+    async fn sponsored_card(shielded: bool, version: &PlatformVersion) -> Self {
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(version.protocol_version)
+            .build_with_mock_rpc()
+            .set_genesis_state();
         let (identity, signer, key) = setup_identity(&mut platform, 70_501, dash_to_credits!(1.0));
         let (sponsor, _, _) = setup_identity(&mut platform, 70_507, dash_to_credits!(1.0));
         let contract_id = DataContract::generate_data_contract_id_v0(sponsor.id(), 1);
@@ -128,7 +131,6 @@ impl FundedPool {
                 true,
                 None,
                 version,
-                None,
             )
             .unwrap();
         if !shielded {
@@ -614,7 +616,6 @@ impl FundedPool {
                 &transaction,
                 &mut 0,
                 version,
-                &CachedEpochIndexFeeVersions::new(),
             )
             .expect("execute and charge real event");
         self.platform
@@ -734,7 +735,7 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
                 .value
                 .unwrap()
         ),
-        "fb76e051fe936ae3e39265a9cddf3d3297e901ca2c6048c1dcf85b82a92d8778"
+        "a31f166a75f37e3a8c2762401f52d7ba296517d0b54c945a7ce6f16cff00687c"
     );
     assert_eq!(
         pool.platform
@@ -1589,16 +1590,29 @@ async fn should_reject_a_duplicate_payment_before_its_failing_trigger_without_ch
     let mut json = json_document_to_json_value(
         "tests/supporting_files/contract/crypto-card-game/crypto-card-game-in-game-currency-burn-tokens.json").unwrap();
     json.as_object_mut().unwrap().remove("tokens");
-    json["documentSchemas"] = serde_json::json!({ "contactRequest": {
+    // A `domain` under the DPNS contract's id, so the DPNS domain create trigger runs on it.
+    // From protocol version 15 that trigger is the one left that reads state before it fails
+    // a create: it looks the parent up, and a parent that does not exist refuses the name.
+    json["documentSchemas"] = serde_json::json!({ "domain": {
         "type": "object", "documentsMutable": false, "canBeDeleted": false,
-        "properties": { "toUserId": { "type": "identifier", "position": 0 } },
-        "required": ["toUserId"], "additionalProperties": false,
+        "indices": [{ "name": "parentNameAndLabel", "properties": [
+            { "normalizedParentDomainName": "asc" }, { "normalizedLabel": "asc" }
+        ] }],
+        "properties": {
+            "normalizedLabel": { "type": "string", "maxLength": 63, "position": 0 },
+            "normalizedParentDomainName": { "type": "string", "maxLength": 63, "position": 1 },
+            "subdomainRules": { "type": "object", "position": 2,
+                "properties": { "allowSubdomains": { "type": "boolean", "position": 0 } },
+                "required": ["allowSubdomains"], "additionalProperties": false }
+        },
+        "required": ["normalizedLabel", "normalizedParentDomainName", "subdomainRules"],
+        "additionalProperties": false,
         "tokenCost": { "create": { "contractId": pool.contract.id().to_buffer(),
             "tokenPosition": 0, "amount": 10, "effect": 0 } }
     } });
     let mut contract =
         DataContract::from_json(json, true, version).expect("valid trigger/payment contract");
-    contract.set_id(dashpay_contract::ID.into());
+    contract.set_id(dpns_contract::ID.into());
     contract.set_owner_id(pool.identity.id());
     contract.set_created_at_epoch(Some(0));
     contract.set_created_at(Some(0));
@@ -1614,7 +1628,7 @@ async fn should_reject_a_duplicate_payment_before_its_failing_trigger_without_ch
             version,
         )
         .unwrap();
-    let document_type = contract.document_type_for_name("contactRequest").unwrap();
+    let document_type = contract.document_type_for_name("domain").unwrap();
     let mut rng = StdRng::seed_from_u64(70_505);
     let entropy = Bytes32::random_with_rng(&mut rng);
     let mut document = document_type
@@ -1627,7 +1641,19 @@ async fn should_reject_a_duplicate_payment_before_its_failing_trigger_without_ch
             version,
         )
         .unwrap();
-    document.set("toUserId", Value::Identifier([96; 32]));
+    // a name under a parent no domain holds, so the lookup finds nothing
+    document.set("normalizedLabel", Value::Text("alice".to_string()));
+    document.set(
+        "normalizedParentDomainName",
+        Value::Text("nowhere".to_string()),
+    );
+    document.set(
+        "subdomainRules",
+        Value::Map(vec![(
+            Value::Text("allowSubdomains".to_string()),
+            Value::Bool(false),
+        )]),
+    );
     document
         .set_id_for_creation(document_type, &entropy.0, 1, version)
         .unwrap();
@@ -1709,7 +1735,7 @@ async fn should_reject_a_duplicate_payment_before_its_failing_trigger_without_ch
     assert_eq!(
         natural_context.operations_slice().len(),
         disabled_natural_context.operations_slice().len() + 1,
-        "the failing recipient trigger must actually perform and bill its identity lookup"
+        "the failing parent domain trigger must actually perform and bill its parent lookup"
     );
     assert_eq!(
         format!("{:?}", duplicate_context.operations_slice()),
@@ -1748,9 +1774,33 @@ async fn should_reject_a_duplicate_payment_before_its_failing_trigger_without_ch
 
 #[tokio::test]
 async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_and_execution() {
+    // PROTOCOL_VERSION_16: the token market contract joins the genesis contracts tree, which
+    // changes the actual processing fee.
+    run_real_single_payment_sponsor_at_protocol_version(
+        PlatformVersion::latest().protocol_version,
+        3_870_440,
+        92_739_560,
+    )
+    .await;
+}
+
+/// PROTOCOL_VERSION_15: the genesis contracts tree without the token market contract. Pinned so
+/// v15 chain history stays bit-for-bit reproducible.
+#[tokio::test]
+async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_and_execution_protocol_version_15(
+) {
+    run_real_single_payment_sponsor_at_protocol_version(15, 3_916_360, 92_785_480).await;
+}
+
+async fn run_real_single_payment_sponsor_at_protocol_version(
+    protocol_version: u32,
+    actual_processing_transparent: u64,
+    actual_processing_shielded: u64,
+) {
+    let version =
+        PlatformVersion::get(protocol_version).expect("expected a known protocol version");
     for shielded in [false, true] {
-        let pool = FundedPool::sponsored_card(shielded).await;
-        let version = PlatformVersion::latest();
+        let pool = FundedPool::sponsored_card(shielded, version).await;
         let mut rng = StdRng::seed_from_u64(70_508);
         let card_type = pool.contract.document_type_for_name("card").unwrap();
         let (document, entropy) = super::document_shielded_token_payment_tests::random_card(
@@ -1862,7 +1912,7 @@ async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_an
             .unwrap()
             .unwrap();
         let before = pool_notes_count(&pool.platform, pool.token_id);
-        let result = process(&pool.platform, &transition);
+        let result = process_at_protocol_version(&pool.platform, &transition, version);
         println!(
             "SINGLE SPONSORED PAYMENT shielded={shielded}: {:?}",
             result.execution_results()
@@ -1871,9 +1921,19 @@ async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_an
         // the batch's estimate (protocol v15 note 14).
         let (estimated_storage, estimated_processing, actual_storage, actual_processing) =
             if shielded {
-                (171_126_000, 213_389_040, 155_142_000, 92_739_560)
+                (
+                    171_126_000,
+                    213_389_040,
+                    155_142_000,
+                    actual_processing_shielded,
+                )
             } else {
-                (138_024_000, 117_713_120, 126_468_000, 3_870_440)
+                (
+                    138_024_000,
+                    117_713_120,
+                    126_468_000,
+                    actual_processing_transparent,
+                )
             };
         assert_eq!(
             result.execution_results().as_slice(),
@@ -1926,7 +1986,7 @@ async fn should_preserve_a_real_single_payment_sponsor_on_first_check_recheck_an
             assert_eq!(pool_notes_count(&pool.platform, pool.token_id), before);
             assert_eq!(pool_balance(&pool.platform, pool.token_id), 15);
         }
-        assert_tokens_conserved(&pool.platform);
+        assert_tokens_conserved_at_protocol_version(&pool.platform, version);
     }
 }
 
@@ -2122,10 +2182,13 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
             .unwrap()
             .into_high_level_drive_operations(&BlockInfo::default().epoch, version)
             .unwrap();
+        // This non-history fixture cannot erase documents. Its inactive lifecycle flag is
+        // incidental Debug output; keep actions, charges and operations in the original pin.
         let validation = format!(
             "{validated:?}/{:?}/{operations:?}",
             context.operations_slice()
-        );
+        )
+        .replace(", documents_can_be_erased: false", "");
         let result = process(&pool.platform, &transition);
         let root_after = pool
             .platform
@@ -2160,39 +2223,39 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
         let (expected_validation, expected_settled) = match case {
             "shield" => (
                 "6a823c2db94612652926e6b9c1ae7feec9c2547dfd4cfc4e474318da1c16d59c",
-                "eb7e34a02f156dbe1d9c9609b41bd67a033d1cd3fe81c5f2e6fcef575fc88459",
+                "b6959ba62f0b7d74b6eb688521d10fc79b99666907b7b2517f7ec5c7b131a02d",
             ),
             "valid-payment" => (
                 "9388d5cf63c4a571b9fb009679e2e34d0b681acc88f0f5195e7287c7efbd92f7",
-                "44684cf51317f0e60bc836e7bd671798145bb69bc7605241ebbc659028d50070",
+                "dbad5dabd04124617e5edaa111ff7504e7ba3d1db2eacd0b6ccb1c8aa604845e",
             ),
             "failed-payment" => (
                 "d9b5fe191841bea952494f2a45e3833f925f4d367a1937b2ef1235a1aa01f51e",
-                "365a97c4e20ae4ee695505a8d5dbb0dea5584c14eb4c6b223a3ae4f0b2f8b668",
+                "36a1b19da647f8fa158c1f7dd7f9257967fcf616ed0469e61f2927808e81b208",
             ),
             "within-bundle-repeat" => (
                 "8023e03a697a20f6a78396a05503a4bc583ca8f69e19bd7ee07a6ae0ce7be478",
-                "b9cfc7cafbeafb436917f0b35bfa97df6be58b73a25e0159038558fdc9a2751c",
+                "6c8e5ef40d1e42f15bd408e0fd0220684e38884812cd5a092e1e9e0151a1ecbe",
             ),
             "stored-repeat" => (
                 "05652ac85c972902e8c09d20a7d8586e17e9434a478b335da136ad85f73def01",
-                "9e1d6b0bc9097d817f4ca0ac952611f69398d8f201b6eb36556059b166488393",
+                "51216c2a7ffd6fddab95f03ba8fa98fb4b72efdbf726391cfb0f9c52418d9e43",
             ),
             "open-mint-group" => (
                 "5c68381297c9bf68c5e85ebe6bb9e0f1289e2c07718eecfb5e6773d6009455bb",
-                "b96b1e9b643552413c2e5049f9f9b6ae92357a6ad462e2d3a673d239a355cfd9",
+                "c1775c60308b62a9221d61cf00f125f45f89eda748d85501d7c3e1291a5e3033",
             ),
             "closing-mint-group" => (
                 "2cedc16732c76e0605b5f46085db3d69c12936a5af55a2a82f52ec9e9ca67e38",
-                "78fd3bdabed41d31082162dfc95158872108872c79f3041ef3d71c7fa48dd905",
+                "83a7f57e1a72b02aa327d0d525a3645d48df168b32efb70d09aa52b228a7f4cd",
             ),
             "open-burn-group" => (
                 "e664a045f020ff84de1ca98f364fbabccfc141ad46aa82c79491a340bb0db5f8",
-                "38b6b6d2d77fb41c4262adaa6bbbd581dbb2c5d3195e3d11cec16411464e2758",
+                "92e09ce07b60fb6aa41de6a7a3015e6625f3604146c8666c0373ff036d3dc5fc",
             ),
             "closing-burn-group" => (
                 "93e1732286f168c4a91d2765931e181c5721bfca1bfd5f93b8baacca03e00b2b",
-                "6a4f89129b2bd16b078b1165a46775e20deb1808bfd239fd49e5f4e89e45453c",
+                "956a26f7a6b6adb08668fe79f9399302cb97d458cd95122991f14f656e04c64e",
             ),
             _ => unreachable!("enumerated characterization case"),
         };

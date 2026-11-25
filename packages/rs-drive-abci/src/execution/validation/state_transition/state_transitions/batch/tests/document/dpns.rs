@@ -37,9 +37,21 @@ mod dpns_tests {
             // increasing the bytes billed when reading that tree (protocol 14 only). The
             // moderation charters contract adds another, which reshapes the tree so the
             // DPNS contract's node is billed fewer bytes to reach (-287_760). The decision
-            // proposals and token market contracts add two more at protocol 15, and the DPNS
-            // node is billed more bytes to reach again (+137_760).
+            // proposals contract adds a third at protocol 15, which reshapes it back to as
+            // many bytes as with the app-connect contract alone (+287_760, 95_920 a create).
+            // The token market contract adds a fourth at protocol 16, which reshapes it so the
+            // DPNS node is billed fewer bytes to reach (-150_000).
             5_899_360,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_15: the genesis contracts tree without the token market contract.
+    /// Pinned so v15 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_dpns_contract_references_with_no_contested_unique_index_protocol_version_15() {
+        run_dpns_contract_references_with_no_contested_unique_index_at_protocol_version(
+            15, 6_049_360,
         )
         .await;
     }
@@ -1031,6 +1043,7 @@ mod dpns_tests {
 
 mod dpns_username_transfer_tests {
     use super::*;
+    use crate::platform_types::platform_state::PlatformState;
     use crate::test::helpers::dpns::set_dpns_preorder_hashes;
     use dpp::consensus::basic::BasicError;
     use dpp::consensus::state::data_trigger::DataTriggerError;
@@ -1584,6 +1597,7 @@ mod dpns_username_transfer_tests {
         platform
             .perform_events_on_first_block_of_protocol_change(
                 &platform_state,
+                &mut PlatformState::clone(&platform_state),
                 &block_info,
                 &rejected_transaction,
                 12,
@@ -1628,6 +1642,7 @@ mod dpns_username_transfer_tests {
         platform
             .perform_events_on_first_block_of_protocol_change(
                 &platform_state,
+                &mut PlatformState::clone(&platform_state),
                 &block_info,
                 &retry_transaction,
                 12,
@@ -1683,6 +1698,7 @@ mod dpns_username_transfer_tests {
         clean_control
             .perform_events_on_first_block_of_protocol_change(
                 &clean_control_state,
+                &mut PlatformState::clone(&clean_control_state),
                 &block_info,
                 &clean_control_transaction,
                 12,
@@ -1934,6 +1950,7 @@ mod dpns_username_transfer_tests {
         platform
             .perform_events_on_first_block_of_protocol_change(
                 &platform_state,
+                &mut PlatformState::clone(&platform_state),
                 block_info,
                 &transaction,
                 12,
@@ -2002,6 +2019,7 @@ mod dpns_username_transfer_tests {
         platform
             .perform_events_on_first_block_of_protocol_change(
                 &platform_state,
+                &mut PlatformState::clone(&platform_state),
                 &v13_activation_block_info(),
                 &transaction,
                 12,

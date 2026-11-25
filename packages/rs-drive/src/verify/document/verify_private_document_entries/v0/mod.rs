@@ -89,6 +89,7 @@ impl Drive {
             PrivateDocumentEntries {
                 entries,
                 total_count: page.total_count,
+                chunk_power: Some(chunk_power),
             },
         ))
     }

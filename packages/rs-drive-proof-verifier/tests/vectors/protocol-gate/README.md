@@ -12,9 +12,9 @@ the network runs a protocol version that serves it. When it does not know that y
 asks for the genesis epoch first. `rs-sdk`'s protocol gate tests replay these answers
 through the normal proof and signature verifier:
 
-- `epoch-probe-pv13.bin`, `epoch-probe-pv14.bin`: the genesis epoch
+- `epoch-probe-pv13.bin`, `epoch-probe-pv14.bin`, `epoch-probe-pv15.bin`: the genesis epoch
   (`GetEpochsInfoRequestV0 { start_epoch: Some(0), count: 1, ascending: true, prove: true }`)
-  proved by a node at genesis state of protocol 13 or 14, signed at that version.
+  proved by a node at genesis state of protocol 13, 14 or 15, signed at that version.
 - `epoch-probe-newer.bin`: the same answer from a protocol 14 state, signed as protocol
   version 1000, far above any real version, so the SDK always reads it with the newest
   rules it knows.

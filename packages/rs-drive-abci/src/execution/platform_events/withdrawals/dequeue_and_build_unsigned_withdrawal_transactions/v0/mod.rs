@@ -113,7 +113,6 @@ where
             block_info,
             transaction,
             platform_version,
-            None,
         )?;
 
         Ok(UnsignedWithdrawalTxs::from_vec(
@@ -314,7 +313,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to queue the withdrawals");
 
@@ -343,7 +341,6 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to queue the withdrawals again");
 

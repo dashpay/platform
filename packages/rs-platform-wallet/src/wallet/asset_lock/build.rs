@@ -6,6 +6,7 @@
 use crate::broadcaster::TransactionBroadcaster;
 use std::time::Duration;
 
+use crate::changeset::ShieldedRecipientRaw;
 use dashcore::Address as DashAddress;
 use dashcore::{OutPoint, Transaction, TxOut};
 use key_wallet::account::AccountType;
@@ -24,15 +25,17 @@ use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 
 use crate::changeset::{
-    AccountAddressPoolEntry, AccountRegistrationEntry, AssetLockChangeSet, PlatformWalletChangeSet,
+    AccountAddressPoolEntry, AccountRegistrationEntry, AssetLockChangeSet, PersistenceCapabilities,
+    PlatformWalletChangeSet,
 };
 use crate::error::PlatformWalletError;
+use crate::wallet::core::InBroadcastPin;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 use crate::ASSET_LOCK_FUNDING_SOURCES;
 
 use super::manager::{AssetLockManager, DEFAULT_FEE_PER_KB};
 use super::tracked::{AssetLockStatus, TrackedAssetLock};
-use super::{max_asset_lock_inputs, AssetLockOperationContext, AssetLockOperationState};
+use super::{input_cap_violation, AssetLockOperationContext, AssetLockOperationState};
 
 /// Callback that receives the outpoint of an asset lock built for a
 /// [`AssetLockFunding::FromWalletBalance`](super::AssetLockFunding::FromWalletBalance),
@@ -253,7 +256,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             DerivationPath,
             Option<key_wallet::ReservationToken>,
             Vec<AccountType>,
-            crate::wallet::core::InBroadcastPin,
+            InBroadcastPin,
             Vec<AccountAddressPoolEntry>,
         ),
         PlatformWalletError,
@@ -928,22 +931,27 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             account_index,
             funding_type,
             identity_index,
+            None,
             signer,
             None,
+            |_| {},
         )
         .await
     }
 
     /// [`Self::create_funded_asset_lock_proof`] that reports the built lock's
     /// outpoint to `on_built` (see [`AssetLockBuiltObserver`]).
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn create_funded_asset_lock_proof_observed<S: ExtendedPubKeySigner>(
         &self,
         amount_duffs: u64,
         account_index: u32,
         funding_type: AssetLockFundingType,
         identity_index: u32,
+        shielded_recipient: Option<ShieldedRecipientRaw>,
         signer: &S,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
+        on_dispatch: impl FnOnce(OutPoint) + Send,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         self.create_funded_asset_lock_proof_pooled(
             AssetLockBuildAmount::Exact(amount_duffs),
@@ -951,8 +959,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             account_index,
             funding_type,
             identity_index,
+            shielded_recipient,
             signer,
             on_built,
+            on_dispatch,
         )
         .await
     }
@@ -976,14 +986,17 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             funding_account,
             funding_type,
             identity_index,
+            None,
             signer,
             None,
+            |_| {},
         )
         .await
     }
 
     /// [`Self::create_funded_asset_lock_proof_with_funding`] that reports the
     /// built lock's outpoint to `on_built` (see [`AssetLockBuiltObserver`]).
+    #[allow(clippy::too_many_arguments)]
     pub(super) async fn create_funded_asset_lock_proof_with_funding_observed<
         S: ExtendedPubKeySigner,
     >(
@@ -992,8 +1005,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         funding_account: AssetLockFundingAccount,
         funding_type: AssetLockFundingType,
         identity_index: u32,
+        shielded_recipient: Option<ShieldedRecipientRaw>,
         signer: &S,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
+        on_dispatch: impl FnOnce(OutPoint) + Send,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         self.create_funded_asset_lock_proof_pooled(
             amount,
@@ -1001,8 +1016,10 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             funding_account.account_index(),
             funding_type,
             identity_index,
+            shielded_recipient,
             signer,
             on_built,
+            on_dispatch,
         )
         .await
     }
@@ -1014,6 +1031,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// `on_built` receives the new lock's outpoint once the lock is tracked,
     /// before its row is persisted or it is broadcast (see
     /// [`AssetLockBuiltObserver`]).
+    /// `on_dispatch` receives it after persistence admission, before awaiting
+    /// network acceptance, which may arrive only with the InstantSend lock.
     #[allow(clippy::too_many_arguments)]
     async fn create_funded_asset_lock_proof_pooled<S: ExtendedPubKeySigner>(
         &self,
@@ -1022,18 +1041,23 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         source_index: u32,
         funding_type: AssetLockFundingType,
         identity_index: u32,
+        shielded_recipient: Option<ShieldedRecipientRaw>,
         signer: &S,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
+        on_dispatch: impl FnOnce(OutPoint) + Send,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         let (path, out_point) = self
-            .broadcast_funded_asset_lock_with_funding(
+            .broadcast_funded_asset_lock_tracked(
                 amount,
                 funding_sources,
                 source_index,
                 funding_type,
                 identity_index,
+                shielded_recipient,
                 signer,
+                None,
                 on_built,
+                on_dispatch,
             )
             .await?;
         let proof = self
@@ -1108,21 +1132,25 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         minimum_lock_duffs: Option<u64>,
         funding_type: AssetLockFundingType,
         identity_index: u32,
+        shielded_recipient: Option<ShieldedRecipientRaw>,
         signer: &S,
         operation: &AssetLockOperationContext,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
+        on_dispatch: impl FnOnce(OutPoint) + Send,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         self.require_wallet_drain_persistence()?;
         let (path, out_point) = self
-            .broadcast_funded_asset_lock_with_operation(
+            .broadcast_funded_asset_lock_tracked(
                 AssetLockBuildAmount::DrainAll { minimum_lock_duffs },
                 &ASSET_LOCK_FUNDING_SOURCES,
                 account_index,
                 funding_type,
                 identity_index,
+                shielded_recipient,
                 signer,
                 Some(operation),
                 on_built,
+                on_dispatch,
             )
             .await?;
         let proof = self
@@ -1142,6 +1170,66 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         signer: &S,
         operation: Option<&AssetLockOperationContext>,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
+    ) -> Result<(DerivationPath, OutPoint), PlatformWalletError> {
+        self.broadcast_funded_asset_lock_tracked(
+            amount,
+            funding_sources,
+            source_index,
+            funding_type,
+            identity_index,
+            None,
+            signer,
+            operation,
+            on_built,
+            |_| {},
+        )
+        .await
+    }
+
+    /// Settles a build that is abandoned before it reached the broadcaster:
+    /// the owner-guarded reservation is released across every contributing
+    /// account and the in-broadcast fence comes down after it. The released
+    /// verdict is recorded before the cleanup's first await, so a cancellation
+    /// inside it still settles released — nothing was sent, and a pending-spend
+    /// fence would wait for a spend that can never be observed. The caller
+    /// drops the build→persist gate first.
+    async fn abandon_unsent_build(
+        &self,
+        mut in_broadcast_pin: InBroadcastPin,
+        funding_accounts: &[AccountType],
+        tx: &Transaction,
+        reservation_token: Option<key_wallet::ReservationToken>,
+    ) {
+        in_broadcast_pin.settle_released_on_drop();
+        crate::wallet::reservations::release_reservation_after_rejected_broadcast(
+            &self.wallet_manager,
+            &self.wallet_id,
+            funding_accounts,
+            tx,
+            reservation_token,
+        )
+        .await;
+        in_broadcast_pin.settle_released();
+    }
+
+    /// The build → persist → track → broadcast pipeline every funded lock
+    /// goes through. `shielded_recipient` is the Orchard address a shielded
+    /// funding (Type 18) will pay; it is recorded on the row created here,
+    /// so it is exactly as durable before dispatch as `operation_id`: flushed
+    /// before the broadcast for a drain, queued before it otherwise.
+    #[allow(clippy::too_many_arguments)]
+    async fn broadcast_funded_asset_lock_tracked<S: ExtendedPubKeySigner>(
+        &self,
+        amount: AssetLockBuildAmount,
+        funding_sources: &[AccountTypePreference],
+        source_index: u32,
+        funding_type: AssetLockFundingType,
+        identity_index: u32,
+        shielded_recipient: Option<ShieldedRecipientRaw>,
+        signer: &S,
+        operation: Option<&AssetLockOperationContext>,
+        on_built: Option<&AssetLockBuiltObserver<'_>>,
+        on_dispatch: impl FnOnce(OutPoint) + Send,
     ) -> Result<(DerivationPath, OutPoint), PlatformWalletError> {
         if operation.is_some() {
             self.require_wallet_drain_persistence()?;
@@ -1223,18 +1311,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         // The same verdict covers the asset-lock input cap: Dash Core relays
         // at most `max_asset_lock_transaction_inputs` (100) inputs and drops a
         // larger lock silently (`assetlocktx-too-many-inputs`), and Platform
-        // consensus validates the same versioned bound — tighter than the
-        // standard-transaction limit key-wallet's builder applies. Any amount
-        // can cross it: a drain pools every eligible input, and a fixed amount
-        // held only in many small coins selects as many. An oversized lock is
-        // abandoned here rather than stranded on the wire; the caller can
-        // consolidate the coins and build again.
-        let max_inputs = max_asset_lock_inputs(self.sdk.version());
-        let abandon = match amount {
-            _ if tx.input.len() > max_inputs => Some(PlatformWalletError::AssetLockTooManyInputs {
-                count: tx.input.len(),
-                max: max_inputs,
-            }),
+        // consensus holds an instant proof to the same versioned bound —
+        // tighter than the standard-transaction limit key-wallet's builder
+        // applies. Any amount can cross it: a drain pools every eligible
+        // input, and a fixed amount held only in many small coins selects as
+        // many. An oversized lock is abandoned here rather than stranded on
+        // the wire; the caller can consolidate the coins and build again.
+        let abandon = input_cap_violation(&tx, self.sdk.version()).or_else(|| match amount {
             AssetLockBuildAmount::DrainAll {
                 minimum_lock_duffs: Some(minimum),
             } if locked_amount_duffs < minimum => {
@@ -1245,7 +1328,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 )))
             }
             _ => None,
-        };
+        });
         if let Some(error) = abandon {
             {
                 // Nothing reached the broadcaster, so the fence has no
@@ -1354,17 +1437,13 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 // inputs that provably never went to the wire (same shape as
                 // the drain-floor branch).
                 drop(build_persist_guard);
-                let mut in_broadcast_pin = in_broadcast_pin;
-                in_broadcast_pin.settle_released_on_drop();
-                crate::wallet::reservations::release_reservation_after_rejected_broadcast(
-                    &self.wallet_manager,
-                    &self.wallet_id,
+                self.abandon_unsent_build(
+                    in_broadcast_pin,
                     &funding_accounts,
                     &tx,
                     reservation_token,
                 )
                 .await;
-                in_broadcast_pin.settle_released();
                 if operation.is_some() {
                     return Err(PlatformWalletError::Persistence(format!(
                         "drain funding indices could not be made durable before dispatch: {e}"
@@ -1378,6 +1457,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
         }
 
+        // Only where the backend can record a recipient at all: a host without
+        // the capability keeps the best-effort row every other funding has.
+        let recipient_must_be_durable = operation.is_none()
+            && shielded_recipient.is_some()
+            && self
+                .persister
+                .persistence_capabilities()
+                .contains(PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS);
         let tracked = TrackedAssetLock {
             operation_id: operation.map(|context| context.operation_id),
             out_point,
@@ -1388,6 +1475,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             amount: locked_amount_duffs,
             status: AssetLockStatus::Built,
             proof: None,
+            shielded_recipient,
         };
         if let Some(operation) = operation {
             operation.retain_checkpoint(tracked.clone());
@@ -1418,6 +1506,50 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 })?;
             self.track_asset_lock(tracked).await;
             operation.clear_checkpoint();
+        } else if recipient_must_be_durable {
+            // The recipient exists nowhere but this row: a lock recovered from
+            // the chain after a kill carries none, and a resume would then pay
+            // whatever address the caller names. So, like the drain above, the
+            // row is durable BEFORE it is visible or sent, and a backend that
+            // cannot record it stops the funding while nothing is on the wire.
+            if let Some(on_built) = on_built {
+                on_built(out_point);
+            }
+            let mut changeset = AssetLockChangeSet::default();
+            changeset.asset_locks.insert(out_point, (&tracked).into());
+            let durable = self
+                .persister
+                .store(PlatformWalletChangeSet {
+                    asset_locks: Some(changeset),
+                    ..Default::default()
+                })
+                .and_then(|()| self.persister.flush());
+            if let Err(error) = durable {
+                // The row may be buffered (a backend that restores a failed
+                // flush to its buffer) or committed (a store that succeeded
+                // before a failed flush), and a later flush or a restart would
+                // then surface a resumable row for inputs released below. Its
+                // removal is queued behind it — stores apply removals after
+                // upserts — so the abandoned row does not outlive this call
+                // unless the backend refuses that write too. The funding index
+                // stays consumed, as for the pool gate above.
+                self.queue_asset_lock_changeset(AssetLockChangeSet {
+                    removed: [out_point].into(),
+                    ..Default::default()
+                });
+                drop(build_persist_guard);
+                self.abandon_unsent_build(
+                    in_broadcast_pin,
+                    &funding_accounts,
+                    &tx,
+                    reservation_token,
+                )
+                .await;
+                return Err(PlatformWalletError::Persistence(format!(
+                    "shielded recipient was not made durable before dispatch: {error}"
+                )));
+            }
+            self.track_asset_lock(tracked).await;
         } else {
             let cs_built = self.track_asset_lock(tracked).await;
             // Hand the outpoint to the caller before the row is persisted, so a
@@ -1465,6 +1597,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         //    pending-spend fence everywhere else, until the wallet observes the
         //    spend. A cancellation or unwind inside `broadcast` reaches no arm
         //    at all and settles as pending through `InBroadcastPin::drop`.
+        on_dispatch(out_point);
         let broadcast_outcome = self.broadcaster.broadcast(&tx).await;
         if let Err(e) = broadcast_outcome {
             if matches!(e, crate::broadcaster::BroadcastError::Rejected { .. }) {
@@ -1746,6 +1879,8 @@ mod tests {
         ClientStartState, ClientWalletStartState, PersistenceError, PlatformWalletChangeSet,
         PlatformWalletPersistence,
     };
+    #[cfg(feature = "shielded")]
+    use crate::test_support::orchard_address_fixture;
     use crate::test_support::{
         funded_wallet_manager, funded_wallet_manager_dual_standard,
         funded_wallet_manager_with_contact, funded_wallet_manager_with_outputs,
@@ -2016,6 +2151,7 @@ mod tests {
                                     amount: entry.amount_duffs,
                                     status: entry.status.clone(),
                                     proof: entry.proof.clone(),
+                                    shielded_recipient: entry.shielded_recipient,
                                 },
                             );
                     }
@@ -2066,6 +2202,94 @@ mod tests {
             self.entered.wait().await;
             self.release.wait().await;
             Ok(transaction.txid())
+        }
+    }
+
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_notify_speculation_before_network_acceptance() {
+        for drain in [false, true] {
+            let (wallet_manager, wallet_id, _, signer) =
+                funded_wallet_manager(StandardAccountType::BIP44Account).await;
+            let entered = Arc::new(tokio::sync::Barrier::new(2));
+            let (manager, persistence) = asset_lock_manager_over(
+                wallet_manager,
+                wallet_id,
+                Arc::new(GatedBroadcaster {
+                    entered: entered.clone(),
+                    release: Arc::new(tokio::sync::Barrier::new(2)),
+                }),
+            );
+            let operation = Arc::new(AssetLockOperationContext::new([0x71; 16]));
+            let _registration = manager.register_wallet_drain_operation(operation.clone());
+            let funding = if drain {
+                manager.begin_wallet_drain(&operation).await.unwrap();
+                AssetLockFunding::DrainWalletBalance {
+                    account_index: 0,
+                    minimum_lock_duffs: Some(1),
+                    operation: operation.clone(),
+                }
+            } else {
+                AssetLockFunding::FromWalletBalance {
+                    amount_duffs: 1_000_000,
+                    account_index: 0,
+                }
+            };
+            let built = Mutex::new(Vec::new());
+            let on_built = |out_point| built.lock().unwrap().push(out_point);
+            let (dispatch_tx, mut dispatch_rx) = tokio::sync::oneshot::channel();
+            let persisted_at_dispatch = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let drain_out_point_at_dispatch = Arc::new(Mutex::new(None));
+            let persisted_at_dispatch_callback = Arc::clone(&persisted_at_dispatch);
+            let drain_out_point_at_dispatch_callback = Arc::clone(&drain_out_point_at_dispatch);
+            let persistence_for_dispatch = Arc::clone(&persistence);
+            let operation_for_dispatch = operation.clone();
+            let resolve = manager.resolve_funding_observing_out_point(
+                funding,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                Some(orchard_address_fixture(0x71).to_raw_bytes()),
+                &signer,
+                Some(&on_built),
+                |out_point| {
+                    persisted_at_dispatch_callback.store(
+                        persistence_for_dispatch
+                            .stored_outpoints()
+                            .contains(&out_point),
+                        std::sync::atomic::Ordering::SeqCst,
+                    );
+                    if drain {
+                        *drain_out_point_at_dispatch_callback.lock().unwrap() =
+                            operation_for_dispatch.snapshot().out_point;
+                    }
+                    dispatch_tx.send(out_point).unwrap();
+                },
+            );
+            tokio::pin!(resolve);
+            tokio::select! {
+                _ = &mut resolve => panic!("acceptance is withheld"),
+                _ = entered.wait() => {}
+            }
+
+            let out_point = dispatch_rx
+                .try_recv()
+                .expect("speculation must be notified before network acceptance");
+            assert_eq!(*built.lock().unwrap(), vec![out_point]);
+            assert!(
+                persisted_at_dispatch.load(std::sync::atomic::Ordering::SeqCst),
+                "dispatch callback must run after the asset-lock row is persisted"
+            );
+            assert!(persistence.stored_outpoints().contains(&out_point));
+            let rows = manager.list_tracked_locks().await;
+            let row = rows.iter().find(|row| row.out_point == out_point).unwrap();
+            assert_eq!(row.status, AssetLockStatus::Built);
+            if drain {
+                assert_eq!(
+                    *drain_out_point_at_dispatch.lock().unwrap(),
+                    Some(out_point)
+                );
+                assert_eq!(operation.snapshot().out_point, Some(out_point));
+            }
         }
     }
 
@@ -2441,6 +2665,7 @@ mod tests {
                 },
                 AssetLockFundingType::AssetLockAddressTopUp,
                 0,
+                None,
                 &signer,
                 Some(&observer),
             )
@@ -2470,6 +2695,7 @@ mod tests {
                 },
                 AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 0,
+                None,
                 &signer,
                 Some(&observer),
             )
@@ -3411,6 +3637,7 @@ mod tests {
                 },
                 AssetLockFundingType::IdentityRegistration,
                 0,
+                None,
                 &signer,
                 None,
             )
@@ -3441,6 +3668,7 @@ mod tests {
                     },
                     reclaim_target,
                     0,
+                    None,
                     &signer,
                     None,
                 ),
@@ -5766,6 +5994,63 @@ mod tests {
                 .await
                 .unwrap(),
             snapshot
+        );
+    }
+
+    /// An asset lock from a wallet holding a 1,000 DASH masternode collateral
+    /// and a 5 DASH coin is funded from the 5 DASH coin: a lock only the
+    /// collateral could fund is refused, and draining the account locks the
+    /// spare coin alone.
+    #[tokio::test]
+    async fn should_fund_an_asset_lock_without_the_masternode_collateral() {
+        const DASH: u64 = 100_000_000;
+        let (wallet_manager, wallet_id, _generation, signer, _collateral, spare) =
+            crate::test_support::wallet_manager_with_registered_collateral(
+                StandardAccountType::BIP44Account,
+                5 * DASH,
+            )
+            .await;
+        let (manager, _persistence) = asset_lock_manager_over(
+            wallet_manager,
+            wallet_id,
+            Arc::new(CountingOkBroadcaster::default()),
+        );
+
+        let shortfall = manager
+            .build_asset_lock_transaction(
+                6 * DASH,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(
+                shortfall,
+                Err(PlatformWalletError::AssetLockInsufficientFunds { .. })
+            ),
+            "a 6 DASH lock needs the collateral, got {shortfall:?}"
+        );
+
+        let (tx, _path, _token, _accounts) = manager
+            .build_asset_lock_transaction_with_funding(
+                super::AssetLockBuildAmount::DrainAll {
+                    minimum_lock_duffs: None,
+                },
+                &[AccountTypePreference::BIP44],
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await
+            .expect("draining the account locks the spare coin");
+        let inputs: Vec<OutPoint> = tx.input.iter().map(|input| input.previous_output).collect();
+        assert_eq!(
+            inputs,
+            vec![spare],
+            "the drain must leave the collateral alone"
         );
     }
 }

@@ -37,6 +37,13 @@ impl TenderdashStatus {
         }
     }
 
+    /// Whether Tenderdash answered that this node does not hold the height it was asked for.
+    pub fn is_missing_height(&self) -> bool {
+        self.message
+            .as_deref()
+            .is_some_and(|message| is_missing_height_message(&message.trim().to_lowercase()))
+    }
+
     /// Convert the Tenderdash status into a gRPC `tonic::Status` with enriched metadata.
     pub fn to_status(&self) -> tonic::Status {
         let status_code = self.grpc_code();
@@ -413,8 +420,22 @@ pub(super) fn map_tenderdash_message(message: &str) -> Option<DapiError> {
     if msg.starts_with("broadcast confirmation not received:") {
         return Some(DapiError::Timeout(msg.to_string()));
     }
+
+    // Left as Internal, the client would ban a healthy node for it.
+    if is_missing_height_message(&msg) {
+        return Some(DapiError::NotFound(msg.to_string()));
+    }
     None
 }
+
+/// Tenderdash's answers when this node lacks a height, because it is behind or was
+/// state-synced. Expects a message that is already trimmed and lowercase.
+fn is_missing_height_message(message: &str) -> bool {
+    message.starts_with("height must be less than or equal to the head")
+        || message.starts_with("height is not available")
+        || message.starts_with("could not find results for height")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -487,6 +508,23 @@ mod tests {
     // -- map_tenderdash_message tests --
 
     #[test]
+    fn should_report_a_block_the_node_lacks_as_not_found() {
+        for error in [
+            "height must be less than or equal to the head of the node's blockchain (requested height: 9, blockchain height: 3)",
+            "height is not available (requested height: 2, base height: 7)",
+            "could not find results for height #7",
+        ] {
+            let status = TenderdashStatus::from(serde_json::json!({
+                "code": -32603,
+                "message": "Internal error",
+                "data": error,
+            }))
+            .to_status();
+            assert_eq!(status.code(), tonic::Code::NotFound, "{error}");
+        }
+    }
+
+    #[test]
     fn map_tenderdash_message_tx_already_exists() {
         let result = map_tenderdash_message("tx already exists in cache");
         assert!(result.is_some());
@@ -549,6 +587,21 @@ mod tests {
             result.expect("should map to Timeout"),
             DapiError::Timeout(_)
         ));
+    }
+
+    #[test]
+    fn should_recognize_the_heights_a_node_does_not_hold() {
+        let status = |message: &str| TenderdashStatus::new(-32603, Some(message.to_string()), None);
+
+        for message in [
+            "height must be less than or equal to the head of the node's blockchain",
+            "height is not available",
+            "Could not find results for height #7",
+        ] {
+            assert!(status(message).is_missing_height(), "{message}");
+        }
+        assert!(!status("some random error").is_missing_height());
+        assert!(!TenderdashStatus::new(-32603, None, None).is_missing_height());
     }
 
     #[test]

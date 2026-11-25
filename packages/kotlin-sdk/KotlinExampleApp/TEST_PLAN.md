@@ -126,7 +126,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | ID-03 | View identity (info / balance / revision / keys) | Platform | Essential | ✅ | | `IdentityDetailScreen`, `KeysListScreen`, `KeyDetailScreen`. |
 | ID-04 | Transfer credits identity → identity | Platform | Essential | ✅ | | `IdentityDetailScreen` → **Transfer Credits** (dialog, `TransferCreditsScreen`) → `platform_wallet_transfer_credits_with_signer` (Keystore-signed). Recipient entered via `RecipientPicker` (local identity / paste base58 id / DPNS name). |
 | ID-05 | Top up identity (asset lock) | Cross | Common | ✅ | | `IdentityDetailScreen` → **Top Up from Core** (`TopUpIdentityFromCoreScreen`) → `platform_wallet_top_up_identity_with_funding_signer`. Builds + broadcasts a new Core asset lock (same mechanism as ID-01), signed by the asset lock's Core key. |
-| ID-06 | Top up identity (from Platform addresses) | Cross | Common | ✅ | | `IdentityDetailScreen` → **Top Up from Platform addresses** (`TopUpIdentityScreen`) → `platform_wallet_top_up_from_addresses_with_signer`. Requires the wallet's Platform-payment addresses to hold credits first — fund them via `WalletDetailScreen` → Platform Balance → **Top Up from Core** (`FundFromAssetLockScreen`). |
+| ID-06 | Top up identity (from Platform addresses) | Cross | Common | ✅ | | `IdentityDetailScreen` → **Top Up from Platform addresses** (`TopUpIdentityScreen`) → `IdentityCredits.topUpIdentityFromAddresses` → `platform_wallet_top_up_identity_from_addresses_with_signer`. Requires the wallet's Platform-payment addresses to hold credits first — fund them via `WalletDetailScreen` → Platform Balance → **Top Up from Core** (`FundFromAssetLockScreen`). |
 | ID-07 | Update identity — add public key | Platform | Common | ✅ | | `AddIdentityKeyScreen` (from `KeysListScreen`) → `updateIdentity(addPublicKeys:)`. |
 | ID-08 | Create identity (from Platform addresses) | Cross | Common | ✅ | | `CreateIdentityScreen` → funding source **Platform address** → `IdentityRegistration.registerFromAddresses` → `platform_wallet_register_identity_with_signer` (Keystore-signed; one signer drives both the identity-key and platform-address roles). Derives + persists the canonical key set (as ID-01), then greedily packs the wallet's balance-carrying Platform-payment addresses; nonces auto-fetched Rust-side. Requires funded Platform addresses first (fund via `WalletDetailScreen` → Platform Balance → **Top Up from Core**). |
 | ID-09 | Set / edit local alias | Platform | Common | ✅ | | `IdentityDetailScreen` (Add Alias). Local only — persists across relaunch; no broadcast. |
@@ -146,7 +146,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | ADDR-01 | Query address info / multiple infos | Platform | Common | ✅ | | `AddressQueriesScreen` → `dash_sdk_address_fetch_info(s)`. |
 | ADDR-02 | Transfer credits address → address | Platform | Thorough | ✅ | | `WalletDetailScreen` → Platform Balance row **⋯ menu → Transfer Credits** (`TransferPlatformAddressScreen`) → `platform_address_wallet_transfer` (Keystore-signed). Source = DIP-17 platform-payment account picker; destination = own-wallet address picker or pasted 20-byte P2PKH hash. |
 | ADDR-03 | Top up address from an existing (pending) asset lock | Cross | Thorough | ✅ | | Resume a stuck/pending Platform-address asset-lock funding: `IdentitiesHomeScreen` → `PendingAssetLocksList` → `ManagedPlatformWallet.resumeFundFromAssetLock` → `WalletManagerNative.walletResumeFundFromAssetLock`. Distinct from `ADDR-09`, which builds a **new** lock from Core. Needs a pending-lock fixture (an asset lock whose consume did not complete). |
-| ADDR-04 | Withdraw address credits → Core L1 | Cross | Thorough | ✅ | withdrawal | `WalletDetailScreen` → Platform Balance row **⋯ menu → Withdraw to Core** (`WithdrawPlatformAddressScreen`) → `platform_address_wallet_withdraw_to_address` (Keystore-signed). Full account balance withdrawn. |
+| ADDR-04 | Withdraw address credits → Core L1 | Cross | Thorough | ✅ | withdrawal | `WalletDetailScreen` → Platform Balance row **⋯ menu → Withdraw to Core** (`WithdrawPlatformAddressScreen`) → `platform_address_wallet_withdraw_to_address` (Keystore-signed). Full account balance withdrawn. The partial-amount overload `withdrawCredits(coreAddress, inputs, …)` has no screen here (none in SwiftExampleApp either); its input encoding is covered by `WithdrawalInputTest`. |
 | ADDR-06 | Display / share your Platform receive address | Platform | Common | ✅ | | "Receive Dash" sheet → **Platform** tab (`ReceiveAddressSheet`, platform tab): QR + bech32m DIP-17 address + Copy. |
 | ADDR-07 | Platform address balance sync (BLAST) — start / progress; address balances populate to tip | Platform | Essential | ✅ | | Sync tab → **PLATFORM SYNC STATUS** (`SyncStatusScreen`, `container.platformBalanceSyncService`): State reaches `Synced`, Sync Height advances to tip, Active Addresses populate, "Sync Now" forces a pass. Precondition for the other address rows. |
 | ADDR-08 | Clear & resync platform address balances | Platform | Common | ✅ | | Sync tab → Platform section **Clear** (`SyncStatusScreen`, `testTag("sync.platformClear")`) → `container.platformBalanceSyncService.clearLocalState` (fail-closed): wipes local platform-address balance state; the next sync repopulates from scratch to tip. |
@@ -182,6 +182,13 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | VOTE-11 | Edit a decision proposal's text | Platform | Thorough | ✅ | proposal | Detail → Edit Text (`decisionProposal.edit`, shown only when a local wallet identity filed it) → `editDecisionProposal.*` → `PlatformWalletManager.decisionProposals.edit` (one `platform_wallet_decision_proposal_edit` call; no signing key is chosen in the app). Accepted for a day after creation; an edit that changes nothing is refused before anything is broadcast, and an edit that raced another one is refused by Platform (consensus code 40106) rather than overwriting it. The dialog cannot be dismissed while it broadcasts. |
 | VOTE-12 | Masternode vote on a decision proposal (yes / no / abstain) | Platform | Thorough | ✅ | proposal, masternode | Detail → Vote (`decisionProposal.vote`) → `decisionProposalVote.choice` / `.proTxHash` / `.votingKey` / `.submit` → `dash_sdk_decision_proposal_cast_vote`. The voting key shows as dots and a screenshot of the open dialog comes out blank (FLAG_SECURE). **Requires masternode voting credentials**; a vote from a regular wallet is refused (no voter identity). |
 | VOTE-13 | Read a masternode's answer on a decision proposal | Platform | Thorough | ✅ | proposal, masternode, read-only | Vote dialog → Read This Masternode's Answer (`decisionProposalVote.lookUp`) → `dash_sdk_decision_proposal_get_masternode_vote`. No answer once the poll finished. |
+| VOTE-14 | List multiple choice proposals (mine / newest, paged) | Platform | Thorough | ✅ | proposal, read-only | `QueriesListScreen` → Multiple Choice Proposals (`votingQueries.multipleChoiceProposalsLink`) → `MultipleChoiceProposalsScreen`: listing picker (`multipleChoiceProposals.listing`), identity picker for Mine (`multipleChoiceProposals.ownerPicker`), Load More (`multipleChoiceProposals.loadMore`). Needs protocol version 15; an earlier network shows a load error. |
+| VOTE-15 | Create a multiple choice proposal | Platform | Thorough | ✅ | proposal | `MultipleChoiceProposalsScreen` + (`multipleChoiceProposals.create`) → `CreateMultipleChoiceProposalScreen` (`createMultipleChoiceProposal.*`) → `PlatformWalletManager.multipleChoiceProposals.create` (one `platform_wallet_multiple_choice_proposal_create` call; the success section shows the returned id). The Proposer section shows the processing fee read from `dash_sdk_multiple_choice_proposal_get_processing_fee` (`createMultipleChoiceProposal.processingFee`, 0.2 DASH at protocol version 15), which Platform charges on top of the fees. The description document is three optional fields (`.descriptionDocumentId` / `.descriptionDocumentContractId` / `.descriptionDocumentType`); the switch `.open` says whether anyone may enter choices. While it broadcasts, system Back does nothing, and a rotation or a bottom-tab switch does not cancel it. Platform refuses a proposal with neither a description document nor a url. Protocol version 15. |
+| VOTE-16 | View a multiple choice proposal, its choices and its vote | Platform | Thorough | ✅ | proposal, read-only | `MultipleChoiceProposalDetailScreen` (row `multipleChoiceProposals.row.<id>`): the proposal, who enters choices (`multipleChoiceProposal.open`), the vote status (`multipleChoiceProposal.voteStatus`: no choice entered, voting open, or how it ended), every choice with its tally (`multipleChoiceProposal.choice.<choiceId>`), the none-of-the-choices and abstain tallies, and once the vote ended the kept choice (`multipleChoiceProposal.keptChoice`, read with `dash_sdk_multiple_choice_proposal_get_kept_choice`). |
+| VOTE-17 | Enter a choice for a multiple choice proposal | Platform | Thorough | ✅ | proposal | Detail → Enter a Choice (`multipleChoiceProposal.enterChoice`, shown when a loaded wallet holds an identity) → `enterProposalChoice.ownerPicker` / `.title` / `.description` / `.submitButton` → `PlatformWalletManager.multipleChoiceProposals.enterChoice` (one `platform_wallet_multiple_choice_proposal_enter_choice` call). The dialog shows the contest fund read from `dash_sdk_multiple_choice_proposal_get_choice_fund_to_join` (`enterProposalChoice.fund`), paid on top of the fees. The first choice opens the vote. Platform refuses a choice from anyone but the owner when the proposal is not open; the app does not pre-check it. The entry survives a rotation (the detail screen then shows its outcome), system Back does nothing while it broadcasts, and the action result names the new choice id. |
+| VOTE-18 | Edit a multiple choice proposal | Platform | Thorough | ✅ | proposal | Detail → Edit (`multipleChoiceProposal.edit`, shown only when a local wallet identity filed it) → `editMultipleChoiceProposal.*` → `PlatformWalletManager.multipleChoiceProposals.edit` (one `platform_wallet_multiple_choice_proposal_edit` call). Only the changed fields are sent; an emptied url, or three emptied description document fields, removes it. Accepted for two hours after creation (Platform refuses it afterwards; the app does not hide the button); an edit that changes nothing is refused before anything is broadcast, one that leaves neither a description document nor a url is refused by Platform, and one that raced another edit is refused with consensus code 40106. The dialog cannot be dismissed while it broadcasts. |
+| VOTE-19 | Masternode vote among a multiple choice proposal's choices (a choice / none of the choices / abstain) | Platform | Thorough | ✅ | proposal, masternode | Detail → Vote (`multipleChoiceProposal.vote`) → `multipleChoiceProposalVote.choice` (every choice of the running vote by title and id, then None of the choices and Abstain) / `.proTxHash` / `.votingKey` / `.submit` → `dash_sdk_multiple_choice_proposal_cast_vote`. The voting key shows as dots and a screenshot of the open dialog comes out blank (FLAG_SECURE); the dialog cannot be dismissed while it broadcasts. **Requires masternode voting credentials**; a vote from a regular wallet is refused (no voter identity). |
+| VOTE-20 | Read a masternode's answer among a multiple choice proposal's choices | Platform | Thorough | ✅ | proposal, masternode, read-only | Vote dialog → Read This Masternode's Answer (`multipleChoiceProposalVote.lookUp`) → `dash_sdk_multiple_choice_proposal_get_masternode_vote`. No answer once the vote ended. |
 
 ### 4.6 Data Contracts — `Domain=Contract`
 
@@ -211,6 +218,7 @@ Most Platform actions have hard preconditions. Establish these fixtures before s
 | DOC-13 | Aggregation — sum of a numeric property | Platform | Uncommon | 🧪 | | **Sum / Average Documents** screen (op selector → **Sum**) → `dash_sdk_document_sum`. |
 | DOC-14 | Aggregation — average of a numeric property | Platform | Uncommon | 🧪 | | Same screen (op selector → **Average**) → `dash_sdk_document_average`. |
 | DOC-15 | Document transfer / purchase across wallets | Platform | Uncommon | ✅ | multiwallet | A creates + lists a document (`DOC-02`/`DOC-06`); B transfers/purchases it (`DOC-05`/`DOC-07`). |
+| DOC-16 | Erase a deleted keep-history document's revisions | Platform | Thorough | 🧪 | | Route: **Browse Documents** → document → **Actions…** → **Erase Document…** (or the **Erase Document** catalog entry). The erase form calls the Rust wallet read/decide/select/submit/observe operation through `platform_wallet_document_erase_and_observe`. Rust loads the real contract, rejects ineligible types, skips ACTIVE/ABSENT, and submits nothing when the preflight/ownership read is unavailable. DELETED requires the newest retained revision's owner; ERASING accepts any submitting identity. Keys are selected in Rust using the actual requirement, contract bounds, expiry and supplied signer. A closing-read failure remains a submitted result with unavailable progress; outcome-unknown errors require reading history before any manual retry. Each call submits at most one chunk and never retries automatically. Display skipped/submitted reasons, remaining revisions and cautious progress wording. Needs an erasable keep-history type; not driven on a device or a live provider. |
 
 ### 4.8 Tokens — `Domain=Token`
 
@@ -299,6 +307,7 @@ Shielded notes/balance/activity have **no read-side FFI** by design — Rust pus
 | SYS-06 | Path elements (raw GroveDB) | Platform | Uncommon | 🧪 | read-only | **Get GroveDB Path Elements** read view → `dash_sdk_system_get_path_elements`. Enter `path` + `keys` JSON array; returns `[{key, element, type}]`. Use a **bounded** path. |
 | SYS-07 | Platform balance sync covers every registered wallet | Platform | — | ➖ | | Retired — the row verified a per-active-wallet staleness caveat that no longer exists: the Rust `PlatformAddressSyncManager` sweeps EVERY registered wallet each pass (platform twin of `CORE-20`), and the cross-wallet receives (`SH-15`, `DOC-15`) already exercise it. |
 | SYS-08 | Per-wallet Platform isolation (identities / usernames / tokens / contacts) | Platform | Thorough | ✅ | multiwallet | Wallet A's identities, DPNS names, token balances, and DashPay contacts must never surface under wallet B. |
+| SYS-09 | Quorum Source picker + Proof Quorum Source indicator | Platform | Thorough | ✅ | | Settings → **Quorum Source** (`settings.quorumMode`, port of SwiftExampleApp's Options picker): pick Auto / SPV / Trusted; the choice applies to the current SDK at once and survives a relaunch. **Proof Quorum Source** (`settings.quorumSource`): in Auto it reads *Trusted (HTTP)* until SPV, started from the Sync tab, has synced, then *SPV*; SPV mode reads *SPV* at once (proofs fail closed until synced); Trusted reads *Trusted (HTTP)*. Proofs keep verifying in Auto while SPV syncs. |
 
 ---
 
@@ -312,7 +321,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 |---|---|---|
 | Essential | 21 | yes |
 | Common | 29 | yes |
-| Thorough | 41 | yes |
+| Thorough | 49 | yes |
 | Uncommon | 25 | yes |
 | Manual | 1 (`CORE-08`) | no — physical device |
 
@@ -321,7 +330,7 @@ Counts are of rows reachable in the app (Status `✅`/`🧪`/`⚠️`); `🔌`/`
 | Layer | Count (approx.) |
 |---|---|
 | Core | 17 |
-| Platform | ~80 |
+| Platform | ~87 |
 | Cross | 7 |
 | Shielded | 16 |
 
@@ -335,13 +344,13 @@ Membership of each feature category across **all** sections (primary section mem
 - **Identity** — `ID-01..15`, `SH-11`
 - **Address** (DIP-17 platform addresses) — `ADDR-01..04`, `ADDR-06..09`, `ID-06`, `ID-08`, `ID-11`
 - **DPNS** — `DPNS-01..08`
-- **Voting** — `VOTE-01..13`, `DPNS-05`, `DPNS-08`
+- **Voting** — `VOTE-01..20`, `DPNS-05`, `DPNS-08`
 - **Contract** — `DC-01..04`
 - **Document** — `DOC-01..15`
 - **Token** — `TOK-01..20`
 - **Shielded** — `SH-01..17`
 - **DashPay** — `DP-01..19` (`DP-12..19` = invitation create, claim, persistence, reclaim; funded run 2026-07-23)
-- **System / Diagnostics** — `SYS-01..08`
+- **System / Diagnostics** — `SYS-01..09`
 
 ### Tag index
 
@@ -352,6 +361,6 @@ Tags are cross-cutting modalities. A test may appear under multiple tags.
 - **contested** — `DPNS-05`, `DPNS-08`, `VOTE-01..06`
 - **withdrawal** — `ID-10`, `ADDR-04`, `SH-08`, `SH-16`
 - **regression** — `TOK-17`, `DP-10`
-- **read-only** — `SH-13`, `SYS-05`, `SYS-06`, `VOTE-02..06`, `VOTE-08`, `VOTE-10`, `VOTE-13`, `TOK-18`, `TOK-19`
-- **masternode** — `VOTE-01`, `VOTE-12`, `VOTE-13`
-- **proposal** (decision proposals, protocol version 15): `VOTE-08..13`
+- **read-only** — `SH-13`, `SYS-05`, `SYS-06`, `VOTE-02..06`, `VOTE-08`, `VOTE-10`, `VOTE-13`, `VOTE-14`, `VOTE-16`, `VOTE-20`, `TOK-18`, `TOK-19`
+- **masternode** — `VOTE-01`, `VOTE-12`, `VOTE-13`, `VOTE-19`, `VOTE-20`
+- **proposal** (decision proposals, yes/no and multiple choice, protocol version 15): `VOTE-08..20`

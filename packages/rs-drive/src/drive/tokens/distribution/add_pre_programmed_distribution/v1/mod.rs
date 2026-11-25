@@ -389,7 +389,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected the update adding both tokens to succeed");
 

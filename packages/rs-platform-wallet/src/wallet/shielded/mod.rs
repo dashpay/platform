@@ -35,6 +35,7 @@ pub mod wallet_drain;
 pub use wallet_drain::{WalletDrainPreview, WalletDrainPreviewStatus};
 pub mod activity;
 pub mod activity_recorder;
+pub mod anchor_cache;
 pub mod balance;
 #[cfg(test)]
 mod balance_tests;
@@ -42,6 +43,8 @@ mod balance_tests;
 mod cancelled_scan_tests;
 pub mod coordinator;
 pub mod file_store;
+#[cfg(test)]
+mod fresh_address_scan_tests;
 pub mod fund_from_asset_lock;
 pub mod keys;
 pub mod note_selection;
@@ -60,6 +63,7 @@ pub use activity::{
     ScanDeriveInput, ShieldedActivityEntry, ShieldedActivityKind, ShieldedActivityStatus,
     ShieldedDirection,
 };
+pub use anchor_cache::{RecordedAnchorCache, RECORDED_ANCHOR_CACHE_TTL};
 pub use balance::{
     ShieldedBalanceSource, ShieldedLocalAccountBalance, ShieldedLocalBalanceSnapshot,
     ShieldedLocalBalanceState,
@@ -70,7 +74,8 @@ pub use keys::{AccountViewingKeys, OrchardKeySet};
 pub use prover::CachedOrchardProver;
 pub use seed_pool::{SeedPoolOutcome, SeedPoolProgress, DEFAULT_SEED_POOL_TARGET_NOTES};
 pub use store::{
-    IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, InMemoryShieldedStore, ShieldedNote,
+    IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus, InMemoryShieldedStore,
+    PrivateContactPayment, PrivatePaymentEntry, PrivatePaymentRecord, ShieldedNote,
     ShieldedOutgoingNote, ShieldedStore, SubwalletId,
 };
 pub use sync::{ShieldedSyncSummary, SyncNotesResult};

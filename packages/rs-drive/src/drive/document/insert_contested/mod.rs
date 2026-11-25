@@ -105,7 +105,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -127,7 +126,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect_err(
                 "expected not to be able to insert document with already existing unique index",
