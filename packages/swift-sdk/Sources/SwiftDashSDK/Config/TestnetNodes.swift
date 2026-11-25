@@ -97,7 +97,7 @@ public class TestnetNodesLoader {
 
         let sampleHPMasternode = HPMasternodeInfo(
             protxTxHash: "fedcba0987654321fedcba0987654321fedcba0987654321fedcba0987654321",
-            owner: KeyInfo(privateKey: "cN5YgNRq8rbcJwngdp3fRzv833E7Z74TsF8nB6GhzRg8Gd9aGWH1"),
+            owner: KeyInfo(privateKey: "cPLACEHOLDERxNOTxAxREALxKEYxxxxxxxxxxxxxxxxxxxxxxxxx"),
             voter: KeyInfo(privateKey: "cSBnVM4xvxarwGQuAfQFwqDg9k5tErHUHzgWsEfD4zdwUasvqRVY"),
             payout: KeyInfo(privateKey: "cMnkMfwMVmCM3NkF6p6dLKJMcvgN1BQvLRMvdWMjELUTdJM6QpyG")
         )

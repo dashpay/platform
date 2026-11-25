@@ -879,6 +879,51 @@ fn used_address_owner_conflict_is_tolerated_in_recovery() {
     assert_only_site(&persister, LoadSite::UsedAddressOwnerConflict, 1);
 }
 
+/// The conflicting address and its owning accounts stay out of the error
+/// text and the log, under either policy.
+#[test]
+#[tracing_test::traced_test]
+fn used_address_owner_conflict_does_not_reveal_the_address_or_its_accounts() {
+    let address = dashcore::Address::new(
+        dashcore::Network::Testnet,
+        dashcore::address::Payload::PubkeyHash(dashcore::PubkeyHash::from_byte_array([0x3Cu8; 20])),
+    )
+    .to_string();
+    let withheld = [
+        address.as_str(),
+        &"3c".repeat(20),
+        "standard_bip44[0]",
+        "standard_bip44[1]",
+    ];
+
+    let wallet = wid(0x32);
+    let (persister, _tmp, _path) = fresh_persister();
+    seed_conflicting_used_address_owner(&persister, &wallet);
+    let err = typed(persister.load().expect_err("strict load fails"));
+    assert!(matches!(
+        err,
+        WalletStorageError::UsedAddressOwnerConflict { .. }
+    ));
+    let display = err.to_string();
+    for secret in withheld {
+        assert!(!display.contains(secret), "error names {secret}: {display}");
+    }
+
+    let recovery_wallet = wid(0x33);
+    let (recovery, _tmp, _path) = fresh_recovery_persister(|strict| {
+        seed_conflicting_used_address_owner(strict, &recovery_wallet)
+    });
+    recovery.load().expect("recovery must complete the load");
+
+    assert!(
+        logs_contain("used_address_owner_conflict"),
+        "the conflict must still be logged"
+    );
+    for secret in withheld {
+        assert!(!logs_contain(secret), "must not be logged: {secret}");
+    }
+}
+
 // ── (g) unowned identity carrying a registration index ──────────────────
 
 /// Plant an identity with no owning wallet that nonetheless claims a

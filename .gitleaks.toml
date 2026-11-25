@@ -1,0 +1,10 @@
+# Extends the default gitleaks rules; allowlists deterministic test data that
+# matches generic-api-key but holds no real credentials.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Deterministic test fixtures"
+paths = [
+  '''packages/rs-drive-abci/src/mimic/fixtures/core_quorums\.json''',
+]
