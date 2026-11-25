@@ -46,6 +46,7 @@ const ENCRYPTED_SHIELDED_ADDRESS: &str = "encryptedShieldedAddress";
 #[derive(Debug, Clone)]
 pub struct PreparedContactRequest {
     contact_request_document_type: DocumentType,
+    with_shielded_address: bool,
 }
 
 impl PreparedContactRequest {
@@ -67,6 +68,12 @@ impl PreparedContactRequest {
         self.contact_request_document_type
             .as_ref()
             .data_contract_id()
+    }
+
+    /// Whether the request was prepared to carry a shielded address: the request sent with it
+    /// must carry one exactly when this is `true`.
+    pub fn with_shielded_address(&self) -> bool {
+        self.with_shielded_address
     }
 }
 
@@ -395,6 +402,10 @@ impl Sdk {
     /// `contactRequest` document type. Nothing is built, signed or submitted. The returned
     /// [`PreparedContactRequest`] tells what that contract requires of the signing key; send
     /// it with [`Sdk::submit_contact_request`].
+    ///
+    /// `with_shielded_address` says whether the request will carry a shielded address; the
+    /// contract is then resolved at a protocol version that has the property for it. A
+    /// request whose address does not match this is refused when sent.
     pub async fn prepare_contact_request(
         &self,
         with_shielded_address: bool,
@@ -409,6 +420,7 @@ impl Sdk {
             })?;
         Ok(PreparedContactRequest {
             contact_request_document_type,
+            with_shielded_address,
         })
     }
 
@@ -429,6 +441,20 @@ impl Sdk {
         H: FnOnce(u32) -> Hut,
         Hut: std::future::Future<Output = Result<Vec<u8>, Error>>,
     {
+        // The contract was resolved for a request with or without an address; one sent the
+        // other way could be judged against a contract lacking the property.
+        if input.shielded_address.is_some() != prepared.with_shielded_address {
+            let (sent, prepared_for) = if prepared.with_shielded_address {
+                ("without", "with")
+            } else {
+                ("with", "without")
+            };
+            return Err(Error::InvalidRequest(format!(
+                "a contact request {sent} a shielded address was prepared for one {prepared_for} \
+                 an address; prepare it again with the request's address"
+            )));
+        }
+
         // Validate auto accept proof size if provided
         if let Some(ref proof) = input.auto_accept_proof {
             if proof.len() < 38 || proof.len() > 102 {
@@ -1609,6 +1635,49 @@ mod tests {
         assert!(refusal.contains(ENCRYPTED_SHIELDED_ADDRESS), "{refusal}");
         assert!(!asked_secret, "the shared secret was not asked for");
         assert!(!asked_xpub, "the extended public key was not asked for");
+    }
+
+    /// A request sent with a shielded address the prepare call did not announce, or without
+    /// one it did, is refused as an invalid request before the host is asked for any key.
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_refuse_a_request_whose_address_does_not_match_its_preparation() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let latest = PlatformVersion::latest();
+        for (prepared_with, address) in [(false, Some([3u8; SHIELDED_ADDRESS_LEN])), (true, None)] {
+            let (sdk, _directory) = sdk_resolving(latest, &dashpay(latest)).await;
+            let prepared = sdk
+                .prepare_contact_request(prepared_with)
+                .await
+                .expect("the contact request is prepared");
+            assert_eq!(prepared.with_shielded_address(), prepared_with);
+
+            let asked = AtomicBool::new(false);
+            let built = sdk
+                .build_contact_request(
+                    &prepared,
+                    contact_request_input(address),
+                    EcdhProvider::<NoPrivateKey, _, _, _>::ClientSide {
+                        get_shared_secret: |_: &PublicKey| {
+                            asked.store(true, Ordering::SeqCst);
+                            std::future::ready(Ok(SHARED_KEY))
+                        },
+                    },
+                    |_| {
+                        asked.store(true, Ordering::SeqCst);
+                        std::future::ready(Ok(vec![4u8; COMPACT_XPUB_LEN]))
+                    },
+                )
+                .await;
+
+            assert!(
+                matches!(built, Err(Error::InvalidRequest(_))),
+                "prepared with an address: {prepared_with}, got {:?}",
+                built.as_ref().err()
+            );
+            assert!(!asked.load(Ordering::SeqCst), "the host was not asked");
+        }
     }
 
     /// The same SDK creates a request without an address, as before: the host answers for
