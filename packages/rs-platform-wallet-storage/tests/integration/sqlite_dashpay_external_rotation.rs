@@ -1,4 +1,4 @@
-//! A DashPay contact's payment-xpub rotation (V023).
+//! A DashPay contact's payment-xpub rotation (V024).
 //!
 //! The rotated contact's `DashpayExternalAccount` keeps its account key but
 //! derives a new pool. The registration flush retires the old xpub's pool rows
@@ -500,29 +500,29 @@ fn a_snapshot_of_an_unknown_xpub_still_conflicts() {
     assert!(retired(&persister, &w).is_empty());
 }
 
-/// Rewinds the file at `path` to the V022 schema: what V001..V022 left on disk.
-fn rewind_to_v022(path: &std::path::Path) {
+/// Rewinds the file at `path` to the V023 schema: what V001..V023 left on disk.
+fn rewind_to_v023(path: &std::path::Path) {
     rusqlite::Connection::open(path)
         .unwrap()
         .execute_batch(
             "DROP TABLE core_address_pool_retired;
-             DELETE FROM refinery_schema_history WHERE version = 23;",
+             DELETE FROM refinery_schema_history WHERE version = 24;",
         )
         .unwrap();
 }
 
-/// A database written before V023 migrates in place: its pool is untouched,
+/// A database written before V024 migrates in place: its pool is untouched,
 /// the history starts empty, and the contact then rotates like on a fresh
 /// file.
 #[test]
-fn a_pre_v023_database_migrates_in_place() {
+fn a_pre_v024_database_migrates_in_place() {
     let (persister, _tmp, path) = fresh_persister();
     let w = wid(0xE7);
     ensure_wallet_meta(&persister, &w);
     let a = contact_xpub(0x0A);
     persister.store(w, registration(a, &[2])).unwrap();
     drop(persister);
-    rewind_to_v022(&path);
+    rewind_to_v023(&path);
 
     let persister = reopen(&path);
     assert_eq!(live_scripts(&persister, &w), scripts_of(a));
@@ -543,7 +543,7 @@ fn a_pre_v023_database_migrates_in_place() {
 }
 
 /// The table and index exactly as a downstream build created them, before
-/// V023 existed, without `IF NOT EXISTS`.
+/// V024 existed, without `IF NOT EXISTS`.
 const DOWNSTREAM_RETIRED_POOL_DDL: &str = "\
 CREATE TABLE core_address_pool_retired (
     wallet_id BLOB NOT NULL,
@@ -612,11 +612,11 @@ fn retired_table_shape(conn: &rusqlite::Connection) -> Vec<String> {
 }
 
 /// A file a downstream build wrote already holds `core_address_pool_retired`
-/// and its index, with rows, but no V023 in its history. V023 adopts them in
+/// and its index, with rows, but no V024 in its history. V024 adopts them in
 /// place: the rows survive, the reader and the next rotation use them, and the
 /// file ends up with exactly the shape of a fresh one.
 #[test]
-fn v023_adopts_a_downstream_retired_pool_table() {
+fn v024_adopts_a_downstream_retired_pool_table() {
     let (persister, _tmp, path) = fresh_persister();
     let w = wid(0xEB);
     ensure_wallet_meta(&persister, &w);
@@ -632,14 +632,14 @@ fn v023_adopts_a_downstream_retired_pool_table() {
     drop(persister);
 
     // Recreate the table through the downstream DDL, carrying its rows, and
-    // drop V023 from the history: a V022 file with the downstream table.
+    // drop V024 from the history: a V023 file with the downstream table.
     {
         let conn = rusqlite::Connection::open(&path).unwrap();
         conn.execute_batch(&format!(
             "PRAGMA foreign_keys = OFF;
              BEGIN;
              {}
-             DELETE FROM refinery_schema_history WHERE version = 23;
+             DELETE FROM refinery_schema_history WHERE version = 24;
              COMMIT;",
             rebuild_retired_table_as_downstream()
         ))
@@ -651,7 +651,7 @@ fn v023_adopts_a_downstream_retired_pool_table() {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(version, 22);
+        assert_eq!(version, 23);
     }
 
     let persister = reopen(&path);

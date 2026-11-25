@@ -335,7 +335,7 @@ pub(crate) fn apply_flush_pools(
 /// ones alone.
 ///
 /// Writes every row as given: V008's legacy conversion replays pools through
-/// here before V023 exists. A flush goes through [`apply_flush_pools`].
+/// here before V024 exists. A flush goes through [`apply_flush_pools`].
 pub fn apply_pools(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -675,7 +675,7 @@ pub(crate) fn owning_account_for_script(
 }
 
 /// Whether `core_address_pool_retired` exists yet: V021 replays history
-/// through readers that consult it before V023 creates it.
+/// through readers that consult it before V024 creates it.
 pub(crate) fn retired_pool_exists(conn: &Connection) -> Result<bool, WalletStorageError> {
     Ok(conn
         .prepare_cached(
