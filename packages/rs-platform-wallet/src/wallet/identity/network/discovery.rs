@@ -221,7 +221,8 @@ fn breadcrumb_decisions(
 ///
 /// The defaults match `sync()`'s historical behavior: resume one past
 /// the wallet's highest already-registered identity index and stop
-/// after [`IDENTITY_GAP_LIMIT`] consecutive empty slots. Callers who
+/// after [`IDENTITY_GAP_LIMIT`] consecutive indices that import nothing
+/// (empty or ambiguous). Callers who
 /// want a full rescan pass `start_index: Some(0)`; callers who want a
 /// deeper gap tolerance bump `gap_limit`.
 ///
@@ -241,8 +242,8 @@ pub struct IdentityDiscoveryOptions {
     /// past the wallet's highest already-registered identity index"
     /// (default).
     pub start_index: Option<u32>,
-    /// How many consecutive empty identity indices to tolerate before
-    /// stopping. Defaults to [`IDENTITY_GAP_LIMIT`].
+    /// How many consecutive identity indices that import nothing (empty or
+    /// ambiguous) to tolerate before stopping. Defaults to [`IDENTITY_GAP_LIMIT`].
     pub gap_limit: u32,
 }
 
@@ -265,7 +266,8 @@ impl IdentityWallet {
     /// registered identity bound to that key hash (the unique-key
     /// lookup, then the non-unique one; see
     /// [`Self::fetch_identity_by_master_key_hash`]). Stops after
-    /// `opts.gap_limit` consecutive misses.
+    /// `opts.gap_limit` consecutive indices that import nothing: misses and
+    /// ambiguous indices alike, so an ambiguous index can end the scan.
     ///
     /// For every discovered identity this method also:
     /// - queries DPNS for associated usernames,

@@ -2457,7 +2457,7 @@ mod tests {
     /// candidates, none of them singled out: Platform answered, nothing can
     /// be imported, and rescanning gets the same answer.
     #[tokio::test]
-    async fn an_ambiguous_only_launch_with_every_candidate_read_settles_as_no_identity() {
+    async fn should_settle_an_ambiguous_only_launch_with_every_candidate_read_as_no_identity() {
         let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
         let mut sdk = manager.sdk().clone();
         answer_index_zero_with_owned_candidates(&mut sdk, 2).await;
@@ -2472,7 +2472,7 @@ mod tests {
     /// The same launch with candidates left unread: the verdict keeps the
     /// index unanswered, so the launch reports the identity question as open.
     #[tokio::test]
-    async fn an_ambiguous_only_launch_with_unread_candidates_stays_open() {
+    async fn should_keep_an_ambiguous_only_launch_with_unread_candidates_open() {
         let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
         let mut sdk = manager.sdk().clone();
         let more_than_one_probe_reads =
