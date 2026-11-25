@@ -100,6 +100,9 @@ struct RecoveryPersistence {
     commits_inline: AtomicBool,
     fail_load: AtomicBool,
     records_recipients: AtomicBool,
+    /// Transactions [`InstantSendingSpv`] accepted: their Core record reads
+    /// as InstantSend-locked, so a fresh lock's proof resolves at once.
+    instant_locked: Mutex<BTreeMap<dashcore::Txid, Transaction>>,
 }
 
 impl PlatformWalletPersistence for RecoveryPersistence {
@@ -150,6 +153,36 @@ impl PlatformWalletPersistence for RecoveryPersistence {
         }
         self.commit_staged();
         Ok(())
+    }
+    fn get_core_tx_record(
+        &self,
+        _wallet_id: [u8; 32],
+        txid: &dashcore::Txid,
+    ) -> Result<
+        Option<key_wallet::managed_account::transaction_record::TransactionRecord>,
+        PersistenceError,
+    > {
+        use key_wallet::managed_account::transaction_record::{
+            TransactionDirection, TransactionRecord,
+        };
+        use key_wallet::transaction_checking::{TransactionContext, TransactionType};
+        Ok(self.instant_locked.lock().unwrap().get(txid).map(|tx| {
+            TransactionRecord::new(
+                tx.clone(),
+                key_wallet::account::AccountType::Standard {
+                    index: 0,
+                    standard_account_type: StandardAccountType::BIP44Account,
+                },
+                TransactionContext::InstantSend(
+                    dashcore::ephemerealdata::instant_lock::InstantLock::default(),
+                ),
+                TransactionType::Standard,
+                TransactionDirection::Outgoing,
+                Vec::new(),
+                Vec::new(),
+                0,
+            )
+        }))
     }
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
         if self.fail_load.load(Ordering::SeqCst) {
@@ -241,6 +274,49 @@ async fn signed_wallet_fixture(
     TestDirectory,
     WalletSigner,
 ) {
+    signed_wallet_fixture_with(lock, keys, false).await
+}
+
+/// An SPV channel that accepts every broadcast and records the transaction
+/// as InstantSend-locked in the persistence backend, so a fresh lock is
+/// broadcast and gets its proof without a network.
+struct InstantSendingSpv {
+    persistence: Arc<RecoveryPersistence>,
+}
+
+#[async_trait::async_trait]
+impl crate::broadcaster::SpvChannel for InstantSendingSpv {
+    async fn broadcast_and_wait(
+        &self,
+        transaction: &Transaction,
+        _timeout: Option<std::time::Duration>,
+    ) -> Result<dash_spv::BroadcastResult, crate::broadcaster::BroadcastError> {
+        self.persistence
+            .instant_locked
+            .lock()
+            .unwrap()
+            .insert(transaction.txid(), transaction.clone());
+        Ok(dash_spv::BroadcastResult::Accepted { relayed_by: 1 })
+    }
+
+    async fn wait_until_ready(&self, _timeout: std::time::Duration) -> bool {
+        true
+    }
+}
+
+/// [`signed_wallet_fixture`]; with `instant_send`, Core broadcasts go
+/// through [`InstantSendingSpv`] instead of a never-started SPV client.
+async fn signed_wallet_fixture_with(
+    lock: &TrackedAssetLock,
+    keys: BTreeMap<u32, AccountViewingKeys>,
+    instant_send: bool,
+) -> (
+    PlatformWallet,
+    Arc<RecoveryPersistence>,
+    NetworkShieldedCoordinator,
+    TestDirectory,
+    WalletSigner,
+) {
     let (manager, id, generation, signer) =
         funded_wallet_manager(StandardAccountType::BIP44Account).await;
     let (stored_wallet, info) = {
@@ -262,6 +338,7 @@ async fn signed_wallet_fixture(
         commits_inline: AtomicBool::new(true),
         fail_load: AtomicBool::new(false),
         records_recipients: AtomicBool::new(true),
+        instant_locked: Mutex::new(BTreeMap::new()),
     });
     let sdk = Arc::new(
         dash_sdk::SdkBuilder::new_mock()
@@ -270,10 +347,16 @@ async fn signed_wallet_fixture(
             .build()
             .unwrap(),
     );
-    let spv = Arc::new(SpvRuntime::new(
-        manager.clone(),
-        Arc::new(PlatformEventManager::new(vec![])),
-    ));
+    let broadcaster = if instant_send {
+        SpvBroadcaster::from_channel(Arc::new(InstantSendingSpv {
+            persistence: persistence.clone(),
+        }))
+    } else {
+        SpvBroadcaster::new(Arc::new(SpvRuntime::new(
+            manager.clone(),
+            Arc::new(PlatformEventManager::new(vec![])),
+        )))
+    };
     let wallet = PlatformWallet::new(
         sdk.clone(),
         id,
@@ -281,7 +364,7 @@ async fn signed_wallet_fixture(
         generation,
         Arc::new(Notify::new()),
         persistence.clone(),
-        Arc::new(SpvBroadcaster::new(spv)),
+        Arc::new(broadcaster),
         Arc::new(std::sync::atomic::AtomicBool::new(false)),
         crate::changeset::DurableCursors::default(),
     );
@@ -981,6 +1064,68 @@ async fn should_report_a_fresh_shield_lock_to_the_caller() {
         .await
         .iter()
         .any(|tracked| tracked.out_point == seen[0]));
+}
+
+/// A fresh lock whose first Orchard proof fails is held: the call built
+/// it, nothing was ever submitted for it, and it is still resumable, so the
+/// error names its exact outpoint for the host to resume. The proof failure
+/// is the error, so nothing reached Platform.
+#[tokio::test]
+async fn should_hold_a_fresh_shield_lock_whose_first_proof_fails() {
+    let (mut lock, keys) = drain_lock_fixture();
+    lock.operation_id = None;
+    let recipient = dpp::address_funds::OrchardAddress::from(keys[&0].default_address);
+    let (wallet, _persistence, coordinator, _dir, signer) =
+        signed_wallet_fixture_with(&lock, keys, true).await;
+    let coordinator = Arc::new(coordinator);
+    let prover: &'static super::prover::CachedOrchardProver = &super::prover::CachedOrchardProver;
+    let seen = Mutex::new(Vec::new());
+    let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+    wallet
+        .fail_shield_from_asset_lock_proof
+        .store(true, Ordering::SeqCst);
+
+    let error = wallet
+        .shielded_fund_from_asset_lock(
+            &coordinator,
+            AssetLockFunding::FromWalletBalance {
+                amount_duffs: 5_000_000,
+                account_index: 0,
+            },
+            vec![(recipient, None)],
+            &signer,
+            prover,
+            None,
+            0,
+            None,
+            None,
+            Some(&observer),
+        )
+        .await
+        .expect_err("the first proof fails");
+
+    assert!(
+        error
+            .to_string()
+            .contains("simulated Orchard proving failure"),
+        "the call failed at proving, before any submit: {error}"
+    );
+    let seen = seen.into_inner().unwrap();
+    assert_eq!(seen.len(), 1, "one fresh lock was built");
+    assert_eq!(error.payment_delivery(), PaymentDelivery::LockHeld(seen[0]));
+    assert_eq!(error.held_asset_lock(), Some(seen[0]));
+    let tracked = wallet
+        .asset_locks
+        .list_tracked_locks()
+        .await
+        .into_iter()
+        .find(|tracked| tracked.out_point == seen[0])
+        .expect("the held lock stays tracked for the resume");
+    assert!(
+        !matches!(tracked.status, AssetLockStatus::Consumed),
+        "{:?}",
+        tracked.status
+    );
 }
 
 /// The pooled wallet drain reaches the observer through

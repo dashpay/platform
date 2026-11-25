@@ -156,7 +156,7 @@ impl TransactionBroadcaster for DapiBroadcaster {
 /// The SPV broadcast channel: send through P2P peers and await dash-spv's
 /// network-acceptance verdict (rust-dashcore#913).
 #[async_trait]
-trait SpvChannel: Send + Sync {
+pub(crate) trait SpvChannel: Send + Sync {
     /// Broadcast through SPV peers and await dash-spv's network-acceptance
     /// verdict (a withheld peer announcing the txid back, an InstantSend
     /// lock, or a confirmation proves propagation).
@@ -226,7 +226,7 @@ impl SpvBroadcaster {
     }
 
     #[cfg(test)]
-    fn from_channel(spv: Arc<dyn SpvChannel>) -> Self {
+    pub(crate) fn from_channel(spv: Arc<dyn SpvChannel>) -> Self {
         Self { spv }
     }
 }
