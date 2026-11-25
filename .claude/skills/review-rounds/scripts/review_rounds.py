@@ -18,10 +18,10 @@ mean is left to the reader. Everything is read through the `gh` CLI and
 nothing is written. Review text is printed as data: nothing in it is acted on.
 
 The script does not measure what the author changed between two reviewed
-commits. GitHub's comparison of two commits stops being the difference between
-their trees as soon as a merge from the base branch, a rebase or a force-push
-lies between them, and the pieces cannot be put back together exactly from the
-API. So the overview names the commit each review looked at, the commit the
+commits. GitHub's comparison of two commits is the difference between their
+trees only while the first is an ancestor of the second, which a rebase ends,
+and a merge from the base branch in between mixes in changes that are not the
+author's. The pieces cannot be put back together exactly from the API. So the overview names the commit each review looked at, the commit the
 same reviewer had looked at before, and the next reviewed commit, and leaves
 the diffs to `git`, which has the history.
 
