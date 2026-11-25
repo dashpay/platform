@@ -1626,8 +1626,14 @@ pub(in crate::wallet) async fn identity_top_up_from_pool_with_metadata<
 
     let mut pending_entry = None;
     let result = async {
-        let (spends, anchor, anchor_height) =
-            extract_spends_and_cached_anchor(sdk, store, anchor_cache, &selected_notes).await?;
+        let (spends, anchor, anchor_height) = extract_spends_and_cached_anchor(
+            sdk,
+            store,
+            anchor_cache,
+            &selected_notes,
+            expected_plan,
+        )
+        .await?;
         ensure_version_unchanged(sdk, platform_version, expected_plan)?;
         let anchor_bytes = anchor.to_bytes();
 
@@ -2428,8 +2434,14 @@ pub async fn unshield_with_plan<S: ShieldedStore, P: OrchardProver>(
     // it. A build failure leaves it `None` and records nothing.
     let mut pending_entry = None;
     let result = async {
-        let (spends, anchor, anchor_height) =
-            extract_spends_and_cached_anchor(sdk, store, anchor_cache, &selected_notes).await?;
+        let (spends, anchor, anchor_height) = extract_spends_and_cached_anchor(
+            sdk,
+            store,
+            anchor_cache,
+            &selected_notes,
+            expected_plan,
+        )
+        .await?;
         ensure_version_unchanged(sdk, platform_version, expected_plan)?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed spend can be auto-released once
@@ -2661,8 +2673,14 @@ pub async fn transfer_with_plan<S: ShieldedStore, P: OrchardProver>(
 
     let mut pending_entry = None;
     let result = async {
-        let (spends, anchor, anchor_height) =
-            extract_spends_and_cached_anchor(sdk, store, anchor_cache, &selected_notes).await?;
+        let (spends, anchor, anchor_height) = extract_spends_and_cached_anchor(
+            sdk,
+            store,
+            anchor_cache,
+            &selected_notes,
+            expected_plan,
+        )
+        .await?;
         ensure_version_unchanged(sdk, platform_version, expected_plan)?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed spend can be auto-released once
@@ -2888,8 +2906,14 @@ pub async fn withdraw_with_plan<S: ShieldedStore, P: OrchardProver>(
 
     let mut pending_entry = None;
     let result = async {
-        let (spends, anchor, anchor_height) =
-            extract_spends_and_cached_anchor(sdk, store, anchor_cache, &selected_notes).await?;
+        let (spends, anchor, anchor_height) = extract_spends_and_cached_anchor(
+            sdk,
+            store,
+            anchor_cache,
+            &selected_notes,
+            expected_plan,
+        )
+        .await?;
         ensure_version_unchanged(sdk, platform_version, expected_plan)?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed spend can be auto-released once
@@ -3111,7 +3135,8 @@ where
     let mut derived_identity_id = None;
     let result = async {
         let (spends, anchor, anchor_height) =
-            extract_spends_and_cached_anchor(sdk, store, anchor_cache, &selected_notes).await?;
+            extract_spends_and_cached_anchor(sdk, store, anchor_cache, &selected_notes, None)
+                .await?;
         // Capture the recorded anchor before the builder consumes it, so a
         // broadcast-accepted-but-unconfirmed create can be auto-released once
         // this anchor is pruned from Platform's recorded set.
@@ -3554,11 +3579,18 @@ const MAX_ANCHOR_PROBE_DEPTH: usize = 100;
 /// Returns the proved height of the recorded anchor set the anchor was chosen
 /// from too: the anchor was in the set at that height, so a set proved at or
 /// above it that lacks the anchor shows it pruned rather than newer.
+///
+/// A spend checked against a confirmed plan (`expected_plan`) never reuses a cached set: the
+/// fetch is the verified answer that teaches the SDK the network's current protocol version
+/// before the plan's version check runs. A set cached under an earlier version would let the
+/// spend build at the version, and so the fee, the plan was confirmed at after the network
+/// had already moved to another fee schedule.
 async fn extract_spends_and_cached_anchor<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
     anchor_cache: &RecordedAnchorCache,
     notes: &[ShieldedNote],
+    expected_plan: Option<&[u8; 32]>,
 ) -> Result<(Vec<SpendableNote>, Anchor, u64), PlatformWalletError> {
     // Nothing selected — fail before the network round-trip.
     if notes.is_empty() {
@@ -3569,10 +3601,11 @@ async fn extract_spends_and_cached_anchor<S: ShieldedStore>(
 
     // A cache bound to another SDK, or one that cannot reuse a set now (a
     // zero TTL, or a provider reporting no policy revision), is skipped
-    // without reading the tree size for it.
+    // without reading the tree size for it, and so is any cache for a
+    // plan-checked spend.
     let Some(anchor_cache) = anchor_cache
         .for_sdk(sdk)
-        .filter(|anchor_cache| anchor_cache.can_reuse())
+        .filter(|anchor_cache| expected_plan.is_none() && anchor_cache.can_reuse())
     else {
         return extract_spends_and_recorded_anchor(sdk, store, notes).await;
     };
@@ -10766,6 +10799,10 @@ mod spend_plan_tests {
         store: Arc<RwLock<crate::wallet::shielded::file_store::FileBackedShieldedStore>>,
         plan: ShieldedSpendPlan,
         path: std::path::PathBuf,
+        /// The spend's recorded-anchor cache: a zero TTL (nothing reused) unless
+        /// [`Self::with_warm_cache`] filled it.
+        anchor_cache: RecordedAnchorCache,
+        anchor: [u8; 32],
     }
 
     impl VersionMovesDuringAnchorFetch {
@@ -10835,7 +10872,28 @@ mod spend_plan_tests {
                 store,
                 plan,
                 path,
+                anchor_cache: RecordedAnchorCache::with_ttl(std::time::Duration::ZERO),
+                anchor,
             }
+        }
+
+        /// A cache that already holds the recorded set with the note's anchor, fetched at the
+        /// start version, as an earlier spend or the reservation-release pass leaves it.
+        async fn with_warm_cache(mut self) -> Self {
+            let size = self.store.read().await.tree_size().expect("a tree size");
+            let anchor_cache = RecordedAnchorCache::new();
+            let bound = anchor_cache
+                .for_sdk(&self.sdk)
+                .expect("a fresh cache binds");
+            bound.insert(
+                Arc::new([self.anchor].into_iter().collect()),
+                bound.stamp(),
+                size,
+                1,
+            );
+            assert!(bound.get(size).is_some(), "the cache serves the set");
+            self.anchor_cache = anchor_cache;
+            self
         }
 
         async fn run(
@@ -10886,7 +10944,7 @@ mod spend_plan_tests {
                     transfer_with_plan(
                         sdk,
                         store,
-                        &RecordedAnchorCache::with_ttl(std::time::Duration::ZERO),
+                        &self.anchor_cache,
                         None,
                         WALLET_ID,
                         &keys,
@@ -10903,7 +10961,7 @@ mod spend_plan_tests {
                     unshield_with_plan(
                         sdk,
                         store,
-                        &RecordedAnchorCache::with_ttl(std::time::Duration::ZERO),
+                        &self.anchor_cache,
                         None,
                         WALLET_ID,
                         &keys,
@@ -10919,7 +10977,7 @@ mod spend_plan_tests {
                     withdraw_with_plan(
                         sdk,
                         store,
-                        &RecordedAnchorCache::with_ttl(std::time::Duration::ZERO),
+                        &self.anchor_cache,
                         None,
                         WALLET_ID,
                         &keys,
@@ -10935,7 +10993,7 @@ mod spend_plan_tests {
                 ShieldedSpendKind::IdentityTopUp => identity_top_up_from_pool_with_plan(
                     sdk,
                     store,
-                    &RecordedAnchorCache::with_ttl(std::time::Duration::ZERO),
+                    &self.anchor_cache,
                     None,
                     WALLET_ID,
                     &keys,
@@ -11016,6 +11074,78 @@ mod spend_plan_tests {
                 drop(guard);
                 let _ = std::fs::remove_file(&case.path);
             }
+        }
+    }
+
+    /// A plan-checked spend never builds from a cached recorded-anchor set: with a warm cache
+    /// from the start version and a node that already serves the newest one, every spend kind
+    /// fetches the set, learns the new version from that answer and is refused as a changed
+    /// plan before anything is proved (the prover here panics), with its note released and no
+    /// activity row. A cache hit would have let it build at the plan's old fee.
+    #[tokio::test]
+    async fn should_fetch_the_anchor_set_for_a_plan_checked_spend_despite_a_warm_cache() {
+        use dash_sdk::dapi_grpc::platform::v0::get_shielded_anchors_request::{
+            self, GetShieldedAnchorsRequestV0,
+        };
+        use dash_sdk::dapi_grpc::platform::v0::GetShieldedAnchorsRequest;
+
+        let anchors_request = GetShieldedAnchorsRequest {
+            version: Some(get_shielded_anchors_request::Version::V0(
+                GetShieldedAnchorsRequestV0 {
+                    prove: true,
+                    token_id: None,
+                },
+            )),
+        };
+        for kind in [
+            ShieldedSpendKind::Transfer,
+            ShieldedSpendKind::Unshield,
+            ShieldedSpendKind::Withdrawal {
+                core_fee_per_byte: 1,
+            },
+            ShieldedSpendKind::IdentityTopUp,
+        ] {
+            let case = VersionMovesDuringAnchorFetch::new(kind)
+                .await
+                .with_warm_cache()
+                .await;
+            let refused = case.run(kind, Some(&case.plan.digest)).await;
+
+            assert!(
+                matches!(
+                    refused,
+                    Err(PlatformWalletError::ShieldedPlanChanged {
+                        fresh_selection: None
+                    })
+                ),
+                "{kind:?}: got {refused:?}"
+            );
+            assert_eq!(
+                (*case.sdk)
+                    .clone()
+                    .mock()
+                    .request_count(&anchors_request)
+                    .await,
+                1,
+                "the spend fetched the recorded set ({kind:?})"
+            );
+            assert_eq!(
+                case.sdk.protocol_version_number(),
+                PlatformVersion::latest().protocol_version,
+                "the fetch taught the SDK the network's version ({kind:?})"
+            );
+            let guard = case.store.read().await;
+            assert_eq!(
+                guard.get_unspent_notes(ID).expect("notes").len(),
+                1,
+                "the note is released ({kind:?})"
+            );
+            assert!(
+                guard.get_activity_ids(ID).expect("activity").is_empty(),
+                "no activity row ({kind:?})"
+            );
+            drop(guard);
+            let _ = std::fs::remove_file(&case.path);
         }
     }
 
