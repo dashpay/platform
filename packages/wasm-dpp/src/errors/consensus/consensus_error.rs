@@ -86,6 +86,7 @@ use dpp::consensus::state::document::referenced_document_type_index_only_error::
 use dpp::consensus::state::document::referenced_document_type_private_error::ReferencedDocumentTypePrivateError;
 use dpp::consensus::state::document::referenced_document_type_requirement_not_met_error::ReferencedDocumentTypeRequirementNotMetError;
 use dpp::consensus::state::document::document_type_not_private_error::DocumentTypeNotPrivateError;
+use dpp::consensus::state::document::document_sum_overflow_error::DocumentSumOverflowError;
 use dpp::consensus::state::document::private_document_entry_size_mismatch_error::PrivateDocumentEntrySizeMismatchError;
 use dpp::consensus::basic::document::{
     DuplicatePrivateDocumentEntryError, InvalidPrivateDocumentEntryCountError,
@@ -839,6 +840,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::ReferencedDocumentTypeRequirementNotMetError(e) => {
             generic_consensus_error!(ReferencedDocumentTypeRequirementNotMetError, e).into()
+        }
+        StateError::DocumentSumOverflowError(e) => {
+            generic_consensus_error!(DocumentSumOverflowError, e).into()
         }
     }
 }

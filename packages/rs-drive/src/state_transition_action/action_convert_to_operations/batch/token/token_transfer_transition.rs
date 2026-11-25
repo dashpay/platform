@@ -47,7 +47,7 @@ impl DriveHighLevelBatchOperationConverter for TokenTransferTransitionAction {
                     },
                 )];
 
-                // A random transfer (protocol version 15) moves the most it moves from the
+                // A random transfer (protocol version 16) moves the most it moves from the
                 // sender into a reservation and pays the recipient once the block's random
                 // beacon is known (`Drive::settle_random_token_amounts`), and its history holds
                 // the range's minimum until then. Only a version 1 transfer carries a random minimum amount,

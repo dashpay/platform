@@ -178,4 +178,29 @@ internal object MultipleChoiceProposalsNative {
         votingPrivateKey: ByteArray,
         networkOrd: Int,
     )
+
+    /**
+     * Vote among [proposalId]'s choices for a masternode with a host signer and wait for the
+     * response. Bridges `dash_sdk_multiple_choice_proposal_cast_vote_with_signer`: Rust
+     * builds the ECDSA_HASH160 voting key from [votingAddress] and asks [signerHandle] to
+     * sign with it.
+     *
+     * @param voteChoice `0` for the choice [choiceId] names, `1` none of the choices, `2`
+     *   abstain.
+     * @param choiceId the document id of the choice voted for; null for the answers that
+     *   name none.
+     * @param voterProTxHash 32 bytes in wire order (the reverse of the hex Core displays).
+     * @param votingAddress the 20-byte voting address (hash160 of the compressed voting
+     *   public key).
+     * @param signerHandle a live signer handle the caller keeps alive for the call.
+     */
+    external fun castVoteWithSigner(
+        sdk: Long,
+        proposalId: String,
+        voteChoice: Int,
+        choiceId: String?,
+        voterProTxHash: ByteArray,
+        votingAddress: ByteArray,
+        signerHandle: Long,
+    )
 }

@@ -172,9 +172,15 @@ fn row_bytes(
 ) -> u64 {
     let row = write.ranking.as_ref().expect("a ranking row");
     let bytes = |(count, sum): (u64, i64)| {
-        let (key, priced) =
-            writes::ranking_row(row.axis, &row.entry_key, count, sum, platform_version)
-                .expect("expected the row");
+        let (key, priced) = writes::ranking_row(
+            row.axis,
+            &row.entry_key,
+            count,
+            sum,
+            row.ranked_tree_keeps_big_sums,
+            platform_version,
+        )
+        .expect("expected the row");
         u64::from(new_element_bytes(
             key.len() as u32,
             priced,
@@ -1799,4 +1805,55 @@ fn should_size_an_indexed_typed_array_with_distinct_elements() {
             "{items:?}"
         );
     }
+}
+
+/// A ranking of a type that keeps its sums in 128 bits orders entries holding 128-bit sums,
+/// whose rows carry no sum on the Avg axis either (grovedb `axis_payload_sum`): a fresh
+/// create is quoted at the bytes Drive charges.
+#[test]
+fn should_price_the_rows_of_an_average_ranking_of_a_type_keeping_big_sums() {
+    let version = PlatformVersion::latest();
+    let contract = contract_with(platform_value!({
+        "review": {
+            "type": "object", "documentsMutable": true, "canBeDeleted": true,
+            "documentsSummable": "grade",
+            "properties": {
+                "restaurantId": {"type": "string", "minLength": 1, "maxLength": 32, "position": 0},
+                "grade": {"type": "integer", "minimum": 0, "maximum": 4_294_967_295u32, "position": 1}
+            },
+            "indices": [{
+                "name": "byRestaurant", "properties": [{"restaurantId": "asc"}],
+                "countable": "countable", "summable": "grade", "averageable": "grade",
+                "rangeCountable": true, "rangeSummable": true, "rangeAverageable": true,
+                "rankedAverageable": true
+            }],
+            "required": ["restaurantId", "grade"], "additionalProperties": false
+        }
+    }));
+    let review = contract.document_type_for_name("review").unwrap();
+    assert!(review.uses_big_sums());
+    let mut document = review.random_document(Some(1), version).unwrap();
+    document.set("restaurantId", Value::Text("alpha".to_string()));
+    document.set("grade", Value::U32(4_000_000_000));
+    let cost = document_create_cost(
+        &contract,
+        review,
+        &document,
+        &CostAssumptions::new(version),
+        version,
+    )
+    .unwrap();
+    let drive = setup_drive_with_initial_state_structure(Some(version));
+    drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            StorageFlags::optional_default_as_cow(),
+            None,
+            version,
+        )
+        .unwrap();
+    let fee = insert(&drive, &contract, review, &document).unwrap();
+    assert_eq!(cost.storage_credits.new_values, fee.storage_fee);
 }

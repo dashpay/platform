@@ -98,7 +98,7 @@ impl DriveHighLevelBatchOperationConverter for TokenTransitionAction {
 
 impl TokenTransitionAction {
     /// Gets the associated token event for the transition action. For a random transfer or mint
-    /// (protocol version 15) the amount is the range's minimum, the placeholder its execution
+    /// (protocol version 16) the amount is the range's minimum, the placeholder its execution
     /// writes into the history until the block's random token amounts are settled.
     pub fn associated_token_event(&self) -> TokenEvent {
         match self {

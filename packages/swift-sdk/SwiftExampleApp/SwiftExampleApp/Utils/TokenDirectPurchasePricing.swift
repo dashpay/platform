@@ -1,4 +1,5 @@
 import Foundation
+import SwiftDashSDK
 
 /// A token's direct-purchase pricing schedule, parsed from the JSON that
 /// `SDK.getTokenDirectPurchasePrices(tokenIds:)` returns (the shape emitted

@@ -64,8 +64,9 @@ pub struct DPPStateTransitionSerializationVersions {
     /// A token transfer or a token mint moving a random amount: format version 1 of either,
     /// which carries `random_minimum_amount`. `StateTransition::active_version_range` makes a
     /// batch carrying one active from the first protocol version whose table has this `Some`.
-    /// `None` refuses the batch at decode, which every table does for now, protocol version
-    /// 15's `STATE_TRANSITION_SERIALIZATION_VERSIONS_V4` included (it takes V3's value): block
+    /// `None` refuses the batch at decode, which every table does for now, including
+    /// `STATE_TRANSITION_SERIALIZATION_VERSIONS_V4` (it takes V3's value), which protocol
+    /// versions 15 and 16 select: block
     /// execution does not settle the amounts yet (`settle_random_token_amounts` waits for the
     /// beacon Tenderdash delivers), so a reservation would never be paid out. 0 decodes it.
     pub random_token_amount: OptionalFeatureVersion,

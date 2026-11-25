@@ -193,7 +193,7 @@ pub enum TokenOperationType {
         /// The change notes of the bundle
         notes: Vec<ShieldedActionNote>,
     },
-    /// Reserves the most a random token transfer moves (protocol version 15): moves `maximum`
+    /// Reserves the most a random token transfer moves (protocol version 16): moves `maximum`
     /// from the sender's balance into the token marketplace escrow of the token, under the
     /// transfer's reservation id (`RandomTokenRequest::reservation_id`), and writes the recipient's
     /// balance unchanged, creating it at zero if it has none, so the transition pays for its
@@ -213,7 +213,7 @@ pub enum TokenOperationType {
         /// The most the transfer moves
         maximum: TokenAmount,
     },
-    /// Reserves the most a random token mint issues (protocol version 15): adds `maximum` to
+    /// Reserves the most a random token mint issues (protocol version 16): adds `maximum` to
     /// the token's total supply and holds it in the token marketplace escrow of the token,
     /// under the mint's reservation id (`RandomTokenRequest::reservation_id`), and writes the
     /// recipient's balance unchanged, creating it at zero if it has none, so the transition pays
@@ -235,7 +235,7 @@ pub enum TokenOperationType {
         /// Should we allow this to be the first ever mint
         allow_first_mint: bool,
     },
-    /// Adds the historical document of a random token transfer or mint (protocol version 15),
+    /// Adds the historical document of a random token transfer or mint (protocol version 16),
     /// whose id also hashes the range the amount is drawn from
     /// (`token_history_document_id`), so that a proof of the document binds the range, and
     /// prepays the index entries the settlement of the amount may create

@@ -95,6 +95,12 @@ use crate::error::PlatformWalletError;
 /// screen has a full first page to show from persistence alone.
 pub const PLATFORM_NODE_KEY_PREDERIVE_COUNT: u32 = 20;
 
+/// Default provider-key pre-derivation / scan window: how many operator
+/// (BLS) indices the managed provider pool tracks — and the
+/// derive-and-compare ownership scan covers — for a wallet whose pool was
+/// never extended past registration.
+pub const PROVIDER_KEY_WINDOW: u32 = 20;
+
 /// Derive the first `count` platform-node (Ed25519) public keys from a
 /// **seed-bearing** [`Wallet`](key_wallet::wallet::Wallet), returning
 /// the 32-byte public key + 20-byte Tenderdash node id
@@ -199,7 +205,8 @@ pub fn derive_platform_node_public_keys(
 ///
 /// # Errors
 /// [`PlatformWalletError::KeyDerivation`] if the `ProviderPlatformKeys`
-/// account derivation path or a hardened child index cannot be built.
+/// account derivation path or a hardened child index cannot be built, or
+/// the pool refuses a key whose address it already holds at another index.
 #[cfg(feature = "eddsa")]
 pub fn populate_platform_node_pool(
     wallet_info: &mut key_wallet::wallet::managed_wallet_info::ManagedWalletInfo,
@@ -233,7 +240,6 @@ pub fn populate_platform_node_pool(
             dashcore::PubkeyHash::from_byte_array(key.node_id),
         );
         let address = dashcore::Address::new(network, payload);
-        let script_pubkey = address.script_pubkey();
         let child = key_wallet::bip32::ChildNumber::from_hardened_idx(key.index).map_err(|e| {
             PlatformWalletError::KeyDerivation(format!(
                 "failed to build hardened child index {}: {e:?}",
@@ -245,17 +251,10 @@ pub fn populate_platform_node_pool(
         let path = key_wallet::bip32::DerivationPath::from(children);
         infos.push(AddressInfo {
             address,
-            script_pubkey,
             public_key: Some(PublicKeyType::EdDSA(key.public_key.to_vec())),
             index: key.index,
             path,
             state: AddressState::Available,
-            tx_count: 0,
-            total_received: 0,
-            total_sent: 0,
-            balance: 0,
-            label: None,
-            metadata: std::collections::BTreeMap::new(),
         });
     }
 
@@ -264,16 +263,20 @@ pub fn populate_platform_node_pool(
         .managed_account_type_mut()
         .address_pools_mut()
         .into_iter()
-        .find(|p| p.pool_type == AddressPoolType::AbsentHardened)
+        .find(|p| p.pool_type() == AddressPoolType::AbsentHardened)
     {
+        // Insert into a copy and keep it only once every key landed, so a
+        // refused key leaves the pool untouched.
+        let mut staged = pool.clone();
         for info in infos {
-            let idx = info.index;
-            pool.address_index.insert(info.address.clone(), idx);
-            pool.script_pubkey_index
-                .insert(info.script_pubkey.clone(), idx);
-            pool.highest_generated = Some(pool.highest_generated.map_or(idx, |h| h.max(idx)));
-            pool.addresses.insert(idx, info);
+            let index = info.index;
+            staged.insert(info).map_err(|e| {
+                PlatformWalletError::KeyDerivation(format!(
+                    "failed to store platform node key {index} in its pool: {e}"
+                ))
+            })?;
         }
+        *pool = staged;
     }
     Ok(())
 }
@@ -348,6 +351,23 @@ pub struct ProviderDerivedKey {
     pub private_key_wif: Option<Zeroizing<String>>,
 }
 
+impl ProviderDerivedKey {
+    /// A BLS operator key's 48 public bytes in the basic serialization, with
+    /// the legacy serialization of the same key when it was derived. `None`
+    /// for a key that is not 48 bytes: the other provider key families.
+    ///
+    /// A masternode-list entry holds one serialization or the other, so the
+    /// callers that look a wallet key up in the list need both.
+    pub(crate) fn operator_key_forms(&self) -> Option<([u8; 48], Option<[u8; 48]>)> {
+        let basic = self.public_key_bytes.as_slice().try_into().ok()?;
+        let legacy = self
+            .legacy_public_key_bytes
+            .as_deref()
+            .and_then(|bytes| bytes.try_into().ok());
+        Some((basic, legacy))
+    }
+}
+
 /// The operator seed↔xpub cross-check guard, factored out so it can be
 /// unit-tested without a full [`PlatformWallet`].
 ///
@@ -392,6 +412,75 @@ fn checked_operator_private_bytes_at(
 }
 
 impl PlatformWallet {
+    /// One past the highest operator-key index the wallet's managed
+    /// provider pool tracks: its `highest_generated` watermark plus one,
+    /// floored at [`PROVIDER_KEY_WINDOW`] — the exact window the
+    /// derive-and-compare ownership scan
+    /// (`provider_masternode_txs_blocking`) covers. A rotation must select
+    /// inside it: a beyond-window index derives a perfectly valid key that
+    /// the wallet's ownership lookup could never attribute back to this
+    /// wallet afterwards.
+    ///
+    /// Blocking (wallet-manager `blocking_read` — never call from an async
+    /// runtime worker); errors when the wallet was concurrently removed.
+    pub fn provider_operator_tracked_window(&self) -> Result<u32, PlatformWalletError> {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+        let wm = self.wallet_manager().blocking_read();
+        let info = wm
+            .get_wallet_info(&self.wallet_id())
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id())))?;
+        Ok(info
+            .core_wallet
+            .accounts
+            .provider_operator_keys
+            .as_ref()
+            .and_then(|acct| {
+                acct.managed_account_type()
+                    .address_pools()
+                    .iter()
+                    .filter_map(|pool| pool.highest_generated())
+                    .max()
+            })
+            .map(|highest| highest.saturating_add(1))
+            .unwrap_or(PROVIDER_KEY_WINDOW)
+            .max(PROVIDER_KEY_WINDOW))
+    }
+
+    /// One past the highest voting-key index the wallet's managed
+    /// provider-voting address pool holds an entry for. Unlike operator
+    /// keys — whose ownership is resolved by a derive-and-compare scan
+    /// over a floored window — voting ownership joins against the pool's
+    /// ACTUAL persisted entries (key-wallet's
+    /// `check_provider_voting_key_in_transaction_for_match` walks the
+    /// pool's address index, and hosts join their persisted address
+    /// rows), so a rotation must select an index the pool registered.
+    ///
+    /// Blocking (wallet-manager `blocking_read` — never call from an async
+    /// runtime worker); errors when the wallet was concurrently removed.
+    pub fn provider_voting_tracked_window(&self) -> Result<u32, PlatformWalletError> {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+        let wm = self.wallet_manager().blocking_read();
+        let info = wm
+            .get_wallet_info(&self.wallet_id())
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id())))?;
+        Ok(info
+            .core_wallet
+            .accounts
+            .provider_voting_keys
+            .as_ref()
+            .and_then(|acct| {
+                acct.managed_account_type()
+                    .address_pools()
+                    .iter()
+                    .filter_map(|pool| pool.highest_generated())
+                    .max()
+            })
+            .map(|highest| highest.saturating_add(1))
+            .unwrap_or(0))
+    }
+
     /// Derive this wallet's provider key of `kind` at `index`.
     ///
     /// Public-only when `resolved_seed` is `None` and `include_private`
@@ -443,6 +532,15 @@ impl PlatformWallet {
         // already ran on the FFI side and produced `resolved_seed` before
         // we were called.
         let state = self.state_blocking();
+        // Resolved fallibly, once: the host can remove the wallet while an
+        // FFI caller still holds this `PlatformWallet` handle (the
+        // candidates extern awaits the masternode list between resolving
+        // the handle and deriving), and that race must surface as an
+        // error — the guard's panicking accessor would abort at the
+        // non-unwinding C boundary.
+        let in_process_wallet = state
+            .try_wallet()
+            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id())))?;
 
         // Raw 64-byte BIP39 seed — the exact input the account's curve
         // master consumes (#879). Only obtained when a seed-bearing path
@@ -461,7 +559,7 @@ impl PlatformWallet {
                     // seed. `None` for a watch-only / external-signable
                     // wallet (no resident seed), which the caller must
                     // instead service with a `resolved_seed`.
-                    let raw = state.wallet().wallet_seed_bytes().ok_or_else(|| {
+                    let raw = in_process_wallet.wallet_seed_bytes().ok_or_else(|| {
                         PlatformWalletError::KeyDerivation(
                             "wallet has no resident seed (external-signable / watch-only); a \
                              resolved seed is required to derive this provider key"
@@ -478,8 +576,7 @@ impl PlatformWallet {
 
         match kind {
             ProviderKeyKind::Operator => {
-                let account = state
-                    .wallet()
+                let account = in_process_wallet
                     .accounts
                     .bls_account_of_type(account_type)
                     .ok_or_else(|| {
@@ -537,8 +634,7 @@ impl PlatformWallet {
                 // Existence check — a missing account is a caller error,
                 // not a derivation failure (the seed-based entry point below
                 // needs no account state).
-                if state
-                    .wallet()
+                if in_process_wallet
                     .accounts
                     .eddsa_account_of_type(account_type)
                     .is_none()
@@ -591,8 +687,7 @@ impl PlatformWallet {
                 })
             }
             ProviderKeyKind::Owner | ProviderKeyKind::Voting => {
-                let account = state
-                    .wallet()
+                let account = in_process_wallet
                     .accounts
                     .account_of_type(account_type)
                     .ok_or_else(|| {
@@ -1018,14 +1113,18 @@ mod tests {
             .managed_account_type()
             .address_pools()
             .iter()
-            .find(|p| p.pool_type == AddressPoolType::AbsentHardened)
+            .find(|p| p.pool_type() == AddressPoolType::AbsentHardened)
             .cloned()
             .expect("AbsentHardened pool must exist");
 
-        assert_eq!(pool.addresses.len(), keys.len(), "one row per derived key");
+        assert_eq!(
+            pool.addresses().len(),
+            keys.len(),
+            "one row per derived key"
+        );
         for k in &keys {
             let entry = pool
-                .addresses
+                .addresses()
                 .get(&k.index)
                 .expect("row present at derived index");
             match &entry.public_key {
@@ -1047,7 +1146,7 @@ mod tests {
             );
         }
         assert_eq!(
-            pool.highest_generated,
+            pool.highest_generated(),
             Some(keys.len() as u32 - 1),
             "highest_generated must advance to the last populated index"
         );
@@ -1061,29 +1160,36 @@ mod tests {
         use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 
         let wallet = seed_bearing_wallet(Network::Mainnet);
-        let mut keys = derive_platform_node_public_keys(&wallet, Network::Mainnet, 2)
+        let keys = derive_platform_node_public_keys(&wallet, Network::Mainnet, 2)
             .expect("platform-node derivation");
-        keys[1].index = 1 << 31;
-        let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let mut invalid_index = keys.clone();
+        invalid_index[1].index = 1 << 31;
+        // Passes entry construction; the pool refuses the second insert.
+        let mut duplicate_node_id = keys;
+        duplicate_node_id[1].node_id = duplicate_node_id[0].node_id;
 
-        let result = populate_platform_node_pool(&mut wallet_info, &keys, Network::Mainnet);
+        for batch in [invalid_index, duplicate_node_id] {
+            let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
 
-        assert!(matches!(result, Err(PlatformWalletError::KeyDerivation(_))));
-        let account = wallet_info
-            .accounts
-            .provider_platform_keys
-            .as_ref()
-            .expect("managed platform-node account");
-        let pool = account
-            .managed_account_type()
-            .address_pools()
-            .into_iter()
-            .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
-            .expect("AbsentHardened pool");
-        assert!(
-            pool.addresses.is_empty(),
-            "an invalid later key must not leave earlier keys inserted"
-        );
+            let result = populate_platform_node_pool(&mut wallet_info, &batch, Network::Mainnet);
+
+            assert!(matches!(result, Err(PlatformWalletError::KeyDerivation(_))));
+            let account = wallet_info
+                .accounts
+                .provider_platform_keys
+                .as_ref()
+                .expect("managed platform-node account");
+            let pool = account
+                .managed_account_type()
+                .address_pools()
+                .into_iter()
+                .find(|pool| pool.pool_type() == AddressPoolType::AbsentHardened)
+                .expect("AbsentHardened pool");
+            assert!(
+                pool.addresses().is_empty(),
+                "a refused later key must not leave earlier keys inserted"
+            );
+        }
     }
 
     /// The secp256k1 (owner / voting) families must derive at the DIP-3

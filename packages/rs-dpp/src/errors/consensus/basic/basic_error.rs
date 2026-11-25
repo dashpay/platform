@@ -1172,7 +1172,7 @@ mod tests {
             )),
             213
         );
-        // A token mint refusing a random amount (protocol version 15): the tail of the enum.
+        // A token mint refusing a random amount (protocol version 16): the tail of the enum.
         assert_eq!(
             discriminant_of(BasicError::RandomTokenMintNotAllowedError(
                 RandomTokenMintNotAllowedError::new(

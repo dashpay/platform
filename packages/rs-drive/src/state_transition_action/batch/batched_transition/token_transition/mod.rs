@@ -216,7 +216,7 @@ impl TokenTransitionAction {
         Ok(token_history_contract.document_type_for_name(self.historical_document_type_name())?)
     }
 
-    /// The least and the most a random transfer or mint moves (protocol version 15); `None`
+    /// The least and the most a random transfer or mint moves (protocol version 16); `None`
     /// for any other action, which moves a fixed amount or none.
     pub fn random_amount_range(&self) -> Option<(TokenAmount, TokenAmount)> {
         match self {

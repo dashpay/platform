@@ -9,7 +9,7 @@ use platform_value::Identifier;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
-/// A token transfer that can move a random amount (protocol version 15): every field of
+/// A token transfer that can move a random amount (protocol version 16): every field of
 /// [`TokenTransferTransitionV0`], and `random_minimum_amount`.
 ///
 /// `amount` is the most the transfer moves, and what the sender must hold: the block that

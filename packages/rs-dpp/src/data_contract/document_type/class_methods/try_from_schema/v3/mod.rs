@@ -46,6 +46,8 @@ use crate::data_contract::document_type::property_names;
 use crate::data_contract::document_type::reference_lookup::{
     owner_can_change, schema_property_is_fixed_once_written, why_value_can_change,
 };
+#[cfg(feature = "validation")]
+use crate::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
 use crate::data_contract::document_type::{DocumentType, DocumentTypeRef};
 use crate::data_contract::errors::DataContractError;
@@ -71,7 +73,6 @@ use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 use super::common;
 use super::dynamic_reference::validate_dynamic_reference_sources;
-#[cfg(feature = "validation")]
 use super::schema_at_path;
 use super::{
     apply_property_constraints, parse_doctype_reference, validate_encrypted_for_declarations,
@@ -126,11 +127,23 @@ const INDEXED_STRING_WORST_CASE_BYTES_PER_CHARACTER: u16 = 4;
 /// its own axes, so Avg, whose wider sort key leaves the least room, wins at
 /// a level that carries it, and an Avg ranking at another level of the index
 /// does not tighten this one.
+///
+/// A summing index of a type that keeps its sums in 128 bits (`big_sums`,
+/// `DocumentTypeV2Getters::uses_big_sums`) ranks its sums on the big sum axis,
+/// whose sort key is 16 bytes like Avg's, so its sum ranking takes Avg's
+/// ceiling. A `summableOffCountIndex` index sums counters and keeps the sum
+/// axis. `big_sums` is false for every type parsed before protocol version 15.
 #[cfg(feature = "validation")]
-fn ranked_level_key_length_limit(index: &Index, index_property_name: &str) -> Option<u16> {
+fn ranked_level_key_length_limit(
+    index: &Index,
+    index_property_name: &str,
+    big_sums: bool,
+) -> Option<u16> {
     let is_last = index.properties.last().map(|p| p.name.as_str()) == Some(index_property_name);
     let names_it = |at_levels: &[String]| at_levels.iter().any(|at| at == index_property_name);
-    let average = (is_last && index.ranked_averageable) || names_it(&index.ranked_averageable_at);
+    let big_sum = big_sums && is_last && index.ranked_summable && index.summable.is_some();
+    let average =
+        (is_last && index.ranked_averageable) || names_it(&index.ranked_averageable_at) || big_sum;
     let count_or_sum = (is_last && (index.ranked_countable || index.ranked_summable))
         || names_it(&index.ranked_countable_at)
         || names_it(&index.ranked_summable_at);
@@ -170,6 +183,31 @@ fn validate_ranked_index_property_key_length(
     property_type: &DocumentPropertyType,
     platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
+    validate_ranked_index_property_key_length_at_width(
+        document_type_name,
+        index,
+        index_property_name,
+        reported_property_name,
+        property_type,
+        false,
+        platform_version,
+    )
+}
+
+/// [`validate_ranked_index_property_key_length`] for a type that keeps its sums in 128 bits
+/// when `big_sums` is set ([`ranked_level_key_length_limit`]). The shared parser runs the
+/// 64-bit form on every indexed property before the width is known;
+/// [`validate_big_sum_ranked_key_lengths`] runs this form once it is.
+#[cfg(feature = "validation")]
+fn validate_ranked_index_property_key_length_at_width(
+    document_type_name: &str,
+    index: &Index,
+    index_property_name: &str,
+    reported_property_name: &str,
+    property_type: &DocumentPropertyType,
+    big_sums: bool,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
     // Only a property whose level hosts an indexed tree gets its encoded
     // value mirrored into the ordered secondary behind the sort key — the
     // **terminal** property for the boolean axes, the **`at`** property for
@@ -177,7 +215,7 @@ fn validate_ranked_index_property_key_length(
     // that is where the tightened ceiling comes from. Every other property
     // of a ranked index is an ordinary grovedb path segment, bound by the
     // generic limits checked after this.
-    let Some(limit) = ranked_level_key_length_limit(index, index_property_name) else {
+    let Some(limit) = ranked_level_key_length_limit(index, index_property_name, big_sums) else {
         return Ok(());
     };
 
@@ -733,6 +771,15 @@ fn parse_generation_3(
         }
     }
 
+    // After every aggregate declaration is applied: the width of the type's sums follows the
+    // bounds of the one property they all sum. In every build and with or without full
+    // validation, since it decides the trees Drive stores and reads.
+    apply_summed_value_width(&mut v2, schema_defs, platform_version)?;
+    #[cfg(feature = "validation")]
+    if full_validation {
+        validate_big_sum_ranked_key_lengths(&v2, name, platform_version)?;
+    }
+
     // The flags are read from the parsed result (not the raw schema) so
     // the check sees `canBeDeleted` resolved against the contract config
     // default (`true` when the key is omitted).
@@ -757,6 +804,9 @@ fn parse_generation_3(
         validate_typed_array_max_items(&v2, name, platform_version)?;
         validate_contested_summed_value_bounds(&v2, schema_defs, name, platform_version)?;
         validate_expiring_summed_value_bounds(&v2, schema_defs, name, platform_version)?;
+        // Inert before protocol version 15: the limit it reads is `None` in every earlier
+        // limits table, and it returns on that before reading anything else.
+        validate_summed_value_bounds(&v2, schema_defs, name, platform_version)?;
         validate_reference_expressions(&v2, data_contract_id, name, platform_version)?;
         validate_reference_count(&v2, name, platform_version)?;
         validate_no_immutable_deletable_element_references(&v2, name)?;
@@ -1064,12 +1114,13 @@ pub(in crate::data_contract) fn resolve_derived_index_properties(
                             {
                                 return Err(refusal(reason));
                             }
-                            validate_ranked_index_property_key_length(
+                            validate_ranked_index_property_key_length_at_width(
                                 name,
                                 index,
                                 &index_property.name,
                                 &index_property.name,
                                 &property.property_type,
+                                declaring.big_sums,
                                 platform_version,
                             )?;
                             common::check_indexable_property_shape(
@@ -1523,12 +1574,6 @@ fn validate_contested_summed_value_bounds(
     name: &str,
     platform_version: &PlatformVersion,
 ) -> Result<(), ProtocolError> {
-    let Some(limit) = platform_version
-        .system_limits
-        .max_contested_summed_value_magnitude
-    else {
-        return Ok(());
-    };
     let Some(contested_index) = document_type
         .indices
         .values()
@@ -1536,26 +1581,9 @@ fn validate_contested_summed_value_bounds(
     else {
         return Ok(());
     };
-    let Some((summed_property, property_schema)) =
-        summed_property_schema(document_type, schema_defs)?
-    else {
-        return Ok(());
-    };
-    let bounds = property_schema
-        .map(|property_schema| {
-            Ok::<_, DataContractError>((
-                property_schema.get_optional_integer::<i64>(property_names::MINIMUM)?,
-                property_schema.get_optional_integer::<i64>(property_names::MAXIMUM)?,
-            ))
-        })
-        .transpose()
-        .map_err(consensus_or_protocol_data_contract_error)?;
-    let limit = i64::try_from(limit).unwrap_or(i64::MAX);
-    let within_limit = matches!(
-        bounds,
-        Some((Some(minimum), Some(maximum))) if minimum >= -limit && maximum <= limit
-    );
-    if !within_limit {
+    if let Some((summed_property, limit)) =
+        document_type.summed_property_past_contested_limit(schema_defs, platform_version)?
+    {
         return Err(consensus_or_protocol_data_contract_error(
             DataContractError::InvalidContractStructure(format!(
                 "document type \"{}\" sums \"{}\" and has the contested index \"{}\": \
@@ -1566,6 +1594,51 @@ fn validate_contested_summed_value_bounds(
         ));
     }
     Ok(())
+}
+
+#[cfg(feature = "validation")]
+impl DocumentTypeV2 {
+    /// The property this type sums and `SystemLimits::max_contested_summed_value_magnitude`,
+    /// when the property's schema does not keep its values within that limit: it does not
+    /// declare a `maximum` of at most the limit and a `minimum` of at least its negation.
+    /// `None` when the type sums nothing, when its summed values are within the limit, and
+    /// before the limit exists (protocol version 13 and earlier).
+    ///
+    /// Registration refuses such a type with a contested index
+    /// (`validate_contested_summed_value_bounds`, from protocol version 14). A type registered
+    /// earlier may be one, so the end of a contest asks this of the stored type too, before
+    /// it writes the winner's document into the type's sums.
+    pub fn summed_property_past_contested_limit<'a>(
+        &'a self,
+        schema_defs: Option<&'a BTreeMap<String, Value>>,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<(&'a str, i64)>, ProtocolError> {
+        let Some(limit) = platform_version
+            .system_limits
+            .max_contested_summed_value_magnitude
+        else {
+            return Ok(None);
+        };
+        let Some((summed_property, property_schema)) = summed_property_schema(self, schema_defs)?
+        else {
+            return Ok(None);
+        };
+        let bounds = property_schema
+            .map(|property_schema| {
+                Ok::<_, DataContractError>((
+                    property_schema.get_optional_integer::<i64>(property_names::MINIMUM)?,
+                    property_schema.get_optional_integer::<i64>(property_names::MAXIMUM)?,
+                ))
+            })
+            .transpose()
+            .map_err(consensus_or_protocol_data_contract_error)?;
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        let within_limit = matches!(
+            bounds,
+            Some((Some(minimum), Some(maximum))) if minimum >= -limit && maximum <= limit
+        );
+        Ok((!within_limit).then_some((summed_property, limit)))
+    }
 }
 
 /// A document type with a `ttl` and a summed property whose values may be negative keeps them
@@ -1635,13 +1708,191 @@ fn validate_expiring_summed_value_bounds(
     Ok(())
 }
 
+/// A summed property whose values may pass `SystemLimits::max_summed_value_magnitude_without_type_total`
+/// is never negative and sits on a type that keeps its total: unless the property's schema
+/// declares a `maximum` of at most the limit and a `minimum` of at least its negation, it
+/// declares a `minimum` of at least 0 and the type declares `documentsSummable` or
+/// `documentsAverageable`. Each node of a sum tree holds the sum of its own branch, so with
+/// values of both signs a branch can leave `i64` while the totals stay in it, and nothing read
+/// before a write tells; values this small keep every sum in `i64` short of 2^36 documents.
+/// With values that are never negative no sum of the type exceeds the type's total times the
+/// entries one document adds to an index, and state validation reads that total before a
+/// create or a replace (`DocumentSumOverflowError`).
+///
+/// The bounds are compared as numbers, as `validate_expiring_summed_value_bounds` compares
+/// them. An indexOnly type keeps no total (it has no primary tree), so its summed values stay
+/// within the limit. A type whose `creationRestrictionMode` allows no creation is left alone:
+/// only the protocol writes its documents (the system contracts' history and order types).
+///
+/// Full validation only, like the contested bounds: a contract stored before the rule was
+/// checked when it was registered, and must stay readable.
+#[cfg(feature = "validation")]
+fn validate_summed_value_bounds(
+    document_type: &DocumentTypeV2,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let Some(limit) = platform_version
+        .system_limits
+        .max_summed_value_magnitude_without_type_total
+    else {
+        return Ok(());
+    };
+    // A type no transition creates documents of is written by the protocol alone, with
+    // values it computes: nothing a registration rule holds a writer to.
+    if document_type.creation_restriction_mode == CreationRestrictionMode::NoCreationAllowed {
+        return Ok(());
+    }
+    let Some((summed_property, property_schema)) =
+        summed_property_schema(document_type, schema_defs)?
+    else {
+        return Ok(());
+    };
+    let bound = |keyword: &str| {
+        property_schema
+            .as_ref()
+            .and_then(|property_schema| property_schema.get(keyword))
+            .and_then(|bound| bound.as_float())
+    };
+    let limit_value = limit as f64;
+    let minimum = bound(property_names::MINIMUM);
+    let maximum = bound(property_names::MAXIMUM);
+    if matches!(
+        (minimum, maximum),
+        (Some(minimum), Some(maximum)) if minimum >= -limit_value && maximum <= limit_value
+    ) {
+        return Ok(());
+    }
+    let never_negative = minimum.is_some_and(|minimum| minimum >= 0.0);
+    if never_negative && document_type.documents_summable.is_some() {
+        return Ok(());
+    }
+    let remedy = if never_negative {
+        format!(
+            "so the type must declare `documentsSummable` or `documentsAverageable` on it, \
+             or the property a maximum of at most {limit}"
+        )
+    } else {
+        format!(
+            "so the property must declare a minimum of at least -{limit} and a maximum of \
+             at most {limit}, or a minimum of at least 0 on a type that declares \
+             `documentsSummable` or `documentsAverageable` on it"
+        )
+    };
+    Err(consensus_or_protocol_data_contract_error(
+        DataContractError::InvalidContractStructure(format!(
+            "document type \"{name}\" sums \"{summed_property}\", whose values may pass \
+             {limit}: a write is held to what the type's sums can hold through the total of \
+             a property that is never negative, {remedy}",
+        )),
+    ))
+}
+
+/// Holds the group key of every sum ranking of a type that keeps its sums in 128 bits to the
+/// ceiling of the big sum axis it ranks on ([`ranked_level_key_length_limit`]), which is tighter
+/// than the sum axis's: a key between the two would be refused when a document is written.
+/// The shared parser checks every indexed property against the 64-bit ceilings before the
+/// width is decided, so a type that keeps big sums has its sum rankings checked again here. A
+/// derived index property is checked where it is resolved, against the declaring type's width;
+/// a system property encodes to at most 32 bytes.
+///
+/// Full validation only, like the check it repeats. Inert before protocol version 15, when no
+/// type keeps big sums.
+#[cfg(feature = "validation")]
+fn validate_big_sum_ranked_key_lengths(
+    document_type: &DocumentTypeV2,
+    name: &str,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    if !document_type.big_sums {
+        return Ok(());
+    }
+    for index in document_type.indices.values() {
+        if !index.ranked_summable || index.summable.is_none() {
+            continue;
+        }
+        let Some(group) = index.properties.last() else {
+            continue;
+        };
+        let Some(property) = document_type.flattened_properties.get(&group.name) else {
+            continue;
+        };
+        // A typed array is keyed by its elements, judged as the shared parser judges them
+        if let DocumentPropertyType::TypedArray(typed_array) = &property.property_type {
+            validate_ranked_index_property_key_length_at_width(
+                name,
+                index,
+                &group.name,
+                &format!("{}.items", group.name),
+                &typed_array.item_type,
+                true,
+                platform_version,
+            )?;
+            continue;
+        }
+        validate_ranked_index_property_key_length_at_width(
+            name,
+            index,
+            &group.name,
+            &group.name,
+            &property.property_type,
+            true,
+            platform_version,
+        )?;
+    }
+    Ok(())
+}
+
+/// Records whether `document_type` keeps its sums in 128 bits (`DocumentTypeV2::big_sums` and
+/// the `big_sums` of its summing index levels): it does when its summed property is not
+/// declared within `SystemLimits::max_summed_value_magnitude_in_64_bit_sums` on both sides.
+/// Such a property's values can take a 64-bit sum out of range, and a tree with a 128-bit total
+/// holds any number of them. A property declared within the limit keeps the 64-bit trees.
+///
+/// Does nothing before protocol version 15: the limit is `None` in every earlier limits table,
+/// and the function returns on that before reading anything else, so every type parsed under
+/// those versions keeps `big_sums` false.
+///
+/// The bounds are compared as numbers, as `validate_summed_value_bounds` compares them.
+fn apply_summed_value_width(
+    document_type: &mut DocumentTypeV2,
+    schema_defs: Option<&BTreeMap<String, Value>>,
+    platform_version: &PlatformVersion,
+) -> Result<(), ProtocolError> {
+    let Some(limit) = platform_version
+        .system_limits
+        .max_summed_value_magnitude_in_64_bit_sums
+    else {
+        return Ok(());
+    };
+    let Some((_, property_schema)) = summed_property_schema(document_type, schema_defs)? else {
+        return Ok(());
+    };
+    let bound = |keyword: &str| {
+        property_schema
+            .as_ref()
+            .and_then(|property_schema| property_schema.get(keyword))
+            .and_then(|bound| bound.as_float())
+    };
+    let limit_value = limit as f64;
+    let within_limit = matches!(
+        (bound(property_names::MINIMUM), bound(property_names::MAXIMUM)),
+        (Some(minimum), Some(maximum)) if minimum >= -limit_value && maximum <= limit_value
+    );
+    if !within_limit {
+        document_type.big_sums = true;
+        document_type.index_structure.mark_big_sums();
+    }
+    Ok(())
+}
+
 /// The property a document type sums and its schema, `None` when the type sums nothing. The
 /// schema is `None` when it is not found. Every summed declaration of a type (`summable`,
 /// `averageable`, `documentsSummable`, `documentsAverageable`) names the same property
 /// (`apply_doctype_aggregates`). The schema is followed through `$ref`s into `schema_defs`, so
 /// the bounds are read from it rather than from the inferred type, which is `i64` whatever they
 /// are without `sizedIntegerTypes`.
-#[cfg(feature = "validation")]
 #[allow(clippy::type_complexity)]
 fn summed_property_schema<'a>(
     document_type: &'a DocumentTypeV2,
@@ -2056,6 +2307,8 @@ impl DocumentType {
 }
 
 #[cfg(all(test, feature = "validation"))]
+mod array_element_aggregate_tests;
+#[cfg(all(test, feature = "validation"))]
 mod byte_array_aggregate_key_tests;
 #[cfg(all(test, feature = "validation"))]
 mod byte_array_reads_tests;
@@ -2153,6 +2406,10 @@ mod outlives_delete_tests;
 mod refusal_test_support;
 #[cfg(all(test, feature = "validation"))]
 mod summable_off_count_index_tests;
+#[cfg(all(test, feature = "validation"))]
+mod summed_value_bounds_tests;
+#[cfg(all(test, feature = "validation"))]
+mod summed_value_width_tests;
 
 #[cfg(all(test, feature = "validation"))]
 mod dynamic_reference_tests;

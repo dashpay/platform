@@ -9,6 +9,7 @@ JSON Contracts for Dash Platform Name Service
 
 - [Install](#install)
 - [Usage](#usage)
+- [Giving up a name](#giving-up-a-name)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -23,6 +24,15 @@ npm install @dashevo/dpns-contract
 ```sh
 # TODO ...
 ```
+
+## Giving up a name
+
+From contract v3 (protocol version 15) the identity holding a name can throw it away, in one of two ways:
+
+- **Delete** the `domain` document. The name is free again and anybody may register it. A contested name (a normalized label of 3 to 19 `a-z`, `0`, `1` or `-` characters, awarded by a masternode vote) can not be deleted.
+- **Tombstone** it: create a `tombstone` document holding the name's `normalizedLabel` and `normalizedParentDomainName`. The create deletes the creator's own `domain` of that name, and nobody can register the name while the tombstone exists. Any name can be tombstoned, a contested one included.
+
+Nobody can replace, delete or transfer a tombstone, the identity that created it included. A tombstoned name may later be brought back and redistributed through a direct or indirect will of the DAO.
 
 ## Contributing
 

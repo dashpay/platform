@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.dashfoundation.dashsdk.persistence.entities.AccountEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
+import org.dashfoundation.dashsdk.persistence.entities.ShieldedNoteEntity
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedViewingKeyEntity
 import org.dashfoundation.dashsdk.persistence.entities.TokenBalanceEntity
 import org.dashfoundation.dashsdk.persistence.entities.TokenEntity
@@ -40,6 +41,31 @@ class DashDatabaseTest {
     @After
     fun tearDown() {
         db.close()
+    }
+
+    @Test
+    fun ordinarySendBalanceIncludesOnlyUnspentAccountZeroNotes() = runTest {
+        val dao = db.shieldedDao()
+        fun note(id: Int, account: Int, value: Long, spent: Boolean = false, wallet: ByteArray = walletId) =
+            ShieldedNoteEntity(
+                nullifier = ByteArray(32) { id.toByte() },
+                walletId = wallet,
+                accountIndex = account,
+                position = id.toLong(),
+                cmx = ByteArray(32),
+                blockHeight = 1,
+                isSpent = spent,
+                value = value,
+                noteData = ByteArray(115),
+            )
+        dao.upsertNote(note(1, 0x40000000, 900))
+        assertEquals(0L, dao.observeUnspentNotesByWalletAccount(walletId, 0).first().sumOf { it.value })
+        dao.upsertNote(note(2, 0, 100))
+        dao.upsertNote(note(3, 0, 200))
+        dao.upsertNote(note(4, 1, 500))
+        dao.upsertNote(note(5, 0, 700, spent = true))
+        dao.upsertNote(note(6, 0, 800, wallet = ByteArray(32) { 2 }))
+        assertEquals(300L, dao.observeUnspentNotesByWalletAccount(walletId, 0).first().sumOf { it.value })
     }
 
     @Test
@@ -115,6 +141,47 @@ class DashDatabaseTest {
 
         val byContract = db.tokenDao().observeTokensByContract(contractId).first()
         assertEquals(2, byContract.size)
+    }
+
+    @Test
+    fun updatePausedChangesOnlyThePausedFlag() = runTest {
+        val contractId = ByteArray(32) { 7 }
+        db.dataContractDao().upsert(
+            org.dashfoundation.dashsdk.persistence.entities.DataContractEntity(
+                id = contractId,
+                name = "test-contract",
+                serializedContract = ByteArray(8),
+                networkRaw = 1,
+            ),
+        )
+        val stored = TokenEntity(
+            id = ByteArray(32) { 3 },
+            contractId = contractId,
+            position = 0,
+            name = "token-0",
+            baseSupply = "1000000",
+            maxSupply = "2000000",
+            emergencyActionRules = "{\"rule\":1}",
+            hasEmergencyActions = true,
+        )
+        val dao = db.tokenDao()
+        dao.upsertToken(stored)
+
+        assertEquals(1, dao.updatePaused(stored.id, true))
+        val paused = dao.getTokenById(stored.id)!!
+        assertTrue(paused.isPaused)
+        assertEquals("2000000", paused.maxSupply)
+        assertEquals("{\"rule\":1}", paused.emergencyActionRules)
+        assertEquals(listOf(stored.id.toList()), dao.observePausedTokens().first().map { it.id.toList() })
+
+        // Already paused: nothing to write.
+        assertEquals(0, dao.updatePaused(stored.id, true))
+        // A row that is not stored is left absent.
+        assertEquals(0, dao.updatePaused(ByteArray(32) { 9 }, true))
+        assertNull(dao.getTokenById(ByteArray(32) { 9 }))
+
+        assertEquals(1, dao.updatePaused(stored.id, false))
+        assertEquals(false, dao.getTokenById(stored.id)!!.isPaused)
     }
 
     @Test
@@ -233,7 +300,7 @@ class DashDatabaseTest {
     }
 
     @Test
-    fun schemaIsAtVersion16WithTheSweepHoldIndexes() = runTest {
+    fun schemaIsAtVersion21WithTheSweepHoldIndexes() = runTest {
         // The sweep-hold columns land in ONE migration (10 → 11), with the
         // two `pending_inputs` indexes the sweep's claimed-row lookup
         // (`spendingTxid`) and the end-of-round collector
@@ -241,9 +308,14 @@ class DashDatabaseTest {
         // 11 → 12 adds the identity key usage limits columns on top,
         // 12 → 13 the contract bounds kind, 13 → 14 the token
         // once-per-identity distribution block, 14 → 15 the DashPay
-        // backfill record columns on `wallets`, and 15 → 16 the private
-        // contact request scan state tables.
-        assertEquals(16, db.openHelper.readableDatabase.version)
+        // backfill record columns on `wallets`, 15 → 16 the private
+        // contact request scan state tables, 16 → 17 the asset-lock
+        // operation id column and the wallet drain operations table,
+        // 17 → 18 the masternode voting key check columns on `identities`,
+        // 18 → 19 the masternode pro_tx_hash column on `identities`,
+        // 19 → 20 the shielded recipient column on `asset_locks`, and
+        // 20 → 21 the DashPay profile payment address columns.
+        assertEquals(21, db.openHelper.readableDatabase.version)
         val indexes = mutableSetOf<String>()
         db.openHelper.readableDatabase.query("PRAGMA index_list('pending_inputs')").use { c ->
             val nameColumn = c.getColumnIndexOrThrow("name")
@@ -251,6 +323,28 @@ class DashDatabaseTest {
         }
         assertTrue(indexes.contains("index_pending_inputs_spendingTxid"))
         assertTrue(indexes.contains("index_pending_inputs_walletId_isSweptTombstone_winnerMinedHeight"))
+    }
+
+    @Test
+    fun shouldHaveNullablePaymentAddressColumnsOnBothProfileTables() = runTest {
+        // Version 21 (20 → 21): a profile stored before it publishes no
+        // address, so the columns are nullable BLOBs with no default.
+        for (table in listOf("dashpay_profiles", "dashpay_contact_profiles")) {
+            val seen = mutableSetOf<String>()
+            db.openHelper.readableDatabase.query("PRAGMA table_info('$table')").use { c ->
+                val name = c.getColumnIndexOrThrow("name")
+                val type = c.getColumnIndexOrThrow("type")
+                val notNull = c.getColumnIndexOrThrow("notnull")
+                while (c.moveToNext()) {
+                    val column = c.getString(name)
+                    if (column !in setOf("corePaymentAddress", "platformPaymentAddress", "shieldedAddress")) continue
+                    seen += column
+                    assertEquals("$table.$column", "BLOB", c.getString(type))
+                    assertEquals("$table.$column", 0, c.getInt(notNull))
+                }
+            }
+            assertEquals(table, 3, seen.size)
+        }
     }
 
     @Test

@@ -97,20 +97,6 @@ pub enum WalletStorageError {
         source: std::io::Error,
     },
 
-    /// A database ancestor is writable without the sticky bit or is owned by
-    /// neither the current user nor root, allowing replacement despite `0600`.
-    ///
-    /// Names the offending ancestor rather than the database's own parent: the
-    /// walk runs to `/`, and a nine-component path leaves the user nothing to
-    /// act on otherwise.
-    #[error("{}", crate::parent_permissions::insecure_ancestor_message("database", .ancestor, .reason))]
-    InsecureParentDir {
-        /// The ancestor that was refused, not the database's parent.
-        ancestor: PathBuf,
-        /// Which of the two conditions fired; they need different remediations.
-        reason: crate::parent_permissions::InsecureAncestor,
-    },
-
     /// `delete_wallet` (or another wallet-id-keyed operation) was
     /// called with an id that has no matching `wallets` row.
     #[error("wallet not found: {}", hex::encode(wallet_id))]
@@ -181,6 +167,12 @@ pub enum WalletStorageError {
     /// length, or a column held a value the schema doesn't recognise).
     #[error("blob/column decode failed: {reason}")]
     BlobDecode { reason: &'static str },
+
+    /// A row's encoding stamp names a shape this build has no decoder for:
+    /// a corrupt stamp, or one a later build wrote. `column` is the stamp
+    /// column, `format` the value it held.
+    #[error("{column} holds encoding {format}, which this build cannot decode")]
+    UnknownBlobFormat { column: &'static str, format: i64 },
 
     /// A typed-column decode failed because an underlying
     /// `dashcore::hashes` deserialisation rejected the bytes.
@@ -747,7 +739,6 @@ impl WalletStorageError {
             | Self::SchemaVersionUnsupported { .. }
             | Self::AutoBackupDisabled { .. }
             | Self::AutoBackupDirUnwritable { .. }
-            | Self::InsecureParentDir { .. }
             | Self::WalletNotFound { .. }
             | Self::WalletIdMismatch { .. }
             | Self::LockPoisoned
@@ -758,6 +749,7 @@ impl WalletStorageError {
             | Self::BincodeEncode { .. }
             | Self::BincodeDecode { .. }
             | Self::BlobDecode { .. }
+            | Self::UnknownBlobFormat { .. }
             | Self::HashDecode { .. }
             | Self::ConsensusCodec { .. }
             | Self::AddressDecode { .. }
@@ -862,7 +854,6 @@ impl WalletStorageError {
             | Self::SchemaVersionUnsupported { .. }
             | Self::AutoBackupDisabled { .. }
             | Self::AutoBackupDirUnwritable { .. }
-            | Self::InsecureParentDir { .. }
             | Self::WalletNotFound { .. }
             | Self::WalletIdMismatch { .. }
             | Self::LockPoisoned
@@ -873,6 +864,7 @@ impl WalletStorageError {
             | Self::BincodeEncode { .. }
             | Self::BincodeDecode { .. }
             | Self::BlobDecode { .. }
+            | Self::UnknownBlobFormat { .. }
             | Self::HashDecode { .. }
             | Self::ConsensusCodec { .. }
             | Self::AddressDecode { .. }
@@ -941,7 +933,6 @@ impl WalletStorageError {
             Self::SchemaVersionUnsupported { .. } => "schema_version_unsupported",
             Self::AutoBackupDisabled { .. } => "auto_backup_disabled",
             Self::AutoBackupDirUnwritable { .. } => "auto_backup_dir_unwritable",
-            Self::InsecureParentDir { .. } => "insecure_parent_dir",
             Self::WalletNotFound { .. } => "wallet_not_found",
             Self::WalletIdMismatch { .. } => "wallet_id_mismatch",
             Self::LockPoisoned => "lock_poisoned",
@@ -952,6 +943,7 @@ impl WalletStorageError {
             Self::BincodeEncode { .. } => "bincode_encode",
             Self::BincodeDecode { .. } => "bincode_decode",
             Self::BlobDecode { .. } => "blob_decode",
+            Self::UnknownBlobFormat { .. } => "unknown_blob_format",
             Self::HashDecode { .. } => "hash_decode",
             Self::ConsensusCodec { .. } => "consensus_codec",
             Self::AddressDecode { .. } => "address_decode",

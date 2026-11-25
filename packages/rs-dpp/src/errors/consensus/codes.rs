@@ -127,6 +127,7 @@ impl ErrorWithCode for BasicError {
             Self::NonTransferableTokenPaymentMustBurnError(_) => 10280,
             Self::NonTransferableTokenTradeableError(_) => 10281,
             Self::DataContractCompiledMaxSizeExceededError(_) => 10282,
+            Self::ContractError(DataContractError::DecodedValueBudgetExceeded(_)) => 10283,
 
             // Group Errors: 10350-10399
             Self::GroupPositionDoesNotExistError(_) => 10350,
@@ -403,6 +404,7 @@ impl ErrorWithCode for StateError {
             Self::DocumentTypeNotPrivateError(_) => 40151,
             Self::PrivateDocumentEntrySizeMismatchError(_) => 40152,
             Self::ReferencedDocumentTypeRequirementNotMetError(_) => 40153,
+            Self::DocumentSumOverflowError(_) => 40154,
 
             // Identity Errors: 40200-40299
             Self::IdentityAlreadyExistsError(_) => 40200,

@@ -853,7 +853,7 @@ impl TokenEvent {
     /// The history document of the event, recorded by the transition of `owner_id` with
     /// `owner_nonce` on `token_id`, under the id `token_history_document_id` gives it.
     /// `random_range` is the least and the most a random transfer or mint moves (protocol
-    /// version 15), and `None` for every other event.
+    /// version 16), and `None` for every other event.
     pub fn build_historical_document_owned(
         self,
         token_id: Identifier,

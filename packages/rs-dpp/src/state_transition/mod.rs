@@ -1183,8 +1183,8 @@ fn batch_carries_a_version_1_token_transfer_or_mint(batch_transition: &BatchTran
 /// (a random amount), among `versions`, the protocol versions in order: from the first whose
 /// table admits a random token amount (`random_token_amount` is `Some`), and `NO_VERSION` while
 /// none does. The tables decide it, so the release that settles the amounts activates them by
-/// setting the slot in its table alone. Every table of protocol version 14 and earlier keeps it
-/// `None` (no binary of theirs decodes the format), so the start is never below 15.
+/// setting the slot in its table alone. Every table of protocol version 15 and earlier keeps it
+/// `None` (no binary of theirs decodes the format), so the start is never below 16.
 fn random_token_amount_active_version_range(
     versions: &[PlatformVersion],
 ) -> RangeInclusive<ProtocolVersion> {
@@ -3419,6 +3419,7 @@ mod tests {
     #[cfg(feature = "state-transition-signing")]
     #[test]
     fn should_refuse_a_high_s_ecdsa_signature_at_every_protocol_version() {
+        use crate::dashcore::hashes::hash160;
         use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 
         let bls = crate::bls::native_bls::NativeBlsModule;
@@ -3453,13 +3454,13 @@ mod tests {
             .negate();
         high_s[33..].copy_from_slice(&negated.to_secret_bytes());
         high_s[0] = 27 + ((high_s[0] - 27) ^ 1);
-        // A real twin: `dashcore` alone verifies it like the signature the key made.
-        crate::dashcore::signer::verify_data_signature(
-            &signed.signable_bytes().expect("signable bytes"),
+        // A real twin: key recovery, which takes any S, recovers the key from it.
+        crate::dashcore::signer::verify_hash_signature(
+            &double_sha(signed.signable_bytes().expect("signable bytes")),
             &high_s,
-            key.data().as_slice(),
+            hash160::Hash::hash(key.data().as_slice()).as_byte_array(),
         )
-        .expect("the high-S twin verifies once S is normalized");
+        .expect("key recovery accepts the high-S twin");
         let mut malleated = signed.clone();
         malleated.set_signature(BinaryData::new(high_s));
 
@@ -3898,11 +3899,11 @@ mod tests {
             random_token_amount_active_version_range(PLATFORM_VERSIONS),
             NO_VERSION
         );
-        // No binary of protocol version 14 or earlier decodes the format, so none of their
+        // No binary of protocol version 15 or earlier decodes the format, so none of their
         // tables may ever admit it
         assert!(PLATFORM_VERSIONS
             .iter()
-            .filter(|platform_version| platform_version.protocol_version < 15)
+            .filter(|platform_version| platform_version.protocol_version < 16)
             .all(|platform_version| platform_version
                 .dpp
                 .state_transition_serialization_versions
@@ -3910,17 +3911,48 @@ mod tests {
                 .is_none()));
 
         let mut versions = PLATFORM_VERSIONS.to_vec();
-        let version_15 = versions
+        let version_16 = versions
             .iter_mut()
-            .find(|platform_version| platform_version.protocol_version == 15)
-            .expect("platform version 15 exists");
-        version_15
+            .find(|platform_version| platform_version.protocol_version == 16)
+            .expect("platform version 16 exists");
+        version_16
             .dpp
             .state_transition_serialization_versions
             .random_token_amount = Some(0);
         let active = random_token_amount_active_version_range(&versions);
-        assert_eq!(active, 15..=LATEST_VERSION);
-        assert!(!active.contains(&14));
+        assert_eq!(active, 16..=LATEST_VERSION);
+        assert!(!active.contains(&15));
+    }
+
+    // A table admitting random token amounts decodes transitions whose execution reserves in
+    // the token marketplace escrow and whose amounts the block's settlement pays out, so the
+    // same protocol version's Drive tables must select the escrow and the settlement too
+    #[test]
+    fn should_admit_random_token_amounts_only_where_drive_reserves_and_settles_them() {
+        for platform_version in PLATFORM_VERSIONS {
+            if platform_version
+                .dpp
+                .state_transition_serialization_versions
+                .random_token_amount
+                .is_none()
+            {
+                continue;
+            }
+            let token = &platform_version.drive.methods.token;
+            assert!(
+                token.settle_random_token_amounts.is_some(),
+                "protocol version {} admits random token amounts it does not settle",
+                platform_version.protocol_version
+            );
+            assert!(
+                token.order_escrow.add_tokens.is_some()
+                    && token.order_escrow.fetch_tokens.is_some()
+                    && token.order_escrow.remove_tokens.is_some(),
+                "protocol version {} admits random token amounts without the escrow they are \
+                 reserved in",
+                platform_version.protocol_version
+            );
+        }
     }
 
     fn sample_format_1_batch_st_with_erase() -> StateTransition {

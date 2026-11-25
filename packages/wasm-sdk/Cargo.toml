@@ -18,7 +18,6 @@ default = [
   "moderation-charters-contract",
   "decision-proposals-contract",
   "token-market-contract",
-  "mocks",
 ]
 
 mocks = ["dash-sdk/mocks"]
@@ -70,11 +69,6 @@ token-market-contract = [
 token_reward_explanations = ["dash-sdk/token_reward_explanations"]
 
 [dependencies]
-# Wallet key generation uses dpp's random key constructors; without this they
-# only compiled because `mocks` enabled them transitively.
-dpp = { path = "../rs-dpp", default-features = false, features = [
-  "random-public-keys",
-] }
 dash-sdk = { path = "../rs-sdk", features = [
   "serde",
   "core_key_wallet",
@@ -105,7 +99,7 @@ serde_json = "1.0"
 hex = "0.4"
 base64 = "0.22"
 getrandom = { version = "0.2", features = ["js"] }
-bip39 = { version = "2.0", features = ["rand", "all-languages"] }
+bip39 = { version = "2.0", features = ["rand", "all-languages", "zeroize"] }
 rand = { version = "0.8", features = ["std"] }
 rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" }
 once_cell = "1.19"
@@ -117,13 +111,19 @@ sha2 = { version = "0.10" }
 dpp-json-convertible-derive = { path = "../rs-dpp-json-convertible-derive" }
 wasm-dpp2 = { path = "../wasm-dpp2" }
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+# Smaller secp256k1 precomputed tables: about 1.1 MB less of the Brotli
+# download, in exchange for roughly a third slower signing and key derivation,
+# which the SDK does a few times per state transition.
+secp256k1 = { workspace = true, features = ["lowmemory"] }
+
 [dev-dependencies]
 # Self-dependency to enable `mocks` for the lib under test. Do not add
 # system-contract features here: Cargo unifies them into the tested lib, so
 # `all-system-contracts` would let the trusted context resolve every contract
 # and silently defeat the tests that assert an uncompiled one is fetched.
 wasm-sdk = { path = ".", features = ["mocks"] }
-tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 # The verified context's tests verify fixture proofs and build checkpoints.
 dash-core-proof = { path = "../rs-core-proof" }
 
@@ -144,4 +144,5 @@ wasm-bindgen-test = "0.3.58"
 wasm-opt = false
 
 [package.metadata.cargo-machete]
-ignored = ["wasm-bindgen-futures", "wasm-sdk"]
+# secp256k1 is a direct dependency to enable lowmemory for the WASM target.
+ignored = ["wasm-bindgen-futures", "wasm-sdk", "secp256k1"]

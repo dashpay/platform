@@ -664,7 +664,8 @@ fn summed(drive: &Drive, contract: &DataContract, clauses: Vec<WhereClause>) -> 
         .verify_point_lookup_sum_proof(&proof, platform_version())
         .expect("the sum proof verifies");
     assert_live_root_hash(drive, root_hash);
-    let proved: i64 = entries.iter().filter_map(|entry| entry.sum).sum();
+    let proved = i64::try_from(entries.iter().filter_map(|entry| entry.sum).sum::<i128>())
+        .expect("a sum of 64-bit values within 64 bits");
     assert_eq!(unproved, proved, "unproved and proved sums agree");
     proved
 }

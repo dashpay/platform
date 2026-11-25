@@ -8,7 +8,7 @@ use platform_serialization_derive::{
 use platform_value::Identifier;
 use thiserror::Error;
 
-/// A token mint asking for a random amount (protocol version 15) that cannot take one: it is a
+/// A token mint asking for a random amount (protocol version 16) that cannot take one: it is a
 /// group action, whose members would weigh an amount nobody knows, or it leaves its recipient
 /// to the token's configuration, which the payout must not read after the block executes the
 /// mint. `reason` says which.

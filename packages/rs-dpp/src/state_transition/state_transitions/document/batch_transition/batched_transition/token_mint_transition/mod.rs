@@ -24,7 +24,7 @@ pub enum TokenMintTransition {
     #[display("V0({})", "_0")]
     #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(TokenMintTransitionV0),
-    /// Can issue a random amount (protocol version 15)
+    /// Can issue a random amount (protocol version 16)
     #[display("V1({})", "_0")]
     #[cfg_attr(feature = "serde-conversion", serde(rename = "1"))]
     V1(TokenMintTransitionV1),

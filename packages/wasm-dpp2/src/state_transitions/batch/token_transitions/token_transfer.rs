@@ -27,7 +27,7 @@ export interface TokenTransferTransitionOptions {
     sharedEncryptedNote?: SharedEncryptedNote;
     privateEncryptedNote?: PrivateEncryptedNote;
     /**
-     * The least the transfer moves when its amount is random (protocol version 15): the
+     * The least the transfer moves when its amount is random (protocol version 16): the
      * recipient receives an amount drawn from it to `amount`. Setting it makes a version 1
      * transfer, which no protocol version before 15 accepts.
      */

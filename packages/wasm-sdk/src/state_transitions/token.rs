@@ -201,6 +201,9 @@ export interface TokenMintOptions {
 
   /**
    * Optional public note for the mint operation.
+   * Only the proposer of a group action writes a note: it is left off when signing
+   * someone else's action (`GroupStateTransitionInfoStatus.otherSigner()` as a
+   * non-proposer), and the action keeps the proposer's note.
    */
   publicNote?: string;
 
@@ -439,6 +442,9 @@ export interface TokenBurnOptions {
 
   /**
    * Optional public note for the burn operation.
+   * Only the proposer of a group action writes a note: it is left off when signing
+   * someone else's action (`GroupStateTransitionInfoStatus.otherSigner()` as a
+   * non-proposer), and the action keeps the proposer's note.
    */
   publicNote?: string;
 
@@ -912,6 +918,9 @@ export interface TokenFreezeOptions {
 
   /**
    * Optional public note for the freeze operation.
+   * Only the proposer of a group action writes a note: it is left off when signing
+   * someone else's action (`GroupStateTransitionInfoStatus.otherSigner()` as a
+   * non-proposer), and the action keeps the proposer's note.
    */
   publicNote?: string;
 
@@ -1125,6 +1134,9 @@ export interface TokenUnfreezeOptions {
 
   /**
    * Optional public note for the unfreeze operation.
+   * Only the proposer of a group action writes a note: it is left off when signing
+   * someone else's action (`GroupStateTransitionInfoStatus.otherSigner()` as a
+   * non-proposer), and the action keeps the proposer's note.
    */
   publicNote?: string;
 
@@ -1338,6 +1350,9 @@ export interface TokenDestroyFrozenOptions {
 
   /**
    * Optional public note for the destruction operation.
+   * Only the proposer of a group action writes a note: it is left off when signing
+   * someone else's action (`GroupStateTransitionInfoStatus.otherSigner()` as a
+   * non-proposer), and the action keeps the proposer's note.
    */
   publicNote?: string;
 
@@ -1540,6 +1555,9 @@ export interface TokenEmergencyActionOptions {
 
   /**
    * Optional public note for the emergency action.
+   * Only the proposer of a group action writes a note: it is left off when signing
+   * someone else's action (`GroupStateTransitionInfoStatus.otherSigner()` as a
+   * non-proposer), and the action keeps the proposer's note.
    */
   publicNote?: string;
 
@@ -1964,6 +1982,9 @@ export interface TokenSetPriceOptions {
 
   /**
    * Optional public note for the price change.
+   * Only the proposer of a group action writes a note: it is left off when signing
+   * someone else's action (`GroupStateTransitionInfoStatus.otherSigner()` as a
+   * non-proposer), and the action keeps the proposer's note.
    */
   publicNote?: string;
 
@@ -2549,6 +2570,9 @@ export interface TokenConfigUpdateOptions {
 
   /**
    * Optional public note for the config update.
+   * Only the proposer of a group action writes a note: it is left off when signing
+   * someone else's action (`GroupStateTransitionInfoStatus.otherSigner()` as a
+   * non-proposer), and the action keeps the proposer's note.
    */
   publicNote?: string;
 

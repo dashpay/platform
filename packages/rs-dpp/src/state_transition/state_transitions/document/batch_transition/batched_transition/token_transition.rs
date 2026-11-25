@@ -530,7 +530,7 @@ pub trait TokenTransitionV0Methods {
         token_history_contract: &'a DataContract,
     ) -> Result<DocumentTypeRef<'a>, ProtocolError>;
     /// The least and the most a random transfer or mint moves (format version 1, protocol
-    /// version 15); `None` for any other transition, which moves a fixed amount or none.
+    /// version 16); `None` for any other transition, which moves a fixed amount or none.
     fn random_amount_range(&self) -> Option<(TokenAmount, TokenAmount)>;
     /// Historical document id (`token_history_document_id`), which for a random transfer or
     /// mint also hashes the range it moves an amount from

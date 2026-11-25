@@ -57,6 +57,24 @@ interface PublicKeyDao {
         ownedIdentityIds: List<String>,
     ): Int
 
+    /** How many `public_keys` rows hold [publicKeyData], over every identity. */
+    @Query("SELECT COUNT(*) FROM public_keys WHERE publicKeyData = :publicKeyData")
+    suspend fun countReferences(publicKeyData: ByteArray): Int
+
+    /**
+     * How many `public_keys` rows with [publicKeyData] belong to an identity
+     * of the wallet [walletId], or to an identity with no wallet link (counted
+     * for every wallet, so a claim it may rely on is kept): whether that
+     * wallet still needs its owner-index claim on the key.
+     */
+    @Query(
+        "SELECT COUNT(*) FROM public_keys pk JOIN identities i " +
+            "ON pk.identityIdData = i.identityId " +
+            "WHERE pk.publicKeyData = :publicKeyData " +
+            "AND (i.walletId = :walletId OR i.walletId IS NULL)",
+    )
+    suspend fun countReferencesForWallet(publicKeyData: ByteArray, walletId: ByteArray): Int
+
     /**
      * Rows carrying a derivation breadcrumb (dashpay/platform#4060 finding
      * 5) — the candidate set for reconstructing the pending-repair state

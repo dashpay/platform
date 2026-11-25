@@ -196,7 +196,12 @@ largest documents plus both endings; every erase is admitted against the
 same worst-case estimate and the actual fee is what it removed. GroveDB's
 query surface has no key-only result shape over a range, so the enumeration
 reads revision bodies it discards, and the estimate charges for that read
-honestly.
+honestly. The type's largest document is sized with each string bound past
+`u16::MAX` bytes held at `u16::MAX`. The balance updates the refunds cause
+for other identities are billed on top, to the identity submitting the
+erase, for a full chunk of recipients whatever the erase removes; `check_tx`
+holds the submitter to that charge as well, though it does not validate the
+erase's state.
 
 ## The `getDocumentHistory` query
 
@@ -248,7 +253,8 @@ is the separately named read for how much history is left.
 `historyWithProof()` and `erase()`; the WASM SDK exposes them as
 `getDocumentHistory`, `getDocumentHistoryWithProofInfo` and `documentErase`.
 Every history selector is an exact `u64`: a `number` is accepted only up to
-`Number.MAX_SAFE_INTEGER`, anything larger must be a `bigint`.
+`Number.MAX_SAFE_INTEGER`, anything larger must be a `bigint`. A query without
+a selector reads from the first retained revision, as `startAtMs: 0` does.
 
 ```typescript
 // Delete, then erase in chunks until the history is gone. The first erase

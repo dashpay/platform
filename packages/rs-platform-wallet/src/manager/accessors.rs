@@ -82,6 +82,11 @@ pub struct PlatformAddressSyncConfigSnapshot {
 #[derive(Debug, Clone, Copy)]
 pub struct AccountBalanceRow {
     pub account_type: AccountType,
+    /// This wallet's balance in the account, computed from live UTXOs.
+    /// Zero for keys-only accounts and for a contact's watch-only
+    /// `DashpayExternalAccount`, whose outputs belong to the contact.
+    /// The rows sum to the wallet's live Core balance, which can differ
+    /// from the separately published wallet balance until it is refreshed.
     pub balance: WalletCoreBalance,
     pub keys_used: u32,
     pub keys_total: u32,
@@ -101,7 +106,6 @@ pub struct IdentitySyncConfigSnapshot {
 pub struct CoreWalletStateSnapshot {
     pub synced_height: u32,
     pub last_processed_height: u32,
-    pub monitor_revision: u64,
 }
 
 /// Snapshot of the identity-wallet scan state for a single wallet,
@@ -137,7 +141,7 @@ pub struct PlatformAddressProviderStateSnapshot {
 
 // `WalletInfoMetadataSnapshot` and `wallet_info_metadata_blocking`
 // were removed: the diagnostic explorer's "PlatformWalletInfo Metadata"
-// section duplicated `CoreWalletStateSnapshot` (heights/revision) and
+// section duplicated `CoreWalletStateSnapshot` (heights) and
 // surfaced fields with no active populator (total_transactions is
 // event-driven; first_loaded_at isn't stamped on this path; name /
 // description are wallet-row labels, not part of the in-memory diag
@@ -170,7 +174,6 @@ pub struct TrackedAssetLockSnapshot {
 pub struct AccountMetadataSnapshot {
     pub total_transactions: u64,
     pub total_utxos: u64,
-    pub monitor_revision: u64,
 }
 
 /// Snapshot of one address-pool slot for the per-account drill-down.
@@ -307,8 +310,12 @@ impl OutpointClass {
 /// Whether `account_type` is a contact's watch-only chain
 /// (`DashpayExternalAccount`): coins there belong to the contact, so the
 /// inventory omits them and the classifier has no verdict for them.
+///
+/// Delegates to key-wallet's exhaustive [`AccountType::is_contact_owned`],
+/// the predicate `account_balances_blocking` and the persistence seam use,
+/// so a future contact-owned account type is left out everywhere at once.
 pub fn is_watch_only_contact(account_type: &AccountType) -> bool {
-    matches!(account_type, AccountType::DashpayExternalAccount { .. })
+    account_type.is_contact_owned()
 }
 
 /// One page of `wallet_id`'s UTXO inventory across every funds account
@@ -730,9 +737,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
     /// Read per-account balance + key-usage snapshots for a wallet.
     ///
-    /// Returns one [`AccountBalanceSnapshot`] per managed account: the
+    /// Returns one [`AccountBalanceRow`] per managed account: the
     /// wallet's `AccountType`, the live `WalletCoreBalance` (zero on
-    /// keys-only variants by construction), and (`keys_used`,
+    /// keys-only variants by construction, and zero on a contact's
+    /// watch-only `DashpayExternalAccount`, whose coins are the
+    /// contact's), and (`keys_used`,
     /// `keys_total`) totals across the account's address pools.
     /// Funds variants and keys variants both expose pools the same
     /// way, so the count is meaningful in both directions — the
@@ -764,8 +773,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 // (which coin selection reads) has moved on. Deriving from the
                 // same source selection uses makes disagreement impossible;
                 // the fold is bounded by the account's UTXO count.
+                //
+                // A contact's watch-only chain (`DashpayExternalAccount`)
+                // reports zero: its addresses derive from the CONTACT's
+                // xpub, so the outputs it observes are what this wallet paid
+                // to the contact, not coins it can spend. Hosts sum these
+                // rows into the wallet's Core balance, so counting them there
+                // inflated it by every payment to a contact. Same rule as
+                // `ManagedAccountCollection::all_funding_accounts`
+                // (rust-dashcore#926), which the wallet's own balance and
+                // coin selection use. The row stays, with its key counts.
+                let account_type = account.managed_account_type().to_account_type();
                 let balance = account
                     .as_funds()
+                    .filter(|_| !account_type.is_contact_owned())
                     .map(|a| computed_core_balance(a, last_processed_height))
                     .unwrap_or_default();
                 // Walk every pool on the account, sum
@@ -779,15 +800,15 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                         // "used" counts only funded addresses; a `Reserved`
                         // address is handed out but not yet used.
                         let pool_used = pool
-                            .addresses
+                            .addresses()
                             .values()
                             .filter(|info| matches!(info.state, AddressState::Used))
                             .count() as u32;
-                        let pool_total = pool.addresses.len() as u32;
+                        let pool_total = pool.addresses().len() as u32;
                         (used + pool_used, total + pool_total)
                     });
                 AccountBalanceRow {
-                    account_type: account.managed_account_type().to_account_type(),
+                    account_type,
                     balance,
                     keys_used,
                     keys_total,
@@ -865,27 +886,16 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     // -----------------------------------------------------------------
 
     /// Snapshot of the core wallet's SPV bookkeeping for a single
-    /// wallet. `monitor_revision` is the max across every account on
-    /// the wallet — the max picks up the most recent address-set
-    /// mutation the bloom-filter rebuilder cares about.
+    /// wallet.
     pub fn core_wallet_state_blocking(
         &self,
         wallet_id: &WalletId,
     ) -> Option<CoreWalletStateSnapshot> {
         let wm = self.wallet_manager.blocking_read();
         let info = wm.get_wallet_info(wallet_id)?;
-        let monitor_revision = info
-            .core_wallet
-            .accounts
-            .all_accounts()
-            .iter()
-            .map(|a| a.monitor_revision())
-            .max()
-            .unwrap_or(0);
         Some(CoreWalletStateSnapshot {
             synced_height: info.core_wallet.metadata.synced_height,
             last_processed_height: info.core_wallet.metadata.last_processed_height,
-            monitor_revision,
         })
     }
 
@@ -1116,7 +1126,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // 0 in production builds.
             total_transactions: account.transactions().len() as u64,
             total_utxos: funds.map(|a| a.utxos.len() as u64).unwrap_or(0),
-            monitor_revision: account.monitor_revision(),
         })
     }
 
@@ -1296,10 +1305,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         &self,
         wallet_id: &WalletId,
     ) -> Option<ProviderMasternodeTxs> {
+        use crate::wallet::provider_key_at_index::PROVIDER_KEY_WINDOW;
         use key_wallet::managed_account::address_pool::PublicKeyType;
         use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
-        // Default provider-key pre-derivation / scan window.
-        const PROVIDER_KEY_WINDOW: u32 = 20;
 
         // Scope the wallet-manager read lock so it's released before we
         // acquire the SPV client / engine locks for the DML snapshot — the
@@ -1352,7 +1360,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     acct.managed_account_type()
                         .address_pools()
                         .iter()
-                        .filter_map(|p| p.highest_generated)
+                        .filter_map(|p| p.highest_generated())
                         .max()
                 })
                 .map(|h| h.saturating_add(1))
@@ -1370,7 +1378,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 std::collections::HashMap::new();
             if let Some(acct) = info.core_wallet.accounts.provider_platform_keys.as_ref() {
                 for pool in acct.managed_account_type().address_pools() {
-                    for entry in pool.addresses.values() {
+                    for entry in pool.addresses().values() {
                         if let Some(PublicKeyType::EdDSA(pk)) = &entry.public_key {
                             if let Ok(pk32) = <[u8; 32]>::try_from(pk.as_slice()) {
                                 let node_id = EddsaPkHash::from(EddsaPkBytes::from_bytes(pk32))
@@ -1414,15 +1422,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     false,
                 ) {
                     Ok(key) => {
-                        if let Ok(bytes) = <[u8; 48]>::try_from(key.public_key_bytes.as_slice()) {
-                            operator_index.insert(bytes, index);
-                        }
-                        if let Some(legacy) = key
-                            .legacy_public_key_bytes
-                            .as_deref()
-                            .and_then(|b| <[u8; 48]>::try_from(b).ok())
-                        {
-                            operator_index.insert(legacy, index);
+                        if let Some((basic, legacy)) = key.operator_key_forms() {
+                            operator_index.insert(basic, index);
+                            if let Some(legacy) = legacy {
+                                operator_index.insert(legacy, index);
+                            }
                         }
                     }
                     // First failure ⇒ no operator account (or unavailable) ⇒ stop.
@@ -1506,30 +1510,30 @@ fn asset_lock_funding_type_to_u8(
 }
 
 fn pool_snapshot(pool: &AddressPool) -> AccountAddressPoolSnapshot {
-    let pool_type: u8 = match pool.pool_type {
+    let pool_type: u8 = match pool.pool_type() {
         AddressPoolType::External => 0,
         AddressPoolType::Internal => 1,
         AddressPoolType::Absent => 2,
         AddressPoolType::AbsentHardened => 3,
     };
-    let last_used_index: i64 = pool.highest_used.map(|i| i as i64).unwrap_or(-1);
-    let addresses = pool.addresses.values().map(addr_info_snapshot).collect();
+    let last_used_index: i64 = pool.highest_used().map(|i| i as i64).unwrap_or(-1);
+    let addresses = pool.addresses().values().map(addr_info_snapshot).collect();
     AccountAddressPoolSnapshot {
         pool_type,
-        gap_limit: pool.gap_limit,
+        gap_limit: pool.gap_limit(),
         last_used_index,
         addresses,
     }
 }
 
 fn addr_info_snapshot(info: &AddressInfo) -> AccountAddressInfoSnapshot {
-    // The address pool stores `script_pubkey` directly. P2PKH is the
+    // The pool derives P2PKH addresses. P2PKH is the
     // dominant shape here, so pull the 20-byte HASH160 out via
     // `p2pkh_public_key_hash_bytes`. Non-P2PKH script types simply
     // surface zeroed bytes — the diagnostic surface stays a flat
     // `[u8; 20]` either way.
     let mut pubkey_hash = [0u8; 20];
-    if let Some(bytes) = info.script_pubkey.p2pkh_public_key_hash_bytes() {
+    if let Some(bytes) = info.address.script_pubkey().p2pkh_public_key_hash_bytes() {
         if bytes.len() == 20 {
             pubkey_hash.copy_from_slice(bytes);
         }
@@ -1866,6 +1870,141 @@ mod computed_balance_tests {
         );
     }
 
+    /// A wallet that paid a contact holds a watch-only `DashpayExternalAccount`
+    /// whose UTXO set carries that payment: the address derives from the
+    /// contact's xpub, so the coin is the contact's. Hosts sum the rows into
+    /// the wallet's Core balance, so that row must report zero, while a
+    /// `DashpayReceivingFunds` account (this wallet's own xpub) still counts.
+    #[tokio::test]
+    async fn should_leave_a_contacts_watch_only_account_out_of_the_account_balances() {
+        use dashcore::{BlockHash, Transaction};
+        use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        use key_wallet::managed_account::ManagedCoreFundsAccount;
+        use key_wallet::transaction_checking::{
+            BlockInfo, TransactionContext, WalletTransactionChecker,
+        };
+        use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+        const BIP44: u64 = 9_000_000;
+        const RECEIVED_FROM_CONTACT: u64 = 2_000_000;
+        const PAID_TO_CONTACT: u64 = 100_000;
+
+        let (funded, wallet_id, _generation, _signer, receiving_type) =
+            crate::test_support::funded_wallet_manager_with_contact(
+                &[BIP44],
+                &[RECEIVED_FROM_CONTACT],
+            )
+            .await;
+
+        // The contact's watch-only chain, built as
+        // `register_external_contact_account` builds it, then paid into.
+        let external_type = AccountType::DashpayExternalAccount {
+            index: 0,
+            user_identity_id: [0xAA; 32],
+            friend_identity_id: [0xBB; 32],
+        };
+        // The wallet's own Core balance (what `platform_wallet_get_balance`
+        // reports), read after the payment lands.
+        let wallet_balance = {
+            let mut wm = funded.write().await;
+            let (wallet, info) = wm.get_wallet_mut_and_info_mut(&wallet_id).expect("wallet");
+            let contact_xpub = ExtendedPubKey::from_priv(
+                &ExtendedPrivKey::new_master(key_wallet::Network::Testnet, &[7u8; 64])
+                    .expect("contact master key"),
+            );
+            let mut managed = ManagedCoreFundsAccount::from_account(&key_wallet::Account {
+                parent_wallet_id: Some(wallet_id),
+                account_type: external_type,
+                network: key_wallet::Network::Testnet,
+                account_xpub: contact_xpub,
+                is_watch_only: true,
+            })
+            .expect("managed contact account");
+            let contact_address = managed
+                .next_address_with_info(Some(&contact_xpub))
+                .expect("contact address")
+                .address;
+            wallet
+                .add_account(external_type, Some(contact_xpub))
+                .expect("add external account");
+            info.core_wallet
+                .accounts
+                .insert_funds_bearing_account(managed)
+                .expect("insert external account");
+
+            let payment = Transaction::dummy(&contact_address, 2..3, &[PAID_TO_CONTACT]);
+            let context = TransactionContext::InChainLockedBlock(BlockInfo::new(
+                2,
+                BlockHash::all_zeros(),
+                1_700_000_100,
+            ));
+            assert!(
+                info.check_core_transaction(&payment, context, wallet, true, true)
+                    .await
+                    .is_relevant,
+                "the contact's chain must be monitored"
+            );
+            let held: u64 = info
+                .core_wallet
+                .accounts
+                .dashpay_external_accounts
+                .values()
+                .flat_map(|account| account.utxos.values())
+                .map(|utxo| utxo.txout.value)
+                .sum();
+            assert_eq!(
+                held, PAID_TO_CONTACT,
+                "precondition: the external account's UTXO set holds the payment"
+            );
+            info.core_wallet.update_balance();
+            info.core_wallet.balance().total()
+        };
+
+        let manager = manager_over_funded_fixture(funded).await;
+        let rows = {
+            let manager = Arc::clone(&manager);
+            tokio::task::spawn_blocking(move || manager.account_balances_blocking(&wallet_id))
+                .await
+                .expect("blocking accessor task")
+        };
+
+        let external = rows
+            .iter()
+            .find(|row| row.account_type == external_type)
+            .expect("the external account keeps its row");
+        assert_eq!(
+            external.balance.total(),
+            0,
+            "a contact's coins are not this wallet's balance"
+        );
+        assert!(
+            external.keys_total > 0,
+            "the row still reports the account's keys"
+        );
+
+        let receiving = rows
+            .iter()
+            .find(|row| row.account_type == receiving_type)
+            .expect("the receiving account has a row");
+        assert_eq!(
+            receiving.balance.total(),
+            RECEIVED_FROM_CONTACT,
+            "coins a contact sent to this wallet are this wallet's"
+        );
+
+        let total: u64 = rows.iter().map(|row| row.balance.total()).sum();
+        assert_eq!(
+            total,
+            BIP44 + RECEIVED_FROM_CONTACT,
+            "the rows sum to the wallet's own coins"
+        );
+        assert_eq!(
+            total, wallet_balance,
+            "the rows sum to the wallet balance, which already leaves contacts' coins out"
+        );
+    }
+
     /// Bucket-policy companion to
     /// [`account_balances_blocking_ignores_the_stale_cache`], asserted
     /// directly on the fold: `computed_core_balance` duplicates
@@ -2033,6 +2172,8 @@ pub(crate) mod txo_inventory_tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            tracked_collaterals: Default::default(),
+            funding_issuance_floors: Default::default(),
             observed_input_conflicts: Default::default(),
             finalized_spends: Default::default(),
         };

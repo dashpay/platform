@@ -123,6 +123,34 @@ extension SDK {
         }
     }
 
+    // MARK: - End date
+
+    /// The end date to create a proposal with when the user asked for
+    /// `requested` now (`dash_sdk_decision_proposal_get_end_date`).
+    ///
+    /// Platform accepts an end date from a week to four weeks after the block
+    /// that creates the proposal, which comes seconds after now, so exactly a
+    /// week from now is always refused. rs-sdk moves an end date within an
+    /// hour of either edge of that window (as of this device's clock) to an
+    /// hour inside it, so by at most two hours, and returns any other
+    /// unchanged, for Platform to judge. A network below protocol version 15
+    /// has no decision proposals, which is an error.
+    ///
+    /// `ManagedPlatformWallet.createDecisionProposal` puts the end date it is
+    /// given as it is: give it this one.
+    ///
+    /// - Parameter requested: The end date the user picked.
+    public nonisolated func decisionProposalEndDate(requested: Date) async throws -> Date {
+        let requestedMs = requested.millisecondsSince1970
+        let endDateMs = try await performBlockingQuery { handle in
+            try DecisionProposalFFI.consumeMilliseconds(
+                dash_sdk_decision_proposal_get_end_date(handle, requestedMs),
+                function: "dash_sdk_decision_proposal_get_end_date"
+            )
+        }
+        return Date(millisecondsSince1970: endDateMs)
+    }
+
     /// The id (base58) of the yes/no poll a decision proposal opens, the id
     /// the end-date listing of vote polls names it by
     /// (`dash_sdk_decision_proposal_get_vote_poll_id`).
@@ -256,6 +284,70 @@ extension SDK {
             _ = try DecisionProposalFFI.consumeString(result)
         }
     }
+
+    /// Answer a decision proposal for a masternode with `signer` and wait for
+    /// Platform's response
+    /// (`dash_sdk_decision_proposal_cast_vote_with_signer`).
+    ///
+    /// The same vote as
+    /// ``castDecisionProposalVote(proposalId:choice:proTxHash:votingPrivateKey:)``,
+    /// but no key bytes cross the FFI: the Rust side builds the masternode's
+    /// voting key from `votingAddress` and asks `signer` to sign with it. Use
+    /// ``KeychainSigner/withStoredMasternodeVotingKey(identityId:isolation:perform:)``
+    /// to make a loaded masternode identity's stored voting key signable for
+    /// the call.
+    ///
+    /// - Parameters:
+    ///   - proposalId: The proposal's id, base58.
+    ///   - choice: Yes, no or abstain.
+    ///   - proTxHash: The masternode's 32-byte pro_tx_hash in **wire order**,
+    ///     not the byte order of the hex Core displays (see
+    ///     ``castContestedResourceVote(dataContractId:documentTypeName:indexName:indexValues:choice:proTxHash:votingPrivateKey:)``).
+    ///   - votingAddress: The masternode's 20-byte voting address, the
+    ///     hash160 of the voting public key.
+    ///   - signer: Signs with the voting key. Kept alive for the whole call.
+    public nonisolated func castDecisionProposalVote(
+        proposalId: String,
+        choice: YesNoAbstainVoteChoice,
+        proTxHash: Data,
+        votingAddress: Data,
+        signer: KeychainSigner
+    ) async throws {
+        // The FFI reads exactly 32 and 20 bytes through these pointers.
+        guard proTxHash.count == 32 else {
+            throw SDKError.invalidParameter("proTxHash must be exactly 32 bytes")
+        }
+        guard votingAddress.count == 20 else {
+            throw SDKError.invalidParameter("votingAddress must be exactly 20 bytes")
+        }
+        let voteChoice = choice.ffiTag
+
+        try await performBlockingQuery { handle in
+            // The signer's FFI handle holds an unretained pointer to
+            // `signer`, so pin it for the whole call (see the lifetime
+            // contract on `KeychainSigner`).
+            let result = try withExtendedLifetime(signer) {
+                try proTxHash.withUnsafeBytes { proTxPtr in
+                    try votingAddress.withUnsafeBytes { addressPtr in
+                        try withDecisionProposalCString(
+                            proposalId, field: "proposalId", invalid: SDKError.invalidParameter
+                        ) { idPtr in
+                            dash_sdk_decision_proposal_cast_vote_with_signer(
+                                handle,
+                                idPtr,
+                                voteChoice,
+                                proTxPtr.bindMemory(to: UInt8.self).baseAddress,
+                                addressPtr.bindMemory(to: UInt8.self).baseAddress,
+                                signer.handle
+                            )
+                        }
+                    }
+                }
+            }
+            // No data on success.
+            _ = try DecisionProposalFFI.consumeString(result)
+        }
+    }
 }
 
 // MARK: - FFI result handling
@@ -291,5 +383,25 @@ enum DecisionProposalFFI {
             throw SDKError.internalError("\(function) returned no data")
         }
         return try DecisionProposalJSON.decode([DecisionProposal].self, from: json)
+    }
+
+    /// A time in milliseconds since the Unix epoch, written by the FFI as a
+    /// decimal string (not JSON).
+    static func consumeMilliseconds(_ result: DashSDKResult, function: String) throws -> UInt64 {
+        guard let string = try consumeString(result) else {
+            throw SDKError.internalError("\(function) returned no data")
+        }
+        return try DecisionProposalJSON.milliseconds(from: string)
+    }
+}
+
+extension DecisionProposalJSON {
+    /// The milliseconds since the Unix epoch `string` writes as a decimal
+    /// number, the form the end date read returns.
+    static func milliseconds(from string: String) throws -> UInt64 {
+        guard let milliseconds = UInt64(string) else {
+            throw SDKError.serializationError("Not a time in milliseconds: \(string)")
+        }
+        return milliseconds
     }
 }

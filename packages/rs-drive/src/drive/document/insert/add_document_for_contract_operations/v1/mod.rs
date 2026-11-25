@@ -300,12 +300,12 @@ impl Drive {
         }
 
         // The create of a document whose type indexes a `sys.random` property (protocol version
-        // 15) prepays the entries the draw from the block's random beacon may create in those
+        // 16) prepays the entries the draw from the block's random beacon may create in those
         // indexes (`Self::prepay_random_document_index_entries`), here, with the insert: a
         // create refused at any stage inserts nothing, so it prepays nothing. Only a create
         // inserts such a document, since a moderator's restore is refused on such a type, and a
         // change's dry run creates no draw. Added in place to this shipped generation: no type
-        // declares such a property before protocol version 15, whose draw method version is the
+        // declares such a property before protocol version 16, whose draw method version is the
         // first to be set.
         if !estimates_a_change
             && platform_version

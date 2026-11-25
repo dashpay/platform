@@ -72,6 +72,8 @@ use crate::wallet::identity::{
 /// [`fold_same_txid_records`]), uses monotonic-max for the height
 /// watermarks, `extend` for the utxo vecs and for `sweeps` (in emission
 /// order — see the field), and last-write-wins for the IS-lock map.
+/// [`Self::outpoint_locks`] carries unlocks as well as locks, and merges
+/// last-write-wins per outpoint.
 ///
 /// # Why a projection instead of the upstream type
 ///
@@ -321,6 +323,26 @@ pub struct CoreChangeSet {
     /// [`Self::sweeps`].
     #[cfg_attr(feature = "serde", serde(default))]
     pub utxo_credit_verdicts: BTreeMap<OutPoint, UtxoCreditVerdict>,
+
+    /// Changes to the outpoints the wallet keeps out of coin selection:
+    /// `true` locks the outpoint, `false` unlocks it.
+    ///
+    /// The wallet locks the collateral of the masternode registrations
+    /// (ProRegTx) it processes, a collateral a ProRegTx names once the
+    /// ProRegTx is in a block, since spending the collateral would end the
+    /// registration, and the user can lock or unlock any outpoint by hand.
+    /// The in-memory set is `ManagedWalletInfo::locked_outpoints`; this is
+    /// its persistence delta. A lock does not need a coin behind it (the
+    /// ProRegTx can arrive before its collateral) and outlives the coin's
+    /// spend, so a persister keeps locks apart from its UTXO rows. On load
+    /// it hands every stored lock back through
+    /// `ManagedWalletInfo::lock_outpoint`.
+    ///
+    /// Merge: newest wins per outpoint, so an unlock after a lock in one
+    /// fold persists the unlock. `serde(default)` for the same
+    /// backward-compatible reading as [`Self::sweeps`].
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub outpoint_locks: BTreeMap<OutPoint, bool>,
 }
 
 /// Why the engine did not credit a `Received` / `Change` output of a
@@ -888,6 +910,9 @@ impl Merge for CoreChangeSet {
         // entries of records the newer changeset re-projected were dropped
         // at the top of this merge.
         self.utxo_credit_verdicts.extend(other.utxo_credit_verdicts);
+
+        // Outpoint locks: newest wins per outpoint.
+        self.outpoint_locks.extend(other.outpoint_locks);
     }
 
     fn is_empty(&self) -> bool {
@@ -904,6 +929,7 @@ impl Merge for CoreChangeSet {
             && self.account_highest_used.is_empty()
             && self.last_applied_chain_lock.is_none()
             && self.utxo_credit_verdicts.is_empty()
+            && self.outpoint_locks.is_empty()
     }
 }
 
@@ -2169,13 +2195,13 @@ pub(crate) fn account_address_pool_entries<'a>(
     pools
         .into_iter()
         .filter_map(|pool| {
-            let addresses: Vec<AddressInfo> = pool.addresses.values().cloned().collect();
+            let addresses: Vec<AddressInfo> = pool.addresses().values().cloned().collect();
             if addresses.is_empty() {
                 return None;
             }
             Some(AccountAddressPoolEntry {
                 account_type,
-                pool_type: pool.pool_type,
+                pool_type: pool.pool_type(),
                 addresses,
             })
         })
@@ -3669,7 +3695,6 @@ mod tests {
         let pubkey =
             dashcore::PublicKey::from_slice(&TEST_PUBKEY_G).expect("generator point is valid");
         let address = dashcore::Address::p2pkh(&pubkey, Network::Testnet);
-        let script_pubkey = address.script_pubkey();
         let path = DerivationPath::from(vec![
             ChildNumber::from_normal_idx(0).expect("valid child number"),
             ChildNumber::from_normal_idx(index).expect("valid child number"),
@@ -3679,17 +3704,10 @@ mod tests {
             pool_type,
             info: AddressInfo {
                 address,
-                script_pubkey,
                 public_key: Some(PublicKeyType::ECDSA(TEST_PUBKEY_G.to_vec())),
                 index,
                 path,
                 state: AddressState::Used,
-                tx_count: 0,
-                total_received: 0,
-                total_sent: 0,
-                balance: 0,
-                label: None,
-                metadata: BTreeMap::new(),
             },
         }
     }

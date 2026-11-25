@@ -6,21 +6,28 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 
 /// Introduced in protocol version 15. Differs from v6 in:
 /// - `try_from_schema`, 4 rather than 3: parses `canBeErased` and admits deletable
-///   keep-history types, while preserving generation 3's non-lifecycle parsing;
+///   keep-history types, and under full validation refuses typed-array properties whose element
+///   is a zero-width fixed byte array (`minItems: 0, maxItems: 0`); otherwise it preserves
+///   generation 3's parsing, an object's members stored in the schema's map order as before;
 /// - `parse_property_constraints`, 1 rather than 0: a `countOf` or `sumOf` of a
 ///   `propertyConstraints` or `deleteConstraints` rule may match its documents by a byte array
 ///   key, bound to a byte array property of the document written (or deleted), as it matches
-///   them by an integer, string or identifier key;
+///   them by an integer, string or identifier key, and may match a key by any element of a
+///   typed array of that document (`{ "in": path }`), the total then being over the documents
+///   whose key is one of the list's distinct elements;
 /// - `validate_document`, 2 rather than 1: a document is checked against its type's native
 ///   validator (the typed validation schema of `document_type::schema::validation_schema`)
 ///   instead of the `jsonschema` crate. A document type whose schema has no validation schema
-///   has its documents refused;
+///   has its documents refused, and so is a byte array written as a list holding a member
+///   that is not a byte, which the document serializer cannot read;
 /// - `check_document_type_schema`, 1 rather than 0: a schema is checked at registration
 ///   natively instead of against the document meta-schema through the `jsonschema` crate, and
 ///   every new document type must have a validation schema;
 /// - `validate_update`, 2 rather than 1: an update of a contract is refused when an object of
 ///   a stored document type's schema, or of the stored `$defs`, names a key twice, as
-///   registration from this version refuses a schema that does;
+///   registration from this version refuses a schema that does, and when an object the update
+///   adds is not listed at consecutive member positions or an existing one does not keep its
+///   members' order and gain new ones at its next free positions (note 49);
 /// - `validate_max_depth`, 2 rather than 1: the depth and cycle check resolves `$ref`
 ///   pointers by RFC 6901, as the native validator does;
 /// - `validation_schema`, `Some(0)` rather than `None`: builds that typed validation schema
@@ -41,8 +48,19 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 ///   execution draws the values;
 /// - `validate_schema_patterns`, `Some(0)` rather than `None`: registration and update refuse
 ///   a contract whose document schemas and `$defs` hold more than
-///   `max_contract_schema_patterns` patterns, or one that does not compile within
-///   `max_schema_pattern_compiled_size`;
+///   `max_contract_schema_patterns` patterns, patterns of more than
+///   `max_contract_schema_pattern_bytes` bytes together, or one longer than
+///   `max_schema_pattern_bytes`, folding more than `max_schema_pattern_case_folded_code_points`
+///   code points, or not compiling within `max_schema_pattern_compiled_size`;
+/// - `validate_no_transient_summed_property`, `Some(0)` rather than `None`: registration and
+///   update refuse a contract one of whose document types sums a property it lists as
+///   transient, and a document create on such a type, which a contract registered earlier may
+///   hold, is refused with the same error;
+/// - `validate_gained_requirements`, `Some(0)` rather than `None`: registration and update
+///   refuse a contract that gains an object, a document type or a whole contract's worth of
+///   them, with a `required` list naming a dotted name, a name its object does not have, or
+///   more names than its `maxProperties`, or a type a member of which the parser reads as
+///   required without a list naming it;
 /// - `registration_cost`, 3 rather than 2: the fee a state transition's contract is estimated
 ///   at bills each index by the keys it declares instead of parsing it, which compiled the
 ///   field matches of a contested index before anything bounded them;
@@ -51,7 +69,17 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 ///   format version 1;
 /// - `canonical_contested_index_values`, `Some(1)` rather than `Some(0)`: every index value
 ///   of a contest is written the one way its property's type keys it, so the values of one
-///   contest name one poll; 0 wrote only identifiers one way.
+///   contest name one poll; 0 wrote only identifiers one way;
+/// - `max_size`, 1 rather than 0: a string of 16384 or more characters without `maxBytes`
+///   counts as `u16::MAX` bytes toward a document type's largest size rather than failing it
+///   with an overflow. Only the erase of retained revisions, new in this version, reads it;
+/// - `apply_required_since`, `Some(1)` rather than `Some(0)`: a member of an object listed in
+///   its object's `required` (or the `required` beside its `$ref`) may carry `requiredSince`,
+///   and is then stored with a presence byte at every contract version;
+/// - `validate_schema_compatibility`, 2 rather than 1: the `required` lists of a document
+///   type's objects are left out of the JSON-schema diff, as the type's own `required` is,
+///   and judged by document type `validate_update` 2, which the validation versions of this
+///   protocol version select.
 ///
 /// v6 remains unchanged for `PROTOCOL_VERSION_14`, whose parse refuses a byte array key and
 /// whose schemas and documents the `jsonschema` crate checks.
@@ -63,9 +91,13 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
         validate_document: 2,
         // changed: a contract's schemas hold a bounded number of patterns of bounded size
         validate_schema_patterns: Some(0),
+        validate_no_transient_summed_property: Some(0),
+        // changed: the objects a contract gains have required lists a document can meet (note 49)
+        validate_gained_requirements: Some(0),
         // changed: the fee estimate bills an index without compiling its field matches
         registration_cost: 3,
-        // changed: an update of a contract whose stored schema repeats a key is refused
+        // changed: an update of a contract whose stored schema repeats a key is refused, and the
+        // objects it adds or changes are held to their member positions (note 49)
         validate_update: 2,
         ..CONTRACT_VERSIONS_V6.methods
     },
@@ -79,7 +111,7 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
         schema: DocumentTypeSchemaVersions {
             // changed: checks a schema natively at registration and requires a validation schema
             check_document_type_schema: 1,
-            parse_property_constraints: Some(1), // changed: countOf and sumOf match byte array keys
+            parse_property_constraints: Some(1), // changed: countOf and sumOf match byte array keys, and a key by the elements of an array
             // changed: documents are checked against the typed validation schema this builds
             validation_schema: Some(0),
             // changed: the `private` keyword declares a private document type
@@ -94,12 +126,18 @@ pub const CONTRACT_VERSIONS_V7: DPPContractVersions = DPPContractVersions {
             // changed: the depth and cycle check reads a `$ref` pointer as the validator does
             // and holds arrays to the maximum depth as it does maps
             validate_max_depth: 2,
+            // changed: an object's member may carry `requiredSince`, as a top-level property may
+            apply_required_since: Some(1),
+            // changed: the `required` lists of a type's objects are left to `validate_update` 2
+            validate_schema_compatibility: 2,
             ..CONTRACT_VERSIONS_V6.document_type_versions.schema
         },
         methods: DocumentTypeMethodVersions {
             // changed: every index value of a contest is written the one way its property's
             // type keys it, where 0 wrote only identifiers one way
             canonical_contested_index_values: Some(1),
+            // changed: a string bound past `u16::MAX` bytes is held there, not an overflow
+            max_size: 1,
             ..CONTRACT_VERSIONS_V6.document_type_versions.methods
         },
         ..CONTRACT_VERSIONS_V6.document_type_versions

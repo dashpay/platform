@@ -665,7 +665,7 @@ async fn should_not_promote_update_with_invalid_quorum_signature() {
     assert!(!error.is_retriable());
     assert!(error
         .message()
-        .contains("state transition result is unconfirmed"));
+        .contains("state transition outcome is unconfirmed"));
     assert!(error.message().contains("Proof verification error:"));
     assert_eq!(
         sdk.get_cached_contract(&CONTRACT_ID.into())
@@ -700,7 +700,7 @@ async fn should_not_promote_update_with_corrupt_grovedb_proof() {
     assert!(!error.is_retriable());
     assert!(error
         .message()
-        .contains("state transition result is unconfirmed"));
+        .contains("state transition outcome is unconfirmed"));
     assert!(error.message().contains("Proof verification error:"));
     assert_eq!(
         sdk.get_cached_contract(&CONTRACT_ID.into())
@@ -833,7 +833,7 @@ async fn should_reject_a_signed_contract_proof_differing_from_the_submitted_upda
     assert!(!error.is_retriable());
     assert!(error
         .message()
-        .contains("state transition result is unconfirmed"));
+        .contains("state transition outcome is unconfirmed"));
     assert!(error.message().contains("Proof verification error:"));
     assert!(
         error.to_string().contains("exact expected contract"),

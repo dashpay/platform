@@ -177,6 +177,23 @@ struct TokenTransferActionView: View {
             return
         }
 
+        // A recipient this device stores as a masternode's voter identity
+        // holds only a voting key, so what is sent to it could not be spent:
+        // refused, whether it was picked or pasted.
+        do {
+            if try PersistentIdentity.isKnownVotingOnlyIdentity(
+                recipient.identityId,
+                on: identity.network,
+                in: modelContext
+            ) {
+                submitError = .init(message: PersistentIdentity.votingOnlyRecipientMessage)
+                return
+            }
+        } catch {
+            submitError = .init(message: "The recipient could not be checked: \(error.localizedDescription)")
+            return
+        }
+
         // Guard before flipping `isSubmitting` so an out-of-range
         // position doesn't leave the spinner stuck.
         guard let position = UInt16(exactly: token.position) else {

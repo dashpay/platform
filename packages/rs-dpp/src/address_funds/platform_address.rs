@@ -7,6 +7,7 @@ use crate::serialization::JsonConvertible;
 use crate::serialization::ValueConvertible;
 use crate::util::ecdsa;
 use crate::ProtocolError;
+use bech32::primitives::decode::UncheckedHrpstring;
 use bech32::{Bech32m, Hrp};
 use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::address::Payload;
@@ -276,6 +277,33 @@ pub(crate) fn classify_platform_hrp(hrp: &str) -> Result<bool, ProtocolError> {
     }
 }
 
+/// Decodes a platform bech32m string into whether its HRP is the mainnet
+/// one and its payload bytes.
+///
+/// The HRP is classified before the checksum is checked, so a string of
+/// another chain is reported as not a platform address. Only the Bech32m
+/// checksum is accepted, and the padding bits after the last byte must be
+/// zero. `bech32::decode` also accepts a string carrying the legacy Bech32
+/// checksum, and ignores the padding bits; DIP-0018 allows neither. Such a
+/// string would decode to the same bytes as the canonical one, so one
+/// address would have several spellings.
+pub(crate) fn decode_platform_bech32m(s: &str) -> Result<(bool, Vec<u8>), ProtocolError> {
+    let unchecked = UncheckedHrpstring::new(s)
+        .map_err(|e| ProtocolError::DecodingError(format!("parsing failed: {e}")))?;
+    let is_mainnet = classify_platform_hrp(&unchecked.hrp().to_lowercase())?;
+    let checked = unchecked
+        .validate_and_remove_checksum::<Bech32m>()
+        .map_err(|e| ProtocolError::DecodingError(format!("invalid Bech32m checksum: {e}")))?;
+    // The data part is whole 5-bit groups, so its last group can carry bits
+    // past the last byte. They are dropped when the bytes are collected, so
+    // unless they are required to be zero, strings that differ only there
+    // decode to one address.
+    checked
+        .validate_segwit_padding()
+        .map_err(|e| ProtocolError::DecodingError(format!("invalid Bech32m padding: {e}")))?;
+    Ok((is_mainnet, checked.byte_iter().collect()))
+}
+
 impl PlatformAddress {
     /// Type byte for P2PKH addresses in bech32m encoding (user-facing)
     pub const P2PKH_TYPE: u8 = 0xb0;
@@ -343,10 +371,7 @@ impl PlatformAddress {
     /// - `Err(ProtocolError)` - If the string is malformed or its HRP is not a
     ///   recognized platform HRP
     pub fn from_bech32m_string(s: &str) -> Result<Self, ProtocolError> {
-        let (hrp, data) =
-            bech32::decode(s).map_err(|e| ProtocolError::DecodingError(format!("{}", e)))?;
-
-        classify_platform_hrp(&hrp.as_str().to_ascii_lowercase())?;
+        let (_, data) = decode_platform_bech32m(s)?;
 
         // Validate payload length: 1 type byte + 20 hash bytes = 21 bytes
         if data.len() != 1 + ADDRESS_HASH_SIZE {
@@ -377,8 +402,8 @@ impl PlatformAddress {
 
     /// Classifies a bech32m platform-address string as mainnet or non-mainnet.
     ///
-    /// Fully decodes `s` (validating checksum and data part) then classifies
-    /// the HRP: `dash` means mainnet, `tdash` means non-mainnet (Testnet /
+    /// Fully decodes `s` (validating its Bech32m checksum and data part) and
+    /// classifies the HRP: `dash` means mainnet, `tdash` means non-mainnet (Testnet /
     /// Devnet / Regtest — these are indistinguishable by HRP alone per DIP-0018).
     ///
     /// # Returns
@@ -386,9 +411,7 @@ impl PlatformAddress {
     /// - `Ok(false)` - non-mainnet (`tdash` HRP: Testnet/Devnet/Regtest)
     /// - `Err(ProtocolError)` - malformed address or non-platform HRP
     pub fn is_mainnet_bech32m(s: &str) -> Result<bool, ProtocolError> {
-        let (hrp, _) =
-            bech32::decode(s).map_err(|e| ProtocolError::DecodingError(format!("{e}")))?;
-        classify_platform_hrp(&hrp.to_lowercase())
+        decode_platform_bech32m(s).map(|(is_mainnet, _)| is_mainnet)
     }
 
     /// Converts the PlatformAddress to a dashcore Address with the specified network.
@@ -1418,6 +1441,56 @@ mod tests {
 
         let result = PlatformAddress::from_bech32m_string(&encoded);
         assert!(result.is_err(), "Should fail with corrupted checksum");
+    }
+
+    #[test]
+    fn should_reject_a_legacy_bech32_checksum_and_accept_bech32m() {
+        // The same HRP and payload under each checksum: only Bech32m is an
+        // address (DIP-0018), so one address has one spelling.
+        let hrp = Hrp::parse(PLATFORM_HRP_TESTNET).unwrap();
+        let mut payload = vec![PlatformAddress::P2PKH_TYPE];
+        payload.extend_from_slice(&[0x11; 20]);
+        let legacy = bech32::encode::<bech32::Bech32>(hrp, &payload).unwrap();
+        let current = bech32::encode::<Bech32m>(hrp, &payload).unwrap();
+
+        assert!(PlatformAddress::from_bech32m_string(&legacy).is_err());
+        assert!(PlatformAddress::is_mainnet_bech32m(&legacy).is_err());
+        assert_eq!(
+            PlatformAddress::from_bech32m_string(&current).unwrap(),
+            PlatformAddress::P2pkh([0x11; 20])
+        );
+        assert!(!PlatformAddress::is_mainnet_bech32m(&current).unwrap());
+    }
+
+    #[test]
+    fn should_reject_non_zero_padding_bits_under_a_valid_bech32m_checksum() {
+        use bech32::primitives::iter::{ByteIterExt, Fe32IterExt};
+        use bech32::Fe32;
+
+        // 21 bytes are 168 bits in 34 five-bit groups, so the last group
+        // carries two padding bits. Set one and checksum the result.
+        let hrp = Hrp::parse(PLATFORM_HRP_TESTNET).unwrap();
+        let mut payload = vec![PlatformAddress::P2PKH_TYPE];
+        payload.extend_from_slice(&[0x11; 20]);
+        let mut groups: Vec<Fe32> = payload.iter().copied().bytes_to_fes().collect();
+        let last = groups.pop().unwrap();
+        assert_eq!(last.to_u8() & 0b11, 0, "canonical padding is zero");
+        groups.push(Fe32::try_from(last.to_u8() | 0b01).unwrap());
+        let padded: String = groups
+            .into_iter()
+            .with_checksum::<Bech32m>(&hrp)
+            .chars()
+            .collect();
+
+        let err = PlatformAddress::from_bech32m_string(&padded).unwrap_err();
+        assert!(err.to_string().contains("padding"), "{err}");
+        assert!(PlatformAddress::is_mainnet_bech32m(&padded).is_err());
+
+        let canonical = bech32::encode::<Bech32m>(hrp, &payload).unwrap();
+        assert_eq!(
+            PlatformAddress::from_bech32m_string(&canonical).unwrap(),
+            PlatformAddress::P2pkh([0x11; 20])
+        );
     }
 
     #[test]

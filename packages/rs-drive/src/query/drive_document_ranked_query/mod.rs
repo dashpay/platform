@@ -82,6 +82,8 @@ use crate::error::Error;
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::query::drive_document_count_query::counter_sum_as_document_count;
 #[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
+#[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::{DocumentTypeRef, Index};
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::platform_value::Value;
@@ -394,6 +396,29 @@ pub fn read_axis_for(axis: RankedAxis, index: &Index) -> RankedAxis {
     }
 }
 
+/// The GroveDB axis a read on `axis` (a [`read_axis_for`] axis) walks in
+/// `index`'s ranked tree. A summing index of a type that keeps its sums in 128
+/// bits (`DocumentTypeV2Getters::uses_big_sums`) ranks its groups on the big
+/// sum axis, which sorts by the 128-bit sum; every other ranking is on the axis
+/// of the same name. A `summableOffCountIndex` index sums counters, not the
+/// property, and keeps the sum axis.
+///
+/// Unversioned: no type keeps big sums before protocol version 15, so every
+/// earlier read walks the axis it walked.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn index_axis_for(
+    axis: RankedAxis,
+    document_type: DocumentTypeRef,
+    index: &Index,
+) -> grovedb::element::IndexAxis {
+    match axis {
+        RankedAxis::Sum if document_type.uses_big_sums() && index.summable.is_some() => {
+            grovedb::element::IndexAxis::BigSum
+        }
+        axis => axis.into(),
+    }
+}
+
 /// Entries read on [`read_axis_for`]'s axis, presented on the requested
 /// `axis`: document counts read from sums come back as counts. A no-op
 /// whenever the read axis is the requested one.
@@ -420,6 +445,11 @@ impl DriveDocumentRankedQuery<'_> {
     /// entries are presented on [`Self::axis`].
     pub fn read_axis(&self) -> RankedAxis {
         read_axis_for(self.axis, self.index)
+    }
+
+    /// The GroveDB axis [`Self::read_axis`] walks ([`index_axis_for`]).
+    pub fn read_index_axis(&self) -> grovedb::element::IndexAxis {
+        index_axis_for(self.read_axis(), self.document_type, self.index)
     }
 
     /// The resolved prefix branches, in canonical order — one per `IN`

@@ -14,7 +14,6 @@ use std::path::PathBuf;
 use platform_wallet::changeset::PersistenceError;
 use platform_wallet_storage::sqlite::error::AutoBackupOperation;
 use platform_wallet_storage::sqlite::util::safe_cast::SafeCastTarget;
-use platform_wallet_storage::InsecureAncestor;
 use platform_wallet_storage::WalletStorageError;
 use rusqlite::{Error as SqlErr, ErrorCode};
 
@@ -173,10 +172,6 @@ fn samples() -> Vec<WalletStorageError> {
             dir: PathBuf::from("/nope"),
             source: std::io::Error::other("nope"),
         },
-        WalletStorageError::InsecureParentDir {
-            ancestor: PathBuf::from("/opt/dash"),
-            reason: InsecureAncestor::WritableWithoutSticky { mode: 0o777 },
-        },
         WalletStorageError::WalletNotFound {
             wallet_id: [0u8; 32],
         },
@@ -288,6 +283,10 @@ fn samples() -> Vec<WalletStorageError> {
         // need real upstream errors; omitted but covered by their arms.
         WalletStorageError::BlobDecode {
             reason: "bad shape",
+        },
+        WalletStorageError::UnknownBlobFormat {
+            column: "identities.entry_format",
+            format: 2,
         },
         WalletStorageError::BackupDestinationExists {
             path: PathBuf::from("/x"),
@@ -407,7 +406,6 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::AutoBackupDirUnwritable { .. } => {
                 (false, "auto_backup_dir_unwritable")
             }
-            WalletStorageError::InsecureParentDir { .. } => (false, "insecure_parent_dir"),
             WalletStorageError::WalletNotFound { .. } => (false, "wallet_not_found"),
             WalletStorageError::WalletIdMismatch { .. } => (false, "wallet_id_mismatch"),
             WalletStorageError::LockPoisoned => (false, "lock_poisoned"),
@@ -418,6 +416,7 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::BincodeEncode { .. } => (false, "bincode_encode"),
             WalletStorageError::BincodeDecode { .. } => (false, "bincode_decode"),
             WalletStorageError::BlobDecode { .. } => (false, "blob_decode"),
+            WalletStorageError::UnknownBlobFormat { .. } => (false, "unknown_blob_format"),
             WalletStorageError::HashDecode { .. } => (false, "hash_decode"),
             WalletStorageError::ConsensusCodec { .. } => (false, "consensus_codec"),
             WalletStorageError::AddressDecode { .. } => (false, "address_decode"),

@@ -102,8 +102,11 @@ simple layout is what makes the `get` function so fast.
 
 One file, one protocol version. `v14.rs` was created when the first consensus
 change after version 13 shipped needed somewhere to live, and every later
-change destined for version 14 amends that same file. The day version 14 is
-released the file freezes: from then on it is part of the chain's historical
+change destined for version 14 amends that same file. The day version 14
+ships (released as a stable version or activated on testnet or mainnet,
+whichever comes first; see [When a protocol version counts as
+shipped](../contributing/coding-conventions.md#when-a-protocol-version-counts-as-shipped))
+the file freezes: from then on it is part of the chain's historical
 record, and the next consensus change creates `v15.rs`. There is never a
 `v14.rs` that means one thing on a node built last month and another on a node
 built today.
@@ -419,7 +422,7 @@ version 14 means.
 **Do not:**
 - Never mutate platform version data at runtime. The constants are `const` for
   a reason.
-- Never edit a released `vN.rs`, or any table constant it references. Once a
+- Never edit a shipped `vN.rs`, or any table constant it references. Once a
   protocol version has run on the network its snapshot is part of the chain's
   history; a change there makes a fresh node replay history differently from
   every node that was there at the time.

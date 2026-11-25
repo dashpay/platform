@@ -1,5 +1,6 @@
 """Repack oclif's Dashmate debs under Debian versions that apt orders by release."""
 import io
+import json
 import os
 from pathlib import Path
 import shutil
@@ -17,10 +18,16 @@ Version: {version}
 Section: main
 Priority: standard
 Architecture: {arch}
-Maintainer: undefined
+Maintainer: {maintainer}
 Description: Distribution package for Dash node installation
 Aliases: undefined
 '''
+
+
+def oclif_maintainer():
+    """The Maintainer oclif writes: the package's author, or `undefined` when it has none."""
+    author = json.loads((ROOT / 'packages/dashmate/package.json').read_text()).get('author')
+    return 'undefined' if author is None else author
 
 
 def rewrite_function():
@@ -68,7 +75,8 @@ class RewriteDebVersionsTests(unittest.TestCase):
         """A deb shaped like oclif's: root owned, an executable, a data file and a symlink."""
         workspace = Path(tempfile.mkdtemp(dir=self.tmp))
         (workspace / 'DEBIAN').mkdir()
-        (workspace / 'DEBIAN/control').write_text(control.format(version=version, arch=arch))
+        (workspace / 'DEBIAN/control').write_text(control.format(version=version, arch=arch,
+                                                                  maintainer=oclif_maintainer()))
         bin_dir = workspace / 'usr/lib/dashmate/bin'
         bin_dir.mkdir(parents=True)
         (bin_dir / 'dashmate').write_text('#!/bin/sh\n')
@@ -130,23 +138,44 @@ class RewriteDebVersionsTests(unittest.TestCase):
 
     def test_should_leave_the_built_debs_alone_when_it_cannot_rewrite_them(self):
         cases = {
-            'no git sha in the version': ('4.1.0-1', CONTROL),
+            'no git sha in the version': ('4.1.0-1', CONTROL, 'Expected a git sha'),
             'no description to record the sha in': ('4.1.0.61be67f7bf-1',
                                                      CONTROL.replace('Description: Distribution package for Dash'
-                                                                     ' node installation\n', '')),
+                                                                     ' node installation\n', ''),
+                                                     'No Description field'),
             # valid for dpkg, but not the line the rewrite replaces
             'a Version line the rewrite does not recognise': ('4.1.0.61be67f7bf-1',
                                                               CONTROL.replace('Version: {version}',
-                                                                              'Version:{version}')),
+                                                                              'Version:{version}'),
+                                                              'Could not rewrite the Version field'),
+            # what oclif writes when the package has no author
+            'an undefined Maintainer': ('4.1.0.61be67f7bf-1', CONTROL.replace('{maintainer}', 'undefined'),
+                                        'Expected a Maintainer'),
+            'no Maintainer': ('4.1.0.61be67f7bf-1', CONTROL.replace('Maintainer: {maintainer}\n', ''),
+                              'Expected a Maintainer'),
+            # Debian requires the maintainer's address
+            'a Maintainer without an address': ('4.1.0.61be67f7bf-1',
+                                                CONTROL.replace('{maintainer}', 'Dash Core Team'),
+                                                'Expected a Maintainer'),
+            'an address with a second @': ('4.1.0.61be67f7bf-1',
+                                           CONTROL.replace('{maintainer}', 'Dash Core Team <dev@@dash.org>'),
+                                           'Expected a Maintainer'),
+            # only a plain address is accepted, not a quoted local part
+            'a quoted local part': ('4.1.0.61be67f7bf-1',
+                                    CONTROL.replace('{maintainer}', 'Dash Core Team <"dev"@dash.org>'),
+                                    'Expected a Maintainer'),
         }
-        for case, (version, control) in cases.items():
+        for case, (version, control, reason) in cases.items():
             with self.subTest(case):
                 for leftover in self.dist.iterdir():
                     leftover.unlink()
                 deb = self.build_oclif_deb(version, 'amd64', control)
                 contents = deb.read_bytes()
 
-                self.assertNotEqual(self.rewrite('4.1.0').returncode, 0)
+                result = self.rewrite('4.1.0')
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(reason, result.stdout)
                 self.assertEqual(sorted(p.name for p in self.dist.iterdir()), [deb.name])
                 self.assertEqual(deb.read_bytes(), contents)
 

@@ -23,6 +23,44 @@ enum KeyLimitsFormatting {
         return digits.isEmpty ? "\(whole)" : "\(whole).\(digits)"
     }
 
+    /// The inverse of `dashNumber`: DASH typed by a person, as credits.
+    /// Exact digit arithmetic, never `Double`. The decimal separator is "."
+    /// or the locale's own (the decimal pad types that one). Surrounding
+    /// whitespace is ignored. `nil` for text that is not a plain unsigned
+    /// decimal number, for more than 11 decimals (finer than a credit),
+    /// and for an amount past `UInt64.max` credits.
+    static func credits(fromDash text: String, locale: Locale = .current) -> UInt64? {
+        var normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let separator = locale.decimalSeparator, separator != "." {
+            normalized = normalized.replacingOccurrences(of: separator, with: ".")
+        }
+        let parts = normalized.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 1 || parts.count == 2 else { return nil }
+        let wholeDigits = parts[0]
+        let fractionDigits = parts.count == 2 ? parts[1] : ""
+        guard !(wholeDigits.isEmpty && fractionDigits.isEmpty),
+              wholeDigits.allSatisfy({ $0.isASCII && $0.isNumber }),
+              fractionDigits.allSatisfy({ $0.isASCII && $0.isNumber }),
+              fractionDigits.count <= 11
+        else { return nil }
+
+        let whole = wholeDigits.isEmpty ? 0 : UInt64(wholeDigits)
+        let paddedFraction = fractionDigits + String(repeating: "0", count: 11 - fractionDigits.count)
+        guard let whole, let fraction = UInt64(paddedFraction) else { return nil }
+        let (wholeCredits, multiplyOverflow) = whole.multipliedReportingOverflow(by: creditsPerDash)
+        guard !multiplyOverflow else { return nil }
+        let (total, addOverflow) = wholeCredits.addingReportingOverflow(fraction)
+        return addOverflow ? nil : total
+    }
+
+    /// A picked date as block time milliseconds, the unit of `expiresAt`,
+    /// rounded down to the millisecond. `nil` before 1970.
+    static func millis(from date: Date) -> TimestampMillis? {
+        let millis = (date.timeIntervalSince1970 * 1000).rounded(.down)
+        guard millis.isFinite, millis >= 0 else { return nil }
+        return TimestampMillis(exactly: millis)
+    }
+
     /// "0.004 of 0.01 DASH left" or, without a remaining figure, "0.01 DASH".
     static func budget(total: UInt64, remaining: UInt64?) -> String {
         guard let remaining else { return dash(total) }

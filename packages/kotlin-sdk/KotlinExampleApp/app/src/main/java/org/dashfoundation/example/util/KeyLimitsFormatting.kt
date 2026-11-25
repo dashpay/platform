@@ -1,0 +1,241 @@
+package org.dashfoundation.example.util
+
+import java.text.DateFormat
+import java.text.DecimalFormatSymbols
+import java.util.Calendar
+import java.util.Date
+import java.util.GregorianCalendar
+import java.util.Locale
+import java.util.TimeZone
+
+/**
+ * Renders a key's protocol 14 limits for the key screens, and turns what a person types or
+ * picks into protocol units: port of `SwiftExampleApp/Utils/KeyLimitsFormatting.swift`.
+ *
+ * Display and input parsing only. Whether a key can be raised, whether an amount or an
+ * expiry is acceptable, and which key signs are Rust's answers
+ * (`IdentityUpdates.previewKeyLimitsUpdate`); nothing here refuses a zero amount or an
+ * earlier expiry. Credits and milliseconds are `u64`, so they are [ULong] here.
+ */
+object KeyLimitsFormatting {
+    /** 1 DASH = 100 000 000 duffs = 100 000 000 000 credits. */
+    private const val CREDITS_PER_DASH: ULong = 100_000_000_000uL
+    private const val CREDIT_DECIMALS = 11
+
+    /** Credits rendered as DASH, trimming trailing zeros: 1_000_000_000 -> "0.01 DASH". */
+    fun dash(credits: ULong): String = "${dashNumber(credits)} DASH"
+
+    /** The DASH amount alone, at full credit precision: 1_000_000_000 -> "0.01". */
+    fun dashNumber(credits: ULong): String {
+        val whole = credits / CREDITS_PER_DASH
+        val fraction = (credits % CREDITS_PER_DASH).toString()
+            .padStart(CREDIT_DECIMALS, '0')
+            .trimEnd('0')
+        return if (fraction.isEmpty()) "$whole" else "$whole.$fraction"
+    }
+
+    /**
+     * The inverse of [dashNumber]: DASH typed by a person, as credits. Exact digit
+     * arithmetic, never floating point. The decimal separator is "." or [decimalSeparator]
+     * (the locale's, which a decimal keyboard types). Surrounding whitespace is ignored.
+     * Null for text that is not a plain unsigned decimal number, for more than 11 decimals
+     * (finer than a credit), and for an amount past `u64` credits. Zero parses: whether it
+     * is a raise is Rust's answer.
+     */
+    fun credits(
+        fromDash: String,
+        decimalSeparator: Char = DecimalFormatSymbols.getInstance().decimalSeparator,
+    ): ULong? {
+        var normalized = fromDash.trim()
+        if (decimalSeparator != '.') normalized = normalized.replace(decimalSeparator, '.')
+        val parts = normalized.split('.')
+        if (parts.size !in 1..2) return null
+        val wholeDigits = parts[0]
+        val fractionDigits = if (parts.size == 2) parts[1] else ""
+        if (wholeDigits.isEmpty() && fractionDigits.isEmpty()) return null
+        if (!wholeDigits.all { it in '0'..'9' } || !fractionDigits.all { it in '0'..'9' }) return null
+        if (fractionDigits.length > CREDIT_DECIMALS) return null
+
+        val whole = if (wholeDigits.isEmpty()) 0uL else wholeDigits.toULongOrNull() ?: return null
+        val fraction = fractionDigits.padEnd(CREDIT_DECIMALS, '0').toULong()
+        if (whole > ULong.MAX_VALUE / CREDITS_PER_DASH) return null
+        val wholeCredits = whole * CREDITS_PER_DASH
+        if (fraction > ULong.MAX_VALUE - wholeCredits) return null
+        return wholeCredits + fraction
+    }
+
+    /**
+     * A picked instant as block time milliseconds, the unit of `expiresAt`. Null before
+     * 1970, which the protocol cannot carry: the form says so instead of dropping the expiry.
+     */
+    fun millis(pickedMillis: Long): ULong? = if (pickedMillis >= 0) pickedMillis.toULong() else null
+
+    /**
+     * [currentMillis] moved to the calendar day [pickedDateUtcMillis] (a Material date
+     * picker's selection: UTC midnight of that day), keeping its local time of day in [zone].
+     */
+    fun withDate(currentMillis: Long, pickedDateUtcMillis: Long, zone: TimeZone = TimeZone.getDefault()): Long {
+        val day = gregorian(UTC).apply { timeInMillis = pickedDateUtcMillis }
+        return gregorian(zone).apply {
+            timeInMillis = currentMillis
+            set(Calendar.YEAR, day.get(Calendar.YEAR))
+            set(Calendar.DAY_OF_YEAR, 1)
+            set(Calendar.MONTH, day.get(Calendar.MONTH))
+            set(Calendar.DAY_OF_MONTH, day.get(Calendar.DAY_OF_MONTH))
+        }.timeInMillis
+    }
+
+    /** [currentMillis] at [hour]:[minute]:00.000 local time in [zone], on the same local day. */
+    fun withTime(currentMillis: Long, hour: Int, minute: Int, zone: TimeZone = TimeZone.getDefault()): Long =
+        gregorian(zone).apply {
+            timeInMillis = currentMillis
+            set(Calendar.HOUR_OF_DAY, hour)
+            set(Calendar.MINUTE, minute)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+
+    /** The local calendar day of [millis] in [zone], as a Material date picker selects it. */
+    fun dateUtcMillis(millis: Long, zone: TimeZone = TimeZone.getDefault()): Long {
+        val local = gregorian(zone).apply { timeInMillis = millis }
+        return gregorian(UTC).apply {
+            clear()
+            set(local.get(Calendar.YEAR), local.get(Calendar.MONTH), local.get(Calendar.DAY_OF_MONTH))
+        }.timeInMillis
+    }
+
+    /**
+     * The day the date picker opens on for [millis]: its local calendar day in [zone], held
+     * to the picker's last day, since late on 9999-12-31 UTC is already year 10000 east of UTC
+     * and the picker refuses an initial day outside its years.
+     */
+    fun pickerDateUtcMillis(millis: Long, zone: TimeZone = TimeZone.getDefault()): Long =
+        minOf(dateUtcMillis(millis, zone), LAST_PICKER_DAY_UTC_MILLIS)
+
+    /** The local hour and minute of [millis] in [zone]. */
+    fun timeOfDay(millis: Long, zone: TimeZone = TimeZone.getDefault()): Pair<Int, Int> {
+        val local = gregorian(zone).apply { timeInMillis = millis }
+        return local.get(Calendar.HOUR_OF_DAY) to local.get(Calendar.MINUTE)
+    }
+
+    /**
+     * What `Identities.fetchKeysRemainingBudgets` answered (`{"5": "1000", "6": null}`), by
+     * key id: the credits left for a budgeted key, null for a key without a budget. Key ids
+     * are read as `u32` and kept as their [Int] bit pattern, as Room stores them.
+     */
+    fun remainingBudgets(json: String?): Map<Int, ULong?> {
+        if (json.isNullOrBlank()) return emptyMap()
+        val obj = LenientJson.parseToJsonElement(json) as? kotlinx.serialization.json.JsonObject
+            ?: return emptyMap()
+        return obj.entries.mapNotNull { (key, value) ->
+            val keyId = key.toUIntOrNull()?.toInt() ?: return@mapNotNull null
+            val remaining = (value as? kotlinx.serialization.json.JsonPrimitive)
+                ?.takeUnless { it is kotlinx.serialization.json.JsonNull }
+                ?.content
+                ?.toULongOrNull()
+            keyId to remaining
+        }.toMap()
+    }
+
+    private val UTC: TimeZone = TimeZone.getTimeZone("UTC")
+
+    /**
+     * A Gregorian calendar in [zone], whatever the default locale: `Calendar.getInstance`
+     * picks the locale's calendar (Buddhist under th_TH), whose year 9999 is not the picker's.
+     * Locales are for display formatting only.
+     */
+    private fun gregorian(zone: TimeZone): Calendar = GregorianCalendar(zone, Locale.ROOT)
+
+    /**
+     * "Last-synced budget 0.01 DASH · 0.004 DASH left on Platform", or "Last-synced budget
+     * 0.01 DASH" without a
+     * remaining figure. The total is the key row as last synced and the remaining figure is a
+     * separate Platform read, which can be from a different block (a raise on another
+     * client), so they are labelled apart rather than shown as "x of y".
+     */
+    fun budget(total: ULong, remaining: ULong?): String =
+        if (remaining == null) {
+            "Last-synced budget ${dash(total)}"
+        } else {
+            "Last-synced budget ${dash(total)} · ${dash(remaining)} left on Platform"
+        }
+
+    /**
+     * The last instant the expiry editor can produce in [zone]: 9999-12-31 23:59:59.999 local
+     * time, the end of the date picker's last day. A key whose expiry is at or past it
+     * (Platform imposes no such bound) shows its expiry but offers no expiry edit here; any
+     * earlier expiry can be moved later.
+     */
+    fun maxPickableMillis(zone: TimeZone = TimeZone.getDefault()): Long =
+        gregorian(zone).apply {
+            clear()
+            set(9999, Calendar.DECEMBER, 31, 23, 59, 59)
+            set(Calendar.MILLISECOND, 999)
+        }.timeInMillis
+
+
+    /** UTC midnight of 9999-12-31, the last day the date picker can select. */
+    private const val LAST_PICKER_DAY_UTC_MILLIS: Long = 253_402_214_400_000L
+
+    /** The years the expiry date picker offers. */
+    val PICKABLE_YEARS: IntRange = 1970..9999
+
+    /**
+     * Whether the key has expired at [nowMillis]. The expiry instant itself is already
+     * expired, as consensus counts it. Display only: the preview checks the key against the
+     * block time Platform proved.
+     */
+    fun isExpired(expiresAt: ULong, nowMillis: Long): Boolean =
+        nowMillis >= 0 && nowMillis.toULong() >= expiresAt
+
+    /**
+     * The expiry as an absolute local date and time, or for an expiry past year 9999 in
+     * [zone] its milliseconds, which a calendar date cannot show.
+     */
+    fun expiryDate(
+        expiresAt: ULong,
+        locale: Locale = Locale.getDefault(),
+        zone: TimeZone = TimeZone.getDefault(),
+    ): String {
+        if (expiresAt > maxPickableMillis(zone).toULong()) return "$expiresAt ms after 1970"
+        val formatter = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, locale)
+        formatter.timeZone = zone
+        return formatter.format(Date(expiresAt.toLong()))
+    }
+
+    /** "Expires in 3 hours" or "Expired 2 days ago". */
+    fun expiryRelative(expiresAt: ULong, nowMillis: Long): String {
+        val now = nowMillis.coerceAtLeast(0).toULong()
+        // Unsigned difference, saturated to Long: an expiry past Long.MAX_VALUE stays future.
+        val delta = if (expiresAt >= now) {
+            (expiresAt - now).coerceAtMost(Long.MAX_VALUE.toULong()).toLong()
+        } else {
+            -(now - expiresAt).toLong()
+        }
+        val relative = relative(delta)
+        return if (isExpired(expiresAt, nowMillis)) "Expired $relative" else "Expires $relative"
+    }
+
+    /** "in 1 hour" / "2 days ago" in the largest whole unit, as Swift's relative formatter. */
+    private fun relative(deltaMillis: Long): String {
+        val seconds = kotlin.math.abs(deltaMillis) / 1000
+        val (count, unit) = when {
+            seconds >= YEAR -> seconds / YEAR to "year"
+            seconds >= MONTH -> seconds / MONTH to "month"
+            seconds >= WEEK -> seconds / WEEK to "week"
+            seconds >= DAY -> seconds / DAY to "day"
+            seconds >= HOUR -> seconds / HOUR to "hour"
+            seconds >= MINUTE -> seconds / MINUTE to "minute"
+            else -> seconds to "second"
+        }
+        val amount = "$count $unit${if (count == 1L) "" else "s"}"
+        return if (deltaMillis > 0) "in $amount" else "$amount ago"
+    }
+
+    private const val MINUTE = 60L
+    private const val HOUR = 60 * MINUTE
+    private const val DAY = 24 * HOUR
+    private const val WEEK = 7 * DAY
+    private const val MONTH = 30 * DAY
+    private const val YEAR = 365 * DAY
+}

@@ -9,6 +9,7 @@ import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.persistence.DashDatabase
 import org.dashfoundation.dashsdk.persistence.UInt64Value
 import org.dashfoundation.dashsdk.persistence.dao.StorageCountsDao
+import org.dashfoundation.example.ui.shielded.storedActivityAmountText
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.formatDate
 import org.dashfoundation.example.util.toHex
@@ -360,7 +361,9 @@ val STORAGE_MODELS: List<StorageModel> = listOf(
         tableName = "shielded_activities",
         orderBy = "blockHeight DESC, accountIndex",
         countFlow = { it.countShieldedActivities() },
-        headline = { row -> "${row.long("amount") ?: 0} credits" },
+        headline = { row ->
+            storedActivityAmountText((row.long("kindTag") ?: 0).toInt(), row.long("amount") ?: 0)
+        },
         subtitle = { row ->
             "kind ${row.long("kindTag") ?: 0} · status ${row.long("status") ?: 0} · " +
                 "h ${row.long("blockHeight") ?: 0}"

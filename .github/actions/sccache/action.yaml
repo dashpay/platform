@@ -77,7 +77,7 @@ runs:
 
     - name: Install sccache binary
       if: steps.check.outputs.available == 'true' && inputs.install == 'true'
-      uses: mozilla-actions/sccache-action@v0.0.6
+      uses: mozilla-actions/sccache-action@9e326ebed976843c9932b3aa0e021c6f50310eb4 # v0.0.6
       with:
         version: "v${{ inputs.version }}"
 

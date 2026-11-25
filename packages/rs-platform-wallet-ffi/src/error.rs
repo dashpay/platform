@@ -206,7 +206,7 @@ pub enum PlatformWalletFFIResultCode {
     ErrorTransactionBroadcastUnconfirmed = 20,
     /// Maps `PlatformWalletError::AddressNonceMismatch`. Platform rejected an
     /// address-funds transition (a transfer or withdrawal from Platform
-    /// addresses, or an identity registration or top-up from them)
+    /// addresses, or an identity registration from them)
     /// because the submitted address nonce raced Platform's expected next
     /// value (a lagging DAPI replica stale read; consensus code 40603). Its
     /// OWN code so hosts can recognize this specific, self-healing
@@ -214,7 +214,10 @@ pub enum PlatformWalletFFIResultCode {
     /// the mismatch without host intervention. A shield from Platform
     /// addresses does not report it: an endpoint's nonce verdict on a shield
     /// that was dispatched reads as [`Self::ErrorShieldedSpendUnconfirmed`],
-    /// as no proof backs it. The submitted and Platform-
+    /// as no proof backs it, and an identity top-up from Platform addresses
+    /// never reports it: its nonce verdict reads as
+    /// [`Self::ErrorTransactionBroadcastUnconfirmed`] (20) for the same
+    /// reason. The submitted and Platform-
     /// expected nonce values travel in the result `message` (the typed
     /// `Display`); they are not exposed as structured out-fields (that would
     /// require an ABI-breaking change to `PlatformWalletFFIResult`).
@@ -224,7 +227,10 @@ pub enum PlatformWalletFFIResultCode {
     /// Existing-lock recovery referenced an outpoint not owned/tracked by the wallet.
     ErrorAssetLockNotTracked = 23,
     /// Asset-lock funding cannot reuse this one-shot output; Platform
-    /// completion for the requested operation is unconfirmed.
+    /// completion for the requested operation is unconfirmed. An invitation
+    /// claim also returns it when the invitation is claimed by an identity
+    /// this wallet does not record; the message names that identity and says
+    /// a rescan loads it if this wallet submitted the claim.
     ErrorAssetLockAlreadyConsumed = 24,
     /// Existing-lock recovery attempted to use a lock for the wrong funding
     /// family or bound identity index.
@@ -656,6 +662,43 @@ pub enum PlatformWalletFFIResultCode {
     /// carry none and accept the caller's.
     ErrorAssetLockRecipientMismatch = 61,
 
+    /// Maps `PlatformWalletError::InvitationKeysAlreadyRegistered`. A key of
+    /// the DashPay invitation claim is already registered to another
+    /// identity (usually one this wallet registered before at the same
+    /// index), so Platform would refuse the claim and charge the voucher.
+    /// Definitive for these keys. Found by the claim's lookup, nothing was
+    /// broadcast; with a consensus error attached, Platform refused the
+    /// broadcast instead and the voucher may have been charged.
+    ///
+    /// Message: a STABLE JSON detail object —
+    /// `{"identityId":"<base58>"}`, or `{"identityId":null}` when Platform
+    /// refused the broadcast and the owner is unknown. Swift mirror:
+    /// `PlatformWalletError.invitationKeysAlreadyRegistered`.
+    ErrorInvitationKeysAlreadyRegistered = 63,
+
+    /// Maps `PlatformWalletError::InvitationClaimedByThisWallet`. The
+    /// invitation's identity exists and this wallet already records it in
+    /// one of its registration slots (no key the identity holds decides
+    /// this). Nothing was recorded, and nothing was broadcast unless a node
+    /// that lagged behind let the claim through; load the identity as any of
+    /// the wallet's own.
+    ///
+    /// Message: a STABLE JSON detail object — `{"identityId":"<base58>"}`.
+    /// Swift mirror: `PlatformWalletError.invitationClaimedByThisWallet`.
+    ErrorInvitationClaimedByThisWallet = 64,
+
+    /// Maps `PlatformWalletError::InvitationNotReady`. The invitation
+    /// claim's identity lookups could not be verified yet (the trusted
+    /// quorum source is not ready), so nothing was broadcast. Retry once the
+    /// wallet has synced.
+    ErrorInvitationNotReady = 65,
+
+    /// Maps `PlatformWalletError::AssetLockNotChainLocked`. The asset lock
+    /// cannot be used yet: its transaction has not reached the queried node,
+    /// or it needs a ChainLock proof and is not chain-locked yet. Retry
+    /// later. Produced today by the DashPay invitation claim.
+    ErrorAssetLockNotChainLocked = 66,
+
     /// Maps `PlatformWalletError::PrivateContactRequestNeedsPrivateReply`:
     /// the contact requests with that identity came or went privately
     /// (protocol version 15), so a public `contactRequest` to it, in reply or
@@ -770,6 +813,70 @@ pub enum PlatformWalletFFIResultCode {
     /// A private request pending to the identity is
     /// [`Self::ErrorPrivateContactRequestPending`] (71).
     ErrorPublicContactRequestUnconfirmed = 76,
+
+    /// Maps `PlatformWalletError::IdentityLookupFailed`: Platform could not be
+    /// asked for an identity the operation names (a transport or proof
+    /// failure of the lookup, not Platform's answer that the identity does not
+    /// exist, which is [`Self::ErrorIdentityNotFound`] (7)). Nothing was
+    /// signed, reserved or broadcast, so the operation may be retried as it
+    /// is; a host need not treat it as possibly delivered. Returned by every
+    /// identity top-up from Platform addresses (the identity lookup before
+    /// signing): the top-up of any identity and the deprecated external and
+    /// managed ones.
+    ErrorIdentityLookupFailed = 80,
+
+    /// Maps `PlatformWalletError::BalanceHistoryInconsistentHeights`: the
+    /// balance history read kept getting one page of Platform's address
+    /// balance changes proved below a height it had already used, within its
+    /// per-page retry bound, so it returned no history rather than a partial
+    /// one. Nothing was changed; the read can be made again later. Only
+    /// replies the SDK fetched and proof-verified count: an SDK error (its
+    /// own stale-node rejection, a transport or proof failure) keeps its
+    /// existing mapping. 83: open
+    /// branches hold 77 to 82 (see `ERROR_CODE_REGISTRY.md`).
+    ErrorBalanceHistoryInconsistentHeights = 83,
+
+    /// Maps `PlatformWalletError::ShieldedOperationInProgress`: a shielded
+    /// Clear was refused because a shielded operation (a bind, an account
+    /// being added, a token pool transfer or unshield, a DashPay profile
+    /// write, a tip address preparation or a shielded tip being sent, or
+    /// another Clear) is in flight.
+    /// Clear does not wait for it: it returned at once and changed nothing,
+    /// so the sync loop keeps running and the host must not wipe its own
+    /// rows. Retryable once the operation has finished. Returned by
+    /// `platform_wallet_manager_shielded_clear`. Not the reverse case, an
+    /// operation refused because a Clear holds the wallet.
+    ErrorShieldedOperationInProgress = 84,
+
+    /// Maps `PlatformWalletError::ShieldedTipPending`: a shielded tip was
+    /// refused before anything was selected, built or sent, because another
+    /// tip from this wallet is being sent or an earlier shielded payment to
+    /// the same recipient may still execute. This call sent nothing. The
+    /// earlier payment may be the same tip and may pay the recipient: a
+    /// shielded sync resolves it as executed or as unable to execute, so the
+    /// refusal ending is not a reason to send again. Not the "may have left
+    /// the wallet" code ([`Self::ErrorShieldedSpendUnconfirmed`], 18).
+    ErrorShieldedTipPending = 85,
+
+    /// Maps `PlatformWalletError::ShieldedTipRecipientMismatch`: a shielded
+    /// tip started from a saved contact names the identity the username is
+    /// expected to belong to, and the name resolves to another identity: it
+    /// moved since the contact was saved. Nothing was sent. The user picks
+    /// the recipient again; a tip to the name's new owner starts from the
+    /// name, with no expected identity.
+    ErrorShieldedTipRecipientMismatch = 86,
+
+    /// A local shielded balance read did not finish within its wait budget
+    /// (the wallet's state or its shielded store was held, by a scan for
+    /// instance), or a shielded Clear was running. Nothing failed and
+    /// nothing changed: keep the last state shown and read again later.
+    /// The only code of that read that means retry. Maps
+    /// `PlatformWalletError::ShieldedBalanceBusy`, which the wallet's bounded
+    /// read (`PlatformWallet::shielded_identity_balance_now`) returns.
+    /// Returned by `platform_wallet_manager_shielded_identity_balance`;
+    /// `platform_wallet_manager_local_shielded_balance_snapshot` still
+    /// reports its busy case as [`Self::ErrorWalletOperation`] (6).
+    ErrorShieldedBalanceBusy = 87,
 
     /// The named thing does not exist.
     ///
@@ -892,6 +999,20 @@ impl PlatformWalletFFIResult {
         }
     }
 
+    /// Platform's own verdict, for the variants that still hold the SDK
+    /// error it arrived in (`Sdk`, `TokenOperationFailed`, and
+    /// `InvitationKeysAlreadyRegistered` refused after the broadcast). It
+    /// rides alongside the code already chosen rather than replacing it, so a
+    /// host that branches on a dedicated code keeps seeing exactly what it
+    /// saw before and one that wants the rejection itself no longer has to
+    /// recognize it by its rendered text.
+    fn with_consensus_of(self, error: &PlatformWalletError) -> Self {
+        match error.consensus_error() {
+            Some(consensus_error) => self.with_consensus_error(consensus_error),
+            None => self,
+        }
+    }
+
     /// Stamp Platform's own rejection onto an already-built result.
     ///
     /// Leaves `code` and `message` alone: the numeric result code is the host
@@ -966,12 +1087,13 @@ impl<T> From<Option<T>> for PlatformWalletFFIResult {
     }
 }
 
-/// The value-carrying DPNS-marketplace rejections, rendered as
-/// `(code, JSON detail)` instead of `(code, Display)`.
+/// The value-carrying rejections (the DPNS-marketplace trio and the
+/// invitation claim's identity outcomes), rendered as `(code, JSON detail)`
+/// instead of `(code, Display)`.
 ///
 /// `PlatformWalletFFIResult` has no per-error value fields, so a
 /// host that needs the *values* — not prose naming them — can only get
-/// them through the message. These three therefore put a stable JSON
+/// them through the message. These therefore put a stable JSON
 /// object there; the exact shape is documented on each
 /// [`PlatformWalletFFIResultCode`] variant and parsed back by the Swift
 /// mirror. Returns `None` for every other error, leaving the `Display`
@@ -979,9 +1101,7 @@ impl<T> From<Option<T>> for PlatformWalletFFIResult {
 ///
 /// `DocumentNotForSale` (37) is deliberately absent: its only value is
 /// the document id the caller supplied, so its `Display` is enough.
-fn trade_error_json_detail(
-    error: &PlatformWalletError,
-) -> Option<(PlatformWalletFFIResultCode, String)> {
+fn error_json_detail(error: &PlatformWalletError) -> Option<(PlatformWalletFFIResultCode, String)> {
     match error {
         PlatformWalletError::DocumentPriceChanged {
             document_id,
@@ -1017,6 +1137,20 @@ fn trade_error_json_detail(
             })
             .to_string(),
         )),
+        PlatformWalletError::InvitationKeysAlreadyRegistered { identity_id, .. } => Some((
+            PlatformWalletFFIResultCode::ErrorInvitationKeysAlreadyRegistered,
+            serde_json::json!({
+                "identityId": identity_id.map(|id| id.to_string(Encoding::Base58)),
+            })
+            .to_string(),
+        )),
+        PlatformWalletError::InvitationClaimedByThisWallet { identity_id } => Some((
+            PlatformWalletFFIResultCode::ErrorInvitationClaimedByThisWallet,
+            serde_json::json!({
+                "identityId": identity_id.to_string(Encoding::Base58),
+            })
+            .to_string(),
+        )),
         _ => None,
     }
 }
@@ -1036,11 +1170,11 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
                 error.to_string(),
             );
         }
-        // The three value-carrying marketplace rejections replace the
-        // Display rendering with a stable JSON detail object; everything
-        // else keeps Display as the message.
-        if let Some((code, detail)) = trade_error_json_detail(&error) {
-            return PlatformWalletFFIResult::err(code, detail);
+        // The value-carrying rejections replace the Display rendering with a
+        // stable JSON detail object; everything else keeps Display as the
+        // message.
+        if let Some((code, detail)) = error_json_detail(&error) {
+            return PlatformWalletFFIResult::err(code, detail).with_consensus_of(&error);
         }
         // Map the typed wallet error variants explicitly so they
         // don't flatten to ErrorUnknown at the FFI boundary. The
@@ -1165,7 +1299,8 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
                 PlatformWalletFFIResultCode::ErrorUnknown
             }
             // A definitively-failed address-nonce race (reaches the blanket impl
-            // via identity `top_up_from_addresses` → `?`/`.into()`). Exposing
+            // via `?`/`.into()` from the address-funds paths that promote it;
+            // an identity top-up from addresses never does). Exposing
             // provided/expected nonce as structured out-fields is INTENTIONALLY
             // out of scope: `PlatformWalletFFIResult` is by-value and has no
             // per-error value fields, so the values travel in the message
@@ -1189,8 +1324,15 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::InvitationNetworkMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorInvalidNetwork
             }
-            PlatformWalletError::AssetLockAlreadyConsumed(..) => {
+            PlatformWalletError::AssetLockAlreadyConsumed(..)
+            | PlatformWalletError::InvitationAlreadyClaimed { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed
+            }
+            PlatformWalletError::InvitationNotReady(..) => {
+                PlatformWalletFFIResultCode::ErrorInvitationNotReady
+            }
+            PlatformWalletError::AssetLockNotChainLocked(..) => {
+                PlatformWalletFFIResultCode::ErrorAssetLockNotChainLocked
             }
             PlatformWalletError::AssetLockFundingMismatch { .. } => {
                 PlatformWalletFFIResultCode::ErrorAssetLockFundingMismatch
@@ -1253,6 +1395,37 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             // submit it again.
             PlatformWalletError::PublicContactRequestUnconfirmed(..) => {
                 PlatformWalletFFIResultCode::ErrorPublicContactRequestUnconfirmed
+            }
+            // The recipient lookup failed before anything was signed or
+            // sent: a not-sent refusal, not an ambiguous SDK error.
+            PlatformWalletError::IdentityLookupFailed { .. } => {
+                PlatformWalletFFIResultCode::ErrorIdentityLookupFailed
+            }
+            // The balance history could not read its pages at consistent
+            // heights: no history was returned, and the read can be retried.
+            PlatformWalletError::BalanceHistoryInconsistentHeights { .. } => {
+                PlatformWalletFFIResultCode::ErrorBalanceHistoryInconsistentHeights
+            }
+            // A Clear refused while a shielded operation is in flight changed
+            // nothing: the host keeps its rows and offers the Clear again.
+            PlatformWalletError::ShieldedOperationInProgress => {
+                PlatformWalletFFIResultCode::ErrorShieldedOperationInProgress
+            }
+            // A shielded tip refused with nothing sent while an earlier
+            // payment to the recipient is unresolved: pending, not failed and
+            // not unconfirmed.
+            PlatformWalletError::ShieldedTipPending => {
+                PlatformWalletFFIResultCode::ErrorShieldedTipPending
+            }
+            // A shielded tip refused, nothing sent, because the name belongs
+            // to another identity than the contact it was started from.
+            PlatformWalletError::ShieldedTipRecipientMismatch { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedTipRecipientMismatch
+            }
+            // A bounded balance read that found the shielded store held:
+            // nothing failed, and the host reads again later.
+            PlatformWalletError::ShieldedBalanceBusy => {
+                PlatformWalletFFIResultCode::ErrorShieldedBalanceBusy
             }
             // The wallet's private payments from an earlier process are not
             // restored yet: wallet readiness, not one contact's pending request.
@@ -1322,7 +1495,7 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             // DPNS marketplace: the one trade rejection whose Display is
             // sufficient (the other three are handled by
-            // `trade_error_json_detail` above and never reach this match).
+            // `error_json_detail` above and never reach this match).
             PlatformWalletError::DocumentNotForSale { .. } => {
                 PlatformWalletFFIResultCode::ErrorDocumentNotForSale
             }
@@ -1336,6 +1509,12 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             PlatformWalletError::DecisionProposalNotFound { .. } => {
                 PlatformWalletFFIResultCode::NotFound
             }
+            // The same "does not exist" case: the contract a read names was
+            // read and is absent.
+            PlatformWalletError::ContractNotFound { .. } => PlatformWalletFFIResultCode::NotFound,
+            // The same "does not exist" case: the document a moderation names
+            // was read and is absent.
+            PlatformWalletError::DocumentNotFound { .. } => PlatformWalletFFIResultCode::NotFound,
             PlatformWalletError::AccountNotFound(..) => PlatformWalletFFIResultCode::NotFound,
             // The persister trio, split by the store's own retry
             // classification — flattened to ErrorUnknown a host could not tell
@@ -1397,17 +1576,7 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }) => PlatformWalletFFIResultCode::ErrorProtocolVersionNotActive,
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
-        let result = PlatformWalletFFIResult::err(code, error.to_string());
-        // Platform's own verdict, for the variants that still hold the SDK
-        // error it arrived in (`Sdk`, `TokenOperationFailed`). It rides
-        // alongside the code chosen above rather than replacing it, so a host
-        // that branches on a dedicated code keeps seeing exactly what it saw
-        // before and one that wants the rejection itself no longer has to
-        // recognize it by its rendered text.
-        match error.consensus_error() {
-            Some(consensus_error) => result.with_consensus_error(consensus_error),
-            None => result,
-        }
+        PlatformWalletFFIResult::err(code, error.to_string()).with_consensus_of(&error)
     }
 }
 
@@ -2561,6 +2730,113 @@ mod tests {
         );
     }
 
+    /// The invitation claim's outcomes keep their own pinned codes, so a
+    /// host can tell "this wallet already has an identity" (63) and "an
+    /// identity this wallet records" (64) from "claimed, whose is unknown"
+    /// (24), and the
+    /// two retry signals (65, 66) from an unknown failure.
+    #[test]
+    fn should_keep_distinct_pinned_codes_for_invitation_claim_outcomes() {
+        use dpp::prelude::Identifier;
+
+        let id = Identifier::from([7u8; 32]);
+        let cases: [(PlatformWalletError, PlatformWalletFFIResultCode, i32); 6] = [
+            (
+                PlatformWalletError::InvitationKeysAlreadyRegistered {
+                    identity_id: Some(id),
+                    rejection: None,
+                },
+                PlatformWalletFFIResultCode::ErrorInvitationKeysAlreadyRegistered,
+                63,
+            ),
+            (
+                PlatformWalletError::InvitationClaimedByThisWallet { identity_id: id },
+                PlatformWalletFFIResultCode::ErrorInvitationClaimedByThisWallet,
+                64,
+            ),
+            (
+                PlatformWalletError::InvitationNotReady(dash_sdk::Error::Generic(
+                    "quorum".to_string(),
+                )),
+                PlatformWalletFFIResultCode::ErrorInvitationNotReady,
+                65,
+            ),
+            (
+                PlatformWalletError::AssetLockNotChainLocked("later".to_string()),
+                PlatformWalletFFIResultCode::ErrorAssetLockNotChainLocked,
+                66,
+            ),
+            (
+                PlatformWalletError::InvitationAlreadyClaimed { identity_id: id },
+                PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed,
+                24,
+            ),
+            (
+                PlatformWalletError::AssetLockAlreadyConsumed(dashcore::OutPoint::default()),
+                PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed,
+                24,
+            ),
+        ];
+        for (error, expected, raw) in cases {
+            let rendered = error.to_string();
+            let result: PlatformWalletFFIResult = error.into();
+            assert_eq!(result.code, expected, "{rendered}");
+            assert_eq!(result.code as i32, raw, "{rendered}");
+        }
+    }
+
+    /// Codes 63/64 carry the identity they name as a STABLE JSON detail,
+    /// `null` when Platform refused the broadcast and named no owner.
+    /// Code 24 for an invitation carries the rescan hint to the host
+    /// verbatim: the apps show this text for a claim whose owner is unknown.
+    #[test]
+    fn should_pass_the_rescan_hint_of_an_unrecorded_claim_through() {
+        use dpp::prelude::Identifier;
+
+        let err = PlatformWalletError::InvitationAlreadyClaimed {
+            identity_id: Identifier::new([5; 32]),
+        };
+        let rendered = err.to_string();
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed
+        );
+        let msg = message_of(&result);
+        assert_eq!(msg, rendered);
+        assert!(msg.contains("rescan its identities"), "{msg}");
+    }
+
+    #[test]
+    fn should_carry_the_documented_json_detail_for_invitation_identity_outcomes() {
+        use dpp::prelude::Identifier;
+
+        let id = Identifier::from([7u8; 32]);
+        let detail = |error: PlatformWalletError| -> serde_json::Value {
+            let result: PlatformWalletFFIResult = error.into();
+            serde_json::from_str(&message_of(&result)).expect("the message must parse as JSON")
+        };
+        assert_eq!(
+            detail(PlatformWalletError::InvitationKeysAlreadyRegistered {
+                identity_id: Some(id),
+                rejection: None,
+            })["identityId"],
+            id.to_string(Encoding::Base58)
+        );
+        assert!(
+            detail(PlatformWalletError::InvitationKeysAlreadyRegistered {
+                identity_id: None,
+                rejection: None,
+            })["identityId"]
+                .is_null()
+        );
+        assert_eq!(
+            detail(PlatformWalletError::InvitationClaimedByThisWallet { identity_id: id })
+                ["identityId"],
+            id.to_string(Encoding::Base58)
+        );
+    }
+
     #[test]
     fn shielded_insufficient_balance_code_is_pinned_at_41() {
         assert_eq!(
@@ -2889,6 +3165,36 @@ mod tests {
         ))
     }
 
+    /// Platform's refusal of a claim whose keys are taken keeps code 63 and
+    /// its JSON detail, and carries the refusal's consensus code beside them.
+    #[test]
+    fn should_carry_the_consensus_code_of_a_taken_keys_refusal() {
+        use dpp::consensus::state::identity::duplicated_identity_public_key_id_state_error::DuplicatedIdentityPublicKeyIdStateError;
+        use dpp::consensus::state::state_error::StateError;
+
+        let refusal =
+            ConsensusError::StateError(StateError::DuplicatedIdentityPublicKeyIdStateError(
+                DuplicatedIdentityPublicKeyIdStateError::new(vec![0]),
+            ));
+        let result: PlatformWalletFFIResult =
+            PlatformWalletError::InvitationKeysAlreadyRegistered {
+                identity_id: None,
+                rejection: Some(broadcast_rejection(refusal)),
+            }
+            .into();
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvitationKeysAlreadyRegistered
+        );
+        assert_eq!(message_of(&result), r#"{"identityId":null}"#);
+        assert_eq!(result.consensus_code, 40207);
+        assert_eq!(
+            result.consensus_kind,
+            PlatformWalletFFIConsensusErrorKind::State
+        );
+    }
+
     /// The wait-stream shape a state rejection arrives in: accepted by
     /// CheckTx, rejected at block execution.
     fn broadcast_rejection(cause: ConsensusError) -> dash_sdk::Error {
@@ -3054,6 +3360,7 @@ mod private_contact_request_error_tests {
     use super::*;
     #[cfg(feature = "shielded")]
     use crate::shielded_send::map_spend_result;
+    use dpp::prelude::Identifier;
 
     /// A store the network does not serve yet (DashPay's private contact
     /// requests before protocol version 15) is told apart from a failure, so
@@ -3174,6 +3481,124 @@ mod private_contact_request_error_tests {
             map_spend_result(Err(unconfirmed()), "private contact request").code,
             PlatformWalletFFIResultCode::ErrorPublicContactRequestUnconfirmed
         );
+    }
+
+    /// A failed identity lookup, which sent nothing, reaches the host by its
+    /// own code rather than as the SDK error it wraps.
+    #[test]
+    fn should_report_a_failed_identity_lookup_by_its_own_code() {
+        let result = PlatformWalletFFIResult::from(PlatformWalletError::IdentityLookupFailed {
+            identity_id: [7; 32].into(),
+            source: dash_sdk::Error::Generic("unreachable".to_string()),
+        });
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorIdentityLookupFailed
+        );
+        assert_eq!(result.code as u32, 80);
+    }
+
+    /// A balance history read that could not reach consistent heights
+    /// reaches the host by its own code with its message, not as an unknown
+    /// error.
+    #[test]
+    fn should_report_inconsistent_balance_history_heights_by_their_own_code() {
+        let mut result =
+            PlatformWalletFFIResult::from(PlatformWalletError::BalanceHistoryInconsistentHeights {
+                attempts: 3,
+                required_height: 12,
+                proved_height: 11,
+            });
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorBalanceHistoryInconsistentHeights
+        );
+        assert_eq!(result.code as u32, 83);
+        let message = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_str()
+            .expect("UTF-8 message")
+            .to_owned();
+        assert!(message.contains("height 11"), "{message}");
+        assert!(message.contains("height 12"), "{message}");
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    /// A shielded Clear refused while an operation is in flight reaches the
+    /// host by its own code with its message, so the host can tell "nothing
+    /// changed, retry" apart from a failed store reset.
+    #[test]
+    fn should_report_a_clear_refused_during_a_shielded_operation_by_its_own_code() {
+        let mut result =
+            PlatformWalletFFIResult::from(PlatformWalletError::ShieldedOperationInProgress);
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedOperationInProgress
+        );
+        assert_eq!(result.code as u32, 84);
+        let message = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_str()
+            .expect("UTF-8 message")
+            .to_owned();
+        assert!(message.contains("in progress"), "{message}");
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    /// A shielded tip refused while an earlier payment to its recipient is
+    /// unresolved reaches the host by its own code, through the blanket
+    /// conversion and the spend contract alike, never as unconfirmed.
+    #[test]
+    fn should_report_a_pending_shielded_tip_by_its_own_code() {
+        let mut result = PlatformWalletFFIResult::from(PlatformWalletError::ShieldedTipPending);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedTipPending
+        );
+        assert_eq!(result.code as u32, 85);
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+        #[cfg(feature = "shielded")]
+        {
+            assert_eq!(
+                map_spend_result(Err(PlatformWalletError::ShieldedTipPending), "shielded tip").code
+                    as u32,
+                85
+            );
+        }
+    }
+
+    /// A shielded tip refused because the name belongs to another identity
+    /// than the contact it was started from reaches the host by its own
+    /// code, naming both identities.
+    #[test]
+    fn should_report_a_shielded_tip_recipient_mismatch_by_its_own_code() {
+        let mut result =
+            PlatformWalletFFIResult::from(PlatformWalletError::ShieldedTipRecipientMismatch {
+                expected: Identifier::from([1; 32]),
+                resolved: Identifier::from([2; 32]),
+            });
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedTipRecipientMismatch
+        );
+        assert_eq!(result.code as u32, 86);
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    /// The busy code of a local shielded balance read keeps its raw value:
+    /// hosts match on 87 to keep the last state and read again.
+    #[test]
+    fn should_pin_the_shielded_balance_busy_code() {
+        assert_eq!(
+            PlatformWalletFFIResultCode::ErrorShieldedBalanceBusy as u32,
+            87
+        );
+        let mut result = PlatformWalletFFIResult::from(PlatformWalletError::ShieldedBalanceBusy);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedBalanceBusy
+        );
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
     }
 
     /// A public contact request a loaded wallet refuses until its private

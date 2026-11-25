@@ -92,6 +92,7 @@ mod tests {
     use dpp::data_contract::config::DataContractConfig;
     use dpp::data_contract::v1::DataContractV1;
     use dpp::prelude::DataContract;
+    use dpp::version::PlatformVersion;
     use grovedb_costs::OperationCost;
     use std::collections::BTreeMap;
     use std::sync::Arc;
@@ -146,6 +147,7 @@ mod tests {
                 storage_flags: None,
                 cost: OperationCost::default(),
                 fee: None,
+                parsed_under_protocol_version: PlatformVersion::latest().protocol_version,
             }),
             store_in_group: None,
             perform_action: true,
@@ -233,6 +235,7 @@ mod tests {
                 storage_flags: None,
                 cost: OperationCost::default(),
                 fee: None,
+                parsed_under_protocol_version: PlatformVersion::latest().protocol_version,
             }),
             store_in_group: None,
             perform_action: true,
