@@ -22,7 +22,7 @@ use dpp::identity::{Identity, IdentityPublicKey, Purpose, SecurityLevel};
 use dpp::prelude::{DataContract, Identifier};
 
 use super::document::{document_signing_key, SignerRef};
-use super::{IdentityWallet, SigningScope, WALLET_SIGNING_KEY_TYPES};
+use super::{IdentityWallet, SigningScope};
 use crate::error::{preserve_signer_key_unavailable_or, PlatformWalletError};
 
 /// A proved lifecycle, or a read that could not establish one.
@@ -140,7 +140,6 @@ fn select_erase_key(
             identity_id: identity.id(),
             purpose: Purpose::AUTHENTICATION,
             security_levels: SecurityLevel::accepted_for_requirement(requirement),
-            key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
             transition: format!("a {} document transition", document_type.name()),
         })
 }

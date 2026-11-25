@@ -58,6 +58,12 @@ class KeystoreSigner(
      * Room rows and re-seed `pendingIdentityKeys`.
      */
     private val onSigningKeyInvalidated: (suspend (pubkeyHex: String) -> Unit)? = null,
+    /**
+     * Whether Rust signs an identity key of a DPP `KeyType` discriminant.
+     * Rust owns that set; the parameter exists so a JVM unit test can stub
+     * it without the native library.
+     */
+    private val supportsIdentityKeyType: (Int) -> Boolean = SignerNative::resolverSupportsKeyType,
 ) : NativeSignerBridge(), AutoCloseable {
 
     private val handleRef =
@@ -303,21 +309,23 @@ class KeystoreSigner(
     }
 
     override fun canSignWith(pubkeyBytes: ByteArray, keyType: Int): Boolean = try {
-        if (keyType == PLATFORM_ADDRESS_HASH_KEY_TYPE) {
-            // Prerequisites for the derive-and-sign path: a row with a
-            // non-empty derivation path plus a stored wallet mnemonic.
-            // Existence-only — hasMnemonic never decrypts, so no plaintext
-            // is materialized for a mere capability check.
-            runBlocking {
-                platformAddressDao.getAllByAddressHash(pubkeyBytes).any { row ->
-                    row.derivationPath.isNotEmpty() && storage.hasMnemonic(row.walletId)
+        when {
+            keyType == PLATFORM_ADDRESS_HASH_KEY_TYPE ->
+                // Prerequisites for the derive-and-sign path: a row with a
+                // non-empty derivation path plus a stored wallet mnemonic.
+                // Existence-only — hasMnemonic never decrypts, so no plaintext
+                // is materialized for a mere capability check.
+                runBlocking {
+                    platformAddressDao.getAllByAddressHash(pubkeyBytes).any { row ->
+                        row.derivationPath.isNotEmpty() && storage.hasMnemonic(row.walletId)
+                    }
                 }
+            else -> identityKeySignable(keyType, supportsIdentityKeyType) {
+                // Ciphertext presence is not signing capability after Android
+                // replaces KEYS_ALIAS: the stale blob remains in DataStore but
+                // can never be decrypted by the replacement private key.
+                runBlocking { storage.isPrivateKeyDecryptable(storageKeyFor(pubkeyBytes)) }
             }
-        } else {
-            // Ciphertext presence is not signing capability after Android
-            // replaces KEYS_ALIAS: the stale blob remains in DataStore but
-            // can never be decrypted by the replacement private key.
-            runBlocking { storage.isPrivateKeyDecryptable(storageKeyFor(pubkeyBytes)) }
         }
     } catch (_: Exception) {
         false
@@ -371,6 +379,21 @@ class KeystoreSigner(
          * `rs-sdk-ffi/src/signer.rs`; arrives here as the unsigned value 255.
          */
         private const val PLATFORM_ADDRESS_HASH_KEY_TYPE: Int = 0xFF
+
+        /**
+         * Whether [canSignWith] reports an identity key of DPP `KeyType`
+         * discriminant [keyType] signable. Rust picks signing keys by this
+         * answer: claiming a key the secp256k1 sign path cannot sign (BLS,
+         * EdDSA) would get it chosen and then signed with the wrong
+         * algorithm, so [supportsKeyType] (Rust's predicate) is asked first
+         * and [privateKeyDecryptable] only for a type it accepts. Factored
+         * pure so it is unit-testable without the native signer handle.
+         */
+        internal fun identityKeySignable(
+            keyType: Int,
+            supportsKeyType: (Int) -> Boolean,
+            privateKeyDecryptable: () -> Boolean,
+        ): Boolean = supportsKeyType(keyType) && privateKeyDecryptable()
 
         /**
          * Structured completion code for a sign-path failure [t]:

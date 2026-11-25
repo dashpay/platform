@@ -11,10 +11,7 @@
 //! all rejected by Drive. See
 //! `state_transitions/document/batch_transition/methods/v0/mod.rs:133-138`.
 
-use super::super::key_selection::{
-    check_signing_key, usable_signing_key, SigningScope, PLATFORM_SIGNING_KEY_TYPES,
-    WALLET_SIGNING_KEY_TYPES,
-};
+use super::super::key_selection::{check_signing_key, usable_signing_key, SigningScope};
 use std::sync::Arc;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -42,12 +39,12 @@ fn token_signing_purposes(action: TokenTransitionActionType) -> &'static [Purpos
 }
 
 /// The key that signs a token `action` on the token at `position` of `token_contract_id`: a
-/// CRITICAL key of one of [`WALLET_SIGNING_KEY_TYPES`] with one of the purposes
-/// [`token_signing_purposes`] allows, whose bounds cover that token. A purpose is tried only
-/// when no key of the ones before it qualifies, so an identity holding a qualifying
-/// AUTHENTICATION key keeps the outcome it always had, the signer-unavailable error
-/// included, and a TRANSFER key signs only for an identity without one. Within one purpose
-/// the order is [`usable_signing_key`]'s.
+/// CRITICAL key with one of the purposes [`token_signing_purposes`] allows, of a key type
+/// Platform verifies an identity signature by, whose bounds cover that token. A purpose is
+/// tried only when no key of the ones before it qualifies, so an identity holding a
+/// qualifying AUTHENTICATION key keeps the outcome it always had, the signer-unavailable
+/// error included, and a TRANSFER key signs only for an identity without one. Within one
+/// purpose the order is [`usable_signing_key`]'s.
 ///
 /// `Ok(None)` means no key of any allowed purpose is eligible; `Err` means the first purpose
 /// with an eligible key has none the signer reaches.
@@ -64,7 +61,6 @@ fn token_signing_key<'a>(
             signer,
             purpose,
             &TOKEN_SIGNING_LEVELS,
-            &WALLET_SIGNING_KEY_TYPES,
             SigningScope::Token {
                 contract_id: token_contract_id,
                 position,
@@ -93,7 +89,6 @@ pub(super) fn check_token_signing_key(
         signer,
         token_signing_purposes(action),
         &TOKEN_SIGNING_LEVELS,
-        &PLATFORM_SIGNING_KEY_TYPES,
         SigningScope::Token {
             contract_id: data_contract.id(),
             position,
@@ -108,8 +103,8 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
     /// which on-chain key id to sign with.
     ///
     /// Key selection is a fixed canonical policy:
-    /// a purpose `action` allows × `SecurityLevel::CRITICAL` × `WALLET_SIGNING_KEY_TYPES`,
-    /// bounds covering `token_contract_id` (see `token_signing_key`).
+    /// a purpose `action` allows × `SecurityLevel::CRITICAL`, of a key type Platform verifies
+    /// an identity signature by, bounds covering `token_contract_id` (see `token_signing_key`).
     /// Callers that pass a `signing_key_id` over FFI are advisory —
     /// this Rust path is authoritative and Drive validates the chosen
     /// key matches what the state transition needs.
@@ -139,7 +134,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     identity_id: *identity_id,
                     purpose: Purpose::AUTHENTICATION,
                     security_levels: TOKEN_SIGNING_LEVELS.to_vec(),
-                    key_types: WALLET_SIGNING_KEY_TYPES.to_vec(),
                     transition: format!("a token transition of contract {token_contract_id}"),
                 })?
                 .clone();
