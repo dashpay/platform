@@ -11,7 +11,14 @@
 //! 3. `Ok` lets the broadcast go ahead. A refusal sends nothing: the record
 //!    is retired and the notes are released, as for any spend refused before
 //!    delivery, and the call returns
-//!    [`PlatformWalletError::ShieldedDispatchRefused`].
+//!    [`PlatformWalletError::ShieldedDispatchRefused`]. If the record can't be
+//!    retired (the store's write fails), or a sync pass claimed it while the
+//!    hook was awaited, the call reports the spend as unconfirmed instead, and
+//!    the record and its notes are kept;
+//! 4. every later re-broadcast of a saved note spend by a sync pass first
+//!    awaits [`ShieldedDispatch::admit`]. A refusal skips it for that pass:
+//!    the record stays, its attempt count is unchanged and its notes stay
+//!    reserved.
 //!
 //! # Why after the hand-over
 //!
@@ -20,23 +27,28 @@
 //! out, shut down) leaves both the notes and the record: it never frees a
 //! note under a transition that may still be sent.
 //!
-//! # What the hook alone does not stop
+//! # A pass, a drop or a crash during the hook
 //!
-//! The refusal holds when the hook answers `Err`. A sync pass re-broadcasts
-//! every saved spend, so the hook alone does not stop one that:
+//! A saved spend that the hook has not accepted can reach a sync pass in
+//! three ways: the pass runs while the hook is awaited; the send is dropped
+//! or its hook panics; or the process crashes, or the send is cancelled,
+//! between the record's save and the host's commit of what the hook
+//! registered. In each case the pass asks [`ShieldedDispatch::admit`] before
+//! re-broadcasting it, so a host that admits only transitions it accepted
+//! from [`ShieldedDispatch::dispatch`] never sees one leave the wallet first.
+//! A host that admits a transition it refused lets the pass send it, and the
+//! refusal then can't retire its record: the spend is reported unconfirmed
+//! and may execute.
 //!
-//! - a sync pass finds while the hook is awaited: the pass may re-broadcast
-//!   it before the hook answers. A refusal after that can't retire its
-//!   record, and the spend settles as unconfirmed;
-//! - is dropped while the hook is awaited, or whose hook panics: its record
-//!   stays, and the next pass re-broadcasts it;
-//! - was saved before a crash while the hook was awaited, or before the host
-//!   committed what the hook registered: a restart restores the record, and
-//!   the pass re-broadcasts it.
+//! The hook must be set before the first wallet is bound and before shielded
+//! sync starts, not only before the first spend: a sync pass that runs with
+//! no hook set re-broadcasts every saved record without asking.
 //!
-//! A host that must see every transition before it leaves the wallet runs no
-//! sync pass of the network while a hook is awaited and doesn't drop a send
-//! mid-hook.
+//! Such a record keeps its notes reserved. Its reservation carries its
+//! anchor, so the sync pass's prune releases them once that anchor is pruned
+//! from Platform's recorded set, or its nullifiers land. The hook runs before
+//! the broadcast, so a record the host never accepted was never sent by this
+//! call.
 //!
 //! [`NetworkShieldedCoordinator::set_shielded_dispatch`]:
 //!     super::NetworkShieldedCoordinator::set_shielded_dispatch
@@ -55,9 +67,15 @@ use crate::wallet::platform_wallet::WalletId;
 ///
 /// # Locks
 ///
-/// It is awaited with no shielded store guard and no coordinator lock held,
-/// so it may read the store. A running sync pass holds the store's write
-/// guard while it scans, so such a read waits for the scan.
+/// Both methods are awaited with no shielded store guard and no coordinator
+/// lock held, so they may read the store. A running sync pass holds the
+/// store's write guard while it scans, so such a read waits for the scan.
+///
+/// [`Self::admit`] runs inside a sync pass, so it should answer promptly. It
+/// must not wait for a [`Self::dispatch`] still awaited (a pass can overlap
+/// one), clear the shielded state, remove or tear down a wallet, or shut the
+/// manager down: each of those waits for the pass. A stop of the pass drops
+/// an `admit` still awaited.
 ///
 /// An identity top-up runs with its wallet's shield-class guard held, so a
 /// hook must not start a shield, top-up or other shield-class operation on
@@ -72,6 +90,27 @@ pub trait ShieldedDispatch: Send + Sync {
     /// is already durable when this runs. `Ok` lets the broadcast go ahead;
     /// `Err` refuses it, and this call sends nothing.
     async fn dispatch(&self, payload: ShieldedDispatchPayload) -> Result<(), DispatchRefused>;
+
+    /// Allow a sync pass to re-broadcast the saved note spend of transition
+    /// `st_hash` (the SHA-256 of its bytes, as in
+    /// [`ShieldedDispatchPayload::st_hash`]), recorded under `activity_id` in
+    /// `wallet_id`'s account `account_index`. `Err` skips it for this pass.
+    ///
+    /// It is asked about every saved note spend a pass would re-broadcast
+    /// while the hook is set, including ones saved before it was set or in
+    /// an earlier run, and ones whose [`Self::dispatch`] never answered `Ok`.
+    /// A host should admit only transitions it has accepted, and refuse any it
+    /// has no record of. A record that is never admitted keeps its notes
+    /// reserved until its anchor is pruned or its nullifiers land, so a host
+    /// that starts using the hook holds the records saved before it until
+    /// then. Identity-funded shields spend no notes and are not put to it.
+    async fn admit(
+        &self,
+        wallet_id: WalletId,
+        account_index: u32,
+        activity_id: [u8; 32],
+        st_hash: [u8; 32],
+    ) -> Result<(), DispatchRefused>;
 }
 
 /// A refusal from a [`ShieldedDispatch`] hook.
@@ -178,6 +217,16 @@ mod tests {
     #[async_trait]
     impl ShieldedDispatch for Accepting {
         async fn dispatch(&self, _: ShieldedDispatchPayload) -> Result<(), DispatchRefused> {
+            Ok(())
+        }
+
+        async fn admit(
+            &self,
+            _: WalletId,
+            _: u32,
+            _: [u8; 32],
+            _: [u8; 32],
+        ) -> Result<(), DispatchRefused> {
             Ok(())
         }
     }
