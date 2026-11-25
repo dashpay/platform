@@ -3,11 +3,9 @@
 //! SQLite store through the event adapter, and a reload restores every one
 //! of them.
 
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use std::time::Duration;
 
-use crate::common::fresh_persister;
+use crate::common::{fresh_persister, persist_queued, register};
 use dashcore::OutPoint;
 use key_wallet::account::{AccountType, StandardAccountType};
 use key_wallet::managed_account::address_pool::AddressPoolType;
@@ -16,8 +14,7 @@ use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet::Wallet;
 use platform_wallet::changeset::{
-    spawn_wallet_event_adapter, AccountAddressPoolEntry, AccountRegistrationEntry, CoreChangeSet,
-    PlatformWalletChangeSet, PlatformWalletPersistence, WalletMetadataEntry,
+    CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::key_wallet_manager::WalletEvent;
 use platform_wallet::test_support::{
@@ -43,76 +40,6 @@ fn external_gap(wallet: &Wallet, account: AccountType) -> u32 {
         .find(|p| p.pool_type() == AddressPoolType::External)
         .expect("external pool")
         .gap_limit()
-}
-
-fn register(persister: &SqlitePersister, wallet_id: WalletId, wallet: &Wallet) {
-    let manifest = wallet
-        .accounts
-        .all_accounts()
-        .into_iter()
-        .map(|a| AccountRegistrationEntry {
-            account_type: a.account_type,
-            account_xpub: a.account_xpub,
-        })
-        .collect();
-    let pools = ManagedWalletInfo::from_wallet(wallet, 0)
-        .accounts
-        .all_funding_accounts()
-        .into_iter()
-        .flat_map(|account| {
-            let account_type = account.managed_account_type().to_account_type();
-            account
-                .managed_account_type()
-                .address_pools()
-                .into_iter()
-                .map(move |pool| AccountAddressPoolEntry {
-                    account_type,
-                    pool_type: pool.pool_type(),
-                    addresses: pool.addresses().values().cloned().collect(),
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect();
-    persister
-        .store(
-            wallet_id,
-            PlatformWalletChangeSet {
-                wallet_metadata: Some(WalletMetadataEntry {
-                    network: key_wallet::Network::Testnet,
-                    wallet_group_id: [0u8; 32],
-                    birth_height: 0,
-                }),
-                account_registrations: manifest,
-                account_address_pools: pools,
-                ..Default::default()
-            },
-        )
-        .expect("register the wallet");
-}
-
-/// Runs the event adapter over every event the manager queued, into
-/// `persister`, until it has stored them all.
-async fn persist_queued(
-    manager: &Arc<RwLock<platform_wallet::key_wallet_manager::WalletManager<PlatformWalletInfo>>>,
-    queued: &mut mpsc::UnboundedReceiver<WalletEvent>,
-    persister: &Arc<SqlitePersister>,
-) {
-    let (tx, rx) = mpsc::unbounded_channel();
-    while let Ok(event) = queued.try_recv() {
-        tx.send(event).expect("adapter channel");
-    }
-    drop(tx);
-    let adapter = spawn_wallet_event_adapter(
-        Arc::clone(manager),
-        Arc::downgrade(persister),
-        rx,
-        Arc::new(AtomicBool::new(false)),
-        tokio_util::sync::CancellationToken::new(),
-    );
-    tokio::time::timeout(Duration::from_secs(60), adapter)
-        .await
-        .expect("the adapter drains")
-        .expect("the adapter task");
 }
 
 /// The coins every funds account of the wallet holds after a reload of the

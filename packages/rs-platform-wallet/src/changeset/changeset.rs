@@ -327,9 +327,10 @@ pub struct CoreChangeSet {
     #[cfg_attr(feature = "serde", serde(default))]
     pub abandoned_txids: Vec<Txid>,
 
-    /// The changes to the wallet's own dismissals, in order. Stored in the
-    /// same write as the sweep or record they ride on, so after a crash
-    /// both or neither are on disk. Merge appends in order.
+    /// The changes to the wallet's own dismissals, in order. A sweep's
+    /// changes are stored in the same write as the sweep. Changes a store
+    /// did not accept go ahead of the wallet's next write. Merge appends in
+    /// order.
     #[cfg_attr(feature = "serde", serde(default))]
     pub dismissal_changes: Vec<DismissalChange>,
 
@@ -473,6 +474,17 @@ pub enum DismissalChange {
     /// `txid` is dismissed no more, of either kind: mined or locked after
     /// all, or pushed out of the last set that held it.
     Forgotten(Txid),
+}
+
+impl From<&key_wallet::wallet::managed_wallet_info::DismissalChange> for DismissalChange {
+    fn from(change: &key_wallet::wallet::managed_wallet_info::DismissalChange) -> Self {
+        use key_wallet::wallet::managed_wallet_info::DismissalChange as Kw;
+        match *change {
+            Kw::Dismissed(txid) => Self::Dismissed(txid),
+            Kw::Abandoned(txid) => Self::Abandoned(txid),
+            Kw::Forgotten(txid) => Self::Forgotten(txid),
+        }
+    }
 }
 
 /// Append the txids of `more` not already in `kept`, in order.
