@@ -220,6 +220,67 @@ async fn a_truncate_above_through_the_bridge_deletes_block_spends_above_the_fork
     );
 }
 
+/// A stored round's truncation deletes the rows above its fork before
+/// its own rows are written, and keeps the rest.
+#[tokio::test]
+async fn a_stored_truncation_deletes_block_spends_above_the_fork() {
+    let (persister, _tmp, _path, _manager, wallet_id, _queued, _) =
+        wallet_with_block_spends().await;
+    let replacement = BlockSpend {
+        outpoint: coin(0x77),
+        height: 102,
+        block_hash: BlockHash::from_byte_array([0x67; 32]),
+        spender_txid: spending(coin(0x77)).txid(),
+    };
+
+    persister
+        .inner
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    block_spends_truncated_above: Some(100),
+                    block_spends: vec![replacement],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .expect("store");
+    persister.inner.flush(wallet_id).expect("flush");
+
+    assert_eq!(
+        stored(&persister.inner, &wallet_id),
+        BTreeSet::from([coin(100), coin(0x77)])
+    );
+}
+
+/// A foreign transaction in a block spending a coin the wallet holds a
+/// restored claim on reaches the store as a row with its block's height
+/// and hash and the spender, through the event adapter, and the row is
+/// still there after a restart.
+#[tokio::test]
+async fn a_captured_foreign_spend_of_a_claimed_coin_is_stored_and_survives_a_restart() {
+    let (persister, _tmp, path, manager, wallet_id, queued, hashes) =
+        wallet_with_block_spends().await;
+    let rows = persister.inner.block_spent_outpoints(&wallet_id).unwrap();
+    assert_eq!(
+        rows.keys().copied().collect::<BTreeSet<_>>(),
+        BTreeSet::from([coin(100), coin(101), coin(102)])
+    );
+    for height in [100u32, 101, 102] {
+        let row = rows[&coin(height as u8)];
+        assert_eq!(row.height, height);
+        assert_eq!(row.block_hash, hashes[&height]);
+        assert_eq!(row.spender_txid, spending(coin(height as u8)).txid());
+    }
+    drop((persister, manager, queued));
+
+    let reopened = SqlitePersister::open(SqlitePersisterConfig::new(&path)).expect("reopen");
+    reopened.load().expect("load");
+    assert_eq!(reopened.block_spent_outpoints(&wallet_id).unwrap(), rows);
+}
+
 #[tokio::test]
 async fn the_hash_check_deletes_rows_off_the_header_chain_at_every_height() {
     let (persister, _tmp, _path, _manager, wallet_id, _queued, hashes) =
