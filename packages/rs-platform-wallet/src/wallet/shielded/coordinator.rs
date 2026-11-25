@@ -1317,6 +1317,13 @@ impl NetworkShieldedCoordinator {
         self.hydrated.write().await.remove(&wallet_id);
     }
 
+    /// Whether `wallet_id` is registered: bound on this coordinator, with no
+    /// Clear or removal since. A bind replaces a registration without ever
+    /// removing it, so under an admission this is stable.
+    pub(crate) async fn is_wallet_registered(&self, wallet_id: WalletId) -> bool {
+        self.persisters.read().await.contains_key(&wallet_id)
+    }
+
     /// Currently-registered subwallet ids (snapshot, ascending
     /// `(wallet_id, account_index)` order). Exposed for tests and
     /// for the sync coordinator's pass enumeration.

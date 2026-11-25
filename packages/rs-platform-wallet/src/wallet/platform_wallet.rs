@@ -554,12 +554,25 @@ impl ShieldedOperationLocks<'_> {
     /// [`admit`](Self::admit) for a payment: a wallet removed first is
     /// refused as [`PlatformWalletError::WalletRemovedBeforeSend`], which a
     /// host reads as nothing sent.
+    ///
+    /// A wallet with no registration on the coordinator is refused as
+    /// [`PlatformWalletError::ShieldedNotBound`]: a Clear dropped it and no
+    /// bind followed, which a payment that waited for that Clear finds here.
+    /// The handle keeps its keys across a Clear, so a shield would otherwise
+    /// still build and broadcast, into an account no sync pass scans.
     async fn admit_spend(
         &self,
         wallet: &PlatformWallet,
     ) -> Result<ShieldedAdmission<'_>, PlatformWalletError> {
         let admission = self.coordinator.admit_operation().await?;
         wallet.ensure_shielded_attached_for_spend()?;
+        if !self
+            .coordinator
+            .is_wallet_registered(wallet.wallet_id)
+            .await
+        {
+            return Err(PlatformWalletError::ShieldedNotBound);
+        }
         Ok(admission)
     }
 }

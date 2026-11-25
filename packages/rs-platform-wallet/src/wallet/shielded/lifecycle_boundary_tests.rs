@@ -1324,6 +1324,106 @@ async fn should_refuse_every_shielded_spend_on_a_handle_kept_past_its_removal() 
     removed(wallet.bind_shielded_from_persisted(&[0]).await.map(drop));
 }
 
+/// A Platform address signer no test may reach: the payment it is handed to
+/// must be refused before anything is signed.
+#[derive(Debug)]
+struct UnreachableAddressSigner;
+
+#[async_trait::async_trait]
+impl Signer<PlatformAddress> for UnreachableAddressSigner {
+    async fn sign(
+        &self,
+        _key: &PlatformAddress,
+        _data: &[u8],
+    ) -> Result<BinaryData, ProtocolError> {
+        panic!("the shield was refused before signing");
+    }
+
+    async fn sign_create_witness(
+        &self,
+        _key: &PlatformAddress,
+        _data: &[u8],
+    ) -> Result<AddressWitness, ProtocolError> {
+        panic!("the shield was refused before signing");
+    }
+
+    fn can_sign_with(&self, _key: &PlatformAddress) -> bool {
+        true
+    }
+}
+
+/// A payment that waited for a Clear is refused once it is admitted. The
+/// Clear dropped the wallet's registration while the handle kept its keys,
+/// so a shield, which needs no note, would otherwise build and broadcast
+/// into an account no sync pass scans. It is refused before it plans, signs
+/// or records anything, and is admitted again once the wallet is bound.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_refuse_a_payment_that_waited_for_a_clear_until_the_wallet_is_bound_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = BoundaryHost::new();
+    let (_manager, wallet, coordinator) = configured(&host, &dir).await;
+    wallet.bind_shielded(&SEED, &[0]).await.unwrap();
+    let id = SubwalletId::new(wallet.wallet_id(), 0);
+
+    let clearing = coordinator
+        .try_admit_clear()
+        .expect("no operation is in flight");
+    let mut shield = {
+        let wallet = Arc::clone(&wallet);
+        tokio::spawn(async move {
+            wallet
+                .shielded_shield_from_account(
+                    0,
+                    0,
+                    1,
+                    &UnreachableAddressSigner,
+                    &CachedOrchardProver::new(),
+                )
+                .await
+        })
+    };
+    assert!(
+        tokio::time::timeout(Duration::from_millis(200), &mut shield)
+            .await
+            .is_err(),
+        "the shield waits for the admitted Clear"
+    );
+    clearing.clear(&*host).await.expect("the Clear runs");
+
+    let waited = shield.await.unwrap();
+    assert!(
+        matches!(waited, Err(PlatformWalletError::ShieldedNotBound)),
+        "{waited:?}"
+    );
+    let prover = CachedOrchardProver::new();
+    let later = wallet
+        .shielded_transfer_to(&SEED, 0, &[0; 43], 1, [0; 36], &prover)
+        .await;
+    assert!(
+        matches!(later, Err(PlatformWalletError::ShieldedNotBound)),
+        "any payment after the Clear is refused the same way: {later:?}"
+    );
+    assert!(
+        coordinator
+            .store()
+            .read()
+            .await
+            .get_activity(id, 0, 10)
+            .unwrap()
+            .is_empty(),
+        "a refused payment records no activity"
+    );
+
+    wallet.bind_shielded(&SEED, &[0]).await.unwrap();
+    let rebound = wallet
+        .shielded_transfer_to(&SEED, 0, &[0; 43], 1, [0; 36], &prover)
+        .await;
+    assert!(
+        rebound.is_err() && !matches!(rebound, Err(PlatformWalletError::ShieldedNotBound)),
+        "a bound wallet's payment is admitted and fails on its own input: {rebound:?}"
+    );
+}
+
 /// An identity signer that parks each proof-of-possession signature until
 /// the test releases it, as a host's signing prompt does.
 #[derive(Debug, Default)]
