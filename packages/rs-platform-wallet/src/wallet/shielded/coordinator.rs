@@ -1207,7 +1207,6 @@ impl NetworkShieldedCoordinator {
         // dropped; retained accounts are left untouched.
         if !stale.is_empty() {
             let mut store = self.store.write().await;
-            self.store_epoch.bump_wallet(&mut store, wallet_id);
             let mut purged = Vec::with_capacity(stale.len());
             for (id, _) in stale {
                 // The check above ran under a store guard it released. A
@@ -1237,17 +1236,21 @@ impl NetworkShieldedCoordinator {
                     );
                     continue;
                 }
-                purged.push(id);
-                if let Err(e) = store.purge_subwallet(id) {
-                    tracing::warn!(
+                match store.purge_subwallet(id) {
+                    Ok(()) => purged.push(id),
+                    Err(e) => tracing::warn!(
                         wallet_id = %hex::encode(id.wallet_id),
                         account = id.account_index,
                         error = %e,
                         "Failed to purge dropped subwallet store state on re-register"
-                    );
+                    ),
                 }
             }
+            // Purges first, wallet last: a pass that watched the epoch while
+            // this loop ran sees the wallet move and retries, instead of
+            // committing against a purge counter it never saw.
             self.store_epoch.bump_purged(&mut store, purged);
+            self.store_epoch.bump_wallet(&mut store, wallet_id);
         }
         Ok(())
     }
@@ -6556,8 +6559,8 @@ mod tests {
         );
         coordinator
             .store()
-            .write()
-            .await
+            .try_write()
+            .expect("the re-bind must release the store before waiting for fan-out")
             .arm_redrive(
                 account(1),
                 PendingRedrive {
@@ -6600,6 +6603,93 @@ mod tests {
                 .iter()
                 .any(|round| round.synced_indices.get(&account(1)) == Some(&4096)),
             "the kept account's watermark reaches the host: {rounds:?}"
+        );
+        drop(rounds);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A re-bind whose purge of a dropped account fails leaves that account's
+    /// store state in place, so it must not mark it purged: a pass that
+    /// committed a receipt for the account before the re-bind still hands the
+    /// host the note together with the watermark the store kept.
+    #[tokio::test]
+    async fn should_queue_a_pass_to_a_dropped_account_whose_purge_failed() {
+        let dir = temp_dir("fan_out_after_failed_purge");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let views = |account| {
+            OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, account)
+                .expect("derive viewing keys")
+                .viewing_keys()
+        };
+        let account = |index| SubwalletId::new(wallet_id, index);
+        let register = |accounts: &'static [u32], recorder: Arc<RecordingPersistence>| {
+            let account_views: BTreeMap<u32, AccountViewingKeys> =
+                accounts.iter().map(|a| (*a, views(*a))).collect();
+            coordinator.register_wallet(
+                wallet_id,
+                account_views,
+                WalletPersister::new(wallet_id, recorder),
+            )
+        };
+        register(&[0, 1], Arc::new(RecordingPersistence::default()))
+            .await
+            .unwrap();
+
+        let epoch = coordinator.store_epoch.watch();
+        let received = test_note([0xB2; 32], 3, false);
+        let mut pass = ShieldedChangeSet::default();
+        {
+            let mut store = coordinator.store().write().await;
+            store.save_note(account(1), &received).unwrap();
+            for index in [0, 1] {
+                store
+                    .set_last_synced_note_index(account(index), 4096)
+                    .unwrap();
+                pass.record_synced_index(account(index), 4096);
+            }
+            pass.record_note(account(1), received.clone());
+        }
+
+        let conn = rusqlite::Connection::open(dir.join("tree.sqlite")).expect("open db");
+        conn.execute_batch(
+            "ALTER TABLE shielded_pending_spends RENAME TO unavailable_pending_spends;",
+        )
+        .expect("break schema");
+        let replacement = Arc::new(RecordingPersistence::default());
+        let rebound = register(&[0], replacement.clone()).await;
+        conn.execute_batch(
+            "ALTER TABLE unavailable_pending_spends RENAME TO shielded_pending_spends;",
+        )
+        .expect("restore schema");
+        rebound.unwrap();
+        assert_eq!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .last_synced_note_index(account(1))
+                .unwrap(),
+            4096,
+            "the failed purge left the dropped account's store state"
+        );
+        coordinator.queue_pass_changeset(&epoch, pass).await;
+
+        let rounds = replacement.0.lock().unwrap();
+        assert!(
+            rounds.iter().any(
+                |round| round.notes_saved.get(&account(1)).is_some_and(|notes| notes
+                    .iter()
+                    .any(|note| note.nullifier == received.nullifier))
+            ),
+            "the unpurged account's receipt reaches the host: {rounds:?}"
+        );
+        assert!(
+            rounds
+                .iter()
+                .any(|round| round.synced_indices.get(&account(1)) == Some(&4096)),
+            "the unpurged account's watermark reaches the host: {rounds:?}"
         );
         drop(rounds);
 
