@@ -2914,19 +2914,47 @@ extension ManagedPlatformWallet {
         /// unspent (a reclaim top-up consumes it without creating this
         /// identity), so the claim can still fail late.
         public let alreadyClaimed: Bool
+        /// Whether this wallet made the claim: `true` only when the wallet
+        /// records the invitation's identity in one of its registration
+        /// slots, `false` whenever `alreadyClaimed` is false, and `nil` for
+        /// any other claimed invitation (no key the identity holds decides
+        /// it). Always `nil` for a claimed invitation from
+        /// ``invitationClaimStatus(uri:)``, which does not ask.
+        public let claimedByThisWallet: Bool?
 
+        /// `claimedByThisWallet` defaults to unknown; Rust reports `false`
+        /// for an unclaimed invitation.
         public init(
             prospectiveIdentityId: Data,
             amountDuffs: UInt64,
             isInstant: Bool,
             isChainLocked: Bool,
-            alreadyClaimed: Bool
+            alreadyClaimed: Bool,
+            claimedByThisWallet: Bool? = nil
         ) {
             self.prospectiveIdentityId = prospectiveIdentityId
             self.amountDuffs = amountDuffs
             self.isInstant = isInstant
             self.isChainLocked = isChainLocked
             self.alreadyClaimed = alreadyClaimed
+            self.claimedByThisWallet = claimedByThisWallet
+        }
+
+        init(_ ffi: InvitationClaimStatusFFI) {
+            let claimedByThisWallet: Bool?
+            switch ffi.claimed_by_this_wallet {
+            case UInt8(INVITATION_CLAIMED_BY_THIS_WALLET_NO): claimedByThisWallet = false
+            case UInt8(INVITATION_CLAIMED_BY_THIS_WALLET_YES): claimedByThisWallet = true
+            default: claimedByThisWallet = nil
+            }
+            self.init(
+                prospectiveIdentityId: withUnsafeBytes(of: ffi.prospective_identity_id) { Data($0) },
+                amountDuffs: ffi.amount_duffs,
+                isInstant: ffi.is_instant,
+                isChainLocked: ffi.is_chain_locked,
+                alreadyClaimed: ffi.already_claimed,
+                claimedByThisWallet: claimedByThisWallet
+            )
         }
     }
 
@@ -3031,6 +3059,25 @@ extension ManagedPlatformWallet {
     /// time gate. The contact-bootstrap ("establish contact with the
     /// sender?") is NOT done here — after a successful claim the UI asks the
     /// invitee and, on confirm, calls `sendContactRequest` for the reciprocal.
+    ///
+    /// Nothing is broadcast when Platform would refuse the claim and charge
+    /// the voucher: it throws `.invitationClaimedByThisWallet` (the wallet
+    /// already records the invitation's identity; load that identity),
+    /// `.assetLockAlreadyConsumed` (claimed by an identity the wallet does not
+    /// record: whose it is is unknown, usually someone else's, possibly an
+    /// earlier claim of this wallet whose result was lost before it was
+    /// recorded; no key the identity holds decides it),
+    /// `.invitationKeysAlreadyRegistered` with no consensus error (another
+    /// identity holds these keys)
+    /// or `.invitationNotReady` (retry once synced). The same
+    /// `.invitationKeysAlreadyRegistered` carrying a consensus error is
+    /// different: a key was registered after the lookup, Platform refused
+    /// the broadcast, and the voucher may have been charged.
+    /// `.assetLockNotChainLocked` means retry later. A node that has not seen an earlier landed claim
+    /// lets the retry through; Platform then refuses it, and the identity is
+    /// returned as the claim's result when it carries exactly these keys, or
+    /// reported as `.invitationClaimedByThisWallet` / `.assetLockAlreadyConsumed`
+    /// as above when it does not.
     ///
     /// Returns the freshly-registered invitee `ManagedIdentity`.
     public func claimInvitation(
@@ -3149,13 +3196,26 @@ extension ManagedPlatformWallet {
                     platform_wallet_invitation_claim_status(handle, uriPtr, &out)
                 }
                 try result.check()
-                return InvitationClaimStatus(
-                    prospectiveIdentityId: withUnsafeBytes(of: out.prospective_identity_id) { Data($0) },
-                    amountDuffs: out.amount_duffs,
-                    isInstant: out.is_instant,
-                    isChainLocked: out.is_chain_locked,
-                    alreadyClaimed: out.already_claimed
-                )
+                return InvitationClaimStatus(out)
+            }
+        }.value
+    }
+
+    /// ``invitationClaimStatus(uri:)``, plus whether this wallet made the
+    /// claim (``InvitationClaimStatus/claimedByThisWallet``): `true` only for
+    /// an identity the wallet records, `nil` for any other claimed
+    /// invitation. Same error contract as ``invitationClaimStatus(uri:)``.
+    public func invitationClaimStatusForThisWallet(uri: String) async throws -> InvitationClaimStatus {
+        // `self` stays alive for the whole call (up to ~12 s of funding-tx
+        // retries): a deinit mid-call would destroy the handle in use.
+        return try await Task.detached(priority: .userInitiated) { [self] () -> InvitationClaimStatus in
+            try withExtendedLifetime(self) {
+                var out = InvitationClaimStatusFFI()
+                let result = uri.withCString { uriPtr in
+                    platform_wallet_invitation_claim_status_for_identity(handle, uriPtr, &out)
+                }
+                try result.check()
+                return InvitationClaimStatus(out)
             }
         }.value
     }
