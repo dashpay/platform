@@ -577,6 +577,7 @@ fn known_grpc_endpoint(path: &str) -> &'static str {
                 "getIdentityByPublicKeyHash",
                 "getIdentityByNonUniquePublicKeyHash",
                 "waitForStateTransitionResult",
+                "getRecentStateTransitionStatus",
                 "getConsensusParams",
                 "getProtocolVersionUpgradeState",
                 "getProtocolVersionUpgradeVoteStatus",
@@ -587,6 +588,8 @@ fn known_grpc_endpoint(path: &str) -> &'static str {
                 "getContestedResourceVotersForIdentity",
                 "getContestedResourceIdentityVotes",
                 "getVotePollsByEndDate",
+                "getYesNoVotePollState",
+                "getMasternodeYesNoVote",
                 "getPrefundedSpecializedBalance",
                 "getTotalCreditsInPlatform",
                 "getPathElements",
@@ -618,6 +621,9 @@ fn known_grpc_endpoint(path: &str) -> &'static str {
                 "getShieldedPoolState",
                 "getShieldedNotesCount",
                 "getShieldedNullifiers",
+                "getPrivateDocumentEntries",
+                "getOwnerTransactionsInBlock",
+                "getBlocks",
             ]
         )
     })

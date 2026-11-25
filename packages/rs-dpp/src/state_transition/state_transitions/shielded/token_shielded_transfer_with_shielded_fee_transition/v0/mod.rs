@@ -56,6 +56,10 @@ pub struct TokenShieldedTransferWithShieldedFeeTransitionV0 {
     /// Halo 2 proof of the token bundle.
     pub token_proof: Vec<u8>,
     /// RedPallas binding signature of the token bundle.
+    #[cfg_attr(
+        all(feature = "serde-conversion", not(feature = "json-conversion")),
+        serde(with = "crate::serialization::serde_bytes")
+    )]
     pub token_binding_signature: [u8; 64],
     /// Orchard actions of the spend bundle in the credit shielded pool that pays the fee.
     pub fee_actions: Vec<SerializedAction>,
@@ -64,6 +68,10 @@ pub struct TokenShieldedTransferWithShieldedFeeTransitionV0 {
     /// Halo 2 proof of the fee bundle.
     pub fee_proof: Vec<u8>,
     /// RedPallas binding signature of the fee bundle.
+    #[cfg_attr(
+        all(feature = "serde-conversion", not(feature = "json-conversion")),
+        serde(with = "crate::serialization::serde_bytes")
+    )]
     pub fee_binding_signature: [u8; 64],
     /// Credits leaving the credit pool: the fee bundle's value balance.
     pub credit_amount: Credits,

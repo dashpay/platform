@@ -1,24 +1,23 @@
 mod v0;
+mod v1;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerInformation;
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds estimation costs for token balance changes based on the provided drive version.
     ///
-    /// This method updates the `estimated_costs_only_with_layer_info` HashMap with entries
+    /// This method updates the `estimated_costs_only_with_layer_info` `EstimatedLayers` with entries
     /// representing the estimated costs for different layers of the balance tree. The method
     /// adjusts its behavior depending on the provided `drive_version`, allowing it to support
     /// different versioned implementations for cost estimation.
     ///
     /// # Parameters
     /// - `token_id`: A 32-byte identifier for the token whose balance changes are being estimated.
-    /// - `estimated_costs_only_with_layer_info`: A mutable reference to a HashMap that holds
+    /// - `estimated_costs_only_with_layer_info`: A mutable reference to an `EstimatedLayers` that holds
     ///   `KeyInfoPath` and `EstimatedLayerInformation` for each token balance layer.
     /// - `drive_version`: The version of the drive to determine which estimation logic to apply.
     ///
@@ -31,7 +30,7 @@ impl Drive {
     /// This function will return an error if the provided `drive_version` does not match a known version.
     pub(crate) fn add_estimation_costs_for_token_balances(
         token_id: [u8; 32],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         match drive_version
@@ -47,9 +46,16 @@ impl Drive {
                 );
                 Ok(())
             }
+            1 => {
+                Self::add_estimation_costs_for_token_balances_v1(
+                    token_id,
+                    estimated_costs_only_with_layer_info,
+                );
+                Ok(())
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_estimation_costs_for_token_balances".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

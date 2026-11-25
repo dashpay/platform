@@ -152,7 +152,8 @@ class BlockHeadersSyncWorker extends Worker {
     await this.storage.saveState();
 
     if (!stopped) {
-      this.syncCheckpoint = bestBlockHeight;
+      // Continue from the chain's own tip, which a reorg may have moved
+      this.syncCheckpoint = blockHeadersProvider.spvChain.getTipHeight();
     }
     this.syncState = STATES.IDLE;
   }
@@ -237,41 +238,68 @@ class BlockHeadersSyncWorker extends Worker {
   }
 
   /**
-   * Listens for chain updates during the synchronization of historical headers
+   * Stores headers the SPV chain connected from `firstHeight` on. Headers at
+   * or below the last stored one come from a reorg and replace it.
+   * @param {BlockHeader[]} headers
+   * @param {number} firstHeight
+   * @return {number} height of the last header
    */
-  historicalChainUpdateHandler() {
+  storeConnectedHeaders(headers, firstHeight) {
+    const chainStore = this.storage.getDefaultChainStore();
+
+    if (!Number.isInteger(firstHeight) || !headers || !headers.length) {
+      throw new Error(`Invalid chain update of ${headers && headers.length} headers at height ${firstHeight}`);
+    }
+
+    if (firstHeight <= chainStore.state.lastSyncedHeaderHeight) {
+      chainStore.rewindHeaders(firstHeight);
+    }
+
+    // Stored headers must be consecutive, ending at lastSyncedHeaderHeight.
+    // Fill a gap before the new headers from what the SPV chain still keeps;
+    // if it can't be filled, start the stored headers over.
+    const { lastSyncedHeaderHeight } = chainStore.state;
+    const { spvChain } = this.transport.client.blockHeadersProvider;
+    const gap = [];
+    for (let height = firstHeight - 1; height > lastSyncedHeaderHeight; height -= 1) {
+      const header = spvChain.getHeaderAt(height);
+      if (!header) {
+        break;
+      }
+      gap.push(header);
+    }
+    const newHeaders = gap.reverse().concat(headers);
+    const storedHeaders = firstHeight - gap.length === lastSyncedHeaderHeight + 1
+      ? chainStore.state.blockHeaders
+      : [];
+
+    const lastHeight = firstHeight + headers.length - 1;
+    chainStore.setBlockHeaders(storedHeaders.concat(newHeaders).slice(-this.maxHeadersToKeep));
+
+    // Also restore the metadata of the header before them: transaction sync
+    // may have pruned it, and a wallet restored from storage restarts
+    // transaction sync at that block
+    const parentHeight = firstHeight - gap.length - 1;
+    const parent = parentHeight >= 0 ? spvChain.getHeaderAt(parentHeight) : undefined;
+    if (parent) {
+      chainStore.updateHeadersMetadata([parent], parentHeight);
+    }
+    chainStore.updateHeadersMetadata(newHeaders, lastHeight);
+    chainStore.updateLastSyncedHeaderHeight(lastHeight);
+    this.syncCheckpoint = lastHeight;
+
+    return lastHeight;
+  }
+
+  /**
+   * Listens for chain updates during the synchronization of historical headers
+   * @param {BlockHeader[]} headers
+   * @param {number} firstHeight
+   */
+  historicalChainUpdateHandler(headers, firstHeight) {
     try {
-      const chainStore = this.storage.getDefaultChainStore();
-      const { blockHeadersProvider } = this.transport.client;
-      const { spvChain } = blockHeadersProvider;
-
-      // TODO(spv): return only new headers added instead of the whole chain
-      const longestChain = spvChain.getLongestChain({ withPruned: true });
-      const { startBlockHeight } = spvChain;
-      const { lastSyncedHeaderHeight } = chainStore.state;
-
-      // TODO(spv): abstract this in spv chain?
-      const totalHeadersCount = startBlockHeight + longestChain.length - 1; // Ignore genesis block
-      const syncedHeadersCount = lastSyncedHeaderHeight;
-
-      if (syncedHeadersCount > totalHeadersCount) {
-        throw new Error(`Synced headers count ${syncedHeadersCount} is greater than total headers count ${totalHeadersCount}.`);
-      }
-
-      if (syncedHeadersCount < totalHeadersCount) {
-        // Update headers in the store
-        chainStore.setBlockHeaders(longestChain.slice(-this.maxHeadersToKeep));
-
-        const newLastSyncedHeaderHeight = totalHeadersCount;
-        const newHeaders = longestChain.slice(-(totalHeadersCount - syncedHeadersCount + 1));
-
-        chainStore.updateHeadersMetadata(newHeaders, newLastSyncedHeaderHeight);
-        chainStore.updateLastSyncedHeaderHeight(newLastSyncedHeaderHeight);
-        this.syncCheckpoint = newLastSyncedHeaderHeight;
-
-        this.storage.scheduleStateSave();
-      }
-
+      this.storeConnectedHeaders(headers, firstHeight);
+      this.storage.scheduleStateSave();
       this.scheduleProgressUpdate();
     } catch (e) {
       this.emitError(e);
@@ -279,42 +307,26 @@ class BlockHeadersSyncWorker extends Worker {
     }
   }
 
-  async continuousChainUpdateHandler(newHeaders, batchHeadHeight) {
+  /**
+   * @param {BlockHeader[]} headers
+   * @param {number} firstHeight
+   */
+  async continuousChainUpdateHandler(headers, firstHeight) {
     try {
       const chainStore = this.storage.getDefaultChainStore();
+      const { lastSyncedHeaderHeight, chainHeight } = chainStore.state;
+      const newChainHeight = this.storeConnectedHeaders(headers, firstHeight);
 
-      if (typeof batchHeadHeight !== 'number' || Number.isNaN(batchHeadHeight)) {
-        throw new Error(`Invalid batch head height ${batchHeadHeight}`);
+      if (newChainHeight > chainHeight) {
+        chainStore.updateChainHeight(newChainHeight);
+      } else if (firstHeight <= lastSyncedHeaderHeight && chainHeight === lastSyncedHeaderHeight) {
+        // A reorg to a chain with more work but no more headers. A chain
+        // height ahead of the headers came from elsewhere and stays.
+        chainStore.state.chainHeight = newChainHeight;
       }
-
-      if (!newHeaders || !newHeaders.length) {
-        throw new Error(`No new headers received for batch at height ${batchHeadHeight}`);
-      }
-
-      const newChainHeight = batchHeadHeight + newHeaders.length - 1;
-
-      const { chainHeight } = chainStore.state;
-      // Ignore height overlap in case of the stream reconnected
-      if (newChainHeight === chainHeight) {
-        this.logger.debug(`[BlockHeadersSyncWorker] New chain height ${newChainHeight} is equal to current one: ${chainHeight}`);
-        return;
-      } if (newChainHeight < chainHeight) {
-        throw new Error(`New chain height ${newChainHeight} is less than latest height ${chainHeight}`);
-      }
-
-      const { blockHeadersProvider: { spvChain } } = this.transport.client;
-      // TODO(spv): request only new headers instead of the whole chain
-      const longestChain = spvChain.getLongestChain({ withPruned: true });
-
-      chainStore.updateChainHeight(newChainHeight);
-      chainStore.updateLastSyncedHeaderHeight(newChainHeight);
-      chainStore.setBlockHeaders(longestChain.slice(-this.maxHeadersToKeep));
-      chainStore.updateHeadersMetadata(newHeaders, newChainHeight);
-      const header = newHeaders[newHeaders.length - 1];
 
       this.logger.debug(`[BlockHeadersSyncWorker] Chain height updated: ${newChainHeight}`);
-      this.logger.debug(`[--------------------->] Validity chain length: ${spvChain.getLongestChain().length}`);
-      this.logger.debug(`[--------------------->] New block hash: ${header.hash}`);
+      this.logger.debug(`[--------------------->] New block hash: ${headers[headers.length - 1].hash}`);
 
       this.parentEvents.emit(EVENTS.BLOCKHEIGHT_CHANGED, newChainHeight);
 
@@ -335,14 +347,12 @@ class BlockHeadersSyncWorker extends Worker {
     const { blockHeadersProvider } = this.transport.client;
     // TODO(spv): consider caching progress data in historicalChainUpdateHandler
     // and use values from there instead of duplicated computation
-    const longestChain = blockHeadersProvider.spvChain.getLongestChain({ withPruned: true });
-    const { orphanChunks, startBlockHeight } = blockHeadersProvider.spvChain;
-    const totalOrphans = orphanChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    const { spvChain } = blockHeadersProvider;
+    const totalOrphans = spvChain.orphanChunks.reduce((sum, chunk) => sum + chunk.length, 0);
 
     const totalCount = chainStore.state.chainHeight; // Including root block
 
-    // TODO(spv): hide these calculations in the SPVChain
-    const confirmedSyncedCount = startBlockHeight + longestChain.length - 1; // Ignore genesis block
+    const confirmedSyncedCount = spvChain.getTipHeight(); // Ignore genesis block
     const totalSyncedCount = confirmedSyncedCount + totalOrphans;
 
     const confirmedProgress = Math.round((confirmedSyncedCount / totalCount) * 1000) / 10;
@@ -352,7 +362,7 @@ class BlockHeadersSyncWorker extends Worker {
     this.logger.debug(`[--------------------->] Confirmed: ${confirmedSyncedCount}/${totalCount}, ${confirmedProgress}%`);
     this.logger.debug(`[--------------------->] Total: ${totalSyncedCount}/${totalCount}, ${totalProgress}%`);
     if (confirmedProgress === 100) {
-      this.logger.debug(`[--------------------->] Last header: ${longestChain[longestChain.length - 1].hash}`);
+      this.logger.debug(`[--------------------->] Last header: ${spvChain.getTipHash()}`);
     }
 
     this.parentEvents.emit(EVENTS.HEADERS_SYNC_PROGRESS, {

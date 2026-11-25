@@ -16,11 +16,12 @@ use dash_sdk::platform::{
 };
 use dash_sdk::Error;
 use dpp::address_funds::PlatformAddress;
-use dpp::dashcore::{hashes::Hash, ProTxHash};
+use dpp::dashcore::ProTxHash;
 use dpp::data_contract::DataContractFactory;
 use dpp::platform_value::platform_value;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
+use drive::query::document_history_drive_query::DocumentHistoryFilter;
 use drive::query::{
     contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery,
     vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery,
@@ -98,6 +99,7 @@ macro_rules! proof_only {
                 let settings = QuerySettings {
                     request_settings: &settings,
                     protocol_version: PlatformVersion::latest(),
+                    verified_protocol_version: 0,
                     prove: false,
                 };
                 let input = $input;
@@ -112,6 +114,7 @@ macro_rules! proof_only {
                 let settings = QuerySettings {
                     request_settings: &settings,
                     protocol_version: PlatformVersion::latest(),
+                    verified_protocol_version: 0,
                     prove: true,
                 };
                 let input = $input;
@@ -168,17 +171,16 @@ proof_only!(
         data_contract_id: id(),
         document_type_name: "domain".into(),
         document_id: other_id(),
-        start_at_ms: 123,
-        limit: Some(2),
-        offset: None
+        filter: DocumentHistoryFilter::StartAtTime(123),
+        limit: Some(2)
     },
     proto::GetDocumentHistoryRequest,
     |request: proto::GetDocumentHistoryRequest| {
-        let Some(proto::get_document_history_request::Version::V0(v0)) = request.version else {
-            panic!("expected V0 request")
+        let Some(proto::get_document_history_request::Version::V1(v1)) = request.version else {
+            panic!("expected V1 request")
         };
-        assert!(v0.prove);
-        assert_eq!(v0.document_id, other_id().to_vec());
+        assert!(v1.prove);
+        assert_eq!(v1.document_id, other_id().to_vec());
     }
 );
 
@@ -764,12 +766,48 @@ proof_only!(
     }
 );
 
+/// Once the network has proven a protocol that serves V1, the proved lookup is V1 and
+/// keeps its proof flag and cursor; an unproved one is still refused locally.
+#[test]
+fn should_preserve_proved_non_unique_key_request_as_v1() {
+    let request_settings = RequestSettings::default();
+    for prove in [true, false] {
+        let settings = QuerySettings {
+            request_settings: &request_settings,
+            protocol_version: PlatformVersion::latest(),
+            verified_protocol_version: PlatformVersion::latest().protocol_version,
+            prove,
+        };
+        let query = NonUniquePublicKeyHashQuery {
+            key_hash: [3; 20],
+            after: Some([2; 32]),
+        };
+        let result = <_ as Query<IdentityRequest>>::query(&query, &settings);
+        if !prove {
+            assert_config(result.unwrap_err(), UNPROVED_MESSAGE);
+            continue;
+        }
+        let IdentityRequest::GetIdentityByNonUniquePublicKeyHash(request) = result.unwrap() else {
+            panic!("expected identity request variant")
+        };
+        let Some(proto::get_identity_by_non_unique_public_key_hash_request::Version::V1(v1)) =
+            request.version
+        else {
+            panic!("expected V1 request")
+        };
+        assert!(v1.prove);
+        assert_eq!(v1.public_key_hash, vec![3; 20]);
+        assert_eq!(v1.start_after, Some(vec![2; 32]));
+    }
+}
+
 #[test]
 fn should_reject_proved_quorum_info_before_transport() {
     let request_settings = RequestSettings::default();
     let settings = QuerySettings {
         request_settings: &request_settings,
         protocol_version: PlatformVersion::latest(),
+        verified_protocol_version: 0,
         prove: true,
     };
     assert_config(
@@ -788,6 +826,7 @@ fn should_preserve_unproved_quorum_info() {
     let settings = QuerySettings {
         request_settings: &request_settings,
         protocol_version: PlatformVersion::latest(),
+        verified_protocol_version: 0,
         prove: false,
     };
     let raw = <NoParamQuery as Query<proto::GetCurrentQuorumsInfoRequest>>::query(
@@ -807,6 +846,7 @@ fn should_reject_unsupported_modes_for_older_protocol_versions() {
     let settings = QuerySettings {
         request_settings: &request_settings,
         protocol_version: PlatformVersion::get(1).unwrap(),
+        verified_protocol_version: 0,
         prove: false,
     };
     assert_config(
@@ -827,6 +867,7 @@ fn should_reject_unproved_epoch_conveniences() {
     let settings = QuerySettings {
         request_settings: &request_settings,
         protocol_version: PlatformVersion::latest(),
+        verified_protocol_version: 0,
         prove: false,
     };
     assert_config(
@@ -858,6 +899,7 @@ fn should_preserve_raw_wire_requests_under_both_settings() {
         let settings = QuerySettings {
             request_settings: &request_settings,
             protocol_version: PlatformVersion::latest(),
+            verified_protocol_version: 0,
             prove,
         };
         let raw = proto::GetIdentityRequest {
@@ -901,6 +943,7 @@ fn should_preserve_forced_proofs_for_rich_document_queries() {
     let settings = QuerySettings {
         request_settings: &request_settings,
         protocol_version: PlatformVersion::latest(),
+        verified_protocol_version: 0,
         prove: false,
     };
     let retained: dash_sdk::platform::DocumentQuery = query.query(&settings).unwrap();
@@ -921,6 +964,7 @@ fn should_preserve_proved_requests_for_older_protocol_versions() {
     let settings = QuerySettings {
         request_settings: &request_settings,
         protocol_version: PlatformVersion::get(1).unwrap(),
+        verified_protocol_version: 0,
         prove: true,
     };
     let identity = <Identifier as Query<IdentityRequest>>::query(&id(), &settings).unwrap();

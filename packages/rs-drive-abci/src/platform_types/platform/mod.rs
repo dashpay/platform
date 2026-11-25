@@ -11,6 +11,7 @@ use std::fmt::{Debug, Formatter};
 
 use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
 use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
+use crate::platform_types::state_transition_execution_proofs::StateTransitionExecutionProofs;
 use arc_swap::ArcSwap;
 use dpp::prelude::BlockHeight;
 use dpp::serialization::PlatformDeserializableFromVersionedStructureTrusted;
@@ -54,6 +55,9 @@ pub struct Platform<C> {
     pub core_rpc: C,
     /// CheckTx-only proof-verification admission control
     pub(crate) check_tx_proof_verifier: CheckTxProofVerifier,
+    /// The state transitions this node was asked to prove the state before and after, and
+    /// the proofs it has made of them
+    pub(crate) state_transition_execution_proofs: StateTransitionExecutionProofs,
 }
 
 // @append_only
@@ -167,15 +171,27 @@ impl<C> Platform<C> {
         // when no records exist; a failure leaves the records for the
         // per-block flush to retry.
         if let Some(platform_version) = current_platform_version {
-            if let Err(error) = drive
+            match drive
                 .grove
                 .flush_pending_prefix_drops(&platform_version.drive.grove_version)
             {
-                tracing::warn!(
-                    ?error,
-                    "failed to flush pending prefix drops at startup; records persist and \
-                     will be retried after the next block"
-                );
+                Ok(report) => {
+                    if report.unresolved_records > 0 {
+                        tracing::warn!(
+                            unresolved_records = report.unresolved_records,
+                            first_unresolved_error = report.first_unresolved_error.as_deref(),
+                            "pending prefix drops left unresolved at startup; records persist \
+                             and will be retried after the next block"
+                        );
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        ?error,
+                        "failed to flush pending prefix drops at startup; records persist and \
+                         will be retried after the next block"
+                    );
+                }
             }
         }
 
@@ -277,6 +293,7 @@ impl<C> Platform<C> {
             config,
             core_rpc,
             check_tx_proof_verifier: CheckTxProofVerifier::default(),
+            state_transition_execution_proofs: StateTransitionExecutionProofs::new(height),
         };
 
         Ok(platform)
@@ -315,6 +332,7 @@ impl<C> Platform<C> {
             config,
             core_rpc,
             check_tx_proof_verifier: CheckTxProofVerifier::default(),
+            state_transition_execution_proofs: StateTransitionExecutionProofs::new(height),
         })
     }
 }

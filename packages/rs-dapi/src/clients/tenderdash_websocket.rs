@@ -95,6 +95,12 @@ impl TenderdashWebSocketClient {
         self.block_sender.subscribe()
     }
 
+    /// Report a connection, for a test that delivers the events itself.
+    #[cfg(test)]
+    pub(crate) fn set_connected_for_test(&self) {
+        self.is_connected.store(true, Ordering::Relaxed);
+    }
+
     /// Test WebSocket connection without establishing a persistent connection
     pub async fn test_connection(ws_url: &str) -> DAPIResult<()> {
         tracing::trace!("Testing WebSocket connection to {}", ws_url);
@@ -143,7 +149,7 @@ impl TenderdashWebSocketClient {
         });
 
         ws_sender
-            .send(Message::Text(subscribe_msg.to_string()))
+            .send(Message::Text(subscribe_msg.to_string().into()))
             .await?;
 
         // Subscribe to new block events
@@ -156,7 +162,7 @@ impl TenderdashWebSocketClient {
             }
         });
         ws_sender
-            .send(Message::Text(subscribe_block_msg.to_string()))
+            .send(Message::Text(subscribe_block_msg.to_string().into()))
             .await?;
 
         debug!("Subscribed to Tenderdash transaction events");

@@ -175,6 +175,8 @@ http_filters:
 - IP whitelist: `platform.gateway.rateLimiter.whitelist`
 - IP blacklist: `platform.gateway.rateLimiter.blacklist`
 
+`Platform/getBlocks` has its own fixed limit of 30 requests per hour for each IP, instead of the limit above, because DAPI is for looking blocks up and not for syncing a chain. The blacklist and whitelist apply to it as well.
+
 ## TLS/SSL Configuration
 
 The Gateway supports multiple SSL configuration options:

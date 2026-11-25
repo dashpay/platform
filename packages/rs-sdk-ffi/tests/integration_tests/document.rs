@@ -2,7 +2,15 @@
 
 use crate::config::Config;
 use crate::ffi_utils::*;
+use dash_sdk::dpp::version::v12::PROTOCOL_VERSION_12;
+use dash_sdk::dpp::version::PlatformVersion;
 use rs_sdk_ffi::*;
+
+/// The protocol version that signed the recorded document vectors. The SDK replaying them
+/// starts there: document query answers verify only at the protocol version that signed them.
+fn recorded_version() -> &'static PlatformVersion {
+    PlatformVersion::get(PROTOCOL_VERSION_12).expect("known protocol version")
+}
 
 /// Test fetching a non-existent document
 #[test]
@@ -11,7 +19,10 @@ fn test_document_read_not_found() {
 
     let cfg = Config::new();
     // Use vectors where the contract exists but document does not
-    let handle = create_test_sdk_handle("document_read_no_document");
+    let handle = create_test_sdk_handle_with_initial_version(
+        "document_read_no_document",
+        recorded_version(),
+    );
 
     // First fetch the data contract
     let contract_id = to_c_string(&cfg.existing_data_contract_id);
@@ -49,7 +60,7 @@ fn test_document_read() {
     setup_logs();
 
     let cfg = Config::new();
-    let handle = create_test_sdk_handle("document_read");
+    let handle = create_test_sdk_handle_with_initial_version("document_read", recorded_version());
 
     // First fetch the data contract
     let contract_id = to_c_string(&cfg.existing_data_contract_id);
@@ -101,7 +112,10 @@ fn test_document_read() {
 fn test_document_search_with_order_by() {
     setup_logs();
 
-    let handle = create_test_sdk_handle("test_document_read_complex");
+    let handle = create_test_sdk_handle_with_initial_version(
+        "test_document_read_complex",
+        recorded_version(),
+    );
 
     // DPNS contract ID and domain document type
     let contract_id = to_c_string("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec");

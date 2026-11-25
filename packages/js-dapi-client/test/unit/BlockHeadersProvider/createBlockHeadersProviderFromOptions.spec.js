@@ -40,6 +40,30 @@ describe('#createBlockHeadersProviderFromOptions', () => {
     });
   });
 
+  it('should validate a devnet\'s headers with the settings it was started with', () => {
+    options = {
+      network: 'devnet',
+      blockHeadersProviderOptions: {
+        powTargetSpacing: 60,
+        minimumDifficultyBlocks: 1000,
+      },
+    };
+
+    const provider = createBlockHeadersProviderFromOptions(options, coreMethodsMock);
+
+    expect(provider.spvChain.consensusNetwork).to.deep.equal({
+      network: 'devnet',
+      powTargetSpacing: 60,
+      minimumDifficultyBlocks: 1000,
+    });
+  });
+
+  it('should validate a network\'s headers with its own rules by default', () => {
+    const provider = createBlockHeadersProviderFromOptions(options, coreMethodsMock);
+
+    expect(provider.spvChain.consensusNetwork).to.equal('testnet');
+  });
+
   it('should validate options', () => {
     const badOptions = {
       maxRetries: 200,

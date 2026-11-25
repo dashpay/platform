@@ -35,9 +35,9 @@ use std::sync::Arc;
 
 use dash_sdk::platform::types::identity::NonUniquePublicKeyHashQuery;
 use dash_sdk::platform::Fetch;
-use dashcore::hashes::{hash160, Hash};
-use dashcore::secp256k1::{PublicKey as SecpPublicKey, SecretKey as SecpSecretKey};
-use dashcore::{Network, PrivateKey};
+use dashcore::blockdata::script::Script;
+use dashcore::crypto::ecdsa::EcdsaSecretKey;
+use dashcore::{Network, PrivateKey, PublicKey};
 use dpp::bls::{PublicKey as BlsPublicKey, SecretKey as BlsSecretKey};
 use dpp::ed25519_dalek::SigningKey;
 use dpp::identifier::MasternodeIdentifiers;
@@ -45,6 +45,7 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{Identity, Purpose};
 use dpp::prelude::Identifier;
+use dpp::secp256k1::SecretKey as SecpSecretKey;
 use zeroize::Zeroizing;
 
 use super::list::{find_in_summaries, MasternodeListQuery, MasternodeListSummary};
@@ -315,7 +316,7 @@ pub fn parse_locator_input(
         }
         return Ok(ParsedLocatorInput {
             candidates: vec![MasternodeLocatorInput::Secret(LocatorSecret::Ecdsa {
-                secret: Zeroizing::new(key.inner.to_secret_bytes()),
+                secret: key.inner.to_bytes(),
                 compressed: key.compressed,
             })],
         });
@@ -358,14 +359,13 @@ pub fn parse_locator_input(
 /// hash160 of the secp256k1 public key for `secret`, or `None` when the
 /// scalar is out of range.
 pub fn ecdsa_key_id(secret: &[u8; 32], compressed: bool) -> Option<[u8; 20]> {
-    let sk = SecpSecretKey::from_secret_bytes(*secret).ok()?;
-    let pk = SecpPublicKey::from_secret_key(&sk);
-    let bytes: Vec<u8> = if compressed {
-        pk.serialize().to_vec()
+    let public = EcdsaSecretKey::from_bytes(secret).ok()?.public_key();
+    let public = if compressed {
+        PublicKey::new(public)
     } else {
-        pk.serialize_uncompressed().to_vec()
+        PublicKey::new_uncompressed(public)
     };
-    Some(hash160::Hash::hash(&bytes).to_byte_array())
+    Some(public.pubkey_hash().to_byte_array())
 }
 
 /// The ids Platform may give the operator identity of a masternode whose list
@@ -865,19 +865,10 @@ impl MasternodeKeyReference {
 /// hash160 of a standard P2PKH script (`OP_DUP OP_HASH160 <20> OP_EQUALVERIFY
 /// OP_CHECKSIG`), else `None`.
 pub fn p2pkh_script_hash(script: &[u8]) -> Option<[u8; 20]> {
-    if script.len() == 25
-        && script[0] == 0x76
-        && script[1] == 0xa9
-        && script[2] == 0x14
-        && script[23] == 0x88
-        && script[24] == 0xac
-    {
-        let mut out = [0u8; 20];
-        out.copy_from_slice(&script[3..23]);
-        Some(out)
-    } else {
-        None
-    }
+    Script::from_bytes(script)
+        .p2pkh_public_key_hash_bytes()?
+        .try_into()
+        .ok()
 }
 
 /// Result of checking a key against a role.

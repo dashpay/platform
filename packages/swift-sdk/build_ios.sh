@@ -33,8 +33,6 @@ STAGING_DIR=""
 # Crates whose cbindgen-generated headers ship in the unified framework.
 # Order matters: earlier headers define types referenced by later ones.
 INCLUDED_CRATES=(
-  dash-network
-  key-wallet-ffi
   rs-sdk-ffi
   platform-wallet-ffi
 )

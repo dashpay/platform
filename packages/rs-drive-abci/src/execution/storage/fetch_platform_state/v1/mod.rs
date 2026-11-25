@@ -4,7 +4,7 @@ use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::platform_state_for_saving::PlatformStateForSaving;
 use crate::platform_types::platform_state::PlatformState;
-use dpp::bincode::config;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use drive::drive::platform_state::PlatformStateEntryKind;
@@ -24,21 +24,19 @@ impl<C> Platform<C> {
             return Ok(None);
         };
 
-        let record: PlatformStateForSaving = bincode::decode_from_slice(
-            &bytes,
-            config::standard().with_big_endian().with_no_limit(),
-        )
-        .map(|(record, _)| record)
-        .map_err(|e| {
-            tracing::error!(
-                bytes = hex::encode(&bytes),
-                "Unable deserialize platform state for version {}",
-                platform_version.protocol_version
-            );
-            Error::Protocol(ProtocolError::PlatformDeserializationError(format!(
-                "unable to deserialize PlatformStateForSaving: {e}"
-            )))
-        })?;
+        let record: PlatformStateForSaving =
+            bincode::decode_from_slice(&bytes, PLATFORM_BINCODE_CONFIG)
+                .map(|(record, _)| record)
+                .map_err(|e| {
+                    tracing::error!(
+                        bytes = hex::encode(&bytes),
+                        "Unable deserialize platform state for version {}",
+                        platform_version.protocol_version
+                    );
+                    Error::Protocol(ProtocolError::PlatformDeserializationError(format!(
+                        "unable to deserialize PlatformStateForSaving: {e}"
+                    )))
+                })?;
 
         let PlatformStateForSaving::V2(record) = record else {
             // An earlier structure carries the whole state itself, possibly with

@@ -617,7 +617,8 @@ fn system_values_for_write(
 /// The first rule of `document_type`'s `propertyConstraints` that `document`
 /// breaks, in name order, as consensus judges a create or replace: its
 /// properties with every `generatedFrom` property generated from its params,
-/// as the transition builders send them, its owner for `$ownerId`, its system
+/// as the transition builders send them (a rule reading one generated from
+/// state, `sys.tokens`, which they leave out, is not judged), its owner for `$ownerId`, its system
 /// times and heights as [`system_values_for_write`] estimates them, and
 /// `stored`, the version it replaces, for the paths through `$old.`, judged by
 /// the code consensus judges with (`validate_property_constraints`).

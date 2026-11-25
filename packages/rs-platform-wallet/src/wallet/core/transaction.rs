@@ -103,7 +103,6 @@ fn checked_fee(fee_rate: FeeRate, size_bytes: usize) -> Result<u64, PlatformWall
 /// the hash — so a zero hash stands in for the real destination, which the
 /// caller has not chosen yet at send-max time.
 fn modeled_output_script() -> ScriptBuf {
-    use dashcore::hashes::Hash;
     ScriptBuf::new_p2pkh(&PubkeyHash::from_byte_array([0u8; 20]))
 }
 
@@ -641,6 +640,16 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             let (wallet, info) = manager
                 .get_wallet_and_info_mut(&self.wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound("wallet not found".into()))?;
+            // Bound to this handle's generation, as the release is: a wallet
+            // re-created under the same id since the caller last checked would
+            // otherwise reserve the NEW generation's inputs under a build
+            // stamped with the old one, which the generation-bound release
+            // then refuses to free.
+            if !Arc::ptr_eq(&info.generation, self.generation()) {
+                return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
+                    self.wallet_id,
+                )));
+            }
 
             let height = info.core_wallet.last_processed_height();
 
@@ -1006,7 +1015,7 @@ mod tests {
     use std::sync::Arc;
 
     use async_trait::async_trait;
-    use dashcore::secp256k1::{ecdsa, PublicKey};
+    use dashcore::crypto::ecdsa::{EcdsaPublicKey as PublicKey, EcdsaSignature};
     use dashcore::{Address as DashAddress, Network};
     use key_wallet::account::account_type::StandardAccountType;
     use key_wallet::signer::{Signer, SignerMethod};
@@ -1019,8 +1028,8 @@ mod tests {
     use crate::broadcaster::TransactionBroadcaster;
     use crate::test_support::{
         funded_wallet_manager, funded_wallet_manager_dual_standard,
-        funded_wallet_manager_with_contact, AlwaysMaybeSentBroadcaster, AlwaysOkBroadcaster,
-        AlwaysRejectedBroadcaster, WalletSigner,
+        funded_wallet_manager_with_contact, funded_wallet_manager_with_outputs,
+        AlwaysMaybeSentBroadcaster, AlwaysOkBroadcaster, AlwaysRejectedBroadcaster, WalletSigner,
     };
     use key_wallet::wallet::managed_wallet_info::fee::{estimate_tx_size, FeeRate};
 
@@ -1661,6 +1670,63 @@ mod tests {
         );
     }
 
+    /// A handle whose wallet was re-created under the same id since the
+    /// caller last checked funds nothing: the build is refused before it
+    /// reserves the new generation's inputs, which the old handle's
+    /// generation-bound release could never free.
+    #[tokio::test]
+    async fn should_reserve_nothing_when_finalizing_from_a_recreated_generation() {
+        let (manager, wallet_id, generation, signer) =
+            funded_wallet_manager_with_outputs(StandardAccountType::BIP44Account, &[1_200_000])
+                .await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let broadcaster = Arc::new(AlwaysOkBroadcaster);
+        let stale = CoreWallet::new(
+            Arc::clone(&sdk),
+            Arc::clone(&manager),
+            wallet_id,
+            Arc::clone(&broadcaster),
+            generation,
+        );
+        let fresh_generation = Arc::new(crate::wallet::core::WalletGeneration::new());
+        {
+            let mut wm = manager.write().await;
+            let (_, info) = wm
+                .get_wallet_and_info_mut(&wallet_id)
+                .expect("wallet present in manager");
+            info.generation = Arc::clone(&fresh_generation);
+        }
+
+        let refused = stale
+            .finalize_transaction(
+                payment_builder(50),
+                &crate::SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::WalletRemovedBeforeSend(_))
+            ),
+            "got {refused:?}"
+        );
+        // One coin: the re-created generation can only fund this if the
+        // refused build left it unreserved.
+        let fresh = CoreWallet::new(sdk, manager, wallet_id, broadcaster, fresh_generation);
+        let funded = fresh
+            .finalize_transaction(
+                payment_builder(51),
+                &crate::SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await
+            .expect("the refused build reserved nothing");
+        fresh.abandon_transaction(&funded).await;
+    }
+
     fn payment_builder(tag: u8) -> TransactionBuilder {
         TransactionBuilder::new().add_output(
             &DashAddress::dummy(Network::Testnet, usize::from(tag)),
@@ -1906,7 +1972,7 @@ mod tests {
             &self,
             _path: &DerivationPath,
             _sighash: [u8; 32],
-        ) -> Result<(ecdsa::Signature, PublicKey), Self::Error> {
+        ) -> Result<(EcdsaSignature, PublicKey), Self::Error> {
             Err("intentional signer failure")
         }
 
@@ -2006,5 +2072,206 @@ mod tests {
                 .await,
             Err(PlatformWalletError::CoreInsufficientFunds { .. })
         ));
+    }
+
+    const DASH: u64 = 100_000_000;
+    const SPARE: u64 = 5 * DASH;
+
+    /// A BIP44 core wallet holding a 1,000 DASH masternode collateral, locked
+    /// by the registration the wallet processed, and one 5 DASH coin.
+    async fn collateral_core() -> (
+        CoreWallet<AlwaysOkBroadcaster>,
+        WalletSigner,
+        dashcore::OutPoint,
+        dashcore::OutPoint,
+    ) {
+        let (manager, wallet_id, generation, signer, collateral, spare) =
+            crate::test_support::wallet_manager_with_registered_collateral(
+                StandardAccountType::BIP44Account,
+                SPARE,
+            )
+            .await;
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        (
+            CoreWallet::new(
+                sdk,
+                manager,
+                wallet_id,
+                Arc::new(AlwaysOkBroadcaster),
+                generation,
+            ),
+            signer,
+            collateral,
+            spare,
+        )
+    }
+
+    fn largest_first_send(amount: u64) -> TransactionBuilder {
+        TransactionBuilder::new()
+            .set_selection_strategy(SelectionStrategy::LargestFirst)
+            .add_output(&DashAddress::dummy(Network::Testnet, 90), amount)
+    }
+
+    /// Sending 1 DASH from a wallet holding a 1,000 DASH collateral and a
+    /// 5 DASH coin spends the 5 DASH coin. Largest-first would reach for the
+    /// collateral first, and the drain would sweep it, if the lock did not
+    /// keep it out of selection.
+    #[tokio::test]
+    async fn should_send_from_the_spare_coin_and_never_the_masternode_collateral() {
+        let (core, signer, _collateral, spare) = collateral_core().await;
+
+        let finalized = core
+            .finalize_transaction(
+                largest_first_send(DASH),
+                &crate::SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await
+            .expect("the spare coin covers 1 DASH");
+        let inputs: Vec<_> = finalized
+            .transaction()
+            .input
+            .iter()
+            .map(|input| input.previous_output)
+            .collect();
+        assert_eq!(inputs, vec![spare], "only the spare coin may be spent");
+        core.abandon_transaction(&finalized).await;
+
+        let drain = core
+            .finalize_transaction(
+                TransactionBuilder::new()
+                    .set_selection_strategy(SelectionStrategy::All)
+                    .add_output(&DashAddress::dummy(Network::Testnet, 91), 0),
+                &crate::SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await
+            .expect("the drain spends the spare coin");
+        let inputs: Vec<_> = drain
+            .transaction()
+            .input
+            .iter()
+            .map(|input| input.previous_output)
+            .collect();
+        assert_eq!(
+            inputs,
+            vec![spare],
+            "a drain must leave the collateral alone"
+        );
+        core.abandon_transaction(&drain).await;
+    }
+
+    /// A payment only the collateral could cover is refused rather than
+    /// funded from it.
+    #[tokio::test]
+    async fn should_refuse_a_send_only_the_masternode_collateral_could_cover() {
+        let (core, signer, _collateral, _spare) = collateral_core().await;
+        let err = core
+            .finalize_transaction(
+                largest_first_send(6 * DASH),
+                &crate::SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await
+            .expect_err("6 DASH needs the collateral");
+        assert!(
+            matches!(err, PlatformWalletError::CorePooledInsufficientFunds { .. }),
+            "expected a funding shortfall, got {err:?}"
+        );
+    }
+
+    /// The spendable pool and the max-sendable figure count the spare coin
+    /// only, so a host offering "send max" never offers the collateral.
+    #[tokio::test]
+    async fn should_leave_the_masternode_collateral_out_of_max_sendable() {
+        let (core, _signer, _collateral, _spare) = collateral_core().await;
+        let sources = [AccountTypePreference::BIP44];
+        assert_eq!(
+            core.pooled_spendable_balance(&sources[..], 0)
+                .await
+                .expect("pooled balance"),
+            SPARE
+        );
+        let fee = FeeRate::normal().calculate_fee(estimate_tx_size(1, 1, false));
+        assert_eq!(
+            core.pooled_max_sendable(&sources[..], 0, None)
+                .await
+                .expect("max sendable"),
+            SPARE - fee,
+            "max sendable is the spare coin less the fee of spending it alone"
+        );
+    }
+
+    /// A caller-seeded copy of the collateral is dropped, not spent: a
+    /// reservation-only build seeded with nothing but the collateral has
+    /// nothing to fund from.
+    #[tokio::test]
+    async fn should_not_spend_a_seeded_masternode_collateral() {
+        let (core, signer, collateral, _spare) = collateral_core().await;
+        let seeded = {
+            let wm = core.wallet_manager.read().await;
+            let info = wm
+                .get_wallet_info(&core.wallet_id())
+                .expect("wallet present in manager");
+            info.core_wallet
+                .first_bip44_managed_account()
+                .expect("bip44 managed account")
+                .utxos
+                .get(&collateral)
+                .cloned()
+                .expect("the wallet holds its collateral")
+        };
+        let err = core
+            .finalize_transaction_with_options(
+                largest_first_send(DASH).add_inputs([seeded]),
+                &[AccountTypePreference::BIP44],
+                0,
+                &signer,
+                true,
+            )
+            .await
+            .expect_err("the seeded collateral must not fund the send");
+        assert!(
+            matches!(err, PlatformWalletError::CoreInsufficientFunds { .. }),
+            "expected a funding shortfall, got {err:?}"
+        );
+    }
+
+    /// Unlocking the collateral hands it back to coin selection:
+    /// largest-first then spends it.
+    #[tokio::test]
+    async fn should_spend_the_masternode_collateral_after_an_explicit_unlock() {
+        let (core, signer, collateral, _spare) = collateral_core().await;
+        {
+            let mut wm = core.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&core.wallet_id())
+                .expect("wallet present in manager");
+            assert!(info.core_wallet.unlock_outpoint(&collateral));
+        }
+        let finalized = core
+            .finalize_transaction(
+                largest_first_send(DASH),
+                &crate::SEND_FUNDING_SOURCES,
+                0,
+                &signer,
+            )
+            .await
+            .expect("the unlocked collateral funds the send");
+        let inputs: Vec<_> = finalized
+            .transaction()
+            .input
+            .iter()
+            .map(|input| input.previous_output)
+            .collect();
+        assert_eq!(
+            inputs,
+            vec![collateral],
+            "largest-first takes the collateral"
+        );
+        core.abandon_transaction(&finalized).await;
     }
 }

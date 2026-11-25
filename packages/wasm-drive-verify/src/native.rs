@@ -66,6 +66,7 @@ mod tests {
     };
     use dpp::data_contract::DataContract;
     use dpp::data_contracts::SystemDataContract;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
     use dpp::system_data_contracts::load_system_data_contract;
     use dpp::version::PlatformVersion;
     use drive::error::proof::ProofError;
@@ -74,8 +75,7 @@ mod tests {
 
     /// A bincode-encoded GroveDB proof envelope discriminant with no payload.
     fn envelope_only_proof(version: u32) -> Vec<u8> {
-        bincode::encode_to_vec(version, bincode::config::standard().with_big_endian())
-            .expect("encode envelope version")
+        bincode::encode_to_vec(version, PLATFORM_BINCODE_CONFIG).expect("encode envelope version")
     }
 
     fn assert_rejected_envelope(result: Result<(), Error>) {

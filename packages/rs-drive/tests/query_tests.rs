@@ -68,7 +68,6 @@ use dpp::document::serialization_traits::{
     DocumentCborMethodsV0, DocumentPlatformConversionMethodsV0,
 };
 use dpp::document::{DocumentV0Getters, DocumentV0Setters};
-use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::identity::TimestampMillis;
 use dpp::platform_value;
 use dpp::platform_value::string_encoding::Encoding;
@@ -78,12 +77,10 @@ use dpp::serialization::ValueConvertible;
 use dpp::tests::json_document::json_document_to_contract;
 #[cfg(feature = "server")]
 use dpp::util::cbor_serializer;
-use dpp::version::fee::FeeVersion;
 use dpp::version::PlatformVersion;
 #[cfg(feature = "server")]
 use drive::drive::contract::test_helpers::add_init_contracts_structure_operations;
 use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
-use once_cell::sync::Lazy;
 use rand::prelude::StdRng;
 
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
@@ -280,7 +277,6 @@ pub fn setup_family_tests(
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
     }
@@ -355,7 +351,6 @@ fn setup_family_tests_with_people(
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
     }
@@ -430,7 +425,6 @@ pub fn setup_countable_family_tests(
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
     }
@@ -502,7 +496,6 @@ pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, DataContr
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
     }
@@ -575,7 +568,6 @@ pub fn setup_family_tests_only_first_name_index(count: u32, seed: u64) -> (Drive
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
     }
@@ -935,7 +927,6 @@ pub fn add_domains_to_contract(
                 true,
                 transaction,
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
     }
@@ -977,7 +968,6 @@ pub fn add_withdrawals_to_contract(
                 true,
                 transaction,
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
     }
@@ -1232,7 +1222,6 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, DataContract) {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
     }
@@ -2235,7 +2224,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
 
@@ -2280,7 +2268,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
 
@@ -2705,10 +2692,11 @@ mod tests {
             .expect("there is always a root hash");
 
         // protocol version 14 stores the contract's version item beside the contract, one more
-        // element under the contract's root subtree in the app hash
+        // element under the contract's root subtree in the app hash; from protocol version 15
+        // the contract is stored compiled (format version 2)
         let expected_app_hash = vec![
-            218, 33, 80, 218, 65, 176, 16, 169, 104, 175, 188, 231, 236, 145, 201, 88, 151, 196,
-            11, 21, 153, 97, 32, 182, 177, 196, 215, 23, 155, 178, 252, 57,
+            92, 61, 19, 245, 61, 176, 235, 45, 246, 99, 166, 165, 143, 81, 71, 235, 144, 188, 138,
+            101, 254, 68, 244, 4, 150, 10, 64, 154, 98, 76, 255, 49,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3581,7 +3569,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
 
@@ -3626,7 +3613,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
 
@@ -4028,12 +4014,13 @@ mod tests {
             .expect("there is always a root hash");
 
         // protocol version 14 stores the contract's version item beside the contract, one more
-        // element under the contract's root subtree in the app hash
+        // element under the contract's root subtree in the app hash; from protocol version 15
+        // the contract is stored compiled (format version 2)
         assert_eq!(
             root_hash.as_slice(),
             vec![
-                21, 138, 176, 60, 123, 198, 114, 129, 174, 239, 252, 191, 174, 54, 60, 119, 96,
-                161, 70, 31, 203, 77, 107, 203, 74, 7, 53, 142, 227, 142, 63, 87
+                74, 54, 41, 255, 135, 251, 74, 33, 130, 213, 152, 233, 67, 25, 57, 192, 2, 119, 12,
+                251, 29, 227, 38, 49, 231, 56, 236, 90, 219, 214, 167, 145
             ],
         );
     }
@@ -4043,9 +4030,6 @@ mod tests {
     fn test_family_person_update() {
         let platform_version = PlatformVersion::latest();
         let (drive, contract) = setup_family_tests(10, 73509, platform_version);
-
-        let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
-            Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
 
         let db_transaction = drive.grove.start_transaction();
 
@@ -4093,7 +4077,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
 
@@ -4123,7 +4106,6 @@ mod tests {
                 storage_flags,
                 Some(&db_transaction),
                 platform_version,
-                Some(&epoch_change_fee_version_test),
             )
             .expect("expected to override document");
         assert!(fee.storage_fee > 0);
@@ -4184,10 +4166,11 @@ mod tests {
             .expect("there is always a root hash");
 
         // protocol version 14 stores the contract's version item beside the contract, one more
-        // element under the contract's root subtree in the app hash
+        // element under the contract's root subtree in the app hash; from protocol version 15
+        // the contract is stored compiled (format version 2)
         let expected_app_hash = vec![
-            218, 33, 80, 218, 65, 176, 16, 169, 104, 175, 188, 231, 236, 145, 201, 88, 151, 196,
-            11, 21, 153, 97, 32, 182, 177, 196, 215, 23, 155, 178, 252, 57,
+            92, 61, 19, 245, 61, 176, 235, 45, 246, 99, 166, 165, 143, 81, 71, 235, 144, 188, 138,
+            101, 254, 68, 244, 4, 150, 10, 64, 154, 98, 76, 255, 49,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -5048,9 +5031,6 @@ mod tests {
 
         let platform_version = PlatformVersion::latest();
 
-        let epoch_change_fee_version_test: Lazy<CachedEpochIndexFeeVersions> =
-            Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
-
         let db_transaction = drive.grove.start_transaction();
 
         let root_hash = drive
@@ -5060,10 +5040,11 @@ mod tests {
             .expect("there is always a root hash");
 
         // protocol version 14 stores the contract's version item beside the contract, one more
-        // element under the contract's root subtree in the app hash
+        // element under the contract's root subtree in the app hash; from protocol version 15
+        // the contract is stored compiled (format version 2)
         let expected_app_hash = vec![
-            43, 45, 143, 165, 228, 213, 155, 164, 47, 219, 35, 54, 79, 234, 90, 122, 172, 124, 7,
-            244, 136, 209, 187, 215, 29, 158, 150, 192, 111, 90, 161, 136,
+            37, 66, 65, 115, 192, 227, 95, 200, 67, 244, 49, 58, 166, 2, 98, 210, 47, 207, 13, 44,
+            90, 51, 176, 229, 73, 208, 93, 153, 88, 130, 192, 64,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -5158,7 +5139,6 @@ mod tests {
                     true,
                     Some(&db_transaction),
                     platform_version,
-                    Some(&epoch_change_fee_version_test),
                 )
                 .expect("expected to be able to delete the document");
         }
@@ -5186,10 +5166,11 @@ mod tests {
 
         // Make sure the state is deterministic
         // protocol version 14 stores the contract's version item beside the contract, one more
-        // element under the contract's root subtree in the app hash
+        // element under the contract's root subtree in the app hash; from protocol version 15
+        // the contract is stored compiled (format version 2)
         let expected_app_hash = vec![
-            218, 33, 80, 218, 65, 176, 16, 169, 104, 175, 188, 231, 236, 145, 201, 88, 151, 196,
-            11, 21, 153, 97, 32, 182, 177, 196, 215, 23, 155, 178, 252, 57,
+            92, 61, 19, 245, 61, 176, 235, 45, 246, 99, 166, 165, 143, 81, 71, 235, 144, 188, 138,
+            101, 254, 68, 244, 4, 150, 10, 64, 154, 98, 76, 255, 49,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6162,10 +6143,11 @@ mod tests {
             .expect("there is always a root hash");
 
         // protocol version 14 stores the contract's version item beside the contract, one more
-        // element under the contract's root subtree in the app hash
+        // element under the contract's root subtree in the app hash; from protocol version 15
+        // the contract is stored compiled (format version 2)
         let expected_app_hash = vec![
-            139, 60, 156, 135, 222, 1, 254, 248, 208, 89, 108, 46, 135, 74, 5, 211, 186, 59, 198,
-            190, 189, 140, 59, 55, 104, 93, 14, 14, 176, 255, 184, 76,
+            119, 45, 48, 0, 143, 30, 16, 190, 245, 70, 103, 196, 20, 213, 21, 214, 130, 249, 79,
+            50, 31, 27, 193, 104, 163, 68, 255, 21, 36, 154, 69, 194,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -6261,10 +6243,11 @@ mod tests {
             .expect("there is always a root hash");
 
         // protocol version 14 stores the contract's version item beside the contract, one more
-        // element under the contract's root subtree in the app hash
+        // element under the contract's root subtree in the app hash; from protocol version 15
+        // the contract is stored compiled (format version 2)
         let expected_app_hash = vec![
-            139, 60, 156, 135, 222, 1, 254, 248, 208, 89, 108, 46, 135, 74, 5, 211, 186, 59, 198,
-            190, 189, 140, 59, 55, 104, 93, 14, 14, 176, 255, 184, 76,
+            119, 45, 48, 0, 143, 30, 16, 190, 245, 70, 103, 196, 20, 213, 21, 214, 130, 249, 79,
+            50, 31, 27, 193, 104, 163, 68, 255, 21, 36, 154, 69, 194,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6360,10 +6343,11 @@ mod tests {
             .expect("there is always a root hash");
 
         // protocol version 14 stores the contract's version item beside the contract, one more
-        // element under the contract's root subtree in the app hash
+        // element under the contract's root subtree in the app hash; from protocol version 15
+        // the contract is stored compiled (format version 2)
         let expected_app_hash = vec![
-            139, 60, 156, 135, 222, 1, 254, 248, 208, 89, 108, 46, 135, 74, 5, 211, 186, 59, 198,
-            190, 189, 140, 59, 55, 104, 93, 14, 14, 176, 255, 184, 76,
+            119, 45, 48, 0, 143, 30, 16, 190, 245, 70, 103, 196, 20, 213, 21, 214, 130, 249, 79,
+            50, 31, 27, 193, 104, 163, 68, 255, 21, 36, 154, 69, 194,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6459,10 +6443,11 @@ mod tests {
             .expect("there is always a root hash");
 
         // protocol version 14 stores the contract's version item beside the contract, one more
-        // element under the contract's root subtree in the app hash
+        // element under the contract's root subtree in the app hash; from protocol version 15
+        // the contract is stored compiled (format version 2)
         let expected_app_hash = vec![
-            139, 60, 156, 135, 222, 1, 254, 248, 208, 89, 108, 46, 135, 74, 5, 211, 186, 59, 198,
-            190, 189, 140, 59, 55, 104, 93, 14, 14, 176, 255, 184, 76,
+            119, 45, 48, 0, 143, 30, 16, 190, 245, 70, 103, 196, 20, 213, 21, 214, 130, 249, 79,
+            50, 31, 27, 193, 104, 163, 68, 255, 21, 36, 154, 69, 194,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6594,7 +6579,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
 
@@ -6638,7 +6622,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
 
@@ -6657,10 +6640,11 @@ mod tests {
             .expect("there is always a root hash");
 
         // protocol version 14 stores the contract's version item beside the contract, one more
-        // element under the contract's root subtree in the app hash
+        // element under the contract's root subtree in the app hash; from protocol version 15
+        // the contract is stored compiled (format version 2)
         let expected_app_hash = vec![
-            201, 164, 185, 154, 195, 116, 101, 180, 218, 13, 252, 38, 54, 2, 210, 37, 220, 242, 85,
-            66, 251, 209, 71, 98, 255, 217, 93, 3, 15, 184, 33, 119,
+            233, 15, 202, 8, 172, 197, 50, 42, 37, 33, 16, 122, 126, 213, 111, 81, 88, 13, 151, 55,
+            194, 191, 94, 56, 87, 149, 160, 43, 90, 95, 59, 170,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -6801,7 +6785,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
 
@@ -6848,7 +6831,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
 
@@ -6867,10 +6849,11 @@ mod tests {
             .expect("there is always a root hash");
 
         // protocol version 14 stores the contract's version item beside the contract, one more
-        // element under the contract's root subtree in the app hash
+        // element under the contract's root subtree in the app hash; from protocol version 15
+        // the contract is stored compiled (format version 2)
         let expected_app_hash = vec![
-            201, 164, 185, 154, 195, 116, 101, 180, 218, 13, 252, 38, 54, 2, 210, 37, 220, 242, 85,
-            66, 251, 209, 71, 98, 255, 217, 93, 3, 15, 184, 33, 119,
+            233, 15, 202, 8, 172, 197, 50, 42, 37, 33, 16, 122, 126, 213, 111, 81, 88, 13, 151, 55,
+            194, 191, 94, 56, 87, 149, 160, 43, 90, 95, 59, 170,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -7023,7 +7006,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
 
@@ -7068,7 +7050,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("document should be inserted");
 
@@ -7087,10 +7068,11 @@ mod tests {
             .expect("there is always a root hash");
 
         // protocol version 14 stores the contract's version item beside the contract, one more
-        // element under the contract's root subtree in the app hash
+        // element under the contract's root subtree in the app hash; from protocol version 15
+        // the contract is stored compiled (format version 2)
         let expected_app_hash = vec![
-            201, 164, 185, 154, 195, 116, 101, 180, 218, 13, 252, 38, 54, 2, 210, 37, 220, 242, 85,
-            66, 251, 209, 71, 98, 255, 217, 93, 3, 15, 184, 33, 119,
+            233, 15, 202, 8, 172, 197, 50, 42, 37, 33, 16, 122, 126, 213, 111, 81, 88, 13, 151, 55,
+            194, 191, 94, 56, 87, 149, 160, 43, 90, 95, 59, 170,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -7312,8 +7294,8 @@ mod tests {
         // `pooling`, `coreFeePerByte` and `transactionIndex` are unsigned. The system
         // withdrawals contract keeps them i64, whose keys do not change
         let expected_app_hash = vec![
-            45, 251, 231, 200, 213, 139, 245, 60, 137, 163, 52, 115, 114, 123, 35, 84, 59, 57, 201,
-            6, 224, 117, 195, 143, 119, 197, 175, 115, 0, 102, 105, 28,
+            39, 79, 30, 231, 184, 19, 239, 83, 110, 164, 56, 18, 201, 117, 50, 237, 201, 198, 84,
+            73, 135, 188, 194, 147, 81, 126, 213, 245, 167, 147, 164, 117,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -7399,8 +7381,8 @@ mod tests {
         // `pooling`, `coreFeePerByte` and `transactionIndex` are unsigned. The system
         // withdrawals contract keeps them i64, whose keys do not change
         let expected_app_hash = vec![
-            45, 251, 231, 200, 213, 139, 245, 60, 137, 163, 52, 115, 114, 123, 35, 84, 59, 57, 201,
-            6, 224, 117, 195, 143, 119, 197, 175, 115, 0, 102, 105, 28,
+            39, 79, 30, 231, 184, 19, 239, 83, 110, 164, 56, 18, 201, 117, 50, 237, 201, 198, 84,
+            73, 135, 188, 194, 147, 81, 126, 213, 245, 167, 147, 164, 117,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -7510,8 +7492,8 @@ mod tests {
         // `pooling`, `coreFeePerByte` and `transactionIndex` are unsigned. The system
         // withdrawals contract keeps them i64, whose keys do not change
         let expected_app_hash = vec![
-            45, 251, 231, 200, 213, 139, 245, 60, 137, 163, 52, 115, 114, 123, 35, 84, 59, 57, 201,
-            6, 224, 117, 195, 143, 119, 197, 175, 115, 0, 102, 105, 28,
+            39, 79, 30, 231, 184, 19, 239, 83, 110, 164, 56, 18, 201, 117, 50, 237, 201, 198, 84,
+            73, 135, 188, 194, 147, 81, 126, 213, 245, 167, 147, 164, 117,
         ];
 
         assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -8170,7 +8152,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("should add document");
 
@@ -8405,7 +8386,6 @@ mod tests {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("should add document");
         }
@@ -9621,7 +9601,6 @@ mod gapped_index_query_tests {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("should add document");
         }
@@ -9945,7 +9924,6 @@ mod dpns_identity_records_paging {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("expected to insert a domain document");
         }

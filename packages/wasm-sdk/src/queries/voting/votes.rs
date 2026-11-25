@@ -3,10 +3,9 @@ use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use crate::WasmSdkError;
 use dash_sdk::dpp::platform_value::Identifier;
-use dash_sdk::dpp::voting::votes::resource_vote::ResourceVote;
 use dash_sdk::platform::FetchMany;
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
-use drive_proof_verifier::types::ResourceVotesByIdentity;
+use drive_proof_verifier::types::{ResourceVoteWithCount, ResourceVotesByIdentity};
 use js_sys::Map;
 use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -126,7 +125,40 @@ fn parse_contested_resource_identity_votes_query(
     build_contested_resource_identity_votes_query(input)
 }
 
-/// Convert ResourceVotesByIdentity to a Map<string, ResourceVote>.
+/// The vote an identity currently has on a vote poll, with the number of times the identity
+/// has voted on that poll.
+#[derive(Clone)]
+#[wasm_bindgen(js_name = "ResourceVoteWithCount")]
+pub struct ResourceVoteWithCountWasm {
+    resource_vote: ResourceVoteWasm,
+    vote_count: u16,
+}
+
+impl From<ResourceVoteWithCount> for ResourceVoteWithCountWasm {
+    fn from(vote: ResourceVoteWithCount) -> Self {
+        Self {
+            resource_vote: vote.resource_vote.into(),
+            vote_count: vote.vote_count,
+        }
+    }
+}
+
+#[wasm_bindgen(js_class = ResourceVoteWithCount)]
+impl ResourceVoteWithCountWasm {
+    /// The identity's current vote on the vote poll.
+    #[wasm_bindgen(getter = resourceVote)]
+    pub fn resource_vote(&self) -> ResourceVoteWasm {
+        self.resource_vote.clone()
+    }
+
+    /// How many times the identity has voted on the vote poll, the current vote included.
+    #[wasm_bindgen(getter = voteCount)]
+    pub fn vote_count(&self) -> u16 {
+        self.vote_count
+    }
+}
+
+/// Convert ResourceVotesByIdentity to a Map<string, ResourceVoteWithCount>.
 fn resource_votes_to_map(votes: ResourceVotesByIdentity) -> Map {
     let map = Map::new();
 
@@ -136,7 +168,7 @@ fn resource_votes_to_map(votes: ResourceVotesByIdentity) -> Map {
         };
 
         let key: JsValue = IdentifierWasm::from(vote_id).to_base58().into();
-        let value = JsValue::from(ResourceVoteWasm::from(vote));
+        let value = JsValue::from(ResourceVoteWithCountWasm::from(vote));
 
         map.set(&key, &value);
     }
@@ -148,7 +180,7 @@ fn resource_votes_to_map(votes: ResourceVotesByIdentity) -> Map {
 impl WasmSdk {
     #[wasm_bindgen(
         js_name = "getContestedResourceIdentityVotes",
-        unchecked_return_type = "Map<string, ResourceVote>"
+        unchecked_return_type = "Map<string, ResourceVoteWithCount>"
     )]
     pub async fn get_contested_resource_identity_votes(
         &self,
@@ -156,23 +188,26 @@ impl WasmSdk {
     ) -> Result<Map, WasmSdkError> {
         let drive_query = parse_contested_resource_identity_votes_query(query)?;
 
-        let votes = ResourceVote::fetch_many(self.as_ref(), drive_query).await?;
+        let votes = ResourceVoteWithCount::fetch_many(self.as_ref(), drive_query).await?;
 
         Ok(resource_votes_to_map(votes))
     }
 
     #[wasm_bindgen(
         js_name = "getContestedResourceIdentityVotesWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, ResourceVote>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, ResourceVoteWithCount>>"
     )]
     pub async fn get_contested_resource_identity_votes_with_proof_info(
         &self,
         query: ContestedResourceIdentityVotesQueryJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let drive_query = parse_contested_resource_identity_votes_query(query)?;
-        let (votes, metadata, proof) =
-            ResourceVote::fetch_many_with_metadata_and_proof(self.as_ref(), drive_query, None)
-                .await?;
+        let (votes, metadata, proof) = ResourceVoteWithCount::fetch_many_with_metadata_and_proof(
+            self.as_ref(),
+            drive_query,
+            None,
+        )
+        .await?;
 
         let votes_map = resource_votes_to_map(votes);
 

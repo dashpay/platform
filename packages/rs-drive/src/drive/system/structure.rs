@@ -1,6 +1,7 @@
 use crate::drive::balances::{TOTAL_SYSTEM_CREDITS_STORAGE_KEY, TOTAL_TOKEN_SUPPLIES_STORAGE_KEY};
 use crate::drive::document::expiration::paths::DOCUMENTS_EXPIRATIONS_KEY;
 use crate::drive::initialization::genesis_core_height::GENESIS_CORE_HEIGHT_KEY;
+use crate::drive::system::core_fork_activations::CORE_FORK_V24_ACTIVATION_KEY;
 use crate::drive::RootTree;
 use crate::structure::{ElementKind, KeyEncoding, KeyMatcher, StructureNode};
 
@@ -11,8 +12,9 @@ pub(crate) fn structure() -> StructureNode {
         .source("packages/rs-drive/src/drive/mod.rs")
         .describe(
             "Chain wide values: total credits, total token \
-             supplies, the genesis core height, and the documents \
-             waiting to expire.",
+             supplies, the genesis core height, the Core forks \
+             Platform has seen active, and the documents waiting \
+             to expire.",
         )
         .children(vec![
             StructureNode::fixed(
@@ -30,6 +32,25 @@ pub(crate) fn structure() -> StructureNode {
                 "The core chain height Platform started at. \
                  Written when the chain is initialized, after the \
                  structure.",
+            ),
+            StructureNode::fixed(
+                "core_fork_v24",
+                CORE_FORK_V24_ACTIVATION_KEY,
+                "CoreForkV24Activation",
+                "CORE_FORK_V24_ACTIVATION_KEY",
+            )
+            .kind(ElementKind::Item)
+            .lazy()
+            .since(15)
+            .source("packages/rs-drive/src/drive/system/core_fork_activations/mod.rs")
+            .value("u32 big endian")
+            .describe(
+                "The chain locked Core height of the first block that \
+                 saw Dash Core's V24 active: the coinbase of that Core \
+                 block has payload version 4 or higher. Written once, \
+                 by a block that moves the chain locked height, or at \
+                 init chain; never changed. The key is `F` and the \
+                 fork's id.",
             ),
             StructureNode::fixed(
                 "documents_expirations",

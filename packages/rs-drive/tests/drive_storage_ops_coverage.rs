@@ -871,6 +871,7 @@ mod document_operation_tests {
         let id = dpp::prelude::Identifier::new([2u8; 32]);
         let _op = DocumentOperationType::DeleteDocument {
             document_id: id,
+            deleter_id: None,
             contract_info: drive::util::object_size_info::DataContractInfo::DataContractId(
                 dpp::prelude::Identifier::new([3u8; 32]),
             ),
@@ -960,6 +961,7 @@ mod grovedb_op_batch_tests {
     use drive::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
     use grovedb::batch::{GroveOp, QualifiedGroveDbOp};
     use grovedb::{Element, TreeType};
+    use platform_version::version::PlatformVersion;
 
     #[test]
     fn new_batch_is_empty() {
@@ -1384,7 +1386,9 @@ mod grovedb_op_batch_tests {
     #[test]
     fn verify_consistency_of_empty_batch() {
         let batch = GroveDbOpBatch::new();
-        let results = batch.verify_consistency_of_operations();
+        let results = batch
+            .verify_consistency_of_operations(&PlatformVersion::latest().drive.grove_version)
+            .expect("expected to check the batch");
         // An empty batch should have no inconsistencies
         assert!(
             results.is_empty(),

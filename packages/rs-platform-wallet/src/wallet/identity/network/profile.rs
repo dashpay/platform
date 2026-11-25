@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::{Document, DocumentV0Getters};
+use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 #[cfg(test)]
 use dpp::identity::identity_public_key::Purpose;
@@ -14,6 +15,7 @@ use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::Value;
 use dpp::prelude::Identifier;
 
+use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
 use dash_sdk::platform::dashpay::ProfileFields;
 
 use super::*;
@@ -176,9 +178,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 })?
         };
 
-        let created = self
+        let (created, owner_balance, metadata) = self
             .sdk
-            .create_profile(
+            .create_profile_with_owner_balance_and_metadata(
                 &dashpay_contract,
                 *identity_id,
                 fields,
@@ -188,7 +190,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .await
             .map_err(PlatformWalletError::Sdk)?;
 
-        Ok(self.cache_own_profile(identity_id, &created).await)
+        Ok(self
+            .record_own_profile_write(identity_id, &created, owner_balance, metadata)
+            .await)
     }
 
     /// Update an existing DashPay profile document using an
@@ -238,9 +242,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
         // The returned profile overwrites the local cache, so it must
         // reflect the merged on-platform state, not the partial input.
-        let merged = self
+        let (merged, owner_balance, metadata) = self
             .sdk
-            .update_profile(
+            .update_profile_with_owner_balance_and_metadata(
                 &dashpay_contract,
                 *identity_id,
                 fields,
@@ -250,16 +254,24 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             .await
             .map_err(PlatformWalletError::Sdk)?;
 
-        Ok(self.cache_own_profile(identity_id, &merged).await)
+        Ok(self
+            .record_own_profile_write(identity_id, &merged, owner_balance, metadata)
+            .await)
     }
 
-    /// Cache the profile document Platform confirmed for an own identity, in
-    /// the same sanitized form the sync path caches, and return it.
-    async fn cache_own_profile(
+    /// Keep what a confirmed profile write of an own identity proved: the
+    /// owner's balance its proof carries, as every proven document write
+    /// keeps it, and the profile document, cached in the same sanitized form
+    /// the sync path caches and returned.
+    pub(super) async fn record_own_profile_write(
         &self,
         identity_id: &Identifier,
         document: &Document,
+        owner_balance: Option<Credits>,
+        metadata: ResponseMetadata,
     ) -> DashPayProfile {
+        self.persist_proven_owner_balance(identity_id, owner_balance, metadata)
+            .await;
         let profile = cacheable_profile(document.properties());
         let mut wm = self.wallet_manager.write().await;
         if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {

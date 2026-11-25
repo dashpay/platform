@@ -1,3 +1,4 @@
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::BatchInsertTreeApplyType;
 
 use crate::drive::Drive;
@@ -25,7 +26,6 @@ use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements
 use grovedb::EstimatedLayerSizes::AllSubtrees;
 use grovedb::EstimatedSumTrees::{AllCountTrees, NoSumTrees};
 use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds contested indices for the contract operations
@@ -41,9 +41,7 @@ impl Drive {
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -66,6 +64,36 @@ impl Drive {
             .owned_document_info
             .document_info
             .get_storage_flags_ref();
+        // The key the poll keeps this contender under: its owner's id, or, in a vote among
+        // documents, its own id, so that an identity may enter several. No contract
+        // registered before protocol version 15 declares that resolution, so every poll
+        // before it keys its contenders by their owners, as it always did.
+        let contender_key = if contested_index
+            .contested_index
+            .as_ref()
+            .is_some_and(|contested| contested.resolution.contenders_are_documents())
+        {
+            match document_and_contract_info
+                .owned_document_info
+                .document_info
+                .get_document_id_as_slice()
+            {
+                Some(document_id) => <[u8; 32]>::try_from(document_id).map_err(|_| {
+                    Error::Drive(DriveError::CorruptedCodeExecution(
+                        "a contested document's id must be 32 bytes",
+                    ))
+                })?,
+                // An estimate has no document: any key of this size prices the contender
+                None if estimated_costs_only_with_layer_info.is_some() => owner_id,
+                None => {
+                    return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "a contested document must have an id",
+                    )))
+                }
+            }
+        } else {
+            owner_id
+        };
 
         // we need to construct the path for documents on the contract
         // the path is
@@ -242,7 +270,7 @@ impl Drive {
         }
 
         self.batch_insert_empty_tree_if_not_exists(
-            DriveKeyInfo::Key(owner_id.to_vec()).add_path_info(index_path_info.clone()),
+            DriveKeyInfo::Key(contender_key.to_vec()).add_path_info(index_path_info.clone()),
             TreeType::NormalTree,
             storage_flags,
             choice_apply_type,
@@ -277,7 +305,7 @@ impl Drive {
         )?;
 
         let mut towards_identity_index_path_info = index_path_info.clone();
-        towards_identity_index_path_info.push(DriveKeyInfo::Key(owner_id.to_vec()))?;
+        towards_identity_index_path_info.push(DriveKeyInfo::Key(contender_key.to_vec()))?;
 
         //                Inter-wizard championship (event type)
         //                             |
@@ -352,14 +380,16 @@ mod tests {
 
     /// A drive holding the DPNS contract
     fn drive_with_dpns() -> (Drive, DataContract) {
+        drive_with_dpns_of(PlatformVersion::latest().protocol_version)
+    }
+
+    /// A drive holding the DPNS contract of `protocol_version`
+    fn drive_with_dpns_of(protocol_version: u32) -> (Drive, DataContract) {
         let platform_version = PlatformVersion::latest();
         let drive = setup_drive_with_initial_state_structure(Some(platform_version));
-        let dpns_contract = get_dpns_data_contract_fixture(
-            Some(Identifier::from([7; 32])),
-            0,
-            platform_version.protocol_version,
-        )
-        .data_contract_owned();
+        let dpns_contract =
+            get_dpns_data_contract_fixture(Some(Identifier::from([7; 32])), 0, protocol_version)
+                .data_contract_owned();
         drive
             .apply_contract(
                 &dpns_contract,
@@ -430,7 +460,9 @@ mod tests {
     #[test]
     fn should_keep_the_plain_tree_of_a_poll_started_before_protocol_version_14() {
         let platform_version = PlatformVersion::latest();
-        let (drive, dpns_contract) = drive_with_dpns();
+        // A chain running a contest at protocol version 13 stores DPNS v2, which every later
+        // version reads too; v3 is written with type shorthands protocol version 13 does not parse
+        let (drive, dpns_contract) = drive_with_dpns_of(13);
         add_dpns_name_contenders(
             &drive,
             &dpns_contract,

@@ -36,8 +36,8 @@ use super::{PersistenceCapabilities, PlatformWalletPersistence};
 /// was recorded — the earliest height whose block the scanner is guaranteed to
 /// test against this contact's addresses. It is stored per contact rather than
 /// as one wallet-wide floor because a contact's checkpoint can *drop* after it
-/// was covered (the reciprocal request turns out to be older than ours, or a
-/// rotation falls back to wallet birth): a wallet-wide floor would then read
+/// was covered (an older outgoing publication becomes known, or a rotation
+/// falls back to wallet birth): a wallet-wide floor would then read
 /// as "still covered" for blocks the scan never tested with that contact.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

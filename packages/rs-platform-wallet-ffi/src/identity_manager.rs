@@ -4,7 +4,7 @@ use crate::handle::*;
 use crate::types::*;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 use platform_wallet::wallet::persister::{NoPlatformPersistence, WalletPersister};
-use platform_wallet::IdentityManager;
+use platform_wallet::{IdentityManager, PlatformWalletError};
 use std::sync::Arc;
 
 pub(crate) fn ffi_noop_persister() -> WalletPersister {
@@ -65,13 +65,20 @@ pub unsafe extern "C" fn identity_manager_remove_identity(
         manager.remove_identity(&id, &ffi_noop_persister())
     });
     let result = unwrap_option_or_return!(option);
-    if result.is_err() {
-        return PlatformWalletFFIResult::err(
+    match result {
+        Ok(_) => PlatformWalletFFIResult::ok(),
+        // Refused while the identity's contact request channel is held: a
+        // request in flight or a private payment that may still execute (71),
+        // or one not restored yet (72).
+        Err(
+            error @ (PlatformWalletError::PrivateContactRequestPending(_)
+            | PlatformWalletError::PrivateContactPaymentsNotRestored),
+        ) => PlatformWalletFFIResult::from(error),
+        Err(_) => PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorIdentityNotFound,
             "Identity not found",
-        );
+        ),
     }
-    PlatformWalletFFIResult::ok()
 }
 
 /// Get an identity by ID. `identity_id` is a `*const u8` to a

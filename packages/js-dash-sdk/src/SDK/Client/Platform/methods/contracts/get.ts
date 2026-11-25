@@ -11,20 +11,29 @@ declare type ContractIdentifier = string | Identifier;
  *
  * @param {Platform} this - bound instance class
  * @param {ContractIdentifier} identifier - identifier of the contract to fetch
+ * @param {Object} [options]
+ * @param {boolean} [options.skipCache] - fetch the contract the network stores now,
+ * ignoring an app's cached one, and cache it in its place
  * @returns contracts
  */
-export async function get(this: Platform, identifier: ContractIdentifier): Promise<any> {
+export async function get(
+  this: Platform,
+  identifier: ContractIdentifier,
+  options: { skipCache?: boolean } = {},
+): Promise<any> {
   this.logger.debug(`[Contracts#get] Get Data Contract "${identifier}"`);
   await this.initialize();
 
   const contractId : Identifier = Identifier.from(identifier);
 
   // Try to get contract from the cache
-  // eslint-disable-next-line
-  for (const appName of this.client.getApps().getNames()) {
-    const appDefinition = this.client.getApps().get(appName);
-    if (appDefinition.contractId.equals(contractId) && appDefinition.contract) {
-      return appDefinition.contract;
+  if (!options.skipCache) {
+    // eslint-disable-next-line
+    for (const appName of this.client.getApps().getNames()) {
+      const appDefinition = this.client.getApps().get(appName);
+      if (appDefinition.contractId.equals(contractId) && appDefinition.contract) {
+        return appDefinition.contract;
+      }
     }
   }
 

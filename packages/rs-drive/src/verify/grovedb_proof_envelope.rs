@@ -1,5 +1,6 @@
 use crate::error::proof::ProofError;
 use crate::error::Error;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
 /// Lowest GroveDB proof envelope version a client accepts.
 ///
@@ -8,9 +9,11 @@ use crate::error::Error;
 /// V0 payload safe. GroveDB emits V1 from grove version 3, which Platform
 /// selects from protocol version 12, so every live network serves V1.
 ///
-/// This is client policy, not consensus: no node reads it, so it holds for
-/// every protocol version a client verifies with and is not a version-table
-/// entry.
+/// This is client policy, not consensus, so it holds for every protocol
+/// version a client verifies with and is not a version-table entry. A node
+/// reads it only to skip the optional before/after proofs of a registered
+/// state transition that clients would refuse; no block's acceptance, fees,
+/// results or state depend on it.
 pub const MINIMUM_GROVEDB_PROOF_ENVELOPE_VERSION: u32 = 1;
 
 /// Reject a GroveDB proof envelope older than
@@ -25,9 +28,7 @@ pub fn require_supported_grovedb_proof_envelope(
     proof: &[u8],
     label: &'static str,
 ) -> Result<(), Error> {
-    let config = bincode::config::standard()
-        .with_big_endian()
-        .with_limit::<16>();
+    let config = PLATFORM_BINCODE_CONFIG.with_limit::<16>();
     let (version, _): (u32, usize) =
         bincode::decode_from_slice(proof, config).map_err(|error| {
             Error::Proof(ProofError::InvalidGroveDBProofEnvelope {
@@ -54,10 +55,10 @@ mod tests {
     use super::{require_supported_grovedb_proof_envelope, MINIMUM_GROVEDB_PROOF_ENVELOPE_VERSION};
     use crate::error::proof::ProofError;
     use crate::error::Error;
+    use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 
     fn envelope(version: u32) -> Vec<u8> {
-        bincode::encode_to_vec(version, bincode::config::standard().with_big_endian())
-            .expect("encode envelope version")
+        bincode::encode_to_vec(version, PLATFORM_BINCODE_CONFIG).expect("encode envelope version")
     }
 
     #[test]

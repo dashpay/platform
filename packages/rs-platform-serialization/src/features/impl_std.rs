@@ -561,10 +561,10 @@ where
 #[allow(clippy::needless_borrows_for_generic_args)]
 mod tests {
     use super::*;
-    use bincode::config;
+    use crate::PLATFORM_BINCODE_CONFIG;
 
     fn cfg() -> impl bincode::config::Config {
-        config::standard().with_big_endian().with_no_limit()
+        PLATFORM_BINCODE_CONFIG
     }
 
     fn pv() -> &'static PlatformVersion {

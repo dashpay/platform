@@ -125,9 +125,11 @@ class Identities internal constructor(private val sdk: Sdk) {
     /**
      * Contract keys for many identities, as a JSON object keyed by base58
      * identity id. [identityIds] are base58 identity ids; [purposes] are the
-     * rs-sdk-ffi purpose discriminants (0 Authentication, 1 Encryption,
-     * 2 Decryption, 3 Transfer). [documentTypeName] may be null. Empty
-     * [identityIds] short-circuits to `"{}"`. Returns JSON, or null.
+     * key purpose numbers (0 authentication … 6 owner). [documentTypeName]
+     * may be null. The arguments are checked and answered by the Rust SDK
+     * (see `dash_sdk_identities_fetch_contract_keys`): no identity ids answer
+     * `"{}"` without a query, an unknown purpose is refused, and no purposes
+     * for some identities is refused (invalid parameter). Returns the JSON.
      */
     suspend fun fetchContractKeys(
         identityIds: List<String>,
@@ -135,8 +137,6 @@ class Identities internal constructor(private val sdk: Sdk) {
         purposes: List<Int>,
         documentTypeName: String? = null,
     ): String? = sdk.queryGate.op {
-        if (identityIds.isEmpty()) return@op "{}"
-        require(purposes.isNotEmpty()) { "at least one key purpose is required" }
         mapNativeErrors {
             QueriesNative.identitiesFetchContractKeys(
                 sdk.handle,
@@ -267,7 +267,11 @@ class Voting internal constructor(private val sdk: Sdk) {
         }
     }
 
-    /** All contested-resource votes cast by an identity, as JSON, or null. */
+    /**
+     * All contested-resource votes cast by an identity, as JSON, or null. Each vote
+     * carries `vote_poll_id`, `resource_vote_choice` and `vote_count`, the number of
+     * times the identity has voted on that vote poll.
+     */
     suspend fun contestedResourceIdentityVotes(
         identityId: String,
         limit: Int = 0,
@@ -639,14 +643,15 @@ class Contracts internal constructor(private val sdk: Sdk) {
     }
 
     /**
-     * Pre-load known contracts into the SDK's trusted context provider so
-     * proof verification resolves them without a network fetch — mirrors
+     * Pre-load known contracts into the SDK's context provider so proof
+     * verification resolves them without a network fetch — mirrors
      * Swift's `SDK.loadKnownContracts`. Each pair is
      * `(base58ContractId, versionedBinarySerialization)`; the second element
      * must be the contract's versioned binary serialization (what
      * `DataContract.versionedDeserialize` expects), NOT its JSON. Entries with
      * an empty id or empty bytes are skipped; empty input short-circuits.
-     * Throws on error (missing trusted provider or a malformed contract).
+     * Throws on error (a malformed contract). A provider that keeps no
+     * contracts ignores them.
      */
     suspend fun loadKnownContracts(contracts: List<Pair<String, ByteArray>>) =
         sdk.queryGate.op {
@@ -892,6 +897,53 @@ class Documents internal constructor(private val sdk: Sdk) {
             )
         }
     }
+
+    /**
+     * Read a page of a keep-history document's revision history with its
+     * lifecycle block (see [DocumentLifecycle]); returns the JSON object
+     * `{"entries":[{"time_ms","revision","document"}],"lifecycle":{…}}` or
+     * null when the response is missing. [contractId] is base58 and is
+     * resolved through the SDK's current context provider. Exactly one
+     * [filter] applies; [limit] is at most ten, 0 for the default. Needs the
+     * protocol-15 history layout: a page served from the earlier layout has no
+     * lifecycle block and the FFI refuses it.
+     */
+    suspend fun history(
+        contractId: String,
+        documentType: String,
+        documentId: String,
+        filter: DocumentHistoryFilter = DocumentHistoryFilter.StartAtTime(0),
+        limit: Int = 0,
+    ): String? = sdk.queryGate.op {
+        require(limit >= 0) { "limit must be non-negative, got $limit" }
+        mapNativeErrors {
+            QueriesNative.documentHistory(
+                sdk.handle,
+                contractId,
+                documentType,
+                documentId,
+                filter.code,
+                filter.timeMs,
+                filter.revision,
+                limit,
+            )
+        }
+    }
+
+    /**
+     * Read where a keep-history document stands right now: its lifecycle
+     * state and the exact number of revisions still retained. A current
+     * observation, not the outcome of any particular transition. The wallet's
+     * erase-and-observe operation returns its submission decision together
+     * with the lifecycle observations before and after submission.
+     */
+    suspend fun lifecycle(
+        contractId: String,
+        documentType: String,
+        documentId: String,
+    ): DocumentLifecycle? =
+        history(contractId, documentType, documentId, DocumentHistoryFilter.StartAtTime(0), 1)
+            ?.let(DocumentLifecycle::fromHistoryJson)
 
     /** Count documents; returns the JSON count result. */
     suspend fun count(

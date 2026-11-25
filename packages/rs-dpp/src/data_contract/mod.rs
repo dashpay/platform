@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 use derive_more::From;
 
 use bincode::config::{BigEndian, Config, Configuration, Limit, NoLimit, Varint};
+use bincode::enc::write::SizeWriter;
 use once_cell::sync::Lazy;
 
 pub mod errors;
@@ -56,6 +57,12 @@ use crate::data_contract::serialized_version::{
 };
 use crate::util::hash::hash_double_to_vec;
 
+#[cfg(feature = "validation")]
+use crate::consensus::basic::data_contract::DataContractCompiledMaxSizeExceededError;
+#[cfg(feature = "validation")]
+use crate::validation::operations::ProtocolValidationOperation;
+#[cfg(feature = "validation")]
+use crate::validation::SimpleConsensusValidationResult;
 use crate::version::{FeatureVersion, PlatformVersion};
 use crate::ProtocolError;
 use crate::ProtocolError::{PlatformDeserializationError, PlatformSerializationError};
@@ -66,6 +73,7 @@ use crate::data_contract::document_type::accessors::DocumentTypeV2Getters;
 use crate::data_contract::group::Group;
 use crate::data_contract::v0::DataContractV0;
 use crate::data_contract::v1::DataContractV1;
+use platform_serialization::PLATFORM_BINCODE_CONFIG;
 use platform_version::TryIntoPlatformVersioned;
 use platform_versioning::PlatformVersioned;
 pub use serde_json::Value as JsonValue;
@@ -149,9 +157,7 @@ impl PlatformSerializableWithPlatformVersion for DataContract {
     ) -> Result<Vec<u8>, ProtocolError> {
         let serialization_format: DataContractInSerializationFormat =
             self.try_into_platform_versioned(platform_version)?;
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         bincode::encode_to_vec(serialization_format, config).map_err(|e| {
             PlatformSerializationError(format!("unable to serialize DataContract: {}", e))
         })
@@ -163,17 +169,150 @@ impl PlatformSerializableWithPlatformVersion for DataContract {
     ) -> Result<Vec<u8>, ProtocolError> {
         let serialization_format: DataContractInSerializationFormat =
             self.try_into_platform_versioned(platform_version)?;
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let config = PLATFORM_BINCODE_CONFIG;
         bincode::encode_to_vec(serialization_format, config).map_err(|e| {
             PlatformSerializationError(format!("unable to serialize consume DataContract: {}", e))
         })
     }
 }
 
+impl DataContract {
+    /// The contract's bytes as a node stores them at `platform_version`
+    /// (`contract_storage_serialization_version`): through protocol version 14 the bytes
+    /// [`PlatformSerializableWithPlatformVersion::serialize_to_bytes_with_platform_version`]
+    /// gives, or format version 2, the compiled form, which only state holds. Every other
+    /// serialization, of a state transition, a query response or a client, keeps
+    /// `contract_serialization_version`.
+    pub fn serialize_to_storage_bytes(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        let serialization_format =
+            DataContractInSerializationFormat::try_from_data_contract_for_storage(
+                self,
+                platform_version,
+            )?;
+        bincode::encode_to_vec(serialization_format, no_limit_config()).map_err(|e| {
+            PlatformSerializationError(format!("unable to serialize DataContract: {}", e))
+        })
+    }
+
+    /// Refuses the contract when a node would store it compiled
+    /// (`contract_storage_serialization_version` 2, from protocol version 15) and its compiled
+    /// bytes are over `max_compiled_contract_size`, with a
+    /// [`DataContractCompiledMaxSizeExceededError`]: compiling turns a contract into more bytes
+    /// than its schemas take, and only the format transitions carry is capped by
+    /// `max_serialized_size`. The compile and serialization it takes is recorded in
+    /// `validation_operations`, charged per compiled byte. Refuses, compiles and records
+    /// nothing where contracts are not stored compiled.
+    #[cfg(feature = "validation")]
+    pub fn validate_compiled_size(
+        &self,
+        validation_operations: &mut impl Extend<ProtocolValidationOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        let stored_compiled = platform_version
+            .dpp
+            .contract_versions
+            .contract_storage_serialization_version
+            >= 2;
+        let Some(max_compiled_size) = platform_version.system_limits.max_compiled_contract_size
+        else {
+            return Ok(SimpleConsensusValidationResult::new());
+        };
+        if !stored_compiled {
+            return Ok(SimpleConsensusValidationResult::new());
+        }
+        let compiled_size = self.serialize_to_storage_bytes(platform_version)?.len() as u64;
+        validation_operations.extend(std::iter::once(
+            ProtocolValidationOperation::ContractCompiledSizeValidation(compiled_size),
+        ));
+        if compiled_size > u64::from(max_compiled_size) {
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                DataContractCompiledMaxSizeExceededError::new(compiled_size, max_compiled_size)
+                    .into(),
+            ));
+        }
+        Ok(SimpleConsensusValidationResult::new())
+    }
+
+    /// [`Self::validate_compiled_size`] as an error: a contract over the cap refused with its
+    /// [`DataContractCompiledMaxSizeExceededError`] as a `ProtocolError::ConsensusError`, as a
+    /// contract parse refuses one, for the callers that turn parse errors into the
+    /// transition's refusal.
+    #[cfg(feature = "validation")]
+    pub fn ensure_compiled_size(
+        &self,
+        validation_operations: &mut impl Extend<ProtocolValidationOperation>,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), ProtocolError> {
+        match self
+            .validate_compiled_size(validation_operations, platform_version)?
+            .errors
+            .into_iter()
+            .next()
+        {
+            Some(error) => Err(ProtocolError::ConsensusError(Box::new(error))),
+            None => Ok(()),
+        }
+    }
+
+    /// [`Self::serialize_to_storage_bytes`], with the length of the contract's bytes in the
+    /// format state transitions carry (`contract_serialization_version`), the bytes the
+    /// protocol caps. Stored compiled, a contract holds those bytes' fields as its base, so
+    /// they are measured rather than serialized again; otherwise it is stored in that format.
+    pub fn serialize_to_storage_bytes_with_carried_size(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<(Vec<u8>, usize), ProtocolError> {
+        let serialization_format =
+            DataContractInSerializationFormat::try_from_data_contract_for_storage(
+                self,
+                platform_version,
+            )?;
+        let carried_size = match &serialization_format {
+            // Format version 1 bytes are the format version, one byte, then the base's fields
+            DataContractInSerializationFormat::V2(compiled) => {
+                let mut size = SizeWriter::default();
+                bincode::encode_into_writer(&compiled.base, &mut size, no_limit_config()).map_err(
+                    |e| {
+                        PlatformSerializationError(format!("unable to measure DataContract: {}", e))
+                    },
+                )?;
+                Some(1 + size.bytes_written)
+            }
+            _ => None,
+        };
+        let bytes =
+            bincode::encode_to_vec(serialization_format, no_limit_config()).map_err(|e| {
+                PlatformSerializationError(format!("unable to serialize DataContract: {}", e))
+            })?;
+        let carried_size = carried_size.unwrap_or(bytes.len());
+        Ok((bytes, carried_size))
+    }
+
+    /// The bytes [`PlatformSerializableWithPlatformVersion::serialize_to_bytes_with_platform_version`]
+    /// gives for the contract a node stored as `storage_bytes`, read as
+    /// [`PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted::versioned_deserialize_trusted`]
+    /// reads it without full validation, but without parsing the contract: a stored revision in
+    /// schema form would build every document type, its patterns compiled, each time it is
+    /// read. For a query that answers with stored contracts it does not otherwise use.
+    pub fn carried_bytes_from_storage_bytes(
+        storage_bytes: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        let (stored, _) =
+            decode_serialization_format_trusted(storage_bytes, no_limit_config(), "DataContract")?;
+        let carried = stored.try_into_carried_format(platform_version)?;
+        bincode::encode_to_vec(carried, PLATFORM_BINCODE_CONFIG).map_err(|e| {
+            PlatformSerializationError(format!("unable to serialize DataContract: {}", e))
+        })
+    }
+}
+
 /// Decodes the stored serialization format with the ordinary decoder: bytes
-/// this node wrote itself (Drive state, wallet storage).
+/// this node wrote itself (Drive state, wallet storage). A contract in the stored
+/// format is read back from its compiled document types.
 fn decode_serialization_format_trusted<C: Config>(
     data: &[u8],
     config: C,
@@ -184,7 +323,10 @@ fn decode_serialization_format_trusted<C: Config>(
 }
 
 /// Decodes the serialization format with the untrusted decoder: bytes from a
-/// peer, a client, a proof or a host caller.
+/// peer, a client, a proof or a host caller. The untrusted entry points never take a
+/// contract in the stored format at its compiled types, which nothing vouches for
+/// ([`untrusted_form`]). Proof verification, whose bytes the proof authenticates, reads
+/// them with `DataContract::try_from_platform_versioned`.
 fn decode_serialization_format_untrusted<C: Config>(
     data: &[u8],
     config: C,
@@ -194,17 +336,27 @@ fn decode_serialization_format_untrusted<C: Config>(
         .map_err(|e| PlatformDeserializationError(format!("unable to deserialize {}: {}", what, e)))
 }
 
+/// The format an untrusted entry point reads `format` as: a contract in the stored format
+/// from its schemas ([`DataContractInSerializationFormat::into_schema_form`]), or, fully
+/// validated, from its schemas with its compiled types checked against what they compile to.
+fn untrusted_form(
+    format: DataContractInSerializationFormat,
+    full_validation: bool,
+) -> DataContractInSerializationFormat {
+    if full_validation {
+        format
+    } else {
+        format.into_schema_form()
+    }
+}
+
 fn no_limit_config() -> Configuration<BigEndian, Varint, NoLimit> {
-    bincode::config::standard()
-        .with_big_endian()
-        .with_no_limit()
+    PLATFORM_BINCODE_CONFIG
 }
 
 fn contract_limit_config() -> Configuration<BigEndian, Varint, Limit<CONTRACT_DESERIALIZATION_LIMIT>>
 {
-    bincode::config::standard()
-        .with_big_endian()
-        .with_limit::<CONTRACT_DESERIALIZATION_LIMIT>()
+    PLATFORM_BINCODE_CONFIG.with_limit::<CONTRACT_DESERIALIZATION_LIMIT>()
 }
 
 impl PlatformDeserializableWithPotentialValidationFromVersionedStructureTrusted for DataContract {
@@ -239,7 +391,7 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructureUntruste
         let (data_contract_in_serialization_format, _) =
             decode_serialization_format_untrusted(data, no_limit_config(), "DataContract")?;
         DataContract::try_from_platform_versioned(
-            data_contract_in_serialization_format,
+            untrusted_form(data_contract_in_serialization_format, full_validation),
             full_validation,
             &mut vec![],
             platform_version,
@@ -283,7 +435,7 @@ impl PlatformDeserializableWithBytesLenFromVersionedStructureUntrusted for DataC
             decode_serialization_format_untrusted(data, no_limit_config(), "DataContract")?;
         Ok((
             DataContract::try_from_platform_versioned(
-                data_contract_in_serialization_format,
+                untrusted_form(data_contract_in_serialization_format, full_validation),
                 full_validation,
                 &mut vec![],
                 platform_version,
@@ -590,5 +742,193 @@ mod tests {
                 .requires_identity_encryption_bounded_key(),
             Some(StorageKeyRequirements::MultipleReferenceToLatest)
         );
+    }
+}
+
+#[cfg(all(test, feature = "validation"))]
+mod compiled_size_tests {
+    use super::*;
+    use crate::consensus::basic::BasicError;
+    use crate::consensus::ConsensusError;
+    use crate::tests::fixtures::get_data_contract_fixture;
+
+    fn fixture_contract() -> DataContract {
+        get_data_contract_fixture(None, 0, PlatformVersion::latest().protocol_version)
+            .data_contract_owned()
+    }
+
+    /// `platform_version` with a compiled size cap every contract is over.
+    fn with_a_tiny_compiled_size_cap(platform_version: &PlatformVersion) -> PlatformVersion {
+        let mut platform_version = platform_version.clone();
+        platform_version.system_limits.max_compiled_contract_size = Some(100);
+        platform_version
+    }
+
+    #[test]
+    fn should_refuse_a_contract_compiled_over_the_cap_and_charge_for_compiling_it() {
+        let platform_version = with_a_tiny_compiled_size_cap(PlatformVersion::latest());
+        let contract = fixture_contract();
+        let compiled_size = contract
+            .serialize_to_storage_bytes(&platform_version)
+            .expect("expected the contract to compile")
+            .len() as u64;
+        let mut operations = vec![];
+        let refused = contract.ensure_compiled_size(&mut operations, &platform_version);
+        assert!(
+            matches!(
+                &refused,
+                Err(ProtocolError::ConsensusError(error)) if matches!(
+                    error.as_ref(),
+                    ConsensusError::BasicError(
+                        BasicError::DataContractCompiledMaxSizeExceededError(error)
+                    ) if error.max_compiled_size() == 100
+                        && error.compiled_size() == compiled_size
+                )
+            ),
+            "{refused:?}"
+        );
+        assert_eq!(
+            operations,
+            vec![ProtocolValidationOperation::ContractCompiledSizeValidation(
+                compiled_size
+            )]
+        );
+
+        // Under the cap of the latest version, admitted and charged alike
+        let mut operations = vec![];
+        contract
+            .ensure_compiled_size(&mut operations, PlatformVersion::latest())
+            .expect("expected the contract to fit the cap");
+        assert_eq!(operations.len(), 1);
+    }
+
+    #[test]
+    fn should_neither_refuse_nor_charge_where_contracts_are_not_stored_compiled() {
+        let platform_version = with_a_tiny_compiled_size_cap(
+            PlatformVersion::get(14).expect("expected protocol version 14"),
+        );
+        let mut operations = vec![];
+        fixture_contract()
+            .ensure_compiled_size(&mut operations, &platform_version)
+            .expect("expected nothing refused at protocol version 14");
+        assert!(operations.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod carried_bytes_tests {
+    use super::*;
+    use crate::data_contract::serialized_version::v0::DataContractInSerializationFormatV0;
+    use crate::data_contract::serialized_version::v1::DataContractInSerializationFormatV1;
+    use crate::tests::fixtures::get_data_contract_fixture;
+    use platform_value::Value;
+    use platform_version::version::PLATFORM_VERSIONS;
+    use std::collections::BTreeSet;
+
+    fn fixture_contract() -> DataContract {
+        get_data_contract_fixture(None, 0, PlatformVersion::latest().protocol_version)
+            .data_contract_owned()
+    }
+
+    fn encode(format: DataContractInSerializationFormat) -> Vec<u8> {
+        bincode::encode_to_vec(format, PLATFORM_BINCODE_CONFIG).expect("expected to encode")
+    }
+
+    /// The fixture contract in each format a node has stored a contract in: format versions 0
+    /// and 1 in schema form, 1 with the fields only it holds and keywords to lowercase, and 2,
+    /// compiled.
+    fn stored_forms() -> Vec<(&'static str, Vec<u8>)> {
+        let contract = fixture_contract();
+        let format_v1 = DataContractInSerializationFormatV1::from(contract.clone());
+        let mut format_v1_with_its_fields = format_v1.clone();
+        format_v1_with_its_fields.created_at = Some(1_700_000_000_000);
+        format_v1_with_its_fields.created_at_block_height = Some(12);
+        format_v1_with_its_fields.keywords = vec!["Social".to_string(), "PAY".to_string()];
+        format_v1_with_its_fields.description = Some("A contract".to_string());
+        let compiled = contract
+            .serialize_to_storage_bytes(PlatformVersion::latest())
+            .expect("expected to store the contract");
+        assert!(
+            matches!(
+                decode_serialization_format_trusted(&compiled, no_limit_config(), "DataContract")
+                    .expect("expected to decode")
+                    .0,
+                DataContractInSerializationFormat::V2(_)
+            ),
+            "the latest version stores contracts compiled"
+        );
+        vec![
+            (
+                "format version 0",
+                encode(DataContractInSerializationFormatV0::from(contract).into()),
+            ),
+            ("format version 1", encode(format_v1.into())),
+            (
+                "format version 1 with its own fields",
+                encode(format_v1_with_its_fields.into()),
+            ),
+            ("format version 2", compiled),
+        ]
+    }
+
+    #[test]
+    fn should_carry_a_stored_contract_as_reading_and_serializing_it_does() {
+        let mut compared = BTreeSet::new();
+        for (form, stored) in stored_forms() {
+            for platform_version in PLATFORM_VERSIONS {
+                let version = platform_version.protocol_version;
+                // A version that can not read the contract, or carry it, is not compared
+                let Ok(contract) =
+                    DataContract::versioned_deserialize_trusted(&stored, false, platform_version)
+                else {
+                    continue;
+                };
+                let Ok(expected) =
+                    contract.serialize_to_bytes_with_platform_version(platform_version)
+                else {
+                    continue;
+                };
+                let carried =
+                    DataContract::carried_bytes_from_storage_bytes(&stored, platform_version)
+                        .unwrap_or_else(|e| panic!("{form} at protocol version {version}: {e}"));
+                assert_eq!(carried, expected, "{form} at protocol version {version}");
+                compared.insert((form, version));
+            }
+        }
+        let latest = PlatformVersion::latest().protocol_version;
+        let first = PlatformVersion::first().protocol_version;
+        for (form, _) in stored_forms() {
+            assert!(
+                compared.contains(&(form, latest)),
+                "{form} is compared at the latest version"
+            );
+            assert!(
+                compared.contains(&(form, first)),
+                "{form} is compared at the first version, which carries format version 0"
+            );
+        }
+    }
+
+    #[test]
+    fn should_carry_a_stored_contract_without_parsing_its_schemas() {
+        let latest = PlatformVersion::latest();
+        let mut format_v1 = DataContractInSerializationFormatV1::from(fixture_contract());
+        let broken = Value::Text("not a schema".to_string());
+        format_v1
+            .document_schemas
+            .insert("broken".to_string(), broken.clone());
+        let stored = encode(format_v1.into());
+        assert!(
+            DataContract::versioned_deserialize_trusted(&stored, false, latest).is_err(),
+            "reading the contract parses its schemas"
+        );
+
+        let carried = DataContract::carried_bytes_from_storage_bytes(&stored, latest)
+            .expect("expected to carry the contract without parsing it");
+
+        let (carried, _) =
+            decode_serialization_format_trusted(&carried, no_limit_config(), "DataContract")
+                .expect("expected to decode");
+        assert_eq!(carried.document_schemas().get("broken"), Some(&broken));
     }
 }

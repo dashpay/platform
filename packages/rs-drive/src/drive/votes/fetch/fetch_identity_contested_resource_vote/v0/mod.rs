@@ -9,6 +9,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use crate::state_transition_action::identity::masternode_vote::v0::PreviousVoteCount;
 use crate::util::grove_operations::DirectQueryType;
 use dpp::identifier::Identifier;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
@@ -39,9 +40,7 @@ impl Drive {
         optional_element
             .map(|element| {
                 let serialized_reference = element.into_item_bytes()?;
-                let bincode_config = bincode::config::standard()
-                    .with_big_endian()
-                    .with_no_limit();
+                let bincode_config = PLATFORM_BINCODE_CONFIG;
                 let reference: ContestedDocumentResourceVoteReferenceStorageForm =
                     bincode::decode_from_slice(&serialized_reference, bincode_config)
                         .map_err(|e| {

@@ -3,6 +3,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::GroveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::DirectQueryType;
 
 use crate::drive::prefunded_specialized_balances::{
@@ -11,9 +12,8 @@ use crate::drive::prefunded_specialized_balances::{
 };
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
-use grovedb::batch::{KeyInfoPath, QualifiedGroveDbOp};
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::batch::QualifiedGroveDbOp;
+use grovedb::{Element, TransactionArg};
 
 impl Drive {
     /// The operations to add to the specialized balance
@@ -22,9 +22,7 @@ impl Drive {
         &self,
         specialized_balance_id: Identifier,
         amount: u64,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -75,6 +73,7 @@ impl Drive {
 mod tests {
     use crate::error::drive::DriveError;
     use crate::error::Error;
+    use crate::util::estimated_layers::EstimatedLayers;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use dpp::identifier::Identifier;
     use dpp::version::PlatformVersion;
@@ -191,7 +190,7 @@ mod tests {
             .add_prefunded_specialized_balance(id, 1_000, None, platform_version)
             .expect("seed");
 
-        let mut estimated = Some(std::collections::HashMap::new());
+        let mut estimated = Some(EstimatedLayers::new());
         let _ops = drive
             .deduct_from_prefunded_specialized_balance_operations_v0(
                 id,

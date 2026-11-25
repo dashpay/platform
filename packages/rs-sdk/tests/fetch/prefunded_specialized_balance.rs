@@ -61,7 +61,7 @@ async fn test_prefunded_specialized_balance_ok() {
 
     // Vote poll specialized balance ID
     let balance_id = poll
-        .specialized_balance_id()
+        .specialized_balance_id(sdk.version())
         .expect("vote poll specialized balance ID")
         .expect("must have specialized balance ID");
 

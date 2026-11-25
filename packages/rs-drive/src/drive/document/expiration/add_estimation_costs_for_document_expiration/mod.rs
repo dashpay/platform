@@ -3,11 +3,9 @@ mod v0;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::prelude::TimestampMillis;
 use dpp::version::drive_versions::DriveVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::EstimatedLayerInformation;
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds the layers a write to the documents expirations tree goes through to a dry run's
@@ -26,7 +24,7 @@ impl Drive {
     pub(crate) fn add_estimation_costs_for_document_expiration(
         expires_at_ms: TimestampMillis,
         entry_value_size: u32,
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         match drive_version

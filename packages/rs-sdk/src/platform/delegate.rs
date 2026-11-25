@@ -46,6 +46,16 @@ macro_rules! delegate_transport_request_variant {
                 }
             }
 
+            fn needs_protocol_version(&self) -> Option<u32> {
+                use $request::*;
+
+                match self {
+                    $(
+                        $variant(request) => request.needs_protocol_version(),
+                    )*
+                }
+            }
+
             fn execute_transport<'c>(
                 self,
                 client: &'c mut Self::Client,
@@ -84,6 +94,20 @@ macro_rules! delegate_from_proof_variant {
         impl drive_proof_verifier::FromProof<$request> for $object {
             type Request = $request;
             type Response = $response;
+
+            fn check_request(
+                request: &Self::Request,
+                version: &dpp::version::PlatformVersion,
+            ) -> Result<(), drive_proof_verifier::Error> {
+                use $request as req;
+
+                match request {$(
+                    req::$variant(request) => {
+                        <Self as drive_proof_verifier::FromProof<$req>>::check_request(request, version)
+                    }
+                )*
+                }
+            }
 
             fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
                 request: I,
@@ -186,4 +210,108 @@ macro_rules! delegate_enum {
 /// Return type name of a variable as a String
 pub(crate) fn type_name<T>(_v: &T) -> String {
     std::any::type_name::<T>().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+    use dash_context_provider::ContextProvider;
+    use dpp::dashcore::Network;
+    use dpp::version::PlatformVersion;
+    use drive_proof_verifier::{Error, FromProof};
+
+    /// A request whose answer [`Answer`] is verified from.
+    #[derive(Debug, Clone)]
+    struct Verifiable;
+
+    /// A request no answer to which [`Answer`] can be verified from.
+    #[derive(Debug, Clone)]
+    struct Unverifiable;
+
+    #[derive(Debug, Clone, Default)]
+    struct Response;
+
+    enum Request {
+        Verifiable(Verifiable),
+        Unverifiable(Unverifiable),
+    }
+
+    // The wrapper matches answers by variant; these tests never get as far as an answer.
+    #[allow(dead_code)]
+    enum Responses {
+        Verifiable(Response),
+        Unverifiable(Response),
+    }
+
+    struct Answer;
+
+    impl FromProof<Verifiable> for Answer {
+        type Request = Verifiable;
+        type Response = Response;
+
+        fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+            _: I,
+            _: O,
+            _: Network,
+            _: &PlatformVersion,
+            _: &'a dyn ContextProvider,
+        ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+        where
+            Self: Sized + 'a,
+        {
+            unreachable!("only the check before sending runs")
+        }
+    }
+
+    impl FromProof<Unverifiable> for Answer {
+        type Request = Unverifiable;
+        type Response = Response;
+
+        fn check_request(_: &Self::Request, _: &PlatformVersion) -> Result<(), Error> {
+            Err(Error::RequestError {
+                error: "no answer to this request verifies as an Answer".to_string(),
+            })
+        }
+
+        fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+            _: I,
+            _: O,
+            _: Network,
+            _: &PlatformVersion,
+            _: &'a dyn ContextProvider,
+        ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+        where
+            Self: Sized + 'a,
+        {
+            unreachable!("only the check before sending runs")
+        }
+    }
+
+    crate::delegate_from_proof_variant!(
+        Request,
+        Responses,
+        Answer,
+        (Verifiable, Verifiable, Response),
+        (Unverifiable, Unverifiable, Response)
+    );
+
+    /// A wrapper over several requests is checked before sending as the request it wraps:
+    /// otherwise a request its own verifier refuses is sent, and the node that answers it is
+    /// held to an answer no node can give.
+    #[test]
+    fn should_check_a_wrapped_request_before_sending_as_its_own_type_does() {
+        let version = PlatformVersion::latest();
+        assert!(<Answer as FromProof<Request>>::check_request(
+            &Request::Verifiable(Verifiable),
+            version
+        )
+        .is_ok());
+        assert!(matches!(
+            <Answer as FromProof<Request>>::check_request(
+                &Request::Unverifiable(Unverifiable),
+                version
+            ),
+            Err(Error::RequestError { error }) if error.contains("no answer to this request")
+        ));
+    }
 }

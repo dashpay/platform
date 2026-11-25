@@ -287,9 +287,15 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use crate::query::tests::{
-        assert_invalid_argument_status, assert_invalid_identifier, setup_platform,
+        assert_drive_part_of_proof_verified, assert_invalid_argument_status,
+        assert_invalid_identifier, setup_platform, setup_platform_with_default_query_limit,
+        NoQuorumKeysContextProvider, NO_LIMIT_PROOF_CASES,
     };
     use dapi_grpc::platform::v0::get_group_actions_request::StartAtActionId;
+    use dapi_grpc::platform::v0::{
+        get_group_actions_request, get_group_actions_response, GetGroupActionsRequest,
+        GetGroupActionsResponse,
+    };
     use dpp::block::block_info::BlockInfo;
     use dpp::dashcore::Network;
     use dpp::data_contract::group::v0::GroupV0;
@@ -300,6 +306,9 @@ mod tests {
     use dpp::identifier::Identifier;
     use dpp::tokens::emergency_action::TokenEmergencyAction;
     use dpp::tokens::token_event::TokenEvent;
+    use drive::drive::Drive;
+    use drive_proof_verifier::types::groups::GroupActions as ProvedGroupActions;
+    use drive_proof_verifier::FromProof;
     use std::collections::BTreeMap;
 
     #[test]
@@ -1235,6 +1244,110 @@ mod tests {
                 ));
             }
             other => panic!("unexpected result: {:?}", other),
+        }
+    }
+
+    /// Drive answers a proved request naming no count with its default page and proves that
+    /// page, so the client verifies the proof against the page Drive proved, from a node left at
+    /// the default as from one whose operator set a larger default
+    #[test]
+    fn should_verify_the_default_page_of_group_actions_requested_with_no_count() {
+        for (default_query_limit, stored) in NO_LIMIT_PROOF_CASES {
+            let (platform, state, version) =
+                setup_platform_with_default_query_limit(None, default_query_limit);
+
+            let contract_id = Identifier::from([1u8; 32]);
+            let member_id = Identifier::from([2u8; 32]);
+
+            let group = Group::V0(GroupV0 {
+                members: BTreeMap::from([(member_id, 5u32)]),
+                required_power: 10,
+            });
+            platform
+                .drive
+                .add_new_groups(
+                    contract_id,
+                    &BTreeMap::from([(0u16, group)]),
+                    &BlockInfo::genesis(),
+                    true,
+                    None,
+                    version,
+                )
+                .expect("expected to add groups");
+
+            for n in 0..stored {
+                let mut action_id = [0u8; 32];
+                action_id[..2].copy_from_slice(&n.to_be_bytes());
+                let action = GroupAction::V0(GroupActionV0 {
+                    contract_id,
+                    proposer_id: member_id,
+                    token_contract_position: 0,
+                    event: DppGroupActionEvent::TokenEvent(TokenEvent::Mint(1000, member_id, None)),
+                });
+                platform
+                    .drive
+                    .add_group_action(
+                        contract_id,
+                        0,
+                        Some(action),
+                        false,
+                        Identifier::from(action_id),
+                        member_id,
+                        5,
+                        &BlockInfo::genesis(),
+                        true,
+                        None,
+                        version,
+                    )
+                    .expect("expected to add group action");
+            }
+
+            let request_v0 = GetGroupActionsRequestV0 {
+                contract_id: contract_id.to_vec(),
+                group_contract_position: 0,
+                status: 0,
+                start_at_action_id: None,
+                count: None,
+                prove: true,
+            };
+            let response_v0 = platform
+                .query_group_actions_v0(request_v0.clone(), &state, version)
+                .expect("expected query to succeed")
+                .into_data()
+                .expect("expected query to be valid");
+            let Some(get_group_actions_response_v0::Result::Proof(proof)) = &response_v0.result
+            else {
+                panic!("expected a proof")
+            };
+
+            // Drive proved its default page
+            let (_, actions): (_, BTreeMap<Identifier, GroupAction>) =
+                Drive::verify_action_infos_in_contract(
+                    &proof.grovedb_proof,
+                    contract_id,
+                    0,
+                    GroupActionStatus::ActionActive,
+                    None,
+                    Some(default_query_limit),
+                    false,
+                    version,
+                )
+                .expect("expected the proof to verify as the node's default page");
+            assert_eq!(actions.len(), stored.min(default_query_limit) as usize);
+
+            let error = <ProvedGroupActions as FromProof<GetGroupActionsRequest>>::maybe_from_proof_with_metadata(
+                GetGroupActionsRequest {
+                    version: Some(get_group_actions_request::Version::V0(request_v0)),
+                },
+                GetGroupActionsResponse {
+                    version: Some(get_group_actions_response::Version::V0(response_v0)),
+                },
+                Network::Testnet,
+                version,
+                &NoQuorumKeysContextProvider,
+            )
+            .expect_err("expected no quorum key");
+            assert_drive_part_of_proof_verified(error);
         }
     }
 }

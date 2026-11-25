@@ -493,7 +493,6 @@ mod tests {
                     apply,
                     Some(&db_transaction),
                     platform_version,
-                    None,
                 )
                 .expect("expected to remove from identity balance");
 
@@ -1066,7 +1065,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             );
 
             assert!(matches!(
@@ -1089,7 +1087,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             );
 
             assert!(matches!(

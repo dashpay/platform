@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use ciborium::ser::into_writer;
 use dashcore_rpc::dashcore::BlockHash;
-use dashcore_rpc::dashcore::hashes::Hash as HashTrait;
 use tokio::sync::{Mutex, Notify, RwLock};
 use tracing::{debug, trace};
 

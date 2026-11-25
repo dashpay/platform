@@ -324,13 +324,18 @@ describe('ReconnectableStream', () => {
       reconnectableStream.stream = stream;
 
       const newArgs = ['newArg1', 'newArg2'];
-      reconnectableStream.on('beforeReconnect', (updateArgs) => {
+      let retryError;
+      reconnectableStream.on('beforeReconnect', (updateArgs, e) => {
         updateArgs(newArgs);
+        retryError = e;
       });
 
-      reconnectableStream.retryOnError(new Error('Fake stream error'));
+      const error = new Error('Fake stream error');
+      reconnectableStream.retryOnError(error);
 
       await wait(10);
+
+      expect(retryError).to.equal(error);
 
       expect(reconnectableStream.stopAutoReconnect)
         .to

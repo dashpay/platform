@@ -10,13 +10,13 @@ use crate::drive::shielded::paths::{
 };
 use crate::drive::tokens::paths::{token_shielded_pools_root_path, tokens_root_path};
 use crate::drive::Drive;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::EstimatedLevel;
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees, Mix};
 use grovedb::EstimatedSumTrees::{AllBigSumTrees, AllSumTrees, SomeSumTrees};
 use grovedb::{EstimatedLayerInformation, TreeType};
-use std::collections::HashMap;
 
 impl Drive {
     /// Registers the layer information for every tree a token shielded pool write can touch,
@@ -24,13 +24,14 @@ impl Drive {
     /// priced without state.
     pub(crate) fn add_estimation_costs_for_token_shielded_pool_operations(
         token_id: [u8; 32],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         // Root level: []. This MUST stay identical to the credit pool's root registration in
         // `crate::drive::shielded::estimated_costs`, because the three identity-less token pool
-        // transitions write both into one estimation map under this one key, and the later write
-        // wins. A divergence would make the surviving estimate depend on the order the operations
-        // happen to be converted in.
+        // transitions write both into one estimate under this one key. Before protocol version 15
+        // the later write is priced, so a divergence would make the estimate depend on the order
+        // the operations happen to be converted in; from protocol version 15 the estimate is
+        // resolved and a divergence would price the root at the costlier of the two.
         //
         // `NoSumTrees` was also untrue of the root, whoever is asking: `Balances`, `Tokens` and
         // `PreFundedSpecializedBalances` are sum trees directly under it. Of the two descriptions

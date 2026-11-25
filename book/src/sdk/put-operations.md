@@ -242,11 +242,45 @@ for a proof made at an earlier version or a transition without an owner);
 `wait_for_document_and_owner_balance` and
 `put_to_platform_and_wait_for_response_with_owner_balance` return it next to
 the document. The balance is a snapshot at the proof's block: it may already
-include later transitions of the same identity. A wait that asks for no proof
+include later transitions of the same identity.
+`put_to_platform_and_wait_for_response_with_owner_balance_and_metadata` also
+returns the verified response metadata, whose `height` is that block, so a
+wallet keeping the balance can order it against balances it read elsewhere; it
+checks the proof as strictly as `put_to_platform_and_wait_for_response` does
+(this write must be proved executed unless the document type is indexOnly),
+where `put_to_platform_and_wait_for_response_with_owner_balance` accepts an
+affected-state snapshot for any document type. For a DPNS registration,
+`Sdk::register_dpns_name_with_owner_balance_and_metadata` returns the
+registration result with the balance and metadata of the domain's proof, the
+registration's last write. For a DashPay profile,
+`Sdk::create_profile_with_owner_balance_and_metadata` and
+`Sdk::update_profile_with_owner_balance_and_metadata` return the confirmed
+profile document with the balance and metadata of its proof, which must show
+the write executed. A wait that asks for no proof
 but sets `request_user_balance` gets the owner's balance back unverified, as
 the response's `success_with_owner_balance` result, read from a Drive state at
 or past the block that executed the write; that works for any transition with
 an owner.
+
+The protocol version signed with the proof selects the layout the proof is
+checked against. Validation and decoding follow the SDK's stored version, or
+the signed version when it is newer and known to this build, also for a pinned
+SDK: a producer's version can raise those rules but never lower them. An SDK
+at protocol 14 therefore verifies an outcome produced at protocol 13, whose
+`owner_balance()` is `None`, while an outcome signed as protocol 14 must prove
+the balance: a proof without it is refused, never retried as the older layout.
+An outcome signed by a protocol newer than any this SDK build knows is checked
+with the newest layout and rules the build knows, so results stay verifiable
+after that protocol activates while it keeps that layout. A protocol that
+changes the layout needs an SDK update. Its outcomes that return data are
+expected to fail verification, but an outcome proved by absence, such as a
+document delete, could still verify at a location the newer protocol no longer
+uses. The signature binds the protocol version to the state root, and an
+unpinned SDK raises its stored version to the producer's only after the
+signature and freshness checks pass, and never to a version this build does not
+know. Document query answers signed at an older version than the SDK's, unlike
+outcomes, are not verified (see
+[The Internal Fetch Pipeline](fetch-traits.md#the-internal-fetch-pipeline)).
 
 ### Timeout Handling
 

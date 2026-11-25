@@ -104,7 +104,8 @@ pub enum DocumentReferenceErrorCodeWasm {
     /// `permanentDocument`, `deletableDocument` or `moderatedDocument`
     /// reference without `findBy`, or one with `inList`, whose list's
     /// document is read by its id) names an `indexOnly` document type,
-    /// reported at contract registration. Such a type's documents exist only
+    /// reported at contract registration, or when a document is written for a
+    /// reference whose target the document names. Such a type's documents exist only
     /// as index entries and cannot be fetched by id, so no write could check
     /// the reference.
     ReferencedDocumentTypeIndexOnly = 40146,
@@ -125,6 +126,17 @@ pub enum DocumentReferenceErrorCodeWasm {
     /// valid commitment in that order wins (the earliest block's, ordered by
     /// `$createdAtBlockHeight` ascending).
     ReferencedDocumentPreceded = 40149,
+    /// A reference of any kind names a private document type (protocol version
+    /// 15), reported at contract registration. A private type's documents are
+    /// encrypted entries an anonymous transition appends and the chain never
+    /// reads, so no write could check the reference.
+    ReferencedDocumentTypePrivate = 40150,
+    /// A reference naming its target through the referring document
+    /// (`contractId` and `documentType` written `$self.<property>`, protocol version 15)
+    /// points at a document type that does not meet the reference's
+    /// `documentTypeRequirements`: its properties do not fill the slots the
+    /// reference requires.
+    ReferencedDocumentTypeRequirementNotMet = 40153,
     /// A create cannot reveal the preimage of a `refersTo` `findBy`
     /// function: a value a param reads is absent, or a variable-length
     /// value holds the one-byte separator that follows it in the preimage.
@@ -134,7 +146,7 @@ pub enum DocumentReferenceErrorCodeWasm {
 impl DocumentReferenceErrorCodeWasm {
     /// The reference-validation error a code names, or `None` when the code
     /// is not in the 40120-40125 range, 40131, 40135-40138, 40142-40146,
-    /// 40148, 40149 or 10423.
+    /// 40148-40150, 40153 or 10423.
     fn from_code(code: u32) -> Option<Self> {
         match code {
             40120 => Some(Self::ReferencedEntityNotFound),
@@ -155,6 +167,8 @@ impl DocumentReferenceErrorCodeWasm {
             40146 => Some(Self::ReferencedDocumentTypeIndexOnly),
             40148 => Some(Self::ReferencedDocumentRuleReadInvalid),
             40149 => Some(Self::ReferencedDocumentPreceded),
+            40150 => Some(Self::ReferencedDocumentTypePrivate),
+            40153 => Some(Self::ReferencedDocumentTypeRequirementNotMet),
             10423 => Some(Self::DocumentReferencePreimageInvalid),
             _ => None,
         }
@@ -396,9 +410,8 @@ impl ConsensusErrorWasm {
     }
 
     /// The reference-validation error this is, or `undefined` when it is
-    /// not one of codes 40120-40125, 40131, 40135-40138, 40142-40146, 40148,
-    /// 40149
-    /// and 10423.
+    /// not one of codes 40120-40125, 40131, 40135-40138, 40142-40146,
+    /// 40148-40150, 40153 and 10423.
     #[wasm_bindgen(getter = "documentReferenceErrorCode")]
     pub fn document_reference_error_code(&self) -> Option<DocumentReferenceErrorCodeWasm> {
         DocumentReferenceErrorCodeWasm::from_code(self.0.code())
@@ -471,6 +484,8 @@ mod tests {
     use dpp::consensus::state::document::referenced_document_type_moderated_error::ReferencedDocumentTypeModeratedError;
     use dpp::consensus::state::document::referenced_document_type_not_found_error::ReferencedDocumentTypeNotFoundError;
     use dpp::consensus::state::document::referenced_document_type_not_moderated_error::ReferencedDocumentTypeNotModeratedError;
+    use dpp::consensus::state::document::referenced_document_type_private_error::ReferencedDocumentTypePrivateError;
+    use dpp::consensus::state::document::referenced_document_type_requirement_not_met_error::ReferencedDocumentTypeRequirementNotMetError;
     use dpp::consensus::state::document::referenced_entity_not_found_error::ReferencedEntityNotFoundError;
     use dpp::consensus::state::document::referenced_identity_key_disabled_error::ReferencedIdentityKeyDisabledError;
     use dpp::consensus::state::document::referenced_identity_key_not_found_error::ReferencedIdentityKeyNotFoundError;
@@ -840,6 +855,28 @@ mod tests {
                 )
                 .into(),
                 DocumentReferenceErrorCodeWasm::ReferencedDocumentTypeIndexOnly,
+            ),
+            (
+                StateError::ReferencedDocumentTypePrivateError(
+                    ReferencedDocumentTypePrivateError::new(
+                        id(),
+                        "privateContactRequest".to_string(),
+                        "requestId".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentTypePrivate,
+            ),
+            (
+                StateError::ReferencedDocumentTypeRequirementNotMetError(
+                    ReferencedDocumentTypeRequirementNotMetError::new(
+                        id(),
+                        "post".to_string(),
+                        "descriptionId".to_string(),
+                    ),
+                )
+                .into(),
+                DocumentReferenceErrorCodeWasm::ReferencedDocumentTypeRequirementNotMet,
             ),
             (
                 StateError::ReferencedDocumentRuleReadInvalidError(

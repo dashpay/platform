@@ -59,14 +59,7 @@ mod tests {
             },
         )];
         drive
-            .apply_drive_operations(
-                ops,
-                true,
-                &BlockInfo::default(),
-                None,
-                platform_version,
-                None,
-            )
+            .apply_drive_operations(ops, true, &BlockInfo::default(), None, platform_version)
             .expect("apply");
     }
 
