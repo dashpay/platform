@@ -11,8 +11,8 @@
 //! - to catch up after being offline, start from a proved read's `metadata.height + 1`.
 //!
 //! A broken stream (including the transport's periodic streaming timeout) is resumed from the
-//! height after the last checkpoint, possibly on another node, so transitions after it may be
-//! delivered again. A node that sends something invalid (a wrong hash, indexes or positions out
+//! height after the highest checkpoint, possibly on another node, so transitions after it may
+//! be delivered again. A node that sends something invalid (a wrong hash, indexes or positions out
 //! of range, a stream that opens above the height it was asked to start at or with anything
 //! but a checkpoint, a checkpoint below an earlier one of its stream) is banned (only moved
 //! out of the rotation when `ban_failed_address` is off) and the stream resumed elsewhere. A node that

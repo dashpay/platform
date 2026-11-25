@@ -290,11 +290,22 @@ impl SubscriptionService {
         if tip.height > 0 {
             return Ok(tip.height);
         }
-        // Not published yet: the height the tracker would publish.
-        readable_tip(&self.blocks, 0)
-            .await
-            .map(|height| height.unwrap_or(0))
-            .map_err(|e| Status::unavailable(format!("cannot read the Tenderdash tip: {e}")))
+        // Not published yet: the height the tracker would publish, read here or published
+        // by the tracker, whichever comes first. Streams that open together before the
+        // tip is known each ask for it in turn, and the ones still waiting when the
+        // tracker has it need not.
+        let mut published = self.tip.clone();
+        tokio::select! {
+            Ok(tip) = published.wait_for(|tip| tip.height > 0 || tip.unreadable) => {
+                if tip.unreadable {
+                    return Err(tip_unreadable());
+                }
+                Ok(tip.height)
+            }
+            read = readable_tip(&self.blocks, 0) => read
+                .map(|height| height.unwrap_or(0))
+                .map_err(|e| Status::unavailable(format!("cannot read the Tenderdash tip: {e}"))),
+        }
     }
 }
 
@@ -313,7 +324,7 @@ async fn publish_tip(blocks: &BlockSource, tip: &watch::Sender<Tip>) -> DAPIResu
 /// The refusal of a node that cannot read its chain tip.
 fn tip_unreadable() -> Status {
     Status::unavailable(
-        "this node cannot read its chain tip; resume from the last checkpoint on another node",
+        "this node cannot read its chain tip; resume from the highest checkpoint on another node",
     )
 }
 
@@ -369,7 +380,7 @@ impl Scan {
             // Its buffer already stayed full for the whole deadline.
             Err(Stop::SlowClient) => (
                 Status::resource_exhausted(format!(
-                    "the client did not read for {}s; resume from the last checkpoint",
+                    "the client did not read for {}s; resume from the highest checkpoint",
                     SEND_DEADLINE.as_secs()
                 )),
                 false,

@@ -48,10 +48,12 @@ means every match from the first scanned block through `h` was sent: resume with
 `fromBlockHeight = h + 1`. Any end of the stream, including one with status `OK` (for example
 at the gateway's 600-second limit), means the same: resume from the highest checkpoint.
 
-Keep the highest checkpoint received, not the last. A stream resumed on a node that starts at
-its tip opens with a checkpoint below the one the client holds, and repeats matches the client
-may have. Resuming from that lower checkpoint could ask for a height nodes no longer replay.
-The Rust SDK does this: the checkpoints it gives an app never go down.
+The height to resume from only moves up: it is the greater of the one the client holds
+(the height it first asked to start at included) and a received checkpoint plus one. A stream
+resumed on a node that starts at its tip opens with a checkpoint below the one the client
+holds, and repeats matches the client may have. Resuming from that lower checkpoint could ask
+for a height nodes no longer replay. The Rust SDK does this: the checkpoints it gives an app
+never go down.
 
 **Example Usage** (Rust SDK):
 ```rust
@@ -127,8 +129,8 @@ chain is quiet, which the node does not know.
 
 **Limits** (per node): 256 subscriptions, 16 per client address (IPv6 per /48), 8 Tenderdash
 RPCs in flight across all subscriptions; a client that does not read for 60 seconds is
-dropped with `RESOURCE_EXHAUSTED`. The gateway ends every stream after 600 seconds; resume from the last
-checkpoint.
+dropped with `RESOURCE_EXHAUSTED`. The gateway ends every stream after 600 seconds; resume from the
+highest checkpoint.
 
 **Errors**: `INVALID_ARGUMENT` (malformed or undecidable filter), `NOT_FOUND` (unknown data
 contract), `OUT_OF_RANGE` (start height behind the replay window: catch up with a proved read

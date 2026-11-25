@@ -30,6 +30,8 @@ struct FakeChain {
     results_withheld: Mutex<Option<u64>>,
     /// Whether Tenderdash refuses to say how high its chain is, as when it is down.
     unreachable: AtomicBool,
+    /// Held by a test to keep Tenderdash from saying how high its chain is.
+    status_gate: tokio::sync::Mutex<()>,
     /// RPCs of any kind in flight, the most seen at once, and the `block` calls made.
     reads_in_flight: AtomicUsize,
     max_reads_in_flight: AtomicUsize,
@@ -62,6 +64,7 @@ impl FakeChain {
 #[async_trait]
 impl TenderdashBlocks for FakeChain {
     async fn latest_height(&self) -> DAPIResult<u64> {
+        drop(self.status_gate.lock().await);
         self.in_flight().await;
         if self.unreachable.load(Ordering::SeqCst) {
             return Err(DapiError::Client("connection refused".to_string()));
@@ -527,6 +530,31 @@ async fn should_hold_a_failed_streams_slot_until_its_buffer_is_read_or_discarded
         assert!(stream.next().await.is_none(), "the status is the last item");
     }
     assert!(subscribe().await.is_ok(), "the readers' slots are free");
+}
+
+/// A stream that opens before the tip is known asks Tenderdash for it, one such call at a
+/// time. After a restart many clients open at once, and the ones still waiting their turn
+/// when the tracker publishes the tip take it from there, instead of each asking in turn
+/// and the last of them running out of time.
+#[tokio::test(start_paused = true)]
+async fn should_open_with_the_tip_the_tracker_publishes_while_its_own_read_waits() {
+    let harness = harness(SubscriptionLimits::default());
+    // Stored but not published: the tip watch is still 0.
+    let height = harness.chain.push(vec![]);
+    let slow = harness.chain.status_gate.lock().await;
+
+    let opening = harness.subscribe(7, None);
+    tokio::pin!(opening);
+    assert!(
+        timeout(Duration::from_secs(1), &mut opening).await.is_err(),
+        "Tenderdash has not said how high its chain is"
+    );
+    harness.tip.send_replace(readable(height));
+    let mut stream = timeout(Duration::from_secs(1), &mut opening)
+        .await
+        .expect("opens with the published tip");
+    expect_checkpoint(&mut stream, height).await;
+    drop(slow);
 }
 
 #[tokio::test]

@@ -4855,8 +4855,11 @@ message SubscribeToStateTransitionsRequest {
 // is repeated every few seconds. A checkpoint at height `h` asserts that every
 // match from the first scanned block through `h` has been sent: resume from
 // `h + 1`. Any end of the stream, including one with status OK (for example
-// at the gateway's 600-second limit), means the same: resume from the last
-// checkpoint.
+// at the gateway's 600-second limit), means the same: resume from the highest
+// checkpoint received. A stream opened on a node that starts at its tip sends
+// checkpoints below the height it was asked to start at; the height to resume
+// from is the greater of the one held and the checkpoint plus one, and never
+// moves down.
 //
 // The server asserts these; it does not prove them. A client can check a
 // delivered transition (its hash, and that it matches the filters) but not
