@@ -17,6 +17,7 @@ import org.dashfoundation.example.di.LocalAppUiState
 import org.dashfoundation.example.services.auth.AuthPrompt
 import org.dashfoundation.example.ui.AppRoot
 import org.dashfoundation.example.ui.theme.ExampleTheme
+import org.dashfoundation.example.util.SensitiveClipboard
 
 /**
  * Toggle for FLAG_SECURE on screens that display secrets (seed backup, key
@@ -66,6 +67,12 @@ class MainActivity : FragmentActivity() {
             }
             }
         }
+    }
+
+    /** Retry a clipboard clear that fell due while the app was unfocused. */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) SensitiveClipboard.onFocusGained(this)
     }
 
     /** Warm-start deep link (launchMode=singleTop). */

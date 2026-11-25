@@ -42,6 +42,7 @@ import org.dashfoundation.example.services.KeyDisableGate
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.ui.credits.rememberManagedWalletFor
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.hexToBytes
@@ -55,7 +56,9 @@ import org.dashfoundation.example.util.toHex
  * [KeyDisableGate] pre-flight (master / last-auth / last-transfer refusals)
  * in front of `PlatformWalletManager.identityUpdates.disableKeys` — the
  * same `platform_wallet_update_identity_with_signer` call Swift's
- * `KeyDetailView.disableKey()` makes.
+ * `KeyDetailView.disableKey()` makes. A key with a budget or an expiry also
+ * shows the [KeyLimitsSection] (← `KeyDetailView.limitsSection`), whose
+ * Update Limits opens [UpdateKeyLimitsScreen].
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,9 +69,9 @@ fun KeyDetailScreen(identityIdHex: String, keyId: Int, navController: NavHostCon
     val idBytes = remember(identityIdHex) { identityIdHex.hexToBytes() }
     val idBase58 = remember(identityIdHex) { Base58.encode(idBytes) }
 
-    val identity by container.database.identityDao()
-        .observeByIdentityId(idBytes)
-        .collectAsStateWithLifecycle(initialValue = null)
+    val identity by remember(idBytes) {
+        container.database.identityDao().observeByIdentityId(idBytes)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
     // The persister keys `public_keys.identityId` by base58; older callers
     // passed the hex nav-arg through — observe base58 and fall back to hex
     // so both encodings resolve.
@@ -128,6 +131,18 @@ fun KeyDetailScreen(identityIdHex: String, keyId: Int, navController: NavHostCon
                 LabeledContent("Type", IdentityKeys.keyTypeName(k.keyType))
                 LabeledContent("Security Level", IdentityKeys.securityLevelName(k.securityLevel))
                 if (k.disabledAt != null) LabeledContent("Status", "Disabled")
+            }
+
+            if (k.hasLimits) {
+                KeyLimitsSection(
+                    identityIdHex = identityIdHex,
+                    identityIdBase58 = idBase58,
+                    identityId = idBytes,
+                    key = k,
+                    manager = manager,
+                    wallet = wallet,
+                    navController = navController,
+                )
             }
 
             FormSection(title = "Public Key") {

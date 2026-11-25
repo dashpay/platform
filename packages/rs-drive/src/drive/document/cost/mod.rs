@@ -1214,6 +1214,7 @@ impl DocumentCreateCost {
                                                 IndexAxis::Count => "count",
                                                 IndexAxis::Sum => "sum",
                                                 IndexAxis::Avg => "avg",
+                                                IndexAxis::BigSum => "bigSum",
                                             })
                                         })
                                         .unwrap_or(Value::Null),

@@ -281,3 +281,34 @@ fn shield_memo_round_trips_through_ovk_recovery() {
         "the OVK-recovered memo must decode back to the original text"
     );
 }
+
+#[test]
+fn should_keep_identity_account_notes_and_ordinary_account_notes_apart() {
+    use crate::wallet::shielded::shielded_identity_account_index;
+    let seed = [0x67; 64];
+    let identity_account = shielded_identity_account_index(0).unwrap();
+    let identity = OrchardKeySet::from_seed(&seed, Network::Testnet, identity_account).unwrap();
+    let restored = OrchardKeySet::from_seed(&seed, Network::Testnet, identity_account).unwrap();
+    let ordinary = OrchardKeySet::from_seed(&seed, Network::Testnet, 0).unwrap();
+    // Any address of the identity's account is found again from the seed, with no saved
+    // diversifier index, and the ordinary account's key reads none of them.
+    for recipient in [identity.default_address, identity.address_at(17)] {
+        let wire = make_own_ovk_wire_note(
+            recipient,
+            identity.outgoing_viewing_key.clone(),
+            123_456,
+            [0; 36],
+        );
+        assert!(try_decrypt_note_with_memo(&restored.prepared_ivk(), &wire).is_some());
+        assert!(try_decrypt_note_with_memo(&ordinary.prepared_ivk(), &wire).is_none());
+    }
+    // Nor does the identity account's key read the ordinary account's notes.
+    let ordinary_wire = make_own_ovk_wire_note(
+        ordinary.default_address,
+        ordinary.outgoing_viewing_key.clone(),
+        456_789,
+        [0; 36],
+    );
+    assert!(try_decrypt_note_with_memo(&identity.prepared_ivk(), &ordinary_wire).is_none());
+    assert!(try_recover_outgoing_note(&identity.outgoing_viewing_key, &ordinary_wire).is_none());
+}

@@ -49,6 +49,7 @@ import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.prettyPrintJson
 import org.dashfoundation.example.util.toHex
 
@@ -78,7 +79,7 @@ fun QuickBasicTokenScreen(navController: NavHostController) {
     val ownedIdentitiesFlow = remember(network) {
         container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
     }
-    val ownedIdentities by ownedIdentitiesFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val ownedIdentities by ownedIdentitiesFlow.collectEachAsStateWithLifecycle(initialValue = emptyList())
     val owner = ownedIdentities.firstOrNull()
 
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()

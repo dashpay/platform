@@ -2,4 +2,6 @@
 pub mod cast_vote;
 
 // Re-export all public functions for convenient access
-pub use cast_vote::dash_sdk_contested_resource_cast_vote;
+pub use cast_vote::{
+    dash_sdk_contested_resource_cast_vote, dash_sdk_contested_resource_cast_vote_with_signer,
+};

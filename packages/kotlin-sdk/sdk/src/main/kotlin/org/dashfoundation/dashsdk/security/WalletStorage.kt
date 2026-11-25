@@ -6,6 +6,7 @@ import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.UserNotAuthenticatedException
 import android.util.Log
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -157,6 +158,38 @@ class WalletStorage(
          * wallet's owner-index entry with fresh ciphertext.
          */
         suspend fun tombstoneWallet(walletId: ByteArray)
+
+        /**
+         * The identity-key deletes recorded and not settled yet (see
+         * [recordPendingIdentityKeyDeletes]).
+         */
+        suspend fun pendingIdentityKeyDeletes(): List<PendingIdentityKeyDelete>
+
+        /**
+         * Durably record [deletes]: identity-key aliases whose identity rows
+         * are being removed, each with the wallet that owned the identity.
+         * Written BEFORE the rows go (an identity removal, a persisted
+         * identity removal, a repair that outlived its identity), so a
+         * cleanup interrupted after them can be finished by the next one.
+         */
+        suspend fun recordPendingIdentityKeyDeletes(deletes: Collection<PendingIdentityKeyDelete>)
+
+        /**
+         * In ONE atomic commit: delete the aliases [delete] as
+         * [deletePrivateKeys] does (owner indexes included) and drop the
+         * entries [settled] from the pending identity-key deletes.
+         */
+        suspend fun settlePendingIdentityKeyDeletes(
+            delete: Collection<String>,
+            settled: Collection<PendingIdentityKeyDelete>,
+        )
+
+        /**
+         * Drop [walletId]'s owner-index claim on [pubkeyHexes] without
+         * deleting their ciphertext: the identity that needed them under that
+         * wallet is gone, while another wallet's identity still uses them.
+         */
+        suspend fun releaseOwnerClaims(walletId: ByteArray, pubkeyHexes: Collection<String>)
     }
 
     private val privateKeyExclusionScope = object : PrivateKeyExclusion {
@@ -183,6 +216,36 @@ class WalletStorage(
         override suspend fun tombstoneWallet(walletId: ByteArray) {
             tombstonedWalletIds += walletId.toHex()
         }
+
+        override suspend fun pendingIdentityKeyDeletes(): List<PendingIdentityKeyDelete> =
+            (store.data.first()[PENDING_IDENTITY_KEY_DELETES] ?: emptySet())
+                .map(PendingIdentityKeyDelete::decode)
+
+        override suspend fun recordPendingIdentityKeyDeletes(
+            deletes: Collection<PendingIdentityKeyDelete>,
+        ) {
+            if (deletes.isEmpty()) return
+            store.edit { prefs ->
+                prefs[PENDING_IDENTITY_KEY_DELETES] =
+                    (prefs[PENDING_IDENTITY_KEY_DELETES] ?: emptySet()) + deletes.map { it.encode() }
+            }
+        }
+
+        override suspend fun settlePendingIdentityKeyDeletes(
+            delete: Collection<String>,
+            settled: Collection<PendingIdentityKeyDelete>,
+        ) {
+            val settledEntries = settled.map { it.encode() }.toSet()
+            deletePrivateKeysLocked(delete) { prefs ->
+                val current = prefs[PENDING_IDENTITY_KEY_DELETES] ?: return@deletePrivateKeysLocked
+                val next = current - settledEntries
+                if (next.isEmpty()) prefs.remove(PENDING_IDENTITY_KEY_DELETES)
+                else prefs[PENDING_IDENTITY_KEY_DELETES] = next
+            }
+        }
+
+        override suspend fun releaseOwnerClaims(walletId: ByteArray, pubkeyHexes: Collection<String>) =
+            removeFromOwnerIndexLocked(walletId, pubkeyHexes)
     }
 
     /**
@@ -1364,10 +1427,14 @@ class WalletStorage(
         privateKeyMutex.withLock { deletePrivateKeysLocked(pubkeyHexes) }
     }
 
-    private suspend fun deletePrivateKeysLocked(pubkeyHexes: Collection<String>) {
-        if (pubkeyHexes.isEmpty()) return
+    private suspend fun deletePrivateKeysLocked(
+        pubkeyHexes: Collection<String>,
+        alsoInSameCommit: ((MutablePreferences) -> Unit)? = null,
+    ) {
+        if (pubkeyHexes.isEmpty() && alsoInSameCommit == null) return
         val normalized = pubkeyHexes.map { it.lowercase() }.toSet()
         store.edit { prefs ->
+            alsoInSameCommit?.invoke(prefs)
             for (pubkeyHex in normalized) {
                 prefs.remove(privateKeyKey(pubkeyHex))
                 prefs.remove(privateKeyFingerprintKey(pubkeyHex))
@@ -1649,6 +1716,10 @@ class WalletStorage(
         /** Durable wallet → alias-hex-set owner index (string-set entries). */
         const val PRIVKEY_OWNERS_PREFIX = "privkeyowners."
 
+        /** Identity-key aliases an identity removal has yet to delete. */
+        private val PENDING_IDENTITY_KEY_DELETES =
+            stringSetPreferencesKey("pendingidentitykeydeletes")
+
         fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 
         /**
@@ -1711,5 +1782,37 @@ class WalletStorage(
         private val MASTER_LOCK_DEFECT_KEY = booleanPreferencesKey("masterkeylockdefect")
 
         private const val TAG = "WalletStorage"
+    }
+}
+
+/**
+ * One identity-key alias to delete once nothing needs it, with the wallet that
+ * owned the removed identity (null for an identity with no wallet link). See
+ * [WalletStorage.PrivateKeyExclusion.recordPendingIdentityKeyDeletes].
+ */
+class PendingIdentityKeyDelete(aliasHex: String, val walletId: ByteArray?) {
+    /** Lowercase hex of the alias (public key or HASH160). */
+    val aliasHex: String = aliasHex.lowercase()
+
+    internal fun encode(): String =
+        if (walletId == null) aliasHex else "$aliasHex@${walletId.joinToString("") { "%02x".format(it) }}"
+
+    override fun equals(other: Any?): Boolean =
+        other is PendingIdentityKeyDelete && other.encode() == encode()
+
+    override fun hashCode(): Int = encode().hashCode()
+
+    override fun toString(): String = "PendingIdentityKeyDelete(${encode()})"
+
+    internal companion object {
+        fun decode(entry: String): PendingIdentityKeyDelete {
+            val at = entry.indexOf('@')
+            if (at < 0) return PendingIdentityKeyDelete(entry, null)
+            val walletHex = entry.substring(at + 1)
+            return PendingIdentityKeyDelete(
+                entry.substring(0, at),
+                ByteArray(walletHex.length / 2) { walletHex.substring(it * 2, it * 2 + 2).toInt(16).toByte() },
+            )
+        }
     }
 }

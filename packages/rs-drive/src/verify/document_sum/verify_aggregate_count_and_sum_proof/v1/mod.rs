@@ -14,7 +14,7 @@ impl DriveDocumentSumQuery<'_> {
         &self,
         proof: &[u8],
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, u64, i64), Error> {
+    ) -> Result<(RootHash, u64, i128), Error> {
         let verified = self.verify_aggregate_count_and_sum_proof_v0(proof, platform_version);
         or_empty_range_total(
             verified,

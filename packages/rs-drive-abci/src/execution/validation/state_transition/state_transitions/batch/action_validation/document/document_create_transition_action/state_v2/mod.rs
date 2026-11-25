@@ -146,6 +146,10 @@ impl DocumentCreateTransitionActionStateValidationV2 for DocumentCreateTransitio
             &system,
             None,
             None,
+            // Read by document reference validation 1 (protocol version 15) alone: generation
+            // 0, which every earlier protocol version selecting this module runs, is not handed
+            // it
+            self.prefunded_voting_balance().is_some(),
             platform,
             block_info,
             consumed_documents,

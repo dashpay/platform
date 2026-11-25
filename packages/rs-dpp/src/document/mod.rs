@@ -13,6 +13,7 @@ pub mod errors;
 pub mod extended_document;
 mod fields;
 pub mod generate_document_id;
+mod id_and_revision_from_bytes;
 pub mod lifecycle;
 pub mod serialization_traits;
 #[cfg(feature = "factories")]

@@ -30,6 +30,8 @@ use crate::version::drive_versions::drive_document_method_versions::{
 ///   removes its current pointer and indices and writes a lifecycle record. Its primary
 ///   removal and removal estimate selectors are 1, describing the composite pointer.
 /// * `query.fetch_document_lifecycle` is `Some(0)`: reads the current document or its record.
+/// * `query.fetch_document_type_sum` is `Some(0)`: reads the total a document type keeps of
+///   its summed property, which document create and replace state validation hold in range.
 ///   `delete.erase_document_for_contract_operations`, `add_estimation_costs_for_erase_document`
 ///   and `add_estimation_costs_for_lifecycle_record` are `Some(0)`: bounded erasure removes
 ///   retained revisions and prices the chunk and its lifecycle metadata.
@@ -50,8 +52,10 @@ use crate::version::drive_versions::drive_document_method_versions::{
 pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
     DriveDocumentMethodVersions {
         document_history_storage_layout: 1,
+        primary_key_tree_type: 2, // changed: the 128-bit counterpart for a type that keeps big sums
         query: DriveDocumentQueryMethodVersions {
             fetch_document_lifecycle: Some(0), // changed: reads the current document or lifecycle record
+            fetch_document_type_sum: Some(0), // changed: reads the total a type keeps of its summed property
             single_document_path_query: 1, // changed: a temporal lookup selects the latest retained revision
             fetch_document_history_query: 1,
             fetch_document_history: 1,
@@ -71,6 +75,7 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V5: DriveDocumentMethodVersions =
         append_private_document_entries_operations: Some(0), // changed: a PrivateDocumentCreateFromShieldedPool appends entries to a store
         delete: DriveDocumentDeleteMethodVersions {
             erase_refund_recipient_cost: Some(0), // changed: prices third-party balance work caused by erasure
+            consumed_document_delete_cost: 1, // the delete from what the lookup read, as the create conversion 1 makes it
             add_estimation_costs_for_remove_document_to_primary_storage: 1, // changed: estimates removal of the composite current pointer
             remove_document_from_primary_storage: 1, // changed: removes only the current history pointer
             delete_document_for_contract_operations: 1, // changed: retains history and records deletion

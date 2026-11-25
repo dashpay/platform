@@ -4,9 +4,10 @@ use crate::version::system_data_contract_versions::SystemDataContractVersions;
 // keywords instead of most of its data trigger: generated normalized names, the
 // reveal and deletion of the writer's own preorder from an earlier block
 // (preorders unsalted, one per owner and name, the first valid one of a name
-// chosen), and the new domain's identity record held to its owner. Domains can
-// no longer be deleted. v3 (dpns: 2) remains for PROTOCOL_VERSION_14 chain
-// replay. The token market contract does not exist yet (token_market: 0): the
+// chosen), and the new domain's identity record held to its owner. A name's
+// owner can delete it (not a contested one) or tombstone it, the new `tombstone`
+// type, which keeps the name from being registered again. v3 (dpns: 2) remains
+// for PROTOCOL_VERSION_14 chain replay. The token market contract does not exist yet (token_market: 0): the
 // token marketplace starts with protocol version 16.
 //
 // The DashPay contract v3 states the checks of its two data triggers as schema

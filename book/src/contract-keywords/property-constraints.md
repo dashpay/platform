@@ -276,6 +276,18 @@ A write that changes no property is not judged against a rule that compares prop
 
 A filter maps each key, a property of the counted type or `$ownerId`, to the value it must take, read from the document being written: one of its properties (`"campaignRef"`), `$ownerId`, `$id` (its own id, for an identifier key), an integer, or a `{ "const": ... }` string or base58 identifier. From protocol version 15 a key may also be a byte array property, matched by a byte array property of the document: `{ "countOf": ["preorder", { "nameHash": "nameHash" }] }` counts the preorders holding the same hash as the one being written. The counted type may be the rule's own. `$id` counts the documents pointing at this one: `{ "countOf": ["vote", { "pollId": "$id" }] }` is how many votes name the poll being written.
 
+From protocol version 15 a key may instead match **any element** of a [typed array](typed-arrays.md) of the document being written, with `{ "in": "<array property>" }`. The total is then over the counted documents whose key is one of the list's distinct elements: for a `countOf`, how many of them there are. A list the document leaves out, or an empty one, matches nothing and reads 0, and a list holding an element twice counts its documents once.
+
+```json
+"propertyConstraints": {
+  "noBannedTags": {
+    "equal": [{ "countOf": ["bannedTag", { "tag": { "in": "tags" } }] }, 0]
+  }
+}
+```
+
+A post is refused when one of its `tags` is the `tag` of a `bannedTag` document. Like every total, it is judged when a post is written and not when a tag is banned: banning a tag stops the next post, and leaves the posts already stored. It is judged on every replace too, so a type whose authors retract a document by replacing it lets that replace through (`{ "anyOf": [{ "present": "deleted" }, ...] }`), or a tag banned later would keep its author from retracting.
+
 ```json
 "propertyConstraints": {
   "atMostTenListings": {
@@ -290,7 +302,7 @@ A filter maps each key, a property of the counted type or `$ownerId`, to the val
 - **As it will be after the write.** The total is the stored one with the write applied. When the counted type is the rule's own, a create or moderator restore adds the document, a replace swaps its stored version for the new one, and a transfer or purchase moves it to its new owner. So `atMostTenListings`, declared on `listing`, keeps every owner at ten or fewer, and a replace of one of ten is allowed.
 - **Judged when the rule's own type is written.** A rule is never judged on writes of the type it counts. On its own type it holds for good, since every write that could raise the total is judged; a type with a contested index cannot total its own documents, since a document a contest awards is stored without any rule judged. On another type it is only checked when its own type is written, and can go stale later: deleting a `profile` does not undo a `post` that needed one. Deletes are not judged, so a lower bound can be broken by deleting documents, unless the counted type's [`deleteConstraints`](deletion.md#deleteconstraints) hold it.
 - **Transfers, purchases and price updates.** A total that depends on the owner (a filter value of `$ownerId`, or a `$ownerId` key on the rule's own type) is read again for a transfer or purchase, the document counted toward its new owner. A rule a transfer, purchase or price update judges for another read (`$transferredAt…`, `$updatedAt…` or `$revision`, of either version) reads its totals too.
-- **Billed.** Each total is a state read billed with the write. A total two rules read alike is read once.
+- **Billed.** Each total is a state read billed with the write. A total two rules read alike is read once. A total matching a key by the elements of an array is one state read per distinct element the document holds.
 - **Every earlier write counts.** A document batch carries one transition, and each state transition of a block is applied before the next is validated, so a total includes every write before it.
 - **SDK pre-checks** cannot read state, so they do not judge a rule reading a total.
 
@@ -377,7 +389,7 @@ The meta-schema checks the shape (`JsonSchemaError`, 10101):
 - no `anyOf` or `allOf` holds its own kind directly, and no `not` holds a `not` or a `notIn`;
 - a path matches `$ownerId`, `$revision`, one of the nine [times and heights](#times-and-heights), or dotted names of 1 to 64 letters, digits or underscores, any of them optionally after `$old.`, so `$id` and other system properties are refused; a `referenced` lists a property name, then a dotted path, `$id`, `$ownerId`, `$creatorId` or a time or height;
 - a `byteAt` lists a path and an integer index from 0 to 65535;
-- a `countOf` lists a type name and optionally a filter, and a `sumOf` a type name, a property and optionally a filter; a filter has one or more keys, each `$ownerId` or a dotted path, and each value is a path, `$ownerId`, `$id`, an integer or a `{ "const": ... }` string.
+- a `countOf` lists a type name and optionally a filter, and a `sumOf` a type name, a property and optionally a filter; a filter has one or more keys, each `$ownerId` or a dotted path, and each value is a path, `$ownerId`, `$id`, an integer, a `{ "const": ... }` string or, from protocol version 15, `{ "in": path }`, at most one of them in a filter.
 
 The parser then checks the rules against the document type (`InvalidContractStructure`, 10231):
 
@@ -395,6 +407,7 @@ The parser then checks the rules against the document type (`InvalidContractStru
 - no condition or operand nests more than 64 levels deep;
 - once every document type of the contract is parsed, every `countOf` and `sumOf` counts a type of the contract that is not index-only, and not its own type when that has a contested index, with a tree that keeps the total as set out in [Totals of other documents](#totals-of-other-documents). A unique, contested, ranked, time-range, integer-range or index-only-terminal index keeps no such total, nor does one with more properties than the filter has keys;
 - every key of a filter is `$ownerId` or an integer, string or identifier property of the counted type, or from protocol version 15 a byte array property, and its value is of the same kind (`$ownerId` and `$id` are identifiers, and a byte array key takes a byte array property, never a constant); a string constant is in the key's `enum` when it has one, and an identifier constant is base58;
+- an `{ "in": path }` names a typed array property of the declaring type whose elements are integers, strings or identifiers, of the same kind as its key, and never stands in a total of the rule's own type, which matches every key by a single value. The array may be optional, unlike a property a key is bound to;
 - every property a filter value reads is listed in `required`, with every object around it, so a write always has the value; an index-only type has no rule reading a total;
 - a `referenced` reads through a property of the type holding one reference to one document, as set out in [Values of a referenced document](#values-of-a-referenced-document), only in `propertyConstraints` (not `deleteConstraints`, an `immutable` condition or `retractedWhen`, whose writes check no reference), not on an index-only type, and not beside what a write checking no reference changes: what a transfer or purchase of the type changes (`$ownerId`, `$transferredAt` and its heights or `$revision`, of either version, or a total depending on the owner), what a price update of the type changes (`$updatedAt` and its heights or `$revision`, of either version), on a type keeping fields for its moderators one of those fields or `$revision`, of either version, or any total, and, on a type whose moderators' deletions keep records, any total;
 - once every document type of the contract is parsed, what a rule reads of a referenced type of the same contract is a field that type gives it: one it has, stored, of the kind the rule reads, a time or height it records, a `$creatorId` it records, a constant its `enum` lists, and through a `moderatedDocument` reference a field its removal record keeps. A referenced type of another contract is checked at registration against the stored contract, refused with `ReferencedDocumentRuleReadInvalidError` (40148).
@@ -403,7 +416,7 @@ Three limits come from the protocol version 14 `SystemLimits`, and a rule over o
 
 - at most 16 rules per document type (`max_property_constraints`);
 - at most 32 nodes per rule (`max_property_constraint_nodes`);
-- at most 4 distinct `countOf` and `sumOf` totals read by one document type's rules, a total read twice counting once (`max_property_constraint_aggregates`).
+- at most 4 distinct `countOf` and `sumOf` totals read by one document type's rules, a total read twice counting once, and one matching a key by the elements of an array counting as that array's `maxItems`, the state reads it can make (`max_property_constraint_aggregates`).
 
 A rule within 32 nodes is never deep enough to reach the 64-level bound. Nodes are counted like this:
 

@@ -166,6 +166,39 @@ interface AssetLockDao {
     )
     suspend fun fundingTypeForTxid(txidHex: String): Int?
 
+    /**
+     * How many OTHER locks of [walletId] already carry [operationId]. An
+     * operation id names one lock, so anything above zero refuses the write
+     * (`onPersistAssetLockOperationId`).
+     */
+    @Query(
+        "SELECT COUNT(*) FROM asset_locks WHERE walletId = :walletId " +
+            "AND operationId = :operationId AND outPointHex != :outPointHex"
+    )
+    suspend fun countOtherLocksWithOperationId(
+        walletId: ByteArray,
+        operationId: ByteArray,
+        outPointHex: String,
+    ): Int
+
+    /**
+     * Associate [operationId] with the lock at [outPointHex]
+     * (`onPersistAssetLockOperationId`). Returns the number of rows changed.
+     */
+    @Query("UPDATE asset_locks SET operationId = :operationId WHERE outPointHex = :outPointHex")
+    suspend fun setOperationId(outPointHex: String, operationId: ByteArray): Int
+
+    /**
+     * Associate the shielded [recipientRaw43] with the lock at [outPointHex]
+     * (`onPersistAssetLockShieldedRecipient`). Returns the number of rows
+     * changed.
+     */
+    @Query(
+        "UPDATE asset_locks SET shieldedRecipientRaw43 = :recipientRaw43 " +
+            "WHERE outPointHex = :outPointHex"
+    )
+    suspend fun setShieldedRecipient(outPointHex: String, recipientRaw43: ByteArray): Int
+
     @Upsert
     suspend fun upsert(assetLock: AssetLockEntity)
 
@@ -174,16 +207,18 @@ interface AssetLockDao {
 
     /**
      * Asset-lock removal path (`onPersistAssetLockRemoval`). The
-     * `statusRaw != 4` guard is the same terminal rule SQLite's DELETE
-     * (`status != 'consumed'`) and Swift's `statusRaw == 4` skip apply: a
-     * Consumed row is deliberately retained for historical lookup, and
+     * `statusRaw NOT IN (4, 6)` guard is the same terminal rule SQLite's
+     * DELETE (`status != 'consumed'`, to which DrainCompleted also projects)
+     * and Swift's `statusRaw == 4 || statusRaw == 6` skip apply: a
+     * Consumed row is deliberately retained for historical lookup, and a
+     * DrainCompleted row is the receipt that reports its drain as finished;
      * neither removal producer can legitimately name one — a Built row
      * rejected at broadcast never got that far, and a sweep of the funding
      * transaction only tombstones entries still tracked, which a consumed
      * lock no longer is — so a removal reaching a consumed row is by
      * construction a stale write.
      */
-    @Query("DELETE FROM asset_locks WHERE outPointHex = :outPointHex AND statusRaw != 4")
+    @Query("DELETE FROM asset_locks WHERE outPointHex = :outPointHex AND statusRaw NOT IN (4, 6)")
     suspend fun deleteByOutPointHex(outPointHex: String)
 
     /** Wallet teardown mirror of `deleteWalletData`'s asset-lock pass. */

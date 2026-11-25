@@ -110,7 +110,11 @@ pub struct AverageEntry {
     pub count: Option<u64>,
     /// Aggregated `sum_property` value for this key. `Some(n)` for
     /// matched keys; `None` for keys proven absent.
-    pub sum: Option<i64>,
+    ///
+    /// 128 bits wide, as [`SumEntry::sum`] is, and for the same reason.
+    ///
+    /// [`SumEntry::sum`]: crate::query::drive_document_sum_query::SumEntry::sum
+    pub sum: Option<i128>,
 }
 
 /// Server-side request input for the average dispatcher. Mirrors

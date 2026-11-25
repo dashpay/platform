@@ -86,6 +86,7 @@ use crate::consensus::state::document::referenced_document_type_index_only_error
 use crate::consensus::state::document::referenced_document_type_private_error::ReferencedDocumentTypePrivateError;
 use crate::consensus::state::document::referenced_document_type_requirement_not_met_error::ReferencedDocumentTypeRequirementNotMetError;
 use crate::consensus::state::document::document_type_not_private_error::DocumentTypeNotPrivateError;
+use crate::consensus::state::document::document_sum_overflow_error::DocumentSumOverflowError;
 use crate::consensus::state::document::private_document_entry_size_mismatch_error::PrivateDocumentEntrySizeMismatchError;
 use crate::consensus::state::document::document_delete_constraint_violated_error::DocumentDeleteConstraintViolatedError;
 use crate::consensus::state::document::referenced_document_rule_read_invalid_error::ReferencedDocumentRuleReadInvalidError;
@@ -777,6 +778,11 @@ pub enum StateError {
     // document type that does not meet its `documentTypeRequirements` (protocol version 15).
     #[error(transparent)]
     ReferencedDocumentTypeRequirementNotMetError(ReferencedDocumentTypeRequirementNotMetError),
+
+    // A document create or replace would take its type's total of the summed property past what
+    // the type's sums hold (protocol version 15).
+    #[error(transparent)]
+    DocumentSumOverflowError(DocumentSumOverflowError),
 }
 
 impl From<StateError> for ConsensusError {
@@ -1767,6 +1773,19 @@ mod tests {
                 )
             )),
             181
+        );
+        // A document write past its type's total of the summed property (protocol version 15):
+        // the tail of the enum.
+        assert_eq!(
+            discriminant_of(StateError::DocumentSumOverflowError(
+                DocumentSumOverflowError::new(
+                    identity_id,
+                    "tip".to_string(),
+                    "amount".to_string(),
+                    i64::MAX,
+                )
+            )),
+            182
         );
     }
 }

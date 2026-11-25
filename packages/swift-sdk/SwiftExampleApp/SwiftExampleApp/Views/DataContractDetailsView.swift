@@ -15,10 +15,24 @@ struct DataContractDetailsView: View {
     /// In-flight indicator for the Save button. Owned by the parent
     /// (the persist call lives there); we just toggle the spinner.
     var isSaving: Bool = false
+    /// The app's store, which holds the wallets' identities and keys. Set
+    /// when this view itself runs on a preview container: the moderation
+    /// hub then reads identities and signs against the app's store, not the
+    /// preview's. Nil when this view already runs on the app's store.
+    var appModelContainer: ModelContainer? = nil
+    /// `AppState.sdkGeneration` of the SDK this contract was read through.
+    /// Set for a preview fetched from the network: the moderation hub is
+    /// scoped to that connection, so after an SDK rebuild it asks the user
+    /// to reopen. Nil for a saved contract, whose hub takes the connection
+    /// current when it is opened.
+    var moderationGeneration: Int? = nil
     @Environment(\.dismiss) var dismiss
+    /// Read for the connection the moderation screens are opened on.
+    @EnvironmentObject var appState: AppState
     @Environment(\.modelContext) private var modelContext
     @State private var showingShareSheet = false
     @State private var showCopiedAlert = false
+    @State private var showingUpdateContract = false
 
     var displayName: String {
         // Check if this is a token-only contract
@@ -56,6 +70,7 @@ struct DataContractDetailsView: View {
                 groupsSection
                 documentTypesSection
                 documentsSection
+                moderationSection
                 actionsSection
             }
             .navigationTitle("Contract Details")
@@ -79,6 +94,15 @@ struct DataContractDetailsView: View {
             }
             .navigationDestination(for: OwnerRoute.self) { route in
                 IdentityDetailView(identityId: route.identityId)
+            }
+            .navigationDestination(for: ModerationRoute.self) { route in
+                moderationHub(for: route)
+            }
+            // A boolean route on the stack itself, not a link inside a
+            // section, so a re-render of this list cannot pop it (see the
+            // comment above).
+            .navigationDestination(isPresented: $showingUpdateContract) {
+                UpdateContractView(contract: contract)
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -284,6 +308,47 @@ struct DataContractDetailsView: View {
         }
     }
 
+    /// Contract moderation and fee pots (protocol version 14). Offered for
+    /// every contract: whether it is moderated, which lists it keeps and
+    /// what its pots hold are the node's to answer on the next screen.
+    @ViewBuilder
+    private var moderationSection: some View {
+        Section("Moderation") {
+            NavigationLink(
+                value: ModerationRoute(
+                    // The connection is captured as the hub is opened: once it is
+                    // replaced, the hub shows a notice rather than read this id
+                    // through the new SDK, which may hold another chain's contract.
+                    // A preview keeps the connection it was fetched through
+                    scope: ModerationScope(
+                        contractId: contract.idBase58,
+                        generation: moderationGeneration ?? appState.sdkGeneration
+                    ),
+                    documentTypeNames: (contract.documentTypes ?? []).map(\.name).sorted()
+                )
+            ) {
+                Label("Moderation and Fee Pots", systemImage: "shield.lefthalf.filled")
+            }
+            .accessibilityIdentifier("contractModeration.link")
+        }
+    }
+
+    /// The moderation hub for `route`, on the app's store when this view
+    /// runs on a preview container (``appModelContainer``). The hub asks the
+    /// wallets of the identities in that store and signs with their keys.
+    @ViewBuilder
+    private func moderationHub(for route: ModerationRoute) -> some View {
+        let hub = ContractModerationView(
+            scope: route.scope,
+            documentTypeNames: route.documentTypeNames
+        )
+        if let appModelContainer {
+            hub.modelContainer(appModelContainer)
+        } else {
+            hub
+        }
+    }
+
     @ViewBuilder
     private var actionsSection: some View {
         Section {
@@ -303,6 +368,18 @@ struct DataContractDetailsView: View {
                     }
                 }
                 .disabled(isSaving)
+            }
+
+            // Only the owner can sign an update, so the action is offered
+            // when a local identity owns the contract, and never for a
+            // preview-only contract (`onSave != nil`). Whether Platform
+            // accepts the update is decided when it is broadcast.
+            if onSave == nil, contract.ownerIdentity != nil {
+                Button(action: { showingUpdateContract = true }) {
+                    Label("Update Contract", systemImage: "square.and.pencil")
+                        .foregroundColor(.blue)
+                }
+                .accessibilityIdentifier("contractDetails.updateContract")
             }
 
             Button(action: { showingShareSheet = true }) {
@@ -338,6 +415,12 @@ struct DataContractDetailsView: View {
     /// `Data` value could collide with any other `Data`-keyed route).
     private struct OwnerRoute: Hashable {
         let identityId: Data
+    }
+
+    /// Value-based navigation route for the moderation screen.
+    private struct ModerationRoute: Hashable {
+        let scope: ModerationScope
+        let documentTypeNames: [String]
     }
 
     /// Decode `contract.groups` (`[String: Any]?`) into a sorted
@@ -534,6 +617,17 @@ struct DocumentTypeRowView: View {
             HStack {
                 Text(docType.name)
                     .font(.headline)
+                if docType.isPrivate {
+                    // Protocol version 15: encrypted entries, not documents
+                    Label("Private", systemImage: "lock.fill")
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.indigo.opacity(0.2))
+                        .foregroundColor(.indigo)
+                        .cornerRadius(4)
+                        .accessibilityIdentifier("documentType.privateBadge")
+                }
                 Spacer()
                 if docType.documentCount > 0 {
                     Text("\(docType.documentCount) docs")

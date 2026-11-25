@@ -96,29 +96,47 @@ pub(crate) struct RankingRow {
     pub entry_path: Vec<Vec<u8>>,
     /// The entry's key: the document's value.
     pub entry_key: Vec<u8>,
+    /// Whether the ranked tree keeps 128-bit sums, whose rows carry no sum
+    /// ([`ranking_row`]).
+    pub ranked_tree_keeps_big_sums: bool,
+}
+
+/// Whether the ranked tree `tree_type` keeps 128-bit sums: the entries of such a tree hold
+/// 128-bit sums, which no row carries.
+pub(crate) fn ranked_tree_keeps_big_sums(tree_type: TreeType) -> bool {
+    matches!(
+        tree_type,
+        TreeType::ProvableBigSumIndexedTree | TreeType::ProvableCountProvableBigSumIndexedTree
+    )
 }
 
 /// The key and element of the row of the entry `entry_key` holding
 /// `count` and `sum` in the secondary tree of `axis`: the sort key followed
 /// by the entry key, holding a one-hop reference to the entry that carries
 /// the axis's aggregate (grovedb `make_axis_secondary_key`,
-/// `axis_row_reference`).
+/// `axis_row_reference`). `ranked_tree_keeps_big_sums` is whether the ranked
+/// tree keeps 128-bit sums ([`ranked_tree_keeps_big_sums`]).
 pub(crate) fn ranking_row(
     axis: IndexAxis,
     entry_key: &[u8],
     count: u64,
     sum: i64,
+    ranked_tree_keeps_big_sums: bool,
     platform_version: &PlatformVersion,
 ) -> Result<(Vec<u8>, PricedElement), Error> {
     let sort_key_len = match axis {
         IndexAxis::Count | IndexAxis::Sum => 8,
-        IndexAxis::Avg => 16,
+        IndexAxis::Avg | IndexAxis::BigSum => 16,
     };
     let mut key = vec![0u8; sort_key_len];
     key.extend_from_slice(entry_key);
     let payload = match axis {
         IndexAxis::Count => i64::try_from(count).unwrap_or(i64::MAX),
+        // A row ordering the entries of a tree keeping 128-bit sums carries no
+        // sum (grovedb `axis_payload_sum`), the order being in its key
+        IndexAxis::Sum | IndexAxis::Avg if ranked_tree_keeps_big_sums => 0,
         IndexAxis::Sum | IndexAxis::Avg => sum,
+        IndexAxis::BigSum => 0,
     };
     let row = Element::new_reference_with_sum_item_with_hops(
         SiblingReference(entry_key.to_vec()),
@@ -308,14 +326,23 @@ impl Context<'_> {
         &mut self,
         path: &[Vec<u8>],
         key: &[u8],
+        ranked_tree_type: TreeType,
         axes: &[IndexAxis],
         count: u64,
         sum: i64,
         indexes: &[String],
         ephemeral: bool,
     ) -> Result<(), Error> {
+        let keeps_big_sums = ranked_tree_keeps_big_sums(ranked_tree_type);
         for axis in axes {
-            let (row_key, element) = ranking_row(*axis, key, count, sum, self.platform_version)?;
+            let (row_key, element) = ranking_row(
+                *axis,
+                key,
+                count,
+                sum,
+                keeps_big_sums,
+                self.platform_version,
+            )?;
             let mut row_path = path.to_vec();
             row_path.push(key.to_vec());
             row_path.push(vec![0xff, *axis as u8]);
@@ -334,6 +361,7 @@ impl Context<'_> {
                     axis: *axis,
                     entry_path: path.to_vec(),
                     entry_key: key.to_vec(),
+                    ranked_tree_keeps_big_sums: keeps_big_sums,
                 }),
                 referring_type: None,
                 expiration: false,
@@ -700,6 +728,7 @@ impl Context<'_> {
             self.ranking_rows(
                 &path,
                 &key,
+                tree_types.property_name_tree_type,
                 &tree_types.ranked_axes,
                 1,
                 sum,
@@ -840,6 +869,7 @@ impl Context<'_> {
                 self.ranking_rows(
                     &property_path,
                     &raw,
+                    sub_tree_types.property_name_tree_type,
                     &sub_tree_types.ranked_axes,
                     1,
                     sum,
@@ -897,7 +927,16 @@ impl Context<'_> {
             expiration: false,
             flagged: flags.is_some(),
         });
-        self.ranking_rows(path, &key, ranked_axes, 1, sum, &indexes, ephemeral)
+        self.ranking_rows(
+            path,
+            &key,
+            property_name_tree_type,
+            ranked_axes,
+            1,
+            sum,
+            &indexes,
+            ephemeral,
+        )
     }
 
     /// A document with a `ttl`'s entry in the documents expirations tree:
@@ -1140,6 +1179,7 @@ impl Context<'_> {
                     self.ranking_rows(
                         &path,
                         raw,
+                        tree_types.property_name_tree_type,
                         &tree_types.ranked_axes,
                         count,
                         sum,

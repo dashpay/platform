@@ -150,6 +150,32 @@ pub struct DriveAbciQueryAddressFundsVersions {
     pub addresses_branch_state: FeatureVersionBounds,
     pub recent_address_balance_changes: FeatureVersionBounds,
     pub recent_compacted_address_balance_changes: FeatureVersionBounds,
+    /// The most blocks one `getRecentAddressBalanceChanges` answer holds. The
+    /// query handler proves at most this many and the proof verifier checks a
+    /// proof against the same value, so a proved answer with fewer blocks is
+    /// the end of the recent zone at its height. 100 in every table, the
+    /// literal the handler and the verifier used before.
+    ///
+    /// Do not lower it in a future table without first changing the clients.
+    /// The wallet's history pager treats a page shorter than its own version's
+    /// cap as exhausted: before lowering this cap, have the SDK report
+    /// exhaustion using the limit that verified the proof. SDK address sync
+    /// reads Recent in one request: keep the cap large enough for the whole
+    /// zone, or paginate Recent before advancing the sync height.
+    pub recent_address_balance_changes_max_blocks: u16,
+    /// The most compacted ranges one `getRecentCompactedAddressBalanceChanges`
+    /// answer holds (kept small to bound the proof size). The query handler
+    /// proves at most this many and the proof verifier checks a proof against
+    /// the same value, so a proved answer with fewer ranges is the end of the
+    /// compacted zone at its height. 25 in every table, the literal the
+    /// handler and the verifier used before.
+    ///
+    /// Do not lower it in a future table without first changing the clients:
+    /// the SDK address sync and the wallet's balance history treat a page
+    /// shorter than this cap as the end of the query, reading the cap from
+    /// their own platform version. Lowering it needs the SDK to report query
+    /// exhaustion from the limit used for that proof before the cap changes.
+    pub recent_compacted_address_balance_changes_max_ranges: u16,
 }
 
 #[derive(Clone, Debug, Default)]

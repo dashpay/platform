@@ -163,12 +163,132 @@ public struct DataContractParser {
             // Parse and set all token properties
             parseTokenConfiguration(token: token, from: tokenDict)
 
+            // A contract parsed again (after an update) already has this
+            // token's row, with balances and history hanging off it. Give
+            // that row the parsed definition instead of inserting a second
+            // row with the same unique id.
+            let tokenId = token.id
+            if let existing = try modelContext.fetch(
+                FetchDescriptor<PersistentToken>(predicate: #Predicate { $0.id == tokenId })
+            ).first {
+                replaceDefinition(of: existing, with: token)
+                existing.dataContract = contract
+                print("✅ Refreshed token: \(tokenName) at position \(position)")
+                continue
+            }
+
             // Link to contract
             token.dataContract = contract
 
             modelContext.insert(token)
             print("✅ Created token: \(tokenName) at position \(position)")
         }
+    }
+
+    // MARK: - Refreshing Existing Rows
+
+    // A contract parsed a second time (after a contract update) meets the
+    // rows of its first parse. Each definition row is rebuilt as on the
+    // first parse, into a row that is never inserted, and its values are
+    // copied onto the stored row with the same unique id. The stored row
+    // keeps its identity and relationships: a token's balances and history,
+    // a document type's documents. Every definition attribute the parser
+    // writes must be copied here, or a refresh keeps the old value. An
+    // attribute the parser only seeds and live state owns afterwards is not
+    // copied.
+
+    private static func replaceDefinition(of token: PersistentToken, with parsed: PersistentToken) {
+        token.name = parsed.name
+        token.baseSupply = parsed.baseSupply
+        token.maxSupply = parsed.maxSupply
+        token.decimals = parsed.decimals
+        token.localizations = parsed.localizations
+        // `isPaused` is not copied. The parser seeds it from the contract's
+        // `startAsPaused`, but the stored value is the token's live paused
+        // status (written by the pause and resume actions and the token
+        // status sync), which the contract definition does not carry.
+        token.allowTransferToFrozenBalance = parsed.allowTransferToFrozenBalance
+        token.keepsTransferHistory = parsed.keepsTransferHistory
+        token.keepsFreezingHistory = parsed.keepsFreezingHistory
+        token.keepsMintingHistory = parsed.keepsMintingHistory
+        token.keepsBurningHistory = parsed.keepsBurningHistory
+        token.keepsDirectPricingHistory = parsed.keepsDirectPricingHistory
+        token.keepsDirectPurchaseHistory = parsed.keepsDirectPurchaseHistory
+        token.conventionsChangeRules = parsed.conventionsChangeRules
+        token.maxSupplyChangeRules = parsed.maxSupplyChangeRules
+        token.manualMintingRules = parsed.manualMintingRules
+        token.manualBurningRules = parsed.manualBurningRules
+        token.freezeRules = parsed.freezeRules
+        token.unfreezeRules = parsed.unfreezeRules
+        token.destroyFrozenFundsRules = parsed.destroyFrozenFundsRules
+        token.emergencyActionRules = parsed.emergencyActionRules
+        token.perpetualDistribution = parsed.perpetualDistribution
+        token.preProgrammedDistribution = parsed.preProgrammedDistribution
+        token.newTokensDestinationIdentity = parsed.newTokensDestinationIdentity
+        token.mintingAllowChoosingDestination = parsed.mintingAllowChoosingDestination
+        token.distributionChangeRules = parsed.distributionChangeRules
+        token.tradeMode = parsed.tradeMode
+        token.tradeModeChangeRules = parsed.tradeModeChangeRules
+        token.mainControlGroupPosition = parsed.mainControlGroupPosition
+        token.mainControlGroupCanBeModified = parsed.mainControlGroupCanBeModified
+        token.tokenDescription = parsed.tokenDescription
+        token.lastUpdatedAt = Date()
+    }
+
+    private static func replaceDefinition(
+        of documentType: PersistentDocumentType,
+        with parsed: PersistentDocumentType
+    ) {
+        documentType.schemaJSON = parsed.schemaJSON
+        documentType.propertiesJSON = parsed.propertiesJSON
+        documentType.documentsKeepHistory = parsed.documentsKeepHistory
+        documentType.documentsMutable = parsed.documentsMutable
+        documentType.documentsCanBeDeleted = parsed.documentsCanBeDeleted
+        documentType.documentsTransferable = parsed.documentsTransferable
+        documentType.indexOnly = parsed.indexOnly
+        documentType.requiredFieldsJSON = parsed.requiredFieldsJSON
+        documentType.securityLevel = parsed.securityLevel
+        documentType.tradeMode = parsed.tradeMode
+        documentType.creationRestrictionMode = parsed.creationRestrictionMode
+        documentType.requiresIdentityEncryptionBoundedKey = parsed.requiresIdentityEncryptionBoundedKey
+        documentType.requiresIdentityDecryptionBoundedKey = parsed.requiresIdentityDecryptionBoundedKey
+    }
+
+    private static func replaceDefinition(of index: PersistentIndex, with parsed: PersistentIndex) {
+        index.unique = parsed.unique
+        index.nullSearchable = parsed.nullSearchable
+        index.contested = parsed.contested
+        index.countable = parsed.countable
+        index.rangeCountable = parsed.rangeCountable
+        index.summable = parsed.summable
+        index.rangeSummable = parsed.rangeSummable
+        index.averageable = parsed.averageable
+        index.rangeAverageable = parsed.rangeAverageable
+        index.rankedCountable = parsed.rankedCountable
+        index.rankedSummable = parsed.rankedSummable
+        index.rankedAverageable = parsed.rankedAverageable
+        index.terminal = parsed.terminal
+        index.preallocated = parsed.preallocated
+        index.timeRangeJSON = parsed.timeRangeJSON
+        index.propertiesJSON = parsed.propertiesJSON
+        index.contestedDetailsJSON = parsed.contestedDetailsJSON
+    }
+
+    private static func replaceDefinition(of property: PersistentProperty, with parsed: PersistentProperty) {
+        property.type = parsed.type
+        property.format = parsed.format
+        property.contentMediaType = parsed.contentMediaType
+        property.byteArray = parsed.byteArray
+        property.minItems = parsed.minItems
+        property.maxItems = parsed.maxItems
+        property.pattern = parsed.pattern
+        property.minLength = parsed.minLength
+        property.maxLength = parsed.maxLength
+        property.minValue = parsed.minValue
+        property.maxValue = parsed.maxValue
+        property.fieldDescription = parsed.fieldDescription
+        property.transient = parsed.transient
+        property.isRequired = parsed.isRequired
     }
 
     // MARK: - Parse Document Types
@@ -283,26 +403,52 @@ public struct DataContractParser {
                 docType.securityLevel = 2
             }
 
-            // Link to contract
-            docType.dataContract = contract
+            // A contract parsed again (after an update) already has this
+            // type's row, with the contract's documents hanging off it. Give
+            // that row the parsed definition instead of inserting a second
+            // row with the same unique id.
+            let docTypeId = docType.id
+            let storedType: PersistentDocumentType
+            if let existing = try modelContext.fetch(
+                FetchDescriptor<PersistentDocumentType>(predicate: #Predicate { $0.id == docTypeId })
+            ).first {
+                replaceDefinition(of: existing, with: docType)
+                existing.dataContract = contract
+                storedType = existing
+                print("✅ Refreshed document type: \(typeName)")
+            } else {
+                // Link to contract
+                docType.dataContract = contract
 
-            modelContext.insert(docType)
-            print("✅ Created document type: \(typeName)")
-
-            // Parse indices
-            if let indices = typeDict["indices"] as? [[String: Any]] {
-                try parseIndices(indices: indices, contractId: contractId, documentTypeName: typeName, documentType: docType, modelContext: modelContext)
+                modelContext.insert(docType)
+                storedType = docType
+                print("✅ Created document type: \(typeName)")
             }
 
-            // Parse properties into separate entities
-            if let properties = typeDict["properties"] as? [String: Any] {
-                try parseProperties(properties: properties, definitions: definitions, contractId: contractId, documentTypeName: typeName, documentType: docType, requiredFields: typeDict["required"] as? [String] ?? [], modelContext: modelContext)
+            // Parse indices
+            let indices = typeDict["indices"] as? [[String: Any]] ?? []
+            let indexIds = try parseIndices(indices: indices, contractId: contractId, documentTypeName: typeName, documentType: storedType, modelContext: modelContext)
+
+            // Parse properties into separate entities (`properties` is the
+            // type's `properties` read above, empty when it has none)
+            let propertyIds = try parseProperties(properties: properties, definitions: definitions, contractId: contractId, documentTypeName: typeName, documentType: storedType, requiredFields: typeDict["required"] as? [String] ?? [], modelContext: modelContext)
+
+            // On a refresh, an index or property the type no longer
+            // declares is removed. Nothing hangs off these rows.
+            for index in storedType.indices ?? [] where !indexIds.contains(index.id) {
+                modelContext.delete(index)
+            }
+            for property in storedType.propertiesList ?? [] where !propertyIds.contains(property.id) {
+                modelContext.delete(property)
             }
         }
     }
 
     // MARK: - Parse Indices
-    private static func parseIndices(indices: [[String: Any]], contractId: Data, documentTypeName: String, documentType: PersistentDocumentType, modelContext: ModelContext) throws {
+    /// Returns the ids of the index rows `indices` stands for.
+    @discardableResult
+    private static func parseIndices(indices: [[String: Any]], contractId: Data, documentTypeName: String, documentType: PersistentDocumentType, modelContext: ModelContext) throws -> Set<Data> {
+        var parsedIds: Set<Data> = []
         for indexData in indices {
             guard let name = indexData["name"] as? String else {
                 print("⚠️ Skipping index without name")
@@ -406,12 +552,34 @@ public struct DataContractParser {
                 }
             }
 
+            let indexId = index.id
+            if let existing = try modelContext.fetch(
+                FetchDescriptor<PersistentIndex>(predicate: #Predicate { $0.id == indexId })
+            ).first {
+                // See `definitionRowIdCollides`.
+                if definitionRowIdCollides(
+                    storedTypeName: existing.documentTypeName,
+                    storedName: existing.name,
+                    parsedTypeName: documentTypeName,
+                    parsedName: name
+                ) {
+                    print("⚠️ Skipping index \(documentTypeName).\(name): its row id is taken by index \(existing.documentTypeName).\(existing.name)")
+                    continue
+                }
+                parsedIds.insert(indexId)
+                replaceDefinition(of: existing, with: index)
+                existing.documentType = documentType
+                continue
+            }
+
             // Link to document type
+            parsedIds.insert(indexId)
             index.documentType = documentType
 
             modelContext.insert(index)
             print("✅ Created index: \(name) for document type: \(documentTypeName)")
         }
+        return parsedIds
     }
 
     /// Whether a ranking keyword's value declares the ranking: `true`, or the
@@ -424,7 +592,10 @@ public struct DataContractParser {
     }
 
     // MARK: - Parse Properties
-    private static func parseProperties(properties: [String: Any], definitions: [String: Any], contractId: Data, documentTypeName: String, documentType: PersistentDocumentType, requiredFields: [String], modelContext: ModelContext) throws {
+    /// Returns the ids of the property rows `properties` stands for.
+    @discardableResult
+    private static func parseProperties(properties: [String: Any], definitions: [String: Any], contractId: Data, documentTypeName: String, documentType: PersistentDocumentType, requiredFields: [String], modelContext: ModelContext) throws -> Set<Data> {
+        var parsedIds: Set<Data> = []
         for (propertyName, propertyData) in properties {
             guard let declared = propertyData as? [String: Any] else {
                 print("⚠️ Skipping invalid property: \(propertyName)")
@@ -513,15 +684,53 @@ public struct DataContractParser {
             // Check if required
             property.isRequired = requiredFields.contains(propertyName)
 
+            let propertyId = property.id
+            if let existing = try modelContext.fetch(
+                FetchDescriptor<PersistentProperty>(predicate: #Predicate { $0.id == propertyId })
+            ).first {
+                // See `definitionRowIdCollides`.
+                if definitionRowIdCollides(
+                    storedTypeName: existing.documentTypeName,
+                    storedName: existing.name,
+                    parsedTypeName: documentTypeName,
+                    parsedName: propertyName
+                ) {
+                    print("⚠️ Skipping property \(documentTypeName).\(propertyName): its row id is taken by property \(existing.documentTypeName).\(existing.name)")
+                    continue
+                }
+                parsedIds.insert(propertyId)
+                replaceDefinition(of: existing, with: property)
+                existing.documentType = documentType
+                continue
+            }
+
             // Link to document type
+            parsedIds.insert(propertyId)
             property.documentType = documentType
 
             modelContext.insert(property)
             print("✅ Created property: \(propertyName) for document type: \(documentTypeName)")
         }
+        return parsedIds
     }
 
     // MARK: - Helper Methods
+
+    /// Whether the stored row found under a parsed index or property's id
+    /// belongs to another definition. The id is the contract id, the type
+    /// name and the index or property name concatenated without a
+    /// separator, so `note`.`title` and `notet`.`itle` share one. Such a row
+    /// is neither refreshed nor moved to the parsed type, and the parsed
+    /// definition is skipped, since inserting it would collide on the unique
+    /// id. The id scheme stays: the stored ids predate this check.
+    private static func definitionRowIdCollides(
+        storedTypeName: String,
+        storedName: String,
+        parsedTypeName: String,
+        parsedName: String
+    ) -> Bool {
+        storedTypeName != parsedTypeName || storedName != parsedName
+    }
 
     /// The definition a property schema's `$ref` names, when the reference is
     /// `#/$defs/<name>` and `definitions` holds a dictionary under `<name>`;
@@ -671,9 +880,11 @@ public struct DataContractParser {
 
     private static func parseTokenConfiguration(token: PersistentToken, from tokenDict: [String: Any]) {
         // Basic properties
-        let maxSupplyStr = extractTokenSupply(from: tokenDict, key: "maxSupply")
-        if maxSupplyStr != "0" {
-            token.maxSupply = maxSupplyStr
+        // `maxSupply` is optional: absent or null means no cap, and an
+        // explicit 0 is a cap of zero. `extractTokenSupply` answers "0" for
+        // both, so the cap is read only when the field holds a value.
+        if let maxSupply = tokenDict["maxSupply"], !(maxSupply is NSNull) {
+            token.maxSupply = extractTokenSupply(from: tokenDict, key: "maxSupply")
         }
 
         if let decimals = tokenDict["decimals"] as? Int {
