@@ -121,20 +121,7 @@ pub fn apply(
     if !cs.new_utxos.is_empty() {
         // Blob-bearing records always win; height-only writes never overwrite them.
         // Placeholder confirmation is `height IS NOT NULL`; `finalized` stays 0.
-        let mut height_only_stmt = tx.prepare_cached(
-            "INSERT INTO core_transactions \
-                (wallet_id, txid, height, block_hash, block_time, finalized, record_blob) \
-             VALUES (?1, ?2, ?3, NULL, NULL, 0, NULL) \
-             ON CONFLICT(wallet_id, txid) DO UPDATE SET height = \
-                CASE \
-                    WHEN excluded.height IS NOT NULL \
-                         AND (core_transactions.height IS NULL \
-                              OR excluded.height > core_transactions.height) \
-                    THEN excluded.height \
-                    ELSE core_transactions.height \
-                END \
-             WHERE core_transactions.record_blob IS NULL",
-        )?;
+        let mut height_only_stmt = tx.prepare_cached(HEIGHT_ONLY_TRANSACTION_SQL)?;
         let mut utxo_stmt = tx.prepare_cached(UPSERT_UTXO_SQL)?;
         for utxo in &cs.new_utxos {
             let affected = height_only_stmt.execute(params![
@@ -150,6 +137,25 @@ pub fn apply(
                 );
             }
             execute_upsert_utxo(&mut utxo_stmt, wallet_id, utxo, false)?;
+        }
+    }
+    if !cs.rescan_utxos.is_empty() {
+        // Fill-only: a re-scan's coin is written only where the store has no
+        // row for it, and never changes an existing row's spent flag. A sweep
+        // placeholder is materialised with its spent flag kept, as every
+        // delivery must (see `spent_utxos` below). The height is raised
+        // either way, so a spent row a sweep later releases loads confirmed.
+        // A spend in the same fold lands whichever is written first: the
+        // spend marks the row, and the fill never clears the mark.
+        let mut height_only_stmt = tx.prepare_cached(HEIGHT_ONLY_TRANSACTION_SQL)?;
+        let mut fill_stmt = tx.prepare_cached(INSERT_ABSENT_UTXO_SQL)?;
+        for utxo in &cs.rescan_utxos {
+            height_only_stmt.execute(params![
+                wallet_id.as_slice(),
+                AsRef::<[u8]>::as_ref(&utxo.outpoint.txid),
+                utxo.is_confirmed.then_some(i64::from(utxo.height)),
+            ])?;
+            execute_upsert_utxo(&mut fill_stmt, wallet_id, utxo, false)?;
         }
     }
     if !cs.spent_utxos.is_empty() {
@@ -797,6 +803,29 @@ fn apply_sweep(
     Ok(())
 }
 
+const HEIGHT_ONLY_TRANSACTION_SQL: &str = "INSERT INTO core_transactions \
+        (wallet_id, txid, height, block_hash, block_time, finalized, record_blob) \
+     VALUES (?1, ?2, ?3, NULL, NULL, 0, NULL) \
+     ON CONFLICT(wallet_id, txid) DO UPDATE SET height = \
+        CASE \
+            WHEN excluded.height IS NOT NULL \
+                 AND (core_transactions.height IS NULL \
+                      OR excluded.height > core_transactions.height) \
+            THEN excluded.height \
+            ELSE core_transactions.height \
+        END \
+     WHERE core_transactions.record_blob IS NULL";
+
+const INSERT_ABSENT_UTXO_SQL: &str = "INSERT INTO core_utxos \
+        (wallet_id, outpoint, value, script, spent) \
+     VALUES (?1, ?2, ?3, ?4, ?5) \
+     ON CONFLICT(wallet_id, outpoint) DO UPDATE SET \
+        value = excluded.value, \
+        script = excluded.script, \
+        is_sweep_placeholder = 0, \
+        winner_mined_height = NULL \
+     WHERE core_utxos.is_sweep_placeholder = 1";
+
 const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
         (wallet_id, outpoint, value, script, spent) \
      VALUES (?1, ?2, ?3, ?4, ?5) \
@@ -812,7 +841,8 @@ const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
             WHEN excluded.spent THEN core_utxos.spent_in_txid \
             ELSE NULL END";
 
-/// Upsert one `core_utxos` row; `spent` marks spent-only synthetic rows.
+/// Write one `core_utxos` row through `stmt` (an upsert, or the fill-only
+/// insert); `spent` marks spent-only synthetic rows.
 ///
 /// # Errors
 ///
@@ -2671,6 +2701,46 @@ mod tests {
         assert!(get_tx_record(&conn, &wallet_id, &txid, &LoadCtx::strict())
             .unwrap()
             .is_none());
+    }
+
+    /// One changeset carries a re-scan's coin and its spend: the coin loads
+    /// spent, so it is not a balance row after a reload.
+    #[test]
+    fn rescan_coin_spent_in_the_same_changeset_loads_spent() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        migrations::run(&mut conn).unwrap();
+        let wallet_id = [0x4Bu8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+        let coin = sample_utxo(Txid::from_byte_array([0x87u8; 32]), 500, true);
+        let cs = CoreChangeSet {
+            rescan_utxos: vec![coin.clone()],
+            spent_utxos: vec![coin],
+            ..Default::default()
+        };
+        let tx = conn.transaction().unwrap();
+        apply(&tx, &wallet_id, &cs).unwrap();
+        tx.commit().unwrap();
+
+        let (state, _) = load_state(
+            &conn,
+            &wallet_id,
+            dashcore::Network::Testnet,
+            &LoadCtx::strict(),
+        )
+        .unwrap();
+        assert!(state.new_utxos.is_empty(), "the coin loads spent");
+        let spent: i64 = conn
+            .query_row(
+                "SELECT spent FROM core_utxos WHERE wallet_id = ?1",
+                params![&wallet_id[..]],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(spent, 1);
     }
 
     #[test]
