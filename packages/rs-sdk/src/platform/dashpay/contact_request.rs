@@ -406,6 +406,7 @@ impl Sdk {
     /// `with_shielded_address` says whether the request will carry a shielded address; the
     /// contract is then resolved at a protocol version that has the property for it. A
     /// request whose address does not match this is refused when sent.
+    /// Preparation fails if the resolved document type cannot carry the requested address.
     pub async fn prepare_contact_request(
         &self,
         with_shielded_address: bool,
@@ -418,6 +419,9 @@ impl Sdk {
             .map_err(|_| {
                 Error::Generic("DashPay contactRequest document type not found".to_string())
             })?;
+        if with_shielded_address {
+            ensure_carries_shielded_address(contact_request_document_type.as_ref())?;
+        }
         Ok(PreparedContactRequest {
             contact_request_document_type,
             with_shielded_address,
@@ -1635,6 +1639,20 @@ mod tests {
         assert!(refusal.contains(ENCRYPTED_SHIELDED_ADDRESS), "{refusal}");
         assert!(!asked_secret, "the shared secret was not asked for");
         assert!(!asked_xpub, "the extended public key was not asked for");
+    }
+
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_refuse_preparing_an_address_the_schema_lacks() {
+        let without_property = dashpay(PlatformVersion::get(14).expect("protocol version 14"));
+        let (sdk, _directory) = sdk_resolving(PlatformVersion::latest(), &without_property).await;
+
+        let refusal = sdk
+            .prepare_contact_request(true)
+            .await
+            .expect_err("preparing an unsupported shielded address is refused")
+            .to_string();
+        assert!(refusal.contains(ENCRYPTED_SHIELDED_ADDRESS), "{refusal}");
     }
 
     /// A request sent with a shielded address the prepare call did not announce, or without

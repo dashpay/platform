@@ -380,9 +380,10 @@ impl Sdk {
     /// preorder commits to the hash that contract declares, so neither a contract the
     /// context provider holds for the SDK's protocol version nor one cached before an upgrade
     /// changed it will do: either can be older than the network's, and its hash one the
-    /// domain cannot reveal. The SDK first refreshes its protocol version (best effort: a
-    /// failed refresh keeps the version it had), then takes a response proved at the version
-    /// it parsed it under ([`dpns_contract_proved_at_parsed_version`]).
+    /// domain cannot reveal. The SDK refreshes its protocol version on a best-effort basis:
+    /// a failed refresh does not roll back a version learned from a verified response,
+    /// including one learned during that refresh. The SDK then takes a response proved at
+    /// the version it parsed it under ([`dpns_contract_proved_at_parsed_version`]).
     ///
     /// The guarantee is the contract proved at the version the SDK parses with. An SDK
     /// pinned to a version ([`SdkBuilder::with_version`](crate::SdkBuilder::with_version))
@@ -854,6 +855,7 @@ fn identity_from_domain_records(
 mod tests {
     use super::*;
     use crate::error::StaleNodeError;
+    use crate::platform::system_data_contract::tests::with_document_security_level;
     use crate::query_types::Documents;
     use crate::sdk::test::expect_epoch_refresh;
     use crate::SdkBuilder;
@@ -1149,15 +1151,16 @@ mod tests {
         assert!(declares_the_preorder_hash(&resolved));
     }
 
-    /// The latest DPNS contract with its `domain` document type requiring a CRITICAL key,
-    /// where every shipped DPNS contract requires HIGH: what a network upgrade could store.
+    /// The latest DPNS contract with `domain` and its consumer `tombstone` requiring
+    /// CRITICAL, while `preorder` stays HIGH: what a network upgrade could store.
     fn dpns_with_critical_domain() -> DataContract {
-        crate::platform::system_data_contract::tests::with_document_security_level(
+        let contract = with_document_security_level(
             load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
                 .expect("the DPNS contract loads"),
-            "domain",
-            dpp::identity::SecurityLevel::CRITICAL,
-        )
+            "tombstone",
+            SecurityLevel::CRITICAL,
+        );
+        with_document_security_level(contract, "domain", SecurityLevel::CRITICAL)
     }
 
     #[test]

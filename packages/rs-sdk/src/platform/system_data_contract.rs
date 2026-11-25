@@ -36,10 +36,9 @@ impl Sdk {
     /// such contract. A fetched contract is registered with the context provider, so the proof
     /// confirming a transition built against it can be verified.
     ///
-    /// Only the provider installed when this method starts, which the fetch verifies with,
-    /// receives the contract, and only while it is still installed: after a
-    /// [`Sdk::set_context_provider`] during the fetch, neither the replacement, which did not
-    /// verify it, nor the replaced provider is written to.
+    /// Registration uses the provider captured before the fetch and is skipped if a
+    /// replacement is observed afterward. A concurrent [`Sdk::set_context_provider`] never
+    /// redirects registration to the replacement.
     ///
     /// Limitation: a registered contract is sticky. A provider that checks its id-keyed cache
     /// first keeps returning the registered generation after a protocol upgrade (e.g. DashPay

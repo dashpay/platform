@@ -597,8 +597,8 @@ mod signing_key_tests {
             .expect("bundled DPNS contract")
     }
 
-    /// The latest DPNS contract with its `domain` document type requiring a CRITICAL key,
-    /// where every bundled DPNS contract requires HIGH: what a network upgrade could store.
+    /// The latest DPNS contract with `domain` and its consumer `tombstone` requiring
+    /// CRITICAL, while `preorder` stays HIGH: what a network upgrade could store.
     fn dpns_with_critical_domain() -> DataContract {
         let platform_version = PlatformVersion::latest();
         let mut format = DataContractInSerializationFormat::try_from_platform_versioned(
@@ -607,16 +607,18 @@ mod signing_key_tests {
         )
         .expect("serialization format")
         .into_schema_form();
-        format
-            .document_schemas_mut()
-            .expect("schema form")
-            .get_mut("domain")
-            .expect("domain schema")
-            .set_value(
-                "signatureSecurityLevelRequirement",
-                Value::U8(SecurityLevel::CRITICAL as u8),
-            )
-            .expect("schema is a map");
+        for document_type in ["domain", "tombstone"] {
+            format
+                .document_schemas_mut()
+                .expect("schema form")
+                .get_mut(document_type)
+                .expect("document type schema")
+                .set_value(
+                    "signatureSecurityLevelRequirement",
+                    Value::U8(SecurityLevel::CRITICAL as u8),
+                )
+                .expect("schema is a map");
+        }
         DataContract::try_from_platform_versioned(format, true, &mut vec![], platform_version)
             .expect("a valid contract")
     }
