@@ -17,6 +17,7 @@ use key_wallet::managed_account::managed_account_collection::ManagedAccountColle
 use key_wallet::transaction_checking::account_checker::TransactionCheckResult;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::transaction_checking::WalletTransactionChecker;
+use key_wallet::wallet::managed_wallet_info::helpers::WalletConflictSweep;
 use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::{
     ApplyChainLockOutcome, Truncation, WalletInfoInterface,
@@ -50,6 +51,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             tracked_collaterals: Default::default(),
+            funding_issuance_floors: Default::default(),
         }
     }
 
@@ -71,6 +73,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             tracked_collaterals: Default::default(),
+            funding_issuance_floors: Default::default(),
         }
     }
 
@@ -183,6 +186,34 @@ impl WalletInfoInterface for PlatformWalletInfo {
             .wrapping_add(self.rewind_barrier.generation_base())
     }
 
+    fn is_dismissed(&self, txid: &Txid) -> bool {
+        self.core_wallet.is_dismissed(txid)
+    }
+
+    fn refetch_on_lock(&self, txid: &Txid) -> bool {
+        self.core_wallet.refetch_on_lock(txid)
+    }
+
+    fn dismiss_spend(&mut self, tx: &Transaction) -> bool {
+        self.core_wallet.dismiss_spend(tx)
+    }
+
+    fn undismiss(&mut self, txid: &Txid) {
+        self.core_wallet.undismiss(txid)
+    }
+
+    fn unconfirmed_spent_outpoints(&self) -> BTreeMap<OutPoint, BTreeSet<Txid>> {
+        self.core_wallet.unconfirmed_spent_outpoints()
+    }
+
+    fn sweep_conflicts_only(
+        &mut self,
+        tx: &Transaction,
+        context: &TransactionContext,
+    ) -> WalletConflictSweep {
+        self.core_wallet.sweep_conflicts_only(tx, context)
+    }
+
     fn synced_height(&self) -> CoreBlockHeight {
         self.core_wallet.synced_height()
     }
@@ -269,10 +300,6 @@ impl WalletInfoInterface for PlatformWalletInfo {
             }
         }
         changed
-    }
-
-    fn monitor_revision(&self) -> u64 {
-        self.core_wallet.monitor_revision()
     }
 
     // Delegate the chain-lock methods to the inner `ManagedWalletInfo`.
@@ -641,6 +668,63 @@ mod tests {
         }
     }
 
+    /// The trait's defaults dismiss nothing, hold back no spend and sweep
+    /// nothing, so each of these calls must reach the core wallet, also
+    /// when the manager asks on dash-spv's behalf.
+    #[tokio::test]
+    async fn should_forward_the_dismissal_and_sweep_calls() {
+        use crate::manager::accessors::txo_inventory_tests::{funding, in_block, manager_with};
+
+        let ctx = TestWalletContext::new_random();
+        let funded = funding(ctx.receive_address.script_pubkey(), 0x61, 6_000);
+        let coin = OutPoint::new(funded.txid(), 0);
+        let mut payment = spending(coin);
+        payment.output = vec![TxOut {
+            value: 5_000,
+            script_pubkey: ScriptBuf::new_op_return(&[2]),
+        }];
+        let mut winner = spending(coin);
+        winner.output = vec![TxOut {
+            value: 4_000,
+            script_pubkey: ScriptBuf::new_op_return(&[3]),
+        }];
+        let (mut wm, wallet_id) = manager_with(ctx);
+        let (wallet, info) = wm.get_wallet_mut_and_info_mut(&wallet_id).expect("wallet");
+        assert!(
+            info.check_core_transaction(&funded, in_block(100), wallet, true, true)
+                .await
+                .is_relevant
+        );
+        assert!(
+            info.check_core_transaction(&payment, TransactionContext::Mempool, wallet, true, true)
+                .await
+                .is_relevant
+        );
+        assert_eq!(
+            info.unconfirmed_spent_outpoints(),
+            BTreeMap::from([(coin, BTreeSet::from([payment.txid()]))])
+        );
+
+        let block = in_block(101).block_info().copied().expect("mined");
+        let sweep =
+            info.sweep_conflicts_only(&winner, &TransactionContext::InChainLockedBlock(block));
+        assert_eq!(sweep.txids, vec![payment.txid()]);
+        assert!(info.unconfirmed_spent_outpoints().is_empty());
+        assert!(info.is_dismissed(&payment.txid()));
+        assert!(WalletInterface::is_dismissed(&wm, &payment.txid()));
+        assert!(WalletInterface::refetch_on_lock(&wm, &payment.txid()));
+
+        let (_, info) = wm.get_wallet_mut_and_info_mut(&wallet_id).expect("wallet");
+        let child = spending(OutPoint::new(payment.txid(), 0));
+        assert!(info.dismiss_spend(&child));
+        assert!(info.is_dismissed(&child.txid()));
+        info.undismiss(&payment.txid());
+        assert!(!info.is_dismissed(&payment.txid()));
+        assert!(!info.is_dismissed(&child.txid()));
+        assert!(info.refetch_on_lock(&child.txid()));
+        assert!(WalletInterface::refetch_on_lock(&wm, &child.txid()));
+    }
+
     /// A transaction paying this wallet one output and a stranger another,
     /// and a ChainLocked transaction spending both. Only the wallet's coin is
     /// kept, by either path that drops the spender's record.
@@ -789,7 +873,7 @@ mod tests {
             .managed_wallet
             .first_bip32_managed_account_mut()
             .expect("BIP32 account")
-            .next_receive_address(Some(&bip32_xpub), true)
+            .next_receive_address(Some(&bip32_xpub))
             .expect("address");
         let to_bip44 = funding(ctx.receive_address.script_pubkey(), 0x52, 6_000);
         let to_bip32 = funding(bip32_address.script_pubkey(), 0x53, 7_000);
