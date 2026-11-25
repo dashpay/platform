@@ -46,6 +46,7 @@
 //! [`property_name_tree_type_and_ranked_axes`] so the layouts they describe
 //! cannot drift apart.
 
+use crate::drive::document::index_level_tree_types::tree_type_for_sum_width;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::data_contract::document_type::{IndexLevel, IndexLevelTypeInfo};
@@ -66,11 +67,34 @@ pub(crate) fn ranked_axes_for_index_level_info(
     let Some(info) = index_level_info else {
         return Vec::new();
     };
+    if info.big_sums {
+        return big_sum_ranked_axes(
+            info.ranked_countable,
+            info.ranked_summable,
+            info.ranked_averageable,
+        );
+    }
     ranked_axes(
         info.ranked_countable,
         info.ranked_summable,
         info.ranked_averageable,
     )
+}
+
+/// The axes of an index level of a document type that keeps its sums in 128
+/// bits (`IndexLevelTypeInfo::big_sums`): the sum ranking is the big sum axis,
+/// which sorts by the 128-bit sum, and the list is in ascending tag order
+/// (Count < Avg < BigSum), the canonical TLV order
+/// `Element::validate_pcpbsit_axes` demands.
+fn big_sum_ranked_axes(count: bool, sum: bool, avg: bool) -> Vec<IndexAxis> {
+    [
+        (count, IndexAxis::Count),
+        (avg, IndexAxis::Avg),
+        (sum, IndexAxis::BigSum),
+    ]
+    .into_iter()
+    .filter_map(|(ranked, axis)| ranked.then_some(axis))
+    .collect()
 }
 
 /// The axes `count`, `sum` and `avg` name, pushed in ascending tag order so
@@ -130,6 +154,14 @@ pub(crate) fn ranked_property_name_tree_type(
         (TreeType::ProvableCountProvableSumTree, _) => {
             Ok(TreeType::ProvableCountProvableSumIndexedTree)
         }
+        // The 128-bit counterparts (protocol version 15): no earlier version resolves a
+        // base with a 128-bit sum or the big sum axis
+        (TreeType::ProvableBigSumTree, [IndexAxis::BigSum]) => {
+            Ok(TreeType::ProvableBigSumIndexedTree)
+        }
+        (TreeType::ProvableCountProvableBigSumTree, _) => {
+            Ok(TreeType::ProvableCountProvableBigSumIndexedTree)
+        }
         _ => Err(Error::Drive(DriveError::CorruptedContractIndexes(format!(
             "index declares ranking axes {:?} but its range flags lay the terminal \
              property-name tree out as {:?}; every ranked axis requires the matching \
@@ -160,7 +192,12 @@ pub(crate) fn property_name_tree_type_and_ranked_axes(
     let range_summable = index_level_info
         .map(|info| info.range_summable)
         .unwrap_or(false);
-    let base = provable_tree_type(range_countable, range_summable);
+    // In its 128-bit counterpart when the document type keeps big sums, which no type does
+    // before protocol version 15 (`tree_type_for_sum_width`)
+    let base = tree_type_for_sum_width(
+        provable_tree_type(range_countable, range_summable),
+        index_level_info.is_some_and(|info| info.big_sums),
+    );
     let ranked_axes = ranked_axes_for_index_level_info(index_level_info);
     Ok((
         ranked_property_name_tree_type(base, &ranked_axes)?,
@@ -259,6 +296,10 @@ pub(crate) fn non_indexed_mirror_tree_type(tree_type: TreeType) -> TreeType {
         TreeType::ProvableCountIndexedTree => TreeType::ProvableCountTree,
         TreeType::ProvableSumIndexedTree => TreeType::ProvableSumTree,
         TreeType::ProvableCountProvableSumIndexedTree => TreeType::ProvableCountProvableSumTree,
+        TreeType::ProvableBigSumIndexedTree => TreeType::ProvableBigSumTree,
+        TreeType::ProvableCountProvableBigSumIndexedTree => {
+            TreeType::ProvableCountProvableBigSumTree
+        }
         other => other,
     }
 }
@@ -295,6 +336,7 @@ mod tests {
             flat: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            big_sums: false,
         }
     }
 

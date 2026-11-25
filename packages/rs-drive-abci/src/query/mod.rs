@@ -9,7 +9,7 @@ mod identity_based_queries;
 mod prefunded_specialized_balances;
 mod private_document_entries;
 mod proofs;
-mod response_metadata;
+pub(crate) mod response_metadata;
 mod service;
 mod shielded;
 mod system;

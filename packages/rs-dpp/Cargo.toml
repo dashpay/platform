@@ -13,8 +13,8 @@ authors = [
 
 [dependencies]
 secp256k1 = { workspace = true }
-# Reach dash-pkc through rust-dashcore so its base-sdk rev is the only one in the
-# lockfile; a second rev would duplicate dash-pkc and break `cargo vendor`.
+# Reach dash-pkc through rust-dashcore so the crates.io release it requires is the
+# only one in the lockfile; a second version would duplicate dash-pkc.
 dashcore-crypto = { workspace = true, optional = true }
 # Keep downstream lockfiles from retaining blst versions without WASM aggregate verification.
 # TODO: Remove this constraint once the pinned rust-dashcore dependency graph enforces a compatible blst minimum.
@@ -101,11 +101,6 @@ tracing = { version = "0.1.41" }
 grovedb-commitment-tree = { workspace = true, optional = true }
 
 [dev-dependencies]
-# The test platform versions: the token marketplace is tested under one until protocol version
-# 16 has tables.
-platform-version = { path = "../rs-platform-version", features = [
-  "mock-versions",
-] }
 tokio = { version = "1.40", features = ["full"] }
 pretty_assertions = { version = "1.4.1" }
 dpp = { path = ".", default-features = false, features = [

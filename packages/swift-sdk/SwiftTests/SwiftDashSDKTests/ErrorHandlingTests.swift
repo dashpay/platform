@@ -701,6 +701,90 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(message, detail)
     }
 
+    /// A balance history read that could not reach consistent heights keeps
+    /// its own code and typed case, not the unknown error.
+    func testShouldReportInconsistentBalanceHistoryHeightsByTheirOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_BALANCE_HISTORY_INCONSISTENT_HEIGHTS
+        )
+        XCTAssertEqual(code, .errorBalanceHistoryInconsistentHeights)
+        XCTAssertEqual(code.rawValue, 83)
+        let detail = "all 3 attempts to read a page were below the required height 12"
+        guard case .balanceHistoryInconsistentHeights(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed balance history height error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// A shielded Clear refused while an operation is in flight keeps its own
+    /// code and typed case, so the host can keep its rows and offer a retry
+    /// instead of treating it as a failed reset.
+    func testShouldReportAClearRefusedDuringAShieldedOperationByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_OPERATION_IN_PROGRESS
+        )
+        XCTAssertEqual(code, .errorShieldedOperationInProgress)
+        XCTAssertEqual(code.rawValue, 84)
+        let detail = "A shielded operation is in progress; clear the shielded state once it has finished"
+        guard case .shieldedOperationInProgress(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed shielded operation in progress error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// A shielded tip refused while an earlier payment to its recipient is
+    /// unresolved keeps its own code and typed case, not the unknown error
+    /// and not the unconfirmed spend.
+    func testShouldReportAPendingShieldedTipByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_TIP_PENDING
+        )
+        XCTAssertEqual(code, .errorShieldedTipPending)
+        XCTAssertEqual(code.rawValue, 85)
+        let detail = "A shielded payment to this recipient is still being sent or is unresolved"
+        guard case .shieldedTipPending(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed shielded tip pending error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// A shielded tip refused because the name belongs to another identity
+    /// than the contact it was started from keeps its own code and typed
+    /// case, not the unknown error.
+    func testShouldReportAShieldedTipRecipientMismatchByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_TIP_RECIPIENT_MISMATCH
+        )
+        XCTAssertEqual(code, .errorShieldedTipRecipientMismatch)
+        XCTAssertEqual(code.rawValue, 86)
+        let detail = "This username now belongs to identity"
+        guard case .shieldedTipRecipientMismatch(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed shielded tip recipient mismatch error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
+    /// A busy local shielded balance read keeps its own code and typed case,
+    /// not the generic wallet operation error: it is the only error of that
+    /// read that means keep the last state and read again.
+    func testShouldReportABusyShieldedBalanceByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_BALANCE_BUSY
+        )
+        XCTAssertEqual(code, .errorShieldedBalanceBusy)
+        XCTAssertEqual(code.rawValue, 87)
+        let detail = "shielded identity balance busy; retry after sync releases its locks"
+        guard case .shieldedBalanceBusy(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed shielded balance busy error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
     func testShouldReadEveryFieldOfThePrivateContactReadiness() {
         var ffi = PrivateContactReadinessFFI()
         ffi.private_payments_restored = false

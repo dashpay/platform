@@ -22,6 +22,13 @@ pub struct BlockTransaction {
     pub gas_used: i64,
 }
 
+impl BlockTransaction {
+    /// Whether it executed: its result code is 0. Any other code is an error it paid for.
+    pub fn executed(&self) -> bool {
+        self.code == 0
+    }
+}
+
 /// The state transitions one owner has in a block, in block order.
 ///
 /// When proved, every transition is in the block at `height`, with the result it is shown

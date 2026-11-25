@@ -31,6 +31,8 @@ import org.dashfoundation.dashsdk.tokens.InvitationPreview
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.services.DashpayKeyProvisioning
+import org.dashfoundation.example.ui.components.EmissionKey
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.toHex
 
@@ -76,7 +78,7 @@ fun ClaimInvitationSheet(
     }.collectAsStateWithLifecycle()
     val walletOwned by remember(network) {
         container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
-    }.collectAsStateWithLifecycle(emptyList())
+    }.collectEachAsStateWithLifecycle(emptyList())
 
     var uriText by remember { mutableStateOf(initialUri.orEmpty()) }
     var preview by remember { mutableStateOf(InvitationPreview.INVALID) }
@@ -94,7 +96,7 @@ fun ClaimInvitationSheet(
     // the host — the user's actual selection, matching iOS), else the first
     // wallet-owned identity's wallet, else the first loaded wallet — a
     // fresh invitee with no identity can still claim.
-    val claimWallet = remember(walletOwned, walletsMap, preferredWalletIdHex) {
+    val claimWallet = remember(EmissionKey(walletOwned), walletsMap, preferredWalletIdHex) {
         preferredWalletIdHex?.let { walletsMap[it] }
             ?: walletOwned.firstOrNull {
                 it.walletId != null && walletsMap.containsKey(it.walletId!!.toHex())

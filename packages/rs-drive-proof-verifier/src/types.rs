@@ -41,7 +41,7 @@ pub mod yes_no_vote_polls;
 use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::core_types::validator_set::ValidatorSet;
-use dpp::data_contract::document_type::DocumentType;
+use dpp::data_contract::document_type::{DecodedValueBudget, DocumentType};
 use dpp::fee::Credits;
 use dpp::platform_value::Value;
 use dpp::prelude::{AddressNonce, IdentityNonce, TimestampMillis};
@@ -135,18 +135,24 @@ pub use drive::query::document_history_drive_query::{
 pub struct DocumentHistory {
     /// Entries retain their complete cursor, including edits sharing a timestamp.
     pub entries: Vec<DocumentHistoryEntry>,
-    /// Absent for the legacy layout through protocol 14 and authenticated by protocol-15 proofs.
+    /// Absent for the legacy layout through protocol 14, whose history request (V0) proves
+    /// revisions only, and authenticated by protocol-15 proofs.
     pub lifecycle: Option<DocumentHistoryLifecycle>,
 }
-/// Verified history with the complete wire response needed for independent verification.
+/// Verified history with the request and complete wire response needed for independent
+/// verification ([`Self::verify`]).
 #[derive(Debug, Clone, PartialEq)]
 pub struct DocumentHistoryProofInfo {
     /// Decoded and verified history page.
     pub history: DocumentHistory,
-    /// Original metadata and the quorum-signed proof whose GroveDB payload
-    /// carries one GroveDB proof of the page and lifecycle.
-    pub response:
-        dapi_grpc::platform::v0::get_document_history_response::GetDocumentHistoryResponseV1,
+    /// The request the response answers, as sent: an SDK may send a version 1 query as
+    /// version 0 to a network below protocol 15, and a response verifies only against the
+    /// request of its own version.
+    pub request: dapi_grpc::platform::v0::GetDocumentHistoryRequest,
+    /// Original metadata and the quorum-signed proof: a version 1 response from protocol 15,
+    /// whose GroveDB payload carries one proof of the page and lifecycle, or a version 0
+    /// response through protocol 14, which proves the page only.
+    pub response: dapi_grpc::platform::v0::GetDocumentHistoryResponse,
 }
 
 /// Multiple data contracts.
@@ -203,6 +209,12 @@ pub struct Contenders {
 impl Contenders {
     /// Return a map of deserialized [Contender] objects indexed by the ids the contest
     /// names them by: identity ids, or document ids in a vote among documents.
+    ///
+    /// Each attached document is decoded under a decoded-value budget proportional to
+    /// its encoded byte length ([`ContenderWithSerializedDocument::try_to_contender_bounded`]),
+    /// so legitimate contender pages carrying large non-zero-width typed arrays always fit
+    /// while zero-width typed arrays on protocol-version-14 contracts cannot expand a small
+    /// payload into unbounded memory.
     pub fn to_contenders(
         &self,
         document_type: &DocumentType,
@@ -211,7 +223,30 @@ impl Contenders {
         self.contenders
             .iter()
             .map(|(id, v)| {
-                let contender = v.try_to_contender(document_type.as_ref(), platform_version)?;
+                let contender =
+                    v.try_to_contender_bounded(document_type.as_ref(), platform_version)?;
+                Ok((*id, contender))
+            })
+            .collect::<Result<BTreeMap<Identifier, Contender>, dpp::ProtocolError>>()
+            .map_err(Into::into)
+    }
+
+    /// Return a map of deserialized [Contender] objects while enforcing a shared `budget`
+    /// across all contender documents in the page.
+    pub fn to_contenders_with_budget(
+        &self,
+        document_type: &DocumentType,
+        budget: &mut DecodedValueBudget,
+        platform_version: &PlatformVersion,
+    ) -> Result<BTreeMap<Identifier, Contender>, crate::Error> {
+        self.contenders
+            .iter()
+            .map(|(id, v)| {
+                let contender = v.try_to_contender_with_budget(
+                    document_type.as_ref(),
+                    budget,
+                    platform_version,
+                )?;
                 Ok((*id, contender))
             })
             .collect::<Result<BTreeMap<Identifier, Contender>, dpp::ProtocolError>>()
@@ -1030,4 +1065,229 @@ pub struct TokenShieldedNullifiersQuery {
     pub token_id: Identifier,
     /// The nullifiers to check
     pub nullifiers: Vec<[u8; 32]>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Error;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
+    use dpp::data_contract::errors::DataContractError;
+    use dpp::data_contract::DataContract;
+    use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+    use dpp::document::{Document, DocumentV0};
+    use dpp::platform_value::platform_value;
+    use dpp::voting::contender_structs::ContenderWithSerializedDocumentV0;
+    use dpp::ProtocolError;
+
+    #[test]
+    fn should_enforce_proportional_and_explicit_decoded_value_budgets_on_contenders_page() {
+        let pv14 = PlatformVersion::get(14).expect("PV14 exists");
+        let latest = PlatformVersion::latest();
+        // 60 zero-width typed arrays × 1024 elements = 61,500 decoded values from a few hundred
+        // bytes: even a single contender exceeds its encoded-size-proportional budget.
+        let field_count = 60usize;
+        let mut properties = Vec::with_capacity(field_count);
+        let mut doc_properties = BTreeMap::new();
+        for i in 0..field_count {
+            let name = format!("f{i:02}");
+            properties.push((
+                Value::Text(name.clone()),
+                platform_value!({
+                    "type": "array",
+                    "maxItems": 1024,
+                    "items": {
+                        "type": "array",
+                        "byteArray": true,
+                        "minItems": 0,
+                        "maxItems": 0,
+                    },
+                    "position": i as u32,
+                }),
+            ));
+            doc_properties.insert(name, Value::Array(vec![Value::Bytes(vec![]); 1024]));
+        }
+        let contract = DataContract::from_value(
+            platform_value!({
+                "$formatVersion": "1",
+                "id": Identifier::new([0x11; 32]),
+                "version": 1u32,
+                "ownerId": Identifier::new([0x22; 32]),
+                "config": {
+                    "$formatVersion": "1",
+                    "canBeDeleted": false,
+                    "readonly": false,
+                    "keepsHistory": false,
+                    "documentsKeepHistoryContractDefault": false,
+                    "documentsMutableContractDefault": true,
+                    "documentsCanBeDeletedContractDefault": true,
+                    "requiresIdentityEncryptionBoundedKey": Value::Null,
+                    "requiresIdentityDecryptionBoundedKey": Value::Null,
+                    "sizedIntegerTypes": true,
+                },
+                "documentSchemas": {
+                    "entry": {
+                        "type": "object",
+                        "properties": Value::Map(properties),
+                        "additionalProperties": false,
+                    }
+                }
+            }),
+            true,
+            pv14,
+        )
+        .expect("PV14 contract validates");
+        let document_type = contract
+            .document_type_for_name("entry")
+            .expect("entry document type")
+            .to_owned_document_type();
+
+        let make_contender = |seed: u8| {
+            let identity_id = Identifier::new([seed; 32]);
+            let doc = Document::V0(DocumentV0 {
+                id: Identifier::new([seed.wrapping_add(100); 32]),
+                owner_id: identity_id,
+                properties: doc_properties.clone(),
+                ..Default::default()
+            });
+            let bytes = doc
+                .serialize(document_type.as_ref(), &contract, latest)
+                .expect("serialize document");
+            (
+                identity_id,
+                ContenderWithSerializedDocument::V0(ContenderWithSerializedDocumentV0 {
+                    identity_id,
+                    serialized_document: Some(bytes),
+                    vote_tally: Some(1),
+                }),
+            )
+        };
+
+        // Even a single zero-width bomb contender is refused by the proportional budget.
+        let single_bomb = Contenders {
+            contenders: BTreeMap::from([make_contender(1)]),
+            ..Default::default()
+        };
+        let bomb_error = single_bomb
+            .to_contenders(&document_type, latest)
+            .expect_err("zero-width bomb contender must exceed proportional budget");
+        assert!(
+            matches!(
+                bomb_error,
+                Error::ProtocolError { ref error }
+                    if error.contains("decoded value budget exceeded")
+            ),
+            "expected ProtocolError with decoded value budget exceeded, got: {bomb_error:?}"
+        );
+
+        // Explicit caller-supplied shared budget still stops when exhausted across contenders.
+        let pair_page = Contenders {
+            contenders: (1u8..=2).map(make_contender).collect(),
+            ..Default::default()
+        };
+        let mut explicit_budget = DecodedValueBudget::new(70_000);
+        let explicit_error = pair_page
+            .to_contenders_with_budget(&document_type, &mut explicit_budget, latest)
+            .expect_err("pair must exhaust 70,000 explicit shared budget");
+        assert!(
+            matches!(
+                explicit_error,
+                Error::ProtocolError { ref error }
+                    if error.contains("decoded value budget exceeded")
+            ),
+            "expected ProtocolError with decoded value budget exceeded, got: {explicit_error:?}"
+        );
+
+        // Direct DPP bounded check verifies the typed DecodedValueBudgetExceeded error.
+        let dpp_error = single_bomb
+            .contenders
+            .values()
+            .next()
+            .expect("one contender")
+            .try_to_contender_bounded(document_type.as_ref(), latest)
+            .expect_err("zero-width bomb contender must fail bounded decode");
+        assert!(
+            matches!(
+                dpp_error,
+                ProtocolError::DataContractError(DataContractError::DecodedValueBudgetExceeded(_))
+            ),
+            "expected DecodedValueBudgetExceeded, got: {dpp_error:?}"
+        );
+
+        // Legitimate 100-contender page where each contender holds three 1,024-element u8 arrays
+        // (~307,500 decoded values > old 262,144 fixed cap) succeeds under proportional budgeting.
+        let u8_contract = DataContract::from_value(
+            platform_value!({
+                "$formatVersion": "1",
+                "id": Identifier::new([0x33; 32]),
+                "version": 1u32,
+                "ownerId": Identifier::new([0x44; 32]),
+                "config": {
+                    "$formatVersion": "1",
+                    "canBeDeleted": false,
+                    "readonly": false,
+                    "keepsHistory": false,
+                    "documentsKeepHistoryContractDefault": false,
+                    "documentsMutableContractDefault": true,
+                    "documentsCanBeDeletedContractDefault": true,
+                    "requiresIdentityEncryptionBoundedKey": Value::Null,
+                    "requiresIdentityDecryptionBoundedKey": Value::Null,
+                    "sizedIntegerTypes": true,
+                },
+                "documentSchemas": {
+                    "entry": {
+                        "type": "object",
+                        "properties": {
+                            "a": { "type": "array", "maxItems": 1024, "items": { "type": "integer", "minimum": 0, "maximum": 255 }, "position": 0u32 },
+                            "b": { "type": "array", "maxItems": 1024, "items": { "type": "integer", "minimum": 0, "maximum": 255 }, "position": 1u32 },
+                            "c": { "type": "array", "maxItems": 1024, "items": { "type": "integer", "minimum": 0, "maximum": 255 }, "position": 2u32 },
+                        },
+                        "additionalProperties": false,
+                    }
+                }
+            }),
+            true,
+            latest,
+        )
+        .expect("u8 array contract validates");
+        let u8_type = u8_contract
+            .document_type_for_name("entry")
+            .expect("entry document type")
+            .to_owned_document_type();
+        let u8_props = BTreeMap::from([
+            ("a".to_string(), Value::Array(vec![Value::U8(1); 1024])),
+            ("b".to_string(), Value::Array(vec![Value::U8(2); 1024])),
+            ("c".to_string(), Value::Array(vec![Value::U8(3); 1024])),
+        ]);
+        let legitimate_page = Contenders {
+            contenders: (0u8..100)
+                .map(|seed| {
+                    let identity_id = Identifier::new([seed; 32]);
+                    let doc = Document::V0(DocumentV0 {
+                        id: Identifier::new([seed.wrapping_add(128); 32]),
+                        owner_id: identity_id,
+                        properties: u8_props.clone(),
+                        ..Default::default()
+                    });
+                    let bytes = doc
+                        .serialize(u8_type.as_ref(), &u8_contract, latest)
+                        .expect("serialize u8 doc");
+                    (
+                        identity_id,
+                        ContenderWithSerializedDocument::V0(ContenderWithSerializedDocumentV0 {
+                            identity_id,
+                            serialized_document: Some(bytes),
+                            vote_tally: Some(1),
+                        }),
+                    )
+                })
+                .collect(),
+            ..Default::default()
+        };
+        let decoded = legitimate_page
+            .to_contenders(&u8_type, latest)
+            .expect("100 legitimate contenders with 3x1024 u8 arrays must fit proportional budget");
+        assert_eq!(decoded.len(), 100);
+    }
 }

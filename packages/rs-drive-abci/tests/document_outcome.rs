@@ -296,6 +296,7 @@ fn fixture_signed_as_for_document(
         version: Some(Version::V0(WaitForStateTransitionResultResponseV0 {
             result: Some(WaitResult::Proof(signed(bytes, &metadata, root))),
             metadata: Some(metadata),
+            state_before_block: None,
         })),
     };
     (

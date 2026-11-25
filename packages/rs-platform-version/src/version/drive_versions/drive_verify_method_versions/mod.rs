@@ -222,6 +222,12 @@ pub struct DriveVerifySingleDocumentMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveVerifyStateTransitionMethodVersions {
     pub verify_state_transition_was_executed_with_proof: FeatureVersion,
+    /// Version of `verify_state_transition_prior_state_with_proof` and
+    /// `state_transition_prior_state_is_readable`. It controls client verification of the state
+    /// before a state transition, and which registered transitions a node proves for its
+    /// clients while it finalizes a block: an optional, node-local proof. No block's acceptance,
+    /// fees, results or state depend on it, so it cannot change consensus.
+    pub verify_state_transition_prior_state_with_proof: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

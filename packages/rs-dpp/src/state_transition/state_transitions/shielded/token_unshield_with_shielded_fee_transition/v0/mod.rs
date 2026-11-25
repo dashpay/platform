@@ -5,6 +5,7 @@ pub(super) mod v0_methods;
 mod version;
 
 use crate::balances::credits::TokenAmount;
+use crate::data_contract::associated_token::token_perpetual_distribution::distribution_function::MAX_DISTRIBUTION_PARAM;
 use crate::data_contract::TokenContractPosition;
 use crate::fee::Credits;
 use crate::prelude::Identifier;
@@ -21,9 +22,10 @@ use serde::{Deserialize, Serialize};
 ///
 /// Tokens leaving a token's shielded pool into an identity's token balance, with the fee paid out of the credit shielded pool: an Orchard spend bundle in the token pool (value balance `amount`) and one in the credit pool (value balance the fee). No identity signs; the recipient and amount are bound into the token bundle's sighash.
 ///
-/// The token bundle binds the token id and the transition's transparent fields into its
-/// sighash; the fee bundle binds the token id and a digest of the token bundle's actions, so
-/// neither bundle can be paired with another.
+/// The token bundle binds the token id, the transition's transparent fields and, from protocol
+/// version 15, the fee bundle's commitment into its sighash; the fee bundle binds the token id
+/// and a digest of the token bundle's actions. From protocol version 15 neither bundle can be
+/// paired with a bundle of different effects.
 #[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[derive(
     Debug,
@@ -80,4 +82,13 @@ pub struct TokenUnshieldWithShieldedFeeTransitionV0 {
     pub fee_binding_signature: [u8; 64],
     /// Credits leaving the credit pool: the fee bundle's value balance.
     pub credit_amount: Credits,
+}
+
+impl TokenUnshieldWithShieldedFeeTransitionV0 {
+    /// Whether `amount` is an amount this transition's structure validation accepts: from 1 to
+    /// [`MAX_DISTRIBUTION_PARAM`], the most one transition moves out of a token pool. A wallet
+    /// asks it before reserving notes for an unshield, and the builder before proving one.
+    pub fn is_valid_amount(amount: TokenAmount) -> bool {
+        amount != 0 && amount <= MAX_DISTRIBUTION_PARAM
+    }
 }

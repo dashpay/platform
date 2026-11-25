@@ -1,5 +1,6 @@
 use dash_sdk::error::ContextProviderError;
 use dash_sdk::platform::dashpay::InvitationError;
+use dash_sdk::platform::private_document_seal::PrivateDocumentSealError;
 use dashcore::sml::llmq_entry_verification::LLMQEntryVerificationStatus;
 use dpp::address_funds::PlatformAddress;
 use dpp::consensus::state::address_funds::AddressInvalidNonceError;
@@ -8,10 +9,12 @@ use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::prelude::{AddressNonce, CoreBlockHeight};
-use key_wallet::account::StandardAccountType;
+use key_wallet::account::{AccountType, StandardAccountType};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::Network;
+
+use crate::changeset::PersistenceError;
 
 pub use dash_sdk::platform::transition::asset_lock_submission::{
     as_asset_lock_proof_cl_height_too_low, as_state_transition_max_size_exceeded,
@@ -225,6 +228,15 @@ pub enum PlatformWalletError {
         account_index: u32,
     },
 
+    /// key-wallet could not build the address pools of a DashPay account
+    /// from its xpub.
+    #[error("Failed to build DashPay account {account_type}: {source}")]
+    DashpayAccountBuild {
+        account_type: AccountType,
+        #[source]
+        source: key_wallet::Error,
+    },
+
     #[error("Asset lock transaction failed: {0}")]
     AssetLockTransaction(String),
 
@@ -237,8 +249,10 @@ pub enum PlatformWalletError {
     /// For Core transactions, the
     /// transaction may already have reached the network (transport timeout
     /// after delivery, partial peer send, or an internal multi-node retry
-    /// whose earlier attempt may have succeeded). The spent Core inputs are
-    /// intentionally kept out of the selectable set, so an immediate retry
+    /// whose earlier attempt may have succeeded). One case was not sent but
+    /// may still be: a shielded funding abandoned before its broadcast whose
+    /// row may be on disk, where a restart resumes it. The spent Core inputs
+    /// are intentionally kept out of the selectable set, so an immediate retry
     /// fails at input selection instead of double-spending.
     ///
     /// A Platform state transition may instead have been accepted but its
@@ -846,6 +860,23 @@ pub enum PlatformWalletError {
     #[error("decision proposal {proposal_id} not found")]
     DecisionProposalNotFound { proposal_id: Identifier },
 
+    /// No data contract with this id exists on Platform. Distinct from
+    /// [`Self::InvalidParameter`]: the id was well-formed, the read came
+    /// back empty.
+    #[error("data contract {contract_id} not found")]
+    ContractNotFound { contract_id: Identifier },
+
+    /// No document with this id exists on Platform under the named
+    /// contract and document type, so there is nothing to act on.
+    /// Distinct from [`Self::InvalidParameter`]: the id was well-formed,
+    /// the read came back empty.
+    #[error("document {document_id} of {document_type_name} on contract {contract_id} not found")]
+    DocumentNotFound {
+        contract_id: Identifier,
+        document_type_name: String,
+        document_id: Identifier,
+    },
+
     /// The DPNS domain document carries no `$price` — it is not listed
     /// for sale. Raised by the wallet's pre-flight check and by the
     /// consensus downcast of `DocumentNotForSaleError` (DPP code 40108).
@@ -914,6 +945,30 @@ pub enum PlatformWalletError {
 
     #[error("Address operation failed: {0}")]
     AddressOperation(String),
+
+    /// The balance history could not read a page of Platform's balance
+    /// changes at a consistent height: within the per-page retry bound,
+    /// every answer for one page was proved below a height the read had
+    /// already used, so it could hide a block (or a compacted range) the
+    /// earlier pages relied on. No partial history is returned; retry later.
+    ///
+    /// Only replies the SDK fetched and proof-verified count toward it: every
+    /// attempt got such a reply, and each was below the floor. An error from
+    /// the SDK itself (its own stale-node rejection, a transport failure, a
+    /// proof verification failure) is returned as that SDK error instead.
+    #[error(
+        "Balance history: all {attempts} attempts to read a page of address balance changes \
+         were below the required height {required_height} (last reply proved at height \
+         {proved_height}); retry later"
+    )]
+    BalanceHistoryInconsistentHeights {
+        /// How many times the page was asked for.
+        attempts: usize,
+        /// The floor every reply had to reach.
+        required_height: u64,
+        /// The height the last reply was proved at.
+        proved_height: u64,
+    },
 
     /// A caller passed an argument this API cannot act on — as opposed to a
     /// lookup that found nothing. Kept distinct from [`WalletNotFound`] so a
@@ -1180,6 +1235,54 @@ pub enum PlatformWalletError {
     #[error("Identity {} has an unresolved shielded debit; this request was not started. Wait for shielded sync", hex::encode(identity_id))]
     ShieldedIdentityDebitPending { identity_id: [u8; 32] },
 
+    /// A shielded tip was refused before anything was built or sent: another
+    /// tip from this wallet is being sent, or an earlier shielded payment to
+    /// the same recipient may still execute. This call sent nothing.
+    ///
+    /// It says nothing about the earlier payment, which may be this same tip
+    /// requested twice and may pay the recipient. A shielded sync resolves
+    /// it either way: seen executed, or proven unable to execute. The
+    /// refusal ending is therefore not a reason to send the tip again. Send
+    /// it again only once the earlier payment is known to have failed (its
+    /// shielded activity entry reads failed, not confirmed). A send returns
+    /// no id for that entry, and look-alike entries can have other outcomes:
+    /// when the exact attempt cannot be identified, its outcome is unknown
+    /// and the tip is not sent again.
+    #[error(
+        "Another shielded tip is being sent, or an earlier shielded payment to this recipient \
+         is unresolved; this tip was not sent. Wait for shielded sync, then check whether the \
+         earlier payment was made before sending again"
+    )]
+    ShieldedTipPending,
+
+    /// A shielded balance could not be read now. Either a bounded read did
+    /// not finish within its wait (the wallet's state or its shielded store
+    /// was held, by a scan for instance), or a shielded Clear was admitted
+    /// and had not finished, so the ledger read may be the one it wipes.
+    /// Which is not told. Nothing failed and nothing changed: the caller
+    /// keeps the state it last read and reads again later.
+    #[error(
+        "The shielded balance could not be read now: the wallet was busy; nothing was read. \
+         Read it again later"
+    )]
+    ShieldedBalanceBusy,
+
+    /// A shielded tip was reviewed or sent for a username the caller expects
+    /// to belong to `expected` (a saved contact's identity), and the name
+    /// resolves to `resolved` instead: the name moved to another identity.
+    /// Nothing was sent. The user picks the recipient again; a tip to the
+    /// name's new owner is started from the name, not from the contact.
+    #[error(
+        "This username now belongs to identity {resolved}, not to the expected identity \
+         {expected}; this tip was not sent"
+    )]
+    ShieldedTipRecipientMismatch {
+        /// The identity the caller expected the name to belong to.
+        expected: Identifier,
+        /// The identity the name resolves to.
+        resolved: Identifier,
+    },
+
     /// Durable recovery data cannot safely identify or reconstruct a payment.
     #[error("shielded recovery record is damaged (account {account_index:?}): {reason}; restore a known-good backup or inspect recovery records before explicitly accepting an unknown payment outcome")]
     ShieldedRecoveryCorrupted {
@@ -1216,6 +1319,26 @@ pub enum PlatformWalletError {
         operation: &'static str,
         reason: String,
     },
+
+    /// A shielded spend (`operation` names it: an identity top-up, a private document create)
+    /// did not execute and never can, on proof the wallet already held when the spend's result
+    /// arrived: the note scan read another transition's action spending one of its notes (a
+    /// second device restored from the same seed), or its anchor was proven pruned. These spends
+    /// get their result as a snapshot of the state they affect, which shows their nullifiers
+    /// spent and not which transition spent them, so such a result does not say the spend
+    /// executed. Nothing was paid and the spend's activity row reads failed. The notes it
+    /// selected are marked spent, as the snapshot proves each of them spent on chain.
+    ///
+    /// Unlike [`Self::ShieldedSpendUnconfirmed`], this spend cannot execute later, so a new
+    /// attempt cannot pay twice. Whether a new attempt is admitted is a separate matter: a
+    /// private contact request keeps its pair held after this error, as for any payment that
+    /// left the wallet, and a new request to the same contact is refused with
+    /// [`Self::PrivateContactRequestPending`] until the hold is released.
+    #[error(
+        "Shielded {operation} did not execute: another transaction spent one of its notes \
+         first, or it expired before it was included. Nothing was paid"
+    )]
+    ShieldedSpendNotExecuted { operation: &'static str },
 
     /// A masternode (evonode) identity credit withdrawal was broadcast and
     /// accepted, or may have been delivered, but its execution result could
@@ -1284,6 +1407,86 @@ pub enum PlatformWalletError {
 
     #[error("Shielded sub-wallet not bound: call bind_shielded first")]
     ShieldedNotBound,
+
+    /// A shielded spend would need more notes than one transition can spend
+    /// while it still fits the protocol's size and action limits. Refused
+    /// before anything was reserved or proved. Covering the amount takes
+    /// fewer, larger notes: a shielded transfer to the wallet itself merges
+    /// them.
+    #[error(
+        "Shielded spend needs {required_notes} notes but one transition spends at most \
+         {max_notes}: merge notes with a shielded transfer to this wallet first"
+    )]
+    ShieldedTooManyNotes {
+        required_notes: usize,
+        max_notes: usize,
+    },
+
+    /// This SDK builds and signs at protocol version `sdk_version`, but a
+    /// verified answer shows the network runs `network_version`. A
+    /// transition whose signature binds what a protocol version binds (a
+    /// token pool transition paying from the credit pool) is refused by the
+    /// other, so it was refused before anything was reserved or proved.
+    #[error(
+        "This SDK builds at protocol version {sdk_version} but the network runs \
+         {network_version}; the transition would be refused"
+    )]
+    ShieldedProtocolVersionMismatch {
+        sdk_version: u32,
+        network_version: u32,
+    },
+
+    /// The token has no shielded pool (`hasShieldedPool` is off in its
+    /// configuration, which is fixed at creation), so nothing can be bought
+    /// into or moved through one. Refused before anything was reserved.
+    #[error("Token {token_id} has no shielded pool")]
+    TokenShieldedPoolDisabled { token_id: Identifier },
+
+    /// The token's configuration could not be read: its contract did not
+    /// fetch or verify, is not on Platform, or has no token at the position.
+    /// Unlike [`Self::TokenShieldedPoolDisabled`] this says nothing about the
+    /// token, and a retry may succeed. Refused before anything was reserved.
+    #[error("Configuration of token {token_id} could not be read: {reason}")]
+    TokenConfigurationUnavailable {
+        token_id: Identifier,
+        reason: String,
+    },
+
+    /// The account's spendable notes in the token's shielded pool do not
+    /// cover the amount, both in the token's smallest unit. Notes a spend in
+    /// flight holds are not counted. Refused before anything was reserved.
+    #[error(
+        "Insufficient shielded balance of token {token_id}: available {available}, required \
+         {required}"
+    )]
+    TokenShieldedInsufficientBalance {
+        token_id: Identifier,
+        available: u64,
+        required: u64,
+    },
+
+    /// A token shielded pool cannot be unwatched while a spend that has not
+    /// settled holds some of the wallet's notes there: forgetting them would
+    /// offer them to another spend once the pool is watched again.
+    #[error(
+        "Token {token_id}'s shielded pool holds notes of a spend that has not settled; unwatch \
+         it once the spend settles"
+    )]
+    TokenShieldedPoolSpendPending { token_id: Identifier },
+
+    /// A shielded Clear was refused because a shielded operation is admitted
+    /// on the coordinator: a bind, an account being added, a payment from a
+    /// shielded pool (a credit pool spend, a token pool transfer, unshield or
+    /// purchase, the payment for a private contact request or a private
+    /// document), a DashPay profile write or a tip address preparation, from
+    /// its first step to its result, or another Clear.
+    /// Clear does not wait for it. It returned at once and changed nothing:
+    /// the sync loop keeps running, and no registration, note, watermark or
+    /// tree leaf was touched, so the host must not wipe its own rows.
+    /// Retryable: Clear goes through once the operation has finished.
+    /// FFI mirror: `PlatformWalletFFIResultCode::ErrorShieldedOperationInProgress`.
+    #[error("A shielded operation is in progress; clear the shielded state once it has finished")]
+    ShieldedOperationInProgress,
 }
 
 /// The SDK's invitation errors map onto the variants the wallet used before
@@ -1309,6 +1512,22 @@ impl From<InvitationError> for PlatformWalletError {
             },
             InvitationError::NotReady(error) => Self::InvitationNotReady(error),
             InvitationError::Sdk(error) => Self::Sdk(error),
+        }
+    }
+}
+
+/// What the SDK refuses to seal as an entry of a private document type
+/// ([`PrivateDocumentSealError::is_refused_request`]: the type, a key or the
+/// properties asked for) is the caller's
+/// [`PlatformWalletError::InvalidParameter`]; a signer holding another key
+/// than the sender key, or an envelope that did not seal a checked request,
+/// is the provider's [`PlatformWalletError::InvalidIdentityData`].
+impl From<PrivateDocumentSealError> for PlatformWalletError {
+    fn from(error: PrivateDocumentSealError) -> Self {
+        if error.is_refused_request() {
+            Self::InvalidParameter(error.to_string())
+        } else {
+            Self::InvalidIdentityData(error.to_string())
         }
     }
 }
@@ -1346,6 +1565,19 @@ impl PlatformWalletError {
             }
             _ => source,
         };
+        Self::PersisterStore(source)
+    }
+
+    /// A persister's `store_and_commit` refused a changeset before it was
+    /// staged (`StoreAndCommitError::NotStaged`). Unlike
+    /// [`from_store_failure`](Self::from_store_failure) the classification is
+    /// kept as the backend reported it. A `Transient` store failure tells
+    /// the caller that nothing was committed and nothing was kept, so the
+    /// changeset may be issued again, and that is exactly what this answer
+    /// states, for the changeset it was given: the backend attested it with
+    /// the step itself. The reissue attestation speaks for a plain `store`,
+    /// which this was not, so it is not asked.
+    pub fn from_unstaged_store_failure(source: PersistenceError) -> Self {
         Self::PersisterStore(source)
     }
 

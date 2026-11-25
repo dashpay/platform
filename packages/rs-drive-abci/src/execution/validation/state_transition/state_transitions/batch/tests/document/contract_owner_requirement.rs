@@ -526,6 +526,7 @@ mod contract_owner_requirement_tests {
                 // Nor a changed typed array, whose stored list this would
                 // hold
                 None,
+                false,
                 &platform_ref,
                 &BlockInfo::default(),
                 &mut Vec::new(),

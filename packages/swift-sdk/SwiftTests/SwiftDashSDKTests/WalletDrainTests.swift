@@ -99,4 +99,132 @@ final class WalletDrainTests: XCTestCase {
         XCTAssertEqual(masked.state, .pending)
         XCTAssertNil(masked.outpoint)
     }
+
+    // MARK: - WalletDrainRules (Rust holds each rule; these pin the bridge)
+
+    func testShouldForgetAStoredIdOnlyWhenTheOperationNeedsNothingMore() {
+        let cases: [(WalletDrainStatusRead, Bool, Bool)] = [
+            (.reported(.completed), false, false),
+            (.reported(.completed), true, false),
+            (.reported(.notSent), false, false),
+            (.reported(.notSent), true, true),
+            (.reported(.pending), false, true),
+            (.reported(.pending), true, true),
+            (.failed, false, true),
+            (.failed, true, true),
+        ]
+        for (read, overlapped, keep) in cases {
+            XCTAssertEqual(
+                WalletDrainRules.keepsStoredId(after: read, attemptOverlappedRead: overlapped),
+                keep,
+                "\(read), overlapped: \(overlapped)"
+            )
+        }
+    }
+
+    func testShouldOfferAResumeOnlyForAPendingReportThatNamedALock() {
+        let reads: [WalletDrainStatusRead?] = [
+            nil, .failed, .reported(.notSent), .reported(.pending), .reported(.completed),
+        ]
+        for read in reads {
+            for named in [false, true] {
+                XCTAssertEqual(
+                    WalletDrainRules.recoveryAction(attemptInFlight: true, lastRead: read, readNamedAssetLock: named),
+                    .inProgress,
+                    "a running attempt wins: \(String(describing: read)), named: \(named)"
+                )
+                let expected: WalletDrainRecoveryAction =
+                    read == .reported(.pending) && named ? .resume : .checkAgain
+                XCTAssertEqual(
+                    WalletDrainRules.recoveryAction(attemptInFlight: false, lastRead: read, readNamedAssetLock: named),
+                    expected,
+                    "\(String(describing: read)), named: \(named)"
+                )
+            }
+        }
+    }
+
+    func testShouldCountOnlyACompletedAttemptAsFinished() {
+        XCTAssertTrue(WalletDrainRules.attemptFinished(.completed))
+        XCTAssertFalse(WalletDrainRules.attemptFinished(.pending))
+        XCTAssertFalse(WalletDrainRules.attemptFinished(.notSent))
+    }
+
+    func testShouldReportNotSentAsPendingOnlyWhileAHostCallIsActive() {
+        let cases: [(WalletDrainOutcome.State, Bool, WalletDrainOutcome.State)] = [
+            (.notSent, false, .notSent),
+            (.notSent, true, .pending),
+            (.pending, false, .pending),
+            (.pending, true, .pending),
+            (.completed, false, .completed),
+            (.completed, true, .completed),
+        ]
+        for (reported, active, expected) in cases {
+            XCTAssertEqual(
+                WalletDrainRules.statusDuringHostCall(reported, hostCallActive: active),
+                expected,
+                "\(reported), host call active: \(active)"
+            )
+        }
+    }
+
+    func testShouldRefuseAStartOnlyWhenThePreviewHasNothingToShield() {
+        XCTAssertTrue(WalletDrainRules.previewAllowsStart(.ready))
+        XCTAssertTrue(WalletDrainRules.previewAllowsStart(.inputLimitMayBeExceeded))
+        XCTAssertFalse(WalletDrainRules.previewAllowsStart(.insufficientFunds))
+    }
+
+    func testShouldNotOfferANewDrainOnMainnet() {
+        XCTAssertFalse(WalletDrainRules.startOffered(on: .mainnet))
+        for network in [Network.testnet, .devnet, .regtest] {
+            XCTAssertTrue(WalletDrainRules.startOffered(on: network), "\(network)")
+        }
+    }
+
+    func testShouldListADrainLockByItsStoredIdOrAsAResumableCheckpoint() {
+        // Funding type 5 is a shielded top-up, 4 an address top-up; status 0
+        // is Built, 1 Broadcast, 6 DrainCompleted.
+        let cases: [(Int, Int, Bool, Bool, WalletDrainLockListing)] = [
+            (5, 0, false, false, .unaffected),
+            (5, 0, false, true, .unaffected),
+            (5, 0, true, true, .hidden),
+            (5, 1, true, true, .hidden),
+            (5, 6, true, true, .hidden),
+            (5, 0, true, false, .offered),
+            (5, 1, true, false, .unaffected),
+            (5, 6, true, false, .unaffected),
+            (4, 0, true, false, .unaffected),
+        ]
+        for (funding, status, hasId, stored, expected) in cases {
+            let args = "funding \(funding), status \(status), has id \(hasId), stored \(stored)"
+            XCTAssertEqual(
+                WalletDrainRules.lockListingIfKnown(
+                    fundingTypeRaw: funding, statusRaw: status, hasOperationId: hasId, hostHoldsStoredId: stored),
+                expected,
+                args
+            )
+            XCTAssertEqual(
+                WalletDrainRules.lockListing(
+                    fundingTypeRaw: funding, statusRaw: status, hasOperationId: hasId, hostHoldsStoredId: stored),
+                expected,
+                args
+            )
+        }
+    }
+
+    func testShouldReportNoListingForAFundingTypeOrStatusRustDoesNotKnow() {
+        for (funding, status) in [(5, 99), (6, 0), (-1, 0), (5, 256)] {
+            XCTAssertNil(
+                WalletDrainRules.lockListingIfKnown(
+                    fundingTypeRaw: funding, statusRaw: status, hasOperationId: true, hostHoldsStoredId: false),
+                "funding \(funding), status \(status)"
+            )
+            XCTAssertEqual(
+                WalletDrainRules.lockListing(
+                    fundingTypeRaw: funding, statusRaw: status, hasOperationId: true, hostHoldsStoredId: false),
+                .unaffected,
+                "the fail-closed answer: funding \(funding), status \(status)"
+            )
+        }
+    }
 }

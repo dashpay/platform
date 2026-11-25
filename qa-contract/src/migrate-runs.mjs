@@ -1,18 +1,22 @@
-// Migrate historical testRun records from the previous QA contract (v4) onto the
-// freshly-registered v5 contract, remapping testId via the v4->v5 table in
-// codes.mjs (MultiWallet / Group ids folded into their domain categories; GRP-03
-// merged into TOK-15).
+// Migrate historical testRun records from the previous QA contract (v5, whose
+// runs only its owner could record) onto the freshly-registered contract, where
+// listed admins record them. testIds pass through the remap table in codes.mjs,
+// which leaves v5 ids as they are.
 //
-// Reading the old contract is public (no key); writing the new runs uses the v5
-// owner from .env (QA_IDENTITY_ID / QA_PRIVATE_KEY). Migrated runs get a FRESH
-// $createdAt — the original run time is intentionally not preserved.
+// Reading the old contract is public (no key); writing the new runs uses the
+// identity from .env (QA_IDENTITY_ID / QA_PRIVATE_KEY), which must be an admin
+// of the new contract (register.mjs lists the owner). Migrated runs get a FRESH
+// $createdAt and are owned by that identity: the original run time is not
+// preserved. They are written oldest first, so their order is.
 //
-// Run AFTER register.mjs + seed.mjs (the v5 testCases must already exist).
-// Idempotent: a run already present on v5 for the same (testId, result, buildRef)
-// is skipped, so re-running won't duplicate.
+// Run AFTER register.mjs + seed.mjs (the new testCases must already exist), once
+// per app (--app). Idempotent: a source run is skipped when the target already
+// holds a run with the same content that no other source run accounts for, so
+// re-running copies what is missing and nothing twice.
 //
 // Usage:
-//   QA_IDENTITY_ID=... QA_PRIVATE_KEY=... node src/migrate-runs.mjs [--dry-run]
+//   node src/migrate-runs.mjs --dry-run            # reads only, no key needed
+//   QA_IDENTITY_ID=... QA_PRIVATE_KEY=... node src/migrate-runs.mjs
 //     [--from <oldContractId>] [--from-owner <oldOwnerId>] [--app SwiftExampleApp]
 
 import { parseArgs } from 'node:util';
@@ -20,16 +24,27 @@ import { randomBytes } from 'node:crypto';
 import { loadDotEnv, connect, loadOwnerAuth, readConfig } from './sdk.mjs';
 import { appCode, DEFAULT_APP, remapTestId } from './codes.mjs';
 
-// Previous (v4) QA contract on testnet + its owner identity (public, read-only).
-const DEFAULT_OLD_CONTRACT = '67ctgcKJgCs7U4hhAxGj1QQUVq15xkkvMk88CT2AbjCF';
-const DEFAULT_OLD_OWNER = '85KjYZLZXA7YZBPyFEjiMaH36xcQpBBZisKGBHF3uKuH';
+// Previous (v5) QA contract on testnet + its owner identity (public, read-only).
+const DEFAULT_OLD_CONTRACT = '9tshSfq5TU3gAEJCVa6KWxmb7cS7kkzRSmSSTmteKGcU';
+const DEFAULT_OLD_OWNER = '2YBjQKEP6APyu9JADk46yoELL2aKAcRW7yCLTCV2d4dD';
 
-// v4 also had Group (10) and MultiWallet (12) category codes that no longer exist
-// in v5; enumerate old testCases across a generous code range so none are missed
-// regardless of the old numbering.
+// Enumerate old testCases across a generous category code range so none are
+// missed regardless of the old numbering.
 const OLD_CATEGORY_CODES = Array.from({ length: 16 }, (_, i) => i);
 
 function entropy() { return Uint8Array.from(randomBytes(32)); }
+
+// Everything of a run that is copied. A copy has a new id, owner and
+// $createdAt, so its content is the only thing that says which source run it
+// came from, and two runs with the same content are told apart by count.
+const RUN_FIELDS = ['result', 'buildRef', 'network', 'device', 'evidence', 'notes', 'blockerReason'];
+const runKey = (run) => JSON.stringify(RUN_FIELDS.map((f) => run[f] ?? ''));
+
+function countByKey(runs) {
+  const counts = new Map();
+  for (const run of runs) counts.set(runKey(run), (counts.get(runKey(run)) ?? 0) + 1);
+  return counts;
+}
 
 const PAGE = 100;
 
@@ -82,13 +97,13 @@ async function main() {
   }
 
   const cfg = readConfig(network);
-  if (!cfg?.contractId) throw new Error(`No v5 contract registered for ${network}. Run register.mjs first.`);
+  if (!cfg?.contractId) throw new Error(`No contract registered for ${network}. Run register.mjs first.`);
   const newContractId = cfg.contractId;
   if (newContractId === oldContractId) {
-    throw new Error(`Refusing to migrate: the registered contract (${newContractId}) equals --from. Register the v5 contract first.`);
+    throw new Error(`Refusing to migrate: the registered contract (${newContractId}) equals --from. Register the new contract first (register.mjs --force).`);
   }
 
-  // Resolve the old owner (testRun indices are $ownerId-prefixed).
+  // Resolve the old owner (the old contract's testRun indices are $ownerId-prefixed).
   let oldOwner = (values['from-owner'] || process.env.OLD_OWNER_ID || '').trim();
   if (!oldOwner) {
     try {
@@ -98,7 +113,10 @@ async function main() {
   }
   if (!oldOwner) oldOwner = DEFAULT_OLD_OWNER;
 
-  let { ownerId: newOwner, signer, identityKey } = await loadOwnerAuth(sdk, mod, network);
+  // A dry run only reads, so it needs no key and is not held to the checks a
+  // signing identity goes through.
+  let newOwner; let signer; let identityKey;
+  if (!dryRun) ({ ownerId: newOwner, signer, identityKey } = await loadOwnerAuth(sdk, mod, network));
   let { Document } = mod;
 
   // Reconnect a fresh SDK + re-derive auth. A fresh instance re-fetches the
@@ -112,7 +130,7 @@ async function main() {
 
   console.log('Migrating runs:');
   console.log(`  from  ${oldContractId} (owner ${oldOwner})`);
-  console.log(`  to    ${newContractId} (owner ${newOwner})`);
+  console.log(`  to    ${newContractId}${dryRun ? '' : ` (recorded by ${newOwner})`}`);
   console.log(`  app '${appName}' (code ${app})${dryRun ? '  [DRY RUN]' : ''}`);
 
   // 1. Enumerate old testIds (across every old category code so MW/GRP are caught).
@@ -125,6 +143,10 @@ async function main() {
 
   // 2. For each old testId, read its runs and re-create them under the new id.
   let migrated = 0; let skipped = 0; let failed = 0; let runsSeen = 0;
+  // The pairing state of each target testId, kept across source ids: the remap
+  // can fold two source ids into one target id, and the second must not claim
+  // the copies made for the first.
+  const pairing = new Map();
   for (const oldId of oldTestIds) {
     const newId = remapTestId(oldId);
     const oldRuns = await queryAll(
@@ -134,18 +156,29 @@ async function main() {
     );
     if (!oldRuns.length) continue;
 
-    // Idempotency: skip a run already present on v5 for (newId, result, buildRef).
-    const existing = await queryAll(
-      sdk, newContractId, 'testRun',
-      [['$ownerId', '==', newOwner], ['app', '==', app], ['testId', '==', newId]],
-      [['$createdAt', 'asc']],
-    );
-    const present = new Set(existing.map((r) => `${r.result}|${r.buildRef}`));
+    // Idempotency: pair each source run with one target run of the same
+    // content. `onTarget` counts the target's runs per content, `unpaired` those
+    // no source run has claimed yet. A source run with nothing left to claim is
+    // missing and is copied, so two source runs with the same content need two
+    // target runs. A run recorded on the target itself counts as a copy when
+    // its content equals a source run's, which is why the copy comes before
+    // anyone records there (see "Moving to a new contract" in the README).
+    if (!pairing.has(newId)) {
+      const existing = await queryAll(
+        sdk, newContractId, 'testRun',
+        [['app', '==', app], ['testId', '==', newId]],
+        [['$createdAt', 'asc']],
+      );
+      const onTarget = countByKey(existing);
+      pairing.set(newId, { onTarget, unpaired: new Map(onTarget) });
+    }
+    const { onTarget, unpaired } = pairing.get(newId);
 
     for (const run of oldRuns) {
       runsSeen += 1;
       const label = oldId === newId ? newId : `${oldId}->${newId}`;
-      if (present.has(`${run.result}|${run.buildRef}`)) { skipped += 1; continue; }
+      const key = runKey(run);
+      if (unpaired.get(key) > 0) { unpaired.set(key, unpaired.get(key) - 1); skipped += 1; continue; }
 
       const props = { testId: newId, app, result: run.result, network: run.network, buildRef: run.buildRef };
       for (const f of ['device', 'evidence', 'notes', 'blockerReason']) {
@@ -162,6 +195,7 @@ async function main() {
             ownerId: newOwner, dataContractId: newContractId, documentTypeName: 'testRun', properties: props, entropy: entropy(),
           });
           await sdk.documents.create({ document: doc, identityKey, signer });
+          onTarget.set(key, (onTarget.get(key) ?? 0) + 1);
           migrated += 1;
           console.log(`  + ${label}  ${run.result}  ${run.buildRef}`);
           break;
@@ -175,14 +209,16 @@ async function main() {
             await reconnect();
             // A nonce error can be a false negative — the write may have landed
             // before the ack was lost. Re-check before retrying so we don't
-            // create a duplicate testRun for the same (testId, result, buildRef).
+            // create a duplicate: it landed if the target now holds one more run
+            // with this content than it did before this attempt.
             const after = await queryAll(
               sdk, newContractId, 'testRun',
-              [['$ownerId', '==', newOwner], ['app', '==', app], ['testId', '==', newId]],
+              [['app', '==', app], ['testId', '==', newId]],
               [['$createdAt', 'asc']],
             );
-            if (after.some((r) => `${r.result}|${r.buildRef}` === `${run.result}|${run.buildRef}`)) {
+            if ((countByKey(after).get(key) ?? 0) > (onTarget.get(key) ?? 0)) {
               console.log(`  = ${label} (${run.result}/${run.buildRef}) already landed — skipping retry`);
+              onTarget.set(key, (onTarget.get(key) ?? 0) + 1);
               skipped += 1;
               break;
             }

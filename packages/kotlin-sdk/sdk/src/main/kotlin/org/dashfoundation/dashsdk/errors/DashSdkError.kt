@@ -708,6 +708,21 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorIdentityBalanceUnavailable` (native code 58). Platform
+         * returned no balance for a managed identity (not yet visible, or a
+         * lagging node), or the balance could not be read with a proof, so
+         * the operation that needed it (a shield from the identity's
+         * balance, Type 21, for one) was refused before anything was saved,
+         * signed or broadcast. The read may be retried as it is. Mirrors
+         * Swift's `PlatformWalletError.identityBalanceUnavailable` in
+         * `PlatformWalletResult.swift`.
+         */
+        class IdentityBalanceUnavailable(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
          * `ErrorShutdownIncomplete` (native code 27). A sync pass or an SPV
          * teardown was still running; nothing was wiped. Retry the stop or
          * clear. An SPV start refused with this needs an SPV stop first.
@@ -877,13 +892,76 @@ sealed class DashSdkError(
         }
 
         /**
-         * `ErrorIdentityBalanceUnavailable` (native code 58). Platform
-         * returned no balance for a managed identity (not yet visible, or a
-         * lagging node). Nothing was signed or broadcast, so the read may be
-         * retried as it is.
-         * ← Swift `PlatformWalletError.identityBalanceUnavailable`.
+         * `ErrorBalanceHistoryInconsistentHeights` (native code 83). The
+         * Platform address balance history kept getting one page of
+         * Platform's address balance changes proved below a height it had
+         * already read, within Rust's per-page retry bound, so it returned
+         * no history rather than a partial one. Every attempt got a
+         * successfully fetched, proof-verified reply below that height;
+         * errors from the SDK itself (its own stale-node rejection,
+         * transport or proof failures) keep their own mapping. Nothing
+         * changed: load the history again.
+         * ← Swift `PlatformWalletError.balanceHistoryInconsistentHeights`.
          */
-        class IdentityBalanceUnavailable(message: String, cause: Throwable? = null) :
+        class BalanceHistoryInconsistentHeights(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
+         * `ErrorShieldedOperationInProgress` (native code 84). A shielded
+         * Clear was refused because a shielded operation is in flight on the
+         * wallet manager: a bind, an account being added, a token pool
+         * transfer or unshield, a DashPay profile write, a tip address
+         * preparation, or another Clear. Rust does not make Clear wait for
+         * it. Clear returned at once and changed nothing (the sync loop keeps
+         * running, no registration, note or tree leaf was touched), so the
+         * host keeps its Room rows and offers Clear again once the operation
+         * has finished.
+         * ← Swift `PlatformWalletError.shieldedOperationInProgress`.
+         */
+        class ShieldedOperationInProgress(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
+         * `ErrorShieldedTipPending` (native code 85). A shielded tip was
+         * refused before anything was built or sent: another tip from this
+         * wallet is being sent, or an earlier shielded payment to the same
+         * recipient may still execute. This call sent nothing. Not
+         * retryable: the earlier payment may be the same tip and may pay
+         * the recipient. A shielded sync resolves it as executed or as
+         * unable to execute, and the refusal ends either way, so send again
+         * only once that payment is known to have failed. Distinct from
+         * [ShieldedSpendUnconfirmed] (18), which says this payment itself
+         * may have left the wallet.
+         * ← Swift `PlatformWalletError.shieldedTipPending`.
+         */
+        class ShieldedTipPending(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorShieldedTipRecipientMismatch` (native code 86). A shielded
+         * tip was started from a saved contact, and the contact's username
+         * now belongs to another identity. Nothing was sent. Not retryable:
+         * the user picks the recipient again, and a tip to the name's new
+         * owner is started from the name, not from the contact.
+         * ← Swift `PlatformWalletError.shieldedTipRecipientMismatch`.
+         */
+        class ShieldedTipRecipientMismatch(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorShieldedBalanceBusy` (native code 87). A local shielded
+         * balance read did not finish within its wait budget (the wallet's
+         * state or its shielded store was held, by a scan for instance), or
+         * a shielded Clear was running. Nothing failed and nothing changed:
+         * keep the last state shown and read again later.
+         * The only error of `shieldedIdentityBalance` that means retry.
+         * ← Swift `PlatformWalletError.shieldedBalanceBusy`.
+         */
+        class ShieldedBalanceBusy(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
             override val isRetryable: Boolean get() = true
         }
@@ -1117,6 +1195,11 @@ sealed class DashSdkError(
             75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
             76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
             80 -> PlatformWallet.IdentityLookupFailed(message, cause) // ErrorIdentityLookupFailed
+            83 -> PlatformWallet.BalanceHistoryInconsistentHeights(message, cause) // ErrorBalanceHistoryInconsistentHeights
+            84 -> PlatformWallet.ShieldedOperationInProgress(message, cause) // ErrorShieldedOperationInProgress
+            85 -> PlatformWallet.ShieldedTipPending(message, cause) // ErrorShieldedTipPending
+            86 -> PlatformWallet.ShieldedTipRecipientMismatch(message, cause) // ErrorShieldedTipRecipientMismatch
+            87 -> PlatformWallet.ShieldedBalanceBusy(message, cause) // ErrorShieldedBalanceBusy
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.

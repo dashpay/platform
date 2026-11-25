@@ -40,6 +40,7 @@ use rs_dapi_client::{
 use std::fmt::Debug;
 #[cfg(feature = "mocks")]
 use std::num::NonZeroUsize;
+#[cfg(any(feature = "mocks", not(target_arch = "wasm32")))]
 use std::path::Path;
 #[cfg(feature = "mocks")]
 use std::path::PathBuf;
@@ -97,6 +98,26 @@ impl<T: VersionedGrpcResponse> ProofResponseMetadata for T {
     }
 }
 
+/// Whether a verifier error is a failure to read what a proof holds: its envelope, its
+/// GroveDB proof, the state it proves, or an object decoded from it. A build older than the
+/// network's protocol version fails this way on forms that version introduced. An answer
+/// without a proof, one whose signature is refused, or one whose response around the proof
+/// does not decode, does not: that is its node's fault whatever the network runs.
+///
+/// A GroveDB proof that does not verify counts whatever the reason GroveDB gives, a hash
+/// that does not match included. Each protocol version selects its GroveDB version, which
+/// decides the proof layout and what a node's hash covers, so an honest proof of a newer
+/// version can fail this build's hash check as a forged one does, and this build cannot
+/// tell the two apart.
+fn may_be_an_unreadable_format(error: &drive_proof_verifier::Error) -> bool {
+    matches!(
+        error,
+        drive_proof_verifier::Error::DriveError { .. }
+            | drive_proof_verifier::Error::GroveDBError { .. }
+            | drive_proof_verifier::Error::ProtocolError { .. }
+    ) || error.is_undecodable_grovedb_proof_envelope()
+}
+
 /// Select proof rules without weakening the SDK's stored version.
 ///
 /// Document query verifiers also require the answer to be signed at the selected
@@ -138,11 +159,19 @@ pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// Per-network *default* seed used only when an unpinned SDK has no explicit
 /// initial version.
 ///
-/// Mainnet, testnet and regtest seed at protocol version 13, the lowest version
-/// any of those networks still runs. Devnets seed at 14, the lowest version
-/// a development network may still run. Proved reads can use a newer version named in
-/// their signed response metadata even when the SDK starts with a lower seed;
-/// the stored version ratchets only after proof and signature verification.
+/// Every network seeds at protocol version 14, the version mainnet and testnet
+/// run and the lowest a development network may still run. A lower seed has the
+/// SDK build state transitions in a version those networks no longer accept
+/// until a proved read has ratcheted it. Proved reads can use a newer version
+/// named in their signed response metadata even when the SDK starts with a lower
+/// seed; the stored version ratchets only after proof and signature verification.
+///
+/// This is a startup default, not the oldest version a chain can run: a local
+/// chain can still be at protocol version 13. The stored version is never
+/// lowered, so against such a chain an SDK left at this default fails proved
+/// document reads with [`Error::Config`], their answers being signed below it.
+/// Seed it with [`SdkBuilder::with_initial_version`] at 13 to keep auto-detect,
+/// or pin it with [`SdkBuilder::with_version`].
 ///
 /// Not a runtime clamp: [`SdkBuilder::with_initial_version`] can seed an unpinned
 /// SDK *below* this value (no construction-time floor), and auto-detect
@@ -150,10 +179,9 @@ pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// *upward* via `fetch_max` when the network reports a newer one.
 pub const fn min_protocol_version(network: Network) -> u32 {
     match network {
-        Network::Mainnet => dpp::version::v13::PROTOCOL_VERSION_13,
-        Network::Testnet => dpp::version::v13::PROTOCOL_VERSION_13,
-        Network::Devnet => dpp::version::v14::PROTOCOL_VERSION_14,
-        Network::Regtest => dpp::version::v13::PROTOCOL_VERSION_13,
+        Network::Mainnet | Network::Testnet | Network::Devnet | Network::Regtest => {
+            dpp::version::v14::PROTOCOL_VERSION_14
+        }
     }
 }
 
@@ -336,6 +364,11 @@ pub struct Sdk {
     /// running, so that calls made meanwhile wait for its answer. Shared between clones.
     probe_hold: Arc<protocol_gate::SharedProbeHold>,
 
+    /// Whether this clone runs a probe of the network's protocol version. An answer to the
+    /// probe that cannot be read is classified without asking the network again, which
+    /// would wait for the probe it belongs to.
+    inside_version_probe: bool,
+
     /// Enforce the protocol version gate on a mock SDK, as on a network one.
     #[cfg(all(test, feature = "mocks"))]
     enforce_protocol_gate_on_mock: bool,
@@ -378,6 +411,7 @@ impl Clone for Sdk {
             verified_protocol_version: Arc::clone(&self.verified_protocol_version),
             protocol_version_observer: self.protocol_version_observer.clone(),
             probe_hold: Arc::clone(&self.probe_hold),
+            inside_version_probe: self.inside_version_probe,
             #[cfg(all(test, feature = "mocks"))]
             enforce_protocol_gate_on_mock: self.enforce_protocol_gate_on_mock,
             metadata_last_seen_height: Arc::clone(&self.metadata_last_seen_height),
@@ -495,6 +529,7 @@ impl Sdk {
     /// Check the freshness of `metadata` ([`Self::verify_response_metadata`]), with
     /// optional arrival-time height and clock anchors, and learn its protocol version
     /// as the stored one, without recording it as verified.
+    #[cfg(any(test, feature = "mocks"))]
     pub(crate) fn verify_response_metadata_as_of(
         &self,
         method_name: &str,
@@ -612,6 +647,10 @@ impl Sdk {
     /// An answer naming no protocol version is malformed, whatever the network runs: it stays
     /// [`Error::Proof`] and its node is banned.
     ///
+    /// An answer this build could not read is classified by whether it can be expected to
+    /// read it ([`Self::classify_unverified_answer`]): on a network proven to run a protocol
+    /// version newer than this build knows, its node is not banned.
+    ///
     /// `metadata` is the response's, not yet verified, and `arrival` the SDK's anchors when
     /// it arrived.
     fn classify_verifier_error(
@@ -659,7 +698,84 @@ impl Sdk {
                 .into();
             }
         }
-        error.into()
+        match error.into() {
+            Error::Proof(error) => {
+                self.classify_unverified_answer(error, method_name, metadata, arrival)
+            }
+            error => error,
+        }
+    }
+
+    /// Classify an answer that failed verification by whether this build can be expected to
+    /// read it.
+    ///
+    /// A protocol upgrade can store and prove state in forms an older build cannot read: a
+    /// new stored contract format, a new GroveDB element type, a new proof layout. On a
+    /// network running a protocol version newer than this build knows, such an answer fails
+    /// alike from every node, and banning them would empty the pool for the requests this
+    /// build still reads. So once a verified answer has shown the network running a version
+    /// this build does not know, an answer naming such a version that this build could not
+    /// read ([`may_be_an_unreadable_format`]) is [`StaleNodeError::NewerProtocolVersion`]:
+    /// the request moves to another node and none is banned, and a request whose every
+    /// attempt ends so fails with [`Error::Config`].
+    ///
+    /// The answer's metadata is not verified, so it does not decide alone: before a verified
+    /// answer has shown the newer version, a node naming one is banned as for any unusable
+    /// proof ([`Self::classify_refused_answer`] asks the network first). An answer naming a
+    /// version this build knows comes from a node behind that network, or is unusable for
+    /// another reason, and an answer outside the height or time tolerance is stale: their
+    /// nodes are banned. So is the node of an answer that fails in any other way, such as
+    /// one without a proof or with a refused signature, whatever the network runs.
+    fn classify_unverified_answer(
+        &self,
+        error: drive_proof_verifier::Error,
+        method_name: &str,
+        metadata: Option<&ResponseMetadata>,
+        arrival: MetadataArrival,
+    ) -> Error {
+        let supported = PlatformVersion::latest().protocol_version;
+        let network = self.verified_protocol_version.load(Ordering::Relaxed);
+        let Some(metadata) = metadata.filter(|metadata| {
+            may_be_an_unreadable_format(&error)
+                && metadata.protocol_version > supported
+                && network > supported
+        }) else {
+            return Error::Proof(error);
+        };
+        if let Err(stale) = self.check_unverified_freshness(method_name, metadata, arrival) {
+            return stale;
+        }
+        StaleNodeError::NewerProtocolVersion {
+            supported_protocol_version: supported,
+            network_protocol_version: network,
+            error: Box::new(error),
+        }
+        .into()
+    }
+
+    /// Turn a proof verifier error into an SDK error ([`Self::classify_verifier_error`]),
+    /// asking the network for its protocol version first when the answer could not be read
+    /// and names a version newer than this build knows, while no verified answer has shown
+    /// such a version ([`Self::probe_for_newer_network`]).
+    ///
+    /// The version an unverified answer names is a reason to ask, not evidence. Without the
+    /// question, an SDK whose first request meets a form it cannot read would ban each node
+    /// it asks, and might have none left to learn the network's version from.
+    pub(crate) async fn classify_refused_answer(
+        &self,
+        error: drive_proof_verifier::Error,
+        method_name: &str,
+        metadata: Option<&ResponseMetadata>,
+        arrival: MetadataArrival,
+    ) -> Error {
+        let supported = PlatformVersion::latest().protocol_version;
+        if may_be_an_unreadable_format(&error)
+            && metadata.is_some_and(|metadata| metadata.protocol_version > supported)
+            && self.verified_protocol_version.load(Ordering::Relaxed) <= supported
+        {
+            self.probe_for_newer_network().await;
+        }
+        self.classify_verifier_error(error, method_name, metadata, arrival)
     }
 
     /// Check that metadata whose proof was not verified is fresh as of `arrival`, without
@@ -842,13 +958,20 @@ impl Sdk {
             SdkInstance::Mock { ref mock, .. } => {
                 let metadata = response.response_metadata().ok().cloned();
                 let arrival = self.metadata_arrival();
-                let (verified, from_expectation) = mock
-                    .lock()
-                    .await
-                    .parse_proof_with_metadata(request, response, self.version())
-                    .map_err(|error| {
-                        self.classify_verifier_error(error, method_name, metadata.as_ref(), arrival)
-                    })?;
+                // The mock is released before the error is classified, which may ask it
+                // for the network's version.
+                let parsed =
+                    mock.lock()
+                        .await
+                        .parse_proof_with_metadata(request, response, self.version());
+                let (verified, from_expectation) = match parsed {
+                    Ok(parsed) => parsed,
+                    Err(error) => {
+                        return Err(self
+                            .classify_refused_answer(error, method_name, metadata.as_ref(), arrival)
+                            .await)
+                    }
+                };
                 if from_expectation {
                     // An expectation's metadata is made up, not verified: it moves
                     // the stored version as a real answer would, but is no evidence
@@ -872,6 +995,12 @@ impl Sdk {
     /// [`Sdk::set_context_provider`] does not change it.
     pub fn context_provider(&self) -> Option<impl ContextProvider> {
         Some(Arc::clone(&**self.context_provider.load()))
+    }
+
+    /// The installed [ContextProvider] as its shared pointer, so a caller can
+    /// tell whether [`Sdk::set_context_provider`] replaced it since.
+    pub fn context_provider_arc(&self) -> Arc<dyn ContextProvider> {
+        Arc::clone(&**self.context_provider.load())
     }
 
     /// Returns a mutable reference to the `MockDashPlatformSdk` instance.
@@ -1713,6 +1842,7 @@ impl SdkBuilder {
                     version_pinned: self.version_pinned,
                     verified_protocol_version: Arc::new(atomic::AtomicU32::new(0)),
                     probe_hold: Arc::default(),
+                    inside_version_probe: false,
                     protocol_version_observer: self.protocol_version_observer.clone(),
                     #[cfg(all(test, feature = "mocks"))]
                     enforce_protocol_gate_on_mock: false,
@@ -1761,6 +1891,7 @@ impl SdkBuilder {
                     version_pinned: self.version_pinned,
                     verified_protocol_version: Arc::new(atomic::AtomicU32::new(0)),
                     probe_hold: Arc::default(),
+                    inside_version_probe: false,
                     protocol_version_observer: self.protocol_version_observer.clone(),
                     #[cfg(all(test, feature = "mocks"))]
                     enforce_protocol_gate_on_mock: false,
@@ -2803,9 +2934,14 @@ pub(crate) mod test {
         assert_eq!(sdk.protocol_version_number(), pinned.protocol_version);
         assert!(sdk.version_pinned);
 
-        // Network reports version 14 (> pinned) — should be ignored because version is pinned
+        // Network reports version 15 (> pinned) — should be ignored because version is pinned
+        let newer = dpp::version::v15::PROTOCOL_VERSION_15;
+        assert!(
+            newer > pinned.protocol_version,
+            "reported version must exceed the pin"
+        );
         let metadata = ResponseMetadata {
-            protocol_version: dpp::version::v14::PROTOCOL_VERSION_14,
+            protocol_version: newer,
             height: 1,
             ..Default::default()
         };
@@ -2856,7 +2992,7 @@ pub(crate) mod test {
         assert_eq!(sdk.protocol_version_number(), floor);
 
         // And a newer network version still ratchets upward.
-        let newer = dpp::version::v14::PROTOCOL_VERSION_14;
+        let newer = dpp::version::v15::PROTOCOL_VERSION_15;
         assert!(newer > floor, "ratchet target must exceed the floor");
         let metadata = ResponseMetadata {
             protocol_version: newer,
@@ -2992,12 +3128,12 @@ pub(crate) mod test {
         let floor = min_protocol_version(Network::Mainnet);
         assert_eq!(sdk.protocol_version_number(), floor);
 
-        // Ratchet to a fixed known target (PV14), not `floor + N`: stays valid as the
+        // Ratchet to a fixed known target (PV15), not `floor + N`: stays valid as the
         // floor advances, and `maybe_update_protocol_version` only accepts known versions.
-        let target = dpp::version::v14::PROTOCOL_VERSION_14;
+        let target = dpp::version::v15::PROTOCOL_VERSION_15;
         assert!(
             target > floor,
-            "ratchet test target must exceed the floor; bump it if the floor reaches v14"
+            "ratchet test target must exceed the floor; bump it if the floor reaches v15"
         );
         sdk.maybe_update_protocol_version(target);
         assert_eq!(
@@ -3108,19 +3244,20 @@ pub(crate) mod test {
         assert!(!sdk.version_pinned);
     }
 
-    /// Each network seeds at the lowest protocol version it may still run.
+    /// Every network's startup default is protocol version 14. It is a default,
+    /// not the oldest version a chain can run.
     #[test]
     fn test_per_network_floors() {
-        assert_eq!(
-            min_protocol_version(Network::Devnet),
-            dpp::version::v14::PROTOCOL_VERSION_14,
-            "devnet floor must support networks still running protocol 14"
-        );
-        for network in [Network::Mainnet, Network::Testnet, Network::Regtest] {
+        for network in [
+            Network::Mainnet,
+            Network::Testnet,
+            Network::Devnet,
+            Network::Regtest,
+        ] {
             assert_eq!(
                 min_protocol_version(network),
-                dpp::version::v13::PROTOCOL_VERSION_13,
-                "{network} floor must be the lowest version the network runs"
+                dpp::version::v14::PROTOCOL_VERSION_14,
+                "{network} must start at protocol version 14 by default"
             );
         }
         let sdk = SdkBuilder::new_mock()
@@ -3132,6 +3269,34 @@ pub(crate) mod test {
             min_protocol_version(Network::Devnet)
         );
         assert!(!sdk.version_pinned);
+    }
+
+    /// Protocol version 14 refuses `ShieldFromAssetLock` version 0. An unpinned SDK
+    /// that has verified no answer yet must already select version 1, the version
+    /// the transition's builders read from this table, or a transfer built before
+    /// the first proved read is refused by the network.
+    #[test]
+    fn should_select_shield_from_asset_lock_version_1_before_any_proved_read() {
+        for network in [
+            Network::Mainnet,
+            Network::Testnet,
+            Network::Devnet,
+            Network::Regtest,
+        ] {
+            let sdk = SdkBuilder::new_mock()
+                .with_network(network)
+                .build()
+                .expect("mock Sdk should be created");
+            assert_eq!(
+                sdk.version()
+                    .dpp
+                    .state_transition_serialization_versions
+                    .shield_from_asset_lock_state_transition
+                    .default_current_version,
+                1,
+                "a fresh {network} SDK must select the version the network accepts"
+            );
+        }
     }
 
     /// The observer fires once per upward ratchet with the new version, and stays
@@ -3152,7 +3317,7 @@ pub(crate) mod test {
             .build()
             .expect("mock Sdk should be created");
         let floor = min_protocol_version(Network::Mainnet);
-        let target = dpp::version::v14::PROTOCOL_VERSION_14;
+        let target = dpp::version::v15::PROTOCOL_VERSION_15;
         assert!(target > floor, "ratchet target must exceed the floor");
 
         sdk.maybe_update_protocol_version(floor);

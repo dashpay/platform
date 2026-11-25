@@ -17,6 +17,7 @@ struct AddressQueriesView: View {
         }
         .padding(.vertical, 4)
       }
+      .accessibilityIdentifier("addressQueries.getAddressInfo")
 
       NavigationLink(destination: GetAddressesInfosView()) {
         VStack(alignment: .leading, spacing: 4) {
@@ -29,6 +30,7 @@ struct AddressQueriesView: View {
         }
         .padding(.vertical, 4)
       }
+      .accessibilityIdentifier("addressQueries.getAddressesInfos")
 
       NavigationLink(destination: GetTrunkStateView()) {
         VStack(alignment: .leading, spacing: 4) {
@@ -41,6 +43,7 @@ struct AddressQueriesView: View {
         }
         .padding(.vertical, 4)
       }
+      .accessibilityIdentifier("addressQueries.getAddressesTrunkState")
 
       NavigationLink(destination: GetBranchStateView()) {
         VStack(alignment: .leading, spacing: 4) {
@@ -53,6 +56,7 @@ struct AddressQueriesView: View {
         }
         .padding(.vertical, 4)
       }
+      .accessibilityIdentifier("addressQueries.getAddressesBranchState")
 
       NavigationLink(destination: GetRecentBalanceChangesView()) {
         VStack(alignment: .leading, spacing: 4) {
@@ -65,6 +69,7 @@ struct AddressQueriesView: View {
         }
         .padding(.vertical, 4)
       }
+      .accessibilityIdentifier("addressQueries.getRecentAddressBalanceChanges")
 
       NavigationLink(destination: GetCompactedBalanceChangesView()) {
         VStack(alignment: .leading, spacing: 4) {
@@ -77,6 +82,7 @@ struct AddressQueriesView: View {
         }
         .padding(.vertical, 4)
       }
+      .accessibilityIdentifier("addressQueries.getRecentCompactedAddressBalanceChanges")
     }
     .navigationTitle("Address Operations")
     .navigationBarTitleDisplayMode(.inline)
@@ -280,14 +286,12 @@ struct GetAddressesInfosView: View {
             .font(.subheadline)
             .fontWeight(.medium)
 
-          TextEditor(text: $viewModel.addressesText)
+          PlainTextEditor(text: $viewModel.addressesText, monospaced: false)
             .frame(height: 120)
             .overlay(
               RoundedRectangle(cornerRadius: 8)
                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
             )
-            .autocapitalization(.none)
-            .disableAutocorrection(true)
 
           HStack {
             Button("Use Bech32m Test") {
@@ -640,6 +644,21 @@ struct GetTrunkStateView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                         }
+
+                        NavigationLink(
+                          destination: GetBranchStateView(
+                            keyHex: boundary.keyHex,
+                            expectedHashHex: boundary.hashHex,
+                            checkpointHeight: "\(state.checkpointHeight)",
+                            depth: try? appState.sdk?.addresses.branchQueryDepth(
+                              estimatedCount: boundary.estimatedCount
+                            )
+                          )
+                        ) {
+                          Label("Query this branch", systemImage: "arrow.branch")
+                            .font(.caption)
+                        }
+                        .accessibilityIdentifier("addressQueries.trunk.queryBranch.\(index)")
                       }
                       .padding(8)
                       .frame(maxWidth: .infinity, alignment: .leading)
@@ -694,13 +713,33 @@ struct GetTrunkStateView: View {
 struct GetBranchStateView: View {
   @EnvironmentObject var appState: AppState
   @State private var keyHex: String = ""
-  @State private var depth: String = "6"  // Valid range: 6-9
+  // The valid range comes from the platform version; the query rejects a
+  // depth outside it.
+  @State private var depth: String = "6"
   @State private var expectedHashHex: String = ""
   @State private var checkpointHeight: String = ""
   @State private var isLoading = false
   @State private var result: PlatformBranchState?
   @State private var errorMessage: String?
   @State private var showResult = false
+
+  /// Empty fields (depth 6) by default; the trunk state view's "Query this
+  /// branch" passes one leaf boundary's key and hash, the trunk's checkpoint
+  /// height, and the depth Rust recommends for the boundary's estimated
+  /// count, so nothing has to be copied by hand. Every field stays editable.
+  init(
+    keyHex: String = "",
+    expectedHashHex: String = "",
+    checkpointHeight: String = "",
+    depth: UInt8? = nil
+  ) {
+    _keyHex = State(initialValue: keyHex)
+    _expectedHashHex = State(initialValue: expectedHashHex)
+    _checkpointHeight = State(initialValue: checkpointHeight)
+    if let depth {
+      _depth = State(initialValue: "\(depth)")
+    }
+  }
 
   var body: some View {
     ScrollView {
@@ -737,10 +776,10 @@ struct GetBranchStateView: View {
           }
 
           VStack(alignment: .leading, spacing: 4) {
-            Text("Depth (6-9)")
+            Text("Depth")
               .font(.subheadline)
               .fontWeight(.medium)
-            TextField("Query depth (6-9)", text: $depth)
+            TextField("Query depth", text: $depth)
               .textFieldStyle(RoundedBorderTextFieldStyle())
               .keyboardType(.numberPad)
           }
@@ -943,10 +982,8 @@ struct GetBranchStateView: View {
   }
 
   private var isFormValid: Bool {
-    guard let depthValue = UInt32(depth) else { return false }
     return !keyHex.isEmpty && AddressValidator.validateHash(expectedHashHex)
-      && !checkpointHeight.isEmpty && depthValue >= 6 && depthValue <= 9
-      && UInt64(checkpointHeight) != nil
+      && UInt32(depth) != nil && UInt64(checkpointHeight) != nil
   }
 
   private func fetchBranchState() {
@@ -964,8 +1001,10 @@ struct GetBranchStateView: View {
       return
     }
 
-    guard let depthValue = UInt32(depth), depthValue >= 6 && depthValue <= 9 else {
-      errorMessage = "Depth must be between 6 and 9"
+    // Only the number is parsed here; whether the depth is allowed is
+    // decided by the query (Rust and the server), whose error is shown.
+    guard let depthValue = UInt32(depth) else {
+      errorMessage = "Depth must be a whole number"
       showResult = true
       return
     }

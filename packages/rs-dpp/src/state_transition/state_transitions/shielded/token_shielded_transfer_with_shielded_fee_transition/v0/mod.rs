@@ -20,9 +20,10 @@ use serde::{Deserialize, Serialize};
 ///
 /// A transfer inside a token's shielded pool whose fee is paid out of the credit shielded pool: an Orchard spend bundle in the token pool (value balance zero) and one in the credit pool (value balance the fee), both authorized by spend keys. No identity signs or is named anywhere.
 ///
-/// The token bundle binds the token id and the transition's transparent fields into its
-/// sighash; the fee bundle binds the token id and a digest of the token bundle's actions, so
-/// neither bundle can be paired with another.
+/// The token bundle binds the token id, the transition's transparent fields and, from protocol
+/// version 15, the fee bundle's commitment into its sighash; the fee bundle binds the token id
+/// and a digest of the token bundle's actions. From protocol version 15 neither bundle can be
+/// paired with a bundle of different effects.
 #[cfg_attr(feature = "json-conversion", crate::serialization::json_safe_fields)]
 #[derive(
     Debug,

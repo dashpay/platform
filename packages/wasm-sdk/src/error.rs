@@ -1,4 +1,5 @@
 use dash_sdk::dpp::ProtocolError;
+use dash_sdk::error::SDK_AHEAD_OF_NETWORK_ADVICE;
 use dash_sdk::platform::encrypted_for::EncryptedForError;
 use dash_sdk::{error::StateTransitionBroadcastError, Error as SdkError};
 use rs_dapi_client::CanRetry;
@@ -94,12 +95,13 @@ impl WasmSdkError {
     }
 
     /// Converts `err` as `?` would, keeping its kind, consensus code and whether it can be
-    /// retried, under the message `"{context}: {err}"`.
+    /// retried, under the message `"{context}: {err}"`, with the SDK's advice for a protocol
+    /// version set ahead of the network replaced as `?` replaces it.
     pub(crate) fn with_context<E>(context: &str, err: E) -> Self
     where
         E: std::fmt::Display + Into<Self>,
     {
-        let message = format!("{context}: {err}");
+        let message = with_javascript_version_advice(format!("{context}: {err}"));
         Self {
             message,
             ..err.into()
@@ -167,7 +169,12 @@ impl From<SdkError> for WasmSdkError {
         let retriable = err.can_retry() || err.is_quorum_source_unavailable();
         match err {
             AlreadyExists(msg) => Self::new(WasmSdkErrorKind::AlreadyExists, msg, None, retriable),
-            Config(msg) => Self::new(WasmSdkErrorKind::Config, msg, None, retriable),
+            Config(msg) => Self::new(
+                WasmSdkErrorKind::Config,
+                with_javascript_version_advice(msg),
+                None,
+                retriable,
+            ),
             // The request has to change: no node answers it as the requested result type.
             InvalidRequest(msg) => {
                 Self::new(WasmSdkErrorKind::InvalidArgument, msg, None, retriable)
@@ -191,9 +198,11 @@ impl From<SdkError> for WasmSdkError {
             ExecutionNotProved(msg) => {
                 Self::new(WasmSdkErrorKind::ExecutionNotProved, msg, None, false)
             }
+            // The SDK's own text: it says that a node may have received the transition
+            // and that the cause is only the last error.
             StateTransitionResultUnconfirmed(source) => Self::new(
                 WasmSdkErrorKind::Generic,
-                format!("state transition result is unconfirmed; reconcile before re-submitting: {source}"),
+                StateTransitionResultUnconfirmed(source).to_string(),
                 None,
                 false,
             ),
@@ -209,7 +218,6 @@ impl From<SdkError> for WasmSdkError {
                 None,
                 retriable,
             ),
-            #[cfg(feature = "mocks")]
             DapiMocksError(e) => Self::new(
                 WasmSdkErrorKind::DapiMocksError,
                 e.to_string(),
@@ -314,6 +322,22 @@ impl From<SdkError> for WasmSdkError {
                 )
             }
         }
+    }
+}
+
+/// What a JavaScript app does about an SDK set ahead of its network: it sets the protocol
+/// version with the `version` option, not with the Rust builder method the SDK's own advice
+/// names.
+const SDK_AHEAD_OF_NETWORK_JAVASCRIPT_ADVICE: &str = "if the `version` option (`withVersion` \
+     on the builder) set the SDK ahead of its network, omit it so the SDK follows the \
+     network's protocol version, or set it to the network's protocol version";
+
+/// A configuration error's message, with the SDK's advice for a protocol version set ahead
+/// of the network replaced by the advice that names the JavaScript option.
+fn with_javascript_version_advice(message: String) -> String {
+    match message.strip_suffix(SDK_AHEAD_OF_NETWORK_ADVICE) {
+        Some(diagnosis) => format!("{diagnosis}{SDK_AHEAD_OF_NETWORK_JAVASCRIPT_ADVICE}"),
+        None => message,
     }
 }
 
@@ -468,6 +492,12 @@ mod tests {
             assert!(error.message().contains("unconfirmed"));
             assert!(error
                 .message()
+                .contains("a node accepted it or may have received it"));
+            assert!(error
+                .message()
+                .contains("last error: Invalid Proved Response error"));
+            assert!(error
+                .message()
                 .contains("document result proof was invalid"));
             assert_eq!(error.code(), -1);
         }
@@ -584,7 +614,19 @@ mod tests {
     /// older protocol version than the SDK's and then no node was left to ask.
     #[cfg(not(target_arch = "wasm32"))]
     async fn every_node_answered_at_an_older_protocol_version() -> SdkError {
-        use dash_sdk::error::StaleNodeError;
+        every_node_answered_with(|| {
+            SdkError::StaleNode(dash_sdk::error::StaleNodeError::ProtocolVersion {
+                expected_protocol_version: 14,
+                received_protocol_version: 13,
+            })
+        })
+        .await
+    }
+
+    /// What the SDK's retry loop ends a request with when its node answered with `spared`,
+    /// an answer that does not get the node banned, and then no node was left to ask.
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn every_node_answered_with(spared: fn() -> SdkError) -> SdkError {
         use rs_dapi_client::{Address, AddressList, ExecutionError, ExecutionResponse};
         use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -603,10 +645,7 @@ mod tests {
                 Err::<ExecutionResponse<()>, _>(if first {
                     ExecutionError {
                         possibly_accepted: false,
-                        inner: SdkError::StaleNode(StaleNodeError::ProtocolVersion {
-                            expected_protocol_version: 14,
-                            received_protocol_version: 13,
-                        }),
+                        inner: spared(),
                         retries: 0,
                         address: Some(node),
                     }
@@ -638,6 +677,73 @@ mod tests {
             "{}",
             error.message()
         );
+        assert!(!error.is_retriable());
+    }
+
+    /// A JavaScript app sets the SDK's protocol version with the `version` option
+    /// (`withVersion` on the builder), and has no Rust builder to call: the error names that
+    /// option, and says to omit it or to set it to the network's version.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn should_name_the_javascript_version_option_when_the_sdk_is_ahead_of_its_network() {
+        let message =
+            WasmSdkError::from(every_node_answered_at_an_older_protocol_version().await).message();
+
+        for named in [
+            "protocol version 13",
+            "protocol version 14",
+            "`version` option",
+            "withVersion",
+            "omit it",
+            "network's protocol version",
+        ] {
+            assert!(message.contains(named), "{named}: {message}");
+        }
+        assert!(!message.contains("with_initial_version"), "{message}");
+    }
+
+    /// The JavaScript advice survives the context of the operation that failed, which
+    /// prefixes the message.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn should_name_the_javascript_version_option_under_the_operation_that_failed() {
+        let error = WasmSdkError::with_context(
+            "Failed to broadcast",
+            every_node_answered_at_an_older_protocol_version().await,
+        );
+        let message = error.message();
+
+        assert_eq!(error.kind(), WasmSdkErrorKind::Config);
+        assert!(message.starts_with("Failed to broadcast: "), "{message}");
+        assert!(message.contains("`version` option"), "{message}");
+        assert!(!message.contains("with_initial_version"), "{message}");
+    }
+
+    /// No node can help an SDK older than its network: the app has to update it. JavaScript
+    /// gets the configuration error, which is not retriable.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn should_report_a_request_no_node_could_answer_readably_on_a_newer_network_as_config() {
+        let error = WasmSdkError::from(
+            every_node_answered_with(|| {
+                SdkError::StaleNode(dash_sdk::error::StaleNodeError::NewerProtocolVersion {
+                    supported_protocol_version: 15,
+                    network_protocol_version: 16,
+                    error: Box::new(drive_proof_verifier::Error::ProtocolError {
+                        error: "unexpected variant".to_string(),
+                    }),
+                })
+            })
+            .await,
+        );
+
+        assert_eq!(
+            error.kind(),
+            WasmSdkErrorKind::Config,
+            "{}",
+            error.message()
+        );
+        assert!(error.message().contains("update the SDK"));
         assert!(!error.is_retriable());
     }
 

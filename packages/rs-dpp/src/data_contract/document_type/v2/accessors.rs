@@ -245,6 +245,10 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
         self.range_summable
     }
 
+    fn uses_big_sums(&self) -> bool {
+        self.big_sums
+    }
+
     fn index_only(&self) -> bool {
         self.index_only
     }

@@ -89,6 +89,29 @@ class DecisionProposals internal constructor(private val sdk: Sdk) {
     }
 
     /**
+     * The end date to create a proposal with when the user asked for [requestedEndDateMs]
+     * (milliseconds since the Unix epoch) now, for a form that offers "ends in N days" or a
+     * date picker.
+     *
+     * Platform accepts an end date from a week to four weeks after the block that creates
+     * the proposal, which comes seconds after now, so exactly a week from now is always
+     * refused and exactly four weeks from now is refused when this device's clock is ahead
+     * of the block's. rs-sdk moves an end date within an hour of either edge to an hour
+     * inside the window (so by at most two hours) and returns any other as it is, for
+     * Platform to judge. [DecisionProposalTransactions.create] puts the end date it is given
+     * as it is: pass it this one.
+     */
+    suspend fun endDate(requestedEndDateMs: Long): Long = sdk.queryGate.op {
+        val decimal = mapNativeErrors {
+            DecisionProposalsNative.getEndDate(sdk.handle, requestedEndDateMs)
+        }.returned("getEndDate")
+        decimal.toLongOrNull()
+            ?: throw DashSdkError.SerializationError(
+                "getEndDate returned a non-numeric end date: $decimal",
+            )
+    }
+
+    /**
      * The id of the yes/no poll [proposalId] opens, base58: the id
      * `Voting.votePollsByEndDate` lists it under.
      */
@@ -144,6 +167,43 @@ class DecisionProposals internal constructor(private val sdk: Sdk) {
                 votingPrivateKey,
                 sdk.network.ffiValue,
             )
+        }
+    }
+
+    /**
+     * Vote on [proposalId] for a masternode with [voter], the signer of its stored voting key,
+     * and wait for the response: the vote of the `votingPrivateKey` overload, for a key the
+     * app stores ([org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore]). Kotlin
+     * counterpart of the signer form of `SDK.castDecisionProposalVote` in Swift's
+     * `SDK+DecisionProposals.swift`.
+     *
+     * Call it inside `PlatformWalletManager.withStoredMasternodeVotingKey`, which supplies
+     * [voter]. Rust builds the ECDSA_HASH160 voting key from the voter's voting address and
+     * asks the signer to sign with it. The voter's signer and the SDK both stay alive until
+     * the call returns.
+     *
+     * @param proTxHash 32-byte pro_tx_hash in wire order, as for the `votingPrivateKey`
+     *   overload.
+     * @param voter the signer of the masternode's stored voting key.
+     * @throws IllegalStateException when [voter] is used after its call ended.
+     */
+    suspend fun castVote(
+        proposalId: String,
+        choice: YesNoAbstainVoteChoice,
+        proTxHash: ByteArray,
+        voter: MasternodeVotingSigner,
+    ): Unit = voter.withSignerHandle { signerHandle ->
+        sdk.queryGate.op {
+            mapNativeErrors {
+                DecisionProposalsNative.castVoteWithSigner(
+                    sdk.handle,
+                    proposalId,
+                    choice.discriminant,
+                    proTxHash,
+                    voter.votingAddress,
+                    signerHandle,
+                )
+            }
         }
     }
 }

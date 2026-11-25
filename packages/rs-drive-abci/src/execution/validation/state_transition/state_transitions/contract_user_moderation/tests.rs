@@ -9,7 +9,12 @@ use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+use dapi_grpc::platform::v0::{
+    wait_for_state_transition_result_response, BroadcastStateTransitionRequest, Proof,
+    ResponseMetadata, WaitForStateTransitionResultResponse,
+};
 use dpp::block::block_info::BlockInfo;
+use dpp::bls::SecretKey;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::state::state_error::StateError;
@@ -42,7 +47,7 @@ use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::platform_value::{platform_value, BinaryData, Bytes32, Identifier, Value};
-use dpp::prelude::IdentityNonce;
+use dpp::prelude::{CoreBlockHeight, IdentityNonce};
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::batch_transition::BatchTransition;
@@ -54,7 +59,9 @@ use dpp::state_transition::data_contract_create_transition::methods::DataContrac
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::state_transition::proof_result::StateTransitionProofResult;
+use dpp::state_transition::proof_result::{
+    StateTransitionProofOutcome, StateTransitionProofResult,
+};
 use dpp::state_transition::StateTransition;
 use dpp::tests::fixtures::get_data_contract_fixture;
 use dpp::tests::json_document::json_document_to_contract;
@@ -69,11 +76,15 @@ use drive::drive::Drive;
 use drive::grovedb::Transaction;
 use drive::query::DriveDocumentQuery;
 use drive::util::storage_flags::StorageFlags;
+use drive_proof_verifier::{ContextProvider, ContextProviderError, FromProof};
 use rand::rngs::StdRng;
 use rand::SeedableRng;
 use simple_signer::signer::SimpleSigner;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
+use tenderdash_abci::proto::types::{CanonicalVote, SignedMsgType, StateId};
+use tenderdash_abci::signatures::{Hashable, Signable};
 
 mod delete_constraints;
 mod deletion_options;
@@ -87,6 +98,7 @@ mod referenced_rules;
 mod restore_constraints;
 mod retraction;
 mod seated_team;
+mod type_total;
 mod typed_array_counters;
 mod typed_array_where;
 
@@ -496,9 +508,9 @@ impl Setup {
     }
 
     /// Proves the committed state for a document deletion or restore and checks the proof
-    /// shows its record. A restore's verifier reads the document's id out of the bytes under
-    /// the contract's document type, so it is given the contract, as a client holding it is;
-    /// a deletion's needs it only for a type that keeps no records.
+    /// shows its record. A restore's verifier reads the document's id directly from its
+    /// header bytes without resolving the contract; a deletion's needs the contract only
+    /// for a type that keeps no records.
     fn assert_removal_proved(&self, transition: &StateTransition) -> ContractDocumentRemoval {
         let platform_version = PlatformVersion::latest();
         let proof = self
@@ -4098,4 +4110,201 @@ async fn should_bring_a_post_back_settled_when_its_deletion_window_ran_out_meanw
     );
     let own_delete = own_post_deletion(&setup, &setup.user, stored).await;
     assert_success(&setup.process_at(&own_delete, restored_at + 1, &transaction));
+}
+
+#[tokio::test]
+async fn should_confirm_document_restore_without_contract_in_context_provider() {
+    struct QuorumOnlyProvider {
+        key: [u8; 48],
+    }
+
+    impl ContextProvider for QuorumOnlyProvider {
+        fn get_data_contract(
+            &self,
+            _: &Identifier,
+            _: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _: u32,
+            _: [u8; 32],
+            _: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Ok(self.key)
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
+    }
+
+    let setup = Setup::new_with_posts(Some(moderators_without_lists())).await;
+    let platform_version = PlatformVersion::latest();
+
+    let transaction = setup.platform.drive.grove.start_transaction();
+    let (post, create) = setup.create_document_of_type(&setup.user, POST).await;
+    assert_success(&setup.process(&create, &transaction));
+    setup.commit(transaction);
+
+    let stored = setup
+        .stored_document(POST, post.id(), None)
+        .expect("expected the post to be stored");
+    let bytes = setup.document_bytes(POST, &stored);
+
+    let delete = setup
+        .moderate(&setup.moderator, delete_action(POST, post.id()))
+        .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_success(&setup.process(&delete, &transaction));
+    setup.commit(transaction);
+    let removal = setup
+        .post_removal(post.id(), None)
+        .expect("expected the removal record");
+
+    let restored_at = BLOCK_TIME_MS + 1;
+    let restore = setup
+        .moderate(&setup.owner, restore_action(POST, bytes))
+        .await;
+    let transaction = setup.platform.drive.grove.start_transaction();
+    assert_success(&setup.process_at(&restore, restored_at, &transaction));
+    setup.commit(transaction);
+
+    let expected = ContractDocumentRemoval {
+        restoration: Some(ContractDocumentRestoration {
+            moderator_id: setup.owner.id(),
+            restored_at,
+        }),
+        ..removal
+    };
+
+    let grovedb_proof = setup
+        .platform
+        .drive
+        .prove_state_transition(&restore, None, platform_version)
+        .expect("expected to prove restore transition")
+        .into_data()
+        .expect("expected proof bytes");
+    let root = setup
+        .platform
+        .drive
+        .grove
+        .root_hash(None, &platform_version.drive.grove_version)
+        .value
+        .expect("expected root hash");
+
+    let (direct_root, direct_outcome) = Drive::verify_state_transition_was_executed_with_proof(
+        &restore,
+        &BlockInfo::default(),
+        &grovedb_proof,
+        &|_| Ok(None),
+        platform_version,
+    )
+    .expect("direct restore confirmation must not require contract lookup");
+    assert_eq!(direct_root, root);
+    assert_eq!(
+        direct_outcome.into_result(),
+        StateTransitionProofResult::VerifiedContractDocumentRemoval(
+            setup.contract.id(),
+            POST.to_string(),
+            post.id(),
+            expected.clone(),
+        )
+    );
+
+    let key = SecretKey::from_be_bytes(&[7; 32]).expect("valid BLS key");
+    let provider = QuorumOnlyProvider {
+        key: key.public_key().to_bytes(),
+    };
+    let quorum_type = setup.platform.config.validator_set.quorum_type as u32;
+    let metadata = ResponseMetadata {
+        height: 42,
+        core_chain_locked_height: 12,
+        epoch: 0,
+        time_ms: restored_at,
+        protocol_version: platform_version.protocol_version,
+        chain_id: "dash-testnet".to_string(),
+    };
+    let state_id = StateId {
+        app_version: metadata.protocol_version as u64,
+        core_chain_locked_height: metadata.core_chain_locked_height,
+        time: metadata.time_ms,
+        app_hash: root.to_vec(),
+        height: metadata.height,
+    };
+    let commit = CanonicalVote {
+        r#type: SignedMsgType::Precommit.into(),
+        block_id: vec![7; 32],
+        chain_id: metadata.chain_id.clone(),
+        height: metadata.height as i64,
+        round: 0,
+        state_id: state_id
+            .calculate_msg_hash(&metadata.chain_id, metadata.height as i64, 0)
+            .expect("state_id hash"),
+    };
+    let digest = commit
+        .calculate_sign_hash(
+            &metadata.chain_id,
+            quorum_type.try_into().expect("quorum type"),
+            &[9; 32],
+            metadata.height as i64,
+            0,
+        )
+        .expect("sign hash");
+    let signed_proof = Proof {
+        grovedb_proof,
+        quorum_hash: vec![9; 32],
+        signature: key.sign(&digest).expect("sign").to_bytes().to_vec(),
+        round: 0,
+        block_id_hash: vec![7; 32],
+        quorum_type,
+    };
+    let request = BroadcastStateTransitionRequest {
+        state_transition: restore
+            .serialize_to_bytes()
+            .expect("serialize restore transition"),
+    };
+    let response = WaitForStateTransitionResultResponse {
+        version: Some(wait_for_state_transition_result_response::Version::V0(
+            wait_for_state_transition_result_response::WaitForStateTransitionResultResponseV0 {
+                result: Some(
+                    wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Proof(
+                        signed_proof,
+                    ),
+                ),
+                metadata: Some(metadata),
+                state_before_block: None,
+            },
+        )),
+    };
+
+    let (outcome, _, _) = StateTransitionProofOutcome::maybe_from_proof_with_metadata(
+        request,
+        response,
+        Network::Testnet,
+        platform_version,
+        &provider,
+    )
+    .expect(
+        "signed restore confirmation must succeed when provider has quorum context but no contract",
+    );
+    let outcome = outcome.expect("expected restore confirmation outcome");
+    assert_eq!(
+        outcome.into_result(),
+        StateTransitionProofResult::VerifiedContractDocumentRemoval(
+            setup.contract.id(),
+            POST.to_string(),
+            post.id(),
+            expected,
+        )
+    );
 }

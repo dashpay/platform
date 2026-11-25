@@ -4,6 +4,8 @@ pub mod block_execution_context;
 pub(crate) mod block_fees;
 /// Block state info
 pub mod block_state_info;
+/// What check tx reserves for work a block bills where check tx validated no state
+pub(in crate::execution) mod check_tx_reservation;
 /// An execution event
 pub(in crate::execution) mod execution_event;
 /// A structure representing the context of the execution of a state transition
