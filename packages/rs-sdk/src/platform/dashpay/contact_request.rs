@@ -7,6 +7,7 @@ use crate::platform::transition::put_document::prepare_document_state_transition
 use crate::platform::transition::waitable::Waitable;
 use crate::platform::Document;
 use crate::{Error, Sdk};
+use dash_context_provider::ContextProviderError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::{DocumentType, DocumentTypeRef};
@@ -744,6 +745,9 @@ impl Sdk {
     /// Send a contact request like [`Sdk::send_contact_request`], building and submitting
     /// the document as the `contactRequest` type of `prepared`, the snapshot the caller
     /// chose `input`'s signing key by.
+    ///
+    /// Refuses before signing or broadcasting if this SDK's context provider cannot resolve
+    /// the prepared contract at the SDK's version to verify the confirmation proof.
     pub async fn submit_contact_request<S: Signer<IdentityPublicKey>, F, Fut, G, Gut, H, Hut>(
         &self,
         prepared: PreparedContactRequest,
@@ -759,6 +763,17 @@ impl Sdk {
         H: FnOnce(u32) -> Hut,
         Hut: std::future::Future<Output = Result<Vec<u8>, Error>>,
     {
+        let contract_id = prepared.dashpay_contract_id();
+        self.context_provider_arc()
+            .get_data_contract(&contract_id, self.version())?
+            .ok_or_else(|| {
+                ContextProviderError::DataContractFailure(format!(
+                    "the submitting SDK's context provider cannot resolve DashPay contract \
+                     {contract_id} for confirmation; configure the provider before submitting \
+                     the contact request"
+                ))
+            })?;
+
         let SignedContactRequest {
             state_transition,
             recipient_id,
@@ -815,6 +830,10 @@ impl Sdk {
     /// Sign a contact request like [`Sdk::sign_contact_request`], building the document as
     /// the `contactRequest` type of `prepared`, the snapshot the caller chose `input`'s
     /// signing key by.
+    ///
+    /// Before broadcasting and waiting for confirmation themselves, callers must ensure the
+    /// confirming SDK's context provider resolves `prepared.dashpay_contract_id()` at that
+    /// SDK's version. Signing alone does not check this confirmation prerequisite.
     pub async fn sign_prepared_contact_request<
         S: Signer<IdentityPublicKey>,
         F,
@@ -902,6 +921,8 @@ impl Sdk {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "mocks")]
+    use crate::sdk::put_test_support::CountingSigner;
     use dpp::data_contract::DataContract;
     use dpp::secp256k1;
     use dpp::secp256k1::rand::{self, RngCore};
@@ -1341,6 +1362,64 @@ mod tests {
         let resolved =
             confirmation_contract(&sdk, &prepared).expect("the fetched contract is registered");
         assert_eq!(*resolved, stored);
+    }
+
+    #[cfg(feature = "mocks")]
+    #[tokio::test]
+    async fn should_refuse_contact_request_before_signing_when_submitting_provider_lacks_contract()
+    {
+        let version = PlatformVersion::latest();
+        let preparing_sdk = crate::SdkBuilder::new_mock()
+            .with_version(version)
+            .with_context_provider(DashPayProvider {
+                contract: Some(Arc::new(dashpay(version))),
+                ..Default::default()
+            })
+            .build()
+            .expect("the preparing SDK builds");
+        let prepared = preparing_sdk.prepare_contact_request(false).await.unwrap();
+        let contract_id = prepared.dashpay_contract_id();
+        // No fetch or broadcast expectations: submission must fail locally.
+        let submitting_sdk = crate::SdkBuilder::new_mock()
+            .with_version(version)
+            .with_context_provider(DashPayProvider::default())
+            .build()
+            .expect("the submitting SDK builds");
+        let signer = Arc::new(CountingSigner::default());
+        let refusal = submitting_sdk
+            .submit_contact_request(
+                prepared,
+                SendContactRequestInput {
+                    contact_request: contact_request_input(None),
+                    identity_public_key:
+                        IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+                            3,
+                            Some(1),
+                            version,
+                        )
+                        .unwrap()
+                        .0,
+                    signer: Arc::clone(&signer),
+                },
+                EcdhProvider::<NoPrivateKey, _, _, _>::ClientSide {
+                    get_shared_secret:
+                        |_: &PublicKey| -> std::future::Ready<Result<[u8; 32], Error>> {
+                            panic!("a missing confirmation contract must be refused before ECDH");
+                        },
+                },
+                |_| std::future::ready(Ok(vec![4u8; COMPACT_XPUB_LEN])),
+            )
+            .await
+            .expect_err("the request is refused before broadcast");
+        assert!(
+            matches!(
+                &refusal,
+                Error::ContextProviderError(ContextProviderError::DataContractFailure(_))
+            ),
+            "{refusal}"
+        );
+        assert!(refusal.to_string().contains(&format!("{contract_id}")));
+        assert_eq!(signer.0.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 
     /// The trusted HTTP provider the Swift and Kotlin wallets run (directly or under the
