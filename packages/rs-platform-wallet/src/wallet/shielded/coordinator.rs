@@ -6755,6 +6755,16 @@ mod tests {
         )
         .expect("restore schema");
         rebound.unwrap();
+        assert_eq!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .last_synced_note_index(account(1))
+                .unwrap(),
+            4096,
+            "the injected purge failure must leave the old watermark in the store"
+        );
         coordinator.queue_pass_changeset(&epoch, pass).await;
 
         let rounds = replacement.0.lock().unwrap();
