@@ -737,6 +737,12 @@ public class PlatformWalletManager: ObservableObject {
     internal var nativeShieldFromIdentityToRecipientCall: ShieldFromIdentityToRecipientCall =
         platform_wallet_manager_shielded_shield_from_identity_to_recipient
 
+    /// Test seam for the native call behind `clearShielded()`, so its
+    /// admission and its handling of Rust's answer are tested without a live
+    /// native manager; same contract as [`nativeTeardownCalls`].
+    internal var nativeShieldedClearCall: ShieldedClearCall =
+        platform_wallet_manager_shielded_clear
+
     /// Test seam for the native reads behind the progress poller; same
     /// contract as [`nativeTeardownCalls`].
     internal var nativePollCalls = PlatformWalletNativePollCalls.live
@@ -1401,8 +1407,7 @@ public class PlatformWalletManager: ObservableObject {
     // MARK: - Wallet creation
 
     /// Admission gate for the SYNCHRONOUS native entrypoints (`createWallet`,
-    /// `createWalletFromSeed`, `loadFromPersistor`, `deleteWallet`,
-    /// `clearShielded`). Rejects:
+    /// `createWalletFromSeed`, `loadFromPersistor`, `deleteWallet`). Rejects:
     ///
     /// - once shutdown has closed admission — including the drain window,
     ///   where the captured native handle remains live for an

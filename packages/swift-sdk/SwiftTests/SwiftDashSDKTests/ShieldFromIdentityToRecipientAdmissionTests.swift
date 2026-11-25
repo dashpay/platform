@@ -84,10 +84,12 @@ final class ShieldFromIdentityToRecipientAdmissionTests: XCTestCase {
         await fulfillment(of: [destroyed], timeout: 5)
     }
 
-    /// `clearShielded` would wipe the recovery state the admitted spend is
-    /// about to write or has just armed, so it is refused while the spend is
-    /// in flight and is no longer refused by the gate once the spend finished.
-    func testShouldRejectClearShieldedWhileSpendIsInFlight() async throws {
+    /// Swift does not pre-empt a Clear while a shield is in flight: the call
+    /// reaches the native Clear, and Rust's refusal (code 84) surfaces as
+    /// `shieldedOperationInProgress` with the sync generation and progress
+    /// mirrors untouched. Once the shield finished, a Clear Rust accepts goes
+    /// through and bumps and resets them.
+    func testShouldLetRustDecideClearShieldedWhileShieldIsInFlight() async throws {
         let ok: PlatformWalletNativeTeardownCalls.Call = { _ in
             PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil)
         }
@@ -96,7 +98,7 @@ final class ShieldFromIdentityToRecipientAdmissionTests: XCTestCase {
             dashPaySyncStop: ok, dpnsSyncStop: ok, destroy: ok)
         let manager = PlatformWalletManager.makeForTesting(handle: 77, calls: calls)
 
-        let entered = expectation(description: "spend entered the native call")
+        let entered = expectation(description: "shield entered the native call")
         let gate = DispatchSemaphore(value: 0)
         defer { gate.signal() }
         manager.nativeShieldFromIdentityToRecipientCall = { _, _, _, _, _, _, _, _, newBalance in
@@ -104,6 +106,15 @@ final class ShieldFromIdentityToRecipientAdmissionTests: XCTestCase {
             XCTAssertEqual(gate.wait(timeout: .now() + 10), .success)
             newBalance.pointee = 7
             return PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil)
+        }
+        // The message is left nil: `check()` frees it through Rust's
+        // allocator, so a fake cannot hand one over.
+        let clearCalls = ClearLog()
+        let clearCode = ClearCode(PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_OPERATION_IN_PROGRESS)
+        manager.nativeShieldedClearCall = { handle in
+            XCTAssertEqual(handle, 77)
+            clearCalls.record()
+            return PlatformWalletFFIResult(code: clearCode.value, message: nil)
         }
         let signer = KeychainSigner(modelContainer: try DashModelContainer.createInMemory())
         let spend = Task {
@@ -113,23 +124,36 @@ final class ShieldFromIdentityToRecipientAdmissionTests: XCTestCase {
         }
         await fulfillment(of: [entered], timeout: 5)
 
-        do {
-            try manager.clearShielded()
-            XCTFail("clearShielded must be rejected while the spend is in flight")
-        } catch PlatformWalletError.invalidHandle(let message) {
-            XCTAssertTrue(message.contains("in flight"), "clearShielded rejected for another reason: \(message)")
+        manager.currentShieldedSyncScanned = 11
+        manager.currentShieldedSyncBlockHeight = 12
+        manager.currentShieldedTreeCommitted = 13
+        manager.currentShieldedTreeTotal = 14
+        let generation = manager.shieldedSyncGeneration.current()
+
+        XCTAssertThrowsError(try manager.clearShielded()) { error in
+            guard case .shieldedOperationInProgress = error as? PlatformWalletError else {
+                return XCTFail("Expected Rust's refusal, got \(error)")
+            }
         }
+        XCTAssertEqual(clearCalls.count, 1, "Swift must not pre-empt the native Clear")
+        XCTAssertEqual(manager.shieldedSyncGeneration.current(), generation)
+        XCTAssertEqual(manager.currentShieldedSyncScanned, 11)
+        XCTAssertEqual(manager.currentShieldedSyncBlockHeight, 12)
+        XCTAssertEqual(manager.currentShieldedTreeCommitted, 13)
+        XCTAssertEqual(manager.currentShieldedTreeTotal, 14)
 
         gate.signal()
-        _ = try await spend.value
+        let balance = try await spend.value
+        XCTAssertEqual(balance, 7)
 
-        // The test handle is not a live native manager, so the FFI clear may
-        // fail; it must no longer be the admission gate that refuses it.
-        do {
-            try manager.clearShielded()
-        } catch PlatformWalletError.invalidHandle(let message) {
-            XCTAssertFalse(message.contains("in flight"), "clearShielded still gated after the spend: \(message)")
-        } catch {}
+        clearCode.value = PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS
+        try manager.clearShielded()
+        XCTAssertEqual(clearCalls.count, 2)
+        XCTAssertNotEqual(manager.shieldedSyncGeneration.current(), generation)
+        XCTAssertNil(manager.currentShieldedSyncScanned)
+        XCTAssertNil(manager.currentShieldedSyncBlockHeight)
+        XCTAssertNil(manager.currentShieldedTreeCommitted)
+        XCTAssertNil(manager.currentShieldedTreeTotal)
     }
 
     /// The `memo` argument reaches the native call: `nil` and an empty string
@@ -155,6 +179,23 @@ final class ShieldFromIdentityToRecipientAdmissionTests: XCTestCase {
                 identitySigner: signer)
         }
         XCTAssertEqual(seen.values, [nil, nil, "hi"])
+    }
+
+    private final class ClearLog: @unchecked Sendable {
+        private let lock = NSLock()
+        private var calls = 0
+        func record() { lock.withLock { calls += 1 } }
+        var count: Int { lock.withLock { calls } }
+    }
+
+    private final class ClearCode: @unchecked Sendable {
+        private let lock = NSLock()
+        private var code: PlatformWalletFFIResultCode
+        init(_ code: PlatformWalletFFIResultCode) { self.code = code }
+        var value: PlatformWalletFFIResultCode {
+            get { lock.withLock { code } }
+            set { lock.withLock { code = newValue } }
+        }
     }
 
     private final class MemoLog: @unchecked Sendable {

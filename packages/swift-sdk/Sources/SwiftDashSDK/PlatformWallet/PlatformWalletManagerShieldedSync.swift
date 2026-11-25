@@ -89,6 +89,10 @@ typealias ShieldFromIdentityToRecipientCall = @Sendable (
     UInt64, UnsafePointer<CChar>?, OpaquePointer, UnsafeMutablePointer<UInt64>
 ) -> PlatformWalletFFIResult
 
+/// The native shielded Clear; injectable through
+/// `PlatformWalletManager.nativeShieldedClearCall`.
+typealias ShieldedClearCall = @Sendable (Handle) -> PlatformWalletFFIResult
+
 extension PlatformWalletManager {
     /// Shutdown leaves the handle live for admitted operations after its
     /// early shielded stop. Do not restart or mutate that lifecycle while
@@ -465,25 +469,27 @@ extension PlatformWalletManager {
     /// flight: Clear quiesces the same loop and would wait on the calling
     /// thread for the pass that stop is draining.
     ///
-    /// Throws `invalidHandle` while an async native operation is admitted
-    /// (for example a shielded spend or a wallet drain): Clear would wipe the
-    /// recovery state that operation is about to write or has armed.
+    /// Throws `invalidHandle` when the manager is not configured or its
+    /// shutdown is in progress.
     ///
-    /// Throws `PlatformWalletError.shieldedOperationInProgress` at once,
-    /// without waiting, while a shielded operation is in flight (a bind, an
-    /// account being added, a spend from the pool, a shield, a tip address
+    /// An async native operation in flight does not stop Clear here; Rust
+    /// decides whether Clear may run alongside it. Throws
+    /// `PlatformWalletError.shieldedOperationInProgress` at once, without
+    /// waiting, while a shielded operation is in flight (a bind, an account
+    /// being added, a spend from the pool, a shield, a tip address
     /// preparation, or another Clear). Rust decides that and changed
     /// nothing: the sync loop keeps running, the host's rows were not wiped,
-    /// and this manager keeps its sync generation, progress mirrors and
-    /// local balance generation. Call again once the operation has finished.
+    /// and this manager keeps its sync generation, progress mirrors and any
+    /// local balance read in flight. Call again once the operation has
+    /// finished.
     public func clearShielded() throws {
         try ensureShieldedLifecycleAllowed("clearShielded")
         try ensureNoShieldedStopInFlight(before: "clearing shielded state")
-        try ensureSyncNativeOpAllowed("clearShielded")
         // Every throw, the refusal included, leaves before the bump and the
         // progress reset below.
+        let clear = nativeShieldedClearCall
         try withShieldedLocalBalanceMutation {
-            try platform_wallet_manager_shielded_clear(handle).check()
+            try clear(handle).check()
         }
         // The Rust drain returned; bump the generation so any trailing
         // completion event the main actor delivers after Clear is dropped
