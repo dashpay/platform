@@ -1053,6 +1053,17 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
         r
     });
 
+    map_identity_create_from_pool_result(result, &mut *out_identity_id)
+}
+
+/// The result handling of
+/// [`platform_wallet_manager_shielded_identity_create_from_pool`]: writes
+/// `out_identity_id` on success and on an unconfirmed broadcast (17) only, and
+/// maps every other error through the spend contract.
+fn map_identity_create_from_pool_result(
+    result: Result<dpp::prelude::Identifier, PlatformWalletError>,
+    out_identity_id: &mut [u8; 32],
+) -> PlatformWalletFFIResult {
     match result {
         Ok(identity_id) => {
             *out_identity_id = identity_id.to_buffer();
@@ -3219,6 +3230,49 @@ mod tests {
                 "{operation}"
             );
         }
+    }
+
+    /// The identity create from the pool, through the result handling its
+    /// export uses: a witness refusal returns 88 and leaves the host's id
+    /// buffer as the host set it, while an unconfirmed broadcast (17) still
+    /// writes the derived id, which Swift and JNI read to hold the slot.
+    #[test]
+    fn should_keep_the_id_buffer_on_a_witness_refusal_and_write_it_on_code_17() {
+        let sentinel = [0xEE; 32];
+
+        let mut out = sentinel;
+        let refused = map_identity_create_from_pool_result(
+            Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(
+                "no checkpoint covers the note at position 7395 yet".to_string(),
+            )),
+            &mut out,
+        );
+        assert_eq!(
+            refused.code,
+            PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable
+        );
+        let message = message_of(&refused);
+        assert!(message.contains("try again shortly"), "{message}");
+        assert_eq!(out, sentinel, "a refusal must not write the id");
+
+        let derived = dpp::prelude::Identifier::from([0x17; 32]);
+        let mut out = sentinel;
+        let unconfirmed = map_identity_create_from_pool_result(
+            Err(PlatformWalletError::ShieldedBroadcastUnconfirmed {
+                identity_id: derived,
+                reason: "no execution result".to_string(),
+            }),
+            &mut out,
+        );
+        assert_eq!(
+            unconfirmed.code,
+            PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed
+        );
+        assert_eq!(
+            out,
+            derived.to_buffer(),
+            "code 17 must write the derived id"
+        );
     }
 
     /// Arguments for `platform_wallet_manager_shielded_shield_from_identity_to_recipient` that
