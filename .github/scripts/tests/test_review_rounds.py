@@ -220,7 +220,7 @@ class ReviewRoundsTest(unittest.TestCase):
         )
         text = rounds.render(report, 0)
         self.assertIn("a merge from the base branch is left out", text)
-        self.assertIn("1 new code, 1 changed file, 1 merged from base", text)
+        self.assertIn("1 new code, 1 changed file, 1 base merge", text)
 
     def test_should_keep_the_authors_edit_to_a_file_the_base_merge_also_changed(self):
         # Base turns A into B and the author turns B into C. Subtracting line
@@ -234,6 +234,17 @@ class ReviewRoundsTest(unittest.TestCase):
         )
         self.assertEqual(placed(report)[7], rounds.NEW_LINES)
         self.assertEqual(placed(report)[5], rounds.OLD_CODE)
+
+    def test_should_call_no_line_new_when_github_cut_the_file_list(self):
+        # A file missing from a cut list may have changed after all, so line
+        # numbers from an earlier patch are not proof.
+        raw = history()
+        raw["compares"][("h1", "h2")]["truncated"] = True
+        report = rounds.build_report(raw)
+        self.assertEqual(placed(report)[5], rounds.CHANGED_FILE)
+        self.assertEqual(placed(report)[7], rounds.UNKNOWN)
+        self.assertEqual(report["changed_since_first_review"]["undone"], 0)
+        self.assertIn("partial: GitHub cut a file list short", rounds.render(report, 0))
 
     def test_should_not_guess_at_a_file_when_the_merge_cannot_be_read(self):
         raw = with_base_merge(history())
@@ -384,11 +395,25 @@ class ReviewRoundsTest(unittest.TestCase):
             {"files": 1, "additions": 42, "deletions": 1, "added_since": ["src/view.rs"]},
         )
 
+    def test_should_count_only_changes_made_after_review_began(self):
+        # The first review is on h2; a review of h1 arrives later. The edit
+        # from h1 to h2 was there before anyone reviewed anything.
+        raw = history()
+        raw["reviews"][0]["submitted_at"] = "2026-01-01T09:00:00Z"
+        raw["compares"][("base", "h2")] = compared({"src/store.rs": changed(42, 1)}, status="diverged")
+        report = rounds.build_report(raw)
+        self.assertEqual(report["passes"][0]["response"]["additions"], 2)
+        self.assertEqual(
+            report["changed_since_first_review"],
+            {"additions": 8, "deletions": 4, "undone": 0, "unavailable": 0},
+        )
+        self.assertEqual(report["files"]["src/store.rs"]["responses"], 1)
+
     def test_should_follow_a_line_only_while_every_change_to_its_file_is_known(self):
-        def change(patch, merged_files=()):
+        def change(patch, merged_files=(), cut=False):
             return {
                 "files": [{"path": "src/store.rs", "patches": [patch]}],
-                "merged_files": set(merged_files),
+                "merged_files": set(merged_files), "cut": cut,
             }
 
         self.assertEqual(rounds.undone_lines([change(PATCH), change(UNDO)])["src/store.rs"], 1)
@@ -400,8 +425,11 @@ class ReviewRoundsTest(unittest.TestCase):
         self.assertEqual(rounds.undone_lines([change(PATCH), merged])["src/store.rs"], 0)
         after = change("@@ -1 +1 @@\n-x\n+y", ["src/store.rs"])
         self.assertEqual(rounds.undone_lines([change(PATCH), after, change(UNDO)])["src/store.rs"], 0)
-        unreadable = {"files": [], "merged_files": None}
+        unreadable = {"files": [], "merged_files": None, "cut": False}
         self.assertEqual(rounds.undone_lines([change(PATCH), unreadable, change(UNDO)])["src/store.rs"], 0)
+        # And a change whose file list GitHub cut short.
+        capped = {"files": [], "merged_files": set(), "cut": True}
+        self.assertEqual(rounds.undone_lines([change(PATCH), capped, change(UNDO)])["src/store.rs"], 0)
 
     def test_should_mark_a_round_that_requested_changes_without_a_new_thread(self):
         raw = history()
@@ -476,6 +504,12 @@ class ReviewRoundsTest(unittest.TestCase):
         self.assertIn("to the end of the comment because the section is not closed", cleaned)
         self.assertIn("A third.", rounds.clean("<details><summary>Review info</summary>\n3. A third.", raw=True))
 
+    def test_should_keep_text_that_only_begins_like_a_section(self):
+        self.assertEqual(rounds.clean("<details and more\nA finding."), "<details and more\nA finding.")
+        cleaned = rounds.clean("One.<details><summary>Review info</summary>x</details><details of the run\nTwo.")
+        self.assertIn("<details of the run\nTwo.", cleaned)
+        self.assertEqual(cleaned.count(rounds.OMITTED), 1)
+
     def test_should_read_a_section_title_inside_a_quote(self):
         cleaned = rounds.clean("> <details>\n> <summary><b>Run configuration</b></summary>\n> x\n> </details>")
         self.assertIn('[section omitted: "Run configuration"', cleaned)
@@ -512,7 +546,7 @@ class ReviewRoundsTest(unittest.TestCase):
     def test_should_render_the_report_as_text(self):
         text = rounds.render(self.report, 200)
         self.assertIn("Rounds: 2 (heads reviewed: 3)", text)
-        self.assertIn("3 commits, 1 named as reverts", text)
+        self.assertIn("base v5.1-dev at base, 3 commits, 1 named as reverts", text)
         self.assertIn("1 lines written in one response were removed by a later one", text)
         self.assertIn("New threads per round: 2 3", text)
         self.assertIn("### Round 2: head h2", text)

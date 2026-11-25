@@ -33,11 +33,12 @@ something else. Whatever cannot be shown exactly is left out of the numbers.
 Limits. Only inline threads are counted as findings. In a file that a merge
 from the base branch also changed, a line is called `new code` only when the
 author wrote it after that merge; an earlier line there is called `changed
-file`. A finding on a file that only the merge changed is called `merged from
-base`. Lines in a file a base merge touched are not followed for the rework
-count. GitHub lists at most 300 files for one comparison and 250 commits for
-one pull request; a change that reaches past either cut is flagged or
-unavailable.
+file`. A finding on a file that changed only inside such a merge commit is
+called `base merge`: the change is the base branch's, or the author's conflict
+resolution, and the script cannot tell which. Lines in a file a base merge
+touched are not followed for the rework count. GitHub lists at most 300 files
+for one comparison and 250 commits for one pull request; a change that reaches
+past either cut is flagged or unavailable, and no line in it is called new.
 """
 import argparse
 from collections import Counter, OrderedDict
@@ -71,7 +72,7 @@ SEVERITIES = (
 )
 # A finding's place relative to the head its reviewer had reviewed before.
 FIRST, NEW_LINES, CHANGED_FILE, BASE_MERGE, OLD_CODE, UNKNOWN = (
-    "first pass", "new code", "changed file", "merged from base", "old code", "unknown",
+    "first pass", "new code", "changed file", "base merge", "old code", "unknown",
 )
 PLACES = (NEW_LINES, CHANGED_FILE, BASE_MERGE, OLD_CODE, UNKNOWN)
 # A thread with this many replies is listed as a long thread.
@@ -143,21 +144,23 @@ def without_noise(text):
     def note(ending=""):
         return f'\n{OMITTED}"{name}", {size} characters{ending}; --raw prints it]\n'
 
+    # Splitting on one group puts the tags at the odd positions, so text that
+    # merely begins with "<details" is never taken for a tag.
     parts = DETAILS.split(text)
     for index, part in enumerate(parts):
-        if part.lower().startswith("<details"):
-            title = section_title(parts[index + 1] if index + 1 < len(parts) else "")
+        if index % 2 == 0:
+            if dropping and dropping[-1]:
+                size += len(part)
+            else:
+                kept.append(part)
+        elif part.lower().startswith("<details"):
+            title = section_title(parts[index + 1])
             inside = bool(dropping and dropping[-1])
             if not inside and NOISE_TITLE.search(title):
                 size, name = 0, " ".join(title.split())[:60]
             dropping.append(inside or bool(NOISE_TITLE.search(title)))
-        elif part.lower() == "</details>":
-            if dropping and dropping.pop() and not (dropping and dropping[-1]):
-                kept.append(note())
-        elif dropping and dropping[-1]:
-            size += len(part)
-        else:
-            kept.append(part)
+        elif dropping and dropping.pop() and not (dropping and dropping[-1]):
+            kept.append(note())
     if dropping and dropping[-1]:
         # The section never closes, so everything after its title went with it.
         kept.append(note(", to the end of the comment because the section is not closed"))
@@ -391,10 +394,13 @@ def author_change(raw, old, new):
             merged_files.update(brought["files"])
     # Line numbers from a patch hold at `new` only when nothing changed the
     # file after it: no later stretch, and no merge from the base branch.
+    # A file missing from a list GitHub cut short may have changed all the same.
     final = len(pairs) - 1 if pairs and pairs[-1][1] == new else None
     for path, row in files.items():
-        untouched_by_base = merged_files is not None and path not in merged_files
-        exact = row["stretches"][-1] == final or (untouched_by_base and len(row["stretches"]) == 1)
+        untouched_by_base = not cut and merged_files is not None and path not in merged_files
+        exact = not cut and (
+            row["stretches"][-1] == final or (untouched_by_base and len(row["stretches"]) == 1)
+        )
         patch = row["patches"][-1]
         row["lines"] = added_lines(patch) if exact and patch else None
         # Everything in a file the author added is new, unless base changed it too.
@@ -450,12 +456,13 @@ def undone_lines(responses):
 
     `responses` holds None for a change that could not be measured. A line is
     followed only while every change to its file is known: an unmeasured change
-    forgets every file, and a merge from the base branch forgets the files it
-    touched, so text that merely looks the same later is not counted.
+    or one whose file list GitHub cut short forgets every file, and a merge
+    from the base branch forgets the files it touched, so text that merely
+    looks the same later is not counted.
     """
     written, undone = {}, Counter()
     for change in responses:
-        if change is None or change["merged_files"] is None:
+        if change is None or change["merged_files"] is None or change["cut"]:
             written.clear()
             continue
         for path in change["merged_files"]:
@@ -508,8 +515,13 @@ def build_report(raw):
             else response(author_change(raw, head, following))
         )
 
-    undone = undone_lines([entry["response"] for entry in passes if not entry["unchanged"]])
-    responses = [entry["response"] for entry in passes if entry["response"]]
+    # Review began at the head reviewed first in time. A change before that
+    # head, seen only because an older commit was reviewed later, is not a
+    # response to review and stays out of the totals and the tables.
+    earliest = min(passes, key=lambda entry: entry["started"]) if passes else None
+    since_review = passes[passes.index(earliest):] if passes else []
+    undone = undone_lines([entry["response"] for entry in since_review if not entry["unchanged"]])
+    responses = [entry["response"] for entry in since_review if entry["response"]]
     files, areas = {}, {}
     for entry in passes:
         for thread in entry["threads"]:
@@ -531,10 +543,9 @@ def build_report(raw):
         for item in change["files"]:
             del item["patches"]
 
-    # From the merge base to the head of the earliest review, whichever commit
-    # that was: the size when review began.
-    earliest = min(passes, key=lambda entry: entry["started"])["head"] if passes else "unknown"
-    first = compare(raw, pr["base"]["sha"], earliest) if earliest != "unknown" else None
+    # From the merge base to that head: the size when review began.
+    began = earliest["head"] if earliest else "unknown"
+    first = compare(raw, pr["base"]["sha"], began) if began != "unknown" else None
     first_size = None
     if first and not first["truncated"]:
         first_size = {
@@ -561,6 +572,9 @@ def build_report(raw):
         "author": login(pr),
         "state": "merged" if pr.get("merged_at") else pr["state"],
         "base": pr["base"]["ref"],
+        # While open: the tip of the base branch. Once merged: the tip just
+        # before the merge, so rules read there do not include this change.
+        "base_sha": pr["base"]["sha"],
         "created": pr["created_at"],
         "size": {"files": pr["changed_files"], "additions": pr["additions"], "deletions": pr["deletions"]},
         "size_at_first_review": first_size,
@@ -582,7 +596,7 @@ def build_report(raw):
             "deletions": sum(change["deletions"] for change in responses),
             "undone": sum(undone.values()),
             "unavailable": sum(
-                1 for entry in passes if not entry["unchanged"] and not entry["response"]
+                1 for entry in since_review if not entry["unchanged"] and not entry["response"]
             ),
         } if passes else None,
         "files": files,
@@ -758,7 +772,7 @@ def render_header(report):
     return [
         f"# Review rounds: {report['repo']}#{report['number']}",
         f"{report['title']}",
-        f"Author {report['author']}, {report['state']}, base {report['base']}, "
+        f"Author {report['author']}, {report['state']}, base {report['base']} at {report['base_sha'][:12]}, "
         f"{report['commits']} commits, {report['reverts']} named as reverts",
         "",
     ]

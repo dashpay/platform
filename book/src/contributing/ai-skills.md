@@ -53,11 +53,11 @@ A change between two reviewed commits is measured only when the first leads to
 the second, with merges from the base branch cut out. After a rebase or a
 force-push the script reports the change as unavailable instead of guessing.
 
-Run the skill from a checkout of the branch the pull request targets, not from
-the pull request's own branch. An agent takes its instructions from the
-checkout it runs in, and a pull request should not supply the instructions it
-is judged by. The skill reads the pull request by number and does not need its
-branch checked out.
+Run the skill from a clean checkout of one of the repository's long-lived
+branches (`master` or a `vX-dev` branch), not from the pull request's own
+branch. An agent takes its instructions from the checkout it runs in, and a
+pull request should not supply the instructions it is judged by. The skill
+reads the pull request by number and does not need its branch checked out.
 
 The measuring part also runs by itself, for the overview or for the full
 conversations of a round or a file:
