@@ -114,6 +114,67 @@ abstract class NativePersistenceBridge {
         const val CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE: Long = 1L shl 15
 
         /**
+         * `PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS` (bit 13): an
+         * asset lock's 16-byte operation UUID survives store and load, consumed
+         * rows included, and a load of a missing or malformed row fails rather
+         * than reading as "no UUID". Wired only for a bridge that overrides
+         * both [onPersistAssetLockOperationId] and [onLoadAssetLockOperationId].
+         * Together with the asset-lock reconciliation bits it makes up
+         * `WALLET_DRAIN`. The one Kotlin home of this bit.
+         */
+        const val CAPABILITY_ASSET_LOCK_OPERATION_IDS: Long = 1L shl 13
+
+        /**
+         * `PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS` (bit 14):
+         * the Orchard recipient a shielded funding was built to pay survives
+         * store and load with its row. Wired only for a bridge that overrides
+         * both [onPersistAssetLockShieldedRecipient] and
+         * [onLoadAssetLockShieldedRecipient].
+         */
+        const val CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS: Long = 1L shl 14
+
+        /**
+         * `PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS` (bit 17;
+         * bit 16 is held by another branch): the identity an unbound identity
+         * top-up was built or assigned to pay survives store and load with its
+         * row. Required, not reported: native builds no unbound top-up lock,
+         * and assigns no recipient, for a host without it. Wired only for a
+         * bridge that overrides both [onPersistAssetLockIdentityRecipient] and
+         * [onLoadAssetLockIdentityRecipient].
+         */
+        const val CAPABILITY_ASSET_LOCK_IDENTITY_RECIPIENTS: Long = 1L shl 17
+
+        /**
+         * `PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS`
+         * (bit 18): the Platform addresses an external Platform-address
+         * funding pays survive store and load with its row, so a resume after
+         * restart pays those recipients or is refused, and never consumes the
+         * lock into the wallet. Required: native builds no external
+         * Platform-address funding for a host without it. Attested only for a
+         * bridge that also declares `ATOMIC_CHANGESETS` (the row and its
+         * recipients arrive in separate callbacks of one round) and overrides
+         * both [onPersistAssetLockPlatformAddressRecipients] and
+         * [onLoadAssetLockPlatformAddressRecipients].
+         */
+        const val CAPABILITY_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS: Long = 1L shl 18
+
+        /**
+         * Largest Platform-address recipient record native hands to
+         * [onPersistAssetLockPlatformAddressRecipients]
+         * (`PLATFORM_WALLET_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS_MAX_LEN`).
+         */
+        const val ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS_MAX_LEN: Int = 4096
+
+        /** Width of an asset-lock operation UUID. */
+        const val ASSET_LOCK_OPERATION_ID_SIZE: Int = 16
+
+        /** Width of a raw Orchard payment address. */
+        const val ASSET_LOCK_SHIELDED_RECIPIENT_SIZE: Int = 43
+
+        /** Width of an identity id. */
+        const val ASSET_LOCK_IDENTITY_RECIPIENT_SIZE: Int = 32
+
+        /**
          * Packed row widths of [onPersistPrivateContactScanState] and
          * [onLoadPrivateContactScanState]: a read position is the identity
          * id (32), the position (u64, little-endian), the key fingerprint
@@ -805,6 +866,94 @@ abstract class NativePersistenceBridge {
 
     /** One 36-byte outpoint removal. Descriptor `([B[B)I`. */
     open fun onPersistAssetLockRemoval(walletId: ByteArray, outPoint: ByteArray): Int = 0
+
+    // The four asset-lock sidecars (`PersistAssetLock*Fn` / `LoadAssetLock*Fn`
+    // in `packages/rs-platform-wallet-ffi/src/persistence.rs`). Each persist
+    // fires after the row's [onPersistAssetLockUpsert], in the same round, and
+    // must refuse (non-zero) a value different from one already stored; the
+    // same value again succeeds. A later upsert of the row must keep the
+    // value. Each load returns the stored value, null when the row records
+    // none, and throws when the row is missing or unreadable: that fails the
+    // native load instead of reading as a lock without one. Each pair is wired
+    // only for a bridge that overrides both of its methods, so an inherited
+    // no-op can never attest the capability.
+
+    /**
+     * `on_persist_asset_lock_operation_id_fn`: associate the 16-byte
+     * [operationId] with the lock at the 36-byte [outPoint]. Descriptor
+     * `([B[B[B)I`. See [CAPABILITY_ASSET_LOCK_OPERATION_IDS].
+     */
+    open fun onPersistAssetLockOperationId(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        operationId: ByteArray,
+    ): Int = 0
+
+    /**
+     * `on_load_asset_lock_operation_id_fn`: the 16-byte UUID stored for the
+     * lock at [outPoint] (consumed rows included), or null. Descriptor
+     * `([B[B)[B`.
+     */
+    open fun onLoadAssetLockOperationId(walletId: ByteArray, outPoint: ByteArray): ByteArray? = null
+
+    /**
+     * `on_persist_asset_lock_shielded_recipient_fn`: associate the raw 43-byte
+     * Orchard [recipientRaw43] with the lock at [outPoint]. Descriptor
+     * `([B[B[B)I`. See [CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS].
+     */
+    open fun onPersistAssetLockShieldedRecipient(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        recipientRaw43: ByteArray,
+    ): Int = 0
+
+    /**
+     * `on_load_asset_lock_shielded_recipient_fn`: the 43-byte recipient stored
+     * for the lock at [outPoint], or null. Descriptor `([B[B)[B`.
+     */
+    open fun onLoadAssetLockShieldedRecipient(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+        null
+
+    /**
+     * `on_persist_asset_lock_identity_recipient_fn`: associate the 32-byte
+     * [identityId] an unbound identity top-up pays with the lock at
+     * [outPoint]. Descriptor `([B[B[B)I`. See
+     * [CAPABILITY_ASSET_LOCK_IDENTITY_RECIPIENTS].
+     */
+    open fun onPersistAssetLockIdentityRecipient(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        identityId: ByteArray,
+    ): Int = 0
+
+    /**
+     * `on_load_asset_lock_identity_recipient_fn`: the 32-byte identity stored
+     * for the lock at [outPoint], or null. Descriptor `([B[B)[B`.
+     */
+    open fun onLoadAssetLockIdentityRecipient(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+        null
+
+    /**
+     * `on_persist_asset_lock_platform_address_recipients_fn`: associate the
+     * Platform addresses an external Platform-address funding pays with the
+     * lock at [outPoint]. [recipients] is the wallet's opaque record, 1 to
+     * [ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS_MAX_LEN] bytes: store it as
+     * given; only native reads it. Same rules as the sidecars above.
+     * Descriptor `([B[B[B)I`. See
+     * [CAPABILITY_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS].
+     */
+    open fun onPersistAssetLockPlatformAddressRecipients(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        recipients: ByteArray,
+    ): Int = 0
+
+    /**
+     * `on_load_asset_lock_platform_address_recipients_fn`: the record stored
+     * for the lock at [outPoint], or null. Descriptor `([B[B)[B`.
+     */
+    open fun onLoadAssetLockPlatformAddressRecipients(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+        null
 
     // ── Invitations (DIP-13) ──────────────────────────────────────────
 

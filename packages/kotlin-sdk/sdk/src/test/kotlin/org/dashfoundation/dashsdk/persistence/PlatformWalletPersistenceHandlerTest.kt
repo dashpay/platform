@@ -220,13 +220,15 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(0L, noOpBridge.persistenceCapabilitiesBits())
 
         assertEquals(1, handler.persistenceCapabilitiesVersion())
-        // The private contact request scan state is bit 15 (0x8000).
-        assertEquals(0x8bbfL, handler.persistenceCapabilitiesBits())
+        // The private contact request scan state is bit 15 (0x8000); the
+        // asset-lock sidecars are bits 13, 14, 17 and 18 (0x2000, 0x4000,
+        // 0x20000, 0x40000).
+        assertEquals(0x6ebbfL, handler.persistenceCapabilitiesBits())
         // Android has no pending-contact-crypto callback, so it must not
         // attest that semantic contract.
         assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x40L)
-        // Nor does it keep the shielded recipient of an asset lock (bit 14).
-        assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x4000L)
+        // Bit 16 is held by another branch and is not attested.
+        assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x10000L)
 
         val diagnostic = PlatformWalletPersistenceCapabilities(
             handler.persistenceCapabilitiesVersion(),
@@ -239,6 +241,12 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.CORE_SWEEP_REMOVAL))
         assertTrue(
             diagnostic.contains(PlatformWalletPersistenceCapabilities.PRIVATE_CONTACT_REQUEST_SCAN_STATE),
+        )
+        assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.ASSET_LOCK_OPERATION_IDS))
+        assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.ASSET_LOCK_SHIELDED_RECIPIENTS))
+        assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.ASSET_LOCK_IDENTITY_RECIPIENTS))
+        assertTrue(
+            diagnostic.contains(PlatformWalletPersistenceCapabilities.ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS),
         )
     }
 

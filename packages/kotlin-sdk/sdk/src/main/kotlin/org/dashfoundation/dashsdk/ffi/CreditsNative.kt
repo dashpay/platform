@@ -142,4 +142,54 @@ internal object CreditsNative {
         accountIndex: Int,
         coreSignerHandle: Long,
     ): Long
+
+    /**
+     * Top up [identityId] (32 bytes), an identity this wallet does not
+     * manage, from a new Core asset lock whose row records the identity.
+     * Returns its proved post-transition balance. Descriptor `(J[BJIJ[B)J`.
+     *
+     * [outOutpoint] (36 bytes) receives the built lock's outpoint
+     * (`txid[32] ‖ vout_le[4]`) on every outcome, before any exception is
+     * thrown; all zero means nothing was built.
+     *
+     * Thinly marshals
+     * `platform_wallet_top_up_external_identity_with_funding_signer`.
+     */
+    external fun topUpExternalIdentityFromCore(
+        walletHandle: Long,
+        identityId: ByteArray,
+        amountDuffs: Long,
+        accountIndex: Int,
+        coreSignerHandle: Long,
+        outOutpoint: ByteArray,
+    ): Long
+
+    /**
+     * Resume the tracked identity top-up at the outpoint to the identity the
+     * lock pays; the caller names none. Descriptor
+     * `(J[BIJ)Lorg/dashfoundation/dashsdk/ffi/IdentityTopUpNativeResult;`.
+     *
+     * Thinly marshals
+     * `platform_wallet_resume_identity_top_up_to_recorded_recipient_signer`.
+     */
+    external fun resumeTopUpToRecordedRecipient(
+        walletHandle: Long,
+        outpointTxid: ByteArray,
+        outpointVout: Int,
+        coreSignerHandle: Long,
+    ): IdentityTopUpNativeResult
+
+    /**
+     * Assign [identityId] (32 bytes) as the identity the unassigned unbound
+     * top-up lock at the outpoint pays. Descriptor `(J[BI[BZ)V`.
+     *
+     * Thinly marshals `platform_wallet_assign_identity_top_up_recipient`.
+     */
+    external fun assignTopUpRecipient(
+        walletHandle: Long,
+        outpointTxid: ByteArray,
+        outpointVout: Int,
+        identityId: ByteArray,
+        acknowledgeUnknownConsumption: Boolean,
+    )
 }

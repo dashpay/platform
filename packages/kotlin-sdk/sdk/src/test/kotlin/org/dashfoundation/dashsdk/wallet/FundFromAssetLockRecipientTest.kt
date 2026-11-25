@@ -1,5 +1,6 @@
 package org.dashfoundation.dashsdk.wallet
 
+import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.Companion.decodeRecipients
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.Companion.encodeRecipients
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.AssetLockBuiltOutPoint
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet.FundRecipient
@@ -98,5 +99,29 @@ class FundFromAssetLockRecipientTest {
                 AssetLockBuiltOutPoint.fromRawBytes(ByteArray(size))
             }
         }
+    }
+
+    // ── Recorded recipients ───────────────────────────────────────────
+
+    /**
+     * The recipients an external lock recorded cross in the row shape
+     * [encodeRecipients] writes (the JNI's `encode_platform_address_recipients`),
+     * in native's order, a P2SH remainder included.
+     */
+    @Test
+    fun `should decode recorded recipients in the funding recipients row shape`() {
+        val recipients = listOf(
+            recipient(1, 1_000_000L),
+            FundRecipient(addressType = 1, hash = ByteArray(20) { 2 }, credits = null),
+        )
+        assertEquals(recipients, decodeRecipients(encodeRecipients(recipients)))
+        assertEquals(emptyList<FundRecipient>(), decodeRecipients(encodeRecipients(emptyList())))
+    }
+
+    @Test
+    fun `should refuse a truncated or trailing recorded recipients blob`() {
+        val rows = encodeRecipients(listOf(recipient(1, null)))
+        assertThrows(IllegalStateException::class.java) { decodeRecipients(rows.copyOf(rows.size - 1)) }
+        assertThrows(IllegalStateException::class.java) { decodeRecipients(rows + byteArrayOf(0)) }
     }
 }

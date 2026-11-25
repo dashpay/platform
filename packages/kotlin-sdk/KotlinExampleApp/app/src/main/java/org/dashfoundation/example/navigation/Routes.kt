@@ -176,12 +176,15 @@ import kotlinx.serialization.Serializable
 /**
  * Live address-funding progress (← `AddressFundFromAssetLockProgressView.swift`).
  * Resolves its controller from the coordinator by
- * `(walletId, platformAccountIndex, recipientHash)`; dismissal-safe.
+ * `(walletId, platformAccountIndex, recipientHash, assetLockOutPointHex)`;
+ * dismissal-safe.
  */
 @Serializable data class AddressFundProgress(
     val walletIdHex: String,
     val platformAccountIndex: Int,
     val recipientHashHex: String,
+    /** The resumed lock's `<txid>:<vout>`, null for a fresh funding. */
+    val assetLockOutPointHex: String? = null,
 )
 
 // ── Shielded funding graph (gated on Sdk.hasShielded) ──────────────────

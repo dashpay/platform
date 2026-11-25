@@ -6,13 +6,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 
 /**
  * Per-slot state for a single "fund a Platform address from an asset lock"
  * attempt — 1:1 port of `AddressFundFromAssetLockController.swift`.
  *
  * One controller is created per
- * `(walletId, platformAccountIndex, recipientHash)` slot when the user
+ * `(walletId, platformAccountIndex, recipientHash, assetLockOutPointHex)` slot when the user
  * submits the fund-from-asset-lock flow. It owns the in-flight [Job],
  * exposes its current [phase] via a [StateFlow], and survives view
  * dismissal via [AddressFundFromAssetLockCoordinator] on the app
@@ -33,6 +34,12 @@ class AddressFundFromAssetLockController(
     val recipientType: Int,
     private val scope: CoroutineScope,
     private val now: () -> Long = System::currentTimeMillis,
+    /**
+     * The resumed lock's `<txid>:<vout>`, or null for a fresh funding. Part
+     * of the slot: an external payment does not credit the picked address,
+     * so a later resume of another lock can pick it again.
+     */
+    val assetLockOutPointHex: String? = null,
 ) {
     /**
      * Funding phase. Flow: [Idle] → [InFlight] (submit) →
@@ -45,8 +52,14 @@ class AddressFundFromAssetLockController(
         /** FFI funding call in flight; the asset-lock progress is read from Room. */
         data object InFlight : Phase
 
-        /** Address credited; [newBalance] is the proof-attested credit balance. */
-        data class Completed(val newBalance: Long) : Phase
+        /**
+         * Funding done. [newBalance] is the picked address's proof-attested
+         * credit balance, or null when the result establishes none: an
+         * external payment credits its recorded payees, not that address, and
+         * reconciliation can return an empty changeset when sync already
+         * applied the balance; a stand-in 0 would be false.
+         */
+        data class Completed(val newBalance: Long?) : Phase
 
         /** Failure terminal state; the message is shown inline. Stays until dismissed. */
         data class Failed(val message: String) : Phase
@@ -68,9 +81,10 @@ class AddressFundFromAssetLockController(
 
     private var task: Job? = null
 
-    /** Composite id for stable list diffing — wallet hex + account + recipient hex. */
+    /** Composite id for stable list diffing — wallet hex + account + recipient hex (+ outpoint). */
     val slotRowId: String
-        get() = walletId.toHex() + "-" + platformAccountIndex + "-" + recipientHash.toHex()
+        get() = walletId.toHex() + "-" + platformAccountIndex + "-" + recipientHash.toHex() +
+            (assetLockOutPointHex?.let { "-$it" } ?: "")
 
     /**
      * Submit the funding. Defensively rejects [Phase.InFlight] and
@@ -80,10 +94,11 @@ class AddressFundFromAssetLockController(
      * ← Swift `submit`.
      *
      * [body] performs the actual FFI call and returns the new credit
-     * balance, or throws. It runs on its own dispatcher; the terminal
+     * balance (null when the result carries none, see [reportedBalance]),
+     * or throws. It runs on its own dispatcher; the terminal
      * phase flip hops back to [scope].
      */
-    fun submit(body: suspend () -> Long) {
+    fun submit(body: suspend () -> Long?) {
         when (_phase.value) {
             is Phase.Idle, is Phase.Failed -> Unit
             is Phase.InFlight, is Phase.Completed -> return
@@ -101,4 +116,18 @@ class AddressFundFromAssetLockController(
     }
 
     private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
+
+    companion object {
+        /**
+         * The balance a funding reported for [recipientHash], or null when
+         * its result carries no update for that address (reconciliation can
+         * return an empty changeset when sync already applied the balance).
+         * [Phase.Completed] then shows no balance line instead of a false 0.
+         * ← Swift `reportedBalance(of:in:)`.
+         */
+        fun reportedBalance(
+            recipientHash: ByteArray,
+            updates: List<ManagedPlatformWallet.UpdatedBalance>,
+        ): Long? = updates.firstOrNull { it.hash.contentEquals(recipientHash) }?.balance
+    }
 }
