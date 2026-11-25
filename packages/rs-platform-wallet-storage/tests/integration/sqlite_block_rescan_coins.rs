@@ -828,6 +828,183 @@ async fn a_rescan_materialises_a_spent_sweep_placeholder_without_unspending_it()
     assert_eq!(rows, vec![1, 0, 1], "the far coin's row stays spent");
 }
 
+/// Transaction records the store holds that spend an output of `txid`.
+fn stored_spenders_of(path: &std::path::Path, txid: dashcore::Txid) -> i64 {
+    rusqlite::Connection::open(path)
+        .expect("open the store")
+        .query_row(
+            "SELECT COUNT(*) FROM core_transaction_inputs WHERE substr(outpoint, 2, 32) = ?1",
+            [AsRef::<[u8]>::as_ref(&txid)],
+            |row| row.get(0),
+        )
+        .expect("count spenders")
+}
+
+fn sweep_placeholders(path: &std::path::Path) -> i64 {
+    rusqlite::Connection::open(path)
+        .expect("open the store")
+        .query_row(
+            "SELECT COUNT(*) FROM core_utxos WHERE is_sweep_placeholder = 1",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count placeholders")
+}
+
+/// The re-scan credits the far coin, and the store records it spent: with
+/// `spender`, block 102 spends it and the store keeps that transaction;
+/// without, only the spent row records the spend. The row becomes a stamped
+/// sweep placeholder, and the ChainLock and synced height pass its stamp, so
+/// the collector deletes it. Then a later re-scan delivers the far coin to a
+/// store that holds no row for it. Returns the restart and the unspent rows
+/// for vout 0, the far coin and the near coin.
+async fn rescan_after_the_far_coins_row_is_collected(
+    spender: bool,
+) -> (FarCoins, Restarted, Vec<i64>) {
+    use dashcore::bls_sig_utils::BLSSignature;
+    use dashcore::ephemerealdata::chain_lock::ChainLock;
+
+    let mut w = FarCoins::new().await;
+    let funding = block_at(HEIGHT, vec![w.paying_far.clone()]);
+    w.process(HEIGHT, &funding).await;
+    w.process(HEIGHT + 1, &block_at(HEIGHT + 1, vec![w.extending.clone()]))
+        .await;
+    w.process(HEIGHT, &funding).await;
+    let far_utxo = w
+        .manager
+        .read()
+        .await
+        .get_wallet_info(&w.wallet_id)
+        .expect("wallet")
+        .core_wallet
+        .accounts
+        .all_funding_accounts()
+        .into_iter()
+        .find_map(|account| account.utxos.get(&w.far()).cloned())
+        .expect("the wallet holds the far coin");
+    if spender {
+        w.process(HEIGHT + 2, &block_at(HEIGHT + 2, vec![spend_away(w.far())]))
+            .await;
+        assert!(!w.holds(w.far()).await, "block 102 spends the far coin");
+        w.persist().await;
+    } else {
+        w.persist().await;
+        w.persister
+            .as_ref()
+            .expect("open")
+            .store(
+                w.wallet_id,
+                PlatformWalletChangeSet {
+                    core: Some(CoreChangeSet {
+                        spent_utxos: vec![far_utxo.clone()],
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .expect("store the far coin as spent");
+    }
+    assert_eq!(
+        stored_spenders_of(&w.path, w.paying_far.txid()),
+        i64::from(spender)
+    );
+    let placed = rusqlite::Connection::open(&w.path)
+        .expect("open the store")
+        .execute(
+            "UPDATE core_utxos SET is_sweep_placeholder = 1, winner_mined_height = ?1, \
+             value = 0, script = X'' WHERE script = ?2 AND spent = 1",
+            rusqlite::params![
+                i64::from(HEIGHT + 2),
+                w.addresses[1].script_pubkey().as_bytes()
+            ],
+        )
+        .expect("make the row a stamped placeholder");
+    assert_eq!(placed, 1, "the store holds the far coin spent");
+    let past = HEIGHT + 5;
+    w.persister
+        .as_ref()
+        .expect("open")
+        .store(
+            w.wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    last_processed_height: Some(past),
+                    synced_height: Some(past),
+                    last_applied_chain_lock: Some(ChainLock {
+                        block_height: past,
+                        block_hash: dashcore::BlockHash::all_zeros(),
+                        signature: BLSSignature::from([0u8; 96]),
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .expect("move the boundary past the stamp");
+    assert_eq!(
+        sweep_placeholders(&w.path),
+        0,
+        "the collector deleted the far coin's row"
+    );
+
+    w.persister
+        .as_ref()
+        .expect("open")
+        .store(
+            w.wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    rescan_utxos: vec![far_utxo],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .expect("a later re-scan reaches the store");
+    let rows = stored_unspent_rows(&w.path, &w.addresses);
+    let restarted = w.restart();
+    (w, restarted, rows)
+}
+
+/// Block 102 spends the far coin, and the store keeps that transaction but
+/// no row for the coin. A re-scan then delivers the coin. After a restart
+/// the far coin is neither held nor in the balance.
+#[tokio::test]
+async fn a_rescan_fills_a_coin_a_stored_transaction_spends_as_spent() {
+    let (w, restarted, rows) = rescan_after_the_far_coins_row_is_collected(true).await;
+    assert_eq!(
+        restarted,
+        Restarted {
+            coins: coins([
+                FarCoins::coin(&w.paying_far, 0),
+                FarCoins::coin(&w.extending, 0)
+            ]),
+            balance: 2 * VALUE,
+        }
+    );
+    assert_eq!(rows, vec![1, 0, 1], "the far coin's row is spent");
+}
+
+/// The store keeps no transaction spending the far coin and no row for it.
+/// A re-scan then delivers the coin. After a restart the far coin is held
+/// and in the balance.
+#[tokio::test]
+async fn a_rescan_fills_a_coin_no_stored_transaction_spends_as_unspent() {
+    let (w, restarted, rows) = rescan_after_the_far_coins_row_is_collected(false).await;
+    assert_eq!(
+        restarted,
+        Restarted {
+            coins: coins([
+                FarCoins::coin(&w.paying_far, 0),
+                w.far(),
+                FarCoins::coin(&w.extending, 0)
+            ]),
+            balance: 3 * VALUE,
+        }
+    );
+    assert_eq!(rows, vec![1, 1, 1], "the far coin's row is unspent");
+}
+
 fn bip44_account_0() -> AccountType {
     AccountType::Standard {
         index: 0,

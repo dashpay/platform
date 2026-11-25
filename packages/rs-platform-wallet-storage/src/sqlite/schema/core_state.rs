@@ -140,12 +140,15 @@ pub fn apply(
     }
     if !cs.rescan_utxos.is_empty() {
         // Fill-only: a re-scan's coin is written only where the store has no
-        // row for it, and never changes an existing row's spent flag. A sweep
-        // placeholder is materialised with its spent flag kept, as every
-        // delivery must (see `spent_utxos` below). The height is raised
-        // either way, so a spent row a sweep later releases loads confirmed.
-        // A spend in the same fold lands whichever is written first: the
-        // spend marks the row, and the fill never clears the mark.
+        // row for it, and never changes an existing row's spent flag. A new
+        // row is written spent when a stored transaction spends the coin: a
+        // collected sweep placeholder can leave that record the only evidence
+        // of the spend. A sweep placeholder is materialised with its spent
+        // flag kept, as every delivery must (see `spent_utxos` below). The
+        // height is raised either way, so a spent row a sweep later releases
+        // loads confirmed. A spend in the same fold lands whichever is
+        // written first: the spend marks the row, and the fill never clears
+        // the mark.
         let mut height_only_stmt = tx.prepare_cached(HEIGHT_ONLY_TRANSACTION_SQL)?;
         let mut fill_stmt = tx.prepare_cached(INSERT_ABSENT_UTXO_SQL)?;
         for utxo in &cs.rescan_utxos {
@@ -805,7 +808,8 @@ const HEIGHT_ONLY_TRANSACTION_SQL: &str = "INSERT INTO core_transactions \
 
 const INSERT_ABSENT_UTXO_SQL: &str = "INSERT INTO core_utxos \
         (wallet_id, outpoint, value, script, spent) \
-     VALUES (?1, ?2, ?3, ?4, ?5) \
+     VALUES (?1, ?2, ?3, ?4, ?5 OR EXISTS(SELECT 1 FROM core_transaction_inputs \
+        WHERE wallet_id = ?1 AND outpoint = ?2)) \
      ON CONFLICT(wallet_id, outpoint) DO UPDATE SET \
         value = excluded.value, \
         script = excluded.script, \
