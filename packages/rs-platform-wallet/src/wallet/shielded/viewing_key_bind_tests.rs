@@ -377,8 +377,11 @@ mod zero_amount_tests {
                 Spend::IdentityCreate => "denomination 0 is not a member",
                 _ => "amount must be > 0",
             };
+            // The transfer's reservation refusal comes wrapped as proven
+            // not sent; the diagnostic is the same.
+            let error = result.as_ref().expect_err("a zero amount is refused");
             assert!(
-                matches!(&result, Err(PlatformWalletError::ShieldedBuildError(message))
+                matches!(error.dispatched_source(), PlatformWalletError::ShieldedBuildError(message)
                     if message.starts_with(expected)),
                 "{spend:?} returned {result:?} while {held:?} was held"
             );

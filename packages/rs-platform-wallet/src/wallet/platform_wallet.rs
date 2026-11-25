@@ -2449,10 +2449,12 @@ impl PlatformWallet {
         let recipient = Option::<grovedb_commitment_tree::PaymentAddress>::from(
             grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(recipient_raw_43),
         )
+        // Refused before anything is built or sent.
         .ok_or_else(|| {
             PlatformWalletError::ShieldedBuildError(
                 "invalid Orchard payment address bytes".to_string(),
             )
+            .before_dispatch()
         })?;
         super::shielded::operations::transfer_once_claimed(
             &self.sdk,

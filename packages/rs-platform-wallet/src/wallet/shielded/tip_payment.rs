@@ -691,45 +691,53 @@ impl PlatformWallet {
         memo: [u8; 36],
         prover: P,
     ) -> Result<(), PlatformWalletError> {
-        // Refused before the recipient is recorded as confirmed: the
-        // transfer would refuse it only afterwards.
-        if amount == 0 {
-            return Err(PlatformWalletError::InvalidParameter(
-                "A tip amount must be more than zero".to_string(),
-            ));
-        }
-        // The account must be bound and the seed must derive its key, or the
-        // transfer refuses the tip only after the recipient was recorded.
-        // Derived once: the transfer below spends with this keyset.
-        let keyset = self.derive_spend_keyset(seed, account).await?;
-        let keys = self.bound_shielded_keys().await?;
-        // Paid to the paying account itself, the payment is one more of the
-        // account's own outputs beside its change, and an unresolved one
-        // could not be told from change: it would not hold back a repeat.
-        if keys
-            .get(&account)
-            .is_some_and(|views| views.is_own_recipient(&recipient.address))
-        {
-            return Err(PlatformWalletError::InvalidParameter(
-                "A tip cannot pay the shielded account it is paid from; pay from another account"
-                    .to_string(),
-            ));
-        }
-        {
-            let mut store = coordinator.store().write().await;
-            let previous = confirmed_recipient(&store, self.wallet_id(), label)?;
-            let unresolved = unresolved_transfer_recipients(&store, self.wallet_id(), &keys)?;
-            if pays_unresolved(&unresolved, recipient, previous.as_ref()) {
-                return Err(PlatformWalletError::ShieldedTipPending);
+        // Everything up to the transfer only checks and records what the
+        // user confirmed: nothing is built or sent, so each refusal here is
+        // proven before the dispatch. The transfer classes its own.
+        let keyset = async {
+            // Refused before the recipient is recorded as confirmed: the
+            // transfer would refuse it only afterwards.
+            if amount == 0 {
+                return Err(PlatformWalletError::InvalidParameter(
+                    "A tip amount must be more than zero".to_string(),
+                ));
             }
-            // What the user confirmed becomes the recipient on file for the
-            // name, whatever happens to the payment.
-            store.confirm_tip_recipient(
-                self.wallet_id(),
-                label,
-                &(recipient.identity_id.to_buffer(), recipient.address),
-            )?;
+            // The account must be bound and the seed must derive its key, or the
+            // transfer refuses the tip only after the recipient was recorded.
+            // Derived once: the transfer below spends with this keyset.
+            let keyset = self.derive_spend_keyset(seed, account).await?;
+            let keys = self.bound_shielded_keys().await?;
+            // Paid to the paying account itself, the payment is one more of the
+            // account's own outputs beside its change, and an unresolved one
+            // could not be told from change: it would not hold back a repeat.
+            if keys
+                .get(&account)
+                .is_some_and(|views| views.is_own_recipient(&recipient.address))
+            {
+                return Err(PlatformWalletError::InvalidParameter(
+                    "A tip cannot pay the shielded account it is paid from; pay from another account"
+                        .to_string(),
+                ));
+            }
+            {
+                let mut store = coordinator.store().write().await;
+                let previous = confirmed_recipient(&store, self.wallet_id(), label)?;
+                let unresolved = unresolved_transfer_recipients(&store, self.wallet_id(), &keys)?;
+                if pays_unresolved(&unresolved, recipient, previous.as_ref()) {
+                    return Err(PlatformWalletError::ShieldedTipPending);
+                }
+                // What the user confirmed becomes the recipient on file for the
+                // name, whatever happens to the payment.
+                store.confirm_tip_recipient(
+                    self.wallet_id(),
+                    label,
+                    &(recipient.identity_id.to_buffer(), recipient.address),
+                )?;
+            }
+            Ok(keyset)
         }
+        .await
+        .map_err(PlatformWalletError::before_dispatch)?;
         self.shielded_transfer_once_claimed(
             coordinator,
             &keyset,

@@ -3826,20 +3826,35 @@ where
     C: FnOnce() -> CFut,
     CFut: Future<Output = Result<(), PlatformWalletError>>,
 {
-    let recipient_addr = payment_address_to_orchard(to_address)?;
     let views = keys.viewing_keys();
-    let change_addr = default_orchard_address(&views)?;
     let id = SubwalletId::new(wallet_id, account);
-
-    // ShieldedTransfer is carved with the base `compute_minimum_shielded_fee`, so reserve
-    // against `ShieldedFeeKind::Base`.
-    let (selected_notes, total_input, exact_fee, mut reservation) =
-        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Base).await?;
-    // Nothing is built or recorded yet: a refusal only gives the notes back.
-    if let Err(refusal) = once_claimed().await {
-        reservation.cancel().await;
-        return Err(refusal);
-    }
+    // Nothing is built, recorded or sent until this block returns, so each
+    // of its refusals (an address, the note reservation, `once_claimed`)
+    // is proven before the dispatch.
+    let (recipient_addr, change_addr, selected_notes, total_input, exact_fee, mut reservation) =
+        async {
+            let recipient_addr = payment_address_to_orchard(to_address)?;
+            let change_addr = default_orchard_address(&views)?;
+            // ShieldedTransfer is carved with the base `compute_minimum_shielded_fee`, so
+            // reserve against `ShieldedFeeKind::Base`.
+            let (selected_notes, total_input, exact_fee, reservation) =
+                reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Base).await?;
+            // A refusal only gives the notes back.
+            if let Err(refusal) = once_claimed().await {
+                reservation.cancel().await;
+                return Err(refusal);
+            }
+            Ok((
+                recipient_addr,
+                change_addr,
+                selected_notes,
+                total_input,
+                exact_fee,
+                reservation,
+            ))
+        }
+        .await
+        .map_err(PlatformWalletError::before_dispatch)?;
 
     info!(
         account,

@@ -1263,14 +1263,28 @@ async fn should_release_the_claimed_notes_when_the_tips_source_no_longer_stands(
                 &prover,
             )
             .await;
+        // Refused once the notes were claimed, before anything was built:
+        // not sent, with the refusal's own diagnostic.
+        let error = result.expect_err("the source no longer stands");
+        assert_eq!(
+            error.payment_delivery(),
+            PaymentDelivery::NotSent,
+            "{error:?}"
+        );
         match source {
             ShieldedTipSource::Identity(_) => assert!(
-                matches!(result, Err(PlatformWalletError::IdentityNotFound(_))),
-                "{result:?}"
+                matches!(
+                    error.dispatched_source(),
+                    PlatformWalletError::IdentityNotFound(_)
+                ),
+                "{error:?}"
             ),
             ShieldedTipSource::Account(_) => assert!(
-                matches!(result, Err(PlatformWalletError::InvalidIdentityData(_))),
-                "{result:?}"
+                matches!(
+                    error.dispatched_source(),
+                    PlatformWalletError::InvalidIdentityData(_)
+                ),
+                "{error:?}"
             ),
         }
         let store = coordinator.store().read().await;
