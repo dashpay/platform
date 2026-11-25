@@ -2345,6 +2345,125 @@ mod tests {
         assert_eq!(spent, 1);
     }
 
+    fn stored_spent(conn: &Connection, wallet_id: &[u8; 32], coin: &OutPoint) -> i64 {
+        conn.query_row(
+            "SELECT spent FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+            params![&wallet_id[..], blob::encode_outpoint(coin).unwrap()],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    fn loaded_coins(conn: &Connection, wallet_id: &[u8; 32]) -> Vec<OutPoint> {
+        let (state, _) = load_state(
+            conn,
+            wallet_id,
+            dashcore::Network::Testnet,
+            &LoadCtx::strict(),
+        )
+        .unwrap();
+        state.new_utxos.iter().map(|u| u.outpoint).collect()
+    }
+
+    fn synced(height: u32) -> CoreChangeSet {
+        CoreChangeSet {
+            synced_height: Some(height),
+            ..Default::default()
+        }
+    }
+
+    /// The store keeps a mempool transaction spending a re-scan's coin that
+    /// never confirmed, and no row for the coin. The re-scan fills the coin
+    /// unspent: a stored spender is not evidence of a live spend.
+    #[test]
+    fn rescan_coin_fills_unspent_beside_a_stale_spender() {
+        let wallet_id = [0x4C; 32];
+        let mut conn = wallet_db(&wallet_id);
+        let coin = sample_utxo(Txid::from_byte_array([0x88; 32]), 500, true);
+        let tx = conn.transaction().unwrap();
+        apply(
+            &tx,
+            &wallet_id,
+            &round(
+                vec![spend(&[coin.outpoint], TransactionContext::Mempool)],
+                vec![],
+            ),
+        )
+        .unwrap();
+        let cs = CoreChangeSet {
+            rescan_utxos: vec![coin.clone()],
+            ..Default::default()
+        };
+        apply(&tx, &wallet_id, &cs).unwrap();
+        tx.commit().unwrap();
+
+        assert_eq!(stored_spent(&conn, &wallet_id, &coin.outpoint), 0);
+        assert_eq!(loaded_coins(&conn, &wallet_id), vec![coin.outpoint]);
+    }
+
+    /// A re-scan coin at the stored checkpoint is held out of the balance; a
+    /// coin above it is not. Neither an advance below the checkpoint nor a
+    /// rewound cursor releases the hold, and an advance reaching it does.
+    #[test]
+    fn rescan_coin_at_the_checkpoint_is_held_until_an_advance_reaches_it() {
+        let wallet_id = [0x4D; 32];
+        let mut conn = wallet_db(&wallet_id);
+        let at = sample_utxo(Txid::from_byte_array([0x89; 32]), 500, true);
+        let above = sample_utxo(Txid::from_byte_array([0x8A; 32]), 501, true);
+        let tx = conn.transaction().unwrap();
+        apply(&tx, &wallet_id, &synced(500)).unwrap();
+        let cs = CoreChangeSet {
+            rescan_utxos: vec![at.clone(), above.clone()],
+            ..Default::default()
+        };
+        apply(&tx, &wallet_id, &cs).unwrap();
+        let held = loaded_coins(&tx, &wallet_id);
+        apply(&tx, &wallet_id, &synced(499)).unwrap();
+        let rewound = CoreChangeSet {
+            synced_height: Some(510),
+            synced_height_is_rewind: true,
+            ..Default::default()
+        };
+        apply(&tx, &wallet_id, &rewound).unwrap();
+        let still_held = loaded_coins(&tx, &wallet_id);
+        apply(&tx, &wallet_id, &synced(500)).unwrap();
+        let mut released = loaded_coins(&tx, &wallet_id);
+        released.sort();
+        tx.commit().unwrap();
+
+        assert_eq!(held, vec![above.outpoint]);
+        assert_eq!(still_held, vec![above.outpoint]);
+        let mut both = vec![at.outpoint, above.outpoint];
+        both.sort();
+        assert_eq!(released, both);
+    }
+
+    /// A held coin's spend lands before the advance that releases the hold:
+    /// the coin stays spent.
+    #[test]
+    fn held_rescan_coin_spent_before_its_release_stays_spent() {
+        let wallet_id = [0x4E; 32];
+        let mut conn = wallet_db(&wallet_id);
+        let coin = sample_utxo(Txid::from_byte_array([0x8B; 32]), 500, true);
+        let tx = conn.transaction().unwrap();
+        apply(&tx, &wallet_id, &synced(600)).unwrap();
+        let cs = CoreChangeSet {
+            rescan_utxos: vec![coin.clone()],
+            ..Default::default()
+        };
+        apply(&tx, &wallet_id, &cs).unwrap();
+        let cs = CoreChangeSet {
+            spent_utxos: vec![coin.clone()],
+            ..Default::default()
+        };
+        apply(&tx, &wallet_id, &cs).unwrap();
+        apply(&tx, &wallet_id, &synced(600)).unwrap();
+        tx.commit().unwrap();
+
+        assert_eq!(stored_spent(&conn, &wallet_id, &coin.outpoint), 1);
+        assert!(loaded_coins(&conn, &wallet_id).is_empty());
+    }
+
     #[test]
     fn height_only_placeholder_does_not_regress() {
         let mut conn = rusqlite::Connection::open_in_memory().unwrap();

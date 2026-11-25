@@ -145,24 +145,27 @@ pub struct CoreChangeSet {
     /// `OutputRole::Change` per the upstream `TransactionRecord`).
     pub new_utxos: Vec<Utxo>,
 
-    /// Coins the wallet holds that a block credited to a transaction it
-    /// already knew: a filter rescan re-delivered the block for addresses a
-    /// later block derived, or a mempool transaction confirmed after its
-    /// pools grew. The `BlockProcessed` projection reads them from the
-    /// wallet's UTXO set, because it derives no coins from `updated` records.
+    /// Coins the wallet holds that a block credited without an inserted
+    /// record: a filter rescan re-delivered the block for addresses a later
+    /// block derived, or a mempool transaction confirmed after its pools
+    /// grew. The `BlockProcessed` projection reads them from the wallet's
+    /// UTXO set. Usually the event carries the updated record that owns
+    /// each one, but not always (a legacy snapshot's finalized transaction
+    /// can be credited with no record), so a persister that projects coins
+    /// from `account_records` alone can miss them; this list is the fallback.
     ///
     /// A persister writes each one only when it holds no row for the
-    /// outpoint, and never changes an existing row's spent flag. A sweep
+    /// outpoint, and never changes an existing row's spent flag: a re-scan
+    /// can re-deliver a coin the store already holds spent. A sweep
     /// placeholder is not a delivered row: it is materialised with its spent
-    /// flag kept. A persister that projects coins from `account_records`
-    /// already sees these outputs on the updated record. A re-scan
-    /// can re-deliver a coin the store has already recorded as spent while
-    /// the wallet still holds it, and re-sending must not offer that coin
-    /// again. The price is that a row left spent by a change the store did
-    /// not mirror stays spent: a coin can be missing, never offered twice.
+    /// flag kept. A coin at or below the persisted sync checkpoint may have
+    /// a spend below it the wallet no longer knows, so a new row for it is
+    /// kept out of the balance until a later sync advance reaches that
+    /// checkpoint. A coin can be missing for a while, never offered twice.
     ///
     /// Merge: appended, like `new_utxos`. `serde(default)` for the same
-    /// backward-compatible reading as [`Self::sweeps`].
+    /// backward-compatible reading as [`Self::sweeps`]; Rust code building a
+    /// `CoreChangeSet` without `..Default::default()` has to set it.
     #[cfg_attr(feature = "serde", serde(default))]
     pub rescan_utxos: Vec<Utxo>,
 
