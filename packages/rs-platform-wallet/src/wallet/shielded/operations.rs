@@ -3804,6 +3804,12 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
 /// here, with the notes already its own: an `Err` releases them and is
 /// returned, with nothing sent.
 ///
+/// Every refusal before anything is built (the addresses, the note
+/// reservation, `once_claimed`) is returned through
+/// [`PlatformWalletError::before_dispatch`]: `NotSent`, and one whose variant
+/// is otherwise classed possibly sent comes wrapped, with its diagnostic at
+/// [`PlatformWalletError::dispatched_source`].
+///
 /// [`PlatformWallet::send_shielded_tip`]: crate::wallet::platform_wallet::PlatformWallet::send_shielded_tip
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn transfer_once_claimed<S, P, C, CFut>(
