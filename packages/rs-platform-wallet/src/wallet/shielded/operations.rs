@@ -5111,9 +5111,13 @@ fn select_recorded_spends<S: ShieldedStore>(
     // Build every selected note's `SpendableNote` plus the shared anchor at a
     // single checkpoint `depth`.
     //
-    // `strict` (depth 0 only): a missing/failed witness is a hard
-    // `ShieldedMerkleWitnessUnavailable` (the note is expected to be witnessable
-    // at the current tip). At depth > 0, `Ok(None)` means the note post-dates
+    // `strict` (depth 0 only): a note no checkpoint covers yet (`Ok(None)`) is
+    // `ShieldedMerkleWitnessUnavailable`, which the next sync's checkpoint
+    // resolves; a store failure (`Err`: an unreadable store, a poisoned
+    // mutex, a position the tree does not hold, a tree that cannot produce a
+    // path for a covered position) is
+    // `ShieldedStoreError`, which no sync repairs. At depth > 0, `Ok(None)`
+    // means the note post-dates
     // this older checkpoint, so the depth is unusable — return `Ok(None)` and
     // let the caller stop probing deeper; a genuine store `Err` (poisoned mutex,
     // IO, tree corruption) is logged — the probe would otherwise discard the
@@ -5131,13 +5135,13 @@ fn select_recorded_spends<S: ShieldedStore>(
                 Ok(Some(path)) => path,
                 Ok(None) if strict => {
                     return Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(format!(
-                        "no witness available for note at position {position} (not marked, or pruned past this position)"
+                        "no checkpoint of the commitment tree covers the note at position {position} yet"
                     )));
                 }
                 Err(e) if strict => {
-                    return Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(
-                        e.to_string(),
-                    ));
+                    return Err(PlatformWalletError::ShieldedStoreError(format!(
+                        "witness for the note at position {position}: {e}"
+                    )));
                 }
                 // depth > 0: the note isn't witnessable at this older checkpoint
                 // (appended after it, or the depth doesn't exist).
@@ -5192,7 +5196,7 @@ fn select_recorded_spends<S: ShieldedStore>(
         // Unreachable — a strict build returns `Some` or errors — but stay
         // fund-safe (a clean error, never a panic) if that invariant breaks.
         None => {
-            return Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(
+            return Err(PlatformWalletError::ShieldedBuildError(
                 "depth-0 witness probe returned no witness for a selected note".to_string(),
             ));
         }
@@ -11645,6 +11649,91 @@ mod select_recorded_spends_tests {
         }
     }
 
+    /// A selected note appended after the latest checkpoint (a sync pass that
+    /// appended and stopped before its checkpoint) is the one case the next
+    /// sync resolves: `ShieldedMerkleWitnessUnavailable`, which hosts get as
+    /// retryable code 88.
+    #[test]
+    fn should_refuse_a_note_past_the_latest_checkpoint_as_witness_unavailable() {
+        let path = temp_tree_path("past_checkpoint");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        store.append_commitment(&filler_cmx(0xA0), true).unwrap();
+        store.checkpoint_tree(1).unwrap();
+        let note = real_note(1);
+        store.append_commitment(&note.cmx, true).unwrap();
+
+        let result = select_recorded_spends(&store, std::slice::from_ref(&note), &HashSet::new());
+
+        let _ = std::fs::remove_file(&path);
+
+        match result {
+            Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(message)) => {
+                assert!(message.contains("position 1"), "{message}");
+            }
+            Err(other) => panic!("expected ShieldedMerkleWitnessUnavailable, got {other:?}"),
+            Ok(_) => panic!("expected ShieldedMerkleWitnessUnavailable, got Ok"),
+        }
+    }
+
+    /// A store that cannot produce the path of a covered note (here its shard
+    /// table is gone) is a store failure no sync repairs: `ShieldedStoreError`,
+    /// never the retryable `ShieldedMerkleWitnessUnavailable`.
+    #[test]
+    fn should_refuse_a_store_failure_at_depth_0_as_a_store_error() {
+        let path = temp_tree_path("store_failure");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        let note = real_note(0);
+        store.append_commitment(&note.cmx, true).unwrap();
+        store.checkpoint_tree(1).unwrap();
+        rusqlite::Connection::open(&path)
+            .unwrap()
+            .execute_batch("DROP TABLE commitment_tree_shards;")
+            .unwrap();
+
+        let result = select_recorded_spends(&store, std::slice::from_ref(&note), &HashSet::new());
+
+        let _ = std::fs::remove_file(&path);
+
+        match result {
+            Err(PlatformWalletError::ShieldedStoreError(message)) => {
+                assert!(message.contains("position 0"), "{message}");
+            }
+            Err(other) => panic!("expected ShieldedStoreError, got {other:?}"),
+            Ok(_) => panic!("expected ShieldedStoreError, got Ok"),
+        }
+    }
+
+    /// A selected note whose position the tree does not hold at all (notes
+    /// restored against a shorter tree, or a tree reset whose note purge
+    /// failed) is not something the next sync adds: `ShieldedStoreError`,
+    /// never the retryable `ShieldedMerkleWitnessUnavailable`. Its sibling, a
+    /// leaf the tree holds past the latest checkpoint, stays retryable
+    /// (`should_refuse_a_note_past_the_latest_checkpoint_as_witness_unavailable`).
+    #[test]
+    fn should_refuse_a_note_missing_from_the_tree_as_a_store_error() {
+        let path = temp_tree_path("missing_leaf");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        store.append_commitment(&filler_cmx(0xA0), true).unwrap();
+        store.checkpoint_tree(1).unwrap();
+        let note = real_note(5);
+
+        let result = select_recorded_spends(&store, std::slice::from_ref(&note), &HashSet::new());
+
+        let _ = std::fs::remove_file(&path);
+
+        match result {
+            Err(PlatformWalletError::ShieldedStoreError(message)) => {
+                assert!(message.contains("position 5"), "{message}");
+                assert!(message.contains("not in the commitment tree"), "{message}");
+            }
+            Err(other) => panic!("expected ShieldedStoreError, got {other:?}"),
+            Ok(_) => panic!("expected ShieldedStoreError, got Ok"),
+        }
+    }
+
     // ---------------------------------------------------------------------
     // Recorded-anchor cache on the spend path (`select_spends_with_anchor_cache`)
     // ---------------------------------------------------------------------
@@ -12014,10 +12103,7 @@ mod select_recorded_spends_tests {
 
         let _ = std::fs::remove_file(&path);
         assert!(
-            matches!(
-                result,
-                Err(PlatformWalletError::ShieldedMerkleWitnessUnavailable(_))
-            ),
+            matches!(result, Err(PlatformWalletError::ShieldedStoreError(_))),
             "expected the anchor-selection failure, got {result:?}"
         );
         assert!(
