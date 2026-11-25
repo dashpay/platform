@@ -57,21 +57,25 @@ ROOT_PATH=$(dirname "$DIR_PATH")
 # survives being uploaded as a release asset.
 #
 # The repack also adds the source file and keyring of Dash's apt repository, so installing
-# the package once configures the repository it upgrades from. The source file names the
-# `stable` suite for every version, prereleases included: moving to `testing` is the
-# operator's choice. Both are conffiles under /etc/apt, so they share one lifecycle:
-#   - an upgrade keeps an operator's edit, and silently replaces an unmodified file, which is
-#     how a renewed keyring reaches every host;
-#   - removing the package without purging it, or rolling back to a version that ships
-#     neither, keeps both, so the source never outlives the key it names;
-#   - purging the package removes both.
+# the package once configures the repository it upgrades from, and an apt preferences file
+# that limits that repository to the dashmate package. The source file names the `stable`
+# suite for every version, prereleases included: moving to `testing` is the operator's
+# choice. All three are conffiles under /etc/apt, so they share one lifecycle:
+#   - an upgrade silently replaces a file the operator has not changed, which is how a
+#     renewed keyring reaches every host, and keeps one the operator changed while the
+#     package's copy stays the same (dpkg asks only when both have changed);
+#   - removing the package without purging it, or rolling back to a version that ships none
+#     of them, keeps them all, so the source never outlives the key it names;
+#   - purging the package removes them all.
 rewrite_deb_versions() {
   DIST_PATH="$1"
   STAGING_PATH="tmp/rewritten"
   APT_SOURCES_PATH="$ROOT_PATH/packages/dashmate/deb/dashmate.sources"
   APT_KEYRING_PATH="$ROOT_PATH/packages/dashmate/deb/dashmate-archive-keyring.gpg"
+  APT_PREFERENCES_PATH="$ROOT_PATH/packages/dashmate/deb/dashmate.pref"
   APT_SOURCES_TARGET="etc/apt/sources.list.d/dashmate.sources"
   APT_KEYRING_TARGET="etc/apt/keyrings/dashmate-archive-keyring.gpg"
+  APT_PREFERENCES_TARGET="etc/apt/preferences.d/dashmate.pref"
 
   if ! ls "$DIST_PATH"/*.deb > /dev/null 2>&1
   then
@@ -82,6 +86,12 @@ rewrite_deb_versions() {
   if [ ! -f "$APT_SOURCES_PATH" ]
   then
     echo "No apt source file at $APT_SOURCES_PATH"
+    exit 1
+  fi
+
+  if [ ! -f "$APT_PREFERENCES_PATH" ]
+  then
+    echo "No apt preferences file at $APT_PREFERENCES_PATH"
     exit 1
   fi
 
@@ -201,7 +211,7 @@ rewrite_deb_versions() {
 
     # oclif writes no conffiles, and nothing at these paths. Writing over them would silently
     # drop what oclif put there.
-    for OCLIF_PATH in DEBIAN/conffiles "$APT_SOURCES_TARGET" "$APT_KEYRING_TARGET"
+    for OCLIF_PATH in DEBIAN/conffiles "$APT_SOURCES_TARGET" "$APT_KEYRING_TARGET" "$APT_PREFERENCES_TARGET"
     do
       if [ -e "$WORKSPACE_PATH/$OCLIF_PATH" ] || [ -L "$WORKSPACE_PATH/$OCLIF_PATH" ]
       then
@@ -213,7 +223,7 @@ rewrite_deb_versions() {
     # A directory oclif built as a symlink would send the files outside the package, and the
     # package would be built without them. Missing directories get an explicit mode so that
     # the build user's umask cannot reach /etc/apt; existing ones keep oclif's.
-    for APT_DIRECTORY in etc etc/apt etc/apt/keyrings etc/apt/sources.list.d
+    for APT_DIRECTORY in etc etc/apt etc/apt/keyrings etc/apt/preferences.d etc/apt/sources.list.d
     do
       if [ -L "$WORKSPACE_PATH/$APT_DIRECTORY" ]
       then
@@ -229,7 +239,9 @@ rewrite_deb_versions() {
 
     install -m 0644 "$APT_SOURCES_PATH" "$WORKSPACE_PATH/$APT_SOURCES_TARGET"
     install -m 0644 "$APT_KEYRING_PATH" "$WORKSPACE_PATH/$APT_KEYRING_TARGET"
-    printf '/%s\n' "$APT_SOURCES_TARGET" "$APT_KEYRING_TARGET" > "$WORKSPACE_PATH/DEBIAN/conffiles"
+    install -m 0644 "$APT_PREFERENCES_PATH" "$WORKSPACE_PATH/$APT_PREFERENCES_TARGET"
+    printf '/%s\n' "$APT_SOURCES_TARGET" "$APT_KEYRING_TARGET" "$APT_PREFERENCES_TARGET" \
+      > "$WORKSPACE_PATH/DEBIAN/conffiles"
     chmod 0644 "$WORKSPACE_PATH/DEBIAN/conffiles"
 
     # oclif builds the payload as root, so restore that after extracting and rebuilding
