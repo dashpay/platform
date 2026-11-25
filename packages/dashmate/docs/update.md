@@ -27,14 +27,17 @@ If you installed dashmate from the Debian package, download the newest dashmate 
 This installs stable releases only: the snippet below reads `releases/latest`, which leaves prereleases out.
 If you run a prerelease, download the package for your architecture from that release's page instead.
 
-The file name contains the version, so it changes with every release; this downloads the one matching the architecture you are on.
+The file name contains the version, so it changes with every release; this downloads the one matching the architecture you are on into a new private directory, so no other user can replace it before it is installed.
 Download it before you stop the node, so a failed download never leaves the node stopped:
 
 ```bash
-DASHMATE_DEB="$(curl -fsSL https://api.github.com/repos/dashpay/platform/releases/latest \
+DASHMATE_DEB_URL="$(curl -fsSL https://api.github.com/repos/dashpay/platform/releases/latest \
   | grep -o "https://[^\"]*_$(dpkg --print-architecture)\.deb" \
   | head -n 1)"
-if [ -z "$DASHMATE_DEB" ] || ! curl -fLO "$DASHMATE_DEB"; then
+DASHMATE_DEB="$(mktemp -d)/$(basename "$DASHMATE_DEB_URL")"
+if [ -n "$DASHMATE_DEB_URL" ] && curl -fL -o "$DASHMATE_DEB" "$DASHMATE_DEB_URL"; then
+  echo "Downloaded $DASHMATE_DEB"
+else
   DASHMATE_DEB=""
   echo "Could not download the dashmate package. Try again later." >&2
 fi
@@ -43,17 +46,17 @@ fi
 After stopping the node with `dashmate stop` (see the examples below), install the package that was just downloaded. Nothing is installed if the download failed:
 
 ```bash
-if [ -n "$DASHMATE_DEB" ] && [ -f "$(basename "$DASHMATE_DEB")" ]; then
+if [ -n "$DASHMATE_DEB" ] && [ -f "$DASHMATE_DEB" ]; then
   sudo apt update
-  sudo apt install "./$(basename "$DASHMATE_DEB")"
+  sudo apt install "$DASHMATE_DEB"
 else
-  echo "The dashmate package was not downloaded, so nothing was installed. Run the download step again." >&2
+  echo "No downloaded dashmate package found, so nothing was installed. Run the download step again in this shell." >&2
 fi
 ```
 
 > **Note:** At the end of the installation process, apt may display an error due to installing a downloaded package.
 > You can ignore this error message:
-> N: Download is performed unsandboxed as root as file '/home/ubuntu/dashmate_5.1.0-1_amd64.deb' couldn't be accessed by user '_apt'. - pkgAcquire::Run (13: Permission denied)
+> N: Download is performed unsandboxed as root as file '/tmp/tmp.k3Jd8sQw2L/dashmate_5.1.0-1_amd64.deb' couldn't be accessed by user '_apt'. - pkgAcquire::Run (13: Permission denied)
 
 #### Node package
 
