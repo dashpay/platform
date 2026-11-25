@@ -1815,18 +1815,16 @@ async fn build_core_changeset(
             // to reach since. So every coin the wallet holds confirmed at
             // this height or on one of the event's records (a re-scan can
             // correct a later spender and credit its output at the
-            // spender's height) that the inserted records did not carry goes out
-            // too. A coin spent since is no longer held, so it never comes
-            // back as unspent. The wallet's held set is the authority here:
-            // re-sending a coin the store holds as an unspent row is an
-            // idempotent upsert, and a coin the store marked spent but the
-            // wallet holds is stored unspent again.
+            // spender's height) that the inserted records did not carry
+            // goes out as a fill-only row (`rescan_utxos`). A coin spent
+            // since is no longer held, so it is not sent; a coin the store
+            // already has a row for, spent or not, keeps that row.
             let inserted_outpoints: HashSet<OutPoint> =
                 cs.new_utxos.iter().map(|u| u.outpoint).collect();
-            cs.new_utxos.extend(
-                held.into_iter()
-                    .filter(|u| !inserted_outpoints.contains(&u.outpoint)),
-            );
+            cs.rescan_utxos = held
+                .into_iter()
+                .filter(|u| !inserted_outpoints.contains(&u.outpoint))
+                .collect();
             fold_same_txid_records(&mut cs.records);
             cs.last_processed_height = Some(*height);
             // Pool extensions triggered by any record in this block.
@@ -2834,6 +2832,7 @@ impl CoreChangeSet {
             && self.sweeps.is_empty()
             && self.spent_utxos.is_empty()
             && self.new_utxos.is_empty()
+            && self.rescan_utxos.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()
             && self.last_processed_height.is_none()
             && self.synced_height.is_none()
@@ -9986,9 +9985,14 @@ mod block_rescan_credit_tests {
         cs
     }
 
+    /// Every coin the changeset sends as unspent: the coins of inserted
+    /// records and the fill-only coins of a re-scan.
+    fn sent(cs: &CoreChangeSet) -> impl Iterator<Item = &Utxo> {
+        cs.new_utxos.iter().chain(&cs.rescan_utxos)
+    }
+
     fn credited_vouts(cs: &CoreChangeSet, txid: dashcore::Txid) -> BTreeSet<u32> {
-        cs.new_utxos
-            .iter()
+        sent(cs)
             .filter(|u| u.outpoint.txid == txid)
             .map(|u| u.outpoint.vout)
             .collect()
@@ -10163,7 +10167,7 @@ mod block_rescan_credit_tests {
 
         assert_eq!(credited_vouts(&cs, funding_txid), BTreeSet::from([0]));
         assert!(
-            !cs.new_utxos.iter().any(|u| u.outpoint == spent),
+            !sent(&cs).any(|u| u.outpoint == spent),
             "the spent coin is not sent as unspent"
         );
         assert!(cs.spent_utxos.iter().any(|u| u.outpoint == spent));
@@ -10232,9 +10236,7 @@ mod block_rescan_credit_tests {
 
         process_block_with_rescans(&manager, wallet_id, &block, 100).await;
         let confirmed = drain(&manager, &mut receiver).await;
-        let confirmed_vouts: BTreeSet<u32> = confirmed
-            .new_utxos
-            .iter()
+        let confirmed_vouts: BTreeSet<u32> = sent(&confirmed)
             .filter(|u| u.outpoint.txid == txid && u.is_confirmed && u.height == 100)
             .map(|u| u.outpoint.vout)
             .collect();
@@ -10283,9 +10285,7 @@ mod block_rescan_credit_tests {
             credited_vouts(&cs, within_gap.txid()),
             (0..BIP44_PAID).collect::<BTreeSet<_>>()
         );
-        let sends: Vec<&Utxo> = cs
-            .new_utxos
-            .iter()
+        let sends: Vec<&Utxo> = sent(&cs)
             .filter(|u| u.outpoint.txid == within_gap.txid())
             .collect();
         assert!(
@@ -10365,16 +10365,17 @@ mod block_rescan_credit_tests {
             BTreeSet::from([1])
         );
         assert!(
-            !rescanned.new_utxos.iter().any(|u| u.outpoint == spent),
+            !sent(&rescanned).any(|u| u.outpoint == spent),
             "the spent coin is not re-sent as unspent"
         );
         let block_100: HashSet<dashcore::Txid> = funding.txdata.iter().map(|t| t.txid()).collect();
         assert!(
-            rescanned
-                .new_utxos
-                .iter()
-                .all(|u| block_100.contains(&u.outpoint.txid)),
+            sent(&rescanned).all(|u| block_100.contains(&u.outpoint.txid)),
             "a pass of block 100 sends no coin of another block"
+        );
+        assert!(
+            rescanned.new_utxos.is_empty(),
+            "a re-scan pass sends its coins fill-only"
         );
     }
     /// The funding block is under a ChainLock before dash-spv re-scans it,
@@ -10410,15 +10411,15 @@ mod block_rescan_credit_tests {
             "the re-scan credits the far output of the finalized transaction"
         );
         let rescanned = drain(&manager, &mut receiver).await;
-        let sent: Vec<&Utxo> = rescanned
-            .new_utxos
-            .iter()
-            .filter(|u| u.outpoint == far)
-            .collect();
-        assert!(!sent.is_empty(), "the far coin reaches the changesets");
+        let far_sends: Vec<&Utxo> = sent(&rescanned).filter(|u| u.outpoint == far).collect();
+        assert!(!far_sends.is_empty(), "the far coin reaches the changesets");
         assert!(
-            sent.iter().all(|u| u.is_confirmed && u.height == 100),
+            far_sends.iter().all(|u| u.is_confirmed && u.height == 100),
             "as a confirmed coin of the funding block"
+        );
+        assert!(
+            rescanned.new_utxos.is_empty(),
+            "a re-scan pass sends its coins fill-only"
         );
         assert!(rescanned.spent_utxos.is_empty(), "nothing is sent as spent");
     }
