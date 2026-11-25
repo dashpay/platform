@@ -88,18 +88,44 @@ gh release view v<version> --repo dashpay/platform --json assets --jq '.assets[]
 
 Expect two debs, `dashmate_5.1.0-1_amd64.deb` and `_arm64.deb` (for a prerelease the `-` before its id becomes `.`: `dashmate_5.1.0.beta.1-1_amd64.deb`), `dashmate-v<version>-<sha>-linux-x64.tar.gz` and `-linux-arm64.tar.gz`, `-x64.exe`, `-x64.pkg` and `-arm64.pkg`, and `SHA256SUMS`. For a stable release, check which release is now Latest: `gh api repos/dashpay/platform/releases/latest --jq .tag_name`. A failed job is re-run only with the user's go.
 
-Then the `Publish Dashmate debs to apt` job asks infra's apt publisher to publish the two debs, and waits up to 40 minutes for it (one publish runs at a time, so it can queue). The publisher downloads them from the release and takes them only as `SHA256SUMS` lists them and only when their version is the tag's. Dev builds go to `dev`, betas, release candidates and finals to `testing` and `dev`. Other prereleases (alpha, `pr`, `hotfix`) are not published to apt: the job skips them with a notice and stays green. Check the job, then the package in each suite it should be in, by its Debian version (`5.1.0-1`, `5.1.0~rc.1-1`, `5.1.0~~dev.1-1`, see [Rebuilding the dashmate deb](#rebuilding-the-dashmate-deb-of-a-published-release)). No output means it is not there; the repository's index can lag a minute behind the job:
+Then the `Publish Dashmate debs to apt` job asks infra's apt publisher to publish the two debs, and waits up to 40 minutes for it (one publish runs at a time, so it can queue). The publisher downloads them from the release and takes them only as `SHA256SUMS` lists them and only when their version is the tag's. Dev builds go to `dev`, betas, release candidates and finals to `testing` and `dev`. Other prereleases (alpha, `pr`, `hotfix`) are not published to apt: the job skips them with a notice and stays green. Check the job first:
 
 ```sh
 gh run view <run-id> --repo dashpay/platform --json jobs \
   --jq '.jobs[] | select(.name == "Publish Dashmate debs to apt") | [.status, .conclusion, .databaseId] | @tsv'
-for suite in dev testing; do
-  curl -fsS "https://apt.services.dash.org/dashmate/dists/${suite}/main/binary-amd64/Packages" \
-    | grep -Fx 'Version: <debian version>'
-done
 ```
 
-A job whose execution ended prints its status, error and cause; one that failed earlier, at the credentials or the start, shows the AWS CLI's error. The job changes no asset and does not hold up signing. Re-run it on its own (`gh run rerun --job <databaseId>`, with the user's go) once the cause is fixed: GitHub re-runs jobs only after the whole run has finished, and only within 30 days of it. Start the re-run before signing or after the signature is attached, never while the signing script runs: a re-run makes a new run attempt, and the script then refuses, after the upload as well. A job that hit its deadline, or could not read the execution, names it: it may still be running and succeed, so check the suites before re-running.
+A green job is not yet proof that apt clients see the package: report it as available only once an apt client does. Check the live repository with a throwaway apt client, for each suite it should be in and for both architectures, by its Debian version (`5.1.0-1`, `5.1.0~rc.1-1`, `5.1.0~~dev.1-1`, see [Rebuilding the dashmate deb](#rebuilding-the-dashmate-deb-of-a-published-release)). `apt-get update` verifies the suite's signature against the archive keyring, whose sha256 infra published on #4246, and fails on a bad or expired one. That failure is a failed check, not a missing package; the last line names a package that is missing. The CDN can serve the previous index for a minute or so after the job:
+
+```sh
+docker run --rm -e SUITE=testing -e VERSION='<debian version>' ubuntu:24.04 bash -euo pipefail -c '
+  apt-get update -qq
+  apt-get install -qq -y curl ca-certificates > /dev/null
+  rm -f /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list
+  keyring=/usr/share/keyrings/dashmate-archive-keyring.gpg
+  curl -fsSo "$keyring" https://apt.services.dash.org/dashmate/dashmate-archive-keyring.gpg
+  echo "08006df56f24e282f19012a29e539dad431654abefefd697832ac61918b01230  $keyring" | sha256sum --check --quiet
+  for arch in amd64 arm64; do
+    [ "$arch" = "$(dpkg --print-architecture)" ] || dpkg --add-architecture "$arch"
+  done
+  echo "deb [arch=amd64,arm64 signed-by=$keyring] https://apt.services.dash.org/dashmate $SUITE main" \
+    > /etc/apt/sources.list.d/dashmate.list
+  apt-get update -qq -o APT::Update::Error-Mode=any
+  for arch in amd64 arm64; do
+    apt-cache madison "dashmate:$arch" | grep -F " $VERSION " \
+      || { echo "dashmate $VERSION ($arch) is not in $SUITE"; exit 1; }
+  done'
+```
+
+Run it with `SUITE=dev` too. Once the keyring ships in `packages/dashmate/deb/`, use that file instead of the download.
+
+**Where a failure is explained.** A job whose execution ended prints its status, error and cause. The state machine runs the publisher as a CodeBuild build, so the job also prints the build's log, CloudWatch Logs group `/aws/codebuild/dashmate-apt-publish` and its stream. The publisher's reason is in that log, on a `REFUSED:` or `NEEDS A PERSON:` line. The job reads the publisher's exit status from the build:
+- **2:** it refused this release (`REFUSED:`), possibly part-way through.
+- **1:** it went through but logged a problem for a person (`NEEDS A PERSON:`), which can be about another release waiting for `stable`. This release may be published.
+
+In either case, run the check above before re-running.
+
+The GitHub role cannot read that log. If nobody at hand can, send infra the execution ARN the job printed. A job that failed earlier, at the credentials or the start, shows the AWS CLI's error. The job changes no asset and does not hold up signing. Re-run it on its own (`gh run rerun --job <databaseId>`, with the user's go) once the cause is fixed: GitHub re-runs jobs only after the whole run has finished, and only within 30 days of it. Start the re-run before signing or after the signature is attached, never while the signing script runs: a re-run makes a new run attempt, and the script then refuses, after the upload as well. A job that hit its deadline, or could not read the execution, names it: it may still be running and succeed, so run the check above before re-running.
 
 Follow the rest of the run, the SDK builds, in the background too:
 
@@ -130,12 +156,7 @@ Ask the user, then attach the signature. With `--upload` the script checks the r
 scripts/release/sign_dashmate_checksums.sh --tag=v<version> --key=<full fingerprint> --commit=<merge commit> --upload
 ```
 
-**Stable:** a final that is already in `testing` (check its Debian version there as in [step 4](#4-wait-for-releaseyml-and-check-the-assets)) moves to `stable` once its `SHA256SUMS.asc` is attached and verifies against an accepted key. That happens on the publisher's next run, normally its daily run at 05:17 UTC, with nothing to trigger. A final that never reached `testing` does not move: re-run its apt job first. Check `stable` the next day:
-
-```sh
-curl -fsS https://apt.services.dash.org/dashmate/dists/stable/main/binary-amd64/Packages \
-  | grep -Fx 'Version: <debian version>'
-```
+**Stable:** a final that is already in `testing` (run the apt client check from [step 4](#4-wait-for-releaseyml-and-check-the-assets) with `SUITE=testing`) moves to `stable` once its `SHA256SUMS.asc` is attached and verifies against an accepted key. That happens on the publisher's next run, normally its daily run at 05:17 UTC, with nothing to trigger. A final that never reached `testing` does not move: re-run its apt job first. Check `stable` the next day with the apt client check from [step 4](#4-wait-for-releaseyml-and-check-the-assets), with `SUITE=stable`.
 
 **To rebuild a signed release:** once a release carries `SHA256SUMS.asc` (or any `SHA256SUMS.*`), release jobs started afterwards refuse to replace its packages or its `SHA256SUMS` and fail instead. To change either, delete each `SHA256SUMS.*` asset first (`gh release delete-asset v<version> <name> --repo dashpay/platform`), re-run the jobs, and sign the new file.
 
