@@ -1319,8 +1319,7 @@ mod plan_withdrawal_seam_tests {
     use key_wallet_manager::WalletManager;
     use tokio::sync::RwLock;
 
-    use crate::wallet::platform_wallet::WalletId;
-    use crate::wallet::PlatformAddressWallet;
+    use crate::test_support::platform_address_wallet_in;
 
     /// A deterministic testnet P2PKH address for a known 20-byte hash.
     fn address_for(byte: u8) -> dashcore::Address {
@@ -1432,8 +1431,10 @@ mod plan_withdrawal_seam_tests {
                 20,
                 Network::Testnet,
             );
-            pool.addresses.insert(0, pool_entry(recipient_byte, 0));
-            pool.addresses.insert(1, pool_entry(origin_byte, 1));
+            pool.insert(pool_entry(recipient_byte, 0))
+                .expect("store recipient row");
+            pool.insert(pool_entry(origin_byte, 1))
+                .expect("store origin row");
 
             let mut platform_account = ManagedPlatformAccount::new(ACCOUNT, 0, pool, false);
             // Seed the cache to DISAGREE with the chain: recipient doubled.
@@ -1469,7 +1470,7 @@ mod plan_withdrawal_seam_tests {
         }
 
         let wallet_manager = Arc::new(RwLock::new(wm));
-        let wallet = build_seam_test_wallet(sdk, wallet_manager, wallet_id);
+        let wallet = platform_address_wallet_in(sdk, wallet_manager, wallet_id);
 
         // --- Plan against a fixed version, then assert the recipient input is
         // sized from the CHAIN (100M), not the doubled cache (200M).
@@ -1601,13 +1602,13 @@ mod plan_withdrawal_seam_tests {
                 .platform_payment_managed_account_at_index(ACCOUNT)
                 .expect("platform account");
             assert!(
-                account.addresses.addresses.is_empty(),
+                account.addresses.addresses().is_empty(),
                 "test setup: the derived pool must be empty (post-relaunch state)"
             );
         }
 
         let wallet_manager = Arc::new(RwLock::new(wm));
-        let wallet = build_seam_test_wallet(sdk, wallet_manager, wallet_id);
+        let wallet = platform_address_wallet_in(sdk, wallet_manager, wallet_id);
 
         let pv = PlatformVersion::latest();
         let plan = wallet
@@ -1628,38 +1629,5 @@ mod plan_withdrawal_seam_tests {
             funded_balance - plan.estimated_fee,
             "the sole input is the fee source, planned at balance − estimated fee"
         );
-    }
-
-    /// Assemble a `PlatformAddressWallet` around a mock SDK + a seeded wallet
-    /// manager. `plan_withdrawal` reads only the SDK and the wallet manager
-    /// (never the provider), so the provider is left uninitialised. Mirrors the
-    /// wiring in `provider::tests::reconcile_address_infos_persists_decremented_balance`.
-    fn build_seam_test_wallet(
-        sdk: Arc<dash_sdk::Sdk>,
-        wallet_manager: Arc<
-            RwLock<WalletManager<crate::wallet::platform_wallet::PlatformWalletInfo>>,
-        >,
-        wallet_id: WalletId,
-    ) -> PlatformAddressWallet {
-        use crate::broadcaster::SpvBroadcaster;
-        use crate::events::PlatformEventManager;
-        use crate::spv::SpvRuntime;
-        use crate::wallet::asset_lock::manager::AssetLockManager;
-        use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
-        use tokio::sync::Notify;
-
-        let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
-        let event_manager = Arc::new(PlatformEventManager::new(Vec::new()));
-        let spv = Arc::new(SpvRuntime::new(Arc::clone(&wallet_manager), event_manager));
-        let broadcaster = Arc::new(SpvBroadcaster::new(spv));
-        let asset_locks = Arc::new(AssetLockManager::new(
-            Arc::clone(&sdk),
-            Arc::clone(&wallet_manager),
-            wallet_id,
-            Arc::new(Notify::new()),
-            broadcaster,
-            persister.clone(),
-        ));
-        PlatformAddressWallet::new(sdk, wallet_manager, wallet_id, asset_locks, persister)
     }
 }

@@ -29,6 +29,7 @@ pub mod restricted_creation;
 pub mod schema;
 pub mod serialized_version;
 
+mod summed_properties;
 mod token_costs;
 mod validate_required_since_within_contract_version;
 pub(crate) use validate_required_since_within_contract_version::validate_required_since_within_contract_version;
@@ -57,6 +58,13 @@ pub const DEFAULT_HASH_SIZE: usize = 32;
 pub const DEFAULT_FLOAT_SIZE: usize = 8;
 pub const EMPTY_TREE_STORAGE_SIZE: usize = 33;
 pub const MAX_INDEX_SIZE: usize = 255;
+/// The longest base 58 text an identifier written as text can decode to an index key from:
+/// every longer one decodes to more than [`MAX_INDEX_SIZE`] bytes. A text of n characters, z of
+/// them leading `1`s, decodes to z zero bytes and the bytes of a number of at least
+/// 58^(n - z - 1); a `1` takes a byte of its own and any other character less than one, so the
+/// fewest bytes n characters decode to is the length of 58^(n - 1). 58^349 is past 256^255,
+/// and 58^348, the 349 characters `2` and `1` 348 times, is 255 bytes.
+pub const MAX_BASE58_INDEX_KEY_LENGTH: usize = 349;
 pub const STORAGE_FLAGS_SIZE: usize = 2;
 /// Worst-case byte length of the contract-version stamp written by document
 /// serialization format 3: a u32 varint.
@@ -87,6 +95,7 @@ pub(crate) mod property_names {
     pub const INDICES: &str = "indices";
     pub const NULL_SEARCHABLE: &str = "nullSearchable";
     pub const PROPERTIES: &str = "properties";
+    pub const ADDITIONAL_PROPERTIES: &str = "additionalProperties";
     pub const POSITION: &str = "position";
     pub const REQUIRED: &str = "required";
     pub const REQUIRED_SINCE: &str = "requiredSince";

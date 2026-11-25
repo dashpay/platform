@@ -29,6 +29,7 @@ use crate::execution::types::state_transition_execution_context::{
 };
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::state_v2::DocumentCreateTransitionActionStateValidationV2;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_reference_validation::ConsumedLookupDocument;
+use crate::execution::validation::state_transition::batch::action_validation::document::document_type_sum_validation::DocumentTypeSumValidation;
 use crate::platform_types::platform::PlatformStateRef;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch::action_validation) trait DocumentCreateTransitionActionStateValidationV3
@@ -68,6 +69,23 @@ impl DocumentCreateTransitionActionStateValidationV3 for DocumentCreateTransitio
         )?;
         if !validation_result.is_valid() {
             return Ok(validation_result);
+        }
+
+        // A create outside a contest adds its summed value to the total its type keeps; one
+        // that opens or joins a contest is stored apart until the contest ends.
+        if self.prefunded_voting_balance().is_none() {
+            let validation_result = self.base().validate_document_type_sum(
+                self.data(),
+                None,
+                platform,
+                block_info,
+                transaction,
+                execution_context,
+                platform_version,
+            )?;
+            if !validation_result.is_valid() {
+                return Ok(validation_result);
+            }
         }
 
         // A non-contested create must not take the index values of a live contest. A contest

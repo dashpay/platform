@@ -314,10 +314,12 @@ internal object IdentityNative {
      * the wallet selects the key internally.
      *
      * [documentsSchemaJson] is required; the rest are optional (`null` or
-     * empty ⇒ the section is omitted). Returns the 32-byte updated contract
-     * id.
+     * empty ⇒ the section is omitted). [expectedCurrentVersion] is the
+     * contract version the caller reviewed: the wallet refuses the update
+     * when Platform holds another version; 0 means no check. Returns the
+     * 32-byte updated contract id.
      */
-    external fun updateDataContract(
+    external fun updateDataContractAtReviewedVersion(
         walletHandle: Long,
         ownerIdentityId: ByteArray,
         contractId: ByteArray,
@@ -327,6 +329,7 @@ internal object IdentityNative {
         keywordsJson: String?,
         description: String?,
         configJson: String?,
+        expectedCurrentVersion: Long,
         signerHandle: Long,
     ): ByteArray
 }

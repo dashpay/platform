@@ -807,7 +807,6 @@ mod tests {
         use dpp::data_contract::associated_token::token_marketplace_rules::v0::TokenTradeMode;
         use dpp::platform_value::BinaryData;
         use dpp::prelude::IdentityNonce;
-        use dpp::version::mocks::v5_test::TEST_PROTOCOL_VERSION_5;
         use dpp::state_transition::batch_transition::batched_transition::token_config_update_transition::{TokenConfigUpdateTransition, TokenConfigUpdateTransitionV0};
         use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
         use dpp::state_transition::batch_transition::BatchTransitionV1;
@@ -825,12 +824,9 @@ mod tests {
             ]
         }
 
-        /// The protocol version that admits a tradeable token. While it has no tables of its own,
-        /// the test version that selects the token marketplace stands in for it; once it has them,
-        /// they are the ones used.
+        /// The protocol version that admits a tradeable token.
         fn protocol_version_admitting_tradeable() -> &'static PlatformVersion {
             PlatformVersion::get(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION)
-                .or_else(|_| PlatformVersion::get(TEST_PROTOCOL_VERSION_5))
                 .expect("expected a version that admits a tradeable token")
         }
 

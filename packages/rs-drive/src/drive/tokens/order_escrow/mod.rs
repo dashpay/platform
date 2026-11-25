@@ -43,14 +43,13 @@ mod tests {
     use grovedb::EstimatedLayerSizes::AllSubtrees;
     use grovedb::EstimatedSumTrees::AllBigSumTrees;
     use grovedb::{EstimatedLayerInformation, GroveDb, TreeType};
-    use platform_version::version::mocks::v5_test::TEST_PROTOCOL_VERSION_5;
+    use platform_version::version::feature_initial_protocol_versions::TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION;
     use std::collections::BTreeMap;
 
-    /// The token marketplace starts with protocol version 16, which has no tables yet: its
-    /// escrow is tested under the test version that selects it on top of protocol version 15.
+    /// The token marketplace starts with protocol version 16.
     fn token_marketplace_version() -> &'static PlatformVersion {
-        PlatformVersion::get(TEST_PROTOCOL_VERSION_5)
-            .expect("expected the token marketplace test version")
+        PlatformVersion::get(TOKEN_MARKETPLACE_INITIAL_PROTOCOL_VERSION)
+            .expect("expected the token marketplace's first protocol version")
     }
 
     fn apply(drive: &Drive, operations: Vec<LowLevelDriveOperation>) {
@@ -711,7 +710,7 @@ mod tests {
         for (name, result) in calls(latest) {
             assert!(
                 result.is_ok(),
-                "{name} at the token marketplace test version: {result:?}"
+                "{name} at the token marketplace version: {result:?}"
             );
         }
     }
@@ -1197,12 +1196,14 @@ mod tests {
             proof_root, live_root,
             "the depth proof authenticates the state holding the orders"
         );
-        let sums: Vec<i64> = elements
+        // The ask type's `remaining` declares no bound past which a 64-bit sum could not
+        // hold it, so its sums are kept in 128 bits: read at that width
+        let sums: Vec<i128> = elements
             .iter()
             .filter_map(|(_, _, element)| {
                 element
                     .as_ref()
-                    .map(|element| element.sum_value_or_default())
+                    .map(|element| element.big_sum_value_or_default())
             })
             .collect();
         assert_eq!(

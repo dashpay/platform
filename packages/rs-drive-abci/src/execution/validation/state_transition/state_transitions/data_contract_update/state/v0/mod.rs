@@ -518,6 +518,23 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
                 &mut validation_operations,
                 platform_version,
             )
+        })
+        .and_then(|action| {
+            // A parse that does not validate (check tx) skips the cap on a private type's
+            // entries, whose store the fee estimate prices for a type the update adds: held to
+            // it here, as an update in a block holds it. Edited in place: no type is private
+            // before protocol version 15, and a block's parse, which validates, refused any type
+            // over the cap already
+            action
+                .data_contract_ref()
+                .ensure_private_entry_sizes(platform_version)?;
+            // As at registration, on the contract the update would store. Edited in place: the
+            // method's gate, `validate_no_transient_summed_property`, is `None` before protocol
+            // version 15, so it refuses nothing there
+            action
+                .data_contract_ref()
+                .validate_no_transient_summed_property(platform_version)?;
+            Ok(action)
         });
 
         execution_context.add_dpp_operations(validation_operations);

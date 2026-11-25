@@ -277,11 +277,51 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub document_index_only_delete_transition_state_validation: FeatureVersion,
     /// The erase kind, active from protocol version 15.
     pub document_erase_transition_state_validation: OptionalFeatureVersion,
+    /// Versions what check tx reserves, for each erase of a batch whose state it does not
+    /// validate, for the work the erase's refunds cause for other identities, which erase state
+    /// validation bills in the block (`erase_refund_recipient_reservation`).
+    ///
+    /// It reserves what `document_erase_transition_state_validation` bills, so a state validation
+    /// generation that bills an erase otherwise comes with a reservation generation that
+    /// reserves it.
+    ///
+    /// - `None` (protocol version 14 and below): no erase passes check tx's basic structure
+    ///   validation, so none reaches the reservation.
+    /// - `Some(0)` (protocol version 15+): one `erase_refund_recipient_cost` per erase.
+    pub document_erase_transition_refund_recipient_reservation: OptionalFeatureVersion,
     pub document_replace_transition_state_validation: FeatureVersion,
     pub document_transfer_transition_state_validation: FeatureVersion,
     pub document_purchase_transition_state_validation: FeatureVersion,
     pub document_update_price_transition_state_validation: FeatureVersion,
     pub document_reference_validation: FeatureVersion,
+    /// Versions what check tx reserves, for each create of a batch whose state it does not
+    /// validate, for the `chooseFirst` check document reference validation runs in a block
+    /// (`choose_first_reservation`): the `findBy` and `validWhen` hashes and the competitor
+    /// scan's budget.
+    ///
+    /// - `0` (protocol version 14 and below): every create of a type declaring `chooseFirst`, one
+    ///   its contest decides included, is reserved both hashes and the scan's budget.
+    /// - `1` (protocol version 15): also the `validWhen` hash of each competitor the scan may
+    ///   read, which `document_reference_validation` 1 bills in full, past the scan's budget.
+    ///
+    /// A generation that reserves less for a create than what the block bills it, the work
+    /// `document_reference_validation` does for it included, would admit a signer the block
+    /// then refuses unpaid.
+    pub choose_first_reservation: FeatureVersion,
+    /// Versions what check tx reserves, for each create of a batch whose state it does not
+    /// validate, for the `refersTo` lookups document reference validation runs in a block
+    /// (`reference_lookup_reservation`): the computed key's hash, the lookup query and, for a
+    /// lookup declaring `consume`, the delete of the document it consumes.
+    ///
+    /// - `0` (every protocol version): for each lookup its references may make, the key's
+    ///   double SHA-256 (but for a `chooseFirst` lookup's, which `choose_first_reservation`
+    ///   reserves), `lookup_query_credits_reserved`, and Drive's estimated delete of one
+    ///   document of a consumed type. No lookup parses before protocol version 14, so it
+    ///   reserves nothing there.
+    ///
+    /// Mempool admission only: a block runs document reference validation and bills what it
+    /// reads.
+    pub reference_lookup_reservation: FeatureVersion,
     pub token_mint_transition_structure_validation: FeatureVersion,
     pub token_burn_transition_structure_validation: FeatureVersion,
     pub token_transfer_transition_structure_validation: FeatureVersion,
@@ -334,6 +374,9 @@ pub struct DriveAbciValidationDataTriggerVersions {
     pub create_contact_request_data_trigger: FeatureVersion,
     pub validate_profile_payment_addresses_data_trigger: FeatureVersion,
     pub create_domain_data_trigger: FeatureVersion,
+    /// The DPNS `domain` delete trigger, which data trigger bindings 3 bind: `None` before
+    /// protocol version 15, where no binding reaches it.
+    pub delete_domain_data_trigger: OptionalFeatureVersion,
     pub create_identity_data_trigger: FeatureVersion,
     pub create_feature_flag_data_trigger: FeatureVersion,
     pub create_masternode_reward_shares_data_trigger: FeatureVersion,

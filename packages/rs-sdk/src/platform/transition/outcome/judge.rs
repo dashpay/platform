@@ -77,11 +77,12 @@ pub(super) fn consumption(reads: &[InputRead]) -> Consumption {
 /// What the reads prove about a transition's inputs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum InputsVerdict {
-    /// Every input is consumed, or the inputs are consumed in an order the reads cannot place:
-    /// it can no longer execute, and the reads do not show whether it did.
+    /// Every input is consumed, or the inputs are consumed in an order the reads cannot place,
+    /// or every nullifier of a token bundle that carries the transition's effect is spent: it
+    /// can no longer execute, and the reads do not show whether it did.
     ConsumedUnattributed {
-        /// The lowest height of a read that showed an input consumed: the transition cannot
-        /// execute after it.
+        /// The lowest height of a read that showed an input consumed, among the token bundle's
+        /// reads when that bundle decides: the transition cannot execute after it.
         consumed_by: u64,
     },
     /// An input another transition took: it never executed and never will.
@@ -113,9 +114,16 @@ pub(super) struct AnchorRead {
 /// and its anchor reads (one per bundle). `anchors_recorded_by` is the caller's evidence of a
 /// height by which every anchor was recorded.
 ///
+/// `token_bundle` holds the reads, also among `nullifiers`, of the token bundle of a token pool
+/// transition paid from the credit pool (`TokenShieldedTransferWithShieldedFee`,
+/// `TokenUnshieldWithShieldedFee`, `TokenPurchaseFromShieldedPool`), and is empty for every other
+/// spend. That bundle carries the transition's effect, which the credit pool bundle only pays
+/// for.
+///
 /// `nullifiers` must not be empty.
 pub(super) fn judge_shielded(
     nullifiers: &[InputRead],
+    token_bundle: &[InputRead],
     anchors: &[AnchorRead],
     anchors_recorded_by: Option<u64>,
 ) -> InputsVerdict {
@@ -124,6 +132,16 @@ pub(super) fn judge_shielded(
         // together or each on its own, so the reads do not say this one executed.
         Consumption::All { consumed_by } | Consumption::Unordered { consumed_by } => {
             InputsVerdict::ConsumedUnattributed { consumed_by }
+        }
+        // Every nullifier of the token bundle, which carries the effect, is spent while a fee
+        // nullifier is free. This transition did not execute, but its token bundle may have
+        // landed with another fee bundle (protocol version 14 does not bind the two), or its
+        // notes were spent elsewhere; the reads cannot say which, and neither is a reason to pay
+        // again. The token bundle's reads bound when it could have landed.
+        Consumption::Partial if bundle_consumed(token_bundle) => {
+            InputsVerdict::ConsumedUnattributed {
+                consumed_by: lowest_consumed_height(token_bundle).unwrap_or_default(),
+            }
         }
         Consumption::Partial => InputsVerdict::InputUsed,
         Consumption::None { free_at } => {
@@ -151,6 +169,20 @@ pub(super) fn judge_shielded(
             }
         }
     }
+}
+
+/// Whether reads show every nullifier of a bundle spent; `false` for a bundle with no reads.
+fn bundle_consumed(reads: &[InputRead]) -> bool {
+    !reads.is_empty() && reads.iter().all(|read| read.consumed)
+}
+
+/// The lowest height among the reads that showed an input consumed, if any did.
+fn lowest_consumed_height(reads: &[InputRead]) -> Option<u64> {
+    reads
+        .iter()
+        .filter(|read| read.consumed)
+        .map(|read| read.height)
+        .min()
 }
 
 /// Judge a transition whose inputs are nonces: identity, identity-contract or address nonces.
@@ -281,15 +313,77 @@ mod tests {
     fn should_not_attribute_a_spend_whose_nullifiers_are_all_spent() {
         // Other transitions may have spent the same notes, together or one by one.
         assert_eq!(
-            judge_shielded(&[consumed(20), consumed(20)], &[pruned(30)], Some(10)),
+            judge_shielded(&[consumed(20), consumed(20)], &[], &[pruned(30)], Some(10)),
             InputsVerdict::ConsumedUnattributed { consumed_by: 20 }
+        );
+    }
+
+    #[test]
+    fn should_settle_a_spend_whose_token_bundle_is_spent_while_its_fee_bundle_is_free() {
+        // The token bundle's two nullifiers are spent, the fee bundle's two free, at one height.
+        let token = [consumed(20), consumed(20)];
+        let all = [free(20), free(20), consumed(20), consumed(20)];
+        assert_eq!(
+            judge_shielded(&all, &token, &[recorded(19), recorded(19)], None),
+            InputsVerdict::ConsumedUnattributed { consumed_by: 20 }
+        );
+    }
+
+    #[test]
+    fn should_settle_a_spent_token_bundle_from_the_lowest_consumed_read_of_that_bundle() {
+        // A fee note spent at 18 says nothing about when the token bundle landed: only its own
+        // reads bound that.
+        let token = [consumed(22), consumed(22)];
+        let all = [consumed(18), free(22), consumed(22), consumed(22)];
+        assert_eq!(
+            judge_shielded(&all, &token, &[recorded(17), recorded(17)], None),
+            InputsVerdict::ConsumedUnattributed { consumed_by: 22 }
+        );
+    }
+
+    #[test]
+    fn should_report_input_used_when_the_token_bundle_is_only_partly_spent() {
+        let token = [consumed(20), free(20)];
+        let all = [free(20), free(20), consumed(20), free(20)];
+        assert_eq!(
+            judge_shielded(&all, &token, &[recorded(19), recorded(19)], None),
+            InputsVerdict::InputUsed
+        );
+    }
+
+    #[test]
+    fn should_report_input_used_when_the_fee_bundle_is_spent_and_the_token_bundle_free() {
+        let token = [free(20), free(20)];
+        let all = [consumed(20), consumed(20), free(20), free(20)];
+        assert_eq!(
+            judge_shielded(&all, &token, &[recorded(19), recorded(19)], None),
+            InputsVerdict::InputUsed
+        );
+    }
+
+    #[test]
+    fn should_not_settle_a_spend_without_a_token_bundle() {
+        assert_eq!(
+            judge_shielded(&[consumed(20), free(20)], &[], &[recorded(19)], None),
+            InputsVerdict::InputUsed
+        );
+    }
+
+    #[test]
+    fn should_keep_the_lowest_height_of_any_bundle_when_every_input_is_consumed() {
+        // The pools are read at once, so their heights can differ.
+        let token = [consumed(100), consumed(100)];
+        let all = [consumed(99), consumed(99), consumed(100), consumed(100)];
+        assert_eq!(
+            judge_shielded(&all, &token, &[recorded(98), recorded(98)], None),
+            InputsVerdict::ConsumedUnattributed { consumed_by: 99 }
         );
     }
 
     #[test]
     fn should_report_input_used_when_some_nullifiers_are_spent_and_others_not() {
         assert_eq!(
-            judge_shielded(&[consumed(20), free(20)], &[recorded(19)], None),
+            judge_shielded(&[consumed(20), free(20)], &[], &[recorded(19)], None),
             InputsVerdict::InputUsed
         );
     }
@@ -299,6 +393,7 @@ mod tests {
         assert_eq!(
             judge_shielded(
                 &[free(20), consumed(21)],
+                &[],
                 &[recorded(19), recorded(19)],
                 None
             ),
@@ -309,11 +404,11 @@ mod tests {
     #[test]
     fn should_report_anchor_expired_when_unspent_nullifiers_are_read_after_the_anchor() {
         assert_eq!(
-            judge_shielded(&[free(30), free(30)], &[pruned(30)], Some(20)),
+            judge_shielded(&[free(30), free(30)], &[], &[pruned(30)], Some(20)),
             InputsVerdict::AnchorExpired
         );
         assert_eq!(
-            judge_shielded(&[free(31)], &[pruned(30)], Some(30)),
+            judge_shielded(&[free(31)], &[], &[pruned(30)], Some(30)),
             InputsVerdict::AnchorExpired
         );
     }
@@ -322,7 +417,7 @@ mod tests {
     fn should_not_report_anchor_expired_without_evidence_the_anchor_was_recorded() {
         // The node answering may be behind the block that records the wallet's anchor.
         assert_eq!(
-            judge_shielded(&[free(30)], &[pruned(30)], None),
+            judge_shielded(&[free(30)], &[], &[pruned(30)], None),
             InputsVerdict::NotYet { checked_at: 30 }
         );
     }
@@ -331,7 +426,7 @@ mod tests {
     fn should_not_report_anchor_expired_from_a_node_below_the_recording_height() {
         // Recorded by 35, read at 30: the node has not reached the block that records it.
         assert_eq!(
-            judge_shielded(&[free(30)], &[pruned(30)], Some(35)),
+            judge_shielded(&[free(30)], &[], &[pruned(30)], Some(35)),
             InputsVerdict::NotYet { checked_at: 30 }
         );
     }
@@ -341,7 +436,7 @@ mod tests {
         // The spend may have executed at 29, before the anchor was pruned by 30, and a node
         // answering the nullifiers from 28 would not show it.
         assert_eq!(
-            judge_shielded(&[free(28)], &[pruned(30)], Some(20)),
+            judge_shielded(&[free(28)], &[], &[pruned(30)], Some(20)),
             InputsVerdict::Unordered
         );
     }
@@ -350,7 +445,12 @@ mod tests {
     fn should_report_anchor_expired_when_one_of_two_pools_lost_its_anchor() {
         // A token pool transition needs both bundles' anchors; losing either one ends it.
         assert_eq!(
-            judge_shielded(&[free(40), free(41)], &[recorded(39), pruned(40)], Some(39)),
+            judge_shielded(
+                &[free(40), free(41)],
+                &[],
+                &[recorded(39), pruned(40)],
+                Some(39)
+            ),
             InputsVerdict::AnchorExpired
         );
     }
@@ -358,7 +458,7 @@ mod tests {
     #[test]
     fn should_report_not_yet_while_every_anchor_is_kept_and_no_nullifier_spent() {
         assert_eq!(
-            judge_shielded(&[free(50), free(51)], &[recorded(49)], None),
+            judge_shielded(&[free(50), free(51)], &[], &[recorded(49)], None),
             InputsVerdict::NotYet { checked_at: 51 }
         );
     }

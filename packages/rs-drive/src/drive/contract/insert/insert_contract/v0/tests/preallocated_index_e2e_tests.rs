@@ -1239,7 +1239,7 @@ fn should_keep_an_empty_preallocated_group_on_a_page_of_range_reads() {
         }]
     };
     // One page of one per kind of read, unproved and proved: (post, count, sum).
-    let page = |where_clauses: Vec<WhereClause>, kind: &str| -> Vec<(Vec<u8>, u64, i64)> {
+    let page = |where_clauses: Vec<WhereClause>, kind: &str| -> Vec<(Vec<u8>, u64, i128)> {
         let count_request = |prove| DocumentCountRequest {
             contract: &contract,
             document_type: tip_type,

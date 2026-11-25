@@ -3883,26 +3883,7 @@ pub(super) fn apply_private_document(
     }
 
     if full_validation {
-        let entry_size = private_document.entry_size();
-        let Some(max_entry_size) = platform_version
-            .system_limits
-            .max_private_document_entry_size
-        else {
-            // A table selecting `parse_private_document` without the limit is a fault of this
-            // build, not of the contract
-            return Err(ProtocolError::CorruptedCodeExecution(format!(
-                "protocol version {} parses private document types but sets no \
-                 max_private_document_entry_size",
-                platform_version.protocol_version,
-            )));
-        };
-        if entry_size > max_entry_size {
-            return Err(structure_error(format!(
-                "declares `{}: {entry_size}`, above the largest entry a private document type \
-                 may declare, {max_entry_size} bytes",
-                property_names::ENTRY_SIZE,
-            )));
-        }
+        private_document.ensure_entry_size_within_limit(name, platform_version)?;
     }
 
     document_type.private_document = Some(private_document);

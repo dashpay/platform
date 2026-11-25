@@ -27,7 +27,7 @@ use dash_sdk::dpp::ProtocolError;
 use dash_sdk::platform::dashpay::{
     ContactRequestInput, EcdhProvider, RecipientIdentity, SendContactRequestInput,
 };
-use dash_sdk::platform::dpns_usernames::{convert_to_homograph_safe_chars, RegisterDpnsNameInput};
+use dash_sdk::platform::dpns_usernames::RegisterDpnsNameInput;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
 use dash_sdk::platform::types::identity::PublicKeyHash;
@@ -353,8 +353,8 @@ impl PlatformClient {
 
     pub fn contested_vote_state(&self, label: &str) -> ffi::VoteStateResult {
         self.call("contested_vote_state", |sdk| {
-            // The SDK's contested query takes the index value as is.
-            let label = convert_to_homograph_safe_chars(label);
+            // The SDK's contested query normalizes the name itself.
+            let label = label.to_string();
             async move {
                 let contenders = sdk.get_contested_dpns_vote_state(&label, None).await?;
                 Ok(marshal::vote_state(&contenders))
@@ -550,6 +550,7 @@ impl PlatformClient {
                         Error::Generic("the wallet refused the contact xpub".to_string())
                     }))
                 };
+                let shielded_address = marshal::shielded_address(&input.shielded_address)?;
                 let (sender, key) =
                     identity_and_key(&sdk, Identifier::from(input.sender), input.signing_key_id)
                         .await?;
@@ -560,6 +561,7 @@ impl PlatformClient {
                     recipient_key_index: input.recipient_key_index,
                     account_reference: input.account_reference,
                     account_label: (!input.account_label.is_empty()).then_some(input.account_label),
+                    shielded_address,
                     auto_accept_proof: None,
                 };
                 let sent = sdk

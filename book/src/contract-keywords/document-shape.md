@@ -59,7 +59,7 @@ Rules at registration:
 - A property name is 1 to 64 letters, digits or underscores (`^[a-zA-Z0-9_]{1,64}$`). Protocol versions 1 to 13 also admitted `-`; from protocol version 14 it is refused.
 - Every property has a [`position`](property-schemas.md#position), a number. The top-level positions must run 0, 1, 2 and so on, with no gap and no number used twice (`MissingPositionsInDocumentTypePropertiesError`, 10411). A document is stored with its properties in `position` order and without their names, so the numbers are what tie the stored bytes to the schema.
 
-On update, a new property takes the next free position. It is optional unless it is listed in `required` with `requiredSince` set to the version the update creates. A property that already exists can never be removed, since stored documents may hold it.
+On update, a new property takes the next free position. It is optional unless it is listed in `required` with `requiredSince` set to the version the update creates. A property that already exists can never be removed, since stored documents may hold it. The members of an object follow the same rules from protocol version 15, in the order the object's `properties` map lists them, which is their position order in an object registered from then: see [Objects](property-schemas.md#objects).
 
 ## `additionalProperties`
 
@@ -98,7 +98,21 @@ On a contract update, from protocol version 14:
 - Nothing may be removed from the list.
 - A system timestamp or block height may not be added. So the set of values a type records is fixed once the type exists.
 
-Each of these is refused with `DataContractInvalidRequiredFieldsUpdateError` (10276). The `required` list of a nested object is fixed (`IncompatibleDocumentTypeSchemaError`, 10246).
+Each of these is refused with `DataContractInvalidRequiredFieldsUpdateError` (10276).
+
+The `required` list of an object property written inline follows the same rules from protocol version 15: it may gain only a member the same update adds to that object, annotated with `requiredSince`, or a member the type already requires through a dotted name, and may lose nothing (10276). The `required` written beside a `$ref` can not change. Up to protocol version 14 it is fixed (`IncompatibleDocumentTypeSchemaError`, 10246).
+
+A dotted name (`"records.identity"`) in a `required` list is read by the document type parser as a requirement on the nested member, but the document validator reads it as a property named with a dot, which no document can hold: a type whose `required` holds one accepts no document. From protocol version 15 an update cannot add a dotted name to the type's `required`, to the `required` of an object the type has, or to that of an object the update adds, nor remove one unless another list still requires the member it names (10276). A type stuck with one is repaired by adding the member to its object's own `required`, after which the dotted name may go. Require a nested member through its object's own `required`.
+
+From protocol version 15 everything a contract gains holds `required` lists a document can meet, and is refused otherwise (10276). That is every object a document type of a new contract reaches, every object of a document type an update adds, and every object an update adds to a type the contract has, a member a `$defs` definition gains through a `$ref` the type keeps included. A definition no type reaches is judged when a type gains a `$ref` to it.
+
+- The validator applies several schemas to such an object: the object as written, the definition its `$ref` points at, and the entry written for it beside an enclosing `$ref`. Every list they hold names only members of the object as the type parses it. The list beside a `$ref` need not restate the definition's members. A `$ref` in an entry beside another `$ref` is read by the validator only, and is followed as the validator follows a JSON pointer, where a number indexes an array.
+- A schema written with `additionalProperties: false` admits only the members its own `properties` declare, beside a `$ref` too, so no list names a member it leaves out.
+- No list names a dotted name, and together the lists name no more members than the least `maxProperties` of those schemas lets the object hold.
+- The type's own `required`, once the system timestamps such as `$createdAt` are left out as the validator leaves them out, names only properties the type declares, and no more than its `maxProperties`. A type the contract has may not grow its list past that either.
+- Each member is required exactly when a list names it by its path. The parser reads a required name made of an enclosing property's name, any one character and a member's name (`meta_y`) as naming that member (`meta.y`), which the validator does not, so such a type is refused.
+
+A member the type parses as something other than an object, whether written inline or through a `$ref`, holds no members: the validator ignores a `required` written for it, and what the parser collects from one names no member it parses, so it is left alone. Beside a `$ref` to an object the parser reads the definition, whatever `type` is written there, so a `required` there is held to these rules. On update an entry can not be written beside a `$ref` the type keeps for a member that documents stored before hold, since the validator would hold them to it (10276).
 
 ## `minProperties` and `maxProperties`
 

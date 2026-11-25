@@ -14,7 +14,9 @@ impl Drive {
         transaction: TransactionArg,
         version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
-        self.fetch_document_history(query, document_type, transaction, version)?;
+        // Validate lifecycle, revision keys, and gap rules from document headers alone
+        // without materializing document properties on the node.
+        self.fetch_document_history_serialized(query, document_type, transaction, version)?;
         self.grove_get_proved_path_query(
             &query.construct_path_query(version)?,
             transaction,

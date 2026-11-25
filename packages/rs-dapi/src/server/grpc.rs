@@ -1,6 +1,7 @@
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
+use tokio::time::Instant;
 use tracing::{info, trace};
 
 use crate::error::DAPIResult;
@@ -92,18 +93,29 @@ impl DapiServer {
     }
 }
 
+/// When a handler's optional work must be done so that its answer leaves before the call is cut
+/// off: the earlier of this layer's own timer and the client's `grpc-timeout` less the safety
+/// margin, both counted from when the request's headers arrived, before its message is read.
+/// When the margin does not fit in the client's timeout there is no time for optional work, and
+/// it is the instant the headers arrived: tonic still enforces the header on its own.
+///
+/// The layer puts it in the request's extensions. It is not when the call ends: the layer and
+/// tonic end it with their own transport status, which clients retry.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct IngressDeadline(pub(crate) Instant);
+
 /// Middleware layer to apply different timeouts based on gRPC method type.
 ///
 /// Streaming methods (subscriptions) get longer timeouts to support long-lived connections,
 /// while unary methods get shorter timeouts to prevent resource exhaustion.
 #[derive(Clone)]
-struct TimeoutLayer {
+pub(crate) struct TimeoutLayer {
     unary_timeout: Duration,
     streaming_timeout: Duration,
 }
 
 impl TimeoutLayer {
-    fn new(unary_timeout: Duration, streaming_timeout: Duration) -> Self {
+    pub(crate) fn new(unary_timeout: Duration, streaming_timeout: Duration) -> Self {
         Self {
             unary_timeout,
             streaming_timeout,
@@ -147,7 +159,7 @@ impl<S> Layer<S> for TimeoutLayer {
 
 /// Service wrapper that applies per-method timeouts.
 #[derive(Clone)]
-struct TimeoutService<S> {
+pub(crate) struct TimeoutService<S> {
     inner: S,
     config: TimeoutLayer,
 }
@@ -169,7 +181,7 @@ where
         self.inner.poll_ready(cx).map_err(Into::into)
     }
 
-    fn call(&mut self, req: Request<ReqBody>) -> Self::Future {
+    fn call(&mut self, mut req: Request<ReqBody>) -> Self::Future {
         let path = req.uri().path().to_owned();
         let default_timeout = self.config.timeout_for_method(&path);
         let timeout_from_header = parse_grpc_timeout_header(req.headers());
@@ -194,6 +206,14 @@ where
         }
         let timeout_duration = effective_timeout;
         let timeout_secs = timeout_duration.as_secs_f64();
+        // The timer below starts now
+        let optional_work_time = timeout_from_header.map_or(timeout_duration, |header| {
+            header
+                .saturating_sub(GRPC_REQUEST_TIME_SAFETY_MARGIN)
+                .min(timeout_duration)
+        });
+        req.extensions_mut()
+            .insert(IngressDeadline(Instant::now() + optional_work_time));
         let fut = tower::timeout::Timeout::new(self.inner.clone(), timeout_duration).call(req);
 
         Box::pin(async move {
@@ -237,6 +257,7 @@ fn parse_grpc_timeout_header(headers: &HeaderMap) -> Option<Duration> {
 mod tests {
     use super::*;
     use std::future::Future;
+    use std::sync::{Arc, Mutex};
     use std::task::{Context, Poll};
 
     #[derive(Clone)]
@@ -258,6 +279,79 @@ mod tests {
                 Ok(Response::new(()))
             })
         }
+    }
+
+    /// Records the ingress deadline the layer hands the service behind it.
+    #[derive(Clone, Default)]
+    struct DeadlineRecorder(Arc<Mutex<Option<Instant>>>);
+
+    impl Service<Request<()>> for DeadlineRecorder {
+        type Response = Response<()>;
+        type Error = Box<dyn std::error::Error + Send + Sync>;
+        type Future =
+            Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+
+        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn call(&mut self, req: Request<()>) -> Self::Future {
+            *self.0.lock().unwrap() = req
+                .extensions()
+                .get::<IngressDeadline>()
+                .map(|deadline| deadline.0);
+            Box::pin(async { Ok(Response::new(())) })
+        }
+    }
+
+    #[tokio::test]
+    async fn should_hand_the_service_the_instant_the_call_is_cut_off() {
+        let timeout_layer = TimeoutLayer::new(Duration::from_secs(15), Duration::from_secs(600));
+        let recorder = DeadlineRecorder::default();
+        let mut service = timeout_layer.layer(recorder.clone());
+        let request = Request::builder()
+            .uri("/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult")
+            .header("grpc-timeout", "5S")
+            .body(())
+            .unwrap();
+
+        let called_at = Instant::now();
+        service.call(request).await.expect("expected an answer");
+        let answered_at = Instant::now();
+
+        let deadline = recorder
+            .0
+            .lock()
+            .unwrap()
+            .expect("expected the layer to hand its deadline on");
+        let timeout = Duration::from_secs(5) - GRPC_REQUEST_TIME_SAFETY_MARGIN;
+        assert!(deadline >= called_at + timeout);
+        assert!(deadline <= answered_at + timeout);
+    }
+
+    #[tokio::test]
+    async fn should_leave_no_time_for_optional_work_when_the_margin_does_not_fit_the_client_deadline()
+     {
+        let timeout_layer = TimeoutLayer::new(Duration::from_secs(15), Duration::from_secs(600));
+        let recorder = DeadlineRecorder::default();
+        let mut service = timeout_layer.layer(recorder.clone());
+        // 40 ms: less than the margin, so the layer falls back to its own 600 s timer, while
+        // tonic still ends the call after 40 ms
+        let request = Request::builder()
+            .uri("/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult")
+            .header("grpc-timeout", "40m")
+            .body(())
+            .unwrap();
+
+        service.call(request).await.expect("expected an answer");
+        let answered_at = Instant::now();
+
+        let deadline = recorder
+            .0
+            .lock()
+            .unwrap()
+            .expect("expected the layer to hand its deadline on");
+        assert!(deadline <= answered_at);
     }
 
     #[tokio::test]

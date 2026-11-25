@@ -57,6 +57,8 @@ const gameSchema = {
     },
     required: ['name', 'element', 'rarity', 'power', 'defense', 'edition'],
     additionalProperties: false,
+    // Cards change hands: without this a transfer is refused
+    transferable: 1,
   },
   deck: {
     type: 'object',
@@ -261,7 +263,9 @@ async function buyPack(playerId: string, playerKey: string) {
   });
 
   for (const [cardId, card] of availableCards) {
-    if (!card) continue;
+    if (card?.revision === undefined) continue;
+    // A transfer writes the next revision: the stored one + 1
+    card.revision += 1n;
     await sdk.documents.transfer({
       document: card,
       recipientId: new Identifier(playerId),
@@ -334,6 +338,14 @@ async function tradeCards(
   // Fetch both card documents
   const fromCard = await sdk.documents.get(contractId, 'card', fromCardId);
   const toCard = await sdk.documents.get(contractId, 'card', toCardId);
+
+  if (fromCard?.revision === undefined || toCard?.revision === undefined) {
+    throw new Error('Both cards must exist');
+  }
+
+  // A transfer writes the next revision: the stored one + 1
+  fromCard.revision += 1n;
+  toCard.revision += 1n;
 
   // Player A sends their card to Player B
   await sdk.documents.transfer({

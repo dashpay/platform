@@ -4,13 +4,16 @@ mod basic_structure;
 mod contract_group_tests;
 #[cfg(test)]
 mod contract_structure_error_tests;
+mod gained_requirements;
 mod identity_nonce;
 mod state;
+mod transform_into_action;
 
 use advanced_structure::v1::DataContractCreatedStateTransitionAdvancedStructureValidationV1;
 use basic_structure::v0::DataContractCreateStateTransitionBasicStructureValidationV0;
 use basic_structure::v1::DataContractCreateStateTransitionBasicStructureValidationV1;
 use basic_structure::v2::DataContractCreateStateTransitionBasicStructureValidationV2;
+use basic_structure::v3::DataContractCreateStateTransitionBasicStructureValidationV3;
 use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::Network;
@@ -32,6 +35,8 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 use crate::execution::validation::state_transition::data_contract_create::advanced_structure::v0::DataContractCreatedStateTransitionAdvancedStructureValidationV0;
 use crate::execution::validation::state_transition::data_contract_create::state::v0::DataContractCreateStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::data_contract_create::state::v1::DataContractCreateStateTransitionStateValidationV1;
+use crate::execution::validation::state_transition::data_contract_create::state::v2::DataContractCreateStateTransitionStateValidationV2;
+use crate::execution::validation::state_transition::data_contract_create::transform_into_action::v1::DataContractCreateStateTransitionTransformIntoActionV1;
 use crate::execution::validation::state_transition::processor::advanced_structure_without_state::StateTransitionAdvancedStructureValidationV0;
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
@@ -80,9 +85,15 @@ impl StateTransitionActionTransformer for DataContractCreateTransition {
                 execution_context,
                 platform_version,
             ),
+            1 => self.transform_into_action_v1::<C>(
+                block_info,
+                validation_mode,
+                execution_context,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract create transition: transform_into_action".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -105,14 +116,15 @@ impl StateTransitionBasicStructureValidationV0 for DataContractCreateTransition 
             Some(0) => self.validate_basic_structure_v0(network_type, platform_version),
             Some(1) => self.validate_basic_structure_v1(network_type, platform_version),
             Some(2) => self.validate_basic_structure_v2(network_type, platform_version),
+            Some(3) => self.validate_basic_structure_v3(network_type, platform_version),
             Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract create transition: validate_basic_structure".to_string(),
-                known_versions: vec![0, 1, 2],
+                known_versions: vec![0, 1, 2, 3],
                 received: version,
             })),
             None => Err(Error::Execution(ExecutionError::VersionNotActive {
                 method: "data contract create transition: validate_basic_structure".to_string(),
-                known_versions: vec![0, 1, 2],
+                known_versions: vec![0, 1, 2, 3],
             })),
         }
     }
@@ -186,9 +198,17 @@ impl StateTransitionStateValidation for DataContractCreateTransition {
                 execution_context,
                 platform_version,
             ),
+            2 => self.validate_state_v2(
+                platform,
+                block_info,
+                validation_mode,
+                tx,
+                execution_context,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract create transition: validate_state".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }
@@ -217,6 +237,7 @@ mod tests {
     use dpp::data_contract::document_type::accessors::{
         DocumentTypeV0MutGetters, DocumentTypeV1Setters,
     };
+    use dpp::data_contract::errors::DataContractError;
     use dpp::data_contract::group::v0::GroupV0;
     use dpp::data_contract::group::Group;
     use dpp::data_contract::DataContract;
@@ -314,7 +335,9 @@ mod tests {
     /// zero-fraction float `position` used to panic in `insert_values_nested` during block
     /// execution (`ValidationMode::Validator`), which would shut the node down. Driving the exact
     /// bytes a validator processes through `process_raw_state_transitions` must now complete and
-    /// return a deterministic result without panicking.
+    /// return a deterministic result without panicking: from protocol version 15, whose
+    /// registration holds an object's members to integer positions, the create's basic structure
+    /// refuses it.
     #[tokio::test]
     async fn nested_float_position_does_not_halt_block_execution() {
         let platform_version = PlatformVersion::latest();
@@ -441,12 +464,17 @@ mod tests {
             )
             .expect("block execution must not panic/error on a nested float position");
 
-        // The contract is accepted deterministically (the float `0.0` is a valid integer per the
-        // meta-schema and nested positions are not consensus-relevant). The point of the test is
-        // that block execution completed without the node-killing panic the old `.expect()` raised.
+        // The float `0.0` is an integer to the meta-schema, but from protocol version 15
+        // registration requires an object's member positions to be integer values, so the
+        // create's basic structure refuses it deterministically. The point of the test is that
+        // block execution completed without the node-killing panic the old `.expect()` raised.
         assert_matches!(
             processing_result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            [StateTransitionExecutionResult::UnpaidConsensusError(
+                ConsensusError::BasicError(BasicError::ContractError(
+                    DataContractError::InvalidContractStructure(message)
+                )),
+            )] if message.contains("needs a position")
         );
 
         platform

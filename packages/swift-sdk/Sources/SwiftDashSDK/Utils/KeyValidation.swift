@@ -54,6 +54,44 @@ public enum KeyValidation {
         return resultStr == "true"
     }
 
+    /// The 32 secret bytes of a private key typed as 64 hex characters or in
+    /// WIF (`dash_sdk_private_key_bytes_from_text`). Rust reads the text and
+    /// decides which form it is.
+    ///
+    /// - Throws: `SDKError.invalidParameter` carrying Rust's reason when the
+    ///   text is neither form, an uncompressed WIF, or not a secp256k1 secret
+    ///   key, or when it contains a NUL character. The reason never contains
+    ///   the text.
+    public static func privateKeyBytes(fromText text: String) throws -> Data {
+        // C reads only up to the first NUL, so text with an embedded one
+        // would be judged by its prefix alone.
+        guard !text.utf8.contains(0) else {
+            throw SDKError.invalidParameter(
+                "the private key contains a NUL character, which a C string cannot carry"
+            )
+        }
+        var secret = [UInt8](repeating: 0, count: 32)
+        defer {
+            secret.withUnsafeMutableBufferPointer { ptr in
+                if let base = ptr.baseAddress {
+                    memset_s(UnsafeMutableRawPointer(base), ptr.count, 0, ptr.count)
+                }
+            }
+        }
+        let result = text.withCString { textPtr in
+            secret.withUnsafeMutableBufferPointer { out in
+                dash_sdk_private_key_bytes_from_text(textPtr, out.baseAddress)
+            }
+        }
+        if let error = result.error {
+            defer { dash_sdk_error_free(error) }
+            let reason = error.pointee.message.map { String(cString: $0) }
+                ?? "the private key was refused"
+            throw SDKError.invalidParameter(reason)
+        }
+        return Data(secret)
+    }
+
     /// Match a private key to its corresponding public key in a list of public keys
     /// Returns the matching public key or nil if no match found
     public static func matchPrivateKeyToPublicKeys(

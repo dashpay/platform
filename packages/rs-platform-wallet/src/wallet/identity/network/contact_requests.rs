@@ -38,6 +38,9 @@ use dash_sdk::drive::query::{WhereClause, WhereOperator};
 use dash_sdk::platform::dashpay::{PrivateContactRequest, SignedContactRequest};
 use dash_sdk::platform::private_document_entries::PrivateDocumentEntries;
 use dash_sdk::platform::private_document_scan::PrivateDocumentScan;
+#[cfg(test)]
+use dash_sdk::platform::private_document_seal::seal_private_document;
+use dash_sdk::platform::private_document_seal::PrivateDocumentEntryRequest;
 use dash_sdk::platform::transition::outcome::{OutcomeEvidence, TransitionOutcome};
 use dash_sdk::platform::transition::waitable::Waitable;
 use dash_sdk::platform::{DocumentQuery, FetchMany};
@@ -69,6 +72,23 @@ pub trait ContactCryptoProvider {
         &self,
         path: &key_wallet::bip32::DerivationPath,
     ) -> Result<key_wallet::bip32::ExtendedPubKey, PlatformWalletError>;
+
+    /// Extended public keys at each of `paths`, in their order: what
+    /// [`Self::receiving_xpub`] derives, for several paths at once. A provider
+    /// backed by a seed it must resolve resolves it once for all of them.
+    ///
+    /// Defaulted to one [`Self::receiving_xpub`] call per path, so adding this
+    /// method is not a source-breaking change.
+    async fn extended_public_keys(
+        &self,
+        paths: &[key_wallet::bip32::DerivationPath],
+    ) -> Result<Vec<key_wallet::bip32::ExtendedPubKey>, PlatformWalletError> {
+        let mut keys = Vec::with_capacity(paths.len());
+        for path in paths {
+            keys.push(self.receiving_xpub(path).await?);
+        }
+        Ok(keys)
+    }
 
     /// ECDH shared secret between our key at `path` and the contact's `peer`
     /// pubkey. Returned in [`zeroize::Zeroizing`] so the DIP-15 friendship AES
@@ -243,6 +263,26 @@ pub trait ContactCryptoProvider {
     ) -> Result<BinaryData, PlatformWalletError> {
         Err(private_documents_unsupported())
     }
+
+    /// Seals `request`, an entry of any private document type, with the sender's encryption key,
+    /// the one at `sender_encryption_key_path`
+    /// ([`dash_sdk::platform::private_document_seal::seal_private_document`]): the entry is
+    /// sealed with that key's outgoing viewing key, and a deniable MAC is keyed with it. Its
+    /// secret key stays in the signer; only the sealed entry returns. `esk_seed` is 32 fresh
+    /// random bytes, never reused.
+    ///
+    /// Defaulted to an "unsupported" error, as [`Self::scan_private_document_page`].
+    async fn seal_private_document_entry(
+        &self,
+        _sender_encryption_key_path: &key_wallet::bip32::DerivationPath,
+        _request: &PrivateDocumentEntryRequest<'_>,
+        _esk_seed: &[u8; 32],
+        _platform_version: &dpp::version::PlatformVersion,
+    ) -> Result<BinaryData, PlatformWalletError> {
+        Err(PlatformWalletError::InvalidIdentityData(
+            "sealing private document entries is not supported by this crypto provider".to_string(),
+        ))
+    }
 }
 
 fn private_documents_unsupported() -> PlatformWalletError {
@@ -283,6 +323,8 @@ pub(crate) struct SeedCryptoProvider {
     /// How many times the private document scan keys were derived: once per scan call, a
     /// page's or a batch's.
     pub(crate) scan_key_derivations: std::sync::atomic::AtomicUsize,
+    /// How many `extended_public_keys` calls it answered, each for all its paths at once.
+    pub(crate) public_key_batches: std::sync::atomic::AtomicUsize,
 }
 
 #[cfg(test)]
@@ -294,6 +336,7 @@ impl SeedCryptoProvider {
             wallet: Wallet::from_seed_bytes(seed, network, WalletAccountCreationOptions::None)
                 .expect("test seed wallet"),
             scan_key_derivations: std::sync::atomic::AtomicUsize::new(0),
+            public_key_batches: std::sync::atomic::AtomicUsize::new(0),
         }
     }
 }
@@ -308,6 +351,25 @@ impl ContactCryptoProvider for SeedCryptoProvider {
         self.wallet.derive_extended_public_key(path).map_err(|e| {
             PlatformWalletError::InvalidIdentityData(format!("test receiving_xpub: {e}"))
         })
+    }
+
+    async fn extended_public_keys(
+        &self,
+        paths: &[key_wallet::bip32::DerivationPath],
+    ) -> Result<Vec<key_wallet::bip32::ExtendedPubKey>, PlatformWalletError> {
+        // Once for the batch, as a signer-backed provider resolves its seed once.
+        self.public_key_batches
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        paths
+            .iter()
+            .map(|path| {
+                self.wallet.derive_extended_public_key(path).map_err(|e| {
+                    PlatformWalletError::InvalidIdentityData(format!(
+                        "test extended_public_keys: {e}"
+                    ))
+                })
+            })
+            .collect()
     }
 
     async fn ecdh_shared_secret(
@@ -492,6 +554,20 @@ impl ContactCryptoProvider for SeedCryptoProvider {
             esk_seed,
             platform_version,
         );
+        encryption_secret_key.non_secure_erase();
+        Ok(sealed?)
+    }
+
+    async fn seal_private_document_entry(
+        &self,
+        sender_encryption_key_path: &key_wallet::bip32::DerivationPath,
+        request: &PrivateDocumentEntryRequest<'_>,
+        esk_seed: &[u8; 32],
+        platform_version: &dpp::version::PlatformVersion,
+    ) -> Result<BinaryData, PlatformWalletError> {
+        let mut encryption_secret_key = self.secret_key_at(sender_encryption_key_path)?;
+        let sealed =
+            seal_private_document(request, &encryption_secret_key, esk_seed, platform_version);
         encryption_secret_key.non_secure_erase();
         Ok(sealed?)
     }
@@ -1121,6 +1197,20 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
             ),
         }
 
+        // 4e. The sender's shielded payment address for this contact, when
+        //     `crypto` proves the identity's slot (the identity carries the master
+        //     key the seed derives there), the slot's shielded account is bound
+        //     and the network's contact requests carry one; the request goes
+        //     without it otherwise.
+        let shielded_address = self
+            .contact_shielded_address(
+                sender_identity_id,
+                recipient_identity_id,
+                account_reference,
+                crypto,
+            )
+            .await?;
+
         // 5. Build the signing key reference for document signing.
         let identity_public_key = sender_identity
             // Contact-request send writes a document state transition,
@@ -1176,6 +1266,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 account_reference,
                 account_label,
                 auto_accept_proof,
+                shielded_address: shielded_address.as_ref().map(|derived| derived.address),
                 shared_secret,
                 expected_recipient_pubkey: recipient_enc_pubkey,
                 xpub_bytes,
@@ -1203,7 +1294,22 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let SignedContactRequest {
             state_transition, ..
         } = signed;
-        let delivery = Box::pin(broadcast_tracking_delivery(&self.sdk, &state_transition)).await;
+        // The last step before the request leaves the wallet, under the gate the
+        // signature took: its shielded address was derived from the key the account
+        // is still bound to, or nothing is broadcast and the send can be made again. A check,
+        // not a fence: a re-key that completes before it is caught; one that completes
+        // between it and the node accepting the request is not, as that window is the
+        // broadcast itself.
+        if let Some(shielded_address) = &shielded_address {
+            self.check_contact_shielded_address(shielded_address)
+                .await?;
+        }
+        let delivery = Box::pin(broadcast_tracking_delivery(
+            &self.sdk,
+            &state_transition,
+            None,
+        ))
+        .await;
         let confirmed = match delivery {
             BroadcastDelivery::NeverDelivered(error) => {
                 return Err(PlatformWalletError::Sdk(error))
@@ -1598,7 +1704,8 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                 {
                     // The same bytes, so never a second request; an
                     // endpoint's answer proves nothing either way.
-                    let delivery = broadcast_tracking_delivery(&self.sdk, &held.transition).await;
+                    let delivery =
+                        broadcast_tracking_delivery(&self.sdk, &held.transition, None).await;
                     tracing::debug!(
                         sender = %sender,
                         recipient = %recipient,
@@ -3067,6 +3174,17 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         // Same field set as the received side; the only difference is which
         // identity is owner vs recipient.
         Self::parse_contact_request_doc(doc, owner_id, recipient_id)
+    }
+
+    /// Parse a `contactRequest` document its owner sent into a
+    /// [`ContactRequest`]: the sender is the document's owner and the
+    /// recipient is its `toUserId`.
+    fn parse_own_sent_contact_request_doc(doc: &dpp::document::Document) -> Option<ContactRequest> {
+        let recipient_id = doc
+            .properties()
+            .get("toUserId")
+            .and_then(|v: &Value| v.to_identifier().ok())?;
+        Self::parse_sent_contact_request_doc(doc, doc.owner_id(), recipient_id)
     }
 
     /// Enqueue a DIP-15 `AutoAccept` op for each inbound contact request to
@@ -5202,77 +5320,13 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
 
         let mut requests = Vec::new();
 
-        for (_doc_id, maybe_doc) in sent_docs.iter() {
-            let doc = match maybe_doc {
-                Some(d) => d,
-                None => continue,
-            };
-
-            let sender_id = doc.owner_id();
-
-            let props = doc.properties();
-
-            let to_user_id = match props
-                .get("toUserId")
-                .and_then(|v: &Value| v.to_identifier().ok())
-            {
-                Some(v) => v,
-                None => continue,
-            };
-            let sender_key_index = match props
-                .get("senderKeyIndex")
-                .and_then(|v: &Value| v.to_integer::<u32>().ok())
-            {
-                Some(v) => v,
-                None => continue,
-            };
-            let recipient_key_index = match props
-                .get("recipientKeyIndex")
-                .and_then(|v: &Value| v.to_integer::<u32>().ok())
-            {
-                Some(v) => v,
-                None => continue,
-            };
-            let account_reference = match props
-                .get("accountReference")
-                .and_then(|v: &Value| v.to_integer::<u32>().ok())
-            {
-                Some(v) => v,
-                None => continue,
-            };
-            let encrypted_public_key = match props
-                .get("encryptedPublicKey")
-                .and_then(|v: &Value| v.as_bytes())
-                .cloned()
-            {
-                Some(v) => v,
-                None => continue,
-            };
-
-            let mut contact_request = ContactRequest::new(
-                sender_id,
-                to_user_id,
-                sender_key_index,
-                recipient_key_index,
-                account_reference,
-                encrypted_public_key,
-                doc.created_at_core_block_height().unwrap_or(0),
-                doc.created_at().unwrap_or(0),
-            );
-
-            // Attach optional encrypted account label if present.
-            contact_request.encrypted_account_label = props
-                .get("encryptedAccountLabel")
-                .and_then(|v: &Value| v.as_bytes())
-                .cloned();
-
-            // Attach optional auto-accept proof if present.
-            contact_request.auto_accept_proof = props
-                .get("autoAcceptProof")
-                .and_then(|v: &Value| v.as_bytes())
-                .cloned();
-
-            requests.push(contact_request);
+        for doc in sent_docs
+            .iter()
+            .filter_map(|(_doc_id, maybe_doc)| maybe_doc.as_ref())
+        {
+            if let Some(request) = Self::parse_own_sent_contact_request_doc(doc) {
+                requests.push(request);
+            }
         }
 
         // Sort by creation time ascending.
@@ -5656,6 +5710,8 @@ mod sweep_tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            tracked_collaterals: Default::default(),
+            funding_issuance_floors: Default::default(),
         }
     }
 
@@ -7055,6 +7111,73 @@ mod sweep_tests {
         );
     }
 
+    /// The public sent-requests query and the sync sweep read the same
+    /// `contactRequest` documents, so they must accept the same byte
+    /// encodings. A document query can yield a byte field as an array of
+    /// `U8` or as base64 text rather than `Value::Bytes`; a parser that only
+    /// matches `Value::Bytes` drops the whole request (required
+    /// `encryptedPublicKey`) or silently loses its label and proof.
+    #[test]
+    fn should_parse_own_sent_contact_request_whose_bytes_are_not_value_bytes() {
+        use dpp::document::{Document, DocumentV0};
+        use dpp::platform_value::Value;
+        use std::collections::BTreeMap;
+
+        let owner = Identifier::from([2u8; 32]);
+        let recipient = Identifier::from([1u8; 32]);
+        let as_u8_array =
+            |bytes: &[u8]| Value::Array(bytes.iter().map(|b| Value::U8(*b)).collect());
+
+        let public_key_ct = vec![1u8; 96];
+        let label_ct = vec![0x2au8; 48];
+        let proof = vec![3u8; 3];
+        let mut properties = BTreeMap::new();
+        properties.insert("toUserId".to_string(), Value::Identifier([1u8; 32]));
+        properties.insert("senderKeyIndex".to_string(), Value::U32(0));
+        properties.insert("recipientKeyIndex".to_string(), Value::U32(0));
+        properties.insert("accountReference".to_string(), Value::U32(5));
+        properties.insert(
+            "encryptedPublicKey".to_string(),
+            as_u8_array(&public_key_ct),
+        );
+        properties.insert("encryptedAccountLabel".to_string(), as_u8_array(&label_ct));
+        // base64 of [3, 3, 3]
+        properties.insert(
+            "autoAcceptProof".to_string(),
+            Value::Text("AwMD".to_string()),
+        );
+
+        let doc = Document::V0(DocumentV0 {
+            contract_version: None,
+            id: Identifier::from([9u8; 32]),
+            owner_id: owner,
+            properties,
+            revision: None,
+            created_at: Some(123),
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: Some(456),
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+            moderated_at: None,
+            moderated_by: None,
+        });
+
+        let parsed = DashPayView::<SpvBroadcaster>::parse_own_sent_contact_request_doc(&doc)
+            .expect("a complete sent contactRequest doc must parse whatever its byte encoding");
+        assert_eq!(parsed.sender_id, owner);
+        assert_eq!(parsed.recipient_id, recipient);
+        assert_eq!(parsed.encrypted_public_key, public_key_ct);
+        assert_eq!(parsed.encrypted_account_label, Some(label_ct));
+        assert_eq!(parsed.auto_accept_proof, Some(proof));
+        assert_eq!(parsed.created_at, 123);
+        assert_eq!(parsed.core_height_created_at, 456);
+    }
+
     /// **Rotation version bump must read established contacts.**
     /// The next request's rotation version is derived by un-masking the
     /// PRIOR sent reference. Once a contact establishes, that prior request
@@ -7656,7 +7779,7 @@ mod stamp_race_tests {
 }
 
 /// Where a contact request send's signing stands, for [`GatedSigner`].
-enum SigningGate {
+pub(super) enum SigningGate {
     /// The host has not signed yet: no gate is held.
     Unsigned,
     /// Signed, and the wallet generation's lifecycle gate is held from then
@@ -7668,19 +7791,29 @@ enum SigningGate {
     Removed,
 }
 
-/// The host's signer for a contact request send, taking the wallet
-/// generation's lifecycle gate once a signature returns and before it can
-/// leave: the SDK broadcasts right after signing, so the broadcast and the
-/// send's bookkeeping run under the gate, while the host's signing prompt
-/// does not. A signature made after the wallet was removed, or re-created
-/// under its id, is refused, so nothing is published.
-struct GatedSigner<'a, S: ?Sized, B: TransactionBroadcaster + ?Sized> {
-    signer: &'a S,
-    wallet: &'a IdentityWallet<B>,
-    gate: std::sync::Mutex<SigningGate>,
+/// The host's signer for a contact request send (and a key limits update, and the
+/// DPNS name writes),
+/// taking the wallet generation's lifecycle gate once a signature returns and
+/// before it can leave: the SDK broadcasts right after signing, so the
+/// broadcast and the send's bookkeeping run under the gate, while the host's
+/// signing prompt does not. A signature made after the wallet was removed, or
+/// re-created under its id, is refused, so nothing is published.
+pub(super) struct GatedSigner<'a, S: ?Sized, B: TransactionBroadcaster + ?Sized> {
+    pub(super) signer: &'a S,
+    pub(super) wallet: &'a IdentityWallet<B>,
+    pub(super) gate: std::sync::Mutex<SigningGate>,
 }
 
-impl<S: ?Sized, B: TransactionBroadcaster + ?Sized> GatedSigner<'_, S, B> {
+impl<'a, S: ?Sized, B: TransactionBroadcaster + ?Sized> GatedSigner<'a, S, B> {
+    /// `signer`, gated on `wallet`'s generation: nothing is held until a signature returns.
+    pub(super) fn new(signer: &'a S, wallet: &'a IdentityWallet<B>) -> Self {
+        Self {
+            signer,
+            wallet,
+            gate: std::sync::Mutex::new(SigningGate::Unsigned),
+        }
+    }
+
     fn gate(&self) -> std::sync::MutexGuard<'_, SigningGate> {
         self.gate
             .lock()
@@ -7689,7 +7822,7 @@ impl<S: ?Sized, B: TransactionBroadcaster + ?Sized> GatedSigner<'_, S, B> {
 
     /// Whether a signature was refused because the wallet was removed or
     /// replaced while the host signed.
-    fn removed(&self) -> bool {
+    pub(super) fn removed(&self) -> bool {
         matches!(*self.gate(), SigningGate::Removed)
     }
 
@@ -8077,7 +8210,10 @@ mod receiving_restore_tests {
                 };
                 info.core_wallet
                     .accounts
-                    .insert_funds_bearing_account(ManagedCoreFundsAccount::from_account(&account))
+                    .insert_funds_bearing_account(
+                        ManagedCoreFundsAccount::from_account(&account)
+                            .expect("build managed external account"),
+                    )
                     .expect("managed external account");
             }
             info.core_wallet.update_synced_height(1000);

@@ -1,6 +1,7 @@
 //! FFI bindings for PlatformWalletManager's SPV runtime.
 
 use std::ffi::{CStr, CString};
+use std::net::SocketAddr;
 use std::os::raw::c_char;
 
 use dashcore::sml::llmq_type::LlmqDevnetParams;
@@ -549,10 +550,24 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
     // registration.
     config.enable_masternodes = true;
     config.restrict_to_configured_peers = restrict_to_configured_peers;
-    for p in &peer_list {
-        if let Ok(addr) = p.parse() {
-            config.peers.push(addr);
-        }
+    // Decoding only: every address that parses is passed on, and what a
+    // given list means for the client is decided in `platform-wallet`.
+    config.peers = decoded_peers(&peer_list);
+    // Peers were given and none could be decoded. Passed on, that would be
+    // an empty list, which is how a host asks for an offline start: only
+    // this boundary can still tell the two apart, so it refuses here.
+    // "Given" is the caller's count, so entries skipped above (null, not
+    // UTF-8) still count as given.
+    let peers_given = !peers.is_null() && peer_count > 0;
+    if restrict_to_configured_peers && peers_given && config.peers.is_empty() {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!(
+                "no usable SPV peer: restrict_to_configured_peers needs at least one IP:port \
+                 address, and none of the {peer_count} given is one{}",
+                peer_examples(&peer_list)
+            ),
+        );
     }
     if let Some(name) = devnet_name_str.as_deref() {
         let mut devnet = DevnetConfig::new(name);
@@ -568,6 +583,35 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
     start_spv_outside_registry(handle, move |spv, still_owned| {
         block_on_worker(async move { spv.start_and_spawn(config, still_owned).await })
     })
+}
+
+/// How many refused peers an error message quotes, and how much of each.
+const MAX_PEER_EXAMPLES: usize = 3;
+const MAX_PEER_EXAMPLE_CHARS: usize = 64;
+
+/// The first few of `peer_list`, each cut short, for an error message. The
+/// entries come from the host (or a service it asked), so the message must
+/// not grow with them.
+fn peer_examples(peer_list: &[String]) -> String {
+    let shown: Vec<String> = peer_list
+        .iter()
+        .take(MAX_PEER_EXAMPLES)
+        .map(|peer| peer.chars().take(MAX_PEER_EXAMPLE_CHARS).collect())
+        .collect();
+    if shown.is_empty() {
+        String::new()
+    } else {
+        format!(", for example {shown:?}")
+    }
+}
+
+/// The entries of `peer_list` that are an `IP:port` address. Hostnames are
+/// skipped: the SPV client takes socket addresses only.
+fn decoded_peers(peer_list: &[String]) -> Vec<SocketAddr> {
+    peer_list
+        .iter()
+        .filter_map(|peer| peer.parse::<SocketAddr>().ok())
+        .collect()
 }
 
 /// Run `run_start` on `handle`'s SPV runtime with the handle registry
@@ -621,6 +665,155 @@ where
             "manager was destroyed while SPV was starting",
         ),
         Err(error) => error.into(),
+    }
+}
+
+#[cfg(test)]
+mod spv_start_peer_tests {
+    use super::*;
+    use crate::handle::NULL_HANDLE;
+    use std::ffi::CString;
+
+    /// A restricted start with `peers` on no manager: the peer check runs
+    /// before the handle is looked up, so a list that passes it fails with
+    /// `NotFound`.
+    fn restricted_start(peers: &[&str]) -> (PlatformWalletFFIResultCode, String) {
+        let data_dir = CString::new("/nonexistent").expect("no NUL");
+        let owned: Vec<CString> = peers
+            .iter()
+            .map(|peer| CString::new(*peer).expect("no NUL"))
+            .collect();
+        let pointers: Vec<*const c_char> = owned.iter().map(|peer| peer.as_ptr()).collect();
+        let mut result = unsafe {
+            platform_wallet_manager_spv_start(
+                NULL_HANDLE,
+                data_dir.as_ptr(),
+                FFINetwork::Testnet,
+                std::ptr::null(),
+                pointers.as_ptr(),
+                pointers.len(),
+                true,
+                0,
+                std::ptr::null(),
+                0,
+                0,
+            )
+        };
+        let code = result.code;
+        let message = if result.message.is_null() {
+            String::new()
+        } else {
+            unsafe { CStr::from_ptr(result.message) }
+                .to_string_lossy()
+                .into_owned()
+        };
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+        (code, message)
+    }
+
+    #[test]
+    fn should_refuse_a_restricted_start_whose_peers_are_not_addresses() {
+        for peers in [
+            &["seed.example.org:19999"][..],
+            &["192.0.2.1", "not a peer"][..],
+        ] {
+            let (code, message) = restricted_start(peers);
+            assert_eq!(
+                code,
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                "{peers:?}"
+            );
+            assert!(message.contains(peers[0]), "{message}");
+        }
+    }
+
+    #[test]
+    fn should_let_a_restricted_start_through_with_a_usable_peer_or_no_peers() {
+        // No peers at all is an offline start, not a mistake. Port 0 is an
+        // address: `platform-wallet` decides about it, with a manager.
+        for peers in [
+            &[][..],
+            &["192.0.2.1:0", "192.0.2.2:19999"][..],
+            &["192.0.2.1:0"][..],
+        ] {
+            let (code, message) = restricted_start(peers);
+            assert_eq!(
+                code,
+                PlatformWalletFFIResultCode::NotFound,
+                "{peers:?}: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn should_refuse_a_restricted_start_whose_peers_cannot_be_decoded() {
+        let data_dir = CString::new("/nonexistent").expect("no NUL");
+        // Not UTF-8, and a null entry: both are skipped while decoding, and
+        // must not turn a start with peers into an offline one.
+        let not_utf8: [u8; 3] = [0xff, 0xfe, 0];
+        let peers = [not_utf8.as_ptr() as *const c_char, std::ptr::null()];
+        let mut result = unsafe {
+            platform_wallet_manager_spv_start(
+                NULL_HANDLE,
+                data_dir.as_ptr(),
+                FFINetwork::Testnet,
+                std::ptr::null(),
+                peers.as_ptr(),
+                peers.len(),
+                true,
+                0,
+                std::ptr::null(),
+                0,
+                0,
+            )
+        };
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        let message = unsafe { CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert!(message.ends_with("none of the 2 given is one"), "{message}");
+        unsafe { platform_wallet_ffi_result_free(&mut result) };
+    }
+
+    #[test]
+    fn should_quote_only_a_few_short_examples_of_the_refused_peers() {
+        let long = "x".repeat(10_000);
+        let peers: Vec<&str> = vec![long.as_str(); 50];
+        let (code, message) = restricted_start(&peers);
+        assert_eq!(code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+        assert!(message.contains("none of the 50 given is one"), "{message}");
+        assert_eq!(
+            message.matches(&"x".repeat(MAX_PEER_EXAMPLE_CHARS)).count(),
+            MAX_PEER_EXAMPLES,
+            "{message}"
+        );
+        assert!(message.len() < 1_000, "{} bytes", message.len());
+    }
+
+    #[test]
+    fn should_pass_on_every_peer_that_is_an_address() {
+        // Port 0 stays in the list: which peers a client can use is not
+        // decided while decoding.
+        let peers = [
+            "192.0.2.1:19999",
+            "192.0.2.1:0",
+            "seed.example.org:19999",
+            "[2001:db8::1]:19999",
+        ]
+        .map(String::from);
+        assert_eq!(
+            decoded_peers(&peers),
+            vec![
+                "192.0.2.1:19999".parse::<SocketAddr>().expect("an address"),
+                "192.0.2.1:0".parse::<SocketAddr>().expect("an address"),
+                "[2001:db8::1]:19999"
+                    .parse::<SocketAddr>()
+                    .expect("an address"),
+            ]
+        );
     }
 }
 

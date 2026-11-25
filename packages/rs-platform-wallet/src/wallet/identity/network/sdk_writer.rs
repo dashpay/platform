@@ -105,6 +105,9 @@ pub(crate) struct SendContactRequestParams<'a> {
     pub account_label: Option<String>,
     /// Optional unencrypted auto-accept proof.
     pub auto_accept_proof: Option<Vec<u8>>,
+    /// The sender's shielded payment address for this contact, 43 raw bytes, which the
+    /// SDK encrypts under the shared secret. `None` sends the request without one.
+    pub shielded_address: Option<[u8; 43]>,
     /// ECDH shared secret, already derived by the caller against the
     /// recipient's encryption key (client-side ECDH). The SDK encrypts
     /// the shared xpub with this directly; no private key crosses into
@@ -194,6 +197,7 @@ impl SdkWriter {
             account_reference,
             account_label,
             auto_accept_proof,
+            shielded_address,
             shared_secret,
             expected_recipient_pubkey,
             xpub_bytes,
@@ -209,6 +213,7 @@ impl SdkWriter {
             account_reference,
             account_label,
             auto_accept_proof,
+            shielded_address,
         };
 
         let send_input = SendContactRequestInput {

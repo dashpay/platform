@@ -1,6 +1,7 @@
 //! Protocol v15 generation of document type update validation.
 //!
-//! v2 is v1 plus the keep-history document lifecycle. Two rules are new:
+//! v2 is v1 plus the keep-history document lifecycle and the member rules of
+//! every object. The lifecycle rules:
 //!
 //! * `canBeErased` is immutable in both directions. Widening it would give an
 //!   operation over already-stored revisions to a type registered without it;
@@ -12,10 +13,29 @@
 //!   itself immutable, so an erasable type that stopped allowing deletion could
 //!   never again reach a state erase acts on.
 //!
-//! Every other check is v1's, which v2 delegates to once the two lifecycle
-//! rules above have passed. The one case where v1 alone would decide
-//! differently, an erasable type withdrawing deletion, is refused here before
-//! v1 sees it, so v1's option computation stays what it was.
+//! A third rule is not about the lifecycle: the width a type keeps its sums
+//! in (`DocumentTypeV2Getters::uses_big_sums`) is immutable. It follows the
+//! bounds of the summed property, which an update may widen, and the trees
+//! holding the type's sums were created at the width it had, so a type that
+//! changed width would write and read its sums at a width its trees do not
+//! have.
+//!
+//! The member rules ([`nested_members`]) hold every object of every type,
+//! private ones included, at every depth, to what the type's own properties are
+//! held to: its members keep their order and requiredness, members are added
+//! only after them, a `required` list loses nothing and gains only members the
+//! same update adds (or one already required through a dotted name), and a
+//! member added to an object that holds stored
+//! documents is required only with `requiredSince`.
+//!
+//! Every other check is v1's, which v2 delegates to once the rules above have
+//! passed. The one case where v1 alone would decide differently, an erasable
+//! type withdrawing deletion, is refused here before v1 sees it, so v1's option
+//! computation stays what it was. The member rules only add refusals, so
+//! running them first changes which error an update breaking several rules
+//! reports, never whether it is refused.
+
+mod nested_members;
 
 use crate::consensus::state::data_contract::document_type_update_error::DocumentTypeUpdateError;
 use crate::data_contract::document_type::accessors::{
@@ -49,6 +69,23 @@ impl DocumentTypeRef<'_> {
             ));
         }
 
+        if new_document_type.uses_big_sums() != self.uses_big_sums() {
+            let width = |big_sums: bool| if big_sums { "128" } else { "64" };
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change the width it keeps its sums in: the bounds \
+                         of its summed property would take it from {}-bit to {}-bit sums",
+                        width(self.uses_big_sums()),
+                        width(new_document_type.uses_big_sums()),
+                    ),
+                )
+                .into(),
+            ));
+        }
+
         if self.documents_can_be_erased()
             && self.documents_can_be_deleted()
             && !new_document_type.documents_can_be_deleted()
@@ -64,6 +101,28 @@ impl DocumentTypeRef<'_> {
             ));
         }
 
+        let result = self.validate_member_order_kept(new_document_type);
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        let result = self.validate_required_lists_kept(new_document_type, platform_version);
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        let result =
+            self.validate_member_requiredness_kept(new_document_type, new_contract_version);
+
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
         self.validate_update_v1(new_document_type, new_contract_version, platform_version)
     }
 }
+
+#[cfg(test)]
+mod tests;

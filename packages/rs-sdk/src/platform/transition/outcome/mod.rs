@@ -64,9 +64,21 @@ const NULLIFIER_REREAD_DELAY: Duration = Duration::from_secs(1);
 ///
 /// Free a reservation, unlock a held contact pair or retry a payment only on
 /// [`TransitionOutcome::CannotExecute`]: it is the one answer that proves the transition did not
-/// execute and never will. Treat [`TransitionOutcome::ExecutedOrSuperseded`] as settled and never
+/// execute and never will. The one exception is the fee notes of a token pool transition paid
+/// from the credit pool whose token bundle is spent; see
+/// [`TransitionOutcome::ExecutedOrSuperseded`]. Treat [`TransitionOutcome::ExecutedOrSuperseded`] as settled and never
 /// retry on it: it may be this very transition. [`TransitionOutcome::StillPossible`] means keep
 /// waiting.
+///
+/// A token pool transition paid from the credit pool (`TokenShieldedTransferWithShieldedFee`,
+/// `TokenUnshieldWithShieldedFee`, `TokenPurchaseFromShieldedPool`) carries its effect in its
+/// token bundle and pays its fee from a credit pool bundle. Under protocol version 14 the token
+/// bundle does not commit to its fee bundle, so a [`TransitionOutcome::CannotExecute`] that the
+/// fee bundle alone decides (its anchor pruned, or its notes spent elsewhere) does not stop the
+/// token bundle from landing with another fee bundle: retry a transfer or an unshield by
+/// spending the same token notes (a purchase's token bundle spends none, and whoever lands it
+/// pays its price). From protocol version 15 the token bundle commits to its fee bundle, and
+/// such an answer is final for both. A refusal at admission is no proof either: see below.
 ///
 /// A node's own view
 /// ([`NodeTransitionStatus`](super::node_status::NodeTransitionStatus), from
@@ -84,17 +96,25 @@ const NULLIFIER_REREAD_DELAY: Duration = Duration::from_secs(1);
 ///
 /// No answer says a transition is invalid either. One that fails today's structure checks may
 /// pass a later protocol version's, so it stays [`TransitionOutcome::StillPossible`] while its
-/// inputs are free; a shielded spend is still bounded by its anchor's deadline.
+/// inputs are free; a shielded spend is still bounded by its anchor's deadline. Likewise a
+/// transition the network refused at admission is not a reason to pay again with other notes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransitionOutcome {
     /// It can no longer execute, and the proofs do not show whether it did: every input it takes
-    /// is consumed, by this transition (executed, or failed with a paid error) or by others.
+    /// is consumed, by this transition (executed, or failed with a paid error) or by others, or
+    /// every nullifier of the token bundle that carries its effect is (see below).
     /// For a shielded spend every nullifier is spent; for a transition that takes nonces every
     /// nonce is used.
     ///
     /// Never retry or release anything on this answer alone: it may be this very transition.
     /// What it would have written, proved absent by a read at or above `consumed_by_height`,
     /// shows it did not execute, or failed with a paid error.
+    ///
+    /// A token pool transition paid from the credit pool also gets this answer when every
+    /// nullifier of its token bundle is spent, whatever its fee bundle shows: the token bundle
+    /// carries its effect. A wallet that reads those nullifiers spent and its fee notes unspent at
+    /// or above `consumed_by_height` may release the fee notes: the fee bundle commits to that
+    /// exact token bundle and cannot land without it.
     ExecutedOrSuperseded {
         /// The lowest height of a read that showed one of its inputs consumed: it cannot
         /// execute after this height.
@@ -517,8 +537,16 @@ async fn read_shielded_spend<R: PoolReads + ?Sized>(
             )
         }))
         .await?;
+        // Only the token pool transitions paid from the credit pool spend from a token pool,
+        // and their token bundle carries the transition's effect.
+        let token_bundle: Vec<InputRead> = spends
+            .iter()
+            .zip(&per_pool)
+            .filter(|(spend, _)| matches!(spend.pool, ShieldedPool::Token(_)))
+            .flat_map(|(_, reads)| reads.iter().copied())
+            .collect();
         let nullifiers: Vec<InputRead> = per_pool.into_iter().flatten().collect();
-        match judge_shielded(&nullifiers, &anchors, anchors_recorded_by) {
+        match judge_shielded(&nullifiers, &token_bundle, &anchors, anchors_recorded_by) {
             InputsVerdict::Unordered if rereads < NULLIFIER_REREADS => {
                 rereads += 1;
                 sleep(NULLIFIER_REREAD_DELAY.saturating_mul(rereads)).await;
@@ -1589,10 +1617,11 @@ mod read_sequence_tests {
     }
 
     #[tokio::test]
-    async fn should_report_a_purchase_whose_token_bundle_landed_in_another_purchase_as_input_used()
-    {
-        // The same outputs-only token bundle went into a purchase with another fee bundle: its
-        // dummy nullifiers are recorded, this purchase's fee nullifiers are not.
+    async fn should_report_a_purchase_whose_token_bundle_landed_in_another_purchase_as_executed_or_superseded(
+    ) {
+        // Under protocol version 14 the same outputs-only token bundle can go into a purchase
+        // with another fee bundle: its dummy nullifiers are recorded, this purchase's fee
+        // nullifiers are not. The tokens it buys were minted to its notes all the same.
         let pools = two_pools(
             fee_pool(vec![FEE_ANCHOR], FEE_ANCHOR),
             PoolScript {
@@ -1607,12 +1636,47 @@ mod read_sequence_tests {
             .expect("expected an outcome");
         assert_eq!(
             outcome,
-            TransitionOutcome::CannotExecute(CannotExecuteReason::InputUsed)
+            TransitionOutcome::ExecutedOrSuperseded {
+                consumed_by_height: 200
+            }
         );
         assert!(
             !pools.reads().contains(&Read::Anchors(TOKEN)),
             "a purchase needs no token pool anchor"
         );
+    }
+
+    #[tokio::test]
+    async fn should_report_a_spent_token_bundle_as_executed_or_superseded_whatever_the_fee_bundle_shows(
+    ) {
+        // The token bundle carries the transition's effect: every one of its nullifiers is
+        // spent, while the fee bundle's are free at the same height. Another fee bundle carried
+        // it, or its notes were spent elsewhere; neither is an answer on which to pay again.
+        for transition in [token_transfer(), token_unshield(), token_purchase()] {
+            let pools = two_pools(
+                fee_pool(vec![FEE_ANCHOR], FEE_ANCHOR),
+                PoolScript {
+                    anchors: vec![TOKEN_ANCHOR],
+                    anchors_height: 200,
+                    recorded_nullifiers: TOKEN_NULLIFIERS.to_vec(),
+                    nullifier_heights: vec![200],
+                    newest_anchor: Some(TOKEN_ANCHOR),
+                    newest_anchor_height: 200,
+                },
+            );
+
+            let outcome = outcome(&pools, &transition, None)
+                .await
+                .expect("expected an outcome");
+            assert_eq!(
+                outcome,
+                TransitionOutcome::ExecutedOrSuperseded {
+                    consumed_by_height: 200
+                },
+                "{}",
+                transition.name()
+            );
+        }
     }
 
     #[tokio::test]

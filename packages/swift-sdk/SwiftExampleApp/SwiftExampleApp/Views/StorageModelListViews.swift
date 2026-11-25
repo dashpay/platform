@@ -569,6 +569,40 @@ struct DashpayContactProfileStorageListView: View {
     }
 }
 
+// MARK: - PersistentDashpayPaymentAddresses
+
+struct DashpayPaymentAddressesStorageListView: View {
+    let network: Network
+    @Query private var records: [PersistentDashpayPaymentAddresses]
+
+    private var filtered: [PersistentDashpayPaymentAddresses] {
+        records.filter { $0.networkRaw == network.rawValue }
+    }
+
+    var body: some View {
+        let visible = filtered
+        List(visible) { record in
+            NavigationLink(destination: DashpayPaymentAddressesStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.profileIdentityId.toHexString())
+                        .font(.body).lineLimit(1).truncationMode(.middle)
+                    Text("Owner: \(record.ownerIdentityId.toHexString())")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+        }
+        .navigationTitle("Payment Addresses (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView("No Records", systemImage: "qrcode")
+            }
+        }
+    }
+}
+
 // MARK: - PersistentDashpayContactRequest
 
 /// Storage-explorer list of every DashPay contact-request row.
@@ -1895,6 +1929,39 @@ struct PendingInputStorageListView: View {
     }
 }
 
+// MARK: - PersistentLockedOutpoint
+
+/// The outpoints each wallet keeps out of coin selection: masternode
+/// collateral, and outpoints locked by hand. A row needs no TXO behind it.
+struct LockedOutpointStorageListView: View {
+    let network: Network
+    @Query private var records: [PersistentLockedOutpoint]
+
+    private var filtered: [PersistentLockedOutpoint] {
+        records.filter { $0.networkRaw == network.rawValue }
+            .sorted { ($0.walletId.toHexString(), $0.outpointHex)
+                < ($1.walletId.toHexString(), $1.outpointHex) }
+    }
+
+    var body: some View {
+        let visible = filtered
+        List(visible) { record in
+            NavigationLink(destination: LockedOutpointStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.outpointHex)
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1).truncationMode(.middle)
+                    Text("Wallet: \(record.walletId.toHexString())")
+                        .font(.caption).foregroundColor(.secondary)
+                        .lineLimit(1).truncationMode(.middle)
+                }
+            }
+        }
+        .navigationTitle("Locked Outpoints (\(visible.count))")
+        .overlay { if visible.isEmpty { ContentUnavailableView("No Records", systemImage: "lock") } }
+    }
+}
+
 // MARK: - PersistentAssetLock
 
 /// Storage explorer surface for tracked asset locks. SwiftData-backed
@@ -2336,7 +2403,7 @@ struct ShieldedActivityStorageListView: View {
                             }
                             Spacer()
                         }
-                        Text("\(record.amount) credits")
+                        Text(ShieldedActivityKindDisplay.rawAmountText(record.amount, tag: record.kindTag))
                             .font(.caption)
                         Text(record.entryId.prefix(8).map { String(format: "%02x", $0) }.joined())
                             .font(.system(.caption2, design: .monospaced))

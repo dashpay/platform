@@ -317,7 +317,7 @@ mod tests {
             // the insert creates, at chunk power 10 (605-byte stored entries under the 1 MiB
             // chunk target of `SYSTEM_LIMITS_V5`), and a contact request's optional
             // `encryptedShieldedAddress`.
-            _ => "3ef193e9d125d0e6cce24e208e1c0e9d723e7226db1150ae6dbcc1a06622c3f3",
+            _ => "16b4154171a9335540f24c1022765e1f24cd2f9720235c925825126dbf1e4ed8",
         };
 
         assert_eq!(

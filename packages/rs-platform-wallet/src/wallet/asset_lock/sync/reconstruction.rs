@@ -50,40 +50,9 @@ use key_wallet_manager::{WalletId, WalletManager};
 use tokio::sync::RwLock;
 
 use crate::changeset::changeset::AssetLockChangeSet;
+use crate::wallet::asset_lock::funding_account::funding_family;
 use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 use crate::wallet::platform_wallet::PlatformWalletInfo;
-
-/// Map a record's owning account to the asset-lock funding family it
-/// implies. `None` for every non-funding account (standard, CoinJoin,
-/// provider keys, DashPay, …) — those records never yield a
-/// reconstruction.
-///
-/// For [`AccountType::IdentityTopUp`] the account key *is* the
-/// registration index, so the destination identity index is recovered
-/// exactly. The singleton families (registration, invitation, unbound
-/// top-up, address top-ups) don't encode their destination index in the
-/// account — the credit-output address is just "next unused" there — so
-/// the index is not recoverable from chain and reconstruction reports 0
-/// (see [`reconstruct_candidates`]).
-fn funding_family(account_type: &AccountType) -> Option<(AssetLockFundingType, u32)> {
-    match account_type {
-        AccountType::IdentityRegistration => Some((AssetLockFundingType::IdentityRegistration, 0)),
-        AccountType::IdentityTopUp { registration_index } => {
-            Some((AssetLockFundingType::IdentityTopUp, *registration_index))
-        }
-        AccountType::IdentityTopUpNotBoundToIdentity => {
-            Some((AssetLockFundingType::IdentityTopUpNotBound, 0))
-        }
-        AccountType::IdentityInvitation => Some((AssetLockFundingType::IdentityInvitation, 0)),
-        AccountType::AssetLockAddressTopUp => {
-            Some((AssetLockFundingType::AssetLockAddressTopUp, 0))
-        }
-        AccountType::AssetLockShieldedAddressTopUp => {
-            Some((AssetLockFundingType::AssetLockShieldedAddressTopUp, 0))
-        }
-        _ => None,
-    }
-}
 
 /// Lock-free pre-filter: does this record even *look* like an
 /// asset-lock funding record for one of this wallet's funding
@@ -668,6 +637,8 @@ mod tests {
             dpns_name_states: BTreeMap::new(),
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
+            tracked_collaterals: Default::default(),
+            funding_issuance_floors: Default::default(),
         };
         assert_eq!(
             funding_account_index(&info, &txid),

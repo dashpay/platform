@@ -36,6 +36,7 @@ import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.CreateWallet
 import org.dashfoundation.example.navigation.WalletDetail
 import org.dashfoundation.example.ui.components.EntityRow
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 
 /**
  * Wallets tab root — port of `WalletsContentView.swift`: the persisted
@@ -52,7 +53,7 @@ fun WalletsScreen(navController: NavHostController) {
     val walletsFlow = remember(network) {
         container.database.walletDao().observeByNetwork(network.ffiValue)
     }
-    val wallets by walletsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val wallets by walletsFlow.collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("Wallets") }) },

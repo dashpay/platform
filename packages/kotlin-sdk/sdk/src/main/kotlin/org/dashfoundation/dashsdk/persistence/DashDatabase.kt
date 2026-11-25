@@ -19,6 +19,7 @@ import org.dashfoundation.dashsdk.persistence.dao.IdentityDao
 import org.dashfoundation.dashsdk.persistence.dao.InvitationDao
 import org.dashfoundation.dashsdk.persistence.dao.PlatformAddressDao
 import org.dashfoundation.dashsdk.persistence.dao.PrivateContactScanStateDao
+import org.dashfoundation.dashsdk.persistence.dao.WalletDrainOperationDao
 import org.dashfoundation.dashsdk.persistence.dao.PublicKeyDao
 import org.dashfoundation.dashsdk.persistence.dao.ShieldedDao
 import org.dashfoundation.dashsdk.persistence.dao.StorageCountsDao
@@ -48,6 +49,7 @@ import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressesSyncStateEntity
 import org.dashfoundation.dashsdk.persistence.entities.PrivateContactRequestsPositionEntity
 import org.dashfoundation.dashsdk.persistence.entities.PrivateShieldedAddressEntity
+import org.dashfoundation.dashsdk.persistence.entities.WalletDrainOperationEntity
 import org.dashfoundation.dashsdk.persistence.entities.PropertyEntity
 import org.dashfoundation.dashsdk.persistence.entities.PublicKeyEntity
 import org.dashfoundation.dashsdk.persistence.entities.ShieldedActivityEntity
@@ -190,9 +192,57 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
  * `onLoadPrivateContactScanState`, so a relaunch resumes the private contact
  * request sync where it stopped. Empty after the migration: the first sync
  * reads the store from its start, as every sync did before.
+ *
+ * Version 17 (Core to shielded "Max", a wallet drain): adds the nullable
+ * `asset_locks.operationId` column with a unique `(walletId, operationId)`
+ * index, the operation id native writes through
+ * `onPersistAssetLockOperationId` and reads back through
+ * `onLoadAssetLockOperationId`, and the `wallet_drain_operations` table, the
+ * id a host stores before it calls the drain. NULL for every pre-existing
+ * lock and empty after the migration: no lock built before it belongs to a
+ * drain.
+ *
+ * Version 18 (masternode voting key check): adds the nullable
+ * `identities.votingKeyCheckRaw`, `identities.votingKeyCheckMessage`,
+ * `identities.votingKeyCheckAddress` and `identities.votingKeyCheckRevision`
+ * columns: what Platform proved when a stored voting key was last checked,
+ * the address of the key it was made of (Swift `PersistentIdentity`,
+ * `DashSchemaV5`), and a count of the checks recorded, which orders them. NULL for every
+ * pre-existing row: a key stored before checks existed is never checked, so
+ * it is checked when it is picked to vote.
+ *
+ * Version 19 (shared masternodes): adds the nullable
+ * `identities.masternodeProTxHash` column, the wire-order pro_tx_hash a
+ * masternode or evonode row votes for, kept apart from its identity id since
+ * a masternode without an owner identity is stored under its voter identity
+ * (Swift `PersistentIdentity.masternodeProTxHash`), and the nullable
+ * `identities.masternodeRoleRaw` column, which of the masternode's
+ * identities the load rule returned (`"owner"` or `"voter"`). Both NULL for
+ * every pre-existing row: such a row is resolved through the load rule when
+ * it is next picked to vote.
+ *
+ * Version 20 (shielded asset-lock recipients): adds the nullable
+ * `asset_locks.shieldedRecipientRaw43` column, the Orchard recipient a
+ * shielded funding was built to pay, which native writes through
+ * `onPersistAssetLockShieldedRecipient` and reads back through
+ * `onLoadAssetLockShieldedRecipient` (Swift
+ * `PersistentAssetLock.shieldedRecipientRaw43`). NULL for every
+ * pre-existing lock: such a lock was tracked before its recipient was
+ * recorded, and a resume of it names the recipient, as before.
+ *
+ * Version 21 (DashPay profile payment addresses): adds the nullable
+ * `corePaymentAddress`, `platformPaymentAddress` and `shieldedAddress`
+ * columns to `dashpay_profiles` and `dashpay_contact_profiles`, the payment
+ * addresses an own or cached contact profile publishes, in their stored
+ * form. Swift keeps them in the `PersistentDashpayPaymentAddresses` sidecar;
+ * here they ride the profile row and commit with it. NULL for every
+ * pre-existing row: the profile publishes none until the next profile sync
+ * rewrites it. Each cached contact profile's `checkedAtMs` is reset to 0, so
+ * that sync fetches every contact profile again instead of treating a row
+ * that never stored addresses as fresh for up to an hour.
  */
 @Database(
-    version = 16,
+    version = 21,
     exportSchema = true,
     entities = [
         WalletEntity::class,
@@ -231,6 +281,7 @@ import org.dashfoundation.dashsdk.persistence.entities.WalletManagerMetadataEnti
         WalletManagerMetadataEntity::class,
         PrivateContactRequestsPositionEntity::class,
         PrivateShieldedAddressEntity::class,
+        WalletDrainOperationEntity::class,
     ],
 )
 @TypeConverters(Converters::class)
@@ -255,6 +306,7 @@ abstract class DashDatabase : RoomDatabase() {
     abstract fun walletManagerMetadataDao(): WalletManagerMetadataDao
     abstract fun storageCountsDao(): StorageCountsDao
     abstract fun privateContactScanStateDao(): PrivateContactScanStateDao
+    abstract fun walletDrainOperationDao(): WalletDrainOperationDao
 
     companion object {
         const val DATABASE_NAME: String = "dash-sdk.db"
@@ -753,6 +805,85 @@ abstract class DashDatabase : RoomDatabase() {
         }
 
         /**
+         * v16 -> v17: the nullable `asset_locks.operationId` column, its
+         * unique `(walletId, operationId)` index and the
+         * `wallet_drain_operations` table, see the version-17 class doc
+         * above. NULL for every pre-existing lock; the table is created empty.
+         */
+        val MIGRATION_16_17: Migration = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `asset_locks` ADD COLUMN `operationId` BLOB")
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_asset_locks_walletId_operationId` " +
+                        "ON `asset_locks` (`walletId`, `operationId`)",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `wallet_drain_operations` (" +
+                        "`operationId` BLOB NOT NULL, `walletId` BLOB NOT NULL, " +
+                        "`networkRaw` INTEGER NOT NULL, `fundingAccountIndex` INTEGER NOT NULL, " +
+                        "`recipientRaw43` BLOB NOT NULL, `createdAtMillis` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`operationId`))",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_wallet_drain_operations_walletId` " +
+                        "ON `wallet_drain_operations` (`walletId`)",
+                )
+            }
+        }
+
+        /**
+         * v17 -> v18: the three nullable voting key check columns on
+         * `identities`, see the version-18 class doc above. NULL for every
+         * pre-existing row: nothing recorded.
+         */
+        val MIGRATION_17_18: Migration = object : Migration(17, 18) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `identities` ADD COLUMN `votingKeyCheckRaw` TEXT")
+                db.execSQL("ALTER TABLE `identities` ADD COLUMN `votingKeyCheckMessage` TEXT")
+                db.execSQL("ALTER TABLE `identities` ADD COLUMN `votingKeyCheckAddress` BLOB")
+                db.execSQL("ALTER TABLE `identities` ADD COLUMN `votingKeyCheckRevision` INTEGER")
+            }
+        }
+
+        /**
+         * v18 -> v19: the nullable `identities.masternodeProTxHash` column, see
+         * the version-19 class doc above. NULL for every pre-existing row.
+         */
+        val MIGRATION_18_19: Migration = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `identities` ADD COLUMN `masternodeProTxHash` BLOB")
+                db.execSQL("ALTER TABLE `identities` ADD COLUMN `masternodeRoleRaw` TEXT")
+            }
+        }
+
+        /**
+         * v19 -> v20: the nullable `asset_locks.shieldedRecipientRaw43`
+         * column, see the version-20 class doc above. NULL for every
+         * pre-existing lock.
+         */
+        val MIGRATION_19_20: Migration = object : Migration(19, 20) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `asset_locks` ADD COLUMN `shieldedRecipientRaw43` BLOB")
+            }
+        }
+
+        /**
+         * v20 -> v21: the three nullable payment address columns on both
+         * DashPay profile tables, see the version-21 class doc above.
+         */
+        val MIGRATION_20_21: Migration = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                for (table in listOf("dashpay_profiles", "dashpay_contact_profiles")) {
+                    db.execSQL("ALTER TABLE `$table` ADD COLUMN `corePaymentAddress` BLOB")
+                    db.execSQL("ALTER TABLE `$table` ADD COLUMN `platformPaymentAddress` BLOB")
+                    db.execSQL("ALTER TABLE `$table` ADD COLUMN `shieldedAddress` BLOB")
+                }
+                // Names and avatars stay; only the fetch backoff is cleared.
+                db.execSQL("UPDATE `dashpay_contact_profiles` SET `checkedAtMs` = 0")
+            }
+        }
+
+        /**
          * Build the on-disk database. WAL is Room's default journal mode on
          * API 16+; writes go through the persistence handler inside
          * `withTransaction`, mirroring the changeset bracketing contract of
@@ -783,6 +914,11 @@ abstract class DashDatabase : RoomDatabase() {
                     MIGRATION_13_14,
                     MIGRATION_14_15,
                     MIGRATION_15_16,
+                    MIGRATION_16_17,
+                    MIGRATION_17_18,
+                    MIGRATION_18_19,
+                    MIGRATION_19_20,
+                    MIGRATION_20_21,
                 )
                 .build()
 
