@@ -149,10 +149,13 @@ pub struct CoreChangeSet {
     /// already knew: a filter rescan re-delivered the block for addresses a
     /// later block derived, or a mempool transaction confirmed after its
     /// pools grew. The `BlockProcessed` projection reads them from the
-    /// wallet's UTXO set, because the event's records derive none.
+    /// wallet's UTXO set, because it derives no coins from `updated` records.
     ///
     /// A persister writes each one only when it holds no row for the
-    /// outpoint, and never changes an existing row's spent flag. A re-scan
+    /// outpoint, and never changes an existing row's spent flag. A sweep
+    /// placeholder is not a delivered row: it is materialised with its spent
+    /// flag kept. A persister that projects coins from `account_records`
+    /// already sees these outputs on the updated record. A re-scan
     /// can re-deliver a coin the store has already recorded as spent while
     /// the wallet still holds it, and re-sending must not offer that coin
     /// again. The price is that a row left spent by a change the store did
@@ -4176,6 +4179,39 @@ mod utxo_credit_verdict_merge_tests {
         ));
         older.merge(newer);
         assert!(older.utxo_credit_verdicts.is_empty());
+    }
+
+    /// A re-scan's coin (`rescan_utxos`) credits its outpoint the same way.
+    #[test]
+    fn merge_drops_older_verdict_for_an_outpoint_a_newer_rescan_credits() {
+        let mut older = CoreChangeSet::default();
+        older
+            .utxo_credit_verdicts
+            .insert(outpoint(1), UtxoCreditVerdict::Doomed);
+        older
+            .utxo_credit_verdicts
+            .insert(outpoint(2), UtxoCreditVerdict::Uncredited);
+        let mut newer = CoreChangeSet::default();
+        let script =
+            dashcore::ScriptBuf::new_p2pkh(&dashcore::PubkeyHash::from_byte_array([7u8; 20]));
+        let address = dashcore::Address::from_script(&script, dashcore::Network::Testnet).unwrap();
+        newer.rescan_utxos.push(key_wallet::Utxo::new(
+            outpoint(1),
+            dashcore::TxOut {
+                value: 1,
+                script_pubkey: script,
+            },
+            address,
+            100,
+            false,
+        ));
+        older.merge(newer);
+        assert_eq!(
+            older.utxo_credit_verdicts.keys().collect::<Vec<_>>(),
+            vec![&outpoint(2)],
+            "only the re-scanned outpoint's verdict is dropped"
+        );
+        assert_eq!(older.rescan_utxos.len(), 1);
     }
 }
 
