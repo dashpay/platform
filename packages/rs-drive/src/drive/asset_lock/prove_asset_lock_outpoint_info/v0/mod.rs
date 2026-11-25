@@ -1,6 +1,6 @@
-use crate::drive::asset_lock_outpoint_info_query::asset_lock_outpoint_info_query;
 use crate::drive::Drive;
 use crate::error::Error;
+use crate::util::common::asset_lock_outpoint_info_query::asset_lock_outpoint_info_query;
 use dpp::platform_value::Bytes36;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
