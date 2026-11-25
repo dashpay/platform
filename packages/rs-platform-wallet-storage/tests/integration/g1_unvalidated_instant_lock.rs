@@ -10,7 +10,11 @@
 //! holds no masternode list, so no quorum of the lock's cycle), in three
 //! orders, then checks:
 //!
-//! - (i) the store has no `core_instant_locks` row with `verified = 1`;
+//! - the client held the lock back: it is pending and no `InstantLockReceived`
+//!   was emitted for it;
+//! - (i) the store has no `core_instant_locks` row with `verified = 1`. The
+//!   writer stores every lock that reaches it as verified, so this means no
+//!   lock reached the store, not that the store refused one;
 //! - (ii) in memory, the record is Mempool and its coin is not InstantSend
 //!   locked, confirmed, or counted in the confirmed balance;
 //! - (iii) after everything is dropped and a fresh manager loads the same
@@ -105,11 +109,15 @@ impl NetworkManager for SharedNetwork {
 #[derive(Clone, Copy, Debug)]
 enum Order {
     /// The lock is injected right behind the transaction, with no wait.
-    LockWithTx,
-    /// The lock is processed by the client before the transaction arrives.
-    LockBeforeTx,
+    WithTx,
+    /// The InstantSend manager has handled the lock before the transaction is
+    /// injected. Had it forwarded the lock, the mempool manager would get it
+    /// on a separate event subscription, so which of its two paths (lock held
+    /// for the transaction, or lock applied to it) a regression takes is not
+    /// fixed.
+    BeforeTx,
     /// The transaction is in the wallet and the store before the lock arrives.
-    LockAfterTx,
+    AfterTx,
 }
 
 /// The `InstantLockReceived` events the client emits, as `(txid, validated)`.
@@ -431,19 +439,19 @@ async fn run(order: Order) {
     };
 
     match order {
-        Order::LockWithTx => {
+        Order::WithTx => {
             net.inject(peer, tx_msg()).await;
             net.inject(peer, lock_msg()).await;
             wait_until("the payment in the wallet and the store", tx_seen).await;
             wait_until("the lock at the InstantSend manager", lock_seen).await;
         }
-        Order::LockBeforeTx => {
+        Order::BeforeTx => {
             net.inject(peer, lock_msg()).await;
             wait_until("the lock at the InstantSend manager", lock_seen).await;
             net.inject(peer, tx_msg()).await;
             wait_until("the payment in the wallet and the store", tx_seen).await;
         }
-        Order::LockAfterTx => {
+        Order::AfterTx => {
             net.inject(peer, tx_msg()).await;
             wait_until("the payment in the wallet and the store", tx_seen).await;
             net.inject(peer, lock_msg()).await;
@@ -469,7 +477,12 @@ async fn run(order: Order) {
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
+    // Why it holds: the client kept the lock pending and emitted nothing.
     let events = lock_events.of(&txid);
+    let pending = instantsend_pending(&client).await;
+    let spv_violation = (!events.is_empty() || pending != 1).then(|| {
+        format!("InstantLockReceived events (validated) {events:?}, {pending} lock(s) pending")
+    });
 
     client.stop().await;
     drop(client);
@@ -504,6 +517,7 @@ async fn run(order: Order) {
         stored_lock_rows(&db, &txid)
     );
     let violations: Vec<String> = [
+        ("SPV held the lock back", spv_violation),
         ("(i) store, live", store_violation),
         ("(ii) memory, live", memory_violation),
         ("(i) store, after reopen", reopened_store_violation),
@@ -521,17 +535,17 @@ async fn run(order: Order) {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn g1_unvalidated_lock_with_its_transaction_is_never_final() {
-    run(Order::LockWithTx).await;
+    run(Order::WithTx).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn g1_unvalidated_lock_before_its_transaction_is_never_final() {
-    run(Order::LockBeforeTx).await;
+    run(Order::BeforeTx).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn g1_unvalidated_lock_after_its_transaction_is_never_final() {
-    run(Order::LockAfterTx).await;
+    run(Order::AfterTx).await;
 }
 
 /// A lock the client validates against a live regtest quorum.
@@ -564,11 +578,15 @@ async fn g1_validated_lock_is_final_and_survives_a_reopen() {
     config.add_peer(mn.controller_addr);
     let handler = Arc::new(TestEventHandler::new());
     let mut sync_events = handler.subscribe_sync_events();
+    let lock_events = Arc::new(LockEvents::default());
     let client = DashSpvClient::new(
         config.clone(),
         PeerNetworkManager::new(&config).await,
         Arc::clone(&wm),
-        vec![handler.clone()],
+        vec![
+            handler.clone(),
+            Arc::clone(&lock_events) as Arc<dyn dash_spv::EventHandler>,
+        ],
     )
     .await
     .expect("spv client");
@@ -626,11 +644,12 @@ async fn g1_validated_lock_is_final_and_survives_a_reopen() {
     // keeps their signing sessions alive (dash-spv's own dashd tests do the same).
     tokio::task::block_in_place(|| mn.bump_mocktime(30));
     wait_until("the controller's lock", || {
-        let locked = mn
-            .controller
-            .try_rpc_call("getrawtransaction", &[txid.to_string().into(), 1.into()])
-            .and_then(|raw| raw.get("instantlock").and_then(|v| v.as_bool()))
-            .unwrap_or(false);
+        let locked = tokio::task::block_in_place(|| {
+            mn.controller
+                .try_rpc_call("getrawtransaction", &[txid.to_string().into(), 1.into()])
+                .and_then(|raw| raw.get("instantlock").and_then(|v| v.as_bool()))
+                .unwrap_or(false)
+        });
         async move { locked }
     })
     .await;
@@ -643,13 +662,18 @@ async fn g1_validated_lock_is_final_and_survives_a_reopen() {
         )
     })
     .await;
-    let validated = client
-        .progress()
-        .await
-        .instantsend()
-        .expect("instantsend progress")
-        .valid();
-    assert!(validated >= 1, "the client validated no lock");
+    // At this pin dash-spv emits a lock only once it has validated it. The
+    // event handlers run on their own task, so the event may trail the wallet.
+    let events_ref = &*lock_events;
+    wait_until("the payment's InstantLockReceived event", || async move {
+        !events_ref.of(&txid).is_empty()
+    })
+    .await;
+    assert_eq!(
+        lock_events.of(&txid),
+        vec![true],
+        "the payment's lock must reach the wallet as validated, once"
+    );
     wait_until("a verified lock row", || async move {
         verified_lock_rows(db_ref, &txid) == 1
     })
