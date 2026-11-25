@@ -1750,6 +1750,10 @@ impl PlatformWalletError {
         match self {
             // Raised before any payment is built or dispatched.
             Self::DocumentEraseBusy
+            | Self::ShieldedPlanChanged { .. }
+            | Self::ShieldedSpendTooManyNotes { .. }
+            | Self::ShieldedWithdrawalAmountOutOfRange { .. }
+            | Self::NetworkProtocolVersionUnsupported { .. }
             | Self::WalletCreation(_)
             | Self::AccountNotFound(_)
             | Self::DashpayAccountBuild { .. }
@@ -2114,6 +2118,10 @@ impl PlatformWalletError {
                 // the request, the wallet's state or the network has to
                 // change first.
                 Self::DocumentEraseBusy
+                | Self::ShieldedPlanChanged { .. }
+                | Self::ShieldedSpendTooManyNotes { .. }
+                | Self::ShieldedWithdrawalAmountOutOfRange { .. }
+                | Self::NetworkProtocolVersionUnsupported { .. }
                 | Self::WalletCreation(_)
                 | Self::PersisterRestore(_)
                 | Self::AccountNotFound(_)
@@ -3197,7 +3205,7 @@ mod payment_delivery_tests {
     }
 
     /// Variants of [`PlatformWalletError`]: one past the highest ordinal.
-    const VARIANT_COUNT: usize = 126;
+    const VARIANT_COUNT: usize = 130;
 
     /// The ordinal of `error`'s variant. No wildcard arm: a new variant does
     /// not compile until it gets the next ordinal here (and
@@ -3332,6 +3340,10 @@ mod payment_delivery_tests {
             E::InvitationAlreadyClaimed { .. } => 123,
             E::InvitationKeysAlreadyRegistered { .. } => 124,
             E::InvitationNotReady(_) => 125,
+            E::ShieldedPlanChanged { .. } => 126,
+            E::ShieldedSpendTooManyNotes { .. } => 127,
+            E::ShieldedWithdrawalAmountOutOfRange { .. } => 128,
+            E::NetworkProtocolVersionUnsupported { .. } => 129,
         }
     }
 
@@ -3753,6 +3765,34 @@ mod payment_delivery_tests {
             (E::ShieldedStoreError(s()), MaybeSent),
             (E::ShieldedMerkleWitnessUnavailable(s()), NotSent),
             (E::ShieldedNoRecordedAnchor(s()), NotSent),
+            (
+                E::ShieldedPlanChanged {
+                    fresh_selection: None,
+                },
+                NotSent,
+            ),
+            (
+                E::ShieldedSpendTooManyNotes {
+                    needed: 20,
+                    max: 16,
+                },
+                NotSent,
+            ),
+            (
+                E::ShieldedWithdrawalAmountOutOfRange {
+                    amount: 1,
+                    min: 2,
+                    max: 3,
+                },
+                NotSent,
+            ),
+            (
+                E::NetworkProtocolVersionUnsupported {
+                    network: 99,
+                    latest_supported: 12,
+                },
+                NotSent,
+            ),
             (E::ShieldedKeyDerivation(s()), NotSent),
             (E::ShieldedNotBound, NotSent),
             (E::DocumentEraseBusy, NotSent),
