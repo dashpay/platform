@@ -121,7 +121,7 @@ def control_member(deb, name):
 
 
 def added_entries(keyring):
-    """The entries the repack adds to oclif's payload: the two files and the directories
+    """The entries the repack adds to oclif's payload: the three files and the directories
     holding them that oclif's payload has no entry for, all root owned."""
     root = (0, 0, 'root', 'root')
     directories = ['./etc', './etc/apt', './etc/apt/keyrings', './etc/apt/preferences.d',
@@ -251,7 +251,7 @@ class RewriteDebVersionsTests(unittest.TestCase):
                 self.assertEqual(field(deb, 'Version'), '4.1.0~rc.3-1')
                 self.assertEqual(field(deb, 'Architecture'), arch)
                 # the same compression, and the same files, modes and root ownership oclif built,
-                # next to the apt repository's source file and keyring
+                # next to the apt repository's source file, keyring and preferences file
                 self.assertEqual(ar_members(deb), members)
                 self.assertEqual(payload(deb), sorted(files + added_entries(self.keyring)))
                 self.assertTrue(all(entry[3:7] == (0, 0, 'root', 'root') for entry in files))
