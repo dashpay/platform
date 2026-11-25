@@ -798,6 +798,8 @@ impl PlatformWallet {
                 None
             }
         };
+        #[cfg(test)]
+        super::tips::test_hooks::after_balance_read(self).await;
         // Whether a Clear is admitted is sampled before the preparation is
         // read again, not after: a Clear that wiped the ledger just read
         // and finished between the two checks would otherwise be seen by

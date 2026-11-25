@@ -925,6 +925,89 @@ async fn should_refuse_a_zero_tip_before_confirming_its_recipient() {
     );
 }
 
+/// A balance read copies its amount, then checks that the identity's account
+/// still stands prepared. A Clear that ran in between, followed by a bind and
+/// a preparation of the same account, leaves that check with nothing to
+/// object to: the account stands again and no Clear is running. The Clear
+/// epoch is what tells the read its amount came from the wiped ledger, so it
+/// reports busy and the caller reads again.
+#[tokio::test]
+async fn should_not_report_an_amount_read_before_a_clear_once_the_account_is_prepared_again() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tip_balance_across_clear").await;
+    wallet
+        .prepare_shielded_identity_address(&seed[..], &id)
+        .await
+        .expect("prepare");
+    let account = shielded_identity_account_index(2).unwrap();
+    {
+        let mut store = coordinator.store().write().await;
+        for scanned in wallet.shielded_account_indices().await {
+            store
+                .set_last_synced_note_index(SubwalletId::new(wallet.wallet_id(), scanned), 0)
+                .expect("complete a scan");
+        }
+        store
+            .save_note(
+                SubwalletId::new(wallet.wallet_id(), account),
+                &ShieldedNote {
+                    position: 1,
+                    cmx: [1; 32],
+                    nullifier: [1; 32],
+                    block_height: 1,
+                    is_spent: false,
+                    value: 4_200,
+                    note_data: vec![1; 115],
+                },
+            )
+            .expect("save a note");
+    }
+    assert_eq!(
+        wallet.shielded_identity_balance(&id).await.unwrap(),
+        ShieldedIdentityBalance::Available {
+            account,
+            credits: 4_200
+        }
+    );
+
+    // The read is held right after it copied its amount.
+    let (copied, resume) = super::tips::test_hooks::pause_after_balance_read(&wallet);
+    let read = {
+        let wallet = wallet.clone();
+        tokio::spawn(async move { wallet.shielded_identity_balance(&id).await })
+    };
+    copied.await.expect("the read copied its amount");
+
+    coordinator
+        .clear(&WipeCountingPersistence::default())
+        .await
+        .expect("clear");
+    wallet.bind_shielded(&seed[..], &[0]).await.expect("bind");
+    wallet
+        .prepare_shielded_identity_address(&seed[..], &id)
+        .await
+        .expect("prepare again");
+    assert_eq!(
+        wallet.prepared_shielded_identity_account(&id).await,
+        Some(account),
+        "the same account stands prepared again"
+    );
+
+    resume.send(()).expect("the read is waiting");
+    let resumed = tokio::time::timeout(std::time::Duration::from_secs(5), read)
+        .await
+        .expect("the read finishes")
+        .expect("the read task");
+    assert!(
+        matches!(resumed, Err(PlatformWalletError::ShieldedBalanceBusy)),
+        "{resumed:?}"
+    );
+    assert_eq!(
+        wallet.shielded_identity_balance(&id).await.unwrap(),
+        ShieldedIdentityBalance::Unavailable { account },
+        "read again, the cleared ledger is not a known amount"
+    );
+}
+
 /// A balance read that waits for the shielded store does not hold the
 /// coordinator's operation admission, so a Clear requested meanwhile is
 /// admitted. While that Clear is admitted the read reports nothing: the

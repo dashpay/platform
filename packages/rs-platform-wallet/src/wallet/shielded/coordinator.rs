@@ -1353,7 +1353,6 @@ impl NetworkShieldedCoordinator {
             .filter(|account_index| account_views.contains_key(account_index))
             .collect();
         self.persisters.write().await.insert(wallet_id, persister);
-        self.bound_since_clear.write().await.insert(wallet_id);
         {
             let mut accounts = self.accounts.write().await;
             // Drop any prior subwallets for this wallet_id before
@@ -1363,6 +1362,11 @@ impl NetworkShieldedCoordinator {
             for (account_index, views) in account_views {
                 accounts.insert(SubwalletId::new(wallet_id, account_index), views);
             }
+            // The wallet counts as bound, and so may pay, only once its
+            // accounts are in the registry a sync pass reads. Under the
+            // registry guard, with no wait in between: a bind dropped while
+            // it waited for that guard leaves the wallet unbound.
+            self.bound_since_clear.write().await.insert(wallet_id);
         }
 
         // Any shape change invalidates prior hydration — the restore
@@ -7084,6 +7088,48 @@ mod tests {
         assert!(
             coordinator.registered_subwallets().await.is_empty(),
             "the queued unregister runs as soon as the transaction commits"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A bind dropped while its registration waited for the account registry
+    /// leaves the wallet unbound: a payment is admitted only for a wallet
+    /// whose accounts a sync pass reads, and those were never installed.
+    #[tokio::test]
+    async fn should_leave_a_wallet_unbound_when_its_registration_is_dropped_midway() {
+        let dir = temp_dir("register_dropped");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        coordinator
+            .clear(&WipeCountingPersistence::default())
+            .await
+            .expect("clear");
+        assert!(!coordinator.is_wallet_registered(wallet_id).await);
+
+        let views = OrchardKeySet::from_seed(&[0u8; 64], dashcore::Network::Testnet, 0)
+            .expect("derive keys")
+            .viewing_keys();
+        let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
+        {
+            // A sync pass reads the registry: the registration waits for it.
+            let pass = coordinator.accounts.read().await;
+            let mut registration = std::pin::pin!(coordinator.register_wallet(
+                wallet_id,
+                BTreeMap::from([(0u32, views)]),
+                persister,
+            ));
+            assert!(
+                futures::poll!(registration.as_mut()).is_pending(),
+                "the registration waits for the account registry"
+            );
+            drop(pass);
+        }
+
+        assert!(coordinator.registered_subwallets().await.is_empty());
+        assert!(
+            !coordinator.is_wallet_registered(wallet_id).await,
+            "no payment is admitted for a wallet whose accounts were never installed"
         );
 
         let _ = std::fs::remove_dir_all(&dir);

@@ -1223,7 +1223,13 @@ impl PlatformWallet {
     /// - the identity account (`shielded_identity_account_index`) of
     ///   every identity this wallet holds with a recorded index;
     /// - every identity account with a persisted viewing key, so the
-    ///   account of an identity removed since keeps scanning.
+    ///   account of an identity removed since keeps scanning;
+    /// - every identity account this handle holds keys for. A Clear wipes
+    ///   the persisted viewing keys and keeps the handle's, so the bind that
+    ///   follows a Clear in the same process still adds the account of a
+    ///   removed identity. Once the process has ended after a Clear, or on a
+    ///   handle that never bound, that account is added again only when its
+    ///   identity is back on the device.
     ///
     /// The bound set can therefore be larger than the request, and each
     /// added account is one more to scan. Pass the ordinary accounts

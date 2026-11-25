@@ -454,6 +454,7 @@ pub(crate) mod test_hooks {
         Snapshot,
         PublicationAdmitted,
         PublicationChecked,
+        BalanceRead,
     }
     static HOOKS: Mutex<Option<HashMap<(usize, Stage), Hook>>> = Mutex::new(None);
 
@@ -495,6 +496,18 @@ pub(crate) mod test_hooks {
 
     pub(crate) async fn after_snapshot(wallet: &PlatformWallet) {
         reach(wallet, Stage::Snapshot).await;
+    }
+
+    /// Pause an identity balance read right after it copied its amount,
+    /// before it checks that the account still stands prepared.
+    pub(crate) fn pause_after_balance_read(
+        wallet: &PlatformWallet,
+    ) -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
+        pause(wallet, Stage::BalanceRead)
+    }
+
+    pub(crate) async fn after_balance_read(wallet: &PlatformWallet) {
+        reach(wallet, Stage::BalanceRead).await;
     }
 
     /// Pause a profile write right after it chose the coordinator admission
