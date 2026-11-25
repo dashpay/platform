@@ -55,9 +55,16 @@ The package configures Dash's apt repository, `https://apt.services.dash.org/das
 
 `apt remove dashmate` keeps the three files and `apt purge dashmate` deletes them. Once dashmate is removed, upgrades no longer renew the key, so when the key expires, `apt update` reports a signature error for the repository. To take dashmate off a host for good, purge it. To keep the source, with its suite choice, without using it, add `Enabled: no` to `dashmate.sources`; a later install keeps that line, so delete it to use the repository again.
 
-Do not create these files yourself, and do not create others with the same names. If one of them already exists with different content when the package is installed, dpkg asks whether to keep it. An install with no terminal to answer that question, such as an `apt-get -y` run from a script, fails at the prompt and leaves dashmate unconfigured. A repository configured by hand, for example to install a prerelease that does not ship these files yet, belongs in files of other names. Create the pin first, before the first `apt update` that reads the source, and check the key before using it: the file's sha256 is `08006df56f24e282f19012a29e539dad431654abefefd697832ac61918b01230` and its primary key fingerprint is `A5F90926475EF25346DCE26836EF5BF853D100FE`.
+Do not create these files yourself, and do not create others with the same names. If one of them already exists with different content when the package is installed, dpkg asks whether to keep it. An install with no terminal to answer that question, such as an `apt-get -y` run from a script, fails at the prompt and leaves dashmate unconfigured. A repository configured by hand, for example to install a prerelease that does not ship these files yet, belongs in files of other names. The commands below create the pin first, before the first `apt update` that reads the source. They download the key to a temporary file and install it only if its sha256 is `08006df56f24e282f19012a29e539dad431654abefefd697832ac61918b01230` (primary key fingerprint `A5F90926475EF25346DCE26836EF5BF853D100FE`), and they stop at the first command that fails. Set `suite` to `dev` instead of `testing` for dev builds. On a system without `sha256sum`, `shasum -a 256 -c -` does the same check.
 
 ```bash
+(
+set -e
+suite=testing
+keyring=$(mktemp)
+trap 'rm -f "$keyring"' EXIT
+curl --proto '=https' -fsSL https://apt.services.dash.org/dashmate/dashmate-archive-keyring.gpg -o "$keyring"
+echo "08006df56f24e282f19012a29e539dad431654abefefd697832ac61918b01230  $keyring" | sha256sum -c -
 sudo install -d -m 0755 /etc/apt/keyrings /etc/apt/preferences.d
 sudo tee /etc/apt/preferences.d/dashmate-testing.pref > /dev/null <<'EOF'
 Package: dashmate:any
@@ -68,34 +75,39 @@ Package: *:any
 Pin: origin apt.services.dash.org
 Pin-Priority: -1
 EOF
-sudo curl -fsSL https://apt.services.dash.org/dashmate/dashmate-archive-keyring.gpg \
-  -o /etc/apt/keyrings/dashmate-testing-archive-keyring.gpg
-sha256sum /etc/apt/keyrings/dashmate-testing-archive-keyring.gpg
-sudo tee /etc/apt/sources.list.d/dashmate-testing.sources > /dev/null <<'EOF'
+sudo install -m 0644 "$keyring" /etc/apt/keyrings/dashmate-testing-archive-keyring.gpg
+sudo tee /etc/apt/sources.list.d/dashmate-testing.sources > /dev/null <<EOF
 Types: deb
 URIs: https://apt.services.dash.org/dashmate
-Suites: testing
+Suites: $suite
 Components: main
 Architectures: amd64 arm64
 Signed-By: /etc/apt/keyrings/dashmate-testing-archive-keyring.gpg
 EOF
 sudo apt update
 sudo apt install dashmate
+)
 ```
 
-Use `Suites: dev` for dev builds.
-
-Once dashmate is installed from a package that ships `dashmate.sources`, delete those three hand-written files first, then set `Suites:` in `dashmate.sources`: while both sources name the same suite with different keys, `apt update` fails with `Conflicting values set for option Signed-By`.
+Once dashmate is installed from a package that ships `dashmate.sources`, move to it with the commands below. They read the suite from `dashmate-testing.sources`, delete the three hand-written files, and only then set that suite in `dashmate.sources`: while both sources name the same suite with different keys, `apt update` fails with `Conflicting values set for option Signed-By`.
 
 ```bash
+(
+set -e
+suite=$(sed -n 's/^Suites: *//p' /etc/apt/sources.list.d/dashmate-testing.sources)
+case "$suite" in
+  testing|dev) echo "Keeping suite $suite" ;;
+  *) echo "Unexpected suite '$suite' in dashmate-testing.sources" >&2; exit 1 ;;
+esac
 sudo rm /etc/apt/sources.list.d/dashmate-testing.sources \
   /etc/apt/keyrings/dashmate-testing-archive-keyring.gpg \
   /etc/apt/preferences.d/dashmate-testing.pref
-sudo sed -i 's/^Suites: stable$/Suites: testing/' /etc/apt/sources.list.d/dashmate.sources
+sudo sed -i "s/^Suites: stable\$/Suites: $suite/" /etc/apt/sources.list.d/dashmate.sources
 sudo apt update
+)
 ```
 
-dpkg does not own the hand-written files, so purging dashmate leaves them in place and the source active. To take dashmate off a host that still uses them, delete the three files with the `rm` command above. To keep the suite choice without an active source, add `Enabled: no` to `dashmate-testing.sources` instead.
+dpkg does not own the hand-written files, so purging dashmate leaves them in place and the source active. To take dashmate off a host that still uses them, delete the three files named in the `rm` command above. To keep the suite choice without an active source, add `Enabled: no` to `dashmate-testing.sources` instead.
 
 ### Node package
 
