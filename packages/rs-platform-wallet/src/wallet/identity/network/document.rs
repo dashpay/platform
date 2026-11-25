@@ -177,7 +177,8 @@ impl IdentityWallet {
     ///      wallet manager: an AUTHENTICATION-purpose ECDSA key
     ///      (`ECDSA_SECP256K1` preferred, `ECDSA_HASH160` accepted) whose security level satisfies the document type's
     ///      `security_level_requirement()` and whose bounds cover the
-    ///      document type (see [`document_signing_key`]). Returns a clear error
+    ///      document type and every type its create may consume (see
+    ///      [`document_signing_key`]). Returns a clear error
     ///      if the owner identity isn't loaded or carries no qualifying
     ///      key.
     ///   4. Broadcasts via
@@ -311,7 +312,7 @@ impl IdentityWallet {
         })
     }
 
-    /// The key a `document_type` state transition of `owner_identity_id`
+    /// The key a `document_type` state transition of `signing_identity_id`
     /// in `scope` is signed with when the caller names none:
     /// [`document_signing_key`]'s choice among the owner identity's keys in
     /// the wallet manager. The wallet manager lock is released before
