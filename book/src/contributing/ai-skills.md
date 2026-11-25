@@ -7,9 +7,11 @@ matches its description, or when you ask for it by name (`/release`,
 `/review-rounds 6057`).
 
 The skills live in `.claude/skills/`, where Claude Code finds them.
-`.codex/skills` is a link to the same folder, so Codex uses the same set. They
-are checked in, so everyone who works in the repository with an agent gets
-them, and a change to one goes through review like any other change.
+`.agents/skills`, where Codex looks for a repository's skills, is a link to the
+same folder, so both use one set. (`.codex/skills` is an older link to the same
+place, kept for tools that still read it.) The skills are checked in, so
+everyone who works in the repository with an agent gets them, and a change to
+one goes through review like any other change.
 
 ## The skills
 
@@ -46,6 +48,10 @@ to restructure, or to split the pull request, instead of answering one more
 round. If there is not, it names the ordinary cause: a diff that grew during
 review, one push per finding, optional suggestions taken as scope, or a
 reviewer raising new points on code it had already passed.
+
+A change between two reviewed commits is measured only when the first leads to
+the second, with merges from the base branch cut out. After a rebase or a
+force-push the script reports the change as unavailable instead of guessing.
 
 The measuring part also runs by itself, for the overview or for the full
 conversations of a round or a file:

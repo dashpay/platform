@@ -53,7 +53,12 @@ class AiSkillsTest(unittest.TestCase):
         self.assertIn("(contributing/ai-skills.md)", summary)
 
     def test_should_share_the_skills_with_codex(self):
-        self.assertEqual((ROOT / ".codex/skills").resolve(), SKILLS.resolve())
+        # Codex scans `.agents/skills` in a repository; `.codex/skills` is the
+        # older location. Both are links, so there is one set of skills.
+        for link in (".agents/skills", ".codex/skills"):
+            with self.subTest(link=link):
+                self.assertTrue((ROOT / link).is_symlink())
+                self.assertEqual((ROOT / link).resolve(), SKILLS.resolve())
 
 
 if __name__ == "__main__":

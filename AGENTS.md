@@ -105,7 +105,7 @@ A design doc / spec / plan written to drive a change (the problem, chosen approa
 - Only commit documentation the project keeps long-term: user/developer guides, architecture references, runbooks, API docs. A fact worth keeping after merge goes in a code comment, a test name, the commit message, or the PR description — not a design doc.
 
 ## AI Skills
-Project skills live in `.claude/skills/` (`.codex/skills` links to the same folder). [book/src/contributing/ai-skills.md](book/src/contributing/ai-skills.md) lists them, with what each does and when to use it.
+Project skills live in `.claude/skills/` (`.agents/skills`, where Codex looks, and `.codex/skills` link to the same folder). [book/src/contributing/ai-skills.md](book/src/contributing/ai-skills.md) lists them, with what each does and when to use it.
 - When you add, rename or remove a skill, update that page's table in the same change; a test in `.github/scripts/tests` checks that the two agree.
 - A pull request that has gone through about four review rounds or more usually has a design problem, not a reviewer problem. Run the `review-rounds` skill on it before pushing another round of fixes.
 

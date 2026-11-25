@@ -1,12 +1,15 @@
 """Check how the review-rounds skill counts rounds and places findings.
 
 The skill's diagnosis rests on these numbers: what counts as a round, whether a
-finding sits on code written in response to the previous review, and how large
-each response was. A reply counted as a round, or a finding placed on the wrong
-side of a change, would point the diagnosis at the wrong cause.
+finding sits on code the author changed since that reviewer's previous review,
+and how large each response was. A reply counted as a round, a base merge
+counted as the author's work, or a finding placed from a diff that is not the
+difference between the two reviewed trees would point the diagnosis at the
+wrong cause.
 """
 import importlib.util
 from pathlib import Path
+import time
 import unittest
 
 
@@ -26,6 +29,7 @@ UNDO = (
     "@@ -10,5 +10,4 @@ fn store()\n context\n-    let kept = read_slot()?;\n-    }\n"
     "+    replace_slot()?;\n context\n context"
 )
+VIEW_PATCH = "@@ -29,2 +29,3 @@ fn view()\n context\n+    let label = input.trim();\n context"
 
 
 def review(review_id, user, state, head, at, body=""):
@@ -88,22 +92,34 @@ def history():
         "files": [{"filename": "src/store.rs"}, {"filename": "src/view.rs"}],
         "commits": [
             commit("h1", "feat: store a key"),
-            commit("h2", "Revert \"feat: delete first\"\n\nThis reverts commit abc."),
-            commit("h3", "fix: keep the old key"),
+            commit("h2", "Revert \"feat: delete first\"\n\nThis reverts commit abc.", "h1"),
+            commit("h3", "fix: keep the old key", "h2"),
         ],
         "resolved": {1: True, 2: True, 5: False, 6: True, 7: True},
         "compares": {
             ("base", "h1"): compared({
                 "src/store.rs": changed(40, 0, status="added"),
                 "src/view.rs": changed(10, 5),
-            }),
-            ("h1", "h2"): compared({
-                "src/store.rs": changed(2, 1, PATCH),
-                "Cargo.lock": changed(300, 200),
-            }),
+            }, status="diverged"),
+            ("h1", "h2"): compared({"src/store.rs": changed(2, 1, PATCH)}),
             ("h2", "h3"): compared({"src/store.rs": changed(8, 4, UNDO)}),
         },
     }
+
+
+def with_base_merge(raw):
+    """Put a merge from the base branch between h1 and h2."""
+    raw["commits"][1:2] = [
+        commit("merge", "Merge branch 'v5.1-dev'", "h1", "tip"),
+        commit("h2", "fix: keep the old key", "merge"),
+    ]
+    raw["pr"]["commits"] = 4
+    del raw["compares"][("h1", "h2")]
+    return raw
+
+
+def placed(report):
+    return {thread["id"]: thread["place"] for entry in report["passes"] for thread in entry["threads"]}
 
 
 class ReviewRoundsTest(unittest.TestCase):
@@ -121,6 +137,22 @@ class ReviewRoundsTest(unittest.TestCase):
         self.assertEqual(first["threads"][0]["replies"], 2)
         self.assertNotIn("author", self.report["reviewers"])
 
+    def test_should_list_a_summary_without_threads_apart_from_the_rounds(self):
+        # A comment-only review can be four findings or a thank-you. It is not
+        # counted, but it is not called a pass without findings either.
+        raw = history()
+        raw["reviews"][3] = review(4, "bot", "COMMENTED", "h2", "2026-01-01T03:00:00Z", "1. Rollback loses the key.")
+        raw["comments"] = raw["comments"][:4]
+        report = rounds.build_report(raw)
+        self.assertEqual((report["rounds"], report["summary_only"]), (1, 1))
+        self.assertTrue(report["passes"][1]["summary_only"])
+        self.assertFalse(report["passes"][2]["summary_only"])
+        text = rounds.render(report, 200)
+        self.assertIn("1 more heads got a review summary with no thread and no change request", text)
+        self.assertIn("### Summary only, not counted as a round: head h2", text)
+        self.assertIn("  1. Rollback loses the key.", text)
+        self.assertIn("### Pass without findings: head h3", text)
+
     def test_should_place_later_findings_against_the_previous_response(self):
         places = [thread["place"] for thread in self.report["passes"][1]["threads"]]
         self.assertEqual(places, [rounds.NEW_LINES, rounds.CHANGED_FILE, rounds.OLD_CODE])
@@ -132,12 +164,25 @@ class ReviewRoundsTest(unittest.TestCase):
             {rounds.NEW_LINES: 1, rounds.CHANGED_FILE: 1, rounds.OLD_CODE: 1},
         )
 
-    def test_should_size_a_response_by_the_pull_requests_own_files(self):
+    def test_should_measure_a_finding_against_its_own_reviewers_last_review(self):
+        raw = history()
+        raw["reviews"].append(review(6, "human", "COMMENTED", "h2", "2026-01-01T03:30:00Z"))
+        raw["reviews"].append(review(7, "human", "COMMENTED", "h3", "2026-01-01T05:30:00Z"))
+        raw["comments"].append(comment(8, 6, "human", "src/view.rs", 30, "Why trim here?"))
+        raw["comments"].append(comment(9, 7, "human", "src/view.rs", 31, "Still unclear"))
+        report = rounds.build_report(raw)
+        # The first time a reviewer looks, nothing is "old code" to them.
+        self.assertEqual(placed(report)[8], rounds.FIRST)
+        self.assertEqual(placed(report)[9], rounds.OLD_CODE)
+        self.assertEqual(report["later_findings"][rounds.OLD_CODE], 2)
+
+    def test_should_size_a_response_by_what_the_author_changed(self):
         response = self.report["passes"][0]["response"]
         self.assertEqual([item["path"] for item in response["files"]], ["src/store.rs"])
         self.assertEqual((response["additions"], response["deletions"]), (2, 1))
         self.assertEqual(
-            self.report["changed_since_first_review"], {"additions": 10, "deletions": 5, "undone": 1}
+            self.report["changed_since_first_review"],
+            {"additions": 10, "deletions": 5, "undone": 1, "unavailable": 0},
         )
         self.assertIsNone(self.report["passes"][2]["response"])
         self.assertTrue(self.report["passes"][2]["unchanged"])
@@ -157,54 +202,58 @@ class ReviewRoundsTest(unittest.TestCase):
         self.assertEqual(self.report["reverts"], 1)
         self.assertEqual(self.report["unresolved"], 1)
 
-    def test_should_say_unknown_when_a_head_cannot_be_compared(self):
-        raw = history()
-        raw["compares"][("h1", "h2")] = None
-        report = rounds.build_report(raw)
-        self.assertEqual(
-            {thread["place"] for thread in report["passes"][1]["threads"]}, {rounds.UNKNOWN}
-        )
-        self.assertIsNone(report["passes"][0]["response"])
-        self.assertIn("unavailable", rounds.render(report, 0))
-
-    def test_should_measure_a_finding_against_its_own_reviewers_last_review(self):
-        raw = history()
-        raw["reviews"].append(review(6, "human", "COMMENTED", "h2", "2026-01-01T03:30:00Z"))
-        raw["reviews"].append(review(7, "human", "COMMENTED", "h3", "2026-01-01T05:30:00Z"))
-        raw["comments"].append(comment(8, 6, "human", "src/view.rs", 30, "Why trim here?"))
-        raw["comments"].append(comment(9, 7, "human", "src/view.rs", 31, "Still unclear"))
-        report = rounds.build_report(raw)
-        placed = {
-            thread["id"]: thread["place"] for entry in report["passes"] for thread in entry["threads"]
-        }
-        # The first time a reviewer looks, nothing is "old code" to them.
-        self.assertEqual(placed[8], rounds.FIRST)
-        self.assertEqual(placed[9], rounds.OLD_CODE)
-        self.assertEqual(report["later_findings"][rounds.OLD_CODE], 2)
-
-    def test_should_leave_a_merge_from_the_base_branch_out_of_a_response(self):
-        raw = history()
-        raw["commits"].insert(1, commit("merge", "Merge branch 'v5.1-dev'", "h1", "tip"))
-        raw["compares"][("h1", "h2")]["files"]["src/view.rs"] = changed(7, 3)
-        raw["compares"][("h1", "merge")] = compared({"src/view.rs": changed(7, 3)})
-        raw["pr"]["commits"] = 4
+    def test_should_cut_a_merge_from_the_base_branch_out_of_a_response(self):
+        # The merge changed view.rs; the author changed store.rs after it.
+        raw = with_base_merge(history())
+        raw["compares"][("merge", "h2")] = compared({"src/store.rs": changed(2, 1, PATCH)})
+        self.assertEqual(rounds.base_merges(raw["pr"], raw["commits"]), {"merge": True})
         report = rounds.build_report(raw)
         response = report["passes"][0]["response"]
         self.assertEqual([item["path"] for item in response["files"]], ["src/store.rs"])
         self.assertTrue(response["merged"])
-        self.assertEqual(report["passes"][1]["threads"][2]["place"], rounds.OLD_CODE)
+        self.assertEqual(
+            [placed(report)[key] for key in (5, 6, 7)],
+            [rounds.NEW_LINES, rounds.CHANGED_FILE, rounds.OLD_CODE],
+        )
         self.assertIn("a merge from the base branch is left out", rounds.render(report, 0))
-        passes = rounds.review_passes(raw["pr"], raw["reviews"], raw["comments"])
-        self.assertIn(("h1", "merge"), rounds.compare_pairs(raw["pr"], passes, raw["commits"]))
+
+    def test_should_keep_the_authors_edit_to_a_file_the_base_merge_also_changed(self):
+        # Base turns A into B and the author turns B into C. Subtracting line
+        # counts would cancel the two; measuring after the merge keeps C.
+        raw = with_base_merge(history())
+        raw["compares"][("merge", "h2")] = compared({"src/view.rs": changed(1, 0, VIEW_PATCH)})
+        report = rounds.build_report(raw)
+        response = report["passes"][0]["response"]
+        self.assertEqual(
+            [(item["path"], item["additions"]) for item in response["files"]], [("src/view.rs", 1)]
+        )
+        self.assertEqual(placed(report)[7], rounds.NEW_LINES)
+        self.assertEqual(placed(report)[5], rounds.OLD_CODE)
+
+    def test_should_not_call_a_line_new_when_a_base_merge_came_after_it(self):
+        # The author's edit comes before the merge, so its line numbers may
+        # have moved by the time of the reviewed head.
+        raw = history()
+        raw["commits"][1:2] = [
+            commit("fix", "fix: keep the old key", "h1"),
+            commit("h2", "Merge branch 'v5.1-dev'", "fix", "tip"),
+        ]
+        raw["pr"]["commits"] = 4
+        del raw["compares"][("h1", "h2")]
+        raw["compares"][("h1", "fix")] = compared({"src/store.rs": changed(2, 1, PATCH)})
+        report = rounds.build_report(raw)
+        self.assertEqual(placed(report)[5], rounds.CHANGED_FILE)
+        self.assertEqual(report["passes"][0]["response"]["additions"], 2)
 
     def test_should_keep_a_merge_of_another_branch_as_the_authors_change(self):
         # The merged-in commit is one of the pull request's own commits, so it
         # was not on the base branch. That stays true after the pull request is
         # merged, when every commit of it is reachable from the base branch.
         raw = history()
-        raw["commits"][1:1] = [
+        raw["commits"][1:2] = [
             commit("tip", "feat: stacked work"),
             commit("merge", "Merge branch 'feat/stacked'", "h1", "tip"),
+            commit("h2", "fix: keep the old key", "merge"),
         ]
         raw["pr"]["commits"] = 5
         raw["compares"][("h1", "h2")]["files"]["src/view.rs"] = changed(7, 3)
@@ -215,31 +264,79 @@ class ReviewRoundsTest(unittest.TestCase):
             sorted(item["path"] for item in response["files"]), ["src/store.rs", "src/view.rs"]
         )
         self.assertFalse(response["merged"])
-        self.assertEqual(report["passes"][1]["threads"][2]["place"], rounds.CHANGED_FILE)
-        passes = rounds.review_passes(raw["pr"], raw["reviews"], raw["comments"])
-        self.assertNotIn(("h1", "merge"), rounds.compare_pairs(raw["pr"], passes, raw["commits"]))
+        self.assertEqual(placed(report)[7], rounds.CHANGED_FILE)
 
-    def test_should_call_a_response_partial_when_a_merge_cannot_be_traced(self):
+    def test_should_say_so_when_a_merge_cannot_be_traced(self):
         # GitHub lists at most 250 commits; with a longer history a merged-in
         # commit that is not listed could be on either side.
         raw = history()
-        raw["commits"].insert(1, commit("merge", "Merge branch 'v5.1-dev'", "h1", "tip"))
+        raw["commits"][1:2] = [
+            commit("merge", "Merge branch 'v5.1-dev'", "h1", "tip"),
+            commit("h2", "fix: keep the old key", "merge"),
+        ]
         raw["pr"]["commits"] = 400
         self.assertEqual(rounds.base_merges(raw["pr"], raw["commits"]), {"merge": None})
         report = rounds.build_report(raw)
-        self.assertTrue(report["passes"][0]["response"]["truncated"])
+        self.assertTrue(report["passes"][0]["response"]["unsure"])
+        self.assertIn("may include a merge from the base branch", rounds.render(report, 0))
 
-    def test_should_flag_a_response_that_rewrote_history(self):
+    def test_should_refuse_to_measure_across_a_rebase(self):
+        # After a rebase GitHub compares from the merge base, not from the old
+        # head: edits the rebase kept would look new, and a file put back to
+        # its base version would drop out and look untouched.
+        raw = history()
+        raw["compares"][("h1", "h2")]["status"] = "diverged"
+        report = rounds.build_report(raw)
+        self.assertEqual(
+            {thread["place"] for thread in report["passes"][1]["threads"]}, {rounds.UNKNOWN}
+        )
+        self.assertIsNone(report["passes"][0]["response"])
+        self.assertEqual(
+            report["changed_since_first_review"],
+            {"additions": 8, "deletions": 4, "undone": 0, "unavailable": 1},
+        )
+        self.assertEqual(report["files"]["src/store.rs"]["responses"], 1)
+        text = rounds.render(report, 0)
+        self.assertIn("unavailable (the history was rewritten in between, or a commit is gone)", text)
+        self.assertIn("1 of the changes between reviewed heads could not be measured", text)
+
+    def test_should_measure_from_a_force_pushed_head_only_when_it_leads_to_the_next(self):
         raw = history()
         del raw["commits"][0]
         report = rounds.build_report(raw)
-        self.assertTrue(report["passes"][0]["response"]["rewritten"])
-        self.assertFalse(report["passes"][1]["response"]["rewritten"])
-        self.assertIn("history was rewritten in between", rounds.render(report, 0))
+        self.assertEqual(report["passes"][0]["response"]["additions"], 2)
+        self.assertTrue(report["passes"][0]["response"]["unsure"])
+        raw = history()
+        del raw["commits"][0]
+        raw["compares"][("h1", "h2")] = None
+        report = rounds.build_report(raw)
+        self.assertIsNone(report["passes"][0]["response"])
+        self.assertEqual(placed(report)[5], rounds.UNKNOWN)
+
+    def test_should_follow_the_commits_when_reviews_arrive_out_of_order(self):
+        # Reviews land for h1, then h3, then h2. The responses are still
+        # h1 to h2 and h2 to h3, each counted once.
+        raw = history()
+        raw["reviews"][3] = review(4, "bot", "CHANGES_REQUESTED", "h2", "2026-01-01T06:00:00Z")
+        report = rounds.build_report(raw)
+        self.assertEqual([entry["head"] for entry in report["passes"]], ["h1", "h2", "h3"])
+        self.assertEqual([entry["round"] for entry in report["passes"]], [1, 2, None])
+        self.assertEqual(
+            report["changed_since_first_review"],
+            {"additions": 10, "deletions": 5, "undone": 1, "unavailable": 0},
+        )
+        passes = rounds.review_passes(raw["pr"], raw["reviews"], raw["comments"], raw["commits"])
+        self.assertEqual(
+            rounds.compare_pairs(raw["pr"], passes, raw["commits"]),
+            [("base", "h1"), ("h1", "h2"), ("h2", "h3")],
+        )
+        self.assertIn("from 2026-01-01 01:00 to 2026-01-01 06:00", rounds.render(report, 0))
 
     def test_should_mark_a_round_that_requested_changes_without_a_new_thread(self):
         raw = history()
-        raw["reviews"].append(review(6, "bot", "CHANGES_REQUESTED", "h3", "2026-01-01T04:00:00Z", "Still 1 blocking."))
+        raw["reviews"].append(
+            review(6, "bot", "CHANGES_REQUESTED", "h3", "2026-01-01T04:00:00Z", "Still 1 blocking.")
+        )
         text = rounds.render(rounds.build_report(raw), 0)
         self.assertIn("Rounds: 3 (heads reviewed: 3)", text)
         self.assertIn("New threads per round: 2 3 0*", text)
@@ -279,7 +376,7 @@ class ReviewRoundsTest(unittest.TestCase):
         self.assertIn("x" * 80, rounds.render(report, -1))
         self.assertNotIn("Looks right now.", rounds.render(report, 0))
 
-    def test_should_drop_sections_about_the_run_and_keep_findings(self):
+    def test_should_say_which_sections_about_the_run_it_left_out(self):
         body = (
             "Two findings.\n<details>\n<summary>Review info</summary>\n"
             "<details><summary>Commits</summary>abc</details>\nconfiguration\n</details>\n"
@@ -288,8 +385,28 @@ class ReviewRoundsTest(unittest.TestCase):
         cleaned = rounds.clean(body)
         self.assertNotIn("configuration", cleaned)
         self.assertNotIn("abc", cleaned)
+        self.assertEqual(cleaned.count(rounds.OMITTED), 1)
+        self.assertIn('[section omitted: "Review info", ', cleaned)
+        self.assertIn("--raw prints it]", cleaned)
         self.assertIn("Follow-up candidates (1)", cleaned)
         self.assertIn("Name the error.", cleaned)
+        # Nothing is lost for good: --raw keeps the section.
+        kept = rounds.clean(body, raw=True)
+        self.assertIn("configuration", kept)
+        self.assertNotIn(rounds.OMITTED, kept)
+        raw = history()
+        raw["raw"] = True
+        raw["reviews"][0]["body"] = body
+        self.assertIn("configuration", rounds.render(rounds.build_report(raw), -1))
+
+    def test_should_clean_unclosed_markup_in_linear_time(self):
+        # 40,000 unclosed openers took minutes with a lazy regex per opener.
+        body = "<!-- " * 10000 + "<picture>" * 10000 + "<sub>" * 10000 + "<a " * 10000
+        started = time.monotonic()
+        cleaned = rounds.clean(body)
+        self.assertLess(time.monotonic() - started, 2)
+        self.assertTrue(cleaned.startswith("<!--"))
+        self.assertEqual(rounds.clean("a<!-- x -->b<sub>c</sub>d<picture><img></picture>e"), "abde")
 
     def test_should_read_the_lines_a_patch_adds(self):
         self.assertEqual(rounds.added_lines(PATCH), {11, 12})
@@ -307,14 +424,6 @@ class ReviewRoundsTest(unittest.TestCase):
         self.assertEqual(rounds.severity_hint(rounds.headline(body)), "minor")
         self.assertEqual(rounds.severity_hint("🔴 Blocking: a minor point"), "blocking")
         self.assertIsNone(rounds.severity_hint("Trim the input."))
-
-    def test_should_ask_for_each_step_between_reviewed_heads(self):
-        raw = history()
-        passes = rounds.review_passes(raw["pr"], raw["reviews"], raw["comments"])
-        self.assertEqual(
-            rounds.compare_pairs(raw["pr"], passes, raw["commits"]),
-            [("base", "h1"), ("h1", "h2"), ("h2", "h3")],
-        )
 
     def test_should_render_the_report_as_text(self):
         text = rounds.render(self.report, 200)
