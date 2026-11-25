@@ -328,6 +328,10 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// lookup failed, which is not Platform's answer that it does not exist,
     /// 7). Nothing was signed, reserved or broadcast: retry as it is.
     case errorIdentityLookupFailed = 80
+    /// A creation key uses a format (a version 1 key, or one bound to a
+    /// contract group) the wallet's protocol version does not admit. Nothing
+    /// was funded, signed or broadcast; register with keys it admits.
+    case errorIdentityKeyFormatNotActive = 82
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -481,6 +485,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorPublicContactRequestUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_LOOKUP_FAILED:
             self = .errorIdentityLookupFailed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_KEY_FORMAT_NOT_ACTIVE:
+            self = .errorIdentityKeyFormatNotActive
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -758,6 +764,12 @@ public enum PlatformWalletError: LocalizedError {
     /// broadcast. Not sent, so it may be retried as it is; unlike an unmapped
     /// SDK error it is never a possibly delivered operation.
     case identityLookupFailed(String)
+    /// A creation key's format is not active at the wallet's protocol version
+    /// (code 82). Nothing was funded, signed or broadcast. The version is the
+    /// newest the SDK knows, refreshed best-effort on an unpinned SDK, so a
+    /// retry can pass once it learns a newer network version. Keys of the Rust
+    /// identity key layout are admitted at every version.
+    case identityKeyFormatNotActive(String)
     case walletAlreadyExists(String)
     /// Definitive shielded-broadcast failure: the shielded transition never
     /// left the wallet (refused before anything was sent), so it cannot
@@ -994,6 +1006,7 @@ public enum PlatformWalletError: LocalizedError {
              .privateContactRecoveryUnsupported(let m),
              .privateContactStoreNotRead(let m), .sdkPinnedBelowProtocolVersion(let m),
              .publicContactRequestUnconfirmed(let m), .identityLookupFailed(let m),
+             .identityKeyFormatNotActive(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
@@ -1133,6 +1146,8 @@ public enum PlatformWalletError: LocalizedError {
             self = .publicContactRequestUnconfirmed(detail)
         case .errorIdentityLookupFailed:
             self = .identityLookupFailed(detail)
+        case .errorIdentityKeyFormatNotActive:
+            self = .identityKeyFormatNotActive(detail)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)

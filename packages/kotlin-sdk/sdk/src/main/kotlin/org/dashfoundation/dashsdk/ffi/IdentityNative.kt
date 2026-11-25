@@ -32,6 +32,21 @@ internal object IdentityNative {
     ): Int
 
     /**
+     * The minimum asset-lock value (duffs) registering the layout with
+     * `IdentityCreationKeyLayout.nativeCode` [layout] needs at the wallet's
+     * platform version (thin marshal of
+     * `platform_wallet_identity_creation_min_funding_duffs`).
+     */
+    external fun identityCreationMinFundingDuffs(walletHandle: Long, layout: Int): Long
+
+    /**
+     * The minimum fees (credits) of an address-funded identity create of
+     * [layout], one per input count from 1 to the protocol maximum (thin
+     * marshal of `platform_wallet_identity_creation_from_addresses_min_fees`).
+     */
+    external fun identityCreationFromAddressesMinFees(walletHandle: Long, layout: Int): LongArray
+
+    /**
      * Resume registration from the exact tracked Core outpoint.
      *
      * JNI symbol:
@@ -84,33 +99,39 @@ internal object IdentityNative {
 
     /**
      * Derive the full identity-registration key **set** for a single
-     * identity: keyId 0..[count] at the fixed [identityIndex]. Unlike
+     * identity at the fixed [identityIndex]. Unlike
      * [previewRegistrationKeys] (which fixes the MASTER key slot and walks
      * the *identity* index for the discovery preview), this fixes the
      * identity index and walks the *key* index — so it returns every
      * keypair a freshly-created identity is built from.
      *
-     * [count] < 0 derives the canonical default set (4 keys: MASTER auth,
-     * CRITICAL auth, HIGH auth, TRANSFER/CRITICAL); the create-identity flow
-     * may request more (e.g. 6, appending the DashPay ENCRYPTION/DECRYPTION
-     * pair). Returns the same flat BLOB layout as [previewRegistrationKeys],
+     * One keypair is derived per slot of the Rust identity-creation key
+     * layout selected by [layout]. Returns the same flat BLOB layout as [previewRegistrationKeys],
      * decoded by
      * [org.dashfoundation.dashsdk.identity.IdentityKeyPreview.decodeAll].
-     * The row carries only the derived ECDSA keypair — the per-key DPP role is
-     * stamped Kotlin-side by
-     * [org.dashfoundation.dashsdk.identity.RegistrationKeys] when the rich
-     * registration rows are built.
+     * The row carries only the derived ECDSA keypair — the per-key DPP role
+     * comes from the same Rust layout via [identityCreationKeyLayout].
      *
      * @param resolverHandle `MnemonicResolverHandle`, needed for
      *   watch-only / external-signable wallets; ignored for resident-key
      *   wallets.
+     * @param layout `IdentityCreationKeyLayout.nativeCode` — one keypair is
+     *   derived per slot of that layout.
      */
     external fun previewRegistrationKeySet(
         walletHandle: Long,
         resolverHandle: Long,
         identityIndex: Int,
-        count: Int,
+        layout: Int,
     ): ByteArray
+
+    /**
+     * The identity-creation key layout Rust owns, as the BLOB decoded by
+     * [org.dashfoundation.dashsdk.identity.RegistrationKeys.decodeLayout].
+     *
+     * @param layout `IdentityCreationKeyLayout.nativeCode`.
+     */
+    external fun identityCreationKeyLayout(layout: Int): ByteArray
 
     /**
      * Resolver-keyed single-slot identity private-key derive for the

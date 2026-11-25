@@ -621,6 +621,22 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(message, detail)
     }
 
+    /// Creation keys in a format the wallet's protocol version does not admit
+    /// have their own code and typed case, apart from a malformed key set.
+    func testShouldReportAnInactiveIdentityKeyFormatByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_KEY_FORMAT_NOT_ACTIVE
+        )
+        XCTAssertEqual(code, .errorIdentityKeyFormatNotActive)
+        XCTAssertEqual(code.rawValue, 82)
+        let detail = "identity key formats are not active at protocol version 13"
+        guard case .identityKeyFormatNotActive(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed identity-key-format-not-active error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
     func testShouldReadEveryFieldOfThePrivateContactReadiness() {
         var ffi = PrivateContactReadinessFFI()
         ffi.private_payments_restored = false
