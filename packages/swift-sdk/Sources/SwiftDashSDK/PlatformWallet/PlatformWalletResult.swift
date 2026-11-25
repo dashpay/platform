@@ -328,6 +328,11 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// lookup failed, which is not Platform's answer that it does not exist,
     /// 7). Nothing was signed, reserved or broadcast: retry as it is.
     case errorIdentityLookupFailed = 80
+    /// An identity create from the shielded pool did not create its identity
+    /// and can never execute, as proven reads show: its notes are spent and
+    /// the identity is absent. The wallet keeps the notes reserved until a
+    /// scan sees them spent. Do not re-submit.
+    case errorShieldedIdentityCreateInputsConsumed = 81
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -481,6 +486,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorPublicContactRequestUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_LOOKUP_FAILED:
             self = .errorIdentityLookupFailed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_IDENTITY_CREATE_INPUTS_CONSUMED:
+            self = .errorShieldedIdentityCreateInputsConsumed
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -773,6 +780,21 @@ public enum PlatformWalletError: LocalizedError {
     /// `outIdentityId`) before falling back to this error: see
     /// `ShieldedIdentityCreateUnconfirmedError`.
     case shieldedBroadcastUnconfirmed(String)
+    /// An identity create from the pool did not create its identity and can
+    /// never execute, as proven reads show (code 81): every note it spends is
+    /// spent and the identity is absent at or above the height they were
+    /// spent by. The wallet keeps the notes reserved and the saved
+    /// transition, as for an unconfirmed create, until a scan sees the notes
+    /// spent; do not re-submit. The error describes what the reads proved,
+    /// not what history shows: the activity row stays as for an
+    /// unconfirmed create. The
+    /// reads do not say what spent the notes: Platform's paid failure path for
+    /// this transition (a key-state check failing in the block, such as a
+    /// public-key hash already registered, which credits the denomination
+    /// minus a penalty to the `sendToAddressOnCreationFailure` address) is one
+    /// possible cause, the same notes spent by another transition (another
+    /// device with this wallet's keys) another.
+    case shieldedIdentityCreateInputsConsumed(String)
     /// A shielded operation (shield from Platform addresses, unshield /
     /// transfer / withdrawal) may have reached a node and its result is not
     /// proved (a node's refusal or consensus verdict included). It may have
@@ -996,6 +1018,7 @@ public enum PlatformWalletError: LocalizedError {
              .publicContactRequestUnconfirmed(let m), .identityLookupFailed(let m),
              .walletAlreadyExists(let m), .shieldedBroadcastFailed(let m),
              .shieldedBroadcastUnconfirmed(let m), .shieldedSpendUnconfirmed(let m),
+             .shieldedIdentityCreateInputsConsumed(let m),
              .shieldedNoRecordedAnchor(let m), .shieldedInsufficientBalance(let m),
              .shieldedIdentityDebitPending(let m),
              .shieldedRecoveryCorrupted(let m), .shieldedRecoveryKeysRequired(let m),
@@ -1136,6 +1159,8 @@ public enum PlatformWalletError: LocalizedError {
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail)
+        case .errorShieldedIdentityCreateInputsConsumed:
+            self = .shieldedIdentityCreateInputsConsumed(detail)
         case .errorShieldedSpendUnconfirmed: self = .shieldedSpendUnconfirmed(detail)
         case .errorShieldedNoRecordedAnchor: self = .shieldedNoRecordedAnchor(detail)
         case .errorShieldedInsufficientBalance: self = .shieldedInsufficientBalance(detail)

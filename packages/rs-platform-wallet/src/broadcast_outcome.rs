@@ -217,6 +217,75 @@ pub(crate) async fn broadcast_tracking_delivery(
     .await
 }
 
+/// [`broadcast_tracking_delivery`], with each dispatch sent to one node the
+/// SDK's address list selects, through an SDK scoped to it
+/// ([`dash_sdk::Sdk::scoped_to_address`]). The node is returned only when it
+/// is known to hold the transition ([`dispatch_reached_node`]): it admitted
+/// it, or answered that it already holds it. That node alone may be asked
+/// about the transition afterwards (see the privacy note of
+/// `Sdk::state_transition_outcome`). A dispatch that may have been delivered
+/// without that answer (a transport failure, a timeout, a verdict) returns no
+/// node. The shared SDK's address list is not changed. With no live address
+/// to select, a dispatch goes through the shared SDK, which reports why, and
+/// keeps no node.
+pub(crate) async fn broadcast_tracking_endpoint(
+    sdk: &dash_sdk::Sdk,
+    state_transition: &dpp::state_transition::StateTransition,
+) -> (BroadcastDelivery, Option<dash_sdk::sdk::Address>) {
+    use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
+
+    let single_dispatch = single_dispatch_settings(None);
+    let reached: std::sync::Mutex<Option<dash_sdk::sdk::Address>> = std::sync::Mutex::new(None);
+    let tried: std::sync::Mutex<Vec<dash_sdk::sdk::Address>> = std::sync::Mutex::new(Vec::new());
+    let (reached_ref, tried_ref) = (&reached, &tried);
+    let delivery = track_delivery(
+        state_transition,
+        spend_broadcast_dispatches(sdk, None),
+        || async move {
+            // A later dispatch goes to a node no earlier one went to, while
+            // there is one: a node that failed is banned only in its scoped
+            // copy, so the shared rotation could select it again.
+            let address = {
+                let mut tried = tried_ref.lock().unwrap_or_else(|e| e.into_inner());
+                let address = if tried.is_empty() {
+                    sdk.address_list().get_live_address()
+                } else {
+                    sdk.address_list()
+                        .get_live_addresses()
+                        .into_iter()
+                        .find(|address| !tried.contains(address))
+                        .or_else(|| sdk.address_list().get_live_address())
+                };
+                if let Some(address) = &address {
+                    tried.push(address.clone());
+                }
+                address
+            };
+            // With no live address to select, the shared SDK reports why;
+            // no node is kept from that dispatch.
+            let Some(address) = address else {
+                return state_transition.broadcast(sdk, Some(single_dispatch)).await;
+            };
+            let scoped = sdk.scoped_to_address(address.clone());
+            let result = state_transition
+                .broadcast(&scoped, Some(single_dispatch))
+                .await;
+            if dispatch_reached_node(&result) {
+                if let Ok(mut reached) = reached_ref.lock() {
+                    *reached = Some(address);
+                }
+            }
+            result
+        },
+    )
+    .await;
+    let endpoint = match delivery {
+        BroadcastDelivery::NeverDelivered(_) => None,
+        _ => reached.into_inner().ok().flatten(),
+    };
+    (delivery, endpoint)
+}
+
 /// The classification [`broadcast_tracking_delivery`] makes of
 /// `state_transition`'s broadcast, over the outcomes `dispatch` returns, one
 /// call per single dispatch, at most `dispatches` of them.
@@ -273,6 +342,18 @@ where
         None => BroadcastDelivery::MaybeDelivered(dash_sdk::Error::Generic(
             "no broadcast dispatch was made".to_string(),
         )),
+    }
+}
+
+/// Whether a single dispatch's `result` shows its node holds the transition:
+/// it admitted it, or answered that it already holds it
+/// ([`node_holds_transition`]). Only such a node may be asked about the
+/// transition. Every other outcome, a failed connection or a timeout
+/// included, does not show the node received it.
+pub(crate) fn dispatch_reached_node(result: &Result<(), dash_sdk::Error>) -> bool {
+    match result {
+        Ok(()) => true,
+        Err(error) => node_holds_transition(error),
     }
 }
 
@@ -757,6 +838,64 @@ mod tests {
             matches!(delivery, BroadcastDelivery::MaybeDelivered(_)),
             "{delivery:?}"
         );
+    }
+
+    /// A broadcast that tracks its node returns a node only when one is known
+    /// to hold the transition: never for a broadcast never delivered, nor for
+    /// a dispatch whose connection failed. The shared SDK's list stays as it
+    /// was.
+    #[tokio::test]
+    async fn should_return_no_node_unless_a_dispatch_shows_it_holds_the_transition() {
+        let transition = withdrawal();
+
+        let (delivery, endpoint) =
+            broadcast_tracking_endpoint(&test_sdks::sdk_without_addresses(), &transition).await;
+        assert!(
+            matches!(delivery, BroadcastDelivery::NeverDelivered(_)),
+            "{delivery:?}"
+        );
+        assert!(endpoint.is_none());
+
+        let (refusing, _port) = test_sdks::sdk_refusing_connections();
+        let node = refusing.address_list().get_live_addresses();
+        let (delivery, endpoint) = broadcast_tracking_endpoint(&refusing, &transition).await;
+        assert!(
+            matches!(delivery, BroadcastDelivery::MaybeDelivered(_)),
+            "{delivery:?}"
+        );
+        assert!(endpoint.is_none(), "a failed connection delivered nothing");
+        assert_eq!(
+            refusing.address_list().get_live_addresses(),
+            node,
+            "the shared list neither loses nor bans the node"
+        );
+    }
+
+    /// Only an admission or a node's answer that it already holds the
+    /// transition shows the node received it.
+    #[test]
+    fn should_read_only_an_admission_or_a_duplicate_as_the_node_holding_the_transition() {
+        use dash_sdk::dapi_client::DapiClientError;
+
+        assert!(dispatch_reached_node(&Ok(())));
+        assert!(dispatch_reached_node(&Err(dash_sdk::Error::AlreadyExists(
+            "held".to_string()
+        ))));
+        assert!(dispatch_reached_node(&Err(
+            dash_sdk::Error::StateTransitionResultUnconfirmed(Box::new(
+                dash_sdk::Error::AlreadyExists("held".to_string())
+            ))
+        )));
+        for not_received in [
+            dash_sdk::Error::DapiClientError(DapiClientError::NoAvailableAddresses),
+            dash_sdk::Error::TimeoutReached(std::time::Duration::from_secs(1), "wait".to_string()),
+            dash_sdk::Error::Generic("connection refused".to_string()),
+        ] {
+            assert!(
+                !dispatch_reached_node(&Err(not_received)),
+                "a dispatch that does not show the node holds it keeps no node"
+            );
+        }
     }
 
     /// A node that reads an input address's nonce as ahead of its own state

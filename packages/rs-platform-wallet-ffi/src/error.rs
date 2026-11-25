@@ -153,7 +153,8 @@ pub enum PlatformWalletFFIResultCode {
     /// could not confirm its execution result (a broadcast attempt that failed
     /// in transport, an endpoint's refusal or verdict, a result-proof
     /// fetch/verify failure, …), and a direct fetch of the derived id also
-    /// came back empty. The wallet keeps the notes reserved and the create's
+    /// came back empty, without proven reads showing its inputs consumed
+    /// ([`Self::ErrorShieldedIdentityCreateInputsConsumed`]). The wallet keeps the notes reserved and the create's
     /// recovery record, which it saved before the broadcast. The identity may
     /// already exist on chain, so the caller must NOT treat
     /// it as unregistered or re-submit. UNLIKE every other error code,
@@ -784,6 +785,23 @@ pub enum PlatformWalletFFIResultCode {
     /// signing): the top-up of any identity and the deprecated external and
     /// managed ones.
     ErrorIdentityLookupFailed = 80,
+    /// Maps `PlatformWalletError::ShieldedIdentityCreateInputsConsumed`: an
+    /// identity create from the shielded pool did not create its identity and
+    /// can never execute, as proven reads (at the node it was delivered to)
+    /// show: every note it spends is spent, and the identity is absent at or
+    /// above the height they were spent by. The wallet keeps the notes
+    /// reserved and the recovery record, as for an unconfirmed create, until a
+    /// scan sees the notes spent. The result describes what the reads proved,
+    /// not what history shows: the activity row stays as for an unconfirmed
+    /// create. Nothing is to be re-submitted. The reads do not show what
+    /// spent the notes: Platform's paid failure path for this transition (a
+    /// key-state check failing in the block, which credits the denomination
+    /// minus a penalty to `send_to_address_on_creation_failure`) is one
+    /// possible cause, the same notes spent by another transition (another
+    /// device with this wallet's keys) another. `out_identity_id` is not
+    /// written. No consensus code rides the result: the proof is the reads,
+    /// not a node's verdict.
+    ErrorShieldedIdentityCreateInputsConsumed = 81,
 
     /// The named thing does not exist.
     ///
@@ -1099,6 +1117,9 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             }
             PlatformWalletError::ShieldedBroadcastUnconfirmed { .. } => {
                 PlatformWalletFFIResultCode::ErrorShieldedBroadcastUnconfirmed
+            }
+            PlatformWalletError::ShieldedIdentityCreateInputsConsumed { .. } => {
+                PlatformWalletFFIResultCode::ErrorShieldedIdentityCreateInputsConsumed
             }
             // A broadcast that may have been delivered may still execute: it
             // reads as unconfirmed, never as failed, so a host does not pay
@@ -3209,6 +3230,30 @@ mod private_contact_request_error_tests {
             PlatformWalletFFIResultCode::ErrorIdentityLookupFailed
         );
         assert_eq!(result.code as u32, 80);
+    }
+
+    /// A shielded identity create proven unable to execute without its
+    /// identity reaches the host by its own code, with its message, and no
+    /// consensus code: the proof is the reads, not a node's verdict.
+    #[test]
+    fn should_report_a_consumed_shielded_identity_create_by_its_own_code() {
+        let consumed = PlatformWalletError::ShieldedIdentityCreateInputsConsumed {
+            identity_id: dpp::prelude::Identifier::from([7u8; 32]),
+            consumed_by_height: 12,
+            reason: "result wait failed".to_string(),
+        };
+        let rendered = consumed.to_string();
+        let result = PlatformWalletFFIResult::from(consumed);
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorShieldedIdentityCreateInputsConsumed
+        );
+        assert_eq!(result.code as u32, 81);
+        assert_eq!(result.consensus_code, 0);
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(msg, rendered, "Display payload must survive verbatim");
     }
 
     /// A public contact request a loaded wallet refuses until its private
