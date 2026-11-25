@@ -1661,6 +1661,10 @@ fn newly_locked(locked_outpoints: &[OutPoint]) -> BTreeMap<OutPoint, bool> {
 /// Drained on every build, whatever the event: a block whose only wallet
 /// fact is a spend of a claimed coin raises no event of its own, so its
 /// spends ride the next one, at the latest the sync checkpoint passing it.
+/// A `ChainTruncated` round also carries, after its truncation, every spend
+/// captured after that truncation: an older event projected late, or the
+/// host, may already have drained and stored them, and the truncation's
+/// delete must not take them.
 ///
 /// The outpoints a transaction check locked (the collateral of a masternode
 /// registration, see `wallet::outpoint_locks`) arrive on the
@@ -1675,6 +1679,9 @@ async fn build_core_changeset(
     let mut cs = project_core_event(wallet_manager, event).await;
     let wm = wallet_manager.read().await;
     if let Some(info) = wm.get_wallet_info(&event.wallet_id()) {
+        if matches!(event, WalletEvent::ChainTruncated { .. }) {
+            cs.block_spends.extend(info.take_truncation_replay());
+        }
         cs.block_spends.extend(info.drain_block_spends());
     }
     cs
@@ -10892,6 +10899,41 @@ mod block_spend_tests {
         }
         wm.truncate_above(101).expect("truncates");
         assert_eq!(captured(wm.get_wallet_info(&wallet_id).unwrap()), vec![low]);
+    }
+
+    /// Three truncations queued before the bridge projects any: each one's
+    /// round replays what was captured after it and is still on the chain.
+    #[tokio::test]
+    async fn each_truncation_replays_the_spends_captured_after_it() {
+        let mut wallet = new_wallet();
+        let mut info = PlatformWalletInfo::from_wallet(&wallet, 0);
+        let (a, b, c) = (outpoint(0x51), outpoint(0x52), outpoint(0x53));
+        info.restore_spent_outpoints(&[(a, None), (b, None), (c, None)]);
+        WalletInfoInterface::truncate_above(&mut info, 100).expect("truncates");
+        info.check_core_transaction(&spending(a), in_block(101), &mut wallet, true, true)
+            .await;
+        WalletInfoInterface::truncate_above(&mut info, 101).expect("truncates");
+        info.check_core_transaction(&spending(b), in_block(102), &mut wallet, true, true)
+            .await;
+        WalletInfoInterface::truncate_above(&mut info, 101).expect("truncates");
+        info.check_core_transaction(&spending(c), in_block(101), &mut wallet, true, true)
+            .await;
+
+        let replay = |info: &PlatformWalletInfo| -> Vec<OutPoint> {
+            info.take_truncation_replay()
+                .into_iter()
+                .map(|s| s.outpoint)
+                .collect()
+        };
+        assert_eq!(
+            replay(&info),
+            vec![a, c],
+            "b went with the third truncation"
+        );
+        assert_eq!(replay(&info), vec![c]);
+        assert_eq!(replay(&info), vec![c]);
+        assert!(replay(&info).is_empty(), "one replay per truncation");
+        assert_eq!(captured(&info), vec![a, c]);
     }
 
     #[test]

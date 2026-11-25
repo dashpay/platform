@@ -26,7 +26,6 @@ use key_wallet::wallet::managed_wallet_info::TransactionRecord;
 use key_wallet::{Network, Utxo, Wallet, WalletCoreBalance};
 
 use super::platform_wallet::PlatformWalletInfo;
-use crate::changeset::BlockSpend;
 
 // ---------------------------------------------------------------------------
 // WalletInfoInterface — delegate to `self.core`
@@ -245,10 +244,15 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.block_capture_inputs = None;
         let before = self.core_wallet.metadata.synced_height;
         let truncation = self.core_wallet.truncate_above(height)?;
-        self.pending_block_spends
+        let pending = self
+            .pending_block_spends
             .get_mut()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .retain(|spend| spend.height <= height);
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        pending.queued.retain(|spend| spend.height <= height);
+        for after in &mut pending.after_truncations {
+            after.retain(|spend| spend.height <= height);
+        }
+        pending.after_truncations.push_back(Vec::new());
         self.note_in_memory_rewind(before);
         Ok(truncation)
     }
@@ -510,18 +514,7 @@ impl WalletTransactionChecker for PlatformWalletInfo {
                     }
                 }
             }
-            if !spent.is_empty() {
-                let pending = self
-                    .pending_block_spends
-                    .get_mut()
-                    .unwrap_or_else(|poisoned| poisoned.into_inner());
-                pending.extend(spent.into_iter().map(|outpoint| BlockSpend {
-                    outpoint,
-                    height: block.height(),
-                    block_hash: block.block_hash(),
-                    spender_txid: txid,
-                }));
-            }
+            self.capture_block_spends(spent, &block, txid);
         }
         result
     }

@@ -810,3 +810,254 @@ fn the_migration_adopts_downstream_block_spend_tables_with_their_rows() {
     );
     assert!(persister.block_spends_migration_done(&wallet_id).unwrap());
 }
+
+/// Process a block at `height` whose one transaction spends `spent`, and
+/// advance the wallet's processed and synced heights to it.
+async fn process_spend(
+    wm: &mut WalletManager<PlatformWalletInfo>,
+    wallet_id: WalletId,
+    height: u32,
+    spent: OutPoint,
+) {
+    let block = dashcore::Block::dummy(height, vec![spending(spent)]);
+    wm.process_block_for_wallets(
+        &block,
+        block.block_hash(),
+        height,
+        &BTreeSet::from([wallet_id]),
+    )
+    .await;
+    wm.update_wallet_last_processed_height(&wallet_id, height);
+    wm.update_wallet_synced_height(&wallet_id, height);
+}
+
+/// A wallet whose block at 100 spent `coin(0x60)`, stored, and whose
+/// old-branch block at 101 spent `coin(0x61)` with its events still queued
+/// when a reorg truncates above 100 and a new-branch block at 101 spends
+/// `coin(0x62)`. Returns the queued events in emission order.
+async fn reorg_with_a_queued_old_branch_event() -> (
+    Arc<Recording>,
+    tempfile::TempDir,
+    Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    WalletId,
+    Vec<WalletEvent>,
+) {
+    let (persister, tmp, _path) = fresh_persister();
+    let wallet = Wallet::new_random(
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .expect("wallet");
+    let manifest_wallet = wallet.clone();
+    let (manager, wallet_id, mut queued) = wallet_manager_with_persistence(wallet);
+    register(&persister, wallet_id, &manifest_wallet);
+    let persister = Arc::new(Recording {
+        inner: persister,
+        truncations: Mutex::new(Vec::new()),
+    });
+    let (base, old, new) = (coin(0x60), coin(0x61), coin(0x62));
+    {
+        let mut wm = manager.write().await;
+        wm.get_wallet_info_mut(&wallet_id)
+            .unwrap()
+            .restore_spent_outpoints(&[(base, None), (old, None), (new, None)]);
+        process_spend(&mut wm, wallet_id, 100, base).await;
+    }
+    persist_queued(&manager, &mut queued, &persister).await;
+    persister.flush(wallet_id).expect("flush");
+    assert_eq!(stored(&persister.inner, &wallet_id), BTreeSet::from([base]));
+
+    let mut events = Vec::new();
+    {
+        let mut wm = manager.write().await;
+        process_spend(&mut wm, wallet_id, 101, old).await;
+        while let Ok(event) = queued.try_recv() {
+            events.push(event);
+        }
+        assert!(!events.is_empty(), "the old branch's block queues an event");
+        wm.truncate_above(100).expect("truncates");
+        let new_block = dashcore::Block::dummy(101, vec![spending(new)]);
+        wm.process_block_for_wallets(
+            &new_block,
+            new_block.block_hash(),
+            101,
+            &BTreeSet::from([wallet_id]),
+        )
+        .await;
+    }
+    while let Ok(event) = queued.try_recv() {
+        events.push(event);
+    }
+    assert!(
+        matches!(
+            events.last(),
+            Some(WalletEvent::ChainTruncated { height: 100, .. })
+        ),
+        "the truncation is queued after the old branch's events: {events:?}"
+    );
+    (persister, tmp, manager, wallet_id, events)
+}
+
+async fn persist_events(
+    manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    events: Vec<WalletEvent>,
+    persister: &Arc<Recording>,
+    wallet_id: WalletId,
+) {
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    for event in events {
+        tx.send(event).expect("channel");
+    }
+    drop(tx);
+    persist_queued(manager, &mut rx, persister).await;
+    persister.flush(wallet_id).expect("flush");
+}
+
+/// The adapter projects the old branch's queued event after the reorg: it
+/// drains the new branch's spend, and the truncation projected after it
+/// must not delete that spend's row.
+#[tokio::test]
+async fn a_spend_captured_after_a_truncation_survives_an_older_queued_event() {
+    let (persister, _tmp, manager, wallet_id, events) =
+        reorg_with_a_queued_old_branch_event().await;
+
+    persist_events(&manager, events, &persister, wallet_id).await;
+
+    assert_eq!(
+        stored(&persister.inner, &wallet_id),
+        BTreeSet::from([coin(0x60), coin(0x62)]),
+        "the new branch's spend at 101 is kept; the old branch's is gone"
+    );
+}
+
+/// The host drains and stores the captured spends itself (before a
+/// release) between the reorg and the adapter reaching its truncation: the
+/// truncation must not delete the row the host just wrote.
+#[tokio::test]
+async fn a_spend_the_host_stored_after_a_truncation_survives_the_truncation_event() {
+    let (persister, _tmp, manager, wallet_id, events) =
+        reorg_with_a_queued_old_branch_event().await;
+    let spends = manager
+        .read()
+        .await
+        .get_wallet_info(&wallet_id)
+        .unwrap()
+        .drain_block_spends();
+    assert_eq!(
+        spends.iter().map(|s| s.outpoint).collect::<Vec<_>>(),
+        vec![coin(0x62)]
+    );
+    persister
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    block_spends: spends,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .expect("store");
+    persister.flush(wallet_id).expect("flush");
+    assert_eq!(
+        stored(&persister.inner, &wallet_id),
+        BTreeSet::from([coin(0x60), coin(0x62)])
+    );
+
+    persist_events(&manager, events, &persister, wallet_id).await;
+
+    assert_eq!(
+        stored(&persister.inner, &wallet_id),
+        BTreeSet::from([coin(0x60), coin(0x62)]),
+        "the truncation at 100 does not delete the new branch's row at 101"
+    );
+}
+
+/// The manager truncates wallet by wallet and emits the `ChainTruncated`
+/// events only once every wallet's truncation returned Ok, so a later
+/// wallet's failure leaves an earlier wallet truncated with no event. That
+/// truncation's captures and the next truncation's must both survive the
+/// next `ChainTruncated` round when a late older event drained them first.
+#[tokio::test]
+async fn a_truncation_without_its_event_keeps_every_later_spend_through_the_next_one() {
+    use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+    let (persister, _tmp, _path) = fresh_persister();
+    let wallet = Wallet::new_random(
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .expect("wallet");
+    let manifest_wallet = wallet.clone();
+    let (manager, wallet_id, mut queued) = wallet_manager_with_persistence(wallet);
+    register(&persister, wallet_id, &manifest_wallet);
+    let persister = Arc::new(Recording {
+        inner: persister,
+        truncations: Mutex::new(Vec::new()),
+    });
+    let (base, old, first, dropped, second) =
+        (coin(0x70), coin(0x71), coin(0x72), coin(0x73), coin(0x74));
+    {
+        let mut wm = manager.write().await;
+        wm.get_wallet_info_mut(&wallet_id)
+            .unwrap()
+            .restore_spent_outpoints(&[
+                (base, None),
+                (old, None),
+                (first, None),
+                (dropped, None),
+                (second, None),
+            ]);
+        process_spend(&mut wm, wallet_id, 100, base).await;
+    }
+    persist_queued(&manager, &mut queued, &persister).await;
+    persister.flush(wallet_id).expect("flush");
+
+    let mut events = Vec::new();
+    {
+        let mut wm = manager.write().await;
+        process_spend(&mut wm, wallet_id, 101, old).await;
+        while let Ok(event) = queued.try_recv() {
+            events.push(event);
+        }
+        // What the manager leaves when a later wallet's truncation fails:
+        // this wallet's own truncation returned Ok, and no event follows.
+        WalletInfoInterface::truncate_above(wm.get_wallet_info_mut(&wallet_id).unwrap(), 100)
+            .expect("truncates");
+        process_spend(&mut wm, wallet_id, 101, first).await;
+        process_spend(&mut wm, wallet_id, 102, dropped).await;
+        wm.truncate_above(101).expect("truncates");
+        let block = dashcore::Block::dummy(102, vec![spending(second)]);
+        wm.process_block_for_wallets(
+            &block,
+            block.block_hash(),
+            102,
+            &BTreeSet::from([wallet_id]),
+        )
+        .await;
+    }
+    while let Ok(event) = queued.try_recv() {
+        events.push(event);
+    }
+    let truncations: Vec<u32> = events
+        .iter()
+        .filter_map(|event| match event {
+            WalletEvent::ChainTruncated { height, .. } => Some(*height),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        truncations,
+        vec![101],
+        "only the manager's truncation emits"
+    );
+
+    persist_events(&manager, events, &persister, wallet_id).await;
+
+    assert_eq!(
+        stored(&persister.inner, &wallet_id),
+        BTreeSet::from([base, first, second]),
+        "every spend captured after either truncation is kept"
+    );
+}

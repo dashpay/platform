@@ -386,11 +386,11 @@ pub struct PlatformWalletInfo {
     /// happened, never hide one.
     pub(crate) spent_claim_mirror: std::collections::BTreeSet<OutPoint>,
     /// Block spends of wallet-held coins captured by `check_core_transaction`
-    /// and not yet drained into a [`CoreChangeSet`](crate::changeset::CoreChangeSet).
-    /// Never pruned: only [`Self::drain_block_spends`] empties it, and a
-    /// truncation drops entries above the fork. A mutex so the event
-    /// bridge can drain it under the manager's read lock.
-    pub(crate) pending_block_spends: std::sync::Mutex<Vec<crate::changeset::BlockSpend>>,
+    /// and not yet drained into a [`CoreChangeSet`](crate::changeset::CoreChangeSet),
+    /// with the spends captured after each truncation whose `ChainTruncated`
+    /// the event bridge has not projected yet. A mutex so the event bridge
+    /// can drain it under the manager's read lock.
+    pub(crate) pending_block_spends: std::sync::Mutex<PendingBlockSpends>,
     /// The inputs of the wallet's unconfirmed records, read once for the
     /// block being processed and keyed by its hash. A check outside a block,
     /// a height advance or a truncation drops it. Within a block the live
@@ -432,8 +432,70 @@ impl PlatformWalletInfo {
             .pending_block_spends
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        std::mem::take(&mut *pending)
+        std::mem::take(&mut pending.queued)
     }
+
+    /// Queue a block spend of each of `outpoints` by `spender_txid` in
+    /// `block`, and copy it into the spends captured after the newest
+    /// truncation. Every producer of block spends goes through here, under
+    /// `&mut self`, so a `ChainTruncated` round replays all of them.
+    pub(crate) fn capture_block_spends(
+        &mut self,
+        outpoints: impl IntoIterator<Item = OutPoint>,
+        block: &key_wallet::transaction_checking::BlockInfo,
+        spender_txid: Txid,
+    ) {
+        let pending = self
+            .pending_block_spends
+            .get_mut()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let start = pending.queued.len();
+        pending.queued.extend(
+            outpoints
+                .into_iter()
+                .map(|outpoint| crate::changeset::BlockSpend {
+                    outpoint,
+                    height: block.height(),
+                    block_hash: block.block_hash(),
+                    spender_txid,
+                }),
+        );
+        if let Some(after) = pending.after_truncations.back_mut() {
+            after.extend_from_slice(&pending.queued[start..]);
+        }
+    }
+
+    /// The spends to write again after the oldest unprojected truncation's
+    /// delete: every spend captured after it that no later truncation
+    /// dropped. A spend captured after a truncation may already be stored,
+    /// drained by an older event the bridge projected late or by the host,
+    /// and the truncation's delete must not take it. Called once per
+    /// projected `ChainTruncated`; empty when none is pending.
+    pub(crate) fn take_truncation_replay(&self) -> Vec<crate::changeset::BlockSpend> {
+        let mut pending = self
+            .pending_block_spends
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(oldest) = pending.after_truncations.pop_front() else {
+            return Vec::new();
+        };
+        oldest
+            .into_iter()
+            .chain(pending.after_truncations.iter().flatten().copied())
+            .collect()
+    }
+}
+
+/// See [`PlatformWalletInfo::pending_block_spends`].
+#[derive(Debug, Default)]
+pub(crate) struct PendingBlockSpends {
+    /// Never pruned: only [`PlatformWalletInfo::drain_block_spends`] empties
+    /// it, and a truncation drops entries above the fork.
+    pub(crate) queued: Vec<crate::changeset::BlockSpend>,
+    /// One entry per truncation, oldest first, until the bridge projects its
+    /// `ChainTruncated`: the spends captured after it and before the next.
+    /// A later truncation drops entries above its fork here too.
+    pub(crate) after_truncations: std::collections::VecDeque<Vec<crate::changeset::BlockSpend>>,
 }
 
 /// A platform wallet that combines core UTXO functionality with identity management.
