@@ -3,15 +3,16 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **platform-wallet:** choose the signing key in Rust for document replace, delete, transfer, set price and purchase (#6228)
-* **platform-wallet:** name private entry and contact request payments in shielded activity (#6226)
+* **platform-wallet:** document replace, delete, transfer, set price and purchase no longer take `signingKeyId` in Swift or Kotlin, or `signing_key_id` in the C FFI or the Rust wallet API. Remove the key ID and keep passing a signer that can sign with an eligible authentication key; Rust selects the key ([#6228](https://github.com/dashpay/platform/issues/6228))
+* **platform-wallet:** name private entry and contact request payments in shielded activity ([#6226](https://github.com/dashpay/platform/issues/6226))
+* **sdk-ffi:** `dash_sdk_group_get_actions` now returns `action.event` as a JSON object, not a string of Rust debug text. Decode the object in C callers and in callers of Swift's `getGroupActions` or Kotlin's `Groups.actions` ([#6225](https://github.com/dashpay/platform/issues/6225))
 
 ### Bug Fixes
 
 * **kotlin-example-app:** bind the availability answer to its label and show unread balances as unknown
 * **kotlin-example-app:** claim no more than the SDK knows in the purchase notices
 * **kotlin-example-app:** confirm a token purchase and read group actions as JSON
-* **kotlin-example-app:** keep a submitted name blocked for the visit and leave the PlatformPayment total to Rust, closes #6235
+* **kotlin-example-app:** keep a submitted name blocked for the visit and omit the PlatformPayment balance until Rust provides an account-scoped total, tracked in [#6235](https://github.com/dashpay/platform/issues/6235)
 * **kotlin-example-app:** keep stale reads and late edits out of Register Name and account balances
 * **kotlin-example-app:** offer Resume on a token paused from the app ([#6251](https://github.com/dashpay/platform/issues/6251))
 * **kotlin-example-app:** say only that a token purchase was submitted
