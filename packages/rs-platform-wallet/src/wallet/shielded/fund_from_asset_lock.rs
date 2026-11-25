@@ -658,7 +658,7 @@ impl PlatformWallet {
                         spawn_proof(proof_out_point, shield_amount, platform_version)
                     }
                 };
-                let bundle = join_proof(proving).await?;
+                let bundle = join_initial_proof(proving).await?;
                 let bundle_state = Arc::new(tokio::sync::Mutex::new(ShieldBundleState {
                     bundle,
                     platform_version,
@@ -1130,6 +1130,19 @@ async fn join_proof(
     }
 }
 
+/// Wait for the bundle proof that precedes the first submit. Proving is
+/// local and signs or sends nothing, so its failure is a refusal before
+/// dispatch: the funded-lock seam then names a still-resumable lock as held
+/// instead of answering `MaybeSent`. A re-proof inside the submit closure
+/// does not use this, as an earlier attempt may have been dispatched.
+async fn join_initial_proof(
+    proving: AbortOnDropHandle<Result<ProvedShieldFromAssetLockBundle, ProtocolError>>,
+) -> Result<ProvedShieldFromAssetLockBundle, PlatformWalletError> {
+    join_proof(proving)
+        .await
+        .map_err(PlatformWalletError::before_dispatch)
+}
+
 /// What a landed Type 18 submit returns to the orchestrator.
 struct LandedShield {
     /// The **landed** bundle's serialized Orchard actions, so the
@@ -1409,6 +1422,7 @@ mod tests {
         ClientStartState, PersistenceCapabilities, PersistenceError, PersistenceErrorKind,
         PlatformWalletChangeSet, PlatformWalletPersistence,
     };
+    use crate::error::PaymentDelivery;
     use crate::test_support::{funded_wallet_manager, AlwaysRejectedBroadcaster};
     use crate::wallet::asset_lock::manager::AssetLockManager;
     use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
@@ -2057,6 +2071,76 @@ mod tests {
             live_lock(&ctx).await.status,
             AssetLockStatus::DrainCompleted
         );
+    }
+
+    fn failing_proof() -> AbortOnDropHandle<Result<ProvedShieldFromAssetLockBundle, ProtocolError>>
+    {
+        AbortOnDropHandle::new(tokio::task::spawn_blocking(|| {
+            Err(ProtocolError::Generic(
+                "simulated Orchard proving failure".into(),
+            ))
+        }))
+    }
+
+    /// The first proof is local and precedes every submit: its failure names
+    /// the still-resumable lock as held, so the host resumes it instead of
+    /// reconciling.
+    #[tokio::test]
+    async fn should_hold_the_resumable_lock_when_the_initial_proof_fails() {
+        let ctx = consumption_report_context().await;
+        let error = ctx
+            .manager
+            .with_funded_lock(Some(ctx.out_point), async {
+                join_initial_proof(failing_proof()).await.map(|_| ())
+            })
+            .await
+            .expect_err("the proof failed");
+        assert_eq!(
+            error.payment_delivery(),
+            PaymentDelivery::LockHeld(ctx.out_point)
+        );
+    }
+
+    /// A lock that can no longer be resumed is not offered, even for a
+    /// failure before the first submit.
+    #[tokio::test]
+    async fn should_name_no_lock_when_the_initial_proof_fails_on_a_consumed_lock() {
+        let ctx = consumption_report_context().await;
+        ctx.wallet_manager
+            .write()
+            .await
+            .get_wallet_info_mut(&ctx.wallet_id)
+            .expect("wallet")
+            .tracked_asset_locks
+            .get_mut(&ctx.out_point)
+            .expect("tracked lock")
+            .status = AssetLockStatus::Consumed;
+        let error = ctx
+            .manager
+            .with_funded_lock(Some(ctx.out_point), async {
+                join_initial_proof(failing_proof()).await.map(|_| ())
+            })
+            .await
+            .expect_err("the proof failed");
+        assert_eq!(error.payment_delivery(), PaymentDelivery::MaybeSent);
+    }
+
+    /// A re-proof inside the submit closure follows an attempt that may have
+    /// been dispatched: its failure, carried out as the closure carries it,
+    /// stays `MaybeSent` and names no lock.
+    #[tokio::test]
+    async fn should_name_no_lock_when_a_re_proof_after_an_attempt_fails() {
+        let ctx = consumption_report_context().await;
+        let error =
+            ctx.manager
+                .with_funded_lock(Some(ctx.out_point), async {
+                    join_proof(failing_proof()).await.map(|_| ()).map_err(|e| {
+                        PlatformWalletError::Sdk(dash_sdk::Error::Generic(e.to_string()))
+                    })
+                })
+                .await
+                .expect_err("the re-proof failed");
+        assert_eq!(error.payment_delivery(), PaymentDelivery::MaybeSent);
     }
 
     #[tokio::test]
