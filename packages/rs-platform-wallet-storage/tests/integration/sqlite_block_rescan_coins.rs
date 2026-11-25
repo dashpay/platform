@@ -375,11 +375,7 @@ async fn in_block_far_coin_spent_in_the_next_block_stays_spent_after_a_restart()
         .await;
     w.persist().await;
 
-    assert_eq!(
-        stored_unspent_rows(&w.path, &w.addresses),
-        vec![1, 0, 1],
-        "the far coin has no unspent row"
-    );
+    let rows = stored_unspent_rows(&w.path, &w.addresses);
     assert_eq!(
         w.restart(),
         Restarted {
@@ -390,6 +386,7 @@ async fn in_block_far_coin_spent_in_the_next_block_stays_spent_after_a_restart()
             balance: 2 * VALUE,
         }
     );
+    assert_eq!(rows, vec![1, 0, 1], "the far coin has no unspent row");
 }
 
 /// One block pays both transactions; the next spends vout 0 with change to
@@ -409,11 +406,7 @@ async fn in_block_coin_spent_later_stays_spent_when_its_block_is_redelivered() {
     w.process(HEIGHT, &funding).await;
     w.persist().await;
 
-    assert_eq!(
-        stored_unspent_rows(&w.path, &w.addresses),
-        vec![0, 1, 1],
-        "vout 0 has no unspent row"
-    );
+    let rows = stored_unspent_rows(&w.path, &w.addresses);
     assert_eq!(
         w.restart(),
         Restarted {
@@ -425,6 +418,7 @@ async fn in_block_coin_spent_later_stays_spent_when_its_block_is_redelivered() {
             balance: 2 * VALUE + CHANGE,
         }
     );
+    assert_eq!(rows, vec![0, 1, 1], "vout 0 has no unspent row");
 }
 
 /// One block pays both CoinJoin transactions and five BIP44 receive
@@ -481,11 +475,7 @@ async fn a_coin_a_rescan_of_an_earlier_block_credits_survives_a_reload() {
     assert!(w.holds(w.far()).await, "the re-scan credits the far output");
     w.persist().await;
 
-    assert_eq!(
-        stored_unspent_rows(&w.path, &w.addresses),
-        vec![1, 1, 1],
-        "the store holds an unspent row for every coin, the far one included"
-    );
+    let rows = stored_unspent_rows(&w.path, &w.addresses);
     assert_eq!(
         w.restart(),
         Restarted {
@@ -496,6 +486,11 @@ async fn a_coin_a_rescan_of_an_earlier_block_credits_survives_a_reload() {
             ]),
             balance: 3 * VALUE,
         }
+    );
+    assert_eq!(
+        rows,
+        vec![1, 1, 1],
+        "the store holds an unspent row for every coin, the far one included"
     );
 }
 
@@ -526,11 +521,7 @@ async fn a_mempool_transaction_confirmed_after_its_pools_grew_keeps_every_coin_a
     assert!(w.holds(w.far()).await, "the block credits the far output");
     w.persist().await;
 
-    assert_eq!(
-        stored_unspent_rows(&w.path, &w.addresses),
-        vec![1, 1, 1],
-        "the store holds an unspent row for every coin, the far one included"
-    );
+    let rows = stored_unspent_rows(&w.path, &w.addresses);
     assert_eq!(
         w.restart(),
         Restarted {
@@ -541,6 +532,11 @@ async fn a_mempool_transaction_confirmed_after_its_pools_grew_keeps_every_coin_a
             ]),
             balance: 3 * VALUE,
         }
+    );
+    assert_eq!(
+        rows,
+        vec![1, 1, 1],
+        "the store holds an unspent row for every coin, the far one included"
     );
 }
 
@@ -560,11 +556,7 @@ async fn a_far_coin_spent_before_its_rescan_is_stored_stays_spent_after_a_restar
         .await;
     w.persist().await;
 
-    assert_eq!(
-        stored_unspent_rows(&w.path, &w.addresses),
-        vec![1, 0, 1],
-        "the far coin has no unspent row"
-    );
+    let rows = stored_unspent_rows(&w.path, &w.addresses);
     assert_eq!(
         w.restart(),
         Restarted {
@@ -575,6 +567,7 @@ async fn a_far_coin_spent_before_its_rescan_is_stored_stays_spent_after_a_restar
             balance: 2 * VALUE,
         }
     );
+    assert_eq!(rows, vec![1, 0, 1], "the far coin has no unspent row");
 }
 
 /// Block 100 pays `paying_far` and is stored; block 101 spends vout 0 with
@@ -598,11 +591,7 @@ async fn a_rescan_after_a_later_spend_keeps_the_spent_coin_spent_after_a_restart
     assert!(w.holds(w.far()).await, "the re-scan credits the far output");
     w.persist().await;
 
-    assert_eq!(
-        stored_unspent_rows(&w.path, &w.addresses),
-        vec![0, 1, 1],
-        "vout 0 has no unspent row, the far coin has one"
-    );
+    let rows = stored_unspent_rows(&w.path, &w.addresses);
     assert_eq!(
         w.restart(),
         Restarted {
@@ -614,6 +603,56 @@ async fn a_rescan_after_a_later_spend_keeps_the_spent_coin_spent_after_a_restart
             balance: 2 * VALUE + CHANGE,
         }
     );
+    assert_eq!(
+        rows,
+        vec![0, 1, 1],
+        "vout 0 has no unspent row, the far coin has one"
+    );
+}
+
+/// Block 100 pays `paying_far` and five BIP44 receive addresses, and is
+/// stored; block 101 pays the near index and is stored; then the re-scan of
+/// block 100 credits the far coin, re-sends the BIP44 coins the store already
+/// holds, and is stored. After a restart every coin is held, the BIP44 ones
+/// in the BIP44 account and the far one in CoinJoin, and the balance counts
+/// all eight.
+#[tokio::test]
+async fn a_rescan_keeps_a_second_accounts_coins_in_their_account_after_a_restart() {
+    let mut w = FarCoins::new().await;
+    let bip44_pay = transaction_paying(&w.bip44, VALUE, 3);
+    let funding = block_at(HEIGHT, vec![w.paying_far.clone(), bip44_pay.clone()]);
+    w.process(HEIGHT, &funding).await;
+    assert!(
+        !w.holds(w.far()).await,
+        "block 100's own pass does not reach the far output"
+    );
+    w.persist().await;
+    w.process(HEIGHT + 1, &block_at(HEIGHT + 1, vec![w.extending.clone()]))
+        .await;
+    w.persist().await;
+    w.process(HEIGHT, &funding).await;
+    assert!(w.holds(w.far()).await, "the re-scan credits the far output");
+    w.persist().await;
+
+    let bip44_coins: Vec<OutPoint> = (0..5).map(|v| FarCoins::coin(&bip44_pay, v)).collect();
+    let mut expected = coins(bip44_coins.clone());
+    expected.extend([
+        FarCoins::coin(&w.paying_far, 0),
+        w.far(),
+        FarCoins::coin(&w.extending, 0),
+    ]);
+    assert_eq!(
+        w.restart(),
+        Restarted {
+            coins: expected,
+            balance: 8 * VALUE,
+        }
+    );
+    let bip44_held = reloaded_account_coins(&w.path, w.wallet_id, bip44_account_0());
+    assert!(bip44_coins.iter().all(|c| bip44_held.contains(c)));
+    let coinjoin_held =
+        reloaded_account_coins(&w.path, w.wallet_id, AccountType::CoinJoin { index: 0 });
+    assert!(coinjoin_held.contains(&w.far()));
 }
 
 /// The store already holds the far coin as spent (a spend it recorded, or a
@@ -657,11 +696,7 @@ async fn a_rescan_never_unspends_a_coin_the_store_holds_spent() {
         .expect("store the far coin as spent");
     w.persist().await;
 
-    assert_eq!(
-        stored_unspent_rows(&w.path, &w.addresses),
-        vec![1, 0, 1],
-        "the far coin's row stays spent"
-    );
+    let rows = stored_unspent_rows(&w.path, &w.addresses);
     assert_eq!(
         w.restart(),
         Restarted {
@@ -672,6 +707,7 @@ async fn a_rescan_never_unspends_a_coin_the_store_holds_spent() {
             balance: 2 * VALUE,
         }
     );
+    assert_eq!(rows, vec![1, 0, 1], "the far coin's row stays spent");
 }
 
 /// The store holds the far coin as a stamped sweep placeholder (a spent
@@ -778,11 +814,7 @@ async fn a_rescan_materialises_a_spent_sweep_placeholder_without_unspending_it()
             },
         )
         .expect("a later re-scan reaches the store");
-    assert_eq!(
-        stored_unspent_rows(&w.path, &w.addresses),
-        vec![1, 0, 1],
-        "the far coin's row stays spent"
-    );
+    let rows = stored_unspent_rows(&w.path, &w.addresses);
     assert_eq!(
         w.restart(),
         Restarted {
@@ -793,6 +825,7 @@ async fn a_rescan_materialises_a_spent_sweep_placeholder_without_unspending_it()
             balance: 2 * VALUE,
         }
     );
+    assert_eq!(rows, vec![1, 0, 1], "the far coin's row stays spent");
 }
 
 fn bip44_account_0() -> AccountType {
