@@ -235,6 +235,7 @@ pub fn wallet_manager_with_core_wallet(
         dashpay_backfill: Default::default(),
         rewind_barrier: Default::default(),
         tracked_collaterals: Default::default(),
+        funding_issuance_floors: Default::default(),
     };
     let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
     let wallet_id = wm.insert_wallet(wallet, info).expect("insert wallet");
@@ -261,14 +262,13 @@ pub fn external_addresses(
         .managed_account_type()
         .address_pools()
         .into_iter()
-        .find(|p| p.pool_type == AddressPoolType::External)
+        .find(|p| p.pool_type() == AddressPoolType::External)
         .expect("an external pool")
         .clone();
-    let have = pool.highest_generated.map_or(0, |h| h + 1);
+    let have = pool.highest_generated().map_or(0, |h| h + 1);
     pool.generate_addresses(
         count.saturating_sub(have),
         &wallet.key_source_for_account(account),
-        true,
     )
     .expect("derive the pool's addresses");
     (0..count)

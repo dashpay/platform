@@ -9984,9 +9984,9 @@ mod block_rescan_credit_tests {
             .managed_account_type()
             .address_pools()
             .into_iter()
-            .find(|p| p.pool_type == AddressPoolType::External)
+            .find(|p| p.pool_type() == AddressPoolType::External)
             .expect("external pool")
-            .gap_limit
+            .gap_limit()
     }
 
     /// Projects and folds every event the manager queued since the last

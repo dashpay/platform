@@ -40,9 +40,9 @@ fn external_gap(wallet: &Wallet, account: AccountType) -> u32 {
         .managed_account_type()
         .address_pools()
         .into_iter()
-        .find(|p| p.pool_type == AddressPoolType::External)
+        .find(|p| p.pool_type() == AddressPoolType::External)
         .expect("external pool")
-        .gap_limit
+        .gap_limit()
 }
 
 fn register(persister: &SqlitePersister, wallet_id: WalletId, wallet: &Wallet) {
@@ -67,8 +67,8 @@ fn register(persister: &SqlitePersister, wallet_id: WalletId, wallet: &Wallet) {
                 .into_iter()
                 .map(move |pool| AccountAddressPoolEntry {
                     account_type,
-                    pool_type: pool.pool_type,
-                    addresses: pool.addresses.values().cloned().collect(),
+                    pool_type: pool.pool_type(),
+                    addresses: pool.addresses().values().cloned().collect(),
                 })
                 .collect::<Vec<_>>()
         })
