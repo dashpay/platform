@@ -8,6 +8,7 @@ use key_wallet::bip32::ExtendedPrivKey;
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
+use crate::wallet::identity::network::discovery::MasterKeyProbe;
 use crate::wallet::identity::state::managed_identity::key_storage::IdentityStatus;
 use crate::BlockTime;
 use dash_sdk::platform::Fetch;
@@ -120,7 +121,11 @@ impl IdentityWallet {
     /// recorded.
     ///
     /// Returns the identity if one was found, or `None` if no identity is
-    /// registered at that index.
+    /// registered at that index. When Platform holds candidates for the
+    /// index and no single one verifies as this wallet's own, nothing is
+    /// imported and the call returns
+    /// [`PlatformWalletError::AmbiguousIdentityForKey`] (see
+    /// [`Self::fetch_identity_by_master_key_hash`]).
     ///
     /// This is the historical resident-wallet path: it derives from the
     /// in-memory `Wallet` key material, so it is valid only for wallets
@@ -215,23 +220,30 @@ impl IdentityWallet {
             )
         };
 
+        let master = match source {
+            LoadKeyHashSource::Master(master) => Some(master),
+            LoadKeyHashSource::ResidentWallet => None,
+        };
         // Query Platform for an identity registered with this key hash.
-        let (mut identity, block_time) =
-            match self.fetch_identity_by_master_key_hash(key_hash_array).await {
-                Ok((Some(identity), metadata)) => (identity, BlockTime::from(metadata)),
-                Ok((None, _)) => {
-                    // "No identity here" is about this handle's wallet only
-                    // while it is still the one the manager holds.
-                    self.ensure_current_generation().await?;
-                    return Ok(None);
-                }
-                Err(e) => {
-                    return Err(PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to fetch identity at index {}: {}",
-                        identity_index, e
-                    )));
-                }
-            };
+        let probe = self
+            .fetch_identity_by_master_key_hash(key_hash_array, identity_index, network, master)
+            .await?;
+        let (mut identity, block_time) = match probe {
+            MasterKeyProbe::Found(identity, metadata) => (identity, BlockTime::from(metadata)),
+            MasterKeyProbe::Absent => {
+                // "No identity here" is about this handle's wallet only
+                // while it is still the one the manager holds.
+                self.ensure_current_generation().await?;
+                return Ok(None);
+            }
+            MasterKeyProbe::Unanswered(e) => {
+                return Err(PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to fetch identity at index {}: {}",
+                    identity_index, e
+                )));
+            }
+            MasterKeyProbe::Ambiguous(e) => return Err(e),
+        };
 
         let identity_id = identity.id();
 
@@ -239,15 +251,7 @@ impl IdentityWallet {
         // the discovery scan) so the imported identity can sign with all its
         // re-derivable keys, not just MASTER. Runs before the write lock.
         let key_decisions = self
-            .derive_key_breadcrumbs(
-                &identity,
-                identity_index,
-                network,
-                match source {
-                    LoadKeyHashSource::Master(master) => Some(master),
-                    LoadKeyHashSource::ResidentWallet => None,
-                },
-            )
+            .derive_key_breadcrumbs(&identity, identity_index, network, master)
             .await?;
 
         // Add the identity to the manager and enrich it — only into this
@@ -923,6 +927,16 @@ mod tests {
             )
             .await
             .unwrap();
+        sdk.mock()
+            .expect_fetch(
+                NonUniquePublicKeyHashQuery {
+                    key_hash: probe,
+                    after: Some(identity_id.to_buffer()),
+                },
+                None::<Identity>,
+            )
+            .await
+            .unwrap();
         let store = Arc::new(CapturingStore::default());
         let manager = PlatformWalletManager::new(Arc::new(sdk), store.clone(), Arc::new(Events));
         let wallet = manager
@@ -1023,6 +1037,188 @@ mod tests {
         assert!(
             matches!(result, Err(PlatformWalletError::WalletNotFound(_))),
             "a stale handle's load is refused: {result:?}"
+        );
+    }
+
+    /// A wallet from [`CANDIDATE_SEED`] whose SDK answers the index-0
+    /// non-unique pages with `candidates`, one per page, then an empty page.
+    async fn wallet_with_candidates(
+        candidates: Vec<Identity>,
+    ) -> (Arc<CapturingStore>, Arc<crate::PlatformWallet>) {
+        struct Events;
+        impl EventHandler for Events {}
+        impl PlatformEventHandler for Events {}
+
+        let master = candidate_master();
+        let probe = derive_load_probe_hash(
+            ResolvedLoadKeyHashSource::Master(&master),
+            Network::Testnet,
+            0,
+        )
+        .unwrap();
+        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
+        sdk.mock()
+            .expect_fetch(PublicKeyHash(probe), None::<Identity>)
+            .await
+            .unwrap();
+        let mut after = None;
+        for candidate in candidates.into_iter().map(Some).chain([None]) {
+            let next = candidate.as_ref().map(|identity| identity.id().to_buffer());
+            sdk.mock()
+                .expect_fetch(
+                    NonUniquePublicKeyHashQuery {
+                        key_hash: probe,
+                        after,
+                    },
+                    candidate,
+                )
+                .await
+                .unwrap();
+            after = next;
+        }
+        let store = Arc::new(CapturingStore::default());
+        let manager = PlatformWalletManager::new(Arc::new(sdk), store.clone(), Arc::new(Events));
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &CANDIDATE_SEED,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .unwrap();
+        store.take();
+        (store, wallet)
+    }
+
+    const CANDIDATE_SEED: [u8; 64] = [7; 64];
+
+    fn candidate_master() -> ExtendedPrivKey {
+        ExtendedPrivKey::new_master(Network::Testnet, &CANDIDATE_SEED).unwrap()
+    }
+
+    /// A candidate for identity index 0 of [`candidate_master`]: key 0 is the
+    /// `ECDSA_HASH160` MASTER key over the index's key hash; `extra` follows.
+    fn candidate(id_byte: u8, extra: Option<IdentityPublicKey>) -> Identity {
+        let master = candidate_master();
+        let probe = derive_load_probe_hash(
+            ResolvedLoadKeyHashSource::Master(&master),
+            Network::Testnet,
+            0,
+        )
+        .unwrap();
+        let master_key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: MASTER_KEY_INDEX,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_HASH160,
+            read_only: false,
+            data: BinaryData::new(probe.to_vec()),
+            disabled_at: None,
+        }
+        .into();
+        let mut public_keys: std::collections::BTreeMap<_, _> =
+            [(MASTER_KEY_INDEX, master_key)].into();
+        if let Some(key) = extra {
+            public_keys.insert(1, key);
+        }
+        Identity::V0(IdentityV0 {
+            id: Identifier::from([id_byte; 32]),
+            public_keys,
+            balance: 0,
+            revision: 0,
+        })
+    }
+
+    /// A HIGH authentication key at key id 1 derived from another seed.
+    fn key_from_another_seed() -> IdentityPublicKey {
+        let other = ExtendedPrivKey::new_master(Network::Testnet, &[9; 64]).unwrap();
+        let pair =
+            derive_ecdsa_identity_auth_keypair_from_master(&other, Network::Testnet, 0, 1).unwrap();
+        IdentityPublicKeyV0 {
+            id: 1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(pair.public_key.to_vec()),
+            disabled_at: None,
+        }
+        .into()
+    }
+
+    /// The resident-wallet load imports the candidate whose every key derives
+    /// from the wallet's seed, not the one holding a key from another seed.
+    #[tokio::test]
+    async fn should_import_the_candidate_whose_keys_all_derive_from_the_wallet() {
+        let (store, wallet) = wallet_with_candidates(vec![
+            candidate(0x01, Some(key_from_another_seed())),
+            candidate(0xC0, None),
+        ])
+        .await;
+        // Registration leaves the wallet external-signable; put the seed back
+        // in process so the load derives from the resident wallet.
+        {
+            let resident = Wallet::from_seed_bytes(
+                CANDIDATE_SEED,
+                Network::Testnet,
+                WalletAccountCreationOptions::None,
+            )
+            .unwrap();
+            let mut wm = wallet.wallet_manager().write().await;
+            let (in_manager, _) = wm.get_wallet_mut_and_info_mut(&wallet.wallet_id()).unwrap();
+            *in_manager = resident;
+        }
+
+        let loaded = wallet
+            .identity()
+            .load_identity_by_index(0)
+            .await
+            .unwrap()
+            .expect("one candidate belongs to the wallet");
+
+        assert_eq!(loaded.id(), Identifier::from([0xC0; 32]));
+        let stored_ids: Vec<Identifier> = store
+            .take()
+            .iter()
+            .filter_map(|changeset| changeset.identities.as_ref())
+            .flat_map(|identities| identities.identities.keys().copied())
+            .collect();
+        assert_eq!(stored_ids, vec![Identifier::from([0xC0; 32])]);
+    }
+
+    /// A lone candidate holding a key the wallet cannot derive is reported,
+    /// not imported and not answered as "no identity at this index".
+    #[tokio::test]
+    async fn should_not_import_a_candidate_holding_a_key_the_wallet_cannot_derive() {
+        let (store, wallet) =
+            wallet_with_candidates(vec![candidate(0x01, Some(key_from_another_seed()))]).await;
+
+        let result = wallet
+            .identity()
+            .load_identity_by_index_from_master(0, &candidate_master())
+            .await;
+
+        assert!(
+            matches!(
+                &result,
+                Err(PlatformWalletError::AmbiguousIdentityForKey {
+                    identity_index: 0,
+                    candidates,
+                    owned,
+                    more_candidates: false,
+                }) if *candidates == vec![Identifier::from([0x01; 32])] && owned.is_empty()
+            ),
+            "{result:?}"
+        );
+        assert!(
+            store
+                .take()
+                .iter()
+                .all(|changeset| changeset.identities.is_none()),
+            "nothing was imported"
         );
     }
 }

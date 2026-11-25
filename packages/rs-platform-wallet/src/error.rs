@@ -208,6 +208,35 @@ pub enum PlatformWalletError {
         source: Box<dash_sdk::Error>,
     },
 
+    /// Platform answered the key-hash lookup for an identity index with
+    /// candidates, and the wallet could not single out one that belongs to it.
+    ///
+    /// A candidate is an identity whose key 0 is an enabled MASTER
+    /// `ECDSA_HASH160` authentication key over the index's key hash. It
+    /// belongs to the wallet only when every enabled key of it derives from
+    /// the wallet's seed. This error means none or more than one candidate
+    /// did, or that more candidates exist than one lookup reads. Nothing was
+    /// imported for the index, which stays unanswered in the scan verdict;
+    /// retrying does not change the answer while Platform's state is the same.
+    #[error(
+        "could not tell which identity at identity index {identity_index} belongs to this \
+         wallet: {} candidate(s) read, {} verified as this wallet's own{}; none was imported",
+        .candidates.len(),
+        .owned.len(),
+        if *.more_candidates { ", more not read" } else { "" }
+    )]
+    AmbiguousIdentityForKey {
+        /// The identity index whose key hash was looked up.
+        identity_index: u32,
+        /// Every candidate read, in the order Platform returned them.
+        candidates: Vec<Identifier>,
+        /// The candidates whose every enabled key derives from the wallet's
+        /// seed.
+        owned: Vec<Identifier>,
+        /// Whether Platform holds more candidates than were read.
+        more_candidates: bool,
+    },
+
     #[error(
         "DashPay receiving account already exists for identity {identity} with contact {contact} on network {network:?} (account index {account_index})"
     )]
