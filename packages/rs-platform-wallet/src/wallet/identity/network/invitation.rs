@@ -432,22 +432,38 @@ impl IdentityWallet {
     /// this handle, so it is reported only while the handle's wallet is
     /// still the one the manager holds: one removed, or re-created under its
     /// id, while the claim ran is reported as not found instead.
+    ///
+    /// A claimed invitation the SDK's preflight found (nothing signed or
+    /// sent) is `NotSent` whichever of these it becomes; one found after
+    /// Platform refused the submitted claim keeps its own class.
     async fn claim_refusal(&self, error: InvitationError) -> PlatformWalletError {
+        let preflight = matches!(
+            error,
+            InvitationError::AlreadyClaimed {
+                after_broadcast: false,
+                ..
+            }
+        );
         let refusal = match error {
-            InvitationError::AlreadyClaimed { identity_id }
+            InvitationError::AlreadyClaimed { identity_id, .. }
                 if self.holds_identity(&identity_id).await =>
             {
                 PlatformWalletError::InvitationClaimedByThisWallet { identity_id }
             }
             error => error.into(),
         };
-        match refusal {
+        let refusal = match refusal {
             PlatformWalletError::InvitationClaimedByThisWallet { .. }
                 if !self.is_current_generation().await =>
             {
                 PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id))
             }
             refusal => refusal,
+        };
+        if preflight {
+            refusal.before_dispatch()
+        } else {
+            refusal
         }
     }
 
@@ -619,7 +635,7 @@ mod tests {
         };
         use crate::wallet::identity::network::IdentityWallet;
         use crate::wallet::persister::NoPlatformPersistence;
-        use crate::PlatformWalletError;
+        use crate::{PaymentDelivery, PlatformWalletError};
 
         const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
              abandon abandon abandon abandon abandon about";
@@ -762,7 +778,7 @@ mod tests {
             );
             assert!(matches!(
                 wallet
-                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: id })
+                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: id, after_broadcast: true })
                     .await,
                 PlatformWalletError::InvitationAlreadyClaimed { identity_id } if identity_id == id
             ));
@@ -785,7 +801,7 @@ mod tests {
             );
             assert!(matches!(
                 wallet
-                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: ours.id() })
+                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: ours.id(), after_broadcast: true })
                     .await,
                 PlatformWalletError::InvitationClaimedByThisWallet { identity_id } if identity_id == ours.id()
             ));
@@ -797,7 +813,7 @@ mod tests {
             );
             assert!(matches!(
                 wallet
-                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: theirs })
+                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: theirs, after_broadcast: true })
                     .await,
                 PlatformWalletError::InvitationAlreadyClaimed { identity_id } if identity_id == theirs
             ));
@@ -832,10 +848,46 @@ mod tests {
             );
             assert!(matches!(
                 wallet
-                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: observed.id() })
+                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: observed.id(), after_broadcast: true })
                     .await,
                 PlatformWalletError::InvitationAlreadyClaimed { identity_id } if identity_id == observed.id()
             ));
+        }
+
+        /// A claimed invitation the preflight found is `NotSent` and not
+        /// retryable, whether it is this wallet's claim or not; one found
+        /// after Platform refused the submitted claim stays `MaybeSent`.
+        /// Either way the refusal names the same variant for its code.
+        #[tokio::test]
+        async fn should_class_a_claimed_invitation_by_when_it_was_found() {
+            let wallet = wallet().await;
+            let ours = claimed_at(2);
+            let theirs = Identifier::new([9; 32]);
+            record(&wallet, &ours, 2).await;
+            for identity_id in [ours.id(), theirs] {
+                let preflight = wallet
+                    .claim_refusal(InvitationError::AlreadyClaimed {
+                        identity_id,
+                        after_broadcast: false,
+                    })
+                    .await;
+                assert_eq!(preflight.payment_delivery(), PaymentDelivery::NotSent);
+                assert!(!preflight.is_retryable());
+                assert!(matches!(
+                    preflight.dispatched_source(),
+                    PlatformWalletError::InvitationClaimedByThisWallet { .. }
+                        | PlatformWalletError::InvitationAlreadyClaimed { .. }
+                ));
+
+                let after = wallet
+                    .claim_refusal(InvitationError::AlreadyClaimed {
+                        identity_id,
+                        after_broadcast: true,
+                    })
+                    .await;
+                assert_eq!(after.payment_delivery(), PaymentDelivery::MaybeSent);
+                assert!(!after.is_retryable());
+            }
         }
 
         /// A handle whose wallet was removed and re-created under its id does
@@ -854,7 +906,7 @@ mod tests {
             record(&replacement, &ours, 2).await;
 
             assert!(matches!(
-                old.claim_refusal(InvitationError::AlreadyClaimed { identity_id: ours.id() })
+                old.claim_refusal(InvitationError::AlreadyClaimed { identity_id: ours.id(), after_broadcast: true })
                     .await,
                 PlatformWalletError::InvitationAlreadyClaimed { identity_id } if identity_id == ours.id()
             ));
@@ -865,7 +917,7 @@ mod tests {
             );
             assert!(matches!(
                 replacement
-                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: ours.id() })
+                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: ours.id(), after_broadcast: true })
                     .await,
                 PlatformWalletError::InvitationClaimedByThisWallet { identity_id } if identity_id == ours.id()
             ));

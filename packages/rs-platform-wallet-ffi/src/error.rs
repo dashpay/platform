@@ -3126,6 +3126,53 @@ mod tests {
         }
     }
 
+    /// A claimed invitation the preflight found keeps its code (24 for an
+    /// unrecorded owner, 64 with its JSON detail for this wallet's) and is
+    /// `NotSent`, not retryable; found after Platform refused the claim it is
+    /// `MaybeSent`.
+    #[test]
+    fn should_class_a_claimed_invitation_by_when_it_was_found() {
+        use dash_sdk::platform::dashpay::InvitationError;
+        use dpp::prelude::Identifier;
+
+        let id = Identifier::new([5; 32]);
+        for (after_broadcast, delivery) in [
+            (false, PlatformWalletFFIPaymentDelivery::NotSent),
+            (true, PlatformWalletFFIPaymentDelivery::MaybeSent),
+        ] {
+            let result: PlatformWalletFFIResult =
+                PlatformWalletError::from(InvitationError::AlreadyClaimed {
+                    identity_id: id,
+                    after_broadcast,
+                })
+                .into();
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorAssetLockAlreadyConsumed
+            );
+            assert_eq!(result.payment_delivery, delivery, "{after_broadcast}");
+            assert!(!result.retryable, "{after_broadcast}");
+        }
+
+        // The wallet's preflight refusal of its own claim, as `claim_refusal`
+        // builds it.
+        let result: PlatformWalletFFIResult = PlatformWalletError::RefusedBeforeDispatch {
+            source: Box::new(PlatformWalletError::InvitationClaimedByThisWallet {
+                identity_id: id,
+            }),
+        }
+        .into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvitationClaimedByThisWallet
+        );
+        assert_eq!(
+            result.payment_delivery,
+            PlatformWalletFFIPaymentDelivery::NotSent
+        );
+        assert!(!result.retryable);
+    }
+
     /// Codes 63/64 carry the identity they name as a STABLE JSON detail,
     /// `null` when Platform refused the broadcast and named no owner.
     /// Code 24 for an invitation carries the rescan hint to the host

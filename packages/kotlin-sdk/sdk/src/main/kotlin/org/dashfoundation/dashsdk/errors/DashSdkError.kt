@@ -329,7 +329,10 @@ sealed class DashSdkError(
          * wallet's: the wallet already records it in one of its registration
          * slots (no key the identity holds decides this). Nothing was recorded, and nothing
          * was broadcast unless a node that lagged behind let the claim
-         * through; load the identity like any of the wallet's own.
+         * through; load the identity like any of the wallet's own. Rust's
+         * class says which: [PaymentDelivery.NOT_SENT] (not retryable) when
+         * the claim's preflight found it, [PaymentDelivery.MAYBE_SENT] when
+         * Platform refused the claim.
          */
         class InvitationClaimedByThisWallet(
             val identityId: String,

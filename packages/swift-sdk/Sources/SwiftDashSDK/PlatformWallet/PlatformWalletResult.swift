@@ -932,6 +932,8 @@ public enum PlatformWalletError: LocalizedError {
     /// the identity holds decides this). Nothing was recorded, and nothing was broadcast
     /// unless a node that lagged behind let the claim through; load the
     /// identity like any of the wallet's own.
+    /// `payment` says which: `.notSent` (not retryable) when the claim's
+    /// preflight found it, `.maybeSent` when Platform refused the claim.
     case invitationClaimedByThisWallet(identityId: String, payment: PlatformPaymentClass? = nil)
     /// The invitation claim could not verify Platform's answers yet (the
     /// quorum is not verified). Nothing was broadcast; retry once synced.

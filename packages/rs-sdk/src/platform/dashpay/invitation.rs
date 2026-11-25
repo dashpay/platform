@@ -191,8 +191,15 @@ pub enum InvitationError {
     /// records. Usually found before the broadcast, else from Platform's
     /// consumed-outpoint refusal when the identity is not exactly the
     /// submitted one.
+    ///
+    /// `after_broadcast` says which: `false` when the preflight lookup found
+    /// it and nothing was signed or sent, `true` when Platform refused the
+    /// submitted claim and the lookup that followed found it.
     #[error("invitation was already claimed by identity {identity_id}")]
-    AlreadyClaimed { identity_id: Identifier },
+    AlreadyClaimed {
+        identity_id: Identifier,
+        after_broadcast: bool,
+    },
 
     /// A submitted key is already registered to another identity, so
     /// Platform would refuse the claim and charge the voucher for it.
@@ -1236,7 +1243,7 @@ where
     let mut lookup_error = None;
     let mut foreign_owner = None;
     match fetch_by_id().await {
-        Ok(Some(identity)) => return Err(already_claimed(&identity)),
+        Ok(Some(identity)) => return Err(already_claimed(&identity, false)),
         Ok(None) => {}
         Err(error) => lookup_error = Some(error),
     }
@@ -1248,7 +1255,7 @@ where
             // the invitation's identity can answer a key hash while the one
             // asked by id had not seen it yet.
             Ok(Some(identity)) if identity.id() == prospective_identity_id => {
-                return Err(already_claimed(&identity));
+                return Err(already_claimed(&identity, false));
             }
             // A later key hash may still name the invitation's identity,
             // which decides first.
@@ -1283,9 +1290,11 @@ where
 /// The invitation's identity exists. No submitted key decides whose it is:
 /// a key the claim shares with that identity (a delegated application key,
 /// say) does not show that the claimant controls its master.
-fn already_claimed(identity: &Identity) -> InvitationError {
+/// `after_broadcast` is whether the claim was submitted before it was found.
+fn already_claimed(identity: &Identity, after_broadcast: bool) -> InvitationError {
     InvitationError::AlreadyClaimed {
         identity_id: identity.id(),
+        after_broadcast,
     }
 }
 
@@ -1556,7 +1565,7 @@ where
             );
             Ok(identity)
         }
-        Ok(Some(identity)) => Err(already_claimed(&identity)),
+        Ok(Some(identity)) => Err(already_claimed(&identity, true)),
         Ok(None) => Err(InvitationError::Sdk(error)),
         Err(lookup) => {
             tracing::warn!(
@@ -2818,14 +2827,20 @@ mod tests {
             let (result, looked_up) = preflight(Ok(Some(theirs())), |_| Ok(None)).await;
             assert!(matches!(
                 result,
-                Err(InvitationError::AlreadyClaimed { .. })
+                Err(InvitationError::AlreadyClaimed {
+                    after_broadcast: false,
+                    ..
+                })
             ));
             assert!(looked_up.is_empty(), "looked up {looked_up:?}");
 
             let (result, looked_up) = preflight(Ok(Some(ours())), |_| Ok(None)).await;
             assert!(matches!(
                 result,
-                Err(InvitationError::AlreadyClaimed { .. })
+                Err(InvitationError::AlreadyClaimed {
+                    after_broadcast: false,
+                    ..
+                })
             ));
             assert!(looked_up.is_empty(), "looked up {looked_up:?}");
         }
@@ -2847,7 +2862,7 @@ mod tests {
             .await;
             assert!(matches!(
                 result,
-                Err(InvitationError::AlreadyClaimed { identity_id })
+                Err(InvitationError::AlreadyClaimed { identity_id, after_broadcast: false })
                     if identity_id == ours().id()
             ));
             assert_eq!(submit_calls.get(), 0, "nothing may be broadcast");
@@ -2858,7 +2873,7 @@ mod tests {
             let (result, _) = preflight(Ok(Some(theirs())), |_| Ok(None)).await;
             assert!(matches!(
                 result,
-                Err(InvitationError::AlreadyClaimed { identity_id }) if identity_id == theirs().id()
+                Err(InvitationError::AlreadyClaimed { identity_id, after_broadcast: false }) if identity_id == theirs().id()
             ));
         }
 
@@ -2868,7 +2883,10 @@ mod tests {
             let (result, _) = preflight(Ok(Some(theirs())), |_| Ok(Some(ours()))).await;
             assert!(matches!(
                 result,
-                Err(InvitationError::AlreadyClaimed { .. })
+                Err(InvitationError::AlreadyClaimed {
+                    after_broadcast: false,
+                    ..
+                })
             ));
 
             // The lookup by id failed, but a key hash names the invitation's
@@ -2876,7 +2894,7 @@ mod tests {
             let (result, _) = preflight(Err(timeout()), |_| Ok(Some(ours()))).await;
             assert!(matches!(
                 result,
-                Err(InvitationError::AlreadyClaimed { identity_id }) if identity_id == ours().id()
+                Err(InvitationError::AlreadyClaimed { identity_id, after_broadcast: false }) if identity_id == ours().id()
             ));
             let (result, _) = preflight(Err(timeout()), |_| Ok(None)).await;
             assert!(matches!(result, Err(InvitationError::Sdk(_))));
@@ -2943,14 +2961,17 @@ mod tests {
             let (result, _) = preflight(Ok(None), |_| Ok(Some(ours()))).await;
             assert!(matches!(
                 result,
-                Err(InvitationError::AlreadyClaimed { identity_id }) if identity_id == ours().id()
+                Err(InvitationError::AlreadyClaimed { identity_id, after_broadcast: false }) if identity_id == ours().id()
             ));
 
             let squatter = identity(1, [(0, test_key(0, 9))].into());
             let (result, _) = preflight(Ok(None), move |_| Ok(Some(squatter.clone()))).await;
             assert!(matches!(
                 result,
-                Err(InvitationError::AlreadyClaimed { .. })
+                Err(InvitationError::AlreadyClaimed {
+                    after_broadcast: false,
+                    ..
+                })
             ));
         }
 
@@ -2966,7 +2987,7 @@ mod tests {
                 .await;
                 assert!(matches!(
                     result,
-                    Err(InvitationError::AlreadyClaimed { identity_id })
+                    Err(InvitationError::AlreadyClaimed { identity_id, after_broadcast: false })
                         if identity_id == ours().id()
                 ));
             }
@@ -2980,6 +3001,7 @@ mod tests {
                 async {
                     Err(InvitationError::AlreadyClaimed {
                         identity_id: ours().id(),
+                        after_broadcast: false,
                     })
                 },
                 || async { panic!("a refused claim must never be broadcast") },
@@ -2987,7 +3009,10 @@ mod tests {
             .await;
             assert!(matches!(
                 refused,
-                Err(InvitationError::AlreadyClaimed { .. })
+                Err(InvitationError::AlreadyClaimed {
+                    after_broadcast: false,
+                    ..
+                })
             ));
 
             let taken = claim_unless_refused(async { Ok(()) }, || async {
@@ -3209,7 +3234,10 @@ mod tests {
             .await;
             assert!(matches!(
                 result,
-                Err(InvitationError::AlreadyClaimed { .. })
+                Err(InvitationError::AlreadyClaimed {
+                    after_broadcast: true,
+                    ..
+                })
             ));
         }
 
@@ -3241,7 +3269,10 @@ mod tests {
             .await;
             assert!(matches!(
                 result,
-                Err(InvitationError::AlreadyClaimed { .. })
+                Err(InvitationError::AlreadyClaimed {
+                    after_broadcast: true,
+                    ..
+                })
             ));
         }
 
@@ -3259,7 +3290,10 @@ mod tests {
             .await;
             assert!(matches!(
                 result,
-                Err(InvitationError::AlreadyClaimed { .. })
+                Err(InvitationError::AlreadyClaimed {
+                    after_broadcast: true,
+                    ..
+                })
             ));
         }
 
@@ -4055,7 +4089,7 @@ mod tests {
             assert!(
                 matches!(
                     result,
-                    Err(InvitationError::AlreadyClaimed { identity_id })
+                    Err(InvitationError::AlreadyClaimed { identity_id, after_broadcast: false })
                         if identity_id == invitation_id
                 ),
                 "got {result:?}"

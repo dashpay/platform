@@ -3092,7 +3092,9 @@ extension ManagedPlatformWallet {
     /// lets the retry through; Platform then refuses it, and the identity is
     /// returned as the claim's result when it carries exactly these keys, or
     /// reported as `.invitationClaimedByThisWallet` / `.assetLockAlreadyConsumed`
-    /// as above when it does not.
+    /// as above when it does not. Those two carry `.notSent` when the
+    /// preflight found the identity and `.maybeSent` when Platform refused
+    /// the claim; neither is retryable.
     ///
     /// Returns the freshly-registered invitee `ManagedIdentity`.
     public func claimInvitation(

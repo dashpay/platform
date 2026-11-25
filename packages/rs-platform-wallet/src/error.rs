@@ -128,7 +128,8 @@ pub enum PlatformWalletError {
     /// it in one of its registration slots. No key the identity holds decides
     /// this. Nothing was recorded, and nothing was broadcast unless a node
     /// that lagged behind let the claim through; the host loads the identity
-    /// the way it loads any of its own.
+    /// the way it loads any of its own. The claim wraps the preflight's in
+    /// [`Self::RefusedBeforeDispatch`] (`NotSent`).
     #[error("invitation was already claimed by this wallet as identity {identity_id}")]
     InvitationClaimedByThisWallet { identity_id: Identifier },
 
@@ -137,7 +138,8 @@ pub enum PlatformWalletError {
     /// an earlier claim of this wallet whose result was lost before it was
     /// recorded (a rescan records it). No key the identity holds decides
     /// this. Nothing was broadcast unless a node that lagged behind let the
-    /// claim through.
+    /// claim through; the preflight's is wrapped in
+    /// [`Self::RefusedBeforeDispatch`] (`NotSent`).
     #[error(
         "invitation was already claimed by identity {identity_id}; if this wallet \
          submitted the claim earlier, rescan its identities to load it"
@@ -1548,8 +1550,19 @@ impl From<InvitationError> for PlatformWalletError {
                 message,
                 after_broadcast,
             },
-            InvitationError::AlreadyClaimed { identity_id } => {
-                Self::InvitationAlreadyClaimed { identity_id }
+            // The preflight found the identity before anything was signed:
+            // proven before the dispatch. One found after Platform refused
+            // the submitted claim keeps the variant's own class.
+            InvitationError::AlreadyClaimed {
+                identity_id,
+                after_broadcast,
+            } => {
+                let refusal = Self::InvitationAlreadyClaimed { identity_id };
+                if after_broadcast {
+                    refusal
+                } else {
+                    refusal.before_dispatch()
+                }
             }
             InvitationError::KeysAlreadyRegistered {
                 identity_id,
@@ -1908,7 +1921,8 @@ impl PlatformWalletError {
             // one of them: only [`Self::WalletRemovedBeforeSend`] says where
             // it failed. A claimed invitation is usually found before the
             // claim is broadcast, and otherwise from Platform's refusal of a
-            // claim a lagging node let through.
+            // claim a lagging node let through; the claim wraps the
+            // preflight's in [`Self::RefusedBeforeDispatch`].
             Self::WalletNotFound(_)
             | Self::InvitationClaimedByThisWallet { .. }
             | Self::InvitationAlreadyClaimed { .. }
@@ -3032,10 +3046,27 @@ mod invitation_error_mapping_tests {
     #[test]
     fn should_keep_the_identity_a_preflight_outcome_names() {
         let id = Identifier::new([5; 32]);
+        // Found by the preflight: proven before the dispatch, same diagnostic.
+        let preflight = PlatformWalletError::from(InvitationError::AlreadyClaimed {
+            identity_id: id,
+            after_broadcast: false,
+        });
         assert!(matches!(
-            PlatformWalletError::from(InvitationError::AlreadyClaimed { identity_id: id }),
+            preflight.dispatched_source(),
+            PlatformWalletError::InvitationAlreadyClaimed { identity_id } if *identity_id == id
+        ));
+        assert_eq!(preflight.payment_delivery(), PaymentDelivery::NotSent);
+        assert!(!preflight.is_retryable());
+        // Found after Platform refused the submitted claim: possibly sent.
+        let after = PlatformWalletError::from(InvitationError::AlreadyClaimed {
+            identity_id: id,
+            after_broadcast: true,
+        });
+        assert!(matches!(
+            after,
             PlatformWalletError::InvitationAlreadyClaimed { identity_id } if identity_id == id
         ));
+        assert_eq!(after.payment_delivery(), PaymentDelivery::MaybeSent);
         for owner in [Some(id), None] {
             assert!(matches!(
                 PlatformWalletError::from(InvitationError::KeysAlreadyRegistered {
