@@ -989,6 +989,38 @@ fn should_reject_a_platform_node_address_stored_at_two_indices() {
     );
 }
 
+/// Keyless rows bypass typed-pool loading, so the pool restore must reject
+/// an address already stored with a key at another hardened index.
+#[test]
+fn should_reject_a_keyless_pool_address_stored_at_two_derivation_indices() {
+    assert_pool_corruption_is_typed_and_isolated(
+        |wallet, info| {
+            let keys =
+                platform_wallet::wallet::provider_key_at_index::derive_platform_node_public_keys(
+                    wallet,
+                    Network::Testnet,
+                    1,
+                )
+                .unwrap();
+            platform_wallet::wallet::provider_key_at_index::populate_platform_node_pool(
+                info,
+                &keys,
+                Network::Testnet,
+            )
+            .unwrap();
+            "INSERT INTO core_address_pool \
+                 (wallet_id, account_type, account_index, key_class, user_identity_id, \
+                  friend_identity_id, pool_type, address_index, script, used, public_key, key_type) \
+             SELECT wallet_id, account_type, account_index, key_class, user_identity_id, \
+                    friend_identity_id, pool_type, 1, script, 0, NULL, NULL \
+             FROM core_address_pool \
+             WHERE wallet_id = ?1 AND account_type = 'provider_platform' AND address_index = 0"
+                .to_string()
+        },
+        "core pool address has multiple derivation indices",
+    );
+}
+
 /// A platform-node row filed under other account coordinates belongs to no
 /// account this wallet rebuilds. Importing it into the platform-node pool
 /// would bring its key back without its reservation, so it is left out and
