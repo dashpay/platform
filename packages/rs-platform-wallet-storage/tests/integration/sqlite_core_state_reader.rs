@@ -458,11 +458,11 @@ fn first_external_info(
             continue;
         }
         for pool in managed.managed_account_type().address_pools() {
-            if pool.pool_type != AddressPoolType::External || pool.addresses.is_empty() {
+            if pool.pool_type() != AddressPoolType::External || pool.addresses().is_empty() {
                 continue;
             }
             let mut infos: Vec<key_wallet::AddressInfo> =
-                pool.addresses.values().cloned().collect();
+                pool.addresses().values().cloned().collect();
             infos.sort_by_key(|a| a.index);
             return infos.into_iter().next().unwrap();
         }
@@ -509,7 +509,8 @@ fn rehydration_routes_via_real_sql_resolver() {
         matches!(at, AccountType::CoinJoin { index: 0 })
     });
     assert_ne!(
-        bip44_info.script_pubkey, coinjoin_info.script_pubkey,
+        bip44_info.address.script_pubkey(),
+        coinjoin_info.address.script_pubkey(),
         "BIP44[0] and CoinJoin[0] must derive distinct scripts"
     );
 
@@ -520,7 +521,7 @@ fn rehydration_routes_via_real_sql_resolver() {
         },
         txout: dashcore::TxOut {
             value,
-            script_pubkey: info.script_pubkey.clone(),
+            script_pubkey: info.address.script_pubkey(),
         },
         address: info.address.clone(),
         height: 5,
@@ -665,7 +666,8 @@ fn rehydration_routes_used_addresses_to_owning_account() {
         )
     });
     assert_ne!(
-        bip44_info.script_pubkey, coinjoin_used.script_pubkey,
+        bip44_info.address.script_pubkey(),
+        coinjoin_used.address.script_pubkey(),
         "BIP44[0] and CoinJoin[0] must derive distinct scripts"
     );
 
@@ -757,7 +759,7 @@ fn rehydration_routes_used_addresses_to_owning_account() {
         .managed_account_type()
         .address_pools()
         .into_iter()
-        .find(|p| p.pool_type == AddressPoolType::External)
+        .find(|p| p.pool_type() == AddressPoolType::External)
         .expect("CoinJoin External pool");
     assert!(
         cj_external

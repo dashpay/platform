@@ -501,7 +501,6 @@ struct WalletMemoryDetailView: View {
             if let s = coreState {
                 KVRow(label: "Synced Height", value: "\(s.syncedHeight)")
                 KVRow(label: "Last Processed", value: "\(s.lastProcessedHeight)")
-                KVRow(label: "Monitor Revision (max)", value: "\(s.monitorRevision)")
             } else {
                 Text("Unavailable")
                     .font(.caption)
@@ -1030,7 +1029,6 @@ struct AccountDrillDownView: View {
                     // 0 and add noise.
                     KVRow(label: "Total UTXOs", value: "\(m.totalUtxos)")
                 }
-                KVRow(label: "Monitor Revision", value: "\(m.monitorRevision)")
             } else {
                 Text("Unavailable")
                     .font(.caption)

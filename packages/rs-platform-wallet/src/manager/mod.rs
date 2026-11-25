@@ -7,6 +7,7 @@ pub mod identity_sync;
 mod load;
 #[cfg(test)]
 pub(crate) use load::pool_validations_on_this_thread;
+pub use load::{restore_account_address_pools, AddressPoolRestoreStats};
 mod persistence_load;
 pub mod platform_address_sync;
 #[cfg(feature = "shielded")]
@@ -1857,6 +1858,9 @@ mod tests {
         Arc::clone(&mgr.identity_sync_manager).start();
         Arc::clone(&mgr.platform_address_sync_manager).start();
         Arc::clone(&mgr.dashpay_sync_manager).start();
+        Arc::clone(&mgr.dpns_sync_manager).start();
+        #[cfg(feature = "shielded")]
+        Arc::clone(&mgr.shielded_sync_manager).start();
 
         let report = mgr.shutdown().await;
         assert!(report.all_clean(), "clean shutdown: {report:?}");
@@ -1864,6 +1868,9 @@ mod tests {
             WalletWorker::IdentitySync,
             WalletWorker::PlatformAddressSync,
             WalletWorker::DashPaySync,
+            WalletWorker::DpnsSync,
+            #[cfg(feature = "shielded")]
+            WalletWorker::ShieldedSync,
         ] {
             assert_eq!(
                 report.per_worker.get(&worker),
