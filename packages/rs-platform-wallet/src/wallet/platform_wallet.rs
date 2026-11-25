@@ -1803,7 +1803,7 @@ impl PlatformWallet {
                 "invalid Orchard payment address bytes".to_string(),
             )
         })?;
-        super::shielded::operations::transfer(
+        super::shielded::operations::transfer_dispatched(
             &self.sdk,
             coordinator.store(),
             coordinator.anchor_cache(),
@@ -1814,6 +1814,7 @@ impl PlatformWallet {
             &recipient,
             amount,
             memo,
+            coordinator.shielded_dispatch(),
             &prover,
         )
         .await
@@ -1844,7 +1845,7 @@ impl PlatformWallet {
             .map_err(|e| {
                 PlatformWalletError::ShieldedBuildError(format!("invalid platform address: {e}"))
             })?;
-        super::shielded::operations::unshield(
+        super::shielded::operations::unshield_dispatched(
             &self.sdk,
             coordinator.store(),
             coordinator.anchor_cache(),
@@ -1854,6 +1855,7 @@ impl PlatformWallet {
             account,
             &to,
             amount,
+            coordinator.shielded_dispatch(),
             &prover,
         )
         .await
@@ -1898,6 +1900,7 @@ impl PlatformWallet {
                 account,
                 *identity_id,
                 amount,
+                coordinator.shielded_dispatch(),
                 &prover,
             )
             .await?;
@@ -2359,6 +2362,7 @@ impl PlatformWallet {
             vec![entry],
             private_contact,
             &started,
+            coordinator.shielded_dispatch(),
             &prover,
         )
         .await
@@ -2394,7 +2398,7 @@ impl PlatformWallet {
                     "core address network mismatch: {e}"
                 ))
             })?;
-        super::shielded::operations::withdraw(
+        super::shielded::operations::withdraw_dispatched(
             &self.sdk,
             coordinator.store(),
             coordinator.anchor_cache(),
@@ -2405,6 +2409,7 @@ impl PlatformWallet {
             &parsed,
             amount,
             core_fee_per_byte,
+            coordinator.shielded_dispatch(),
             &prover,
         )
         .await
@@ -2454,7 +2459,7 @@ impl PlatformWallet {
             // wallet-manager write lock below — it's only needed for the spend, not for the
             // registration step.
             let keyset = self.derive_spend_keyset(seed, account).await?;
-            super::shielded::operations::identity_create_from_shielded_pool(
+            super::shielded::operations::identity_create_from_shielded_pool_dispatched(
                 &self.sdk,
                 coordinator.store(),
                 coordinator.anchor_cache(),
@@ -2466,6 +2471,7 @@ impl PlatformWallet {
                 denomination,
                 send_to_address_on_creation_failure,
                 identity_signer,
+                coordinator.shielded_dispatch(),
                 &prover,
             )
             .await?

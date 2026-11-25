@@ -42,6 +42,7 @@ mod balance_tests;
 #[cfg(test)]
 mod cancelled_scan_tests;
 pub mod coordinator;
+pub mod dispatch;
 pub mod file_store;
 #[cfg(test)]
 mod fresh_address_scan_tests;
@@ -71,6 +72,10 @@ pub use balance::{
     ShieldedLocalBalanceState,
 };
 pub use coordinator::NetworkShieldedCoordinator;
+pub use dispatch::{
+    DispatchRefused, DispatchedNote, ShieldedDispatch, ShieldedDispatchKind,
+    ShieldedDispatchPayload,
+};
 pub use file_store::{FileBackedShieldedStore, FileShieldedStoreError};
 pub use keys::{AccountViewingKeys, OrchardKeySet};
 pub use prover::CachedOrchardProver;

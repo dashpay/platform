@@ -89,6 +89,7 @@ use super::anchor_cache::RecordedAnchorCache;
 use super::balance::{
     ShieldedBalanceSource, ShieldedLocalBalanceSnapshot, ShieldedLocalBalanceState,
 };
+use super::dispatch::ShieldedDispatch;
 use super::file_store::FileBackedShieldedStore;
 use super::keys::AccountViewingKeys;
 use super::store::{
@@ -295,6 +296,10 @@ pub struct NetworkShieldedCoordinator {
 
     /// Per-subwallet removal counts; see [`SubwalletRemovals`].
     removals: SubwalletRemovals,
+
+    /// The host's dispatch hook, set once by
+    /// [`set_shielded_dispatch`](Self::set_shielded_dispatch).
+    dispatch: std::sync::OnceLock<Arc<dyn ShieldedDispatch>>,
 }
 
 /// Per-subwallet count of removals, so a sync pass can skip a subwallet
@@ -505,6 +510,7 @@ impl NetworkShieldedCoordinator {
             hydrated: RwLock::new(std::collections::BTreeSet::new()),
             clear_generation: std::sync::atomic::AtomicU64::new(0),
             removals: SubwalletRemovals::default(),
+            dispatch: std::sync::OnceLock::new(),
         }
     }
 
@@ -561,6 +567,33 @@ impl NetworkShieldedCoordinator {
             .lock()
             .ok()
             .and_then(|g| g.clone())
+    }
+
+    /// Set the host's dispatch hook for this network's shielded note spends
+    /// ([`ShieldedDispatch`]): from then on every note spend made through a
+    /// `PlatformWallet` of this network is shown to it, with its record
+    /// saved, before its first broadcast, and is sent only once it returns
+    /// `Ok`. The free functions of [`operations`](super::operations) never
+    /// call it: a host that sets one spends through the wallet.
+    ///
+    /// The hook is held in memory only: set it after every open, before the
+    /// first spend. It can't be replaced or removed; a second call is refused
+    /// with [`PlatformWalletError::InvalidParameter`] and changes nothing. A
+    /// spend that started before it was set is not shown to it.
+    pub fn set_shielded_dispatch(
+        &self,
+        hook: Arc<dyn ShieldedDispatch>,
+    ) -> Result<(), PlatformWalletError> {
+        self.dispatch.set(hook).map_err(|_| {
+            PlatformWalletError::InvalidParameter(
+                "a shielded dispatch hook is already set; it can't be replaced".to_owned(),
+            )
+        })
+    }
+
+    /// The host's dispatch hook, once set.
+    pub(crate) fn shielded_dispatch(&self) -> Option<&dyn ShieldedDispatch> {
+        self.dispatch.get().map(|hook| hook.as_ref())
     }
 
     /// The on-disk SQLite path the coordinator opened. Used by
