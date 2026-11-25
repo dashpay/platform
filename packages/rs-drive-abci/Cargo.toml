@@ -112,8 +112,13 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
   "data-contract-cbor-conversion",
 ] }
 # `structure`: the strategy tests check every state they build against the
-# GroveDB structure description
-drive = { path = "../rs-drive", features = ["fixtures-and-mocks", "structure"] }
+# GroveDB structure description. `test-storage-engine-env`: the tests run on the storage
+# engine `DRIVE_TEST_STORAGE_ENGINE` names
+drive = { path = "../rs-drive", features = [
+  "fixtures-and-mocks",
+  "structure",
+  "test-storage-engine-env",
+] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 strategy-tests = { path = "../strategy-tests" }
 grovedb-commitment-tree = { workspace = true, features = ["client"] }

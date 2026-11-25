@@ -85,6 +85,10 @@ dpp = { path = "../rs-dpp", features = [
 once_cell = "1.7"
 serde_json = { version = "1.0", features = ["preserve_order"] }
 assert_matches = "1.5.0"
+# Drive's own integration tests run on the storage engine `DRIVE_TEST_STORAGE_ENGINE` names
+drive = { path = ".", default-features = false, features = [
+  "test-storage-engine-env",
+] }
 # Replays merk proof ops to record the exact shape of fixed-key layers in
 # grovedb-structure.json
 grovedb-merk = { workspace = true, features = ["minimal"] }
@@ -120,6 +124,10 @@ fixtures-and-mocks = [
   "dpp/json-conversion",
   "dpp/random-public-keys",
 ]
+# `DriveConfig::default()` takes the storage engine that the environment variable
+# `DRIVE_TEST_STORAGE_ENGINE` names, so that one build of a test suite runs on either
+# engine. For test builds: no default feature and nothing that ships asks for it.
+test-storage-engine-env = []
 server = [
   "serde",
   "parking_lot",

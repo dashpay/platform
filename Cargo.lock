@@ -2447,6 +2447,7 @@ dependencies = [
  "criterion",
  "derive_more 1.0.0",
  "dpp",
+ "drive",
  "enum-map",
  "grovedb",
  "grovedb-bincode",

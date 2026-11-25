@@ -389,12 +389,13 @@ const fn default_data_contracts_cache_size() -> u64 {
 
 /// The storage engine of a configuration that names none: RocksDB.
 ///
-/// Drive's own unit tests, and every build of Drive with its `fixtures-and-mocks`
-/// feature, read `DRIVE_TEST_STORAGE_ENGINE` first, so that one build of the test suite
-/// runs on either engine. The feature is among Drive's default features; the node's
-/// binary is built without it.
+/// Drive's own unit tests, and a build of Drive with its `test-storage-engine-env`
+/// feature, read `DRIVE_TEST_STORAGE_ENGINE` first, so that one build of a test suite
+/// runs on either engine. A value that names no engine is a panic, so that a run with a
+/// mistyped value does not pass on RocksDB. The feature is no default feature: a test
+/// build asks for it, and a build that does not never reads the variable.
 fn default_storage_engine() -> StorageEngine {
-    #[cfg(any(test, feature = "fixtures-and-mocks"))]
+    #[cfg(any(test, feature = "test-storage-engine-env"))]
     {
         if let Ok(named) = std::env::var("DRIVE_TEST_STORAGE_ENGINE") {
             return named
