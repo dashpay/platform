@@ -141,7 +141,12 @@ pub fn apply(
     }
     if !cs.rescan_utxos.is_empty() {
         // Fill-only: a re-scan's coin is written only where the store has no
-        // row for it, and never changes an existing row's spent flag. A sweep
+        // row for it, and never changes an existing row's spent flag. A new
+        // row is written spent when a stored transaction spends the coin: a
+        // collected sweep placeholder can leave that record the only evidence
+        // of the spend. Any stored spender counts, a mempool one too, unlike
+        // the release veto: a fill decides whether a coin is offered, so a
+        // stale spender may hide the coin but never offers it twice. A sweep
         // placeholder is materialised with its spent flag kept, as every
         // delivery must (see `spent_utxos` below). The height is raised
         // either way, so a spent row a sweep later releases loads confirmed.
@@ -818,7 +823,8 @@ const HEIGHT_ONLY_TRANSACTION_SQL: &str = "INSERT INTO core_transactions \
 
 const INSERT_ABSENT_UTXO_SQL: &str = "INSERT INTO core_utxos \
         (wallet_id, outpoint, value, script, spent) \
-     VALUES (?1, ?2, ?3, ?4, ?5) \
+     VALUES (?1, ?2, ?3, ?4, ?5 OR EXISTS(SELECT 1 FROM core_transaction_inputs \
+        WHERE wallet_id = ?1 AND outpoint = ?2)) \
      ON CONFLICT(wallet_id, outpoint) DO UPDATE SET \
         value = excluded.value, \
         script = excluded.script, \
@@ -2741,6 +2747,72 @@ mod tests {
             )
             .unwrap();
         assert_eq!(spent, 1);
+    }
+
+    fn stored_spent(conn: &Connection, wallet_id: &[u8; 32], coin: &OutPoint) -> i64 {
+        conn.query_row(
+            "SELECT spent FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+            params![&wallet_id[..], blob::encode_outpoint(coin).unwrap()],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    /// One changeset carries a mempool transaction spending a re-scan's coin
+    /// and the coin, which the store holds no row for: the record's inputs
+    /// are indexed before the fill, so the coin is written spent.
+    #[test]
+    fn rescan_coin_fills_spent_when_its_spender_arrives_in_the_same_changeset() {
+        let wallet_id = [0x4C; 32];
+        let mut conn = wallet_db(&wallet_id);
+        let coin = sample_utxo(Txid::from_byte_array([0x88; 32]), 500, true);
+        let cs = CoreChangeSet {
+            records: vec![spend(&[coin.outpoint], TransactionContext::Mempool)],
+            rescan_utxos: vec![coin.clone()],
+            ..Default::default()
+        };
+        let tx = conn.transaction().unwrap();
+        apply(&tx, &wallet_id, &cs).unwrap();
+        tx.commit().unwrap();
+
+        assert_eq!(stored_spent(&conn, &wallet_id, &coin.outpoint), 1);
+        let (state, _) = load_state(
+            &conn,
+            &wallet_id,
+            dashcore::Network::Testnet,
+            &LoadCtx::strict(),
+        )
+        .unwrap();
+        assert!(state.new_utxos.is_empty(), "the coin loads spent");
+    }
+
+    /// The store kept a spender of a coin, then deleted that transaction's
+    /// row (as a sweep does): its indexed inputs go with it, so a later
+    /// re-scan fills the coin unspent.
+    #[test]
+    fn rescan_coin_fills_unspent_once_its_spenders_row_is_deleted() {
+        let wallet_id = [0x4D; 32];
+        let mut conn = wallet_db(&wallet_id);
+        crate::sqlite::conn::enforce_foreign_keys(&conn).unwrap();
+        let coin = sample_utxo(Txid::from_byte_array([0x89; 32]), 500, true);
+        let spender = spend(&[coin.outpoint], TransactionContext::Mempool);
+        let tx = conn.transaction().unwrap();
+        apply(&tx, &wallet_id, &round(vec![spender.clone()], vec![])).unwrap();
+        let deleted = tx
+            .execute(
+                "DELETE FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+                params![&wallet_id[..], AsRef::<[u8]>::as_ref(&spender.txid)],
+            )
+            .unwrap();
+        assert_eq!(deleted, 1);
+        let cs = CoreChangeSet {
+            rescan_utxos: vec![coin.clone()],
+            ..Default::default()
+        };
+        apply(&tx, &wallet_id, &cs).unwrap();
+        tx.commit().unwrap();
+
+        assert_eq!(stored_spent(&conn, &wallet_id, &coin.outpoint), 0);
     }
 
     #[test]

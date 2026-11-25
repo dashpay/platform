@@ -447,7 +447,9 @@ V021 indexes every raw input of each stored transaction, even when its ownership
 is not yet known. New historical TXOs locate affected records through this index.
 The shared wallet accounting rule updates input/output details, net amount and
 direction; it never changes coins, spend claims or finality. Contact-only scripts
-are excluded from wallet ownership.
+are excluded from wallet ownership. The one coin rule that reads this index is the
+fill of a re-scan coin: a coin with no `core_utxos` row is written spent when a
+stored transaction spends it.
 
 V021 also indexes and repairs existing mined and unmined records using retained
 TXOs. Unknown historical ownership is filled when later observations supply it.

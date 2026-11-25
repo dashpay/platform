@@ -152,7 +152,9 @@ pub struct CoreChangeSet {
     /// wallet's UTXO set, because it derives no coins from `updated` records.
     ///
     /// A persister writes each one only when it holds no row for the
-    /// outpoint, and never changes an existing row's spent flag. A sweep
+    /// outpoint, and never changes an existing row's spent flag. A persister
+    /// that keeps transaction inputs writes a new row spent when a stored
+    /// transaction spends the outpoint. A sweep
     /// placeholder is not a delivered row: it is materialised with its spent
     /// flag kept. A persister that projects coins from `account_records`
     /// already sees these outputs on the updated record. A re-scan
