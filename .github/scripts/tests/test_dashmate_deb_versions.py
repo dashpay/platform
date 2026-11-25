@@ -27,6 +27,10 @@ Aliases: undefined
 SOURCES = 'etc/apt/sources.list.d/dashmate.sources'
 KEYRING = 'usr/share/keyrings/dashmate-archive-keyring.gpg'
 
+# The primary key of the keyring infra handed over for the repository. A keyring with any
+# other primary key has to come with a deliberate change here.
+REPOSITORY_KEY_FINGERPRINT = 'A5F90926475EF25346DCE26836EF5BF853D100FE'
+
 # The stanza infra specified for the repository. The suite stays `stable` for every version,
 # prereleases included: switching to `testing` is the operator's choice, and the file is a
 # conffile so that choice survives upgrades.
@@ -295,6 +299,27 @@ class RewriteDebVersionsTests(unittest.TestCase):
                 self.assertEqual(payload_file(deb, SOURCES).decode(), STANZA)
                 # the key the source file names is the one shipped next to it
                 self.assertEqual(payload_file(deb, KEYRING), self.keyring)
+
+    def test_should_ship_the_committed_keyring_of_the_repository_key(self):
+        committed = (ROOT / 'packages/dashmate/deb/dashmate-archive-keyring.gpg').read_bytes()
+        home = Path(tempfile.mkdtemp(dir='/tmp' if os.path.isdir('/tmp') else None))
+        try:
+            keys = subprocess.run(
+                ['gpg', '--batch', '--no-options', '--homedir', str(home), '--with-colons', '--show-keys'],
+                input=committed, check=True, capture_output=True).stdout.decode().splitlines()
+        finally:
+            subprocess.run(['gpgconf', '--homedir', str(home), '--kill', 'all'], capture_output=True)
+            shutil.rmtree(home, ignore_errors=True)
+        # the fingerprint of the primary key is the record that follows its `pub` record
+        primary = [keys[i + 1].split(':')[9] for i, line in enumerate(keys) if line.startswith('pub:')]
+        self.assertEqual(primary, [REPOSITORY_KEY_FINGERPRINT])
+
+        # the repack's guard accepts it, and ships it byte for byte
+        self.use_keyring(committed)
+        self.build_oclif_deb('5.1.0.0f38a693a4-1', 'amd64')
+        result = self.rewrite('5.1.0')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(payload_file(self.dist / 'dashmate_5.1.0-1_amd64.deb', KEYRING), committed)
 
     def test_should_list_the_source_file_as_the_only_conffile(self):
         self.build_oclif_deb('5.1.0.0f38a693a4-1', 'amd64')
