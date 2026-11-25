@@ -109,15 +109,15 @@ impl NetworkManager for SharedNetwork {
 #[derive(Clone, Copy, Debug)]
 enum Order {
     /// The lock is injected right behind the transaction, with no wait.
-    WithTx,
+    Together,
     /// The InstantSend manager has handled the lock before the transaction is
     /// injected. Had it forwarded the lock, the mempool manager would get it
     /// on a separate event subscription, so which of its two paths (lock held
     /// for the transaction, or lock applied to it) a regression takes is not
     /// fixed.
-    BeforeTx,
+    LockFirst,
     /// The transaction is in the wallet and the store before the lock arrives.
-    AfterTx,
+    TxFirst,
 }
 
 /// The `InstantLockReceived` events the client emits, as `(txid, validated)`.
@@ -439,19 +439,19 @@ async fn run(order: Order) {
     };
 
     match order {
-        Order::WithTx => {
+        Order::Together => {
             net.inject(peer, tx_msg()).await;
             net.inject(peer, lock_msg()).await;
             wait_until("the payment in the wallet and the store", tx_seen).await;
             wait_until("the lock at the InstantSend manager", lock_seen).await;
         }
-        Order::BeforeTx => {
+        Order::LockFirst => {
             net.inject(peer, lock_msg()).await;
             wait_until("the lock at the InstantSend manager", lock_seen).await;
             net.inject(peer, tx_msg()).await;
             wait_until("the payment in the wallet and the store", tx_seen).await;
         }
-        Order::AfterTx => {
+        Order::TxFirst => {
             net.inject(peer, tx_msg()).await;
             wait_until("the payment in the wallet and the store", tx_seen).await;
             net.inject(peer, lock_msg()).await;
@@ -535,17 +535,17 @@ async fn run(order: Order) {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn g1_unvalidated_lock_with_its_transaction_is_never_final() {
-    run(Order::WithTx).await;
+    run(Order::Together).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn g1_unvalidated_lock_before_its_transaction_is_never_final() {
-    run(Order::BeforeTx).await;
+    run(Order::LockFirst).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn g1_unvalidated_lock_after_its_transaction_is_never_final() {
-    run(Order::AfterTx).await;
+    run(Order::TxFirst).await;
 }
 
 /// A lock the client validates against a live regtest quorum.
