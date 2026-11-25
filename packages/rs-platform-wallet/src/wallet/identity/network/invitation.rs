@@ -30,6 +30,7 @@ use crate::changeset::{
 
 use dash_sdk::platform::transition::put_settings::PutSettings;
 
+use dash_sdk::platform::dashpay::InvitationError;
 pub use dash_sdk::platform::dashpay::{
     InvitationClaimStatus, MAX_INVITATION_DUFFS, MAX_INVITATION_TTL_SECS, MIN_INVITATION_DUFFS,
 };
@@ -391,16 +392,106 @@ impl IdentityWallet {
         Ok(self.sdk.invitation_claim_status(invitation).await?)
     }
 
+    /// [`Self::invitation_claim_status`], plus whether this wallet made the
+    /// claim: `Some(true)` only when this wallet records the invitation's
+    /// identity in one of its registration slots, `Some(false)` when nobody
+    /// claimed it, and `None` (unknown) for any other claimed invitation. No
+    /// key the identity holds decides it: a key it shares with this wallet
+    /// (a delegated application key, say) does not show that this wallet
+    /// controls its master. An earlier claim of this wallet whose result was
+    /// lost before it was recorded reads as unknown until the wallet records
+    /// the identity (a rescan finds it).
+    pub async fn invitation_claim_status_for_identity(
+        &self,
+        invitation: &ParsedInvitation,
+    ) -> Result<(InvitationClaimStatus, Option<bool>), PlatformWalletError> {
+        let status = self.invitation_claim_status(invitation).await?;
+        let claimed_by_this_wallet = self.invitation_claimed_by_this_wallet(&status).await;
+        Ok((status, claimed_by_this_wallet))
+    }
+
+    /// The decision behind [`Self::invitation_claim_status_for_identity`].
+    async fn invitation_claimed_by_this_wallet(
+        &self,
+        status: &InvitationClaimStatus,
+    ) -> Option<bool> {
+        if !status.already_claimed {
+            return Some(false);
+        }
+        self.holds_identity(&status.prospective_identity_id)
+            .await
+            .then_some(true)
+    }
+
+    /// The wallet error for a refused claim. A claimed invitation is this
+    /// wallet's only when the wallet records its identity in one of its
+    /// registration slots ([`Self::holds_identity`]); the SDK never decides
+    /// that, since no key the identity holds proves whose it is.
+    ///
+    /// "This wallet's claim" sends the host to load that identity through
+    /// this handle, so it is reported only while the handle's wallet is
+    /// still the one the manager holds: one removed, or re-created under its
+    /// id, while the claim ran is reported as not found instead.
+    async fn claim_refusal(&self, error: InvitationError) -> PlatformWalletError {
+        let refusal = match error {
+            InvitationError::AlreadyClaimed { identity_id }
+                if self.holds_identity(&identity_id).await =>
+            {
+                PlatformWalletError::InvitationClaimedByThisWallet { identity_id }
+            }
+            error => error.into(),
+        };
+        match refusal {
+            PlatformWalletError::InvitationClaimedByThisWallet { .. }
+                if !self.is_current_generation().await =>
+            {
+                PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id))
+            }
+            refusal => refusal,
+        }
+    }
+
+    /// This handle's wallet is still the one the manager holds under its id.
+    async fn is_current_generation(&self) -> bool {
+        let wm = self.wallet_manager.read().await;
+        self.current_wallet_and_info(&wm).is_some()
+    }
+
+    /// This wallet holds `identity_id` in one of its registration slots. An
+    /// identity it only observed (looked up by name, say) is not its own,
+    /// even when stored under this wallet's id. A wallet re-created under
+    /// this handle's id since it was taken is not this wallet: its
+    /// identities say nothing about this handle's claims.
+    async fn holds_identity(&self, identity_id: &Identifier) -> bool {
+        let wm = self.wallet_manager.read().await;
+        self.current_wallet_and_info(&wm).is_some_and(|(_, info)| {
+            let manager = &info.identity_manager;
+            manager.identity_index(identity_id).is_some()
+                && manager
+                    .managed_identity(identity_id)
+                    .is_some_and(|managed| managed.wallet_id == Some(self.wallet_id))
+        })
+    }
+
     /// Claim a DashPay invitation: register a NEW identity for the invitee,
     /// funded by the imported voucher, then record it in this wallet.
     ///
     /// The claim itself — refetching the funding transaction, rebuilding the
-    /// asset-lock proof, the IS → ChainLock fallback (a stale islock, a claim
-    /// too large with the IS proof, or a funding transaction over the input
-    /// cap) and adopting an earlier claim that
-    /// already landed — is
+    /// asset-lock proof, the lookups that keep a claim Platform would refuse
+    /// and charge for from being broadcast, the IS → ChainLock fallback (a
+    /// stale islock, a claim too large with the IS proof, or a funding
+    /// transaction over the input cap) and adopting an earlier claim that a
+    /// lagging node let through — is
     /// [`dash_sdk::Sdk::claim_invitation`]. This adds the identity and its
     /// keys to the wallet's identity manager at `identity_index`.
+    ///
+    /// An invitation whose identity this wallet already records (at any
+    /// index) is reported as
+    /// [`PlatformWalletError::InvitationClaimedByThisWallet`]: the host loads
+    /// that identity the way it loads any of its own (with its names). Any
+    /// other claimed invitation is
+    /// [`PlatformWalletError::InvitationAlreadyClaimed`], whoever made the
+    /// claim: no key the identity holds shows it is this wallet's.
     ///
     /// The contact-bootstrap is a separate step: on success the UI asks the
     /// invitee whether to establish contact with the sender and, if so, calls
@@ -416,10 +507,14 @@ impl IdentityWallet {
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
     {
-        let identity = self
+        let identity = match self
             .sdk
             .claim_invitation(invitation, keys_map, identity_signer, settings)
-            .await?;
+            .await
+        {
+            Ok(identity) => identity,
+            Err(error) => return Err(self.claim_refusal(error).await),
+        };
 
         // Best-effort local bookkeeping — Platform has already accepted the
         // registration, so a local failure must NOT propagate (mirrors
@@ -427,9 +522,11 @@ impl IdentityWallet {
         // misses is not restored by a routine re-sync; see
         // `IdentityManager::record_new_identity`.
         {
+            // Only into the wallet this handle was taken for: one removed, or
+            // re-created under its id, while the claim ran must not receive it.
             let mut wm = self.wallet_manager.write().await;
-            match wm.get_wallet_info_mut(&self.wallet_id) {
-                Some(info) => info.identity_manager.record_new_identity(
+            match self.current_wallet_info_mut(&mut wm) {
+                Ok(info) => info.identity_manager.record_new_identity(
                     identity.clone(),
                     identity_index,
                     self.wallet_id,
@@ -437,11 +534,11 @@ impl IdentityWallet {
                     "claim_invitation",
                     &self.persister,
                 ),
-                None => {
+                Err(_) => {
                     tracing::warn!(
                         identity_id = %identity.id(),
-                        "claim_invitation: identity registered on Platform but wallet info \
-                         was not found locally; skipping local persistence"
+                        "claim_invitation: identity registered on Platform but this wallet \
+                         was removed or replaced while it ran; skipping local persistence"
                     );
                 }
             }
@@ -496,6 +593,289 @@ mod tests {
     fn funding_index_none_for_empty_path() {
         let path = DerivationPath::from(Vec::<ChildNumber>::new());
         assert_eq!(funding_index_from_path(&path), None);
+    }
+
+    // --- whose claim it was: only an identity the wallet records ---
+
+    mod claimant {
+        use std::collections::BTreeMap;
+        use std::sync::Arc;
+
+        use dash_sdk::platform::dashpay::{InvitationClaimStatus, InvitationError};
+        use dpp::identity::accessors::IdentityGettersV0;
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        use dpp::identity::v0::IdentityV0;
+        use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+        use dpp::platform_value::BinaryData;
+        use dpp::prelude::Identifier;
+        use key_wallet::bip32::ExtendedPrivKey;
+        use key_wallet::mnemonic::Mnemonic;
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+        use key_wallet::Network;
+
+        use crate::events::{EventHandler, PlatformEventHandler};
+        use crate::wallet::identity::network::identity_handle::{
+            derive_ecdsa_identity_auth_keypair_from_master, MASTER_KEY_INDEX,
+        };
+        use crate::wallet::identity::network::IdentityWallet;
+        use crate::wallet::persister::NoPlatformPersistence;
+        use crate::PlatformWalletError;
+
+        const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+             abandon abandon abandon abandon abandon about";
+
+        struct NoopEventHandler;
+        impl EventHandler for NoopEventHandler {}
+        impl PlatformEventHandler for NoopEventHandler {}
+
+        fn seed() -> zeroize::Zeroizing<[u8; 64]> {
+            Mnemonic::from_phrase(TEST_MNEMONIC)
+                .expect("valid mnemonic")
+                .to_seed("")
+        }
+
+        async fn wallet() -> IdentityWallet {
+            wallet_in_manager().await.1
+        }
+
+        /// [`wallet`], with the manager that holds it.
+        async fn wallet_in_manager() -> (
+            Arc<crate::PlatformWalletManager<NoPlatformPersistence>>,
+            IdentityWallet,
+        ) {
+            let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+            let handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+            let manager = Arc::new(crate::PlatformWalletManager::new(
+                sdk,
+                Arc::new(NoPlatformPersistence),
+                handler,
+            ));
+            let wallet = recreate(&manager).await;
+            (manager, wallet)
+        }
+
+        /// Create the test wallet in `manager`, under the id it always gets.
+        async fn recreate(
+            manager: &crate::PlatformWalletManager<NoPlatformPersistence>,
+        ) -> IdentityWallet {
+            manager
+                .create_wallet_from_seed_bytes(
+                    Network::Testnet,
+                    &seed(),
+                    WalletAccountCreationOptions::None,
+                    Some(0),
+                )
+                .await
+                .expect("wallet creation")
+                .identity()
+                .clone()
+        }
+
+        /// The identity a claim from this wallet at `identity_index` creates:
+        /// its key 0 is the wallet's own master key at that index.
+        fn claimed_at(identity_index: u32) -> Identity {
+            let master =
+                ExtendedPrivKey::new_master(Network::Testnet, &seed()[..]).expect("master key");
+            let public_key = derive_ecdsa_identity_auth_keypair_from_master(
+                &master,
+                Network::Testnet,
+                identity_index,
+                MASTER_KEY_INDEX,
+            )
+            .expect("derivable")
+            .public_key;
+            let master_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id: 0,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::MASTER,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: BinaryData::new(public_key.to_vec()),
+                disabled_at: None,
+            });
+            Identity::V0(IdentityV0 {
+                id: Identifier::new([1; 32]),
+                public_keys: BTreeMap::from([(0, master_key)]),
+                balance: 0,
+                revision: 0,
+            })
+        }
+
+        fn status(identity_id: Identifier, already_claimed: bool) -> InvitationClaimStatus {
+            InvitationClaimStatus {
+                prospective_identity_id: identity_id,
+                amount_duffs: 0,
+                is_instant: false,
+                is_chain_locked: true,
+                already_claimed,
+            }
+        }
+
+        /// Record `identity` as this wallet's own at `identity_index`.
+        async fn record(wallet: &IdentityWallet, identity: &Identity, identity_index: u32) {
+            let mut wm = wallet.wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&wallet.wallet_id)
+                .expect("wallet info");
+            info.identity_manager
+                .add_identity(
+                    identity.clone(),
+                    identity_index,
+                    wallet.wallet_id,
+                    &wallet.persister,
+                )
+                .expect("recorded");
+            info.identity_manager
+                .managed_identity_mut(&identity.id())
+                .expect("managed")
+                .wallet_id = Some(wallet.wallet_id);
+        }
+
+        /// Nobody claimed it: not ours.
+        #[tokio::test]
+        async fn should_answer_no_for_an_unclaimed_invitation() {
+            let wallet = wallet().await;
+            let id = claimed_at(0).id();
+            assert_eq!(
+                wallet
+                    .invitation_claimed_by_this_wallet(&status(id, false))
+                    .await,
+                Some(false)
+            );
+        }
+
+        /// An identity that holds this wallet's own master key at the claimed
+        /// index, but that the wallet does not record, is not shown to be
+        /// ours: the status is unknown and a refusal naming it stays
+        /// "claimed". Claim and status agree.
+        #[tokio::test]
+        async fn should_not_take_our_master_key_for_ownership() {
+            let wallet = wallet().await;
+            let holds_our_master = claimed_at(0);
+            let id = holds_our_master.id();
+            assert_eq!(
+                wallet
+                    .invitation_claimed_by_this_wallet(&status(id, true))
+                    .await,
+                None
+            );
+            assert!(matches!(
+                wallet
+                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: id })
+                    .await,
+                PlatformWalletError::InvitationAlreadyClaimed { identity_id } if identity_id == id
+            ));
+        }
+
+        /// An identity this wallet records (at any index) is its claim, for
+        /// the status and for a refusal naming it; any other stays
+        /// "claimed".
+        #[tokio::test]
+        async fn should_report_a_recorded_identity_as_this_wallets_claim() {
+            let wallet = wallet().await;
+            let ours = claimed_at(2);
+            let theirs = Identifier::new([9; 32]);
+            record(&wallet, &ours, 2).await;
+            assert_eq!(
+                wallet
+                    .invitation_claimed_by_this_wallet(&status(ours.id(), true))
+                    .await,
+                Some(true)
+            );
+            assert!(matches!(
+                wallet
+                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: ours.id() })
+                    .await,
+                PlatformWalletError::InvitationClaimedByThisWallet { identity_id } if identity_id == ours.id()
+            ));
+            assert_eq!(
+                wallet
+                    .invitation_claimed_by_this_wallet(&status(theirs, true))
+                    .await,
+                None
+            );
+            assert!(matches!(
+                wallet
+                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: theirs })
+                    .await,
+                PlatformWalletError::InvitationAlreadyClaimed { identity_id } if identity_id == theirs
+            ));
+        }
+
+        /// An identity this wallet only observed is not its claim, even when
+        /// its row carries this wallet's id (as a store restores a lookup it
+        /// recorded under the wallet's scope).
+        #[tokio::test]
+        async fn should_not_treat_an_observed_identity_as_this_wallets_claim() {
+            let wallet = wallet().await;
+            let observed = claimed_at(2);
+            {
+                let mut wm = wallet.wallet_manager.write().await;
+                let info = wm
+                    .get_wallet_info_mut(&wallet.wallet_id)
+                    .expect("wallet info");
+                info.identity_manager
+                    .add_out_of_wallet_identity(observed.clone(), &wallet.persister)
+                    .expect("observed");
+                info.identity_manager
+                    .managed_identity_mut(&observed.id())
+                    .expect("managed")
+                    .wallet_id = Some(wallet.wallet_id);
+            }
+
+            assert_eq!(
+                wallet
+                    .invitation_claimed_by_this_wallet(&status(observed.id(), true))
+                    .await,
+                None
+            );
+            assert!(matches!(
+                wallet
+                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: observed.id() })
+                    .await,
+                PlatformWalletError::InvitationAlreadyClaimed { identity_id } if identity_id == observed.id()
+            ));
+        }
+
+        /// A handle whose wallet was removed and re-created under its id does
+        /// not read the replacement's identities as its own claims; the
+        /// replacement's own handle does.
+        #[tokio::test]
+        async fn should_not_read_a_replacement_wallets_identities_through_a_stale_handle() {
+            let (manager, old) = wallet_in_manager().await;
+            let ours = claimed_at(2);
+            manager
+                .remove_wallet(&old.wallet_id)
+                .await
+                .expect("removed");
+            let replacement = recreate(&manager).await;
+            assert_eq!(replacement.wallet_id, old.wallet_id);
+            record(&replacement, &ours, 2).await;
+
+            assert!(matches!(
+                old.claim_refusal(InvitationError::AlreadyClaimed { identity_id: ours.id() })
+                    .await,
+                PlatformWalletError::InvitationAlreadyClaimed { identity_id } if identity_id == ours.id()
+            ));
+            assert_eq!(
+                old.invitation_claimed_by_this_wallet(&status(ours.id(), true))
+                    .await,
+                None
+            );
+            assert!(matches!(
+                replacement
+                    .claim_refusal(InvitationError::AlreadyClaimed { identity_id: ours.id() })
+                    .await,
+                PlatformWalletError::InvitationClaimedByThisWallet { identity_id } if identity_id == ours.id()
+            ));
+            assert_eq!(
+                replacement
+                    .invitation_claimed_by_this_wallet(&status(ours.id(), true))
+                    .await,
+                Some(true)
+            );
+        }
     }
 
     // --- create_invitation: the durable-persistence precondition ---

@@ -206,46 +206,49 @@ unsafe fn platform_wallet_create_invitation_inner(
     // `Send + 'static` (raw pointers are `!Send`).
     let core_signer_addr = core_signer_handle as usize;
 
+    // Wait for the build and broadcast after releasing the registry guard, so
+    // they do not hold off other handles' open/destroy.
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity_wallet = wallet.identity().clone();
-        let asset_locks = wallet.asset_locks().clone();
-        let wallet_id = wallet.wallet_id();
-        let network = wallet.network();
-        let created = block_on_worker(async move {
-            // SAFETY: see the fn-level safety doc — the caller pins
-            // `core_signer_handle` for the duration of this call. Two views over
-            // the same resolver handle: one as the asset-lock/Core signer, one
-            // wrapped as the `ContactCryptoProvider` used to export the voucher
-            // key. Both are `Send + Sync` and dropped when this task completes.
-            let asset_lock_signer = unsafe {
-                MnemonicResolverCoreSigner::new(
-                    core_signer_addr as *mut MnemonicResolverHandle,
-                    wallet_id,
-                    network,
-                )
-            };
-            let provider = unsafe {
-                resolver_contact_crypto_provider(
-                    core_signer_addr as *mut MnemonicResolverHandle,
-                    wallet_id,
-                    network,
-                )
-            };
-            identity_wallet
-                .create_invitation(
-                    amount_duffs,
-                    funding_account_index,
-                    inviter,
-                    expiry_unix,
-                    now_unix,
-                    &asset_lock_signer,
-                    &provider,
-                )
-                .await
-        });
-        (asset_locks, created)
+        (
+            wallet.identity().clone(),
+            wallet.asset_locks().clone(),
+            wallet.wallet_id(),
+            wallet.network(),
+        )
     });
-    let (asset_locks, result) = unwrap_option_or_return!(option);
+    let (identity_wallet, asset_locks, wallet_id, network) = unwrap_option_or_return!(option);
+    let result = block_on_worker(async move {
+        // SAFETY: see the fn-level safety doc — the caller pins
+        // `core_signer_handle` for the duration of this call. Two views over
+        // the same resolver handle: one as the asset-lock/Core signer, one
+        // wrapped as the `ContactCryptoProvider` used to export the voucher
+        // key. Both are `Send + Sync` and dropped when this task completes.
+        let asset_lock_signer = unsafe {
+            MnemonicResolverCoreSigner::new(
+                core_signer_addr as *mut MnemonicResolverHandle,
+                wallet_id,
+                network,
+            )
+        };
+        let provider = unsafe {
+            resolver_contact_crypto_provider(
+                core_signer_addr as *mut MnemonicResolverHandle,
+                wallet_id,
+                network,
+            )
+        };
+        identity_wallet
+            .create_invitation(
+                amount_duffs,
+                funding_account_index,
+                inviter,
+                expiry_unix,
+                now_unix,
+                &asset_lock_signer,
+                &provider,
+            )
+            .await
+    });
     let invitation = unwrap_result_or_return!(result);
 
     // Marshal the funding outpoint out through the crate's one conversion
@@ -307,6 +310,23 @@ fn voucher_handoff_failure(
 /// here — the UI asks the invitee and, on confirm, calls the existing
 /// contact-request path
 /// ([`crate::dashpay::platform_wallet_send_contact_request_with_signer`]).
+///
+/// Before broadcasting, the claim looks up the identities that would make
+/// Platform refuse it and charge the voucher. Those outcomes have their own
+/// codes, and as preflight refusals none of them broadcast or record anything:
+/// `ErrorInvitationClaimedByThisWallet` (the invitation's identity is one
+/// this wallet already records; JSON detail names the identity),
+/// `ErrorAssetLockAlreadyConsumed` (claimed by an identity this wallet does
+/// not record: whose it is is unknown, usually someone else's, possibly an
+/// earlier claim of this wallet whose result was lost before it was
+/// recorded; no key the identity holds decides it),
+/// `ErrorInvitationKeysAlreadyRegistered` (another
+/// identity holds a submitted key) and `ErrorInvitationNotReady` (the lookups
+/// could not be verified yet). `ErrorInvitationKeysAlreadyRegistered` is also
+/// returned when a key was registered after the lookup and Platform refused
+/// the broadcast: that one carries the consensus error and an unknown owner,
+/// and the voucher may have been charged. `ErrorAssetLockNotChainLocked` asks
+/// to retry once the funding transaction propagates or is chain-locked.
 ///
 /// On success writes the new identity id to `*out_identity_id` and a handle into
 /// `MANAGED_IDENTITY_STORAGE` to `*out_identity_handle` (release via
@@ -371,18 +391,18 @@ pub unsafe extern "C" fn platform_wallet_claim_invitation(
 
     let signer_addr = signer_handle as usize;
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity_wallet = wallet.identity().clone();
-        block_on_worker(async move {
-            // SAFETY: see the fn-level safety doc — the caller pins
-            // `signer_handle` for the duration of this call.
-            let identity_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
-            identity_wallet
-                .claim_invitation(invitation, identity_index, keys_map, identity_signer, None)
-                .await
-        })
+    // Release the wallet storage before the claim's lookups and broadcast.
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+    let identity_wallet = unwrap_option_or_return!(option);
+    let result = block_on_worker(async move {
+        // SAFETY: see the fn-level safety doc — the caller pins
+        // `signer_handle` for the duration of this call.
+        let identity_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
+        identity_wallet
+            .claim_invitation(invitation, identity_index, keys_map, identity_signer, None)
+            .await
     });
-    let result = unwrap_option_or_return!(option);
     let identity = unwrap_result_or_return!(result);
     let id_bytes: [u8; 32] = identity.id().to_buffer();
     unsafe {
@@ -473,15 +493,16 @@ pub unsafe extern "C" fn platform_wallet_invitation_prospective_identity_id(
 
     // A link for the other network comes back as the library's typed
     // mismatch, which maps to `ErrorInvalidNetwork`.
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity_wallet = wallet.identity().clone();
-        block_on_worker(async move {
-            identity_wallet
-                .invitation_prospective_identity_id(&invitation)
-                .await
-        })
+    // Wait for the lookup after releasing the registry guard, so a slow
+    // network does not hold off other handles' open/destroy.
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+    let identity_wallet = unwrap_option_or_return!(option);
+    let result = block_on_worker(async move {
+        identity_wallet
+            .invitation_prospective_identity_id(&invitation)
+            .await
     });
-    let result = unwrap_option_or_return!(option);
     let identifier = unwrap_result_or_return!(result);
     unsafe {
         *out_identity_id = identifier.to_buffer();
@@ -506,7 +527,25 @@ pub struct InvitationClaimStatusFFI {
     /// was claimed. `false` does NOT prove the voucher is unspent (see
     /// [`platform_wallet_invitation_prospective_identity_id`]).
     pub already_claimed: bool,
+    /// Whether this wallet made the claim, as
+    /// [`platform_wallet_invitation_claim_status_for_identity`] decides it:
+    /// [`INVITATION_CLAIMED_BY_THIS_WALLET_NO`] (`already_claimed` is false),
+    /// [`INVITATION_CLAIMED_BY_THIS_WALLET_YES`] (the wallet records the
+    /// identity), or [`INVITATION_CLAIMED_BY_THIS_WALLET_UNKNOWN`] (any other
+    /// claimed invitation). [`platform_wallet_invitation_claim_status`] does
+    /// not decide it and reports `UNKNOWN` for a claimed invitation.
+    pub claimed_by_this_wallet: u8,
 }
+
+/// [`InvitationClaimStatusFFI::claimed_by_this_wallet`]: not claimed at all.
+pub const INVITATION_CLAIMED_BY_THIS_WALLET_NO: u8 = 0;
+/// [`InvitationClaimStatusFFI::claimed_by_this_wallet`]: this wallet records
+/// the invitation's identity in one of its registration slots.
+pub const INVITATION_CLAIMED_BY_THIS_WALLET_YES: u8 = 1;
+/// [`InvitationClaimStatusFFI::claimed_by_this_wallet`]: claimed, and this
+/// wallet does not record the identity, so whose claim it is is unknown (no
+/// key the identity holds decides it).
+pub const INVITATION_CLAIMED_BY_THIS_WALLET_UNKNOWN: u8 = 2;
 
 impl InvitationClaimStatusFFI {
     fn zeroed() -> Self {
@@ -516,19 +555,30 @@ impl InvitationClaimStatusFFI {
             is_instant: false,
             is_chain_locked: false,
             already_claimed: false,
+            claimed_by_this_wallet: INVITATION_CLAIMED_BY_THIS_WALLET_UNKNOWN,
         }
     }
-}
 
-impl From<InvitationClaimStatus> for InvitationClaimStatusFFI {
-    fn from(status: InvitationClaimStatus) -> Self {
+    fn new(status: InvitationClaimStatus, claimed_by_this_wallet: Option<bool>) -> Self {
         Self {
             prospective_identity_id: status.prospective_identity_id.to_buffer(),
             amount_duffs: status.amount_duffs,
             is_instant: status.is_instant,
             is_chain_locked: status.is_chain_locked,
             already_claimed: status.already_claimed,
+            claimed_by_this_wallet: match claimed_by_this_wallet {
+                Some(false) => INVITATION_CLAIMED_BY_THIS_WALLET_NO,
+                Some(true) => INVITATION_CLAIMED_BY_THIS_WALLET_YES,
+                None => INVITATION_CLAIMED_BY_THIS_WALLET_UNKNOWN,
+            },
         }
+    }
+}
+
+impl From<InvitationClaimStatus> for InvitationClaimStatusFFI {
+    fn from(status: InvitationClaimStatus) -> Self {
+        let claimed_by_this_wallet = (!status.already_claimed).then_some(false);
+        Self::new(status, claimed_by_this_wallet)
     }
 }
 
@@ -569,14 +619,61 @@ pub unsafe extern "C" fn platform_wallet_invitation_claim_status(
         Err(e) => return e,
     };
 
-    let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
-        let identity_wallet = wallet.identity().clone();
-        block_on_worker(async move { identity_wallet.invitation_claim_status(&invitation).await })
-    });
-    let result = unwrap_option_or_return!(option);
+    // Wait for the lookup after releasing the registry guard, so a slow
+    // network does not hold off other handles' open/destroy.
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+    let identity_wallet = unwrap_option_or_return!(option);
+    let result =
+        block_on_worker(async move { identity_wallet.invitation_claim_status(&invitation).await });
     let status = unwrap_result_or_return!(result);
     unsafe {
         *out_status = status.into();
+    }
+    PlatformWalletFFIResult::ok()
+}
+
+/// [`platform_wallet_invitation_claim_status`], plus whether this wallet
+/// made the claim (`out_status.claimed_by_this_wallet`): `YES` only when the
+/// wallet records the invitation's identity in one of its registration
+/// slots, `UNKNOWN` for any other claimed invitation. Forwards to
+/// `IdentityWallet::invitation_claim_status_for_identity`. Errors are those
+/// of [`platform_wallet_invitation_claim_status`].
+///
+/// # Safety
+/// - `uri` must be a valid NUL-terminated UTF-8 C string.
+/// - `out_status` must be a valid `*mut InvitationClaimStatusFFI`.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_invitation_claim_status_for_identity(
+    wallet_handle: Handle,
+    uri: *const c_char,
+    out_status: *mut InvitationClaimStatusFFI,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_status);
+    unsafe {
+        *out_status = InvitationClaimStatusFFI::zeroed();
+    }
+    check_ptr!(uri);
+
+    let uri = unwrap_result_or_return!(unsafe { CStr::from_ptr(uri) }.to_str());
+    let invitation = match parse_invitation_for_query(uri) {
+        Ok(invitation) => invitation,
+        Err(e) => return e,
+    };
+
+    // Wait for the lookup after releasing the registry guard, so a slow
+    // network does not hold off other handles' open/destroy.
+    let option =
+        PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| wallet.identity().clone());
+    let identity_wallet = unwrap_option_or_return!(option);
+    let result = block_on_worker(async move {
+        identity_wallet
+            .invitation_claim_status_for_identity(&invitation)
+            .await
+    });
+    let (status, claimed_by_this_wallet) = unwrap_result_or_return!(result);
+    unsafe {
+        *out_status = InvitationClaimStatusFFI::new(status, claimed_by_this_wallet);
     }
     PlatformWalletFFIResult::ok()
 }
@@ -1131,6 +1228,57 @@ mod tests {
             unsafe { platform_wallet_invitation_claim_status(0, std::ptr::null(), &mut status) };
         assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
         assert!(!status.already_claimed, "the out-param is zeroed first");
+    }
+
+    /// The wallet-aware status refuses a malformed link and a null `uri` the
+    /// same way, after zeroing the out-param (including the tri-state).
+    #[test]
+    fn should_refuse_bad_input_in_the_wallet_aware_claim_status() {
+        let bad = std::ffi::CString::new("https://not-an-invite").unwrap();
+        let mut status = InvitationClaimStatusFFI::zeroed();
+        status.claimed_by_this_wallet = INVITATION_CLAIMED_BY_THIS_WALLET_YES;
+        let r = unsafe {
+            platform_wallet_invitation_claim_status_for_identity(0, bad.as_ptr(), &mut status)
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorInvalidParameter);
+        assert_eq!(
+            status.claimed_by_this_wallet, INVITATION_CLAIMED_BY_THIS_WALLET_UNKNOWN,
+            "a failed call never reads as a definite answer"
+        );
+
+        let r = unsafe {
+            platform_wallet_invitation_claim_status_for_identity(0, std::ptr::null(), &mut status)
+        };
+        assert_eq!(r.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+    }
+
+    /// The tri-state reaches hosts as 0/1/2. The wallet-unaware status
+    /// cannot say whose claim it was, so a claimed invitation is unknown
+    /// there, and an unclaimed one is never this wallet's.
+    #[test]
+    fn should_encode_whose_claim_it_was_as_a_tri_state() {
+        let status = |already_claimed: bool| InvitationClaimStatus {
+            prospective_identity_id: dpp::prelude::Identifier::new([3; 32]),
+            amount_duffs: 1,
+            is_instant: true,
+            is_chain_locked: false,
+            already_claimed,
+        };
+        for (claimed_by_this_wallet, raw) in [(Some(false), 0), (Some(true), 1), (None, 2)] {
+            assert_eq!(
+                InvitationClaimStatusFFI::new(status(true), claimed_by_this_wallet)
+                    .claimed_by_this_wallet,
+                raw
+            );
+        }
+        assert_eq!(
+            InvitationClaimStatusFFI::from(status(true)).claimed_by_this_wallet,
+            INVITATION_CLAIMED_BY_THIS_WALLET_UNKNOWN
+        );
+        assert_eq!(
+            InvitationClaimStatusFFI::from(status(false)).claimed_by_this_wallet,
+            INVITATION_CLAIMED_BY_THIS_WALLET_NO
+        );
     }
 
     /// A link for the other network is refused by the library with a typed

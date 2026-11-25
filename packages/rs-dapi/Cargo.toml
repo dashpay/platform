@@ -9,7 +9,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Async runtime
-tokio = { version = "1.47.0", features = ["full"] }
+tokio = { workspace = true, features = ["full"] }
 tokio-stream = "0.1"
 futures = "0.3.31"
 tokio-util = "0.7.15"
@@ -110,7 +110,7 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
 tempfile = "3.13.0"
 # Lets a test move the clock past a deadline instead of waiting for it.
-tokio = { version = "1.47.0", features = ["test-util"] }
+tokio = { workspace = true, features = ["test-util"] }
 serial_test = "4.0.1"
 test-case = "3.3.1"
 # Decodes dapi-grpc's FILE_DESCRIPTOR_SET in the metrics allowlist test.

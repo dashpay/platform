@@ -124,6 +124,46 @@ pub enum PlatformWalletError {
         wallet: Network,
     },
 
+    /// The invitation's identity is this wallet's: the wallet already records
+    /// it in one of its registration slots. No key the identity holds decides
+    /// this. Nothing was recorded, and nothing was broadcast unless a node
+    /// that lagged behind let the claim through; the host loads the identity
+    /// the way it loads any of its own.
+    #[error("invitation was already claimed by this wallet as identity {identity_id}")]
+    InvitationClaimedByThisWallet { identity_id: Identifier },
+
+    /// The invitation is claimed and this wallet does not record its
+    /// identity, so whose claim it is is unknown: usually someone else's, or
+    /// an earlier claim of this wallet whose result was lost before it was
+    /// recorded (a rescan records it). No key the identity holds decides
+    /// this. Nothing was broadcast unless a node that lagged behind let the
+    /// claim through.
+    #[error(
+        "invitation was already claimed by identity {identity_id}; if this wallet \
+         submitted the claim earlier, rescan its identities to load it"
+    )]
+    InvitationAlreadyClaimed { identity_id: Identifier },
+
+    /// A key of the claim is already registered to another identity, so
+    /// Platform would refuse the claim and charge the voucher. `identity_id`
+    /// is that identity when the claim's lookup found it, `None` when
+    /// Platform refused the broadcast; `rejection` is then that refusal,
+    /// kept for its consensus code.
+    #[error("{}", match identity_id {
+        Some(id) => format!("a key of this invitation claim is already registered to identity {id}"),
+        None => "a key of this invitation claim is already registered to another identity".to_string(),
+    })]
+    InvitationKeysAlreadyRegistered {
+        identity_id: Option<Identifier>,
+        #[source]
+        rejection: Option<dash_sdk::Error>,
+    },
+
+    /// The claim's identity lookups could not be verified yet (the trusted
+    /// quorum source is not ready). Nothing was broadcast; retry once synced.
+    #[error("cannot verify Platform's answer for the invitation claim yet: {0}")]
+    InvitationNotReady(#[source] dash_sdk::Error),
+
     #[error("Failed to persist state: {0}")]
     /// A persister `store(...)` round failed. Returned (not swallowed) by
     /// user-initiated writes whose loss leaves a silent, non-self-healing
@@ -1492,6 +1532,17 @@ impl From<InvitationError> for PlatformWalletError {
                 Self::InvitationNetworkMismatch { invitation, wallet }
             }
             InvitationError::NotChainLocked(message) => Self::AssetLockNotChainLocked(message),
+            InvitationError::AlreadyClaimed { identity_id } => {
+                Self::InvitationAlreadyClaimed { identity_id }
+            }
+            InvitationError::KeysAlreadyRegistered {
+                identity_id,
+                rejection,
+            } => Self::InvitationKeysAlreadyRegistered {
+                identity_id,
+                rejection,
+            },
+            InvitationError::NotReady(error) => Self::InvitationNotReady(error),
             InvitationError::Sdk(error) => Self::Sdk(error),
         }
     }
@@ -1597,12 +1648,18 @@ impl PlatformWalletError {
     ///
     /// `None` for the variants that stringified their cause, and for the
     /// typed promotions (`AddressNonceMismatch`, `DocumentNotForSale`, …),
-    /// which keep the values they need and have FFI codes of their own.
+    /// which keep the values they need and have FFI codes of their own. The
+    /// exception is [`Self::InvitationKeysAlreadyRegistered`] refused after
+    /// the broadcast, which keeps Platform's refusal beside its own code.
     pub fn consensus_error(&self) -> Option<&ConsensusError> {
         match self {
             Self::Sdk(source) | Self::TokenOperationFailed { source, .. } => {
                 source.consensus_error()
             }
+            Self::InvitationKeysAlreadyRegistered {
+                rejection: Some(source),
+                ..
+            } => source.consensus_error(),
             _ => None,
         }
     }
@@ -1690,6 +1747,13 @@ impl PlatformWalletError {
             | Self::DpnsNameNotFound { .. }
             | Self::DecisionProposalNotFound { .. }
             | Self::ContestedNameNotTradable { .. } => NotSent,
+            // An invitation claim's lookups refused it before the broadcast:
+            // they could not be verified yet, or found a key of the claim
+            // registered to another identity.
+            Self::InvitationNotReady(_)
+            | Self::InvitationKeysAlreadyRegistered {
+                rejection: None, ..
+            } => NotSent,
             // Persistence that a payment completes before its broadcast (an
             // unstored reservation is never broadcast), and the start-up
             // reads.
@@ -1810,11 +1874,18 @@ impl PlatformWalletError {
             Self::AddressNonceMismatch { .. }
             | Self::DocumentNotForSale { .. }
             | Self::DocumentPriceChanged { .. }
-            | Self::InsufficientIdentityCredits { .. } => MaybeSent,
+            | Self::InsufficientIdentityCredits { .. }
+            | Self::InvitationKeysAlreadyRegistered {
+                rejection: Some(_), ..
+            } => MaybeSent,
             // Reached both before and after a dispatch. A wallet lookup is
             // one of them: only [`Self::WalletRemovedBeforeSend`] says where
-            // it failed.
+            // it failed. A claimed invitation is usually found before the
+            // claim is broadcast, and otherwise from Platform's refusal of a
+            // claim a lagging node let through.
             Self::WalletNotFound(_)
+            | Self::InvitationClaimedByThisWallet { .. }
+            | Self::InvitationAlreadyClaimed { .. }
             | Self::Persistence(_)
             | Self::InvalidIdentityData(_)
             | Self::AssetLockTransaction(_)
@@ -1963,6 +2034,10 @@ impl PlatformWalletError {
                 // for the identity yet, or could not be asked.
                 | Self::IdentityBalanceUnavailable(_)
                 | Self::IdentityLookupFailed { .. }
+                // An invitation claim's lookups Platform could not verify
+                // yet; nothing was broadcast, and the claim gets past once
+                // the wallet has synced.
+                | Self::InvitationNotReady(_)
                 | Self::ShieldedBroadcastFailed(_)
                 | Self::ShutdownIncomplete(_)
                 | Self::PrivateContactStoreNotRead(_) => true,
@@ -2012,6 +2087,7 @@ impl PlatformWalletError {
                 | Self::IdentityNotFound(_)
                 | Self::NoPrimaryIdentity
                 | Self::InvitationNetworkMismatch { .. }
+                | Self::InvitationKeysAlreadyRegistered { .. }
                 | Self::ContactRequestNotFound(_)
                 | Self::IdentityIndexNotSet(_)
                 | Self::IdentityDiscoveryIncomplete { .. }
@@ -2090,6 +2166,8 @@ impl PlatformWalletError {
                 | Self::DocumentNotForSale { .. }
                 | Self::DocumentPriceChanged { .. }
                 | Self::InsufficientIdentityCredits { .. }
+                | Self::InvitationClaimedByThisWallet { .. }
+                | Self::InvitationAlreadyClaimed { .. }
                 | Self::WalletNotFound(_)
                 | Self::Persistence(_)
                 | Self::InvalidIdentityData(_)
@@ -2890,6 +2968,45 @@ mod invitation_error_mapping_tests {
             PlatformWalletError::Sdk(dash_sdk::Error::Generic(message)) if message == "boom"
         ));
     }
+
+    /// Code 24 cannot say whose claim it is, so its text tells the invitee
+    /// a rescan loads the identity if this wallet's earlier claim landed
+    /// unrecorded, and still names the identity.
+    #[test]
+    fn should_point_an_unrecorded_claim_to_a_rescan() {
+        let id = Identifier::new([5; 32]);
+        let message = PlatformWalletError::InvitationAlreadyClaimed { identity_id: id }.to_string();
+        assert!(message.contains(&format!("{id}")), "{message}");
+        assert!(
+            message.contains("if this wallet submitted the claim earlier, rescan its identities"),
+            "{message}"
+        );
+    }
+
+    /// The claim's preflight outcomes keep the identity they name.
+    #[test]
+    fn should_keep_the_identity_a_preflight_outcome_names() {
+        let id = Identifier::new([5; 32]);
+        assert!(matches!(
+            PlatformWalletError::from(InvitationError::AlreadyClaimed { identity_id: id }),
+            PlatformWalletError::InvitationAlreadyClaimed { identity_id } if identity_id == id
+        ));
+        for owner in [Some(id), None] {
+            assert!(matches!(
+                PlatformWalletError::from(InvitationError::KeysAlreadyRegistered {
+                    identity_id: owner,
+                    rejection: None,
+                }),
+                PlatformWalletError::InvitationKeysAlreadyRegistered { identity_id, .. } if identity_id == owner
+            ));
+        }
+        assert!(matches!(
+            PlatformWalletError::from(InvitationError::NotReady(dash_sdk::Error::Generic(
+                "later".to_string()
+            ))),
+            PlatformWalletError::InvitationNotReady(_)
+        ));
+    }
 }
 
 #[cfg(test)]
@@ -3020,7 +3137,7 @@ mod payment_delivery_tests {
     }
 
     /// Variants of [`PlatformWalletError`]: one past the highest ordinal.
-    const VARIANT_COUNT: usize = 122;
+    const VARIANT_COUNT: usize = 126;
 
     /// The ordinal of `error`'s variant. No wildcard arm: a new variant does
     /// not compile until it gets the next ordinal here (and
@@ -3151,6 +3268,10 @@ mod payment_delivery_tests {
             E::TokenShieldedInsufficientBalance { .. } => 119,
             E::TokenShieldedPoolSpendPending { .. } => 120,
             E::ShieldedOperationInProgress => 121,
+            E::InvitationClaimedByThisWallet { .. } => 122,
+            E::InvitationAlreadyClaimed { .. } => 123,
+            E::InvitationKeysAlreadyRegistered { .. } => 124,
+            E::InvitationNotReady(_) => 125,
         }
     }
 
@@ -3639,6 +3760,31 @@ mod payment_delivery_tests {
             ),
             (E::TokenShieldedPoolSpendPending { token_id: id() }, NotSent),
             (E::ShieldedOperationInProgress, NotSent),
+            (
+                E::InvitationClaimedByThisWallet { identity_id: id() },
+                MaybeSent,
+            ),
+            (E::InvitationAlreadyClaimed { identity_id: id() }, MaybeSent),
+            // Found by the claim's own lookup: nothing was broadcast.
+            (
+                E::InvitationKeysAlreadyRegistered {
+                    identity_id: Some(id()),
+                    rejection: None,
+                },
+                NotSent,
+            ),
+            // Platform's refusal of the broadcast claim.
+            (
+                E::InvitationKeysAlreadyRegistered {
+                    identity_id: None,
+                    rejection: Some(dash_sdk::Error::Generic(s())),
+                },
+                MaybeSent,
+            ),
+            (
+                E::InvitationNotReady(dash_sdk::Error::Generic(s())),
+                NotSent,
+            ),
         ]
     }
 
@@ -3685,6 +3831,7 @@ mod payment_delivery_tests {
                 | PlatformWalletError::PrivateContactStoreNotRead(_)
                 | PlatformWalletError::IdentityBalanceUnavailable(_)
                 | PlatformWalletError::IdentityLookupFailed { .. }
+                | PlatformWalletError::InvitationNotReady(_)
                 | PlatformWalletError::BalanceHistoryInconsistentHeights { .. }
                 | PlatformWalletError::ShieldedBalanceBusy
                 | PlatformWalletError::ShieldedOperationInProgress
