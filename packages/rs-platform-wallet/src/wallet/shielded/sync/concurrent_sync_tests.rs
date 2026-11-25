@@ -79,14 +79,38 @@ async fn assert_concurrent_sync_matches_sequential(initial_size: u8) {
     let concurrent = seeded_store(initial_size, subwallets[0].0);
     let never = CancellationToken::new();
     let baseline_sdk = pool_sdk(4).await;
-    sync_notes_across(&baseline_sdk, &sequential, &subwallets, None, None, &never)
-        .await
-        .unwrap();
+    sync_notes_across(
+        &baseline_sdk,
+        &sequential,
+        &subwallets,
+        &|_| false,
+        None,
+        None,
+        &never,
+    )
+    .await
+    .unwrap();
 
     let first_sdk = pool_sdk(4).await;
     let second_sdk = pool_sdk(4).await;
-    let first = sync_notes_across(&first_sdk, &concurrent, &subwallets, None, None, &never);
-    let second = sync_notes_across(&second_sdk, &concurrent, &subwallets, None, None, &never);
+    let first = sync_notes_across(
+        &first_sdk,
+        &concurrent,
+        &subwallets,
+        &|_| false,
+        None,
+        None,
+        &never,
+    );
+    let second = sync_notes_across(
+        &second_sdk,
+        &concurrent,
+        &subwallets,
+        &|_| false,
+        None,
+        None,
+        &never,
+    );
     futures::pin_mut!(first, second);
 
     // Queue both at their first store lock, without sleeps or scheduler races.
@@ -120,9 +144,17 @@ async fn assert_concurrent_sync_matches_sequential(initial_size: u8) {
 
     // A later real position must remain appendable after the overlapping scans.
     let next_sdk = pool_sdk(5).await;
-    sync_notes_across(&next_sdk, &concurrent, &subwallets, None, None, &never)
-        .await
-        .unwrap();
+    sync_notes_across(
+        &next_sdk,
+        &concurrent,
+        &subwallets,
+        &|_| false,
+        None,
+        None,
+        &never,
+    )
+    .await
+    .unwrap();
     let actual = concurrent.read().await;
     assert_eq!(actual.tree_size().unwrap(), 5);
     for (id, _) in &subwallets {

@@ -26,7 +26,7 @@
 //! [`NetworkShieldedCoordinator::sync`]:
 //!     super::coordinator::NetworkShieldedCoordinator::sync
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use dash_sdk::platform::shielded::notes_sync::types::ShieldedChunkBatch;
@@ -162,6 +162,9 @@ pub struct MultiSyncNotesResult {
     /// `total_count` is the highest seen). `None` when no batch shows that:
     /// a proof of a longer tree than the run reached.
     pub covered_height: Option<u64>,
+    /// Subwallets the pass skipped because they were removed after the
+    /// caller took its subwallet list. Nothing was saved for them.
+    pub removed_subwallets: BTreeSet<SubwalletId>,
 }
 
 impl MultiSyncNotesResult {
@@ -189,7 +192,8 @@ impl MultiSyncNotesResult {
 /// of registered subwallets — the Phase 2b primitive that
 /// collapses N per-wallet SDK calls into one.
 ///
-/// The first subwallet's IVK drives the SDK call; the SDK's
+/// The first subwallet not removed since the list drives the SDK call
+/// with its IVK; the SDK's
 /// `result.all_notes` is then locally trial-decrypted against
 /// every other subwallet's IVK. Commitments are appended to the
 /// shared tree exactly once per global position with `marked =
@@ -199,6 +203,12 @@ impl MultiSyncNotesResult {
 ///
 /// `subwallets` must be non-empty; otherwise the function
 /// returns an empty result without contacting Platform.
+///
+/// `removed_since_list` tells, under the pass's store write guard, whether a
+/// subwallet was removed after the caller took `subwallets`. The pass skips
+/// such a subwallet: it saves no note and advances no watermark for it, never
+/// drives the stream with its key, and lists it in
+/// [`MultiSyncNotesResult::removed_subwallets`].
 ///
 /// Privilege boundary: only the viewing-key half is required
 /// (FVK for nullifier derivation, IVK for trial decryption).
@@ -221,6 +231,7 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
     subwallets: &[(SubwalletId, AccountViewingKeys)],
+    removed_since_list: &(dyn Fn(SubwalletId) -> bool + Sync),
     on_progress: Option<&super::coordinator::ShieldedProgressCallback>,
     on_tree_progress: Option<&super::coordinator::ShieldedTreeProgressCallback>,
     cancel: &CancellationToken,
@@ -229,14 +240,15 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
         return Ok(MultiSyncNotesResult::default());
     }
 
-    // Drive the FIRST subwallet's IVK as the streaming driver. Its hits
-    // come back per batch as `batch.decrypted`; every other subwallet's
-    // are produced by local trial-decryption against `batch.notes`.
-    let driver_ivk = subwallets[0].1.prepared_ivk.clone();
-
     // Builds the SDK stream once the consumer has snapshotted its start
     // position and the pre-stream tree size (both feed the config).
-    let make_stream = |aligned_start: u64, tree_size: u64| {
+    // The consumer picks the driver, the first listed subwallet still
+    // registered, once it holds the store guard. Its IVK drives the stream;
+    // its hits come back per batch as `batch.decrypted`, and every other
+    // subwallet's are produced by local trial-decryption against
+    // `batch.notes`.
+    let make_stream = |aligned_start: u64, tree_size: u64, driver: usize| {
+        let driver_ivk = &subwallets[driver].1.prepared_ivk;
         // Network-only config carrying the caller's "downloaded" progress
         // callback; the SDK fires it once per completed network chunk inside
         // the stream. The tree-progress ("checked") callback is owned by
@@ -272,21 +284,32 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
                 cb(downloaded.max(tree_baseline), height);
             }));
         }
-        sync_shielded_notes_stream(sdk, &driver_ivk, aligned_start, Some(sync_config))
+        sync_shielded_notes_stream(sdk, driver_ivk, aligned_start, Some(sync_config))
     };
 
-    sync_notes_from_stream(store, subwallets, on_tree_progress, cancel, make_stream).await
+    sync_notes_from_stream(
+        store,
+        subwallets,
+        removed_since_list,
+        on_tree_progress,
+        cancel,
+        make_stream,
+    )
+    .await
 }
 
-/// The consumer half of [`sync_notes_across`]: snapshots the watermarks,
-/// takes the store write lock, drains the batch stream `make_stream`
-/// builds for `(aligned_start, tree_size)`, and finalizes the store.
+/// The consumer half of [`sync_notes_across`]: takes the store write lock,
+/// drops the subwallets removed since the list, snapshots the
+/// watermarks, drains the batch stream `make_stream` builds for
+/// `(aligned_start, tree_size, driver)` (`driver` indexes `subwallets`), and
+/// finalizes the store.
 ///
 /// Split out so a test can feed a synthetic stream and exercise the
 /// cancellation and finalize paths without a network.
 pub(super) async fn sync_notes_from_stream<S, St, F>(
     store: &Arc<RwLock<S>>,
     subwallets: &[(SubwalletId, AccountViewingKeys)],
+    removed_since_list: &(dyn Fn(SubwalletId) -> bool + Sync),
     on_tree_progress: Option<&super::coordinator::ShieldedTreeProgressCallback>,
     cancel: &CancellationToken,
     make_stream: F,
@@ -294,11 +317,13 @@ pub(super) async fn sync_notes_from_stream<S, St, F>(
 where
     S: ShieldedStore,
     St: Stream<Item = Result<ShieldedChunkBatch, dash_sdk::Error>>,
-    F: FnOnce(u64, u64) -> St,
+    F: FnOnce(u64, u64, usize) -> St,
 {
     if subwallets.is_empty() {
         return Ok(MultiSyncNotesResult::default());
     }
+    #[cfg(test)]
+    let store_key = pass_pause::key(store);
 
     // Nothing has been touched yet, so a stop that landed before the scan
     // costs nothing: skip the lock and the fetch entirely.
@@ -325,6 +350,29 @@ where
         return Ok(MultiSyncNotesResult::default());
     };
 
+    // A removal purges under this guard, so from here on the set of removed
+    // subwallets can only grow by removals whose purge waits for this pass.
+    let removed_subwallets: BTreeSet<SubwalletId> = subwallets
+        .iter()
+        .map(|(id, _)| *id)
+        .filter(|id| removed_since_list(*id))
+        .collect();
+    let Some(driver) = subwallets
+        .iter()
+        .position(|(id, _)| !removed_subwallets.contains(id))
+    else {
+        return Ok(MultiSyncNotesResult {
+            removed_subwallets,
+            ..Default::default()
+        });
+    };
+    let retained: Vec<(SubwalletId, AccountViewingKeys)> = subwallets
+        .iter()
+        .filter(|(id, _)| !removed_subwallets.contains(id))
+        .cloned()
+        .collect();
+    let subwallets = retained.as_slice();
+
     // Snapshot each subwallet's watermark and the shared tree's
     // current leaf count. Two distinct quantities drive the rest
     // of this pass:
@@ -341,6 +389,8 @@ where
     // caught-up subwallet doesn't re-derive nullifiers for notes
     // it already stored, while a lagging one still saves from its
     // own start.
+    #[cfg(test)]
+    pass_pause::reached(store_key, pass_pause::Point::AfterRemovalFilter).await;
     let (watermarks, already_have, tree_size) = {
         let mut watermarks: BTreeMap<SubwalletId, u64> = BTreeMap::new();
         let mut min_idx: Option<u64> = None;
@@ -487,7 +537,7 @@ where
     let mut scanned_to = aligned_start;
     let mut covered_height: Option<u64> = None;
     let cancelled = {
-        let stream = make_stream(aligned_start, tree_size);
+        let stream = make_stream(aligned_start, tree_size, driver);
         futures::pin_mut!(stream);
 
         loop {
@@ -862,6 +912,7 @@ where
         total_scanned: scanned_volume,
         changeset,
         covered_height,
+        removed_subwallets,
     })
 }
 
@@ -1215,6 +1266,112 @@ mod ovk_builder_roundtrip_tests;
 /// full-decryption and the OVK send-history recovery primitives.
 #[cfg(test)]
 mod memo_roundtrip_tests;
+
+/// Test-only pause points in a sync pass, so a test can interleave a
+/// removal, re-bind or Clear there.
+#[cfg(test)]
+pub(super) mod pass_pause {
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex, OnceLock};
+
+    use tokio::sync::{RwLock, Semaphore};
+
+    /// One armed pause: the pass adds a permit to `reached` when it stops,
+    /// and waits for a permit on `resume`.
+    pub(crate) struct Pause {
+        pub(crate) reached: Semaphore,
+        pub(crate) resume: Semaphore,
+    }
+
+    /// Where a pass stops.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    pub(crate) enum Point {
+        /// `sync()` has taken its subwallet list, not yet the store guard.
+        AfterListSnapshot,
+        /// The pass holds the store guard and dropped the removed subwallets,
+        /// and has not read the watermarks yet.
+        AfterRemovalFilter,
+        /// `sync()` scanned and released the store guard, and has not handed
+        /// the hosts their changesets yet.
+        BeforeHostSave,
+        /// `clear()` has reset the store and released the store guard, and
+        /// still holds `accounts`.
+        AfterClearReset,
+    }
+
+    type Armed = Mutex<HashMap<(usize, Point), Arc<Pause>>>;
+
+    fn armed() -> &'static Armed {
+        static ARMED: OnceLock<Armed> = OnceLock::new();
+        ARMED.get_or_init(Default::default)
+    }
+
+    /// Identifies a store, so a pause armed by one test stops only passes
+    /// over that test's store.
+    pub(crate) fn key<S>(store: &Arc<RwLock<S>>) -> usize {
+        Arc::as_ptr(store) as *const () as usize
+    }
+
+    /// An armed pause, disarmed on drop if no pass reached it, so a test that
+    /// fails first leaves nothing armed for a later store at the same address.
+    pub(crate) struct ArmedPause {
+        pause: Arc<Pause>,
+        at: (usize, Point),
+    }
+
+    impl std::ops::Deref for ArmedPause {
+        type Target = Pause;
+
+        fn deref(&self) -> &Pause {
+            &self.pause
+        }
+    }
+
+    impl Drop for ArmedPause {
+        fn drop(&mut self) {
+            let mut armed = armed().lock().unwrap_or_else(|p| p.into_inner());
+            if armed
+                .get(&self.at)
+                .is_some_and(|pause| Arc::ptr_eq(pause, &self.pause))
+            {
+                armed.remove(&self.at);
+            }
+        }
+    }
+
+    /// Stop the next pass over the store keyed `key` at `point`, until the
+    /// test adds a permit to `resume`.
+    pub(crate) fn arm_at(key: usize, point: Point) -> ArmedPause {
+        let pause = Arc::new(Pause {
+            reached: Semaphore::new(0),
+            resume: Semaphore::new(0),
+        });
+        armed()
+            .lock()
+            .expect("pass pause registry")
+            .insert((key, point), pause.clone());
+        ArmedPause {
+            pause,
+            at: (key, point),
+        }
+    }
+
+    pub(crate) async fn reached(key: usize, point: Point) {
+        let pause = armed()
+            .lock()
+            .expect("pass pause registry")
+            .remove(&(key, point));
+        if let Some(pause) = pause {
+            pause.reached.add_permits(1);
+            pause
+                .resume
+                .acquire()
+                .await
+                .expect("pass pause resume")
+                .forget();
+        }
+    }
+}
 
 /// Cancellation of a note-sync pass: a scan cut short keeps only its tree
 /// progress and publishes nothing, a pre-scan cancel touches nothing, and

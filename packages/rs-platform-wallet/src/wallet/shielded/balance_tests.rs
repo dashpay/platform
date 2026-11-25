@@ -17,7 +17,7 @@ use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
 use drive_proof_verifier::types::{ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery};
 use tokio_util::sync::CancellationToken;
 
-fn tree_path() -> PathBuf {
+pub(super) fn tree_path() -> PathBuf {
     // Clock resolution alone does not distinguish parallel test invocations.
     static NEXT_PATH: AtomicU64 = AtomicU64::new(0);
     let sequence = NEXT_PATH.fetch_add(1, Ordering::Relaxed);
