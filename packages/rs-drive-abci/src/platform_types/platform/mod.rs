@@ -6,7 +6,7 @@ use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
-use drive::drive::Drive;
+use drive::drive::{CheckpointInfo, Drive};
 use std::fmt::{Debug, Formatter};
 
 use crate::platform_types::check_tx_proof_verifier::CheckTxProofVerifier;
@@ -212,12 +212,10 @@ impl<C> Platform<C> {
             // Load checkpoint platform states from disk
             let mut checkpoint_platform_states = BTreeMap::new();
             let checkpoints = drive.checkpoints.load();
-            for &block_height in checkpoints.keys() {
-                let checkpoint_state_path = config
-                    .db_path
-                    .join("checkpoints")
-                    .join(block_height.to_string())
-                    .join("platform_state.bin");
+            for (&block_height, loaded) in checkpoints.iter() {
+                // The state saved with a checkpoint is in the directory it was loaded
+                // from, however that directory spells its height.
+                let checkpoint_state_path = loaded.checkpoint.path().join("platform_state.bin");
 
                 if checkpoint_state_path.exists() {
                     match std::fs::read(&checkpoint_state_path) {
@@ -249,6 +247,23 @@ impl<C> Platform<C> {
                     }
                 }
             }
+
+            // A loaded checkpoint is timed by its block, as one that this run makes is,
+            // where the state saved with it was read above and names a block. The scan
+            // times it by the modification time of its directory, which is no record of
+            // the block.
+            let timed_by_block: BTreeMap<_, _> = checkpoints
+                .iter()
+                .map(|(height, loaded)| {
+                    let timestamp_ms = checkpoint_platform_states
+                        .get(height)
+                        .and_then(|state| state.last_committed_block_time_ms())
+                        .unwrap_or(loaded.timestamp_ms);
+                    let timed = CheckpointInfo::new(timestamp_ms, Arc::clone(&loaded.checkpoint));
+                    (*height, timed)
+                })
+                .collect();
+            drive.checkpoints.store(Arc::new(timed_by_block));
 
             return Platform::open_with_client_saved_state::<P>(
                 drive,
