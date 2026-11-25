@@ -235,6 +235,40 @@ describe('renewCertificate', () => {
     expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
   });
 
+  // The helper image is pinned to the CLI that started it, so after a manual
+  // CLI upgrade it keeps running the older build against a config the newer
+  // one migrated. Renewing there would save its state under the newer stamp
+  // and render every service file from its own templates.
+  it('should refuse to renew from an older helper before asking for a certificate', async function it() {
+    const data = JSON.parse(fs.readFileSync(homeDir.joinPath('config.json'), 'utf8'));
+    data.configFormatVersion = '4.2.0';
+    const migrated = JSON.stringify(data);
+    fs.writeFileSync(homeDir.joinPath('config.json'), migrated);
+
+    const olderHelperRepository = new ConfigFileJsonRepository(
+      (raw) => raw,
+      homeDir,
+      () => null,
+      '4.1.0',
+    );
+    const obtainCertificateTask = this.sinon.stub();
+    const writeConfigTemplates = this.sinon.stub();
+
+    await expect(renewCertificate({
+      configName,
+      provider: 'zerossl',
+      expirationDays: 30,
+      obtainCertificateTask,
+      configFileRepository: olderHelperRepository,
+      writeConfigTemplates,
+    })).to.be.rejectedWith(/updated by a newer dashmate/);
+
+    expect(obtainCertificateTask).to.not.have.been.called();
+    expect(writeConfigTemplates).to.not.have.been.called();
+    expect(fs.readFileSync(homeDir.joinPath('config.json'), 'utf8')).to.equal(migrated);
+    expect(fs.existsSync(homeDir.joinPath('.config.json.lock'))).to.be.false();
+  });
+
   // The helper renews inside a container with no terminal, and its event loop
   // is kept alive by an interval that is never unref'd - so an unsettled prompt
   // there hangs forever rather than draining. It also holds the config lock,

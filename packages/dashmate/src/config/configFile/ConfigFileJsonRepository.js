@@ -10,6 +10,7 @@ import Config from '../Config.js';
 import { PACKAGE_ROOT_DIR } from '../../constants.js';
 import ConfigFileNotFoundError from '../errors/ConfigFileNotFoundError.js';
 import InvalidConfigFileFormatError from '../errors/InvalidConfigFileFormatError.js';
+import ConfigFileFormatTooNewError from '../errors/ConfigFileFormatTooNewError.js';
 import configFileJsonSchema from './configFileJsonSchema.js';
 import ConfigFile from './ConfigFile.js';
 import ConfigurationLockLostError from '../../ssl/errors/ConfigurationLockLostError.js';
@@ -229,6 +230,10 @@ export default class ConfigFileJsonRepository {
    */
   update(mutate, { onSaved } = {}) {
     this.#locked(() => {
+      // Before reading: a newer shape can fail this build's schema, and that
+      // error would hide the reason this build may not change the file.
+      this.#refuseNewerFormatOnDisk();
+
       // First run has nothing to read yet, and creating the defaults here rather
       // than separately keeps that on the same locked path as every other change
       // - two nodes being set up at once cannot both create the file.
@@ -289,6 +294,12 @@ export default class ConfigFileJsonRepository {
         throw new ConfigurationLockLostError('Lost the configuration lock before the config file was migrated.');
       }
 
+      // A newer build may have migrated the file while this process waited.
+      // This build may not save it then, and must not render from it either.
+      if (this.#isNewerThanOwnFormat(this.#readRecordedFormatVersion())) {
+        return { configFile: this.read(options) };
+      }
+
       // Another process may have migrated or changed the file while this
       // process waited, so never save the result of the unlocked probe.
       const result = readResult();
@@ -326,12 +337,11 @@ export default class ConfigFileJsonRepository {
     }
 
     let recordedVersion;
+    let hasSeedUpdates;
 
     try {
       const data = JSON.parse(fs.readFileSync(this.configFilePath, 'utf8'));
-      if (getDefaultSeedUpdates(data.configs).length > 0) {
-        return true;
-      }
+      hasSeedUpdates = getDefaultSeedUpdates(data.configs).length > 0;
       recordedVersion = data.configFormatVersion;
     } catch {
       // An unreadable or malformed file is read()'s to report, with the error
@@ -343,7 +353,14 @@ export default class ConfigFileJsonRepository {
       return true;
     }
 
-    return semver.lt(recordedVersion, this.configFormatVersion);
+    // A newer build has migrated the file, and saving it from here is refused.
+    // Reading stays possible, and refreshing this build's stock seeds would only
+    // render its own service files over the newer build's.
+    if (this.#isNewerThanOwnFormat(recordedVersion)) {
+      return false;
+    }
+
+    return hasSeedUpdates || semver.lt(recordedVersion, this.configFormatVersion);
   }
 
   /**
@@ -380,7 +397,20 @@ export default class ConfigFileJsonRepository {
     }
 
     this.#compromised = false;
-    this.#heldRelease = this.#acquireLock();
+    const release = this.#acquireLock();
+
+    // A caller holds this across long work - a certificate issuance, a node
+    // setup - and saves at the end. Refusing only at that save would let the
+    // work happen first, so a file this build may not write is refused here.
+    try {
+      this.#refuseNewerFormatOnDisk();
+    } catch (e) {
+      this.#release(release);
+
+      throw e;
+    }
+
+    this.#heldRelease = release;
     this.#leaseDepth = 1;
   }
 
@@ -492,11 +522,70 @@ export default class ConfigFileJsonRepository {
         + ` to '${rescuePath}'. Review it before re-running the command.`);
     }
 
+    this.#refuseNewerFormatOnDisk();
+
     writeFileAtomic.sync(this.configFilePath, configFileJSON, 'utf8');
 
     // Only now is the state actually on disk. Clearing these beforehand would
     // leave the config file claiming to be saved after a failed write.
     configFile.markAsSaved();
+  }
+
+  /**
+   * Refuse when the file on disk was migrated by a newer build.
+   *
+   * Migration only runs forward, so this build reads such a file unmigrated and
+   * its in-memory copy keeps the newer stamp. Saving it would write this build's
+   * state - and, for every caller, render its service files - under that stamp,
+   * and the newer build would never migrate it again.
+   *
+   * Only a recorded version this build can order is acted on. A missing file has
+   * nothing to protect, and an unreadable one or one without a valid stamp is
+   * read()'s to report. Without a format version of its own - a repository built
+   * outside the DI container - there is nothing to compare against.
+   *
+   * Caller must hold the lock, so the newer build cannot migrate the file
+   * between this check and the write.
+   */
+  #refuseNewerFormatOnDisk() {
+    const recordedVersion = this.#readRecordedFormatVersion();
+
+    if (this.#isNewerThanOwnFormat(recordedVersion)) {
+      throw new ConfigFileFormatTooNewError(
+        this.configFilePath,
+        recordedVersion,
+        this.configFormatVersion,
+      );
+    }
+  }
+
+  /**
+   * The format version recorded on disk, or undefined when there is no file or
+   * it cannot be parsed.
+   *
+   * @returns {*}
+   */
+  #readRecordedFormatVersion() {
+    try {
+      return JSON.parse(fs.readFileSync(this.configFilePath, 'utf8'))?.configFormatVersion;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Whether a recorded format version is newer than the one this build
+   * produces. False whenever either version cannot be ordered.
+   *
+   * @param {*} recordedVersion
+   * @returns {boolean}
+   */
+  #isNewerThanOwnFormat(recordedVersion) {
+    return typeof this.configFormatVersion === 'string'
+      && semver.valid(this.configFormatVersion) !== null
+      && typeof recordedVersion === 'string'
+      && semver.valid(recordedVersion) !== null
+      && semver.gt(recordedVersion, this.configFormatVersion);
   }
 
   /**
