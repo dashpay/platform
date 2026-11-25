@@ -5,7 +5,7 @@ mod block_source;
 mod stream;
 
 pub use block_source::{BlockSource, TenderdashBlocks};
-pub use stream::{SubscriptionLimits, SubscriptionService, SubscriptionStream};
+pub use stream::{SubscriptionLimits, SubscriptionService, SubscriptionStream, Tip};
 
 use crate::services::platform_service::PlatformServiceImpl;
 use crate::services::platform_service::shielded_proof_failure_budget::SourceKey;

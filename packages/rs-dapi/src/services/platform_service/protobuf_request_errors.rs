@@ -4,7 +4,7 @@ use super::block_proof::tenderdash_commit_json;
 use super::{
     BlockSource, MAX_CONCURRENT_GET_BLOCKS, MAX_CONCURRENT_GET_OWNER_TRANSACTIONS,
     MAX_EXECUTION_PROOF_REGISTRATIONS, MAX_PENDING_STATE_TRANSITION_WAITS, PlatformServiceImpl,
-    ShieldedProofFailureBudget, SubscriptionLimits, SubscriptionService,
+    ShieldedProofFailureBudget, SubscriptionLimits, SubscriptionService, Tip,
 };
 use crate::cache::LruResponseCache;
 use crate::clients::TenderdashClient;
@@ -89,7 +89,7 @@ impl PlatformServiceImpl {
             websocket_client: tenderdash_client.websocket_client(),
             subscriptions: Arc::new(SubscriptionService::new(
                 Arc::new(BlockSource::new(tenderdash_client.clone())),
-                watch::channel(0).1,
+                watch::channel(Tip::default()).1,
                 SubscriptionLimits::default(),
             )),
             tenderdash_client,

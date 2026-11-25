@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use bytes::Bytes;
+use dash_platform_queries::subscriptions::decode_committed_state_transition;
 use dpp::platform_value::Value;
 use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
@@ -19,7 +20,7 @@ use sha2::{Digest, Sha256};
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{Semaphore, SemaphorePermit};
+use tokio::sync::Semaphore;
 use tokio::time::timeout;
 
 /// Heights per `blockchain` page; Tenderdash's own cap.
@@ -33,18 +34,22 @@ const TX_OVERHEAD_BYTES: usize = 256;
 const BLOCK_CACHE_SHARDS: usize = 1;
 /// Block metas pages kept.
 const META_PAGE_CACHE_PAGES: usize = 256;
-/// Tenderdash RPCs in flight at once, across all subscriptions and the tip tracker.
+/// Tenderdash RPCs in flight at once, across all subscriptions and the tip tracker. A block
+/// being decoded counts as the two calls that read it.
 pub const MAX_CONCURRENT_FETCHES: usize = 8;
-/// How long a read of a block or of its results waits for Tenderdash. The calls have no
-/// deadline of their own, because the block queries that share them wait for as long as
-/// Tenderdash works. A stream that waited forever would stall without an error, so it gives
-/// up, ends with `UNAVAILABLE`, and the client resumes on another node.
+/// How long a subscription waits for a read it asked Tenderdash for. The calls that read a
+/// block have no deadline of their own, because the block queries that share them wait for
+/// as long as Tenderdash works. A stream that waited forever would stall without an error,
+/// so it stops waiting, ends with `UNAVAILABLE`, and the client resumes on another node. The
+/// read itself goes on, and keeps its share of [`MAX_CONCURRENT_FETCHES`] until it ends.
 const BLOCK_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The Tenderdash RPCs the block source reads.
 #[async_trait]
 pub trait TenderdashBlocks: Send + Sync + 'static {
     async fn latest_height(&self) -> DAPIResult<u64>;
+    /// The lowest height the store still keeps.
+    async fn earliest_height(&self) -> DAPIResult<u64>;
     async fn block(&self, height: u64) -> DAPIResult<ResultBlock>;
     async fn block_results(&self, height: u64) -> DAPIResult<ResultBlockResults>;
     async fn blockchain(
@@ -60,12 +65,16 @@ impl TenderdashBlocks for TenderdashClient {
         Ok(self.status().await?.sync_info.latest_block_height.max(0) as u64)
     }
 
+    async fn earliest_height(&self) -> DAPIResult<u64> {
+        Ok(self.status().await?.sync_info.earliest_block_height.max(0) as u64)
+    }
+
     async fn block(&self, height: u64) -> DAPIResult<ResultBlock> {
-        within_read_timeout(TenderdashClient::block(self, height)).await
+        TenderdashClient::block(self, height).await
     }
 
     async fn block_results(&self, height: u64) -> DAPIResult<ResultBlockResults> {
-        within_read_timeout(TenderdashClient::block_results(self, height)).await
+        TenderdashClient::block_results(self, height).await
     }
 
     async fn blockchain(
@@ -75,15 +84,6 @@ impl TenderdashBlocks for TenderdashClient {
     ) -> DAPIResult<ResultBlockchainInfo> {
         TenderdashClient::blockchain(self, min_height, max_height).await
     }
-}
-
-/// `read`, failing once [`BLOCK_READ_TIMEOUT`] has passed without an answer.
-async fn within_read_timeout<T>(read: impl Future<Output = DAPIResult<T>>) -> DAPIResult<T> {
-    timeout(BLOCK_READ_TIMEOUT, read).await.unwrap_or_else(|_| {
-        Err(DapiError::Timeout(format!(
-            "Tenderdash did not answer a block read in {BLOCK_READ_TIMEOUT:?}"
-        )))
-    })
 }
 
 /// One successfully executed transaction of a committed block.
@@ -141,8 +141,9 @@ pub struct BlockSource {
     blocks: Cache<u64, Arc<CommittedBlock>, BlockWeighter>,
     /// Metas pages by their exact `(start, end)` range; committed metas never change.
     meta_pages: Cache<(u64, u64), Arc<Vec<HeightMeta>>>,
-    /// One permit per Tenderdash RPC, held only for that call, so a slow client cannot hold it.
-    fetches: Semaphore,
+    /// One permit per Tenderdash RPC, held by the task that makes the call until Tenderdash
+    /// has answered it, whoever still waits for the answer. A slow client cannot hold one.
+    fetches: Arc<Semaphore>,
 }
 
 impl BlockSource {
@@ -161,20 +162,25 @@ impl BlockSource {
                 DefaultLifecycle::default(),
             ),
             meta_pages: Cache::new(META_PAGE_CACHE_PAGES),
-            fetches: Semaphore::new(MAX_CONCURRENT_FETCHES),
+            fetches: Arc::new(Semaphore::new(MAX_CONCURRENT_FETCHES)),
         }
     }
 
     /// The highest height Tenderdash reports stored. Its results may not be saved yet.
     pub async fn latest_height(&self) -> DAPIResult<u64> {
-        let _permit = self.fetch_permit(1).await?;
-        self.tenderdash.latest_height().await
+        self.dispatch(
+            1,
+            |tenderdash| async move { tenderdash.latest_height().await },
+        )
+        .await
     }
 
     /// Succeeds once the execution results of `height` are saved, so the height is readable.
     pub async fn results_saved(&self, height: u64) -> DAPIResult<()> {
-        let _permit = self.fetch_permit(1).await?;
-        self.tenderdash.block_results(height).await.map(|_| ())
+        self.dispatch(1, move |tenderdash| async move {
+            tenderdash.block_results(height).await.map(drop)
+        })
+        .await
     }
 
     /// The metas of the aligned page holding `height` (heights `page_start..page_start + 20`),
@@ -189,13 +195,12 @@ impl BlockSource {
         let page = self
             .meta_pages
             .get_or_insert_async(&(page_start, page_end), async {
-                let _permit = self.fetch_permit(1).await?;
-                let info = self.tenderdash.blockchain(page_start, page_end).await?;
-                Ok::<_, DapiError>(Arc::new(page_from_metas(
-                    page_start,
-                    page_end,
-                    &info.block_metas,
-                )?))
+                let metas = self
+                    .dispatch(1, move |tenderdash| {
+                        stored_metas(tenderdash, page_start, page_end)
+                    })
+                    .await?;
+                Ok::<_, DapiError>(Arc::new(page_from_metas(page_start, page_end, &metas)?))
             })
             .await?;
         Ok((page_start, page))
@@ -208,72 +213,129 @@ impl BlockSource {
             .await
     }
 
-    async fn fetch_permit(&self, calls: u32) -> DAPIResult<SemaphorePermit<'_>> {
-        self.fetches
-            .acquire_many(calls)
+    /// Ask Tenderdash for something that takes `calls` of the fetch budget, in a task of its
+    /// own, and wait up to [`BLOCK_READ_TIMEOUT`] for it, queueing for the budget included.
+    ///
+    /// A caller that goes away, or stops waiting, while it queues for the budget has asked
+    /// Tenderdash for nothing. Once asked, Tenderdash works on the request whoever still
+    /// waits for it, so the task keeps the budget until the request ends: a caller that
+    /// stops waiting, or goes away, does not free it for more work.
+    async fn dispatch<T, F>(
+        &self,
+        calls: u32,
+        ask: impl FnOnce(Arc<dyn TenderdashBlocks>) -> F,
+    ) -> DAPIResult<T>
+    where
+        T: Send + 'static,
+        F: Future<Output = DAPIResult<T>> + Send + 'static,
+    {
+        let answer = async {
+            let permit = Arc::clone(&self.fetches)
+                .acquire_many_owned(calls)
+                .await
+                .map_err(|_| DapiError::Internal("the block source is closed".to_string()))?;
+            let asked = ask(Arc::clone(&self.tenderdash));
+            tokio::spawn(async move {
+                let _permit = permit;
+                asked.await
+            })
+            .await?
+        };
+        timeout(BLOCK_READ_TIMEOUT, answer)
             .await
-            .map_err(|_| DapiError::Internal("the block source is closed".to_string()))
+            .unwrap_or_else(|_| {
+                Err(DapiError::Timeout(format!(
+                    "Tenderdash did not answer in {BLOCK_READ_TIMEOUT:?}"
+                )))
+            })
     }
 
     async fn fetch(&self, height: u64) -> DAPIResult<Arc<CommittedBlock>> {
-        let (block, results) = {
-            let _permit = self.fetch_permit(2).await?;
-            tokio::join!(
-                self.tenderdash.block(height),
-                self.tenderdash.block_results(height)
-            )
-        };
-        let block = block?
-            .block
-            .ok_or_else(|| DapiError::Internal(format!("block {height} is not stored")))?;
-        let results = results?;
-        if block.data.txs.len() != results.txs_results.len() {
-            return Err(DapiError::Internal(format!(
-                "block {height} has {} transactions but {} execution results",
-                block.data.txs.len(),
-                results.txs_results.len()
-            )));
-        }
-
-        let protocol_version = u32::try_from(block.header.version.app).map_err(|_| {
-            DapiError::Internal(format!(
-                "block {height} has protocol version {} out of range",
-                block.header.version.app
-            ))
-        })?;
-        // Transactions decode under the rules of the version the block executed with, as
-        // consensus decoded them (older versions put no depth limit on document values).
-        let platform_version = PlatformVersion::get(protocol_version).ok();
-        let mut txs = Vec::new();
-        for (index, (tx, result)) in block.data.txs.iter().zip(&results.txs_results).enumerate() {
-            if result.code != 0 {
-                continue;
-            }
-            let bytes = BASE64_STANDARD.decode(tx).map_err(|e| {
-                DapiError::Internal(format!(
-                    "block {height} transaction {index} is not valid base64: {e}"
-                ))
-            })?;
-            txs.push(CommittedTx {
-                index: index as u32,
-                hash: Sha256::digest(&bytes).into(),
-                state_transition: decode_state_transition(&bytes, platform_version),
-                bytes: Bytes::from(bytes),
-            });
-        }
-        let time_ms = parse_block_time_ms(&block.header.time).ok_or_else(|| {
-            DapiError::Internal(format!(
-                "block {height} has an unreadable time '{}'",
-                block.header.time
-            ))
-        })?;
-        Ok(Arc::new(CommittedBlock {
-            height,
-            time_ms,
-            protocol_version,
-            txs,
-        }))
+        self.dispatch(2, move |tenderdash| async move {
+            let (block, results) =
+                tokio::join!(tenderdash.block(height), tenderdash.block_results(height));
+            let (block, results) = (block?, results?);
+            // Decoding and hashing every transaction of a full block would hold up the other
+            // requests an async thread serves, so it runs on the blocking pool.
+            tokio::task::spawn_blocking(move || committed_block(height, block, results)).await?
+        })
+        .await
     }
+}
+
+/// The metas Tenderdash stores for heights `page_start..=page_end`; none when the whole range
+/// lies below its store's base. Tenderdash leaves out the heights of a range that are below
+/// the base, but refuses a range that is wholly below it, as it refuses a malformed one.
+async fn stored_metas(
+    tenderdash: Arc<dyn TenderdashBlocks>,
+    page_start: u64,
+    page_end: u64,
+) -> DAPIResult<Vec<BlockMeta>> {
+    match tenderdash.blockchain(page_start, page_end).await {
+        Ok(info) => Ok(info.block_metas),
+        Err(refusal) => match tenderdash.earliest_height().await {
+            Ok(earliest) if page_end < earliest => Ok(Vec::new()),
+            _ => Err(refusal),
+        },
+    }
+}
+
+/// The committed block Tenderdash's answers for `height` describe: its successfully executed
+/// transactions, hashed and decoded.
+fn committed_block(
+    height: u64,
+    block: ResultBlock,
+    results: ResultBlockResults,
+) -> DAPIResult<Arc<CommittedBlock>> {
+    let block = block
+        .block
+        .ok_or_else(|| DapiError::Internal(format!("block {height} is not stored")))?;
+    if block.data.txs.len() != results.txs_results.len() {
+        return Err(DapiError::Internal(format!(
+            "block {height} has {} transactions but {} execution results",
+            block.data.txs.len(),
+            results.txs_results.len()
+        )));
+    }
+
+    let protocol_version = u32::try_from(block.header.version.app).map_err(|_| {
+        DapiError::Internal(format!(
+            "block {height} has protocol version {} out of range",
+            block.header.version.app
+        ))
+    })?;
+    // Transactions decode under the rules of the version the block executed with, as
+    // consensus decoded them (older versions put no depth limit on document values).
+    let platform_version = PlatformVersion::get(protocol_version).ok();
+    let mut txs = Vec::new();
+    for (index, (tx, result)) in block.data.txs.iter().zip(&results.txs_results).enumerate() {
+        if result.code != 0 {
+            continue;
+        }
+        let bytes = BASE64_STANDARD.decode(tx).map_err(|e| {
+            DapiError::Internal(format!(
+                "block {height} transaction {index} is not valid base64: {e}"
+            ))
+        })?;
+        txs.push(CommittedTx {
+            index: index as u32,
+            hash: Sha256::digest(&bytes).into(),
+            state_transition: decode_state_transition(&bytes, platform_version),
+            bytes: Bytes::from(bytes),
+        });
+    }
+    let time_ms = parse_block_time_ms(&block.header.time).ok_or_else(|| {
+        DapiError::Internal(format!(
+            "block {height} has an unreadable time '{}'",
+            block.header.time
+        ))
+    })?;
+    Ok(Arc::new(CommittedBlock {
+        height,
+        time_ms,
+        protocol_version,
+        txs,
+    }))
 }
 
 /// A committed transaction decoded as the block's protocol version decoded it; `None` for a
@@ -284,8 +346,7 @@ fn decode_state_transition(
 ) -> Result<StateTransition, String> {
     let platform_version =
         platform_version.ok_or_else(|| "unknown protocol version".to_string())?;
-    StateTransition::deserialize_from_bytes_untrusted_in_version(bytes, platform_version)
-        .map_err(|e| e.to_string())
+    decode_committed_state_transition(bytes, platform_version).map_err(|e| e.to_string())
 }
 
 /// The page `[page_start, page_end]` from the metas Tenderdash returned, which must cover
@@ -399,9 +460,16 @@ mod tests {
         assert_eq!(parse_block_time_ms("not a time"), None);
     }
 
+    /// A chain of one block. `base` is the lowest height its store keeps, and `held` keeps
+    /// every read of the block waiting while a test holds it.
+    #[derive(Default)]
     struct OneBlock {
         txs: Vec<String>,
         results: Option<Vec<BlockTxResult>>,
+        base: u64,
+        /// Whether Tenderdash fails every request for metas.
+        metas_fail: bool,
+        held: tokio::sync::Mutex<()>,
     }
 
     #[async_trait]
@@ -409,7 +477,11 @@ mod tests {
         async fn latest_height(&self) -> DAPIResult<u64> {
             Ok(1)
         }
+        async fn earliest_height(&self) -> DAPIResult<u64> {
+            Ok(self.base)
+        }
         async fn block(&self, height: u64) -> DAPIResult<ResultBlock> {
+            drop(self.held.lock().await);
             Ok(ResultBlock {
                 block: Some(Block {
                     header: BlockHeader {
@@ -436,7 +508,14 @@ mod tests {
                 None => Err(DapiError::Client("no results for height".to_string())),
             }
         }
-        async fn blockchain(&self, _: u64, _: u64) -> DAPIResult<ResultBlockchainInfo> {
+        async fn blockchain(&self, _: u64, max: u64) -> DAPIResult<ResultBlockchainInfo> {
+            // As Tenderdash refuses a range wholly below its base.
+            if max < self.base || self.metas_fail {
+                return Err(DapiError::Client(format!(
+                    "min height {} can't be greater than max height {max}",
+                    self.base
+                )));
+            }
             Ok(ResultBlockchainInfo::default())
         }
     }
@@ -457,6 +536,7 @@ mod tests {
         let source = BlockSource::new(Arc::new(OneBlock {
             txs,
             results: Some(vec![result(1), result(0)]),
+            ..Default::default()
         }));
         let block = source.read(1).await.unwrap();
         assert_eq!(block.protocol_version, 12);
@@ -469,24 +549,68 @@ mod tests {
         );
     }
 
-    /// A read Tenderdash never answers ends at the deadline instead of stalling the stream; an
-    /// answer in time is passed through.
+    /// A subscription stops waiting for a read at the deadline, but Tenderdash is still working
+    /// on it: the read keeps its share of the fetch budget until Tenderdash answers, so the
+    /// ones that gave up waiting make no room for more.
     #[tokio::test(start_paused = true)]
-    async fn should_give_up_a_block_read_tenderdash_does_not_answer_within_the_deadline() {
+    async fn should_keep_the_fetch_budget_of_a_read_nobody_waits_for_until_tenderdash_answers() {
+        let chain = Arc::new(OneBlock {
+            txs: vec![BASE64_STANDARD.encode(b"tx")],
+            results: Some(vec![result(0)]),
+            ..Default::default()
+        });
+        let source = BlockSource::new(chain.clone());
+        let free = || source.fetches.available_permits();
+
+        let held = chain.held.lock().await;
         let started = Instant::now();
-        let unanswered = within_read_timeout(std::future::pending::<DAPIResult<u64>>()).await;
+        let unanswered = source.read(1).await;
         assert!(
             matches!(unanswered, Err(DapiError::Timeout(_))),
             "{unanswered:?}"
         );
         assert_eq!(started.elapsed(), BLOCK_READ_TIMEOUT);
+        assert_eq!(
+            free(),
+            MAX_CONCURRENT_FETCHES - 2,
+            "the read is still Tenderdash's work"
+        );
 
-        let answered = within_read_timeout(async {
-            tokio::time::sleep(BLOCK_READ_TIMEOUT - Duration::from_millis(1)).await;
-            Ok(7)
-        })
-        .await;
-        assert!(matches!(answered, Ok(7)), "{answered:?}");
+        // A reader that goes away is no different.
+        let abandoned = tokio::spawn({
+            let chain = chain.clone();
+            let source = BlockSource::new(chain);
+            async move { (source.read(1).await.map(drop), source) }
+        });
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        abandoned.abort();
+
+        drop(held);
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert_eq!(free(), MAX_CONCURRENT_FETCHES, "Tenderdash answered");
+        assert!(source.read(1).await.is_ok());
+    }
+
+    /// Tenderdash refuses a range of metas that lies wholly below its store's base, where it
+    /// leaves the missing heights out of a range that reaches the base. Both are heights this
+    /// node does not keep.
+    #[tokio::test]
+    async fn should_read_a_page_wholly_below_the_store_base_as_unavailable_heights() {
+        let pruned = BlockSource::new(Arc::new(OneBlock {
+            base: 100,
+            ..Default::default()
+        }));
+        let (page_start, page) = pruned.meta_page(25, 500).await.unwrap();
+        assert_eq!(page_start, 21);
+        assert_eq!(*page, vec![HeightMeta::Unavailable; 20]);
+
+        // A failure to read a range the store reaches is a failure, not missing history.
+        let failing = BlockSource::new(Arc::new(OneBlock {
+            base: 100,
+            metas_fail: true,
+            ..Default::default()
+        }));
+        assert!(failing.meta_page(101, 500).await.is_err());
     }
 
     #[tokio::test]
@@ -494,6 +618,7 @@ mod tests {
         let source = BlockSource::new(Arc::new(OneBlock {
             txs: vec![BASE64_STANDARD.encode(b"tx")],
             results: None,
+            ..Default::default()
         }));
         assert!(source.read(1).await.is_err());
         assert!(source.results_saved(1).await.is_err());
@@ -529,6 +654,7 @@ mod tests {
         let source = BlockSource::new(Arc::new(OneBlock {
             txs: vec![BASE64_STANDARD.encode(array_batch(Value::Bool(true), len))],
             results: Some(vec![result(0)]),
+            ..Default::default()
         }));
         let block = source.read(1).await.unwrap();
         assert!(
@@ -545,6 +671,7 @@ mod tests {
         let source = BlockSource::new(Arc::new(OneBlock {
             txs: vec![BASE64_STANDARD.encode(array_batch(Value::Null, 8_193))],
             results: Some(vec![result(0)]),
+            ..Default::default()
         }));
         let block = source.read(1).await.unwrap();
         assert!(

@@ -62,6 +62,24 @@ const STREAM_BUFFER: usize = 32;
 const SEND_DEADLINE: Duration = Duration::from_secs(60);
 /// How often the tip is polled when no new-block event arrives.
 const TIP_POLL_INTERVAL: Duration = Duration::from_secs(5);
+/// How long the tip may fail to be read before the node says so; see [`Tip::unreadable`].
+const TIP_FAILURE_DEADLINE: Duration = Duration::from_secs(30);
+/// Blocks being matched against a subscription's filters at once, across all subscriptions.
+/// Matching is CPU work on the blocking pool; this keeps it from taking the node's cores
+/// from the requests its async threads serve.
+const MAX_CONCURRENT_MATCHES: usize = 2;
+
+/// What the tip tracker last read of the node's chain.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Tip {
+    /// The highest height whose execution results are saved: every height at or below it is
+    /// readable. 0 before the first read.
+    pub height: u64,
+    /// The tip could not be read for [`TIP_FAILURE_DEADLINE`], so `height` may be behind the
+    /// chain. A subscription that has scanned up to it is not caught up with a quiet chain:
+    /// it ends, and its client resumes on a node that can read its chain.
+    pub unreadable: bool,
+}
 
 /// Bounds on what subscriptions may cost one node.
 #[derive(Debug, Clone, Copy)]
@@ -113,9 +131,11 @@ impl Drop for PerSourceGuard {
 /// Serves every subscription of the node from one block source.
 pub struct SubscriptionService {
     blocks: Arc<BlockSource>,
-    tip: watch::Receiver<u64>,
+    tip: watch::Receiver<Tip>,
     limits: SubscriptionLimits,
     subscriptions: Arc<Semaphore>,
+    /// One permit per block being matched; see [`MAX_CONCURRENT_MATCHES`].
+    matching: Arc<Semaphore>,
     per_source: Arc<Mutex<HashMap<SourceKey, usize>>>,
 }
 
@@ -123,29 +143,42 @@ impl SubscriptionService {
     /// `tip` carries the highest readable height; see [`Self::track_tip`].
     pub fn new(
         blocks: Arc<BlockSource>,
-        tip: watch::Receiver<u64>,
+        tip: watch::Receiver<Tip>,
         limits: SubscriptionLimits,
     ) -> Self {
         Self {
             blocks,
             tip,
             subscriptions: Arc::new(Semaphore::new(limits.max_subscriptions)),
+            matching: Arc::new(Semaphore::new(MAX_CONCURRENT_MATCHES)),
             per_source: Arc::new(Mutex::new(HashMap::new())),
             limits,
         }
     }
 
     /// Keep `tip` at the highest height whose execution results are saved, checking on every
-    /// `new_blocks` event and every few seconds. Runs until `tip` has no receivers.
+    /// `new_blocks` event and every few seconds, and mark it unreadable once reading it has
+    /// failed for [`TIP_FAILURE_DEADLINE`]. Runs until `tip` has no receivers.
     pub async fn track_tip<T: Clone>(
         blocks: Arc<BlockSource>,
-        tip: watch::Sender<u64>,
+        tip: watch::Sender<Tip>,
         mut new_blocks: broadcast::Receiver<T>,
     ) {
         let mut events_open = true;
+        let mut failing_since = None;
         loop {
-            if let Err(error) = publish_tip(&blocks, &tip).await {
-                debug!(%error, "cannot advance the state transition subscription tip");
+            let asked = Instant::now();
+            match publish_tip(&blocks, &tip).await {
+                Ok(()) => failing_since = None,
+                Err(error) => {
+                    debug!(%error, "cannot advance the state transition subscription tip");
+                    // From when the first read to fail was asked: one that Tenderdash never
+                    // answers fails only once its own deadline has passed.
+                    let since: Instant = *failing_since.get_or_insert(asked);
+                    if since.elapsed() >= TIP_FAILURE_DEADLINE {
+                        tip.send_if_modified(|tip| !std::mem::replace(&mut tip.unreadable, true));
+                    }
+                }
             }
             if tip.is_closed() {
                 return;
@@ -210,9 +243,10 @@ impl SubscriptionService {
                         self.limits.max_replay_blocks
                     )));
                 }
-                // A node this far behind may still serve the height elsewhere.
+                // This node lacks the height, as it lacks a pruned one: another node, further
+                // along, may serve it. Not `UNAVAILABLE`, which says this node is failing.
                 if height > tip.saturating_add(self.limits.max_blocks_ahead) {
-                    return Err(Status::unavailable(format!(
+                    return Err(Status::failed_precondition(format!(
                         "from_block_height {height} is more than {} blocks ahead of the tip {tip}",
                         self.limits.max_blocks_ahead
                     )));
@@ -229,7 +263,8 @@ impl SubscriptionService {
         let scan = Scan {
             blocks: self.blocks.clone(),
             tip: self.tip.clone(),
-            filters,
+            filters: Arc::new(filters),
+            matching: self.matching.clone(),
             sender,
             buffer: Arc::downgrade(&buffer),
             next_height: start.max(1),
@@ -241,8 +276,11 @@ impl SubscriptionService {
 
     async fn current_tip(&self) -> Result<u64, Status> {
         let tip = *self.tip.borrow();
-        if tip > 0 {
-            return Ok(tip);
+        if tip.unreadable {
+            return Err(tip_unreadable());
+        }
+        if tip.height > 0 {
+            return Ok(tip.height);
         }
         // Not published yet: the height the tracker would publish.
         readable_tip(&self.blocks, 0)
@@ -252,13 +290,23 @@ impl SubscriptionService {
     }
 }
 
-/// Publish the readable tip; see [`readable_tip`].
-async fn publish_tip(blocks: &BlockSource, tip: &watch::Sender<u64>) -> DAPIResult<()> {
-    let published = *tip.borrow();
-    if let Some(height) = readable_tip(blocks, published).await? {
-        tip.send_replace(height);
-    }
+/// Publish the readable tip, and that it could be read; see [`readable_tip`].
+async fn publish_tip(blocks: &BlockSource, tip: &watch::Sender<Tip>) -> DAPIResult<()> {
+    let published = tip.borrow().height;
+    let height = readable_tip(blocks, published).await?.unwrap_or(published);
+    let read = Tip {
+        height,
+        unreadable: false,
+    };
+    tip.send_if_modified(|tip| std::mem::replace(tip, read) != read);
     Ok(())
+}
+
+/// The refusal of a node that cannot read its chain tip.
+fn tip_unreadable() -> Status {
+    Status::unavailable(
+        "this node cannot read its chain tip; resume from the last checkpoint on another node",
+    )
 }
 
 /// The latest stored height once its results are saved, or the one before it while they are
@@ -292,8 +340,9 @@ enum Stop {
 
 struct Scan {
     blocks: Arc<BlockSource>,
-    tip: watch::Receiver<u64>,
-    filters: ResolvedFilters,
+    tip: watch::Receiver<Tip>,
+    filters: Arc<ResolvedFilters>,
+    matching: Arc<Semaphore>,
     sender: mpsc::Sender<Item>,
     /// The stream's buffer, given the status the stream ends with before `sender` is dropped.
     /// Weak, so a client dropping the stream still closes the channel.
@@ -342,8 +391,16 @@ impl Scan {
         self.checkpoint().await?;
         let mut last_checkpoint = Instant::now();
         loop {
-            let tip = *self.tip.borrow();
+            let Tip {
+                height: tip,
+                unreadable,
+            } = *self.tip.borrow();
             if self.next_height > tip {
+                // Checkpoints while waiting here say the chain is quiet. A node that cannot
+                // read its tip does not know that.
+                if unreadable {
+                    return Err(Stop::Fail(tip_unreadable()));
+                }
                 tokio::select! {
                     _ = self.sender.closed() => return Err(Stop::Closed),
                     changed = self.tip.changed() => {
@@ -403,7 +460,7 @@ impl Scan {
                     "cannot read block {height}: {error}; resume from {height}"
                 )))
             })?;
-        let matches = self.match_block(&block)?;
+        let matches = self.match_block(Arc::clone(&block)).await?;
         if matches.is_empty() {
             return Ok(false);
         }
@@ -432,32 +489,24 @@ impl Scan {
     }
 
     /// The positions, in `block.txs`, of the block's transitions that match, in block order,
-    /// with what they matched.
-    fn match_block(&self, block: &CommittedBlock) -> Result<Vec<(usize, FilterMatch)>, Stop> {
-        let height = block.height;
-        let platform_version = PlatformVersion::get(block.protocol_version).map_err(|_| {
-            Stop::Fail(Status::failed_precondition(format!(
-                "block {height} executed under protocol version {}, which this node does not \
-                 know; resume from {height} on an upgraded node",
-                block.protocol_version
-            )))
-        })?;
-
-        let mut matches = Vec::new();
-        for (position, tx) in block.txs.iter().enumerate() {
-            let state_transition = tx.state_transition.as_ref().map_err(|e| {
-                warn!(height, index = tx.index, error = %e, "cannot decode an executed state transition");
-                Stop::Fail(Status::failed_precondition(format!(
-                    "block {height} transaction {} cannot be decoded by this node ({e}); resume \
-                     from {height} on an upgraded node",
-                    tx.index
-                )))
-            })?;
-            if let Some(filter_match) = self.filters.matches(state_transition, platform_version) {
-                matches.push((position, filter_match));
-            }
-        }
-        Ok(matches)
+    /// with what they matched. Matched on the blocking pool, [`MAX_CONCURRENT_MATCHES`]
+    /// blocks at a time: a full block against document clauses would hold up the other
+    /// requests an async thread serves.
+    async fn match_block(
+        &self,
+        block: Arc<CommittedBlock>,
+    ) -> Result<Vec<(usize, FilterMatch)>, Stop> {
+        let matching = Arc::clone(&self.matching).acquire_owned();
+        let permit = unless_closed(&self.sender, matching)
+            .await?
+            .map_err(|_| Stop::Fail(Status::unavailable("the node is shutting down")))?;
+        let filters = Arc::clone(&self.filters);
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            matches_in(&block, &filters)
+        })
+        .await
+        .map_err(|error| Stop::Fail(Status::internal(format!("cannot match a block: {error}"))))?
     }
 
     /// A checkpoint at the highest fully scanned height.
@@ -484,6 +533,38 @@ impl Scan {
             Err(_) => Err(Stop::SlowClient),
         }
     }
+}
+
+/// The positions, in `block.txs`, of the transitions of `block` that match `filters`, in block
+/// order, with what they matched.
+fn matches_in(
+    block: &CommittedBlock,
+    filters: &ResolvedFilters,
+) -> Result<Vec<(usize, FilterMatch)>, Stop> {
+    let height = block.height;
+    let platform_version = PlatformVersion::get(block.protocol_version).map_err(|_| {
+        Stop::Fail(Status::failed_precondition(format!(
+            "block {height} executed under protocol version {}, which this node does not \
+                 know; resume from {height} on an upgraded node",
+            block.protocol_version
+        )))
+    })?;
+
+    let mut matches = Vec::new();
+    for (position, tx) in block.txs.iter().enumerate() {
+        let state_transition = tx.state_transition.as_ref().map_err(|e| {
+                warn!(height, index = tx.index, error = %e, "cannot decode an executed state transition");
+                Stop::Fail(Status::failed_precondition(format!(
+                    "block {height} transaction {} cannot be decoded by this node ({e}); resume \
+                     from {height} on an upgraded node",
+                    tx.index
+                )))
+            })?;
+        if let Some(filter_match) = filters.matches(state_transition, platform_version) {
+            matches.push((position, filter_match));
+        }
+    }
+    Ok(matches)
 }
 
 /// `read`, or [`Stop::Closed`] once the client is gone: a read can queue behind other

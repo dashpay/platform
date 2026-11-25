@@ -26,9 +26,11 @@ filters, block by block, from a chosen height onward.
     - `batchOwnerId`: the identity that signs the batch
   - `addresses`: up to 256 platform addresses (21 bytes: type byte then 20-byte hash) and a
     `role`: `ANY` (default), `SENDER` (an address input the transition spends) or `RECIPIENT`
-    (an address output or change output it credits)
+    (an address it names as an output or change output; it is credited what execution leaves
+    for it, which can be nothing: a shield from an asset lock names where its surplus goes and
+    may leave none)
 - `fromBlockHeight`: first height to scan (inclusive); unset to start after the current tip.
-  At most 50,000 blocks behind or 1,000 ahead of the tip.
+  At most 50,000 blocks behind or 1,000 ahead of the node's tip.
 
 **Response Parameters**: a stream of one of
 - `stateTransition`: `blockHeight`, `blockTimeMs`, `protocolVersion`,
@@ -100,6 +102,13 @@ it does not know or a pruned height ends the stream there (resume on an upgraded
 node). Filters are resolved once, against the data contracts Drive holds when the subscription
 starts, by `dash_platform_queries::subscriptions`.
 
+Reads and matching are bounded work. A Tenderdash call keeps its place among the 8 in flight
+until Tenderdash has answered it, whether or not a stream still waits for it; a stream waits
+30 seconds for a read and then ends. Blocks are decoded and matched on the blocking pool, two
+blocks being matched at a time. While the node cannot read its chain tip for 30 seconds,
+streams that have caught up end and new ones are refused: a checkpoint then would say the
+chain is quiet, which the node does not know.
+
 **Limits** (per node): 256 subscriptions, 16 per client address (IPv6 per /48), 8 Tenderdash
 RPCs in flight across all subscriptions; a client that does not read for 60 seconds is
 dropped with `RESOURCE_EXHAUSTED`. The gateway ends every stream after 600 seconds; resume from the last
@@ -107,6 +116,8 @@ checkpoint.
 
 **Errors**: `INVALID_ARGUMENT` (malformed or undecidable filter), `NOT_FOUND` (unknown data
 contract), `OUT_OF_RANGE` (start height behind the replay window: catch up with a proved read
-instead), `RESOURCE_EXHAUSTED` (limits), `FAILED_PRECONDITION` (this node does not keep or cannot
-decode a block; another node may), and `UNAVAILABLE` (Tenderdash unreachable, or the start height
-is ahead of this node's tip).
+instead), `RESOURCE_EXHAUSTED` (limits), `FAILED_PRECONDITION` (this node no longer keeps a block, has
+not reached the start height yet, or cannot decode a block; another node may serve it), and
+`UNAVAILABLE` (the node cannot read from Tenderdash: a read failed or took too long, or the chain
+tip could not be read). A client moves to another node on both; only `UNAVAILABLE` says the node
+itself is failing.

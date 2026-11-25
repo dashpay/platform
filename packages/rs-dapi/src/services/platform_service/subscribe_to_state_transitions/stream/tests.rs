@@ -18,7 +18,7 @@ use dpp::state_transition::address_funds_transfer_transition::v0::AddressFundsTr
 use futures::FutureExt;
 use std::collections::BTreeMap;
 use std::net::IpAddr;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use tokio_stream::StreamExt;
 
 /// A chain held in memory: height → successful transactions.
@@ -27,6 +27,8 @@ struct FakeChain {
     blocks: Mutex<BTreeMap<u64, Vec<Vec<u8>>>>,
     /// A height whose execution results are not saved yet.
     results_withheld: Mutex<Option<u64>>,
+    /// Whether Tenderdash refuses to say how high its chain is, as when it is down.
+    unreachable: AtomicBool,
     /// RPCs of any kind in flight, the most seen at once, and the `block` calls made.
     reads_in_flight: AtomicUsize,
     max_reads_in_flight: AtomicUsize,
@@ -60,7 +62,14 @@ impl FakeChain {
 impl TenderdashBlocks for FakeChain {
     async fn latest_height(&self) -> DAPIResult<u64> {
         self.in_flight().await;
+        if self.unreachable.load(Ordering::SeqCst) {
+            return Err(DapiError::Client("connection refused".to_string()));
+        }
         Ok(self.blocks.lock().unwrap().len() as u64)
+    }
+
+    async fn earliest_height(&self) -> DAPIResult<u64> {
+        Ok(1)
     }
 
     async fn block(&self, height: u64) -> DAPIResult<ResultBlock> {
@@ -122,6 +131,14 @@ impl TenderdashBlocks for FakeChain {
     }
 }
 
+/// A tip the node read at `height`.
+fn readable(height: u64) -> Tip {
+    Tip {
+        height,
+        unreadable: false,
+    }
+}
+
 fn address(byte: u8) -> PlatformAddress {
     PlatformAddress::P2pkh([byte; 20])
 }
@@ -155,13 +172,13 @@ struct Harness {
     chain: Arc<FakeChain>,
     blocks: Arc<BlockSource>,
     service: SubscriptionService,
-    tip: watch::Sender<u64>,
+    tip: watch::Sender<Tip>,
 }
 
 fn harness(limits: SubscriptionLimits) -> Harness {
     let chain = Arc::new(FakeChain::default());
     let blocks = Arc::new(BlockSource::new(chain.clone()));
-    let (tip, tip_receiver) = watch::channel(0);
+    let (tip, tip_receiver) = watch::channel(Tip::default());
     Harness {
         service: SubscriptionService::new(blocks.clone(), tip_receiver, limits),
         blocks,
@@ -173,7 +190,7 @@ fn harness(limits: SubscriptionLimits) -> Harness {
 impl Harness {
     fn commit(&self, txs: Vec<Vec<u8>>) -> u64 {
         let height = self.chain.push(txs);
-        self.tip.send_replace(height);
+        self.tip.send_replace(readable(height));
         height
     }
 
@@ -334,7 +351,11 @@ async fn should_refuse_starts_too_far_behind_or_ahead_of_the_tip() {
     for _ in 0..30 {
         harness.commit(vec![]);
     }
-    for (from, code) in [(5, tonic::Code::OutOfRange), (40, tonic::Code::Unavailable)] {
+    // Behind the window no node replays the height; ahead of the tip this node lacks it.
+    for (from, code) in [
+        (5, tonic::Code::OutOfRange),
+        (40, tonic::Code::FailedPrecondition),
+    ] {
         let error = harness
             .service
             .start(
@@ -511,7 +532,7 @@ async fn should_start_a_live_subscription_below_a_tip_whose_results_are_not_save
     expect_checkpoint(&mut stream, withheld - 1).await;
 
     *harness.chain.results_withheld.lock().unwrap() = None;
-    harness.tip.send_replace(withheld);
+    harness.tip.send_replace(readable(withheld));
     expect_match(&mut stream, withheld, &transfer_to(7)).await;
     expect_checkpoint(&mut stream, withheld).await;
 }
@@ -632,7 +653,7 @@ async fn should_publish_a_tip_only_once_its_results_are_saved() {
     chain.push(vec![]);
     let withheld = chain.push(vec![transfer_to(7)]);
     *chain.results_withheld.lock().unwrap() = Some(withheld);
-    let (tip, mut tip_receiver) = watch::channel(0);
+    let (tip, mut tip_receiver) = watch::channel(Tip::default());
     let (events, new_blocks) = broadcast::channel(4);
     tokio::spawn(SubscriptionService::track_tip(
         Arc::new(BlockSource::new(chain.clone())),
@@ -642,7 +663,7 @@ async fn should_publish_a_tip_only_once_its_results_are_saved() {
 
     sleep(Duration::from_secs(1)).await;
     assert_eq!(
-        *tip_receiver.borrow_and_update(),
+        tip_receiver.borrow_and_update().height,
         withheld - 1,
         "height 2 has no results yet; the height before it does"
     );
@@ -654,7 +675,7 @@ async fn should_publish_a_tip_only_once_its_results_are_saved() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(*tip_receiver.borrow_and_update(), withheld);
+    assert_eq!(tip_receiver.borrow_and_update().height, withheld);
 
     // Blocks faster than their results: each event still advances the tip to the height
     // before the newest.
@@ -667,7 +688,7 @@ async fn should_publish_a_tip_only_once_its_results_are_saved() {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(*tip_receiver.borrow_and_update(), newest - 1);
+        assert_eq!(tip_receiver.borrow_and_update().height, newest - 1);
     }
 
     // Without events, the poll still advances the tip.
@@ -680,7 +701,66 @@ async fn should_publish_a_tip_only_once_its_results_are_saved() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(*tip_receiver.borrow(), height);
+    assert_eq!(tip_receiver.borrow().height, height);
+}
+
+/// A chain where nothing happens and a node that cannot read its chain look the same from
+/// the published height: it does not move. While the node reads its tip, a caught-up
+/// stream keeps saying so with checkpoints. Once it has failed to for the deadline, the
+/// stream ends and new ones are refused, until the tip is read again.
+#[tokio::test(start_paused = true)]
+async fn should_end_caught_up_streams_once_the_tip_cannot_be_read() {
+    let chain = Arc::new(FakeChain::default());
+    let height = chain.push(vec![]);
+    let blocks = Arc::new(BlockSource::new(chain.clone()));
+    let (tip, tip_receiver) = watch::channel(Tip::default());
+    let (_events, new_blocks) = broadcast::channel::<()>(4);
+    tokio::spawn(SubscriptionService::track_tip(
+        blocks.clone(),
+        tip,
+        new_blocks,
+    ));
+    let service =
+        SubscriptionService::new(blocks, tip_receiver.clone(), SubscriptionLimits::default());
+    let subscribe = || async {
+        let admission = service.admit(None).unwrap();
+        service.start(admission, recipient_filter(7), None).await
+    };
+
+    // A quiet chain: the tip is read at one height for far longer than the deadline.
+    let mut stream = subscribe().await.unwrap();
+    for _ in 0..12 {
+        expect_checkpoint(&mut stream, height).await;
+    }
+    assert_eq!(*tip_receiver.borrow(), readable(height));
+
+    // Tenderdash stops answering. The stream ends within the deadline and a poll.
+    chain.unreachable.store(true, Ordering::SeqCst);
+    let failing_since = Instant::now();
+    let status = loop {
+        match stream.next().await.expect("the stream ends with a status") {
+            Ok(_) => {}
+            Err(status) => break status,
+        }
+    };
+    assert_eq!(status.code(), tonic::Code::Unavailable);
+    assert!(status.message().contains("chain tip"), "{status}");
+    let ended_after = failing_since.elapsed();
+    assert!(
+        ended_after >= TIP_FAILURE_DEADLINE
+            && ended_after <= TIP_FAILURE_DEADLINE + TIP_POLL_INTERVAL * 2,
+        "{ended_after:?}"
+    );
+    assert_eq!(
+        subscribe().await.unwrap_err().code(),
+        tonic::Code::Unavailable
+    );
+
+    // It answers again: the next poll reads the tip, and streams are served.
+    chain.unreachable.store(false, Ordering::SeqCst);
+    sleep(TIP_POLL_INTERVAL * 2).await;
+    let mut stream = subscribe().await.unwrap();
+    expect_checkpoint(&mut stream, height).await;
 }
 
 #[tokio::test]

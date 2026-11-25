@@ -40,7 +40,7 @@ use tracing::{info, trace, warn};
 pub use error_mapping::TenderdashStatus;
 pub use shielded_proof_failure_budget::ShieldedProofFailureBudget;
 use subscribe_to_state_transitions::{
-    BlockSource, SubscriptionLimits, SubscriptionService, TenderdashBlocks,
+    BlockSource, SubscriptionLimits, SubscriptionService, TenderdashBlocks, Tip,
 };
 
 const MAX_PENDING_STATE_TRANSITION_WAITS: usize = 1_024;
@@ -267,7 +267,7 @@ impl PlatformServiceImpl {
         let blocks = Arc::new(BlockSource::new(
             tenderdash_client.clone() as Arc<dyn TenderdashBlocks>
         ));
-        let (tip_sender, tip_receiver) = tokio::sync::watch::channel(0);
+        let (tip_sender, tip_receiver) = tokio::sync::watch::channel(Tip::default());
         let subscriptions = Arc::new(SubscriptionService::new(
             blocks.clone(),
             tip_receiver,
