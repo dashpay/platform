@@ -54,6 +54,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.dashsdk.wallet.PrivateDocumentAuthMode
 import org.dashfoundation.dashsdk.wallet.PrivateDocumentDirection
@@ -103,10 +104,10 @@ fun PrivateDocumentEntriesScreen(
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val wallets by remember(network) {
         container.database.walletDao().observeByNetwork(network.ffiValue)
-    }.collectAsStateWithLifecycle(initialValue = emptyList())
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
     val identities by remember(network) {
         container.database.identityDao().observeByNetwork(network.ffiValue)
-    }.collectAsStateWithLifecycle(initialValue = emptyList())
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
     // The ids of the wallets the manager has loaded, not the wallets: a screen holds no native handle
     val loadedWalletHexes by remember(manager) {
         manager?.wallets?.map { it.keys } ?: flowOf(emptySet())

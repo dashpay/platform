@@ -30,6 +30,8 @@ import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.services.DashpayKeyProvisioning
 import org.dashfoundation.example.ui.components.AccessiblePicker
+import org.dashfoundation.example.ui.components.EmissionKey
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.ui.dashpay.InvitationReclaimLogic.ReclaimOutcome
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.formatDuffs
@@ -74,14 +76,14 @@ fun ReclaimInvitationSheet(
     // used-slot set for the register arm's next-unused index).
     val walletOwned by remember(network) {
         container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
-    }.collectAsStateWithLifecycle(emptyList())
-    val walletIdentities = remember(walletOwned) {
+    }.collectEachAsStateWithLifecycle(emptyList())
+    val walletIdentities = remember(EmissionKey(walletOwned)) {
         walletOwned.filter { it.walletId?.contentEquals(invitation.walletId) == true }
     }
 
     var targetTopUp by remember { mutableStateOf(true) }
     var selectedIdentityB58 by remember { mutableStateOf<String?>(null) }
-    val selectedIdentity = remember(walletIdentities, selectedIdentityB58) {
+    val selectedIdentity = remember(EmissionKey(walletIdentities), selectedIdentityB58) {
         walletIdentities.firstOrNull { Base58.encode(it.identityId) == selectedIdentityB58 }
             ?: walletIdentities.firstOrNull()
     }

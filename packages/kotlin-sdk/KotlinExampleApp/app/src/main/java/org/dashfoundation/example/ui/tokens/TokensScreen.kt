@@ -72,7 +72,7 @@ fun TokensScreen(navController: NavHostController) {
     val identitiesFlow = remember(network) {
         container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
     }
-    val identities by identitiesFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val identities by identitiesFlow.collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     var selectedIdentityHex by rememberSaveable { mutableStateOf<String?>(null) }
     val selectedIdentity = identities.firstOrNull { it.identityId.toHex() == selectedIdentityHex }

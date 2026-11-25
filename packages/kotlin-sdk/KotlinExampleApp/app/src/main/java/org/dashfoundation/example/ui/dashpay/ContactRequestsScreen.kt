@@ -44,6 +44,7 @@ import kotlinx.coroutines.launch
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.ui.components.SectionHeader
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.toHex
 
@@ -74,7 +75,7 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
 
     val identity by remember(idBytes) {
         container.database.identityDao().observeByIdentityId(idBytes)
-    }.collectAsStateWithLifecycle(initialValue = null)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
     val walletId = identity?.walletId
     val wallet = remember(manager, walletId) {
         walletId?.let { manager?.wallet(forWalletId = it) }

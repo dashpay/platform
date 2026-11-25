@@ -75,6 +75,7 @@ import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.PrivateDocumentEntries
 import org.dashfoundation.example.services.shielded.PrivateDocumentEntryCreateCoordinator
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.ui.identity.HoldSecureWindow
 import org.dashfoundation.example.ui.components.AccessiblePicker
 import org.dashfoundation.example.ui.components.FormSection
@@ -120,17 +121,17 @@ fun PrivateDocumentEntryCreateScreen(
     val protocolVersion by appState.platformProtocolVersion.collectAsStateWithLifecycle()
     val wallets by remember(network) {
         container.database.walletDao().observeByNetwork(network.ffiValue)
-    }.collectAsStateWithLifecycle(initialValue = emptyList())
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
     val identities by remember(network) {
         container.database.identityDao().observeByNetwork(network.ffiValue)
-    }.collectAsStateWithLifecycle(initialValue = emptyList())
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
     // The ids of the wallets the manager has loaded, not the wallets: a screen holds no native handle
     val loadedWalletHexes by remember(manager) {
         manager?.wallets?.map { it.keys } ?: flowOf(emptySet())
     }.collectAsStateWithLifecycle(initialValue = emptySet())
     val contract by remember(contractIdHex) {
         container.database.dataContractDao().observeById(contractId)
-    }.collectAsStateWithLifecycle(initialValue = null)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
     val schema = remember(contract?.lastUpdated, documentTypeName) {
         contract?.let { ParsedContract.from(it)?.documentTypes?.get(documentTypeName) }
     }
@@ -182,8 +183,13 @@ fun PrivateDocumentEntryCreateScreen(
 
     val senders = identities.filter { it.walletId?.toHex() == selectedWalletHex }
 
-    // Default to the first wallet of this network and its first identity
-    LaunchedEffect(wallets, identities) {
+    // Default to the first wallet of this network and its first identity.
+    // Keyed on the ids and wallet links it reads: the rows compare by id, so a
+    // write that links an identity to a wallet would not restart it.
+    LaunchedEffect(
+        wallets.map { it.walletId.toHex() },
+        identities.map { it.identityId.toHex() to it.walletId?.toHex() },
+    ) {
         val current = selectedWalletHex
         if (current == null || wallets.none { it.walletId.toHex() == current }) {
             selectedWalletHex = wallets.firstOrNull()?.walletId?.toHex()

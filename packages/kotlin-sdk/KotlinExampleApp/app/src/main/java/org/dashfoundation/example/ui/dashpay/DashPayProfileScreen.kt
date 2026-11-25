@@ -51,6 +51,7 @@ import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.generateQrBitmap
 import org.dashfoundation.example.util.hexToBytes
@@ -79,7 +80,7 @@ fun DashPayProfileScreen(identityIdHex: String, navController: NavHostController
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val identity by remember(idBytes) {
         container.database.identityDao().observeByIdentityId(idBytes)
-    }.collectAsStateWithLifecycle(initialValue = null)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
     val walletId = identity?.walletId
     val wallet = remember(manager, walletId) { walletId?.let { manager?.wallet(forWalletId = it) } }
 

@@ -58,6 +58,7 @@ import org.dashfoundation.example.navigation.WithdrawCredits
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
@@ -102,9 +103,9 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
     // so both encodings resolve (matches KeyDetailScreen's resolution).
     val idBase58 = remember(idBytes) { Base58.encode(idBytes) }
 
-    val identity by container.database.identityDao()
-        .observeByIdentityId(idBytes)
-        .collectAsStateWithLifecycle(initialValue = null)
+    val identity by remember(idBytes) {
+        container.database.identityDao().observeByIdentityId(idBytes)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
     val dpnsNames by container.database.dpnsNameDao()
         .observeByIdentity(idBytes)
         .collectAsStateWithLifecycle(initialValue = emptyList())

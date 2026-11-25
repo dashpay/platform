@@ -32,12 +32,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.launch
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.formatDate
 import org.dashfoundation.example.util.formatDuffs
 import org.dashfoundation.example.util.toHex
@@ -69,7 +69,7 @@ fun TransactionDetailScreen(
 
     val transaction by remember(txidHex) {
         container.database.transactionDao().observeByTxid(txid)
-    }.collectAsStateWithLifecycle(initialValue = null)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
 
     fun copy(text: String) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager

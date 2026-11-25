@@ -55,6 +55,8 @@ import org.dashfoundation.example.di.AppContainer
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.ui.components.AccessiblePicker
+import org.dashfoundation.example.ui.components.EmissionKey
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.toHex
@@ -883,9 +885,9 @@ fun MasternodeVoterSection(
     // section and a candidate is never judged against a record from another moment.
     val rows by remember(network) {
         container.database.identityDao().observeByNetwork(network.ffiValue).map(::voterRows)
-    }.collectAsStateWithLifecycle(initialValue = emptyList())
-    val candidates = remember(rows, network) { votingCandidates(rows.map { it.identity }, network.ffiValue) }
-    val keyStates = remember(rows) { rows.associate { it.identity.identityId.toHex() to it.state } }
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
+    val candidates = remember(EmissionKey(rows), network) { votingCandidates(rows.map { it.identity }, network.ffiValue) }
+    val keyStates = remember(EmissionKey(rows)) { rows.associate { it.identity.identityId.toHex() to it.state } }
     val rules = MasternodeVotingKeyRules.Native
     fun isRefused(identity: IdentityEntity): Boolean =
         isVotingKeyRefused(keyStates[identity.identityId.toHex()], rules)

@@ -56,6 +56,7 @@ import org.dashfoundation.dashsdk.identity.identityWithdrawals
 import org.dashfoundation.dashsdk.wallet.ManagedPlatformWallet
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.formatCredits
 import org.dashfoundation.example.util.formatDate
 import org.dashfoundation.example.util.hexToBytes
@@ -88,9 +89,9 @@ private const val AUTO_REFRESH_INTERVAL_MS = 15_000L
 fun IdentityWithdrawalsScreen(identityIdHex: String, navController: NavHostController) {
     val container = LocalAppContainer.current
     val idBytes = remember(identityIdHex) { identityIdHex.hexToBytes() }
-    val identity by container.database.identityDao()
-        .observeByIdentityId(idBytes)
-        .collectAsStateWithLifecycle(initialValue = null)
+    val identity by remember(idBytes) {
+        container.database.identityDao().observeByIdentityId(idBytes)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val walletsMap by remember(manager) {
         manager?.wallets ?: MutableStateFlow(emptyMap<String, ManagedPlatformWallet>())

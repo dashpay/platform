@@ -41,6 +41,7 @@ import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.toHex
 
@@ -70,7 +71,7 @@ fun RegisterContractSourceScreen(
     val identityFlow = remember(identityIdHex) {
         container.database.identityDao().observeByIdentityId(identityId)
     }
-    val identity by identityFlow.collectAsStateWithLifecycle(initialValue = null)
+    val identity by identityFlow.collectEachAsStateWithLifecycle(initialValue = null)
 
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val walletsMap by (
