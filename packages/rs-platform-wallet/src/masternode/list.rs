@@ -165,12 +165,18 @@ impl CurrentMasternodeList {
         }
     }
 
-    /// The keys the list knows for `pro_tx_hash` (wire order): voting,
-    /// operator, platform node. `None` when the node is not on this list.
-    pub fn key_reference(&self, pro_tx_hash: &[u8; 32]) -> Option<MasternodeKeyReference> {
+    /// The entry of `pro_tx_hash` (wire order); `None` when the node is not
+    /// on this list.
+    pub fn entry(&self, pro_tx_hash: &[u8; 32]) -> Option<&MasternodeListSummary> {
         self.summaries
             .iter()
             .find(|summary| &summary.pro_tx_hash == pro_tx_hash)
+    }
+
+    /// The keys the list knows for `pro_tx_hash` (wire order): voting,
+    /// operator, platform node. `None` when the node is not on this list.
+    pub fn key_reference(&self, pro_tx_hash: &[u8; 32]) -> Option<MasternodeKeyReference> {
+        self.entry(pro_tx_hash)
             .map(MasternodeKeyReference::from_summary)
     }
 }
