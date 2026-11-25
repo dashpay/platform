@@ -1,0 +1,4 @@
+interface:
+  display_name: "QA Fix Loop"
+  short_description: "Test the example apps, open a fix PR per defect, retest on merge"
+  default_prompt: "Use $qa-fix-loop to run a device QA pass of the example apps and drive every defect to a merged, retested fix."
