@@ -280,6 +280,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             );
             let mut platform_info = PlatformWalletInfo {
                 observed_input_conflicts: Default::default(),
+                spent_claim_mirror: Default::default(),
+                pending_block_spends: Default::default(),
+                block_capture_inputs: None,
                 finalized_spends: Default::default(),
                 core_wallet: wallet_info,
                 generation: Arc::clone(&generation),

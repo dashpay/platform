@@ -42,6 +42,9 @@ impl WalletInfoInterface for PlatformWalletInfo {
             identity_manager: super::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
             observed_input_conflicts: Default::default(),
+            spent_claim_mirror: Default::default(),
+            pending_block_spends: Default::default(),
+            block_capture_inputs: None,
             finalized_spends: Default::default(),
             dpns_name_states: std::collections::BTreeMap::new(),
             dashpay_backfill: Default::default(),
@@ -61,6 +64,9 @@ impl WalletInfoInterface for PlatformWalletInfo {
             identity_manager: super::identity::IdentityManager::new(),
             tracked_asset_locks: std::collections::BTreeMap::new(),
             observed_input_conflicts: Default::default(),
+            spent_claim_mirror: Default::default(),
+            pending_block_spends: Default::default(),
+            block_capture_inputs: None,
             finalized_spends: Default::default(),
             dpns_name_states: std::collections::BTreeMap::new(),
             dashpay_backfill: Default::default(),
@@ -199,12 +205,44 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.unconfirmed_spent_outpoints()
     }
 
+    /// Forwarded, and a mined `tx` beating this wallet's records is captured
+    /// as a block spend of each input it takes from the wallet, in `tx`'s own
+    /// block: the manager calls this for a wallet the block was not fetched
+    /// for and on a ChainLock that finalizes `tx`, and neither records `tx`,
+    /// so the coin it took has no record left to keep it spent. Captured are
+    /// the inputs the wallet holds, has a claim on or spends in an unconfirmed
+    /// record, and, once the sweep removed something, every input of `tx`,
+    /// as `check_core_transaction` does. An output of a transaction this
+    /// sweep removed is nobody's coin and is never captured. A context that
+    /// names no block captures nothing.
     fn sweep_conflicts_only(
         &mut self,
         tx: &Transaction,
         context: &TransactionContext,
     ) -> WalletConflictSweep {
-        self.core_wallet.sweep_conflicts_only(tx, context)
+        let block = context.block_info().filter(|_| !tx.is_coin_base()).copied();
+        let mut spent: BTreeSet<OutPoint> = match block {
+            Some(_) => {
+                let unconfirmed = self.unconfirmed_record_inputs();
+                tx.input
+                    .iter()
+                    .map(|input| input.previous_output)
+                    .filter(|outpoint| {
+                        unconfirmed.contains(outpoint) || self.holds_or_claims(outpoint)
+                    })
+                    .collect()
+            }
+            None => BTreeSet::new(),
+        };
+        let sweep = self.core_wallet.sweep_conflicts_only(tx, context);
+        if let Some(block) = block {
+            if !sweep.txids.is_empty() {
+                spent.extend(tx.input.iter().map(|input| input.previous_output));
+            }
+            spent.retain(|outpoint| !sweep.txids.contains(&outpoint.txid));
+            self.capture_block_spends(spent, &block, tx.txid());
+        }
+        sweep
     }
 
     fn take_dismissal_changes(&mut self) -> Vec<DismissalChange> {
@@ -224,6 +262,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
     }
 
     fn update_last_processed_height(&mut self, current_height: u32) {
+        self.block_capture_inputs = None;
         self.core_wallet
             .update_last_processed_height(current_height);
     }
@@ -241,11 +280,15 @@ impl WalletInfoInterface for PlatformWalletInfo {
 
     /// Forwarded, then noted like any other in-memory rewind (see
     /// `note_in_memory_rewind`) when it lowered the scan cursor: the persister
-    /// does not mirror `ChainTruncated`, so the host still holds the replaced
-    /// branch's cursor. A refused truncation changes nothing and notes nothing.
+    /// mirrors only the block spends of `ChainTruncated`, so the host still
+    /// holds the replaced branch's cursor. The queued block spends above the
+    /// fork are dropped with the branch. A refused truncation changes nothing
+    /// and notes nothing.
     fn truncate_above(&mut self, height: CoreBlockHeight) -> Result<Truncation, key_wallet::Error> {
+        self.block_capture_inputs = None;
         let before = self.core_wallet.metadata.synced_height;
         let truncation = self.core_wallet.truncate_above(height)?;
+        self.truncate_block_spends_above(height);
         self.note_in_memory_rewind(before);
         Ok(truncation)
     }
@@ -385,6 +428,50 @@ where
         })
 }
 
+impl PlatformWalletInfo {
+    fn unconfirmed_inputs_of_block(
+        &mut self,
+        block_hash: dashcore::BlockHash,
+    ) -> std::sync::Arc<BTreeSet<OutPoint>> {
+        if let Some((hash, inputs)) = &self.block_capture_inputs {
+            if *hash == block_hash {
+                return std::sync::Arc::clone(inputs);
+            }
+        }
+        let inputs = std::sync::Arc::new(self.unconfirmed_record_inputs());
+        self.block_capture_inputs = Some((block_hash, std::sync::Arc::clone(&inputs)));
+        inputs
+    }
+
+    /// The outpoints the wallet's unconfirmed records spend, pending and
+    /// InstantSend-locked, across its funds accounts.
+    pub(crate) fn unconfirmed_record_inputs(&self) -> BTreeSet<OutPoint> {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+
+        self.core_wallet
+            .accounts
+            .all_accounts()
+            .into_iter()
+            .filter_map(|account| account.as_funds())
+            .flat_map(|funds| funds.transactions().values())
+            .filter(|record| !record.is_confirmed())
+            .flat_map(|record| record.transaction.input.iter())
+            .map(|input| input.previous_output)
+            .collect()
+    }
+
+    fn holds_or_claims(&self, outpoint: &OutPoint) -> bool {
+        self.has_restored_claim(outpoint)
+            || self
+                .core_wallet
+                .accounts
+                .all_accounts()
+                .into_iter()
+                .filter_map(|account| account.as_funds())
+                .any(|funds| funds.utxos.contains_key(outpoint))
+    }
+}
+
 // ---------------------------------------------------------------------------
 // WalletTransactionChecker — delegate to `self.core`
 // ---------------------------------------------------------------------------
@@ -399,7 +486,29 @@ impl WalletTransactionChecker for PlatformWalletInfo {
         update_state: bool,
         update_balance: bool,
     ) -> TransactionCheckResult {
-        // TODO: some logic must here - restore
+        // A block's spend of a coin the wallet holds, spends in an
+        // unconfirmed record, or has a restored claim on is captured before
+        // the check: the check itself may remove the coin or the record.
+        let block = context
+            .block_info()
+            .filter(|_| update_state && !tx.is_coin_base())
+            .copied();
+        let mut spent: BTreeSet<OutPoint> = match block {
+            Some(block) => {
+                let pending = self.unconfirmed_inputs_of_block(block.block_hash());
+                tx.input
+                    .iter()
+                    .map(|input| input.previous_output)
+                    .filter(|outpoint| pending.contains(outpoint) || self.holds_or_claims(outpoint))
+                    .collect()
+            }
+            None => {
+                if update_state {
+                    self.block_capture_inputs = None;
+                }
+                BTreeSet::new()
+            }
+        };
         let mut result = self
             .core_wallet
             .check_core_transaction(tx, context, wallet, update_state, update_balance)
@@ -425,6 +534,23 @@ impl WalletTransactionChecker for PlatformWalletInfo {
                     .chain(&result.updated_records)
                     .filter(|record| record.context.is_chain_locked()),
             ));
+        }
+        if let Some(block) = block {
+            let txid = tx.txid();
+            if !result.swept_transactions.is_empty() {
+                spent.extend(tx.input.iter().map(|input| input.previous_output));
+            }
+            for record in result.new_records.iter().chain(&result.updated_records) {
+                if record.txid != txid {
+                    continue;
+                }
+                for detail in &record.input_details {
+                    if let Some(input) = tx.input.get(detail.index as usize) {
+                        spent.insert(input.previous_output);
+                    }
+                }
+            }
+            self.capture_block_spends(spent, &block, txid);
         }
         result
     }
@@ -521,11 +647,11 @@ impl PlatformWalletInfo {
     /// it to just below wallet birth (the new account has no filter
     /// coverage), a chain truncation to the fork height. Neither lowering
     /// reaches the persister (an account add emits nothing, and
-    /// `ChainTruncated` projects to an empty changeset), so treat it like any
-    /// other in-memory rewind: advances emitted before it must not be stored
-    /// after it, and the next DashPay backfill record round owes the host the
-    /// lowered cursor — otherwise a round could store coverage beside a host
-    /// cursor that never came down.
+    /// `ChainTruncated` projects to a changeset carrying only its block-spend
+    /// truncation), so treat it like any other in-memory rewind: advances
+    /// emitted before it must not be stored after it, and the next DashPay
+    /// backfill record round owes the host the lowered cursor — otherwise a
+    /// round could store coverage beside a host cursor that never came down.
     fn note_in_memory_rewind(&mut self, before: u32) {
         let after = self.core_wallet.metadata.synced_height;
         if after < before {

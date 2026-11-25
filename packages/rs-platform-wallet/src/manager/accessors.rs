@@ -2017,6 +2017,9 @@ pub(crate) mod txo_inventory_tests {
             tracked_collaterals: Default::default(),
             funding_issuance_floors: Default::default(),
             observed_input_conflicts: Default::default(),
+            spent_claim_mirror: Default::default(),
+            pending_block_spends: Default::default(),
+            block_capture_inputs: None,
             finalized_spends: Default::default(),
         };
         let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);

@@ -10,7 +10,7 @@ use dashcore::transaction::special_transaction::TransactionPayload;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::Utxo;
-use platform_wallet::changeset::CoreChangeSet;
+use platform_wallet::changeset::{BlockSpend, CoreChangeSet};
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
@@ -251,6 +251,7 @@ pub fn apply(
             chainlock_height,
         )?;
     }
+    apply_block_spends(tx, wallet_id, cs)?;
     // Sweeps run last so a winner arriving in this very changeset has its
     // own rows committed before the removal below touches the coins it took,
     // and batch by batch in order: each sweep is only true of the wallet it
@@ -353,6 +354,18 @@ pub fn apply(
             };
             released.retain(|outpoint| !claims.contains(outpoint));
         }
+        // A coin a processed block spent stays spent whatever the sweep
+        // says: the release is computed from what the wallet still holds in
+        // memory, and the block's spend outlives that.
+        if !released.is_empty() {
+            let mut kept = HashSet::new();
+            for outpoint in &released {
+                if has_block_spend(tx, wallet_id, outpoint)? {
+                    kept.insert(*outpoint);
+                }
+            }
+            released.retain(|outpoint| !kept.contains(outpoint));
+        }
         for loser_txid in &batch.txids {
             apply_sweep(
                 tx,
@@ -429,6 +442,223 @@ pub fn apply(
     }
     core_history::apply(tx, wallet_id, cs)?;
     Ok(())
+}
+
+/// Delete the block spends above a truncation in `cs`, then upsert its
+/// block spends by outpoint, last one winning, and mark each coin with a
+/// materialised unspent row spent by its block spender.
+fn apply_block_spends(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    cs: &CoreChangeSet,
+) -> Result<(), WalletStorageError> {
+    if let Some(fork) = cs.block_spends_truncated_above {
+        delete_block_spends_above(tx, wallet_id, fork)?;
+    }
+    if cs.block_spends.is_empty() {
+        return Ok(());
+    }
+    let mut upsert = tx.prepare_cached(
+        "INSERT INTO core_block_spends \
+            (wallet_id, outpoint, height, block_hash, spender_txid) \
+         VALUES (?1, ?2, ?3, ?4, ?5) \
+         ON CONFLICT(wallet_id, outpoint) DO UPDATE SET \
+            height = excluded.height, \
+            block_hash = excluded.block_hash, \
+            spender_txid = excluded.spender_txid",
+    )?;
+    let mut mark_spent = tx.prepare_cached(
+        "UPDATE core_utxos SET spent = 1, spent_in_txid = ?3 \
+         WHERE wallet_id = ?1 AND outpoint = ?2 AND spent = 0",
+    )?;
+    for spend in &cs.block_spends {
+        let op = blob::encode_outpoint(&spend.outpoint)?;
+        upsert.execute(params![
+            wallet_id.as_slice(),
+            &op[..],
+            i64::from(spend.height),
+            AsRef::<[u8]>::as_ref(&spend.block_hash),
+            AsRef::<[u8]>::as_ref(&spend.spender_txid),
+        ])?;
+        mark_spent.execute(params![
+            wallet_id.as_slice(),
+            &op[..],
+            AsRef::<[u8]>::as_ref(&spend.spender_txid),
+        ])?;
+    }
+    Ok(())
+}
+
+fn has_block_spend(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    outpoint: &dashcore::OutPoint,
+) -> Result<bool, WalletStorageError> {
+    let op = blob::encode_outpoint(outpoint)?;
+    Ok(tx
+        .prepare_cached("SELECT 1 FROM core_block_spends WHERE wallet_id = ?1 AND outpoint = ?2")?
+        .query_row(params![wallet_id.as_slice(), &op[..]], |_| Ok(()))
+        .optional()?
+        .is_some())
+}
+
+/// Store `spend`, a block spend found outside block processing, and mark
+/// its coin's unspent row spent by its spender. A coin already spent keeps
+/// its spender: the row is the evidence. The caller owns the transaction.
+pub fn record_found_block_spend(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    spend: &BlockSpend,
+) -> Result<(), WalletStorageError> {
+    let op = blob::encode_outpoint(&spend.outpoint)?;
+    conn.execute(
+        "INSERT INTO core_block_spends \
+            (wallet_id, outpoint, height, block_hash, spender_txid) \
+         VALUES (?1, ?2, ?3, ?4, ?5) \
+         ON CONFLICT(wallet_id, outpoint) DO UPDATE SET \
+            height = excluded.height, \
+            block_hash = excluded.block_hash, \
+            spender_txid = excluded.spender_txid",
+        params![
+            wallet_id.as_slice(),
+            &op[..],
+            i64::from(spend.height),
+            AsRef::<[u8]>::as_ref(&spend.block_hash),
+            AsRef::<[u8]>::as_ref(&spend.spender_txid),
+        ],
+    )?;
+    conn.execute(
+        "UPDATE core_utxos SET spent = 1, spent_in_txid = ?3 \
+         WHERE wallet_id = ?1 AND outpoint = ?2 AND spent = 0",
+        params![
+            wallet_id.as_slice(),
+            &op[..],
+            AsRef::<[u8]>::as_ref(&spend.spender_txid),
+        ],
+    )?;
+    Ok(())
+}
+
+/// Whether `wallet_id`'s block spends from before `core_block_spends` were
+/// recovered.
+pub fn block_spends_migration_done(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<bool, WalletStorageError> {
+    Ok(conn
+        .prepare_cached("SELECT 1 FROM core_block_spends_migrated WHERE wallet_id = ?1")?
+        .query_row(params![wallet_id.as_slice()], |_| Ok(()))
+        .optional()?
+        .is_some())
+}
+
+/// Mark `wallet_id`'s block spends from before `core_block_spends` recovered.
+pub fn mark_block_spends_migration_done(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<(), WalletStorageError> {
+    conn.execute(
+        "INSERT OR IGNORE INTO core_block_spends_migrated (wallet_id) VALUES (?1)",
+        params![wallet_id.as_slice()],
+    )?;
+    Ok(())
+}
+
+/// Delete `wallet_id`'s block spends above `height`; returns how many.
+pub fn delete_block_spends_above(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    height: u32,
+) -> Result<usize, WalletStorageError> {
+    Ok(conn.execute(
+        "DELETE FROM core_block_spends WHERE wallet_id = ?1 AND height > ?2",
+        params![wallet_id.as_slice(), i64::from(height)],
+    )?)
+}
+
+/// Delete every block spend of `wallet_id`; returns how many.
+pub fn clear_block_spends(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<usize, WalletStorageError> {
+    Ok(conn.execute(
+        "DELETE FROM core_block_spends WHERE wallet_id = ?1",
+        params![wallet_id.as_slice()],
+    )?)
+}
+
+/// Delete `wallet_id`'s block spends whose block hash differs from the one
+/// `chain` gives for their height, at every height: a ChainLock does not
+/// exempt a row, since the header at a ChainLocked height is the chain the
+/// wallet follows, and a row captured on another branch is stale whatever
+/// its height. `None`, or a height `chain` does not name, means the header
+/// is unknown and the row stays: only a known header can show a row's block
+/// was replaced. Returns how many rows went.
+pub fn delete_block_spends_off_chain(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    chain: &BTreeMap<u32, Option<dashcore::BlockHash>>,
+) -> Result<usize, WalletStorageError> {
+    let mut stale: Vec<Vec<u8>> = Vec::new();
+    {
+        let mut stmt = conn.prepare_cached(
+            "SELECT outpoint, height, block_hash FROM core_block_spends WHERE wallet_id = ?1",
+        )?;
+        let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+        while let Some(row) = rows.next()? {
+            let outpoint: Vec<u8> = row.get(0)?;
+            let height =
+                height_column_u32("core_block_spends.height", Some(row.get::<_, i64>(1)?))?;
+            let block_hash: Vec<u8> = row.get(2)?;
+            let Some(known) = height.and_then(|h| chain.get(&h).copied().flatten()) else {
+                continue;
+            };
+            if AsRef::<[u8]>::as_ref(&known) != block_hash.as_slice() {
+                stale.push(outpoint);
+            }
+        }
+    }
+    let mut delete = conn
+        .prepare_cached("DELETE FROM core_block_spends WHERE wallet_id = ?1 AND outpoint = ?2")?;
+    let mut deleted = 0;
+    for outpoint in stale {
+        deleted += delete.execute(params![wallet_id.as_slice(), outpoint])?;
+    }
+    Ok(deleted)
+}
+
+/// Every block spend stored for `wallet_id`, by outpoint.
+pub fn load_block_spends(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<BTreeMap<dashcore::OutPoint, BlockSpend>, WalletStorageError> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT length(outpoint), outpoint, height, length(block_hash), block_hash, \
+                length(spender_txid), spender_txid \
+         FROM core_block_spends WHERE wallet_id = ?1",
+    )?;
+    let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+    let mut out = BTreeMap::new();
+    while let Some(row) = rows.next()? {
+        blob::check_size(row.get::<_, i64>(0)?)?;
+        let outpoint = blob::decode_outpoint(&row.get::<_, Vec<u8>>(1)?)?;
+        let height = height_column_u32("core_block_spends.height", Some(row.get::<_, i64>(2)?))?
+            .unwrap_or_default();
+        blob::check_fixed_width(row.get::<_, i64>(3)?, 32, "core_block_spends.block_hash")?;
+        let block_hash = dashcore::BlockHash::from_slice(&row.get::<_, Vec<u8>>(4)?)?;
+        blob::check_fixed_width(row.get::<_, i64>(5)?, 32, "core_block_spends.spender_txid")?;
+        let spender_txid = dashcore::Txid::from_slice(&row.get::<_, Vec<u8>>(6)?)?;
+        out.insert(
+            outpoint,
+            BlockSpend {
+                outpoint,
+                height,
+                block_hash,
+                spender_txid,
+            },
+        );
+    }
+    Ok(out)
 }
 
 /// The union of every input outpoint claimed by a surviving
@@ -1063,7 +1293,9 @@ pub fn load_state(
     {
         let mut stmt = conn.prepare(
             "SELECT length(outpoint), outpoint, value, length(script), script \
-             FROM core_utxos WHERE wallet_id = ?1 AND spent = 0",
+             FROM core_utxos u WHERE wallet_id = ?1 AND spent = 0 \
+               AND NOT EXISTS (SELECT 1 FROM core_block_spends b \
+                               WHERE b.wallet_id = u.wallet_id AND b.outpoint = u.outpoint)",
         )?;
         let mut rows = stmt.query(params![wallet_id.as_slice()])?;
         let mut retired_pool = None;
@@ -1533,7 +1765,9 @@ pub fn list_unspent_utxos(
 ) -> Result<BTreeMap<u32, Vec<UnspentRow>>, WalletStorageError> {
     let mut stmt = conn.prepare_cached(
         "SELECT outpoint, value, script \
-         FROM core_utxos WHERE wallet_id = ?1 AND spent = 0",
+         FROM core_utxos u WHERE wallet_id = ?1 AND spent = 0 \
+           AND NOT EXISTS (SELECT 1 FROM core_block_spends b \
+                           WHERE b.wallet_id = u.wallet_id AND b.outpoint = u.outpoint)",
     )?;
     let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
         let op_bytes: Vec<u8> = row.get(0)?;
@@ -3589,5 +3823,399 @@ mod tests {
         let mut corrupt = bytes.clone();
         corrupt.extend_from_slice(&[0xFFu8; 4]);
         assert_eq!(chain_lock_height(&corrupt), None);
+    }
+
+    mod block_spends {
+        //! `core_block_spends`: written with the round, kept out of the load,
+        //! never released by a sweep, and removed only by a truncation, a
+        //! header mismatch, a rewind, a reset or the wallet's deletion.
+
+        use super::*;
+        use platform_wallet::changeset::changeset::SweepBatch;
+
+        fn store(conn: &mut Connection, w: &[u8; 32], cs: &CoreChangeSet) {
+            let tx = conn.transaction().unwrap();
+            apply(&tx, w, cs).unwrap();
+            tx.commit().unwrap();
+        }
+
+        fn block_spend(byte: u8, height: u32) -> BlockSpend {
+            BlockSpend {
+                outpoint: OutPoint {
+                    txid: Txid::from_byte_array([byte; 32]),
+                    vout: 0,
+                },
+                height,
+                block_hash: BlockHash::from_byte_array([byte; 32]),
+                spender_txid: Txid::from_byte_array([byte ^ 0xFF; 32]),
+            }
+        }
+
+        fn stored_heights(conn: &Connection, w: &[u8; 32]) -> Vec<(u8, u32)> {
+            load_block_spends(conn, w)
+                .unwrap()
+                .values()
+                .map(|s| (AsRef::<[u8]>::as_ref(&s.outpoint.txid)[0], s.height))
+                .collect()
+        }
+
+        fn is_spent(conn: &Connection, w: &[u8; 32], outpoint: &OutPoint) -> bool {
+            conn.query_row(
+                "SELECT spent FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+                params![&w[..], blob::encode_outpoint(outpoint).unwrap()],
+                |row| row.get(0),
+            )
+            .unwrap()
+        }
+
+        fn unspent_loaded(conn: &Connection, w: &[u8; 32]) -> Vec<OutPoint> {
+            let (loaded, _) =
+                load_state(conn, w, dashcore::Network::Testnet, &LoadCtx::strict()).unwrap();
+            loaded.new_utxos.iter().map(|u| u.outpoint).collect()
+        }
+
+        /// A sweep whose losing `loser` gave up `coin`: what a drop or a
+        /// conflict's sweep stores.
+        fn sweep_releasing(loser: Txid, coin: &OutPoint) -> CoreChangeSet {
+            CoreChangeSet {
+                sweeps: vec![SweepBatch {
+                    txids: vec![loser],
+                    superseded_by: Txid::from_byte_array([0xAB; 32]),
+                    winner_mined_height: Some(95),
+                    released_outpoints: vec![*coin],
+                }],
+                ..Default::default()
+            }
+        }
+
+        /// A held coin, spent by a foreign transaction in the block at
+        /// `height` and stored as such.
+        fn held_coin_spent_in_block(
+            conn: &mut Connection,
+            w: &[u8; 32],
+            byte: u8,
+            height: u32,
+        ) -> (Utxo, BlockSpend) {
+            let held = sample_utxo(Txid::from_byte_array([byte; 32]), 90, true);
+            store(conn, w, &round(vec![], vec![held.clone()]));
+            let spend = BlockSpend {
+                outpoint: held.outpoint,
+                ..block_spend(byte, height)
+            };
+            store(
+                conn,
+                w,
+                &CoreChangeSet {
+                    block_spends: vec![spend],
+                    ..Default::default()
+                },
+            );
+            (held, spend)
+        }
+
+        #[test]
+        fn block_spends_upsert_by_outpoint_and_keep_their_coin_out_of_the_load() {
+            let w = [0x81u8; 32];
+            let mut conn = wallet_db(&w);
+            let held = sample_utxo(Txid::from_byte_array([1; 32]), 90, true);
+            store(&mut conn, &w, &round(vec![], vec![held.clone()]));
+            let first = block_spend(1, 100);
+            let mut again = block_spend(1, 101);
+            again.block_hash = BlockHash::from_byte_array([0x22; 32]);
+            store(
+                &mut conn,
+                &w,
+                &CoreChangeSet {
+                    block_spends: vec![first, block_spend(2, 100), again],
+                    ..Default::default()
+                },
+            );
+            let rows = load_block_spends(&conn, &w).unwrap();
+            assert_eq!(rows.len(), 2);
+            assert_eq!(rows[&held.outpoint], again, "the last capture wins");
+            assert!(is_spent(&conn, &w, &held.outpoint));
+            assert!(
+                unspent_loaded(&conn, &w).is_empty(),
+                "a block-spent coin never loads unspent"
+            );
+            conn.execute(
+                "UPDATE core_utxos SET spent = 0 WHERE wallet_id = ?1",
+                params![&w[..]],
+            )
+            .unwrap();
+            assert!(
+                unspent_loaded(&conn, &w).is_empty(),
+                "not even when its row says unspent"
+            );
+            assert!(list_unspent_utxos(&conn, &w).unwrap().is_empty());
+        }
+
+        #[test]
+        fn a_found_block_spend_marks_its_coin_spent_by_its_spender_in_one_write() {
+            let w = [0x85u8; 32];
+            let mut conn = wallet_db(&w);
+            let held = sample_utxo(Txid::from_byte_array([1; 32]), 90, true);
+            store(&mut conn, &w, &round(vec![], vec![held.clone()]));
+            let found = block_spend(1, 100);
+            let tx = conn.transaction().unwrap();
+            record_found_block_spend(&tx, &w, &found).unwrap();
+            tx.commit().unwrap();
+            let (spent, spender): (bool, Vec<u8>) = conn
+                .query_row(
+                    "SELECT spent, spent_in_txid FROM core_utxos WHERE wallet_id = ?1",
+                    params![&w[..]],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap();
+            assert!(spent);
+            assert_eq!(spender, AsRef::<[u8]>::as_ref(&found.spender_txid).to_vec());
+            assert_eq!(load_block_spends(&conn, &w).unwrap()[&held.outpoint], found);
+        }
+
+        /// A coin a recorded payment already spent keeps that spender when
+        /// the one-time check finds a block spend of it; the row is still
+        /// written and keeps the coin out of the load.
+        #[test]
+        fn a_found_block_spend_keeps_the_spender_of_an_already_spent_coin() {
+            let w = [0x89u8; 32];
+            let mut conn = wallet_db(&w);
+            let held = sample_utxo(Txid::from_byte_array([0x89; 32]), 90, true);
+            store(&mut conn, &w, &round(vec![], vec![held.clone()]));
+            let payment = super::spend(&[held.outpoint], TransactionContext::Mempool);
+            let mut loser = super::spend(&[held.outpoint], TransactionContext::Mempool);
+            loser.transaction.lock_time = 1;
+            loser.txid = loser.transaction.txid();
+            store(
+                &mut conn,
+                &w,
+                &round(vec![payment.clone(), loser.clone()], vec![]),
+            );
+            store(
+                &mut conn,
+                &w,
+                &CoreChangeSet {
+                    sweeps: vec![SweepBatch {
+                        txids: vec![loser.txid],
+                        superseded_by: payment.txid,
+                        winner_mined_height: None,
+                        released_outpoints: vec![],
+                    }],
+                    ..Default::default()
+                },
+            );
+            let spender = |conn: &Connection| -> (bool, Option<Vec<u8>>) {
+                conn.query_row(
+                    "SELECT spent, spent_in_txid FROM core_utxos \
+                     WHERE wallet_id = ?1 AND outpoint = ?2",
+                    params![&w[..], blob::encode_outpoint(&held.outpoint).unwrap()],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap()
+            };
+            let before = spender(&conn);
+            assert_eq!(
+                before,
+                (true, Some(AsRef::<[u8]>::as_ref(&payment.txid).to_vec()))
+            );
+
+            let found = BlockSpend {
+                outpoint: held.outpoint,
+                ..block_spend(0x89, 100)
+            };
+            let tx = conn.transaction().unwrap();
+            record_found_block_spend(&tx, &w, &found).unwrap();
+            tx.commit().unwrap();
+
+            assert_eq!(spender(&conn), before, "the recorded spender stays");
+            assert_eq!(load_block_spends(&conn, &w).unwrap()[&held.outpoint], found);
+            assert!(unspent_loaded(&conn, &w).is_empty());
+            assert!(list_unspent_utxos(&conn, &w).unwrap().is_empty());
+        }
+
+        #[test]
+        fn a_truncation_deletes_block_spends_above_it_before_the_rounds_own_rows() {
+            let w = [0x82u8; 32];
+            let mut conn = wallet_db(&w);
+            store(
+                &mut conn,
+                &w,
+                &CoreChangeSet {
+                    block_spends: vec![
+                        block_spend(1, 100),
+                        block_spend(2, 101),
+                        block_spend(3, 102),
+                    ],
+                    ..Default::default()
+                },
+            );
+            store(
+                &mut conn,
+                &w,
+                &CoreChangeSet {
+                    block_spends_truncated_above: Some(100),
+                    block_spends: vec![block_spend(4, 101)],
+                    ..Default::default()
+                },
+            );
+            assert_eq!(stored_heights(&conn, &w), vec![(1, 100), (4, 101)]);
+        }
+
+        #[test]
+        fn block_spend_deletes_touch_only_their_wallet() {
+            let (w, other) = ([0x83u8; 32], [0x84u8; 32]);
+            let mut conn = wallet_db(&w);
+            insert_test_wallet(&conn, &other, 0);
+            for id in [&w, &other] {
+                store(
+                    &mut conn,
+                    id,
+                    &CoreChangeSet {
+                        block_spends: vec![block_spend(1, 100), block_spend(2, 102)],
+                        ..Default::default()
+                    },
+                );
+            }
+            assert_eq!(delete_block_spends_above(&conn, &w, 101).unwrap(), 1);
+            assert_eq!(stored_heights(&conn, &w), vec![(1, 100)]);
+            assert_eq!(clear_block_spends(&conn, &w).unwrap(), 1);
+            assert!(stored_heights(&conn, &w).is_empty());
+            assert_eq!(stored_heights(&conn, &other), vec![(1, 100), (2, 102)]);
+            let chain = BTreeMap::from([(100, Some(BlockHash::from_byte_array([0xEE; 32])))]);
+            assert_eq!(delete_block_spends_off_chain(&conn, &w, &chain).unwrap(), 0);
+            assert_eq!(stored_heights(&conn, &other), vec![(1, 100), (2, 102)]);
+        }
+
+        #[test]
+        fn a_sweep_never_releases_a_coin_with_a_block_spend_row() {
+            for (byte, row) in [(0x71u8, false), (0x72, true)] {
+                let w = [byte; 32];
+                let mut conn = wallet_db(&w);
+                let held = sample_utxo(Txid::from_byte_array([byte; 32]), 90, true);
+                store(&mut conn, &w, &round(vec![], vec![held.clone()]));
+                let loser = spend(&[held.outpoint], TransactionContext::Mempool);
+                store(
+                    &mut conn,
+                    &w,
+                    &CoreChangeSet {
+                        records: vec![loser.clone()],
+                        spent_utxos: vec![held.clone()],
+                        ..Default::default()
+                    },
+                );
+                if row {
+                    store(
+                        &mut conn,
+                        &w,
+                        &CoreChangeSet {
+                            block_spends: vec![BlockSpend {
+                                outpoint: held.outpoint,
+                                ..block_spend(byte, 96)
+                            }],
+                            ..Default::default()
+                        },
+                    );
+                }
+                assert!(is_spent(&conn, &w, &held.outpoint));
+                store(&mut conn, &w, &sweep_releasing(loser.txid, &held.outpoint));
+                assert_eq!(is_spent(&conn, &w, &held.outpoint), row, "row {row}");
+                assert_eq!(unspent_loaded(&conn, &w).is_empty(), row, "row {row}");
+            }
+        }
+
+        /// No ChainLock floor: every row is checked against the header
+        /// chain, so a row at or below the stored ChainLock whose known
+        /// header differs goes, and a matching or unknown header keeps it.
+        #[test]
+        fn the_header_check_covers_rows_at_or_below_the_chain_lock() {
+            let w = [0x86u8; 32];
+            let mut conn = wallet_db(&w);
+            store(
+                &mut conn,
+                &w,
+                &CoreChangeSet {
+                    block_spends: vec![
+                        block_spend(1, 100),
+                        block_spend(2, 101),
+                        block_spend(3, 102),
+                        block_spend(4, 103),
+                    ],
+                    last_applied_chain_lock: Some(sample_chain_lock(200)),
+                    ..Default::default()
+                },
+            );
+            let replaced = BlockHash::from_byte_array([0xEE; 32]);
+            let chain = BTreeMap::from([
+                (100, Some(replaced)),
+                (101, Some(BlockHash::from_byte_array([2; 32]))),
+                (102, None),
+            ]);
+            assert_eq!(delete_block_spends_off_chain(&conn, &w, &chain).unwrap(), 1);
+            assert_eq!(
+                stored_heights(&conn, &w),
+                vec![(2, 101), (3, 102), (4, 103)],
+                "a mismatch below the ChainLock goes; matching, unknown and unnamed stay"
+            );
+        }
+
+        /// Rows outlive what a drop and finality do: a sweep that drops the
+        /// spending payment, a ChainLock past the row, and a height advance
+        /// leave the row and keep its coin spent.
+        #[test]
+        fn a_row_outlives_a_drop_sweep_and_the_chain_lock_past_it() {
+            let w = [0x87u8; 32];
+            let mut conn = wallet_db(&w);
+            let (held, spend) = held_coin_spent_in_block(&mut conn, &w, 0x87, 100);
+            let payment = super::spend(&[held.outpoint], TransactionContext::Mempool);
+            store(&mut conn, &w, &round(vec![payment.clone()], vec![]));
+            store(
+                &mut conn,
+                &w,
+                &sweep_releasing(payment.txid, &held.outpoint),
+            );
+            store(
+                &mut conn,
+                &w,
+                &CoreChangeSet {
+                    last_applied_chain_lock: Some(sample_chain_lock(150)),
+                    synced_height: Some(150),
+                    last_processed_height: Some(150),
+                    ..Default::default()
+                },
+            );
+            assert_eq!(
+                load_block_spends(&conn, &w).unwrap(),
+                BTreeMap::from([(held.outpoint, spend)])
+            );
+            assert!(is_spent(&conn, &w, &held.outpoint));
+            assert!(unspent_loaded(&conn, &w).is_empty());
+        }
+
+        /// A coin whose row a header check removed is released by the next
+        /// sweep like any other coin: the check is what lets a stale row's
+        /// coin come back.
+        #[test]
+        fn a_coin_comes_back_through_the_release_once_its_stale_row_is_gone() {
+            let w = [0x88u8; 32];
+            let mut conn = wallet_db(&w);
+            let (held, spend) = held_coin_spent_in_block(&mut conn, &w, 0x88, 100);
+            store(
+                &mut conn,
+                &w,
+                &CoreChangeSet {
+                    last_applied_chain_lock: Some(sample_chain_lock(200)),
+                    ..Default::default()
+                },
+            );
+            let chain =
+                BTreeMap::from([(spend.height, Some(BlockHash::from_byte_array([0xEE; 32])))]);
+            assert_eq!(delete_block_spends_off_chain(&conn, &w, &chain).unwrap(), 1);
+            store(
+                &mut conn,
+                &w,
+                &sweep_releasing(Txid::from_byte_array([0x99; 32]), &held.outpoint),
+            );
+            assert!(!is_spent(&conn, &w, &held.outpoint));
+            assert_eq!(unspent_loaded(&conn, &w), vec![held.outpoint]);
+        }
     }
 }
