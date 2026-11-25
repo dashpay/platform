@@ -8,7 +8,6 @@ use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::operations::delete::DeleteUpTreeOptions;
 use grovedb::{BackwardsReferences, GroveDb, TransactionArg};
-use grovedb_storage::rocksdb_storage::RocksDbStorage;
 use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
@@ -28,17 +27,17 @@ impl Drive {
         let cost_context = match apply_type {
             BatchDeleteUpTreeApplyType::StatelessBatchDelete {
                 estimated_layer_info,
-            } => GroveDb::average_case_delete_operations_for_delete_up_tree_while_empty::<
-                RocksDbStorage,
-            >(
-                &path,
-                &KeyInfo::KnownKey(key.to_vec()),
-                stop_path_height,
-                true,
-                estimated_layer_info,
-                BackwardsReferences::DontCheck,
-                &drive_version.grove_version,
-            ),
+            } => {
+                GroveDb::average_case_delete_operations_for_delete_up_tree_while_empty_engine_free(
+                    &path,
+                    &KeyInfo::KnownKey(key.to_vec()),
+                    stop_path_height,
+                    true,
+                    estimated_layer_info,
+                    BackwardsReferences::DontCheck,
+                    &drive_version.grove_version,
+                )
+            }
             BatchDeleteUpTreeApplyType::StatefulBatchDelete {
                 is_known_to_be_subtree_with_sum,
             } => {

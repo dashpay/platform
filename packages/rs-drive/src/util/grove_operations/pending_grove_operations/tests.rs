@@ -39,7 +39,6 @@ mod old {
     use grovedb::operations::delete::{DeleteOptions, DeleteUpTreeOptions};
     use grovedb::{BackwardsReferences, Element, GroveDb, TransactionArg};
     use grovedb_path::SubtreePath;
-    use grovedb_storage::rocksdb_storage::RocksDbStorage;
     use platform_version::version::drive_versions::DriveVersion;
 
     pub(super) fn batch_delete<B: AsRef<[u8]>>(
@@ -89,7 +88,7 @@ mod old {
                 in_tree_type: is_sum_tree,
                 estimated_key_size,
                 estimated_value_size,
-            } => GroveDb::average_case_delete_operation_for_delete::<RocksDbStorage>(
+            } => GroveDb::average_case_delete_operation_for_delete_engine_free(
                 &KeyInfoPath::from_known_owned_path(path.to_vec()),
                 &KeyInfo::KnownKey(key.to_vec()),
                 is_sum_tree,
@@ -191,7 +190,7 @@ mod old {
                     in_tree_type: is_sum_tree,
                     estimated_key_size,
                     estimated_value_size,
-                } => GroveDb::average_case_delete_operation_for_delete::<RocksDbStorage>(
+                } => GroveDb::average_case_delete_operation_for_delete_engine_free(
                     &KeyInfoPath::from_known_owned_path(path.to_vec()),
                     &KeyInfo::KnownKey(key.to_vec()),
                     is_sum_tree,
@@ -249,17 +248,17 @@ mod old {
         let cost_context = match apply_type {
             BatchDeleteUpTreeApplyType::StatelessBatchDelete {
                 estimated_layer_info,
-            } => GroveDb::average_case_delete_operations_for_delete_up_tree_while_empty::<
-                RocksDbStorage,
-            >(
-                &path,
-                &KeyInfo::KnownKey(key.to_vec()),
-                stop_path_height,
-                true,
-                estimated_layer_info,
-                BackwardsReferences::DontCheck,
-                &drive_version.grove_version,
-            ),
+            } => {
+                GroveDb::average_case_delete_operations_for_delete_up_tree_while_empty_engine_free(
+                    &path,
+                    &KeyInfo::KnownKey(key.to_vec()),
+                    stop_path_height,
+                    true,
+                    estimated_layer_info,
+                    BackwardsReferences::DontCheck,
+                    &drive_version.grove_version,
+                )
+            }
             BatchDeleteUpTreeApplyType::StatefulBatchDelete {
                 is_known_to_be_subtree_with_sum,
             } => {

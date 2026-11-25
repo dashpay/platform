@@ -10,7 +10,6 @@ use grovedb::operations::delete::DeleteOptions;
 use grovedb::BackwardsReferences;
 use grovedb::{GroveDb, TransactionArg};
 use grovedb_path::SubtreePath;
-use grovedb_storage::rocksdb_storage::RocksDbStorage;
 use platform_version::version::drive_versions::DriveVersion;
 
 impl Drive {
@@ -60,7 +59,7 @@ impl Drive {
                 in_tree_type: is_sum_tree,
                 estimated_key_size,
                 estimated_value_size,
-            } => GroveDb::average_case_delete_operation_for_delete::<RocksDbStorage>(
+            } => GroveDb::average_case_delete_operation_for_delete_engine_free(
                 &KeyInfoPath::from_known_owned_path(path.to_vec()),
                 &KeyInfo::KnownKey(key.to_vec()),
                 is_sum_tree,
