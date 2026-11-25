@@ -250,15 +250,14 @@ fn should_restore_an_asset_lock_funding_pool_beyond_its_initial_window() {
     assert_eq!(pool.highest_used(), Some(deep));
 }
 
-/// A funding pool whose every address is marked used, by locks that never
-/// reached the chain (rejected at broadcast, or abandoned before it), comes
-/// back with fresh unused addresses beyond them. A stored used mark whose
-/// release failed, or one stored before releases were written, survives the
-/// hand-back of such an index, and no transaction refills the pool, so
-/// without the load-time refill each restart would leave the account with
-/// nothing to fund the next lock from.
+/// A funding pool whose every address is marked used comes back exactly as
+/// stored, not extended beyond the used addresses. A lock built on an index
+/// past them would sit beyond the addresses a recovery from scratch scans,
+/// and nothing on chain at the earlier indices would lead that recovery to
+/// it: refusing the lock is the safe outcome. Marks left by locks that never
+/// went out are cleared when the wallet hands their index back instead.
 #[test]
-fn should_refill_an_asset_lock_funding_pool_whose_every_address_is_used() {
+fn should_not_extend_a_restored_funding_pool_whose_every_address_is_used() {
     use key_wallet::account::AccountType;
     use platform_wallet::changeset::AccountAddressPoolEntry;
 
@@ -333,11 +332,14 @@ fn should_refill_an_asset_lock_funding_pool_whose_every_address_is_used() {
         (0..=highest).all(|index| pool.addresses()[&index].is_used()),
         "every stored used mark is kept"
     );
+    assert_eq!(
+        pool.highest_generated(),
+        Some(highest),
+        "the pool is not extended beyond the stored addresses"
+    );
     assert!(
-        pool.addresses()
-            .values()
-            .any(|info| info.index > highest && !info.is_used()),
-        "the pool is refilled beyond the used addresses"
+        pool.unused_addresses().is_empty(),
+        "no unused address is offered past the used ones"
     );
 }
 

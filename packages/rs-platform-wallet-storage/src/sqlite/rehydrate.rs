@@ -8,7 +8,7 @@ use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::{Account, AccountType};
 use key_wallet::bip32::ChildNumber;
 use key_wallet::managed_account::address_pool::{
-    AddressInfo, AddressPool, AddressPoolType, AddressState, KeySource, PublicKeyType,
+    AddressInfo, AddressPool, AddressPoolType, AddressState, PublicKeyType,
 };
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::managed_account::managed_account_type::ManagedAccountType;
@@ -192,18 +192,14 @@ pub(crate) fn restore_provider_platform_node_pool(
 /// an index beyond the window is added from its stored script and public
 /// key, at the pool's base path, and a stored used mark is applied.
 ///
-/// The pool's unused gap is then derived again from the account's xpub in
-/// `manifest`. A live wallet refills it when it sees a lock's transaction, so
-/// an index marked used by a lock that never reached the chain (rejected at
-/// broadcast, or abandoned before it) is never refilled there. The wallet
-/// clears such a mark when it hands the index back
-/// ([`core_pool::release_unsent_address`]),
-/// but a mark whose release failed, or one stored before releases were
-/// written, survives, and without the refill such locks would exhaust the
-/// pool across restarts.
+/// The pool is not extended beyond what was stored. An index marked used by a
+/// lock that never reached the chain is cleared when the wallet hands it back
+/// ([`core_pool::release_unsent_address`]); one that stays marked is left so,
+/// and a pool used up that way refuses the next lock rather than build it past
+/// the addresses a recovery from scratch scans, where it could not be found
+/// again.
 pub(crate) fn restore_asset_lock_funding_pools(
     wallet_info: &mut ManagedWalletInfo,
-    manifest: &[AccountRegistrationEntry],
     conn: &rusqlite::Connection,
     wallet_id: &platform_wallet::wallet::platform_wallet::WalletId,
     network: Network,
@@ -253,10 +249,6 @@ pub(crate) fn restore_asset_lock_funding_pools(
         ));
     }
     for (account_type, managed) in targets {
-        let key_source = manifest
-            .iter()
-            .find(|entry| entry.account_type == account_type)
-            .map(|entry| KeySource::Public(entry.account_xpub));
         for pool in managed.address_pools_mut() {
             let rows = core_pool::load_typed_pool_entries(
                 conn,
@@ -265,21 +257,6 @@ pub(crate) fn restore_asset_lock_funding_pools(
                 pool.pool_type(),
             )?;
             restore_pool_rows(pool, rows, &account_type, wallet_id, network, ctx)?;
-            let Some(key_source) = key_source.as_ref() else {
-                continue;
-            };
-            if let Err(e) = pool.maintain_gap_limit(key_source) {
-                ctx.tolerate_at(
-                    LoadSite::RehydrationMaintainGapLimit,
-                    SiteCoords {
-                        wallet_id: Some(*wallet_id),
-                        account_type: &account_type,
-                        affected: 1,
-                        detail: Some(&pool.pool_type()),
-                    },
-                    WalletStorageError::RehydrationGapLimitFailed { source: e },
-                )?;
-            }
         }
     }
     Ok(())

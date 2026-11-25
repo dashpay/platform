@@ -1982,7 +1982,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     )
                     .await;
                     // Rejected, and its row durably gone: nothing can send the
-                    // lock, so its funding index goes back too.
+                    // lock, so its funding index goes back too. Under the
+                    // build→persist gate, as on the pre-broadcast exits: a
+                    // build that ran while this lock was out snapshotted every
+                    // funding pool with the index still used, and stores that
+                    // snapshot before it lets the gate go. Released before
+                    // that store, the index would be marked used again on disk
+                    // and skipped after a restart. Lock order is the one every
+                    // build takes: this gate, then the manager.
+                    let build_persist_guard = self.build_persist_serial.lock().await;
                     self.hand_back_unsent_funding_index(
                         &in_broadcast_pin,
                         funding_type,
@@ -1990,6 +1998,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         &path,
                     )
                     .await;
+                    drop(build_persist_guard);
                     in_broadcast_pin.settle_released();
                 } else {
                     // An untrack guard fired: the row advanced past `Built`, or
@@ -4647,6 +4656,85 @@ mod tests {
             }
             Ok(transaction.txid())
         }
+    }
+
+    /// Rejects every broadcast once let through, after reporting it was
+    /// reached.
+    struct GatedRejectBroadcaster {
+        entered: Arc<tokio::sync::Barrier>,
+        release: Arc<tokio::sync::Barrier>,
+    }
+
+    #[async_trait]
+    impl TransactionBroadcaster for GatedRejectBroadcaster {
+        async fn broadcast(&self, _transaction: &Transaction) -> Result<Txid, BroadcastError> {
+            self.entered.wait().await;
+            self.release.wait().await;
+            Err(BroadcastError::Rejected {
+                reason: "simulated pre-send rejection".to_string(),
+            })
+        }
+    }
+
+    /// A rejected lock's funding index is released only under the
+    /// build→persist gate. A build that ran while the lock was out holds the
+    /// gate until it has stored its funding-pool snapshot, which still shows
+    /// the index used; released before that store, the index would be marked
+    /// used again on disk.
+    #[tokio::test]
+    async fn should_release_a_rejected_lock_funding_index_only_under_the_build_persist_gate() {
+        let entered = Arc::new(tokio::sync::Barrier::new(2));
+        let release = Arc::new(tokio::sync::Barrier::new(2));
+        let persistence = Arc::new(CapturingPersistence {
+            records_identity_recipients: true,
+            commits_inline: true,
+            ..Default::default()
+        });
+        let (manager, signer) = funded_asset_lock_manager_with_persistence(
+            Arc::new(GatedRejectBroadcaster {
+                entered: Arc::clone(&entered),
+                release: Arc::clone(&release),
+            }),
+            Arc::clone(&persistence),
+        )
+        .await;
+        let fund = manager.broadcast_funded_asset_lock_tracked(
+            super::AssetLockBuildAmount::Exact(1_000_000),
+            &ASSET_LOCK_FUNDING_SOURCES,
+            0,
+            AssetLockFundingType::IdentityTopUp,
+            0,
+            None,
+            &signer,
+            None,
+            None,
+            |_| {},
+        );
+        let other_build = async {
+            entered.wait().await;
+            // Another build holds the gate while the lock is rejected.
+            let gate = manager.build_persist_serial.lock().await;
+            release.wait().await;
+            for _ in 0..50 {
+                tokio::task::yield_now().await;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            assert!(
+                persistence.released.lock().unwrap().is_empty(),
+                "the index is not released while another build holds the gate"
+            );
+            drop(gate);
+        };
+        let (result, ()) = tokio::join!(fund, other_build);
+        assert!(
+            matches!(result, Err(PlatformWalletError::TransactionBroadcast(_))),
+            "{result:?}"
+        );
+        assert_eq!(
+            persistence.released.lock().unwrap().len(),
+            1,
+            "the index is released once the gate is free"
+        );
     }
 
     /// A lock Core rejects before sending, whose row is then durably gone,
