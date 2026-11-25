@@ -12608,6 +12608,7 @@ mod tests {
                 }]),
             )),
         };
+        let lock = rt.block_on(ctx.signed(lock, &[&funding]));
         let seen = rt.block_on(ctx.check_transaction(&lock, TransactionContext::Mempool));
         assert!(seen.is_relevant, "the asset lock must be the wallet's");
         let change = OutPoint {
