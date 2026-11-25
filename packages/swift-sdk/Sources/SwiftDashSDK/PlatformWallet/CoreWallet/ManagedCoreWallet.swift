@@ -6,17 +6,18 @@ import DashSDKFFI
 /// `accepted` means Dash Core accepted the transaction into its mempool or
 /// already knows it; it does not mean the transaction is mined or
 /// InstantSend-locked. `unknown` must not be retried automatically because the
-/// Core response may have been lost after acceptance; its `payment` is Rust's
-/// class of the result (`nil` when Rust gave none), for a screen to hold or
-/// release a form by, never derived here.
+/// Core response may have been lost after acceptance. The `payment` of
+/// `rejected` and `unknown` is Rust's class of the result (`nil` when Rust
+/// gave none), for a screen to hold or release a form by, and for an error
+/// made from the outcome to carry; it is never derived here.
 public enum CoreTransactionBroadcastOutcome: Equatable, Sendable {
     case accepted(txid: String)
-    case rejected(txid: String, reason: String)
+    case rejected(txid: String, reason: String, payment: PlatformPaymentClass? = nil)
     case unknown(txid: String, reason: String, payment: PlatformPaymentClass? = nil)
 
     public var txid: String {
         switch self {
-        case .accepted(let txid), .rejected(let txid, _), .unknown(let txid, _, _):
+        case .accepted(let txid), .rejected(let txid, _, _), .unknown(let txid, _, _):
             return txid
         }
     }
@@ -31,7 +32,7 @@ public enum CoreTransactionBroadcastOutcome: Equatable, Sendable {
         case .success:
             self = .accepted(txid: txid)
         case .errorTransactionBroadcastRejected:
-            self = .rejected(txid: txid, reason: reason)
+            self = .rejected(txid: txid, reason: reason, payment: payment)
         case .errorTransactionBroadcastUnconfirmed:
             self = .unknown(txid: txid, reason: reason, payment: payment)
         default:

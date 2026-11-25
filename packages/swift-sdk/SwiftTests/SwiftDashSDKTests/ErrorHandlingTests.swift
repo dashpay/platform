@@ -1644,7 +1644,23 @@ final class ErrorHandlingTests: XCTestCase {
                 txid: "rejected-id",
                 reason: "policy"
             ),
-            .rejected(txid: "rejected-id", reason: "policy")
+            .rejected(txid: "rejected-id", reason: "policy", payment: nil)
+        )
+        // A classified rejection keeps Rust's class through the mapping.
+        let notSent = PlatformPaymentClass(delivery: .notSent, isRetryable: true)
+        let rejected = try CoreTransactionBroadcastOutcome(
+            resultCode: .errorTransactionBroadcastRejected,
+            txid: "rejected-id",
+            reason: "policy",
+            payment: notSent
+        )
+        XCTAssertEqual(rejected, .rejected(txid: "rejected-id", reason: "policy", payment: notSent))
+        guard case .rejected(_, _, let payment) = rejected else {
+            return XCTFail("expected a rejection, got \(rejected)")
+        }
+        XCTAssertEqual(
+            PlatformWalletError.transactionBroadcastRejected("policy", payment: payment).payment,
+            notSent
         )
         XCTAssertEqual(
             try CoreTransactionBroadcastOutcome(

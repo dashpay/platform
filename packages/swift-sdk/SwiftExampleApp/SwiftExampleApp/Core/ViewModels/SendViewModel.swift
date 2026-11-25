@@ -1289,7 +1289,7 @@ class SendViewModel: ObservableObject {
             successMessage = recipientCount > 1
                 ? "Payment sent to \(recipientCount) recipients"
                 : "Payment sent"
-        case .rejected(_, let reason):
+        case .rejected(_, let reason, _):
             successMessage = nil
             error = "Payment rejected by Dash Core: \(reason)"
         case .unknown(let txid, let reason, let payment):
