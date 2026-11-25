@@ -5,6 +5,7 @@ use crate::drive::RootTree;
 mod add_asset_lock_outpoint_operations;
 mod estimation_costs;
 mod fetch_asset_lock_outpoint_info;
+mod prove_asset_lock_outpoint_info;
 #[cfg(all(feature = "server", any(test, feature = "structure")))]
 pub(crate) mod structure;
 
