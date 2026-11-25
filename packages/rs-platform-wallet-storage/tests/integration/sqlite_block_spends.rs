@@ -13,6 +13,7 @@ use common::{ensure_wallet_meta, fresh_persister};
 use dashcore::ephemerealdata::chain_lock::ChainLock;
 use dashcore::ephemerealdata::instant_lock::InstantLock;
 use dashcore::{BlockHash, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness};
+use key_wallet::test_utils::sign_owned_inputs;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::{Utxo, Wallet};
 use platform_wallet::changeset::changeset::SweepBatch;
@@ -1174,7 +1175,13 @@ async fn paying_wallet(funded: bool, locked: bool) -> PayingWallet {
     } else {
         address.clone()
     };
-    let payment = spend_of(&[coin], vec![pay(40_000, &payee)]);
+    let payment = sign_owned_inputs(
+        &wallet,
+        &wm.get_wallet_info(&held).expect("wallet").core_wallet,
+        spend_of(&[coin], vec![pay(40_000, &payee)]),
+        &[&funding],
+    )
+    .await;
     if funded {
         let block = dashcore::Block::dummy(100, vec![funding.clone()]);
         wm.process_block_for_wallets(&block, block.block_hash(), 100, &BTreeSet::from([held]))

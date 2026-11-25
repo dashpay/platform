@@ -11261,6 +11261,7 @@ mod block_spend_tests {
     use dashcore::ephemerealdata::chain_lock::ChainLock;
     use dashcore::ephemerealdata::instant_lock::InstantLock;
     use dashcore::{BlockHash, Transaction, Txid};
+    use key_wallet::test_utils::sign_owned_inputs;
     use key_wallet::transaction_checking::{BlockInfo, WalletTransactionChecker};
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
@@ -11616,8 +11617,14 @@ mod block_spend_tests {
             txid: funding.txid(),
             vout: 0,
         };
-        let payment = spend_of(&[coin], vec![pay(40_000, &foreign_address(8))]);
         let (wallet, info) = wm.get_wallet_mut_and_info_mut(&wallet_id).expect("wallet");
+        let payment = sign_owned_inputs(
+            wallet,
+            &info.core_wallet,
+            spend_of(&[coin], vec![pay(40_000, &foreign_address(8))]),
+            &[&funding],
+        )
+        .await;
         for (tx, context) in [(&funding, in_block(100)), (&payment, context)] {
             assert!(
                 info.check_core_transaction(tx, context, wallet, true, true)
