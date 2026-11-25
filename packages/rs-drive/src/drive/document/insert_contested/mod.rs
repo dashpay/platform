@@ -408,6 +408,12 @@ mod tests {
         /// processing fee for it. v1 asks the storage engine whether the vote tree is
         /// there. Only RocksDB still shows the one the first contest left, so only there
         /// the record that is found and the look for what is reachable are paid for.
+        ///
+        /// The root hash is read after the document's write and before any fee is taken
+        /// from a payer. A node takes the fee from the payer's balance afterwards, so two
+        /// nodes on the two engines would write different balances for this contest. The
+        /// engines are not interchangeable for it, and this test pins that, as the test at
+        /// protocol version 13 pins the other difference.
         #[test]
         fn a_second_contest_at_protocol_version_14_has_one_root_hash_and_each_engines_processing_fee(
         ) {
