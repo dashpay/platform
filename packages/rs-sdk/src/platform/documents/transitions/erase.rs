@@ -1,6 +1,7 @@
+use crate::platform::document_history::fetch_document_history_with_lifecycle;
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
-use crate::platform::{Fetch, Identifier};
+use crate::platform::{DocumentHistoryQuery, Identifier};
 use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
@@ -313,16 +314,17 @@ impl Sdk {
     /// and this read. `None` means the queried
     /// storage/proof generation does not authenticate lifecycle metadata; it
     /// must not be interpreted as an authenticated absent state.
+    ///
+    /// Lifecycle metadata is proven from protocol version 15 on. On a network
+    /// below it the read is refused with [`Error::ProtocolVersionNotActive`]:
+    /// it never falls back to the history request that carries no lifecycle.
     pub async fn document_current_lifecycle(
         &self,
         data_contract_id: Identifier,
         document_type_name: String,
         document_id: Identifier,
     ) -> Result<Option<DocumentHistoryLifecycle>, Error> {
-        use dash_platform_queries::documents::document_history_query::DocumentHistoryQuery;
-        use drive_proof_verifier::types::DocumentHistory;
-
-        let history = DocumentHistory::fetch(
+        let history = fetch_document_history_with_lifecycle(
             self,
             DocumentHistoryQuery {
                 data_contract_id,
@@ -333,6 +335,7 @@ impl Sdk {
                 filter: DocumentHistoryFilter::StartAtTime(0),
                 limit: Some(1),
             },
+            None,
         )
         .await?;
 

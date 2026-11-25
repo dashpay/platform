@@ -10,6 +10,298 @@
   `P: OrchardProver + Copy + Send + 'static`: pass `&CachedOrchardProver`
   instead of a borrowed, non-`'static` prover.
 
+## [5.1.0-rc.1](https://github.com/dashpay/platform/compare/v5.1.0-dev.4...v5.1.0-rc.1) (2026-11-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform-wallet:** document replace, delete, transfer, set price and purchase no longer take `signingKeyId` in Swift or Kotlin, or `signing_key_id` in the C FFI or the Rust wallet API. Remove the key ID and keep passing a signer that can sign with an eligible authentication key; Rust selects the key ([#6228](https://github.com/dashpay/platform/issues/6228))
+* **platform-wallet:** name private entry and contact request payments in shielded activity ([#6226](https://github.com/dashpay/platform/issues/6226))
+* **kotlin-sdk:** `Tokens.updateConfig` now returns a `TokenConfigUpdateOutcome` (`Pending`, `Applied` with the updated contract, or `AppliedNotRefreshed`) instead of `Unit`, and the JNI `TokensNative.tokenUpdateConfig` returns the outcome as JSON. Kotlin callers that ignore the result still compile; store the returned contract instead of patching the saved one ([#6262](https://github.com/dashpay/platform/issues/6262))
+* **sdk-ffi:** `dash_sdk_group_get_actions` now returns `action.event` as a JSON object, not a string of Rust debug text. Decode the object in C callers and in callers of Swift's `getGroupActions` or Kotlin's `Groups.actions` ([#6225](https://github.com/dashpay/platform/issues/6225))
+
+### Bug Fixes
+
+* show rewritten Room rows on open KotlinExampleApp screens and hand back the contract a token config update produced ([#6262](https://github.com/dashpay/platform/issues/6262))
+* **kotlin-example-app:** bind the availability answer to its label and show unread balances as unknown
+* **kotlin-example-app:** claim no more than the SDK knows in the purchase notices
+* **kotlin-example-app:** confirm a token purchase and read group actions as JSON
+* **kotlin-example-app:** keep a submitted name blocked for the visit and omit the PlatformPayment balance until Rust provides an account-scoped total, tracked in [#6235](https://github.com/dashpay/platform/issues/6235)
+* **kotlin-example-app:** keep stale reads and late edits out of Register Name and account balances
+* **kotlin-example-app:** offer Resume on a token paused from the app ([#6251](https://github.com/dashpay/platform/issues/6251))
+* **kotlin-example-app:** say only that a token purchase was submitted
+* **kotlin-example-app:** scroll to a private entry create's outcome instead of leaving it off screen ([#6255](https://github.com/dashpay/platform/issues/6255))
+* **kotlin-example-app:** small UI fixes from the PV15 devnet QA pass
+* **kotlin-example-app:** unlock token actions and perpetual claims the contract grants ([#6221](https://github.com/dashpay/platform/issues/6221))
+* **kotlin-example-app:** word a token purchase as submitted and handle an unconfirmed one
+* **kotlin-sdk:** watch an identity's tokens so the Tokens screen shows balances ([#6222](https://github.com/dashpay/platform/issues/6222))
+* **platform-wallet:** choose the signing key in Rust for document replace, delete, transfer, set price and purchase ([#6228](https://github.com/dashpay/platform/issues/6228))
+* **platform-wallet:** leave a contact's watch-only account out of per-account Core balances ([#6246](https://github.com/dashpay/platform/issues/6246))
+* **platform-wallet:** name private entry and contact request payments in shielded activity ([#6226](https://github.com/dashpay/platform/issues/6226))
+* **sdk:** leave the proposal's note off a group action co-sign ([#6252](https://github.com/dashpay/platform/issues/6252))
+* **sdk:** let decision proposals end one or four weeks from now ([#6223](https://github.com/dashpay/platform/issues/6223))
+* **swift-example-app:** four small UI fixes from the PV15 QA pass ([#6227](https://github.com/dashpay/platform/issues/6227))
+* **swift-example-app:** let the perpetual distribution's recipient claim it ([#6245](https://github.com/dashpay/platform/issues/6245))
+* **swift-example-app:** show the moderation offer when a contract is opened from search results ([#6224](https://github.com/dashpay/platform/issues/6224))
+* **swift-example-app:** show the shielded token send fee and keep Send off until it is quoted ([#6229](https://github.com/dashpay/platform/issues/6229))
+* **swift-example-app:** show the words on the proposal list's poll state badge ([#6250](https://github.com/dashpay/platform/issues/6250))
+* **swift-example-app:** wrap the proposal list title at accessibility text sizes ([#6263](https://github.com/dashpay/platform/issues/6263))
+
+
+### Continuous Integration
+
+* **dashmate:** make dashmate releases verifiable for the apt repository ([#6144](https://github.com/dashpay/platform/issues/6144))
+
+
+### Miscellaneous Chores
+
+* **platform:** bump GroveDB to 7.0.0 ([#6219](https://github.com/dashpay/platform/issues/6219))
+
+
+### Documentation
+
+* **sdk:** say that document replace, transfer, purchase and setPrice take the next revision ([#6220](https://github.com/dashpay/platform/issues/6220))
+
+
+### Tests
+
+* **kotlin-example-app:** expect the exact fee on a fee-only shielded activity row ([#6244](https://github.com/dashpay/platform/issues/6244))
+* **swift-example-app:** restore the shielded tip rows and ids KotlinExampleApp mirrors ([#6207](https://github.com/dashpay/platform/issues/6207))
+
+## [5.1.0-dev.4](https://github.com/dashpay/platform/compare/v5.1.0-dev.3...v5.1.0-dev.4) (2026-11-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* set, change and remove DashPay profile payment addresses in SwiftExampleApp (#6094)
+* **swift-example-app:** unshield tokens from a token shielded pool to an identity (type 27) (#6133)
+* **swift-example-app:** send tokens within a token shielded pool (type 26) (#6132)
+
+### Features
+
+* **contract:** let listed admins record QA test runs ([#6097](https://github.com/dashpay/platform/issues/6097))
+* create an entry of any private document type from the shielded pool in KotlinExampleApp (type 29) ([#6169](https://github.com/dashpay/platform/issues/6169))
+* **kotlin-example-app:** send DashPay contact requests privately from Add Contact ([#6168](https://github.com/dashpay/platform/issues/6168))
+* **kotlin-example-app:** send shielded tips to a DashPay username ([#6197](https://github.com/dashpay/platform/issues/6197))
+* **kotlin-sdk:** check a masternode voting key against Platform when it is loaded ([#6149](https://github.com/dashpay/platform/issues/6149))
+* **kotlin-sdk:** keep the shielded recipient of an asset lock across restarts ([#6170](https://github.com/dashpay/platform/issues/6170))
+* **kotlin-sdk:** load a shared masternode for voting through its voter identity ([#6150](https://github.com/dashpay/platform/issues/6150))
+* load a masternode without an owner identity (a shared masternode) for voting in SwiftExampleApp ([#6145](https://github.com/dashpay/platform/issues/6145))
+* **platform-wallet:** shielded tips to a DashPay username, decided by the wallet ([#6191](https://github.com/dashpay/platform/issues/6191))
+* raise an identity key's budget or expiry from KotlinExampleApp ([#6148](https://github.com/dashpay/platform/issues/6148))
+* **sdk:** add Swift, JNI and Kotlin wrappers for shielded tips ([#6192](https://github.com/dashpay/platform/issues/6192))
+* set, change and remove DashPay profile payment addresses in KotlinExampleApp ([#6146](https://github.com/dashpay/platform/issues/6146))
+* set, change and remove DashPay profile payment addresses in SwiftExampleApp ([#6094](https://github.com/dashpay/platform/issues/6094))
+* shield from an identity and top up an identity from the shielded pool in KotlinExampleApp ([#6147](https://github.com/dashpay/platform/issues/6147))
+* show, send and unshield shielded pool tokens in KotlinExampleApp ([#6173](https://github.com/dashpay/platform/issues/6173))
+* **swift-example-app:** send tokens within a token shielded pool (type 26) ([#6132](https://github.com/dashpay/platform/issues/6132))
+* **swift-example-app:** shielded tips to a DashPay contact or username ([#6198](https://github.com/dashpay/platform/issues/6198))
+* **swift-example-app:** unshield tokens from a token shielded pool to an identity (type 27) ([#6133](https://github.com/dashpay/platform/issues/6133))
+
+
+### Bug Fixes
+
+* keep each wallet's shielded accounts when an Android Clear registers it again ([#6171](https://github.com/dashpay/platform/issues/6171))
+* **platform-wallet:** fail a pending shielded spend whose note another transition spent ([#6151](https://github.com/dashpay/platform/issues/6151))
+* **platform-wallet:** hold the Clear admission across the remaining shielded pool payments ([#6203](https://github.com/dashpay/platform/issues/6203))
+* **platform-wallet:** hold the lifecycle gate and Clear admission across credit pool spends ([#6178](https://github.com/dashpay/platform/issues/6178))
+* **platform-wallet:** keep a shielded spend failed when its snapshot result arrives after proof it did not execute ([#6183](https://github.com/dashpay/platform/issues/6183))
+* **platform-wallet:** refuse a shielded Clear while a shielded operation runs ([#6182](https://github.com/dashpay/platform/issues/6182))
+* **platform-wallet:** stop a shielded note scan at a gap between fetched ranges ([#6172](https://github.com/dashpay/platform/issues/6172))
+* **platform-wallet:** stop reporting a shielded balance as known after a Clear that failed ([#6186](https://github.com/dashpay/platform/issues/6186))
+* **sdk:** three JS SDK fixes from the 5.1 testnet compatibility check ([#6156](https://github.com/dashpay/platform/issues/6156))
+* **swift-sdk:** admit shielded spend wrappers as native operations ([#6179](https://github.com/dashpay/platform/issues/6179))
+
+
+### Tests
+
+* **swift-example-app:** line up the shielded tip rows and ids with KotlinExampleApp ([#6205](https://github.com/dashpay/platform/issues/6205))
+
+
+### Miscellaneous Chores
+
+* **platform:** update `rust-dashcore` to `v0.46.1` ([#6153](https://github.com/dashpay/platform/issues/6153))
+
+## [5.1.0-dev.3](https://github.com/dashpay/platform/compare/v5.1.0-dev.2...v5.1.0-dev.3) (2026-11-23)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** close the gaps left in nested member update rules (PV15) (#6013)
+* **platform-wallet:** a DashPay profile carries its payment addresses through the wallet, FFI and Swift (#6124)
+* **platform:** bound decoded size and refuse zero-width arrays (PV15) (#6092)
+* **platform-wallet:** apps show the shielded balance the wallet announces, without identity accounts (#5968)
+* **sdk:** pass contested index text values starting with 0x as text (#6034)
+* **swift-sdk:** list DPNS contests and query one contest's vote state in SwiftExampleApp (#6033)
+* **platform:** refuse summed transient properties and bound pattern work before compiling (PV15) (#6012)
+* **platform:** an object's members follow the update rules of the type's own properties (PV15) (#5983)
+
+### Features
+
+* browse blocks and check a state transition's status by hash in KotlinExampleApp ([#6121](https://github.com/dashpay/platform/issues/6121))
+* buy a token from the shielded pool (type 28) in KotlinExampleApp ([#6131](https://github.com/dashpay/platform/issues/6131))
+* check a masternode voting key against Platform when it is loaded ([#6086](https://github.com/dashpay/platform/issues/6086))
+* claim a contract's fee pots from SwiftExampleApp (type 25) ([#6125](https://github.com/dashpay/platform/issues/6125))
+* delete or tombstone a DPNS name from the Kotlin SDK and KotlinExampleApp ([#6119](https://github.com/dashpay/platform/issues/6119))
+* moderate contract users and documents from SwiftExampleApp (type 24) ([#6134](https://github.com/dashpay/platform/issues/6134))
+* **platform-wallet:** a DashPay profile carries its payment addresses through the wallet, FFI and Swift ([#6124](https://github.com/dashpay/platform/issues/6124))
+* **platform-wallet:** apps show the shielded balance the wallet announces, without identity accounts ([#5968](https://github.com/dashpay/platform/issues/5968))
+* **platform-wallet:** delete or tombstone a DPNS name from the wallet and the iOS app ([#6055](https://github.com/dashpay/platform/issues/6055))
+* **platform:** an object's members follow the update rules of the type's own properties (PV15) ([#5983](https://github.com/dashpay/platform/issues/5983))
+* raise an identity key's budget or expiry from SwiftExampleApp ([#6054](https://github.com/dashpay/platform/issues/6054))
+* read contract moderation lists, removal records, team actions and fee pots in KotlinExampleApp ([#6123](https://github.com/dashpay/platform/issues/6123))
+* read the entries of any private document type in KotlinExampleApp ([#6128](https://github.com/dashpay/platform/issues/6128))
+* read the entries of any private document type in the Swift example app ([#6052](https://github.com/dashpay/platform/issues/6052))
+* remove an identity from the KotlinExampleApp device, live wallet first, rows before keys ([#6126](https://github.com/dashpay/platform/issues/6126))
+* reveal a core address's private key behind device authentication in KotlinExampleApp ([#6120](https://github.com/dashpay/platform/issues/6120))
+* review a data contract update through the wallet's preview before broadcasting it in KotlinExampleApp ([#6127](https://github.com/dashpay/platform/issues/6127))
+* **sdk:** read contract moderation and fee pots in the Swift SDK and example app ([#6056](https://github.com/dashpay/platform/issues/6056))
+* shield from an identity and top up an identity from the shielded pool in SwiftExampleApp ([#6051](https://github.com/dashpay/platform/issues/6051))
+* shield the whole Core balance (Max) in KotlinExampleApp and recover it after a restart ([#6122](https://github.com/dashpay/platform/issues/6122))
+* show a wallet's Platform address balance history in KotlinExampleApp, and list the address-sync queries in the catalog ([#6129](https://github.com/dashpay/platform/issues/6129))
+* show where an identity's withdrawals to Core stand in KotlinExampleApp ([#6118](https://github.com/dashpay/platform/issues/6118))
+* show where an identity's withdrawals to Core stand in SwiftExampleApp ([#6089](https://github.com/dashpay/platform/issues/6089))
+* sign KotlinExampleApp masternode votes with a stored voting key through the signer ([#6087](https://github.com/dashpay/platform/issues/6087))
+* sign SwiftExampleApp masternode votes with a stored voting key through the signer ([#6057](https://github.com/dashpay/platform/issues/6057))
+* support document sums past 64 bits end to end on mobile ([#6095](https://github.com/dashpay/platform/issues/6095))
+* **swift-example-app:** browse blocks and check a state transition's status by hash ([#6091](https://github.com/dashpay/platform/issues/6091))
+* **swift-example-app:** buy a token from the shielded pool (type 28) ([#6090](https://github.com/dashpay/platform/issues/6090))
+* **swift-example-app:** create an entry of any private document type from the shielded pool (type 29) ([#6130](https://github.com/dashpay/platform/issues/6130))
+* **swift-example-app:** shield the whole Core balance (Max) and recover it after a restart ([#6050](https://github.com/dashpay/platform/issues/6050))
+* **swift-example-app:** show a wallet's Platform address balance history, and list the address-sync queries in the catalog ([#6088](https://github.com/dashpay/platform/issues/6088))
+* **swift-example-app:** show a wallet's tokens in token shielded pools ([#6116](https://github.com/dashpay/platform/issues/6116))
+* **swift-example-app:** update a data contract from its detail screen, with a Rust preview of the changes ([#6053](https://github.com/dashpay/platform/issues/6053))
+
+
+### Bug Fixes
+
+* **drive-abci:** refuse disabling a missing key with a consensus error at check_tx ([#6021](https://github.com/dashpay/platform/issues/6021))
+* **kotlin-example-app:** connect to a devnet by name and stop showing "null" ban reasons ([#6023](https://github.com/dashpay/platform/issues/6023))
+* **platform-wallet:** poll wallet create, load and shielded bind on a big-stack thread ([#6048](https://github.com/dashpay/platform/issues/6048))
+* **platform:** bound decoded size and refuse zero-width arrays (PV15) ([#6092](https://github.com/dashpay/platform/issues/6092))
+* **platform:** close the gaps left in nested member update rules (PV15) ([#6013](https://github.com/dashpay/platform/issues/6013))
+* **platform:** refuse summed transient properties and bound pattern work before compiling (PV15) ([#6012](https://github.com/dashpay/platform/issues/6012))
+* **platform:** size client decoded-value budgets proportionally to encoded bytes ([#6115](https://github.com/dashpay/platform/issues/6115))
+* **sdk:** pass contested index text values starting with 0x as text ([#6034](https://github.com/dashpay/platform/issues/6034))
+* **sdk:** read document history on a network below protocol version 15 ([#6022](https://github.com/dashpay/platform/issues/6022))
+* **sdk:** say a node may have received an unconfirmed transition, and mark its cause as the last error ([#6044](https://github.com/dashpay/platform/issues/6044))
+* **sdk:** start an unpinned SDK at protocol version 14 on every network ([#6046](https://github.com/dashpay/platform/issues/6046))
+* stop banning nodes when the client is older than the network, and document the protocol version 15 app update ([#6043](https://github.com/dashpay/platform/issues/6043))
+* **swift-example-app:** fix the compile error and the three failing tests in the Swift job ([#6101](https://github.com/dashpay/platform/issues/6101))
+* **swift-example-app:** keep key signing metadata and contract bounds when refreshing an identity ([#6085](https://github.com/dashpay/platform/issues/6085))
+* **swift-example-app:** remove an identity from the device children first, keys after the rows ([#6084](https://github.com/dashpay/platform/issues/6084))
+* **swift-example-app:** reveal account private keys behind device authentication ([#6093](https://github.com/dashpay/platform/issues/6093))
+* **swift-sdk:** list DPNS contests and query one contest's vote state in SwiftExampleApp ([#6033](https://github.com/dashpay/platform/issues/6033))
+
+
+### Tests
+
+* **drive-abci:** remove a retired-request-version test that asserts the old status code ([#6047](https://github.com/dashpay/platform/issues/6047))
+* **drive:** pin both contract fetch generations and correct the contract cache docs ([#5996](https://github.com/dashpay/platform/issues/5996))
+
+
+### Continuous Integration
+
+* let PR Hygiene post its verdicts to the dashboard ([#6039](https://github.com/dashpay/platform/issues/6039))
+
+
+### Documentation
+
+* **swift-example-app:** add test plan rows for DashPay private contact requests ([#6117](https://github.com/dashpay/platform/issues/6117))
+
+## [5.1.0-dev.2](https://github.com/dashpay/platform/compare/v5.1.0-dev.1...v5.1.0-dev.2) (2026-11-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dpp:** count documents matching any element of a typed array (#5995)
+* **platform:** delete or tombstone a DPNS name (PV15) (#5994)
+* **drive:** never serve a contract parsed under another protocol version from the cache (#5993)
+* **platform:** admission and fee fixes (check tx bundle) (#5984)
+* **platform:** keep document sums in 128 bits when the summed property passes 2^27 (PV15) (#5987)
+* **platform:** a contested DPNS name is open to every contender with a valid preorder (PV15) (#5978)
+* **platform:** keep-history document migration and erase fixes (PV15) (#5915)
+* **platform:** token pool transitions paid from the credit pool bind their fee bundle (PV15) (#5969)
+* **platform:** pin GroveDB at develop 22f163c2 (#5975)
+* **platform:** leave open a contest whose winner cannot be awarded (PV15) (#5944)
+* **sdk:** a DashPay profile update can set or remove its payment addresses (#5970)
+* **dpp:** refuse a byte array of integers that are not bytes from protocol version 15 (#5964)
+* **platform-wallet:** private contact requests derive the sender's per-contact shielded address (#5902)
+* **platform:** hold a document write to the total its type keeps of its summed property (#5956)
+* **platform-wallet:** contact requests carry the sender's per-contact shielded address (#5901)
+* **dpp:** refuse updating a contract whose stored schema repeats a key (PV15) (#5947)
+* **platform:** pin GroveDB at develop 89dc7351 (#5942)
+* **platform:** activate Tenderdash consensus version 2 with protocol version 15 (#5941)
+* **platform:** the token marketplace starts with protocol version 16, not 15 (#5910)
+* **platform:** refuse high-S signatures on key-recovery paths from protocol version 15 (#5899)
+
+### Features
+
+* **dpp:** count documents matching any element of a typed array ([#5995](https://github.com/dashpay/platform/issues/5995))
+* **platform-wallet:** a dedicated shielded account for each identity, proved with the seed ([#5905](https://github.com/dashpay/platform/issues/5905))
+* **platform-wallet:** contact requests carry the sender's per-contact shielded address ([#5901](https://github.com/dashpay/platform/issues/5901))
+* **platform-wallet:** private contact requests derive the sender's per-contact shielded address ([#5902](https://github.com/dashpay/platform/issues/5902))
+* **platform-wallet:** store and commit a record in one backend step ([#5955](https://github.com/dashpay/platform/issues/5955))
+* **platform:** activate Tenderdash consensus version 2 with protocol version 15 ([#5941](https://github.com/dashpay/platform/issues/5941))
+* **platform:** delete or tombstone a DPNS name (PV15) ([#5994](https://github.com/dashpay/platform/issues/5994))
+* **platform:** keep document sums in 128 bits when the summed property passes 2^27 (PV15) ([#5987](https://github.com/dashpay/platform/issues/5987))
+* **platform:** token pool transitions paid from the credit pool bind their fee bundle (PV15) ([#5969](https://github.com/dashpay/platform/issues/5969))
+* **sdk:** a DashPay profile update can set or remove its payment addresses ([#5970](https://github.com/dashpay/platform/issues/5970))
+* **sdk:** delete and tombstone DPNS names from JavaScript ([#5998](https://github.com/dashpay/platform/issues/5998))
+* **sdk:** multiple choice decision proposals in rs-sdk, wasm-sdk and js-evo-sdk ([#5903](https://github.com/dashpay/platform/issues/5903))
+* **sdk:** multiple choice decision proposals in the Swift and Kotlin SDKs ([#5919](https://github.com/dashpay/platform/issues/5919))
+
+
+### Bug Fixes
+
+* **dashmate:** load ZeroSSL config in force mode ([#4298](https://github.com/dashpay/platform/issues/4298))
+* **dashmate:** print the default config or group when called without an argument ([#5655](https://github.com/dashpay/platform/issues/5655))
+* **dashmate:** restrict a gateway TLS private key an older version left readable ([#5654](https://github.com/dashpay/platform/issues/5654))
+* **dpp:** bound the work document validation does for a long enum at protocol version 15 ([#5945](https://github.com/dashpay/platform/issues/5945))
+* **dpp:** refuse a byte array of integers that are not bytes from protocol version 15 ([#5964](https://github.com/dashpay/platform/issues/5964))
+* **dpp:** refuse updating a contract whose stored schema repeats a key (PV15) ([#5947](https://github.com/dashpay/platform/issues/5947))
+* **drive:** never serve a contract parsed under another protocol version from the cache ([#5993](https://github.com/dashpay/platform/issues/5993))
+* **platform-wallet:** a contact request proves the sender's shielded account itself ([#5971](https://github.com/dashpay/platform/issues/5971))
+* **platform-wallet:** keep contact request holds consistent after an unconfirmed send ([#5908](https://github.com/dashpay/platform/issues/5908))
+* **platform-wallet:** trust a stored record only when no other flush dropped it ([#5923](https://github.com/dashpay/platform/issues/5923))
+* **platform:** a contested DPNS name is open to every contender with a valid preorder (PV15) ([#5978](https://github.com/dashpay/platform/issues/5978))
+* **platform:** admission and fee fixes (check tx bundle) ([#5984](https://github.com/dashpay/platform/issues/5984))
+* **platform:** hold a document write to the total its type keeps of its summed property ([#5956](https://github.com/dashpay/platform/issues/5956))
+* **platform:** keep-history document migration and erase fixes (PV15) ([#5915](https://github.com/dashpay/platform/issues/5915))
+* **platform:** leave open a contest whose winner cannot be awarded (PV15) ([#5944](https://github.com/dashpay/platform/issues/5944))
+* **platform:** refuse high-S signatures on key-recovery paths from protocol version 15 ([#5899](https://github.com/dashpay/platform/issues/5899))
+* **platform:** the token marketplace starts with protocol version 16, not 15 ([#5910](https://github.com/dashpay/platform/issues/5910))
+* **sdk:** mobile yes/no proposal writes survive a cancelled caller and a released wallet ([#5935](https://github.com/dashpay/platform/issues/5935))
+
+
+### Miscellaneous Chores
+
+* **platform:** pin `rust-dashcore` at the `v0.46.0` release ([#5914](https://github.com/dashpay/platform/issues/5914))
+* **platform:** pin GroveDB at develop 22f163c2 ([#5975](https://github.com/dashpay/platform/issues/5975))
+* **platform:** pin GroveDB at develop 2cfc1ce1 ([#6001](https://github.com/dashpay/platform/issues/6001))
+* **platform:** pin GroveDB at develop 89dc7351 ([#5942](https://github.com/dashpay/platform/issues/5942))
+
+
+### Continuous Integration
+
+* build and rehearse Dashmate macOS packages on macos-15 ([#5921](https://github.com/dashpay/platform/issues/5921))
+
+
+### Documentation
+
+* an unreleased generation is edited in place, not copied to a new vN ([#5973](https://github.com/dashpay/platform/issues/5973))
+* define when a protocol version counts as shipped ([#5911](https://github.com/dashpay/platform/issues/5911))
+
+
+### Build System
+
+* **dashmate:** upgrade Tenderdash to v2.0.0-dev.3 ([#5972](https://github.com/dashpay/platform/issues/5972))
+
+
+### Tests
+
+* **drive-abci:** pin the check tx reservation split and fix its doc ([#5990](https://github.com/dashpay/platform/issues/5990))
+
 ## [5.1.0-dev.1](https://github.com/dashpay/platform/compare/v5.0.3...v5.1.0-dev.1) (2026-11-13)
 
 

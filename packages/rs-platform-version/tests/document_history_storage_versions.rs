@@ -195,4 +195,17 @@ fn should_activate_storage_migration_and_history_proofs_together() {
             .perform_events_on_first_block_of_protocol_change,
         Some(3)
     );
+    // The migration reads each retained revision's header and batches its writes.
+    assert_eq!(
+        version
+            .dpp
+            .document_versions
+            .document_method_versions
+            .id_and_revision_from_bytes,
+        Some(0)
+    );
+    assert!(version
+        .system_limits
+        .max_history_migration_batch_operations
+        .is_some());
 }

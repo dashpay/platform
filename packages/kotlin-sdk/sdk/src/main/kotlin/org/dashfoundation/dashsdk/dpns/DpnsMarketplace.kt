@@ -1,9 +1,12 @@
 package org.dashfoundation.dashsdk.dpns
 
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.errors.mapNativeErrors
+import org.dashfoundation.dashsdk.ffi.DpnsGiveUpNative
 import org.dashfoundation.dashsdk.ffi.DpnsMarketplaceNative
 import org.dashfoundation.dashsdk.wallet.TeardownGate
 import org.dashfoundation.dashsdk.wallet.op
+import org.dashfoundation.dashsdk.wallet.opReturningCompletedResult
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -172,6 +175,99 @@ class DpnsMarketplace internal constructor(
     suspend fun sync(walletHandle: Long): DpnsMarketplaceSyncSummary = gate.op {
         decodeSyncSummary(mapNativeErrors { DpnsMarketplaceNative.sync(walletHandle) })
     }
+
+    /**
+     * Which ways the network accepts for [ownerIdentityId] to give up [name]
+     * (`"alice"` or `"alice.dash"`). Nothing is signed or broadcast.
+     *
+     * Offer exactly the ways whose flag is `true`: a contested name can only
+     * be tombstoned, which Rust decides and reports as `canDelete == false`.
+     *
+     * Needs Platform protocol version 15. On a network proven below it this
+     * throws [DashSdkError.PlatformWallet.ProtocolVersionNotActive]; an SDK
+     * pinned below 15 throws
+     * [DashSdkError.PlatformWallet.SdkPinnedBelowProtocolVersion]. An earlier
+     * give-up of the name that was sent and not confirmed in this session
+     * throws [DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed].
+     * Also throws not-found when the name is not registered and
+     * invalid-parameter when another identity holds it.
+     *
+     * Port of `ManagedPlatformWallet.dpnsNameGiveUpChoices(ownerIdentityId:name:)` in
+     * `packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/DpnsMarketplace.swift`.
+     */
+    suspend fun giveUpChoices(
+        walletHandle: Long,
+        ownerIdentityId: ByteArray,
+        name: String,
+    ): DpnsNameGiveUpChoices = gate.op {
+        require(ownerIdentityId.size == 32) { "ownerIdentityId must be 32 bytes" }
+        DpnsNameGiveUpCodec.decodeChoices(mapNativeErrors {
+            DpnsGiveUpNative.choices(walletHandle, ownerIdentityId, name)
+        })
+    }
+
+    /**
+     * Give up [name], held by [ownerIdentityId], by [method].
+     *
+     * [DpnsNameGiveUpMethod.DELETE] frees the name: anybody may register it
+     * again. [DpnsNameGiveUpMethod.TOMBSTONE] removes it for good. Ask
+     * [giveUpChoices] first and offer only what it allows. Rust reads the
+     * name again before signing and refuses (invalid parameter) a method the
+     * network does not accept and a name that is no longer
+     * [expectedDocumentId] (the [DpnsNameGiveUpChoices.documentId] the user
+     * was shown).
+     *
+     * [DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed] means the
+     * transition may have been delivered: offer no other give-up of the name
+     * until a read shows whether it was. Rust refuses one for the rest of
+     * the session; after a process restart it does not (issue #6072).
+     *
+     * The wallet's stored state changes only after the network confirmed the
+     * name gone: the persistence bridge removes the name's Room rows. If the
+     * backend refuses that cleanup the give-up is still reported as confirmed
+     * and the next Name Marketplace sync removes the name.
+     *
+     * [signerHandle] is the wallet manager's identity signer; the caller keeps
+     * it alive through the call.
+     *
+     * A give-up the network confirmed is returned even if the caller was
+     * cancelled while the native call ran ([opReturningCompletedResult]), as
+     * Swift's `Task.detached` returns it: the caller must act on it before
+     * its next suspension point, which throws.
+     *
+     * Port of `ManagedPlatformWallet.giveUpDpnsName(ownerIdentityId:name:expectedDocumentId:method:signer:)`
+     * in `packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/DpnsMarketplace.swift`.
+     */
+    suspend fun giveUpName(
+        walletHandle: Long,
+        ownerIdentityId: ByteArray,
+        name: String,
+        expectedDocumentId: ByteArray,
+        method: DpnsNameGiveUpMethod,
+        signerHandle: Long,
+    ): DpnsNameGivenUp = gate.opReturningCompletedResult {
+        require(ownerIdentityId.size == 32) { "ownerIdentityId must be 32 bytes" }
+        require(expectedDocumentId.size == 32) { "expectedDocumentId must be 32 bytes" }
+        require(signerHandle != 0L) { "signerHandle must not be 0" }
+        DpnsNameGiveUpCodec.decodeGivenUp(mapNativeErrors {
+            DpnsGiveUpNative.giveUp(
+                walletHandle, ownerIdentityId, name, expectedDocumentId, method.ffiValue,
+                signerHandle,
+            )
+        })
+    }
+
+    /**
+     * Whether to clear an identity's main-name pick ([mainName], null for no
+     * pick) after [giveUpName] returned success for [givenUpName]. Rust owns
+     * the rule (`platform_wallet::give_up_clears_main_dpns_name`): true
+     * exactly when the pick names the same DPNS name by normalized label; a
+     * pick with an empty label names nothing. Pure: no wallet, no network, so
+     * reading it before a give-up (to say the name is the main name) is fine.
+     * Only clearing the pick waits for a confirmed give-up, never an error.
+     */
+    fun giveUpClearsMainName(mainName: String?, givenUpName: String): Boolean =
+        mapNativeErrors { DpnsGiveUpNative.clearsMainName(mainName, givenUpName) }
 
     private suspend fun trade(
         identityId: ByteArray,

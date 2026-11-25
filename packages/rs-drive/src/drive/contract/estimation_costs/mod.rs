@@ -95,6 +95,9 @@ impl TreeTypeWeights {
                 provable_count_trees_weight: self.provable_count,
                 provable_count_sum_trees_weight: self.provable_count_sum,
                 provable_count_provable_sum_trees_weight: self.provable_count_provable_sum,
+                provable_count_provable_big_sum_trees_weight: 0,
+                count_big_sum_trees_weight: 0,
+                provable_big_sum_trees_weight: 0,
             }
         }
     }

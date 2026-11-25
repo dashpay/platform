@@ -108,6 +108,13 @@ internal object DecisionProposalsNative {
     external fun listByCreatedAt(sdk: Long, limit: Int, startAfter: String?): String?
 
     /**
+     * The end date to create a proposal with when the user asked for [requestedEndDateMs]
+     * now, in milliseconds since the Unix epoch as a decimal string. Bridges
+     * `dash_sdk_decision_proposal_get_end_date`.
+     */
+    external fun getEndDate(sdk: Long, requestedEndDateMs: Long): String?
+
+    /**
      * The id of [proposalId]'s yes/no poll, as a plain base58 string. Bridges
      * `dash_sdk_decision_proposal_get_vote_poll_id`.
      */
@@ -144,5 +151,25 @@ internal object DecisionProposalsNative {
         voterProTxHash: ByteArray,
         votingPrivateKey: ByteArray,
         networkOrd: Int,
+    )
+
+    /**
+     * Vote on [proposalId] for a masternode with a host signer and wait for the response.
+     * Bridges `dash_sdk_decision_proposal_cast_vote_with_signer`: Rust builds the
+     * ECDSA_HASH160 voting key from [votingAddress] and asks [signerHandle] to sign with it.
+     *
+     * @param voteChoice `0` yes, `1` no, `2` abstain.
+     * @param voterProTxHash 32 bytes in wire order (the reverse of the hex Core displays).
+     * @param votingAddress the 20-byte voting address (hash160 of the compressed voting
+     *   public key).
+     * @param signerHandle a live signer handle the caller keeps alive for the call.
+     */
+    external fun castVoteWithSigner(
+        sdk: Long,
+        proposalId: String,
+        voteChoice: Int,
+        voterProTxHash: ByteArray,
+        votingAddress: ByteArray,
+        signerHandle: Long,
     )
 }

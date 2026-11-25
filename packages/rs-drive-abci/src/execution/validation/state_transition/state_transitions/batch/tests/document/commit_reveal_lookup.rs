@@ -53,6 +53,11 @@ mod commit_reveal_lookup_tests {
     use dpp::tokens::token_payment_info::TokenPaymentInfo;
     use crate::execution::check_tx::CheckTxLevel;
     use crate::execution::check_tx::CheckTxLevel::{FirstTimeCheck, Recheck};
+    use crate::execution::types::execution_event::ExecutionEvent;
+    use crate::execution::validation::state_transition::check_tx_verification::{
+        state_transition_to_execution_event_for_check_tx, CheckTxExecutionEvent,
+    };
+    use dpp::prelude::UserFeeIncrease;
     use dpp::fee::fee_result::FeeResult;
     use dpp::fee::Credits;
     use dpp::data_contract::document_type::HashFunction;
@@ -275,6 +280,30 @@ mod commit_reveal_lookup_tests {
             absent: &[&str],
             token_payment_info: Option<TokenPaymentInfo>,
         ) -> (Document, StateTransition) {
+            self.creation_transition_raising_fees(
+                contract,
+                who,
+                type_name,
+                values,
+                absent,
+                token_payment_info,
+                0,
+            )
+            .await
+        }
+
+        /// [`Self::creation_transition`] with the fees raised by `user_fee_increase` percent.
+        #[allow(clippy::too_many_arguments)]
+        async fn creation_transition_raising_fees(
+            &mut self,
+            contract: &DataContract,
+            who: Who,
+            type_name: &str,
+            values: &[(&str, Value)],
+            absent: &[&str],
+            token_payment_info: Option<TokenPaymentInfo>,
+            user_fee_increase: UserFeeIncrease,
+        ) -> (Document, StateTransition) {
             let platform_version = self.platform_version;
             let owner_id = self.id(who);
             let document_type = contract
@@ -309,7 +338,7 @@ mod commit_reveal_lookup_tests {
                 entropy.0,
                 &writer.key,
                 nonce,
-                0,
+                user_fee_increase,
                 token_payment_info,
                 &writer.signer,
                 platform_version,
@@ -333,7 +362,17 @@ mod commit_reveal_lookup_tests {
             transition: &StateTransition,
             level: CheckTxLevel,
         ) -> (Vec<u32>, Option<FeeResult>) {
-            let platform_version = self.platform_version;
+            self.check_tx_at_version(transition, level, self.platform_version)
+        }
+
+        /// [`Self::check_tx_at`] at `platform_version`, which may differ from the chain's in a
+        /// value only check tx reads.
+        fn check_tx_at_version(
+            &self,
+            transition: &StateTransition,
+            level: CheckTxLevel,
+            platform_version: &PlatformVersion,
+        ) -> (Vec<u32>, Option<FeeResult>) {
             let state = self.platform.state.load();
             let platform_ref = PlatformRef {
                 drive: &self.platform.drive,
@@ -519,15 +558,18 @@ mod commit_reveal_lookup_tests {
         }
 
         /// The references of a `type_name` document holding `data`, written by `writer` in
-        /// block `height` (a create when `changed_fields` is `None`), validated as the document
-        /// create and replace state validations do at `platform_version`, with the operations
-        /// it billed and the documents it would consume.
+        /// block `height` (a create when `changed_fields` is `None`, one opening or joining a
+        /// contest when `opens_or_joins_contest`), validated as the document create and replace
+        /// state validations do at `platform_version`, with the operations it billed and the
+        /// documents it would consume.
+        #[allow(clippy::too_many_arguments)]
         fn validate_references(
             &self,
             type_name: &str,
             data: &BTreeMap<String, Value>,
             writer: Identifier,
             changed_fields: Option<&BTreeSet<String>>,
+            opens_or_joins_contest: bool,
             height: u64,
             platform_version: &PlatformVersion,
         ) -> (
@@ -575,6 +617,7 @@ mod commit_reveal_lookup_tests {
                     &DocumentSystemValues::default(),
                     changed_fields,
                     None,
+                    opens_or_joins_contest,
                     &platform_ref,
                     &block(height),
                     &mut consumed,
@@ -663,13 +706,19 @@ mod commit_reveal_lookup_tests {
             "name": "byNormalizedLabel",
             "properties": [{ "normalizedLabel": "asc" }],
             "unique": true,
-            "contested": {
-                "fieldMatches": [
-                    { "field": "normalizedLabel", "regexPattern": "^[a-zA-Z01-]{3,19}$" }
-                ],
-                "resolution": 0
-            }
+            "contested": label_contest()
         }]);
+    }
+
+    /// The `contested` of a unique index holding `normalizedLabel`: a document whose label
+    /// matches the DPNS contested pattern goes to a masternode vote.
+    fn label_contest() -> serde_json::Value {
+        serde_json::json!({
+            "fieldMatches": [
+                { "field": "normalizedLabel", "regexPattern": "^[a-zA-Z01-]{3,19}$" }
+            ],
+            "resolution": 0
+        })
     }
 
     #[tokio::test]
@@ -1339,6 +1388,7 @@ mod commit_reveal_lookup_tests {
                 &data,
                 alice,
                 changed_fields,
+                false,
                 REVEAL_HEIGHT,
                 platform_version,
             )
@@ -2485,8 +2535,27 @@ mod commit_reveal_lookup_tests {
 
     /// `who`'s valid preorder of the name, made in block `height`.
     async fn commit_name(fixture: &mut CommitRevealFixture, who: Who, height: u64) -> Document {
+        commit_to(fixture, who, &full_name(), height).await
+    }
+
+    /// `who`'s valid commitment to `committed`, the bytes a reveal's `findBy` function joins,
+    /// made in block `height`: it holds the sha256d of `committed`, and of `who`'s id followed
+    /// by `committed`.
+    async fn commit_to(
+        fixture: &mut CommitRevealFixture,
+        who: Who,
+        committed: &str,
+        height: u64,
+    ) -> Document {
         let owner = fixture.id(who);
-        preorder_name(fixture, who, owner_name_hash(owner), height).await
+        preorder_name_holding(
+            fixture,
+            who,
+            salted_hash(&owner.to_buffer(), committed),
+            Value::Bytes32(hash_double(committed.as_bytes())),
+            height,
+        )
+        .await
     }
 
     /// The values of a `name` for the name.
@@ -2655,6 +2724,340 @@ mod commit_reveal_lookup_tests {
         assert!(fixture.document_exists("namePreorder", alice.id()));
     }
 
+    /// The fixture on a chain at `platform_version` with the name registration of
+    /// [`add_name_registration`], its names contested by their label, so a reveal of a label
+    /// the pattern matches opens or joins a contest.
+    fn contested_choose_first_fixture(
+        platform_version: &'static PlatformVersion,
+    ) -> CommitRevealFixture {
+        contested_choose_first_fixture_with(platform_version, |_| {})
+    }
+
+    /// [`contested_choose_first_fixture`] with `change` applied to the contract's JSON after.
+    fn contested_choose_first_fixture_with(
+        platform_version: &'static PlatformVersion,
+        change: impl FnOnce(&mut serde_json::Value),
+    ) -> CommitRevealFixture {
+        CommitRevealFixture::new_at(platform_version, |contract| {
+            add_name_registration(contract, true);
+            contract["documentSchemas"]["name"]["indices"][0]["contested"] = label_contest();
+            change(contract);
+        })
+    }
+
+    /// A create that opens or joins a contest is not held to `chooseFirst` from protocol
+    /// version 15: the contest decides between its contenders. Alice holds the oldest valid
+    /// preorder of a contested name and never reveals it; Mallory and Carol each preorder the
+    /// name a block later. At 15 Mallory's reveal opens the contest and Carol's joins it, each
+    /// consuming its own preorder. At 14, which runs document reference validation 0, Alice's
+    /// preorder still refuses both (40149). Alice's preorder stays either way.
+    #[tokio::test]
+    async fn should_let_a_contested_reveal_past_an_older_valid_commitment_from_protocol_version_15()
+    {
+        for protocol_version in [14, PlatformVersion::latest().protocol_version] {
+            let mut fixture = contested_choose_first_fixture(
+                PlatformVersion::get(protocol_version).expect("expected the platform version"),
+            );
+            let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+            let mallory = commit_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT).await;
+            let carol = commit_name(&mut fixture, Who::Carol, REVEAL_HEIGHT).await;
+
+            let opening = reveal_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT + 1).await;
+            let joining = reveal_name(&mut fixture, Who::Carol, REVEAL_HEIGHT + 1).await;
+            if protocol_version == 14 {
+                assert_preceded(opening, &mallory, &alice);
+                assert_preceded(joining, &carol, &alice);
+            } else {
+                assert_written(opening);
+                assert_written(joining);
+            }
+            for contender in [&mallory, &carol] {
+                assert_eq!(
+                    fixture.document_exists("namePreorder", contender.id()),
+                    protocol_version == 14,
+                    "expected a contender's preorder consumed by its reveal at 15 alone, at \
+                     {protocol_version}"
+                );
+            }
+            assert!(fixture.document_exists("namePreorder", alice.id()));
+        }
+    }
+
+    /// A contest decides between its contenders only when the commitments `chooseFirst` orders
+    /// are to its values: here the name's commitments hash its label alone, while its
+    /// contest is over the label and the parent, so a preorder of the label may be meant for
+    /// another parent's contest. The contested reveal is held to the order as any other: at 15
+    /// as at 14, Alice's older valid preorder refuses Mallory's (40149).
+    #[tokio::test]
+    async fn should_hold_a_contested_reveal_to_the_order_where_its_commitment_misses_a_contested_value(
+    ) {
+        for protocol_version in [14, PlatformVersion::latest().protocol_version] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected the platform version");
+            let mut fixture = contested_choose_first_fixture_with(platform_version, |contract| {
+                let name = &mut contract["documentSchemas"]["name"]["creatorRefersTo"];
+                name["findBy"]["nameHash"]["params"] = serde_json::json!(["normalizedLabel"]);
+                name["constraints"]["chooseFirst"]["validWhen"]["ownerNameHash"]["params"] =
+                    serde_json::json!(["$ownerId", "normalizedLabel"]);
+            });
+            let alice = commit_to(&mut fixture, Who::Alice, NAME_LABEL, COMMIT_HEIGHT).await;
+            let mallory = commit_to(&mut fixture, Who::Mallory, NAME_LABEL, REVEAL_HEIGHT).await;
+
+            let result = reveal_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT + 1).await;
+            assert_preceded(result, &mallory, &alice);
+            assert!(fixture.document_exists("namePreorder", mallory.id()));
+        }
+    }
+
+    /// A contest decides between its contenders only when the commitments `chooseFirst` orders
+    /// are to the contest's values and nothing more. Here a name's commitments also hold an
+    /// `answer`: the order of the commitments to the same name and answer is a rule of the
+    /// contract the contest over the name does not decide. The contested reveal is held to it
+    /// as any other: at 15 as at 14, Alice's older valid commitment refuses Mallory's (40149).
+    #[tokio::test]
+    async fn should_hold_a_contested_reveal_to_the_order_where_its_commitment_holds_more_than_the_contested_values(
+    ) {
+        for protocol_version in [14, PlatformVersion::latest().protocol_version] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected the platform version");
+            let mut fixture = contested_choose_first_fixture_with(platform_version, |contract| {
+                let name = &mut contract["documentSchemas"]["name"];
+                name["properties"]["answer"] = serde_json::json!({
+                    "type": "string", "minLength": 1, "maxLength": 63, "position": 2
+                });
+                name["required"] =
+                    serde_json::json!(["normalizedLabel", "normalizedParentDomainName", "answer"]);
+                let reference = &mut name["creatorRefersTo"];
+                reference["findBy"]["nameHash"]["params"] = serde_json::json!([
+                    "normalizedLabel", { "const": "." }, "normalizedParentDomainName",
+                    { "const": "/" }, "answer"
+                ]);
+                reference["constraints"]["chooseFirst"]["validWhen"]["ownerNameHash"]["params"] = serde_json::json!([
+                    "$ownerId", "normalizedLabel", { "const": "." },
+                    "normalizedParentDomainName", { "const": "/" }, "answer"
+                ]);
+            });
+            let committed = format!("{}/42", full_name());
+            let alice = commit_to(&mut fixture, Who::Alice, &committed, COMMIT_HEIGHT).await;
+            let mallory = commit_to(&mut fixture, Who::Mallory, &committed, REVEAL_HEIGHT).await;
+
+            let mut values = name_values();
+            values.push(("answer", "42".into()));
+            let (_, result) = fixture
+                .create(Who::Mallory, "name", &values, &[], REVEAL_HEIGHT + 1)
+                .await;
+            assert_preceded(result, &mallory, &alice);
+            assert!(fixture.document_exists("namePreorder", mallory.id()));
+        }
+    }
+
+    /// A contest decides between its contenders only when it is decided by its index values. A
+    /// contract registered at protocol version 14 may hold a contest whose `fieldMatches` read
+    /// a property outside the index, here a `tier`, so its writer chooses whether a create of
+    /// the same values is contested. At 15 such a contested create is held to the order as
+    /// any other: Alice's older valid commitment refuses Mallory's (40149).
+    #[tokio::test]
+    async fn should_hold_a_contested_reveal_to_the_order_where_its_contest_reads_outside_its_index()
+    {
+        let platform_version_14 = PlatformVersion::get(14).expect("expected the platform version");
+        let mut fixture = contested_choose_first_fixture_with(platform_version_14, |contract| {
+            let name = &mut contract["documentSchemas"]["name"];
+            name["properties"]["tier"] = serde_json::json!({
+                "type": "string", "minLength": 1, "maxLength": 10, "position": 2
+            });
+            name["indices"][0]["contested"]["fieldMatches"] =
+                serde_json::json!([{ "field": "tier", "regexPattern": "^gold$" }]);
+        });
+        let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT - 1).await;
+        let mallory = commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT).await;
+        let mut data: BTreeMap<String, Value> = name_values()
+            .into_iter()
+            .map(|(property, value)| (property.to_string(), value))
+            .collect();
+        data.insert("tier".to_string(), "gold".into());
+
+        let (result, _, _) = fixture.validate_references(
+            "name",
+            &data,
+            fixture.id(Who::Mallory),
+            None,
+            true,
+            REVEAL_HEIGHT,
+            PlatformVersion::latest(),
+        );
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::StateError(StateError::ReferencedDocumentPrecededError(e))]
+                if *e.document_id() == mallory.id() && *e.preceding_document_id() == alice.id()
+        );
+    }
+
+    /// A contest decides between its contenders only when `chooseFirst` orders their
+    /// commitments by age alone, the earliest first. Here the commitments to a contested name
+    /// rank by a `priority` each holds, highest first, a rule of the contract the contest does
+    /// not apply: at 15 as at 14, Alice's valid commitment of a higher priority refuses
+    /// Mallory's reveal (40149), though Mallory committed first.
+    #[tokio::test]
+    async fn should_hold_a_contested_reveal_to_an_order_the_contract_ranks_by_priority() {
+        for protocol_version in [14, PlatformVersion::latest().protocol_version] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected the platform version");
+            let mut fixture = contested_choose_first_fixture_with(platform_version, |contract| {
+                let preorder = &mut contract["documentSchemas"]["namePreorder"];
+                preorder["properties"]["priority"] =
+                    serde_json::json!({ "type": "integer", "position": 2 });
+                preorder["required"] = serde_json::json!([
+                    "$createdAt",
+                    "$createdAtBlockHeight",
+                    "ownerNameHash",
+                    "nameHash",
+                    "priority"
+                ]);
+                preorder["indices"]
+                    .as_array_mut()
+                    .expect("the preorder's indices")
+                    .push(serde_json::json!({
+                        "name": "nameHashByPriority",
+                        "properties": [{ "nameHash": "asc" }, { "priority": "asc" }]
+                    }));
+                contract["documentSchemas"]["name"]["creatorRefersTo"]["constraints"]
+                    ["chooseFirst"]["by"] = serde_json::json!([{ "priority": "desc" }]);
+            });
+            let mallory = commit_ranked(&mut fixture, Who::Mallory, 1, COMMIT_HEIGHT).await;
+            let alice = commit_ranked(&mut fixture, Who::Alice, 9, REVEAL_HEIGHT).await;
+
+            let result = reveal_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT + 1).await;
+            assert_preceded(result, &mallory, &alice);
+            assert!(fixture.document_exists("namePreorder", mallory.id()));
+        }
+    }
+
+    /// `who`'s valid preorder of the name holding `priority`, made in block `height`.
+    async fn commit_ranked(
+        fixture: &mut CommitRevealFixture,
+        who: Who,
+        priority: i64,
+        height: u64,
+    ) -> Document {
+        let owner = fixture.id(who);
+        let (preorder, result) = fixture
+            .create(
+                who,
+                "namePreorder",
+                &[
+                    ("ownerNameHash", owner_name_hash(owner)),
+                    ("nameHash", name_hash()),
+                    ("priority", Value::I64(priority)),
+                ],
+                &[],
+                height,
+            )
+            .await;
+        assert_written(result);
+        preorder
+    }
+
+    /// A contest decides between its contenders only when a contender's commitment must be at
+    /// least a block old: without `minimumAgeBlocks` one who learns the values from a pending
+    /// reveal could commit and reveal in that reveal's own block, tie it and win the tie on a
+    /// ground document id. Held to the order as any other, Mallory's reveal is refused (40149)
+    /// by Alice's older valid commitment.
+    #[tokio::test]
+    async fn should_hold_a_contested_reveal_to_the_order_where_no_minimum_age_is_declared() {
+        let mut fixture =
+            contested_choose_first_fixture_with(PlatformVersion::latest(), |contract| {
+                let constraints =
+                    &mut contract["documentSchemas"]["name"]["creatorRefersTo"]["constraints"];
+                constraints
+                    .as_object_mut()
+                    .expect("the reference's constraints")
+                    .remove("minimumAgeBlocks");
+            });
+        let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        let mallory = commit_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT).await;
+
+        let result = reveal_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT + 1).await;
+        assert_preceded(result, &mallory, &alice);
+    }
+
+    /// A contest decides between its contenders only when `chooseFirst` ranks their commitments
+    /// by creation height alone, ascending: newest first, or with a last `$id` deciding between
+    /// the commitments of one block, the order is a rule of the contract the contest does not
+    /// apply, and a contested reveal is held to it as any other (40149).
+    #[tokio::test]
+    async fn should_hold_a_contested_reveal_to_an_order_other_than_its_commitments_age() {
+        // Newest first: Alice's later commitment comes before Mallory's
+        let mut fixture =
+            contested_choose_first_fixture_with(PlatformVersion::latest(), |contract| {
+                contract["documentSchemas"]["name"]["creatorRefersTo"]["constraints"]
+                    ["chooseFirst"]["by"] =
+                    serde_json::json!([{ "$createdAtBlockHeight": "desc" }]);
+            });
+        let mallory = commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT).await;
+        let alice = commit_name(&mut fixture, Who::Alice, REVEAL_HEIGHT).await;
+        let result = reveal_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT + 1).await;
+        assert_preceded(result, &mallory, &alice);
+
+        // Oldest first, a last `$id` breaking ties
+        let mut fixture =
+            contested_choose_first_fixture_with(PlatformVersion::latest(), |contract| {
+                contract["documentSchemas"]["name"]["creatorRefersTo"]["constraints"]
+                    ["chooseFirst"]["by"] = serde_json::json!(["$createdAtBlockHeight", "$id"]);
+            });
+        let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        let mallory = commit_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT).await;
+        let result = reveal_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT + 1).await;
+        assert_preceded(result, &mallory, &alice);
+    }
+
+    /// A create its contest decides reads and bills no competitors: the `findBy` hash, the
+    /// lookup and the found preorder's `validWhen` hash are all it pays for, though Carol's copy
+    /// and Mallory's older valid preorder of the name are in state.
+    #[tokio::test]
+    async fn should_bill_no_competitors_for_a_create_its_contest_decides() {
+        let mut fixture = contested_choose_first_fixture(PlatformVersion::latest());
+        preorder_name(
+            &mut fixture,
+            Who::Carol,
+            Value::Bytes32([0xC0; 32]),
+            COMMIT_HEIGHT - 2,
+        )
+        .await;
+        commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT - 1).await;
+        let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        let data: BTreeMap<String, Value> = name_values()
+            .into_iter()
+            .map(|(property, value)| (property.to_string(), value))
+            .collect();
+
+        let (result, execution_context, consumed) = fixture.validate_references(
+            "name",
+            &data,
+            fixture.id(Who::Alice),
+            None,
+            true,
+            REVEAL_HEIGHT,
+            PlatformVersion::latest(),
+        );
+        assert!(result.is_valid(), "{:?}", result.errors);
+        assert_matches!(
+            execution_context.operations_slice(),
+            [
+                ValidationOperation::DoubleSha256(2),
+                ValidationOperation::PrecalculatedOperation(_),
+                ValidationOperation::DoubleSha256(2)
+            ],
+            "the findBy hash, the lookup and the found preorder's validWhen hash alone"
+        );
+        assert_eq!(
+            consumed
+                .iter()
+                .map(|consumed| consumed.document.document_id)
+                .collect::<Vec<_>>(),
+            vec![alice.id()]
+        );
+    }
+
     /// The fixture with a name registration whose `chooseFirst` orders preorders by `by`.
     fn choose_first_fixture_by(by: serde_json::Value) -> CommitRevealFixture {
         CommitRevealFixture::new_with(move |contract| {
@@ -2715,6 +3118,7 @@ mod commit_reveal_lookup_tests {
             &data,
             fixture.id(second_who),
             None,
+            false,
             REVEAL_HEIGHT,
             &one_candidate,
         );
@@ -2728,6 +3132,7 @@ mod commit_reveal_lookup_tests {
             &data,
             fixture.id(first_who),
             None,
+            false,
             REVEAL_HEIGHT,
             &one_candidate,
         );
@@ -2774,6 +3179,7 @@ mod commit_reveal_lookup_tests {
             &data,
             fixture.id(second_who),
             None,
+            false,
             REVEAL_HEIGHT,
             &one_candidate,
         );
@@ -2787,6 +3193,7 @@ mod commit_reveal_lookup_tests {
             &data,
             fixture.id(first_who),
             None,
+            false,
             REVEAL_HEIGHT,
             &one_candidate,
         );
@@ -2829,44 +3236,60 @@ mod commit_reveal_lookup_tests {
     }
 
     /// The writer's own commitment past its `ttl` is gone too, whether or not the cleanup has
-    /// reached it: its reveal finds no document, as a competitor past it precedes nobody.
+    /// reached it: its reveal finds no document, as a competitor past it precedes nobody. So
+    /// for a create its contest decides, which reads no competitors.
     #[tokio::test]
     async fn should_refuse_revealing_a_commitment_past_its_ttl() {
-        let mut fixture = choose_first_fixture(true);
-        let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        for contested in [false, true] {
+            let mut fixture = choose_first_fixture_contested_or_not(contested);
+            let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
 
-        let result = reveal_name(&mut fixture, Who::Alice, COMMIT_HEIGHT + 3_600).await;
-        assert_no_name_commitment(result);
-        assert!(fixture.document_exists("namePreorder", alice.id()));
+            let result = reveal_name(&mut fixture, Who::Alice, COMMIT_HEIGHT + 3_600).await;
+            assert_no_name_commitment(result);
+            assert!(fixture.document_exists("namePreorder", alice.id()));
 
-        // The block before its expiry it is revealed
-        let result = reveal_name(&mut fixture, Who::Alice, COMMIT_HEIGHT + 3_599).await;
-        assert_written(result);
+            // The block before its expiry it is revealed
+            let result = reveal_name(&mut fixture, Who::Alice, COMMIT_HEIGHT + 3_599).await;
+            assert_written(result);
+        }
+    }
+
+    /// The name registration fixture, its names contested by their label when `contested`.
+    fn choose_first_fixture_contested_or_not(contested: bool) -> CommitRevealFixture {
+        if contested {
+            contested_choose_first_fixture(PlatformVersion::latest())
+        } else {
+            choose_first_fixture(true)
+        }
     }
 
     /// The writer's own preorder must be valid too: Mallory copies Alice's pending preorder,
     /// her copy landing first, then learns the name from Alice's reveal. Her copy holds the
     /// name's hash, so `findBy` finds it, but not the hash of her own id and the name, so her
-    /// reveal finds no commitment, and her copy precedes nobody: Alice's reveal stands.
+    /// reveal finds no commitment, and her copy precedes nobody: Alice's reveal stands. So for
+    /// a create its contest decides, which reads no competitors but still needs a valid
+    /// commitment of its own.
     #[tokio::test]
     async fn should_refuse_revealing_from_a_copied_commitment() {
-        let mut fixture = choose_first_fixture(true);
-        let alice_id = fixture.id(Who::Alice);
-        let copy = preorder_name(
-            &mut fixture,
-            Who::Mallory,
-            owner_name_hash(alice_id),
-            COMMIT_HEIGHT - 1,
-        )
-        .await;
-        commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
+        for contested in [false, true] {
+            let mut fixture = choose_first_fixture_contested_or_not(contested);
+            let alice_id = fixture.id(Who::Alice);
+            let copy = preorder_name(
+                &mut fixture,
+                Who::Mallory,
+                owner_name_hash(alice_id),
+                COMMIT_HEIGHT - 1,
+            )
+            .await;
+            commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
 
-        let result = reveal_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT).await;
-        assert_no_name_commitment(result);
-        assert!(fixture.document_exists("namePreorder", copy.id()));
+            let result = reveal_name(&mut fixture, Who::Mallory, REVEAL_HEIGHT).await;
+            assert_no_name_commitment(result);
+            assert!(fixture.document_exists("namePreorder", copy.id()));
 
-        let result = reveal_name(&mut fixture, Who::Alice, REVEAL_HEIGHT).await;
-        assert_written(result);
+            let result = reveal_name(&mut fixture, Who::Alice, REVEAL_HEIGHT).await;
+            assert_written(result);
+        }
     }
 
     /// `findBy` finds the writer's preorder by the name's hash: one holding another name hash
@@ -2974,6 +3397,7 @@ mod commit_reveal_lookup_tests {
             &data,
             mallory_id,
             None,
+            false,
             REVEAL_HEIGHT,
             &one_candidate,
         );
@@ -2996,6 +3420,7 @@ mod commit_reveal_lookup_tests {
                 &data,
                 mallory_id,
                 None,
+                false,
                 REVEAL_HEIGHT,
                 platform_version,
             );
@@ -3044,6 +3469,7 @@ mod commit_reveal_lookup_tests {
             &data,
             fixture.id(Who::Mallory),
             None,
+            false,
             REVEAL_HEIGHT,
             &one_candidate,
         );
@@ -3081,6 +3507,7 @@ mod commit_reveal_lookup_tests {
             &data,
             alice,
             None,
+            false,
             REVEAL_HEIGHT,
             platform_version,
         );
@@ -3219,11 +3646,19 @@ mod commit_reveal_lookup_tests {
         }))
     }
 
-    /// Alice's preorder and then Mallory's, the platform's last block the one after Mallory's,
-    /// so check tx judges a reveal where Mallory's preorder is old enough and Alice's precedes
-    /// it. Returns Alice's preorder.
+    /// The name registration fixture holding Alice's preorder and then Mallory's, the
+    /// platform's last block the one of Mallory's, so check tx judges, in the next block, a
+    /// reveal where Mallory's preorder is old enough and Alice's precedes it. Returns Alice's
+    /// preorder.
     async fn preceded_reveal_fixture() -> (CommitRevealFixture, Document) {
-        let mut fixture = choose_first_fixture(true);
+        preceded_reveal_on(choose_first_fixture(true)).await
+    }
+
+    /// `fixture`, holding Alice's preorder of the name and then Mallory's, the platform's last
+    /// block the one of Mallory's. Returns Alice's preorder.
+    async fn preceded_reveal_on(
+        mut fixture: CommitRevealFixture,
+    ) -> (CommitRevealFixture, Document) {
         let alice = commit_name(&mut fixture, Who::Alice, COMMIT_HEIGHT).await;
         commit_name(&mut fixture, Who::Mallory, COMMIT_HEIGHT + 1).await;
         let last = block(COMMIT_HEIGHT + 1);
@@ -3306,6 +3741,90 @@ mod commit_reveal_lookup_tests {
         assert_eq!(fixture.check_tx_at(&reveal, Recheck).0, Vec::<u32>::new());
     }
 
+    /// What check tx asks a signer to hold for `estimated`, the fee estimate of a create that
+    /// states the contest's fund: the estimate and the fund it moves out of the identity.
+    fn required_with_fund(estimated: &FeeResult, platform_version: &PlatformVersion) -> Credits {
+        estimated.total_base_fee()
+            + platform_version
+                .fee_version
+                .vote_resolution_fund_fees
+                .contested_document_vote_resolution_fund_required_amount
+    }
+
+    /// Check tx reserves the competitor scan's budget for a create its contest decides too,
+    /// though the block reads no competitor for it: what the block bills that create beyond the
+    /// estimate stays within it. A signer holding the estimate and the contest's fund is
+    /// admitted, one credit short is not, and the block accepts the admitted reveal and charges
+    /// it, opening the contest.
+    #[tokio::test]
+    async fn should_reserve_the_competitor_scan_budget_for_a_create_its_contest_decides() {
+        const IDENTITY_INSUFFICIENT_BALANCE: u32 = 40210;
+        let platform_version = PlatformVersion::latest();
+        let (mut fixture, _) =
+            preceded_reveal_on(contested_choose_first_fixture(platform_version)).await;
+        let contract = fixture.contract.clone();
+        let (_, reveal) = fixture
+            .creation_transition(&contract, Who::Mallory, "name", &name_values(), &[], None)
+            .await;
+
+        let (errors, estimated) = fixture.check_tx_at(&reveal, FirstTimeCheck);
+        assert_eq!(errors, Vec::<u32>::new());
+        let estimated = estimated.expect("expected an estimated fee");
+        assert!(
+            estimated.processing_fee > choose_first_scan_budget(platform_version),
+            "the estimate holds the scan's budget: {estimated:?}"
+        );
+        let required = required_with_fund(&estimated, platform_version);
+
+        fixture.set_balance(Who::Mallory, required - 1);
+        assert_eq!(
+            fixture.check_tx(&reveal),
+            vec![IDENTITY_INSUFFICIENT_BALANCE]
+        );
+        fixture.set_balance(Who::Mallory, required);
+        assert_eq!(fixture.check_tx(&reveal), Vec::<u32>::new());
+        let result = fixture.process(&reveal, COMMIT_HEIGHT + 2);
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. },
+            "the block accepts and charges what check tx admitted: {result:?}"
+        );
+    }
+
+    /// On a recheck too, check tx reserves the competitor scan's budget for a create its
+    /// contest decides: a signer holding the rechecked estimate and the contest's fund stays in
+    /// the mempool, one credit short leaves it.
+    #[tokio::test]
+    async fn should_reserve_the_competitor_scan_budget_on_recheck_for_a_create_its_contest_decides()
+    {
+        const IDENTITY_INSUFFICIENT_BALANCE: u32 = 40210;
+        let platform_version = PlatformVersion::latest();
+        let (mut fixture, _) =
+            preceded_reveal_on(contested_choose_first_fixture(platform_version)).await;
+        let contract = fixture.contract.clone();
+        let (_, reveal) = fixture
+            .creation_transition(&contract, Who::Mallory, "name", &name_values(), &[], None)
+            .await;
+        assert_eq!(fixture.check_tx(&reveal), Vec::<u32>::new());
+
+        let (errors, estimated) = fixture.check_tx_at(&reveal, Recheck);
+        assert_eq!(errors, Vec::<u32>::new());
+        let estimated = estimated.expect("expected the recheck to estimate the fee");
+        assert!(
+            estimated.processing_fee > choose_first_scan_budget(platform_version),
+            "the recheck estimate holds the scan's budget: {estimated:?}"
+        );
+        let required = required_with_fund(&estimated, platform_version);
+
+        fixture.set_balance(Who::Mallory, required - 1);
+        assert_eq!(
+            fixture.check_tx_at(&reveal, Recheck).0,
+            vec![IDENTITY_INSUFFICIENT_BALANCE]
+        );
+        fixture.set_balance(Who::Mallory, required);
+        assert_eq!(fixture.check_tx_at(&reveal, Recheck).0, Vec::<u32>::new());
+    }
+
     /// A `paddedName`: a `name` whose `findBy` and `chooseFirst` functions both read a
     /// transient `pad` of up to 5,120 bytes, which no stored document keeps.
     fn padded_name_schema() -> serde_json::Value {
@@ -3352,63 +3871,89 @@ mod commit_reveal_lookup_tests {
     /// Check tx reserves the two hashes a reveal's `chooseFirst` check computes as their own
     /// values make them: a transient param, which no stored document keeps and so no write
     /// estimate prices, makes the reservation grow by the double SHA-256 blocks it adds to
-    /// both preimages, and by nothing else.
+    /// both preimages. From protocol version 15, where each competitor's `validWhen` hash bills
+    /// in full, it grows by those blocks for each competitor the scan may read too; at 14, whose
+    /// scan bills hashes within its budget, by nothing else.
     #[tokio::test]
-    async fn should_reserve_the_upfront_hashes_by_the_reveals_own_values() {
-        let mut fixture = CommitRevealFixture::new_with(|contract| {
-            add_name_registration(contract, true);
-            contract["documentSchemas"]["paddedName"] = padded_name_schema();
-        });
-        let platform_version = PlatformVersion::latest();
-        let contract = fixture.contract.clone();
-        let padded = |pad: usize| {
-            let mut values = name_values();
-            values.push(("pad", Value::Bytes(vec![0x07; pad])));
-            values
-        };
-        let (_, small) = fixture
-            .creation_transition(&contract, Who::Mallory, "paddedName", &padded(1), &[], None)
-            .await;
-        let (_, large) = fixture
-            .creation_transition(
-                &contract,
-                Who::Mallory,
-                "paddedName",
-                &padded(5_000),
-                &[],
-                None,
-            )
-            .await;
-        let fee = |transition: &StateTransition| {
-            let (errors, estimated) = fixture.check_tx_at(transition, FirstTimeCheck);
-            assert_eq!(errors, Vec::<u32>::new());
-            estimated.expect("expected an estimated fee")
-        };
-        let (small, large) = (fee(&small), fee(&large));
+    async fn should_reserve_the_hashes_by_the_reveals_own_values() {
+        for protocol_version in [14, PlatformVersion::latest().protocol_version] {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected the platform version");
+            let mut fixture = CommitRevealFixture::new_at(platform_version, |contract| {
+                add_name_registration(contract, true);
+                contract["documentSchemas"]["paddedName"] = padded_name_schema();
+            });
+            let contract = fixture.contract.clone();
+            let padded = |pad: usize| {
+                let mut values = name_values();
+                values.push(("pad", Value::Bytes(vec![0x07; pad])));
+                values
+            };
+            let (_, small) = fixture
+                .creation_transition(&contract, Who::Mallory, "paddedName", &padded(1), &[], None)
+                .await;
+            let (_, large) = fixture
+                .creation_transition(
+                    &contract,
+                    Who::Mallory,
+                    "paddedName",
+                    &padded(5_000),
+                    &[],
+                    None,
+                )
+                .await;
+            let fee = |transition: &StateTransition| {
+                let (errors, estimated) = fixture.check_tx_at(transition, FirstTimeCheck);
+                assert_eq!(errors, Vec::<u32>::new());
+                estimated.expect("expected an estimated fee")
+            };
+            let (small, large) = (fee(&small), fee(&large));
 
-        // The findBy preimage is the writer's id and the chooseFirst one, `pad | label . parent`
-        let choose_first_len = |pad: usize| pad + 1 + NAME_LABEL.len() + 1 + NAME_PARENT.len();
-        let function = HashFunction::Sha256d;
-        let blocks = |pad: usize| {
-            u64::from(function.block_count(32 + choose_first_len(pad)))
-                + u64::from(function.block_count(choose_first_len(pad)))
-        };
-        assert_eq!(
-            large.processing_fee - small.processing_fee,
-            (blocks(5_000) - blocks(1)) * platform_version.fee_version.hashing.sha256_per_block,
-        );
-        assert_eq!(
-            large.storage_fee, small.storage_fee,
-            "the pad is not stored"
-        );
+            // The findBy preimage is `pad | label . parent`, the validWhen one the writer's
+            // id and the same bytes
+            let find_by_len = |pad: usize| pad + 1 + NAME_LABEL.len() + 1 + NAME_PARENT.len();
+            let function = HashFunction::Sha256d;
+            let valid_when_blocks =
+                |pad: usize| u64::from(function.block_count(32 + find_by_len(pad)));
+            let blocks = |pad: usize| {
+                valid_when_blocks(pad) + u64::from(function.block_count(find_by_len(pad)))
+            };
+            let competitors = if protocol_version >= 15 {
+                u64::from(platform_version.system_limits.max_choose_first_candidates)
+            } else {
+                0
+            };
+            assert_eq!(
+                large.processing_fee - small.processing_fee,
+                (blocks(5_000) - blocks(1)
+                    + competitors * (valid_when_blocks(5_000) - valid_when_blocks(1)))
+                    * platform_version.fee_version.hashing.sha256_per_block,
+                "at {protocol_version}"
+            );
+            assert_eq!(
+                large.storage_fee, small.storage_fee,
+                "the pad is not stored"
+            );
+        }
     }
 
-    /// The competitor scan bills as it runs, up to its budget: past it, it bills what is left
-    /// of the budget and nothing more, and reads on. With one credit per competitor the budget
-    /// is 1,000 credits, less than the competitors query alone.
-    #[tokio::test]
-    async fn should_bill_the_competitor_scan_up_to_its_budget() {
-        let mut fixture = choose_first_fixture(true);
+    /// The competitors of a reveal, the `name` its `chooseFirst` judges, read with one credit
+    /// per competitor, so the scan's budget is 1,000 credits, less than the competitors query
+    /// alone: Carol's commitment, holding a hash of nobody's, then Mallory's valid one, then
+    /// Alice's, which the reveal finds. Returns the reveal's references validated as Alice's at
+    /// `protocol_version`, and Mallory's commitment.
+    async fn competitors_read_on_a_tight_budget(
+        protocol_version: u32,
+    ) -> (
+        SimpleConsensusValidationResult,
+        StateTransitionExecutionContext,
+        Document,
+    ) {
+        let platform_version =
+            PlatformVersion::get(protocol_version).expect("expected the platform version");
+        let mut fixture = CommitRevealFixture::new_at(platform_version, |contract| {
+            add_name_registration(contract, true)
+        });
         preorder_name(
             &mut fixture,
             Who::Carol,
@@ -3424,20 +3969,52 @@ mod commit_reveal_lookup_tests {
             .map(|(property, value)| (property.to_string(), value))
             .collect();
 
-        let mut tight_budget = PlatformVersion::latest().clone();
+        let mut tight_budget = platform_version.clone();
         tight_budget
             .fee_version
             .document_reference
             .choose_first_credits_per_candidate = 1;
-        let (result, execution_context, _) =
-            fixture.validate_references("name", &data, alice, None, REVEAL_HEIGHT, &tight_budget);
-
-        // Billing stops at the budget, the scan does not: Mallory's valid preorder refuses
+        let (result, execution_context, _) = fixture.validate_references(
+            "name",
+            &data,
+            alice,
+            None,
+            false,
+            REVEAL_HEIGHT,
+            &tight_budget,
+        );
+        // The scan reads on past the budget: Mallory's valid preorder refuses
         assert_matches!(
             result.errors.as_slice(),
             [ConsensusError::StateError(StateError::ReferencedDocumentPrecededError(e))]
                 if *e.preceding_document_id() == mallory.id()
         );
+        (result, execution_context, mallory)
+    }
+
+    /// From protocol version 15 the competitors query bills up to the scan's budget, and every
+    /// competitor's `validWhen` hash bills in full by the blocks it hashes, past the budget too:
+    /// the reveal pays for each hash it makes, however large its preimage.
+    #[tokio::test]
+    async fn should_bill_every_competitor_hash_past_the_scan_budget() {
+        let (_, execution_context, _) =
+            competitors_read_on_a_tight_budget(PlatformVersion::latest().protocol_version).await;
+        let [ValidationOperation::DoubleSha256(2), ValidationOperation::PrecalculatedOperation(_), ValidationOperation::DoubleSha256(2), ValidationOperation::PrecalculatedOperation(scan), ValidationOperation::DoubleSha256(2), ValidationOperation::DoubleSha256(2)] =
+            execution_context.operations_slice()
+        else {
+            panic!(
+                "the query bills its budget and each competitor its hash, got {:?}",
+                execution_context.operations_slice()
+            );
+        };
+        assert_eq!(scan.processing_fee, 1_000);
+    }
+
+    /// At protocol version 14 the scan bills as it runs, up to its budget: past it, it bills
+    /// what is left of the budget and nothing more, and reads on.
+    #[tokio::test]
+    async fn should_bill_the_competitor_scan_up_to_its_budget_at_protocol_version_14() {
+        let (_, execution_context, _) = competitors_read_on_a_tight_budget(14).await;
         let [ValidationOperation::DoubleSha256(2), ValidationOperation::PrecalculatedOperation(_), ValidationOperation::DoubleSha256(2), ValidationOperation::PrecalculatedOperation(scan)] =
             execution_context.operations_slice()
         else {
@@ -3621,6 +4198,7 @@ mod commit_reveal_lookup_tests {
                 &DocumentSystemValues::default(),
                 None,
                 None,
+                false,
                 &platform_ref,
                 &block(REVEAL_HEIGHT),
                 &mut Vec::new(),
@@ -3633,5 +4211,696 @@ mod commit_reveal_lookup_tests {
             .expect("expected the references to be validated");
         assert!(result.is_valid(), "{:?}", result.errors);
         assert!(execution_context.operations_slice().is_empty());
+    }
+
+    /// Holds `who` to `transition`'s check tx estimate at `platform_version` on the first check
+    /// and on a recheck, each judged on its own: one credit short of a level's estimate is
+    /// refused there and its estimate admitted. Leaves `who` holding the smaller of the two, the
+    /// least a signer whose transaction check tx keeps can hold, and returns it. What the
+    /// reservation holds shows only in what the block does with that balance.
+    fn hold_to_the_check_tx_estimate(
+        fixture: &CommitRevealFixture,
+        who: Who,
+        transition: &StateTransition,
+        platform_version: &PlatformVersion,
+    ) -> Credits {
+        const IDENTITY_INSUFFICIENT_BALANCE: u32 = 40210;
+        let mut least = Credits::MAX;
+        for level in [FirstTimeCheck, Recheck] {
+            fixture.set_balance(who, dash_to_credits!(0.5));
+            let (errors, estimated) =
+                fixture.check_tx_at_version(transition, level, platform_version);
+            assert_eq!(errors, Vec::<u32>::new());
+            let estimated = estimated
+                .expect("expected an estimated fee")
+                .total_base_fee();
+            fixture.set_balance(who, estimated - 1);
+            assert_eq!(
+                fixture
+                    .check_tx_at_version(transition, level, platform_version)
+                    .0,
+                vec![IDENTITY_INSUFFICIENT_BALANCE]
+            );
+            fixture.set_balance(who, estimated);
+            assert_eq!(
+                fixture
+                    .check_tx_at_version(transition, level, platform_version)
+                    .0,
+                Vec::<u32>::new()
+            );
+            least = least.min(estimated);
+        }
+        fixture.set_balance(who, least);
+        least
+    }
+
+    /// `platform_version` with the lookup query's allowance at `query`, the most one lookup
+    /// query a test's create makes costs in a block, so that check tx reserves no margin beyond
+    /// what the block bills for the query: whatever else the block bills the create must then
+    /// be reserved too.
+    fn with_tight_lookup_allowance(
+        platform_version: &PlatformVersion,
+        query: Credits,
+    ) -> PlatformVersion {
+        let mut tight = platform_version.clone();
+        tight
+            .fee_version
+            .document_reference
+            .lookup_query_credits_reserved = query;
+        tight
+    }
+
+    /// What a block bills `data`, a `type_name` create by `writer`, for its lookup queries: the
+    /// sum of the queries' processing fees document reference validation adds, at
+    /// `platform_version`.
+    fn lookup_query_cost(
+        fixture: &CommitRevealFixture,
+        type_name: &str,
+        data: &BTreeMap<String, Value>,
+        writer: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Credits {
+        let (result, execution_context, _) = fixture.validate_references(
+            type_name,
+            data,
+            writer,
+            None,
+            false,
+            REVEAL_HEIGHT,
+            platform_version,
+        );
+        assert!(result.is_valid(), "{:?}", result.errors);
+        execution_context
+            .operations_slice()
+            .iter()
+            .map(|operation| match operation {
+                ValidationOperation::PrecalculatedOperation(fee) => fee.processing_fee,
+                _ => 0,
+            })
+            .sum()
+    }
+
+    /// Check tx does not validate the state of a reveal, so its fee estimate held none of what
+    /// document reference validation bills a block for the commitment it finds: the key's hash
+    /// and the lookup query, and the delete of the commitment it consumes, which the block
+    /// prices with the create. It reserves them on the first check and on a recheck: a signer
+    /// holding exactly the smaller of the two estimates is charged for the reveal in the block,
+    /// at protocol version 14 and 15, and the consumed commitment is gone. The query's
+    /// allowance is held to what the block bills for the query, so it leaves no margin to cover
+    /// a delete the reservation missed (the key's hash, a few thousand credits, is pinned by
+    /// `should_report_the_gas_a_reveal_wants_with_its_billed_reservation_in`).
+    #[tokio::test]
+    async fn should_reserve_the_lookup_and_the_consumed_commitments_delete_when_admitting_a_reveal()
+    {
+        for protocol_version in CONSUME_PROTOCOL_VERSIONS {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected the platform version");
+            let mut fixture = CommitRevealFixture::new_at(platform_version, |_| {});
+            let salt = [0x11; 32];
+            let preorder = fixture
+                .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
+                .await;
+            let contract = fixture.contract.clone();
+            let (document, reveal) = fixture
+                .creation_transition(
+                    &contract,
+                    Who::Alice,
+                    "domain",
+                    &subdomain("Alice", "al1ce", "dash", salt),
+                    &[],
+                    None,
+                )
+                .await;
+            let query = lookup_query_cost(
+                &fixture,
+                "domain",
+                document.properties(),
+                fixture.id(Who::Alice),
+                platform_version,
+            );
+            hold_to_the_check_tx_estimate(
+                &fixture,
+                Who::Alice,
+                &reveal,
+                &with_tight_lookup_allowance(platform_version, query),
+            );
+
+            let result = fixture.process(&reveal, REVEAL_HEIGHT);
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "at {protocol_version}"
+            );
+            assert!(!fixture.preorder_exists(preorder.id()));
+        }
+    }
+
+    /// A lookup that does not consume is reserved too: a post finding its author's handle by
+    /// name, made by a signer holding exactly the smaller of the check tx and recheck estimates,
+    /// is charged in the block, at protocol version 14 and 15.
+    #[tokio::test]
+    async fn should_reserve_the_lookup_of_a_write_finding_a_document_by_a_value() {
+        for protocol_version in CONSUME_PROTOCOL_VERSIONS {
+            let mut fixture = handle_fixture_at(
+                "permanentDocument",
+                PlatformVersion::get(protocol_version).expect("expected the platform version"),
+                |_, _| {},
+            );
+            make_handle(&mut fixture, Who::Alice, "alice", COMMIT_HEIGHT).await;
+            let contract = fixture.contract.clone();
+            let (_, post) = fixture
+                .creation_transition(
+                    &contract,
+                    Who::Mallory,
+                    "post",
+                    &[("authorHandle", text("alice")), ("body", text("gm"))],
+                    &[],
+                    None,
+                )
+                .await;
+            hold_to_the_check_tx_estimate(
+                &fixture,
+                Who::Mallory,
+                &post,
+                PlatformVersion::get(protocol_version).expect("expected the platform version"),
+            );
+
+            let result = fixture.process(&post, REVEAL_HEIGHT);
+            assert_matches!(
+                result,
+                StateTransitionExecutionResult::SuccessfulExecution { .. },
+                "at {protocol_version}"
+            );
+        }
+    }
+
+    /// The fee check tx judges `transition` by on its first check at `platform_version`, the
+    /// reservations included, and the gas it reports the transition as wanting.
+    fn admitted_and_gas_wanted(
+        fixture: &CommitRevealFixture,
+        transition: &StateTransition,
+        platform_version: &PlatformVersion,
+    ) -> (Credits, Credits) {
+        let raw = transition
+            .serialize_to_bytes()
+            .expect("expected the transition to serialize");
+        let state = fixture.platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &fixture.platform.drive,
+            state: &state,
+            config: &fixture.platform.config,
+            core_rpc: &fixture.platform.core_rpc,
+        };
+        let result = fixture
+            .platform
+            .check_tx(&raw, FirstTimeCheck, &platform_ref, platform_version)
+            .expect("expected to check the transaction");
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        let checked = result.data.expect("expected a check tx result");
+        (
+            checked
+                .fee_result
+                .expect("expected an estimated fee")
+                .total_base_fee(),
+            checked.gas_wanted,
+        )
+    }
+
+    /// The processing fee of one double SHA-256 over a preimage of `preimage_len` bytes.
+    fn double_sha256_fee(preimage_len: usize, platform_version: &PlatformVersion) -> Credits {
+        let mut fee = FeeResult::default();
+        ValidationOperation::add_many_to_fee_result(
+            &[ValidationOperation::DoubleSha256(
+                HashFunction::Sha256d.block_count(preimage_len),
+            )],
+            &mut fee,
+            platform_version,
+        )
+        .expect("expected to price the hash");
+        fee.processing_fee
+    }
+
+    /// The fee check tx judges `transition` by at `level` and `platform_version`, the gas it
+    /// reports, and, from the event it builds: the operations it reserved, those a block bills
+    /// whenever it accepts the transition and the bounds, and the fee of the event without the
+    /// bounds and without every reserved operation.
+    struct ReservedGas {
+        admitted: Credits,
+        gas_wanted: Credits,
+        billed: Vec<ValidationOperation>,
+        bounds: Vec<ValidationOperation>,
+        without_bounds: Credits,
+        without_reservations: Credits,
+    }
+
+    /// [`ReservedGas`] of `transition` at `level`, `billed` the count of reserved operations a
+    /// block bills, which check tx adds right before its bounds, last.
+    fn reserved_gas(
+        fixture: &CommitRevealFixture,
+        transition: &StateTransition,
+        level: CheckTxLevel,
+        billed: usize,
+        platform_version: &PlatformVersion,
+    ) -> ReservedGas {
+        let raw = transition
+            .serialize_to_bytes()
+            .expect("expected the transition to serialize");
+        let state = fixture.platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &fixture.platform.drive,
+            state: &state,
+            config: &fixture.platform.config,
+            core_rpc: &fixture.platform.core_rpc,
+        };
+        let checked = fixture
+            .platform
+            .check_tx(&raw, level, &platform_ref, platform_version)
+            .expect("expected to check the transaction");
+        assert!(checked.errors.is_empty(), "{:?}", checked.errors);
+        let checked = checked.data.expect("expected a check tx result");
+        let CheckTxExecutionEvent {
+            event,
+            reserved_bounds,
+        } = state_transition_to_execution_event_for_check_tx(
+            &platform_ref,
+            transition,
+            level,
+            &fixture.platform.check_tx_proof_verifier,
+            platform_version,
+        )
+        .expect("expected to build the event")
+        .into_data()
+        .expect("expected the event to be valid")
+        .expect("expected an event");
+        let ExecutionEvent::Paid {
+            execution_operations,
+            ..
+        } = &event
+        else {
+            panic!("expected a paid event");
+        };
+        let reserved = billed + reserved_bounds.len();
+        let operations = execution_operations.len();
+        assert_eq!(
+            &execution_operations[operations - reserved_bounds.len()..],
+            reserved_bounds.as_slice(),
+            "the bounds come last"
+        );
+        let billed_operations = execution_operations
+            [operations - reserved..operations - reserved_bounds.len()]
+            .to_vec();
+        let fee_without_last = |dropped: usize| {
+            let mut event = event.clone();
+            let ExecutionEvent::Paid {
+                execution_operations,
+                ..
+            } = &mut event
+            else {
+                panic!("expected a paid event");
+            };
+            execution_operations.truncate(operations - dropped);
+            fixture
+                .platform
+                .validate_fees_of_event(&event, state.last_block_info(), None, platform_version)
+                .expect("expected to validate the fees")
+                .data
+                .expect("expected a fee")
+                .total_base_fee()
+        };
+        ReservedGas {
+            admitted: checked
+                .fee_result
+                .expect("expected an estimated fee")
+                .total_base_fee(),
+            gas_wanted: checked.gas_wanted,
+            billed: billed_operations,
+            bounds: reserved_bounds.clone(),
+            without_bounds: fee_without_last(reserved_bounds.len()),
+            without_reservations: fee_without_last(reserved),
+        }
+    }
+
+    /// Check tx holds a reveal's signer to what it reserves for the reveal's lookup and reports
+    /// the gas the reveal wants with the part a block bills whenever it accepts the reveal: the
+    /// key's double SHA-256 and the consumed commitment's delete are the billed reservation and
+    /// stay in the gas, raised by the user fee increase as the rest of the estimate is; the lookup
+    /// query's allowance is the bound and is left out. The gas is the estimate without the bound,
+    /// exactly or one credit above it (the increase rounds down over the whole fee), at protocol
+    /// version 14 and 15, on the first check and on a recheck, with no increase and with one of
+    /// 100%. Another allowance moves the fee check tx judges and not the gas it reports.
+    #[tokio::test]
+    async fn should_report_the_gas_a_reveal_wants_with_its_billed_reservation_in() {
+        for protocol_version in CONSUME_PROTOCOL_VERSIONS {
+            let platform_version =
+                PlatformVersion::get(protocol_version).expect("expected the platform version");
+            let mut fixture = CommitRevealFixture::new_at(platform_version, |_| {});
+            let salt = [0x11; 32];
+            fixture
+                .commit(Who::Alice, salt, "al1ce.dash", COMMIT_HEIGHT)
+                .await;
+            let contract = fixture.contract.clone();
+            let block_info = *fixture.platform.state.load().last_block_info();
+            let delete = fixture
+                .platform
+                .drive
+                .consumed_document_delete_cost(
+                    &contract,
+                    contract
+                        .document_type_for_name("preorder")
+                        .expect("expected the preorder type"),
+                    &block_info,
+                    platform_version,
+                )
+                .expect("expected to price the delete")
+                .processing_fee;
+            let key_blocks = HashFunction::Sha256d.block_count(32 + "al1ce.dash".len());
+            let allowance = platform_version
+                .fee_version
+                .document_reference
+                .lookup_query_credits_reserved;
+            for user_fee_increase in [0, 100] {
+                let (_, reveal) = fixture
+                    .creation_transition_raising_fees(
+                        &contract,
+                        Who::Alice,
+                        "domain",
+                        &subdomain("Alice", "al1ce", "dash", salt),
+                        &[],
+                        None,
+                        user_fee_increase,
+                    )
+                    .await;
+                for level in [FirstTimeCheck, Recheck] {
+                    let at = format!(
+                        "at {protocol_version}, {level:?}, an increase of {user_fee_increase}%"
+                    );
+                    let gas = reserved_gas(&fixture, &reveal, level, 2, platform_version);
+                    assert_eq!(
+                        gas.billed,
+                        vec![
+                            ValidationOperation::DoubleSha256(key_blocks),
+                            ValidationOperation::PrecalculatedOperation(
+                                FeeResult::new_from_processing_fee(delete)
+                            ),
+                        ],
+                        "{at}"
+                    );
+                    assert_eq!(
+                        gas.bounds,
+                        vec![ValidationOperation::PrecalculatedOperation(
+                            FeeResult::new_from_processing_fee(allowance)
+                        )],
+                        "{at}"
+                    );
+                    assert!(
+                        gas.gas_wanted == gas.without_bounds
+                            || gas.gas_wanted == gas.without_bounds + 1,
+                        "{at}: gas wanted {}, estimate without the bound {}",
+                        gas.gas_wanted,
+                        gas.without_bounds
+                    );
+                    if user_fee_increase == 0 {
+                        assert_eq!(gas.gas_wanted, gas.without_bounds, "{at}");
+                    }
+                    let billed =
+                        double_sha256_fee(32 + "al1ce.dash".len(), platform_version) + delete;
+                    assert_eq!(
+                        gas.without_bounds - gas.without_reservations,
+                        billed * (100 + u64::from(user_fee_increase)) / 100,
+                        "{at}: the billed reservation is in the gas"
+                    );
+                    assert!(gas.admitted > gas.gas_wanted, "{at}");
+                }
+                if user_fee_increase == 0 {
+                    let mut small_allowance = platform_version.clone();
+                    small_allowance
+                        .fee_version
+                        .document_reference
+                        .lookup_query_credits_reserved = 1;
+                    let (admitted, gas_wanted) =
+                        admitted_and_gas_wanted(&fixture, &reveal, platform_version);
+                    let (admitted_small, gas_wanted_small) =
+                        admitted_and_gas_wanted(&fixture, &reveal, &small_allowance);
+                    assert_eq!(gas_wanted_small, gas_wanted);
+                    assert_eq!(admitted - admitted_small, allowance - 1);
+                }
+            }
+        }
+    }
+
+    /// The fixture contract with `memberOrReveal`: a claim whose `ownerRefersTo` is an `anyOf`
+    /// of the writer's membership and, second, a reveal of a preorder of its label that
+    /// consumes it.
+    fn member_or_reveal(contract: &mut serde_json::Value) {
+        let mut schema = contract["documentSchemas"]["fallbackClaim"].clone();
+        schema["ownerRefersTo"] = serde_json::json!({
+            "anyOf": [
+                {
+                    "type": "deletableDocument",
+                    "documentType": "membership",
+                    "findBy": { "$ownerId": "." }
+                },
+                {
+                    "type": "deletableDocument",
+                    "documentType": "preorder",
+                    "findBy": {
+                        "saltedDomainHash": {
+                            "function": "sys.hash.sha256d",
+                            "params": ["preorderSalt", "label"]
+                        }
+                    },
+                    "where": { "$ownerId": "$ownerId" },
+                    "consume": true
+                }
+            ]
+        });
+        contract["documentSchemas"]["memberOrReveal"] = schema;
+    }
+
+    /// An `anyOf` stops at the first operand that holds, so a block bills the work of a later
+    /// operand only when every earlier one fails. Check tx holds the signer to all of it, but
+    /// reports the gas a claim wants with only the first operand's work: the reveal its second
+    /// operand would make, its key's hash and its commitment's delete, is a bound, beside the
+    /// two lookup queries' allowances. The block holds the claim through the membership and
+    /// neither hashes the key nor consumes the commitment.
+    #[tokio::test]
+    async fn should_report_the_work_of_an_any_of_operand_after_the_first_as_a_bound() {
+        let mut fixture = CommitRevealFixture::new_with(member_or_reveal);
+        let platform_version = PlatformVersion::latest();
+        let salt = [0x52; 32];
+        let preorder = fixture
+            .commit(Who::Alice, salt, "fallback", COMMIT_HEIGHT)
+            .await;
+        let (_, result) = fixture
+            .create(
+                Who::Alice,
+                "membership",
+                &[("note", "member".into())],
+                &[],
+                COMMIT_HEIGHT,
+            )
+            .await;
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        let contract = fixture.contract.clone();
+        let (_, claim) = fixture
+            .creation_transition(
+                &contract,
+                Who::Alice,
+                "memberOrReveal",
+                &[
+                    ("label", "fallback".into()),
+                    ("preorderSalt", Value::Bytes32(salt)),
+                ],
+                &[],
+                None,
+            )
+            .await;
+
+        let (admitted, gas_wanted) = admitted_and_gas_wanted(&fixture, &claim, platform_version);
+        let block_info = *fixture.platform.state.load().last_block_info();
+        let consumed_delete = fixture
+            .platform
+            .drive
+            .consumed_document_delete_cost(
+                &contract,
+                contract
+                    .document_type_for_name("preorder")
+                    .expect("expected the preorder type"),
+                &block_info,
+                platform_version,
+            )
+            .expect("expected to price the delete")
+            .processing_fee;
+        let allowance = platform_version
+            .fee_version
+            .document_reference
+            .lookup_query_credits_reserved;
+        assert_eq!(
+            admitted - gas_wanted,
+            2 * allowance
+                + double_sha256_fee(32 + "fallback".len(), platform_version)
+                + consumed_delete
+        );
+
+        let result = fixture.process(&claim, REVEAL_HEIGHT);
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert!(fixture.preorder_exists(preorder.id()));
+    }
+
+    /// From protocol version 15 a create deletes the commitment it consumes from what its lookup
+    /// read, without reading it again (the create conversion 1), so check tx prices the delete
+    /// without that read: it costs less than at 14, where the create deletes the commitment by
+    /// its id and reads it first. The lookup's own read is reserved by its query's allowance.
+    #[tokio::test]
+    async fn should_price_a_consumed_delete_without_reading_the_document_again_from_15() {
+        let fixture = CommitRevealFixture::new();
+        let contract = fixture.contract.clone();
+        let preorder = contract
+            .document_type_for_name("preorder")
+            .expect("expected the preorder type");
+        let block_info = *fixture.platform.state.load().last_block_info();
+        let delete_at = |protocol_version: u32| {
+            fixture
+                .platform
+                .drive
+                .consumed_document_delete_cost(
+                    &contract,
+                    preorder,
+                    &block_info,
+                    PlatformVersion::get(protocol_version).expect("expected the platform version"),
+                )
+                .expect("expected to price the delete")
+                .processing_fee
+        };
+        assert!(
+            delete_at(PlatformVersion::latest().protocol_version) < delete_at(14),
+            "at 15 {}, at 14 {}",
+            delete_at(PlatformVersion::latest().protocol_version),
+            delete_at(14)
+        );
+    }
+
+    /// A block drops what a failed `anyOf` operand consumes, so a consume in an operand that may
+    /// fail while a later one lets the write through is no work the block bills whenever it
+    /// accepts the write. `fallbackClaim` holds through `anyOf(allOf(<consuming reveal>,
+    /// <membership>), identity)`: check tx holds its signer to the reveal's delete but reports
+    /// it as a bound, beside the two lookup queries' allowances, with the reveal's key hash, the
+    /// first thing the block checks, in the gas. A writer without a membership is accepted
+    /// through the identity, and the commitment stays.
+    #[tokio::test]
+    async fn should_report_a_consume_an_any_of_may_drop_as_a_bound() {
+        let mut fixture = CommitRevealFixture::new();
+        let platform_version = PlatformVersion::latest();
+        let salt = [0x53; 32];
+        let preorder = fixture
+            .commit(Who::Mallory, salt, "fallback", COMMIT_HEIGHT)
+            .await;
+        let contract = fixture.contract.clone();
+        let (_, claim) = fixture
+            .creation_transition(
+                &contract,
+                Who::Mallory,
+                "fallbackClaim",
+                &[
+                    ("label", "fallback".into()),
+                    ("preorderSalt", Value::Bytes32(salt)),
+                ],
+                &[],
+                None,
+            )
+            .await;
+
+        let (admitted, gas_wanted) = admitted_and_gas_wanted(&fixture, &claim, platform_version);
+        let block_info = *fixture.platform.state.load().last_block_info();
+        let consumed_delete = fixture
+            .platform
+            .drive
+            .consumed_document_delete_cost(
+                &contract,
+                contract
+                    .document_type_for_name("preorder")
+                    .expect("expected the preorder type"),
+                &block_info,
+                platform_version,
+            )
+            .expect("expected to price the delete")
+            .processing_fee;
+        let allowance = platform_version
+            .fee_version
+            .document_reference
+            .lookup_query_credits_reserved;
+        assert_eq!(admitted - gas_wanted, 2 * allowance + consumed_delete);
+
+        let result = fixture.process(&claim, REVEAL_HEIGHT);
+        assert_matches!(
+            result,
+            StateTransitionExecutionResult::SuccessfulExecution { .. }
+        );
+        assert!(fixture.preorder_exists(preorder.id()));
+    }
+
+    /// A create its contest decides reads no `chooseFirst` competitor in a block, so check tx
+    /// reserves none of their hashes for it, where it reserves them for an uncontested reveal of
+    /// the same name; both keep the competitor scan's budget. Their bounds differ by exactly the
+    /// hashes of the competitors the scan may read.
+    #[tokio::test]
+    async fn should_reserve_no_competitor_hashes_for_a_create_its_contest_decides() {
+        let platform_version = PlatformVersion::latest();
+        let (uncontested, _) = preceded_reveal_fixture().await;
+        let (contested, _) =
+            preceded_reveal_on(contested_choose_first_fixture(platform_version)).await;
+        let mut bounds = Vec::new();
+        for mut fixture in [uncontested, contested] {
+            let contract = fixture.contract.clone();
+            let (_, reveal) = fixture
+                .creation_transition(&contract, Who::Mallory, "name", &name_values(), &[], None)
+                .await;
+            let (admitted, gas_wanted) =
+                admitted_and_gas_wanted(&fixture, &reveal, platform_version);
+            bounds.push(admitted - gas_wanted);
+        }
+        let competitors = u64::from(platform_version.system_limits.max_choose_first_candidates);
+        assert_eq!(
+            bounds[0] - bounds[1],
+            competitors * double_sha256_fee(32 + full_name().len(), platform_version)
+        );
+        assert!(bounds[1] >= choose_first_scan_budget(platform_version));
+    }
+
+    /// A reveal choosing the first of the commitments to its values is reported as wanting no
+    /// gas for what only bounds the work a block may bill, while check tx still holds its signer
+    /// to it: the competitor scan's budget, the hashes of the competitors the scan may read, and
+    /// its lookup query's allowance. The fee check tx judges and the gas it reports differ by
+    /// exactly those, so the `findBy` and `validWhen` hashes the check makes for the reveal's own
+    /// commitment stay in the gas.
+    #[tokio::test]
+    async fn should_report_the_gas_a_choose_first_reveal_wants_without_the_scan_budget() {
+        let (mut fixture, _) = preceded_reveal_fixture().await;
+        let platform_version = PlatformVersion::latest();
+        let contract = fixture.contract.clone();
+        let (_, reveal) = fixture
+            .creation_transition(&contract, Who::Mallory, "name", &name_values(), &[], None)
+            .await;
+        let (admitted, gas_wanted) = admitted_and_gas_wanted(&fixture, &reveal, platform_version);
+        let budget = choose_first_scan_budget(platform_version);
+        let competitor_hashes =
+            u64::from(platform_version.system_limits.max_choose_first_candidates)
+                * double_sha256_fee(32 + full_name().len(), platform_version);
+        let allowance = platform_version
+            .fee_version
+            .document_reference
+            .lookup_query_credits_reserved;
+        assert!(gas_wanted > 0);
+        assert_eq!(
+            admitted - gas_wanted,
+            budget + competitor_hashes + allowance,
+            "admitted {admitted}, gas wanted {gas_wanted}"
+        );
     }
 }

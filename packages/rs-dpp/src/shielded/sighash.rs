@@ -5,7 +5,9 @@
 //! These helpers build the transparent `extra_data` each transition binds into that sighash so the
 //! signing (client/builder) and verifying (consensus) sides commit to identical bytes. The byte
 //! layouts are consensus-critical and versioned via `dpp.methods.shielded_extra_sighash_data`; the
-//! credit pool's outputs-only bundles via `dpp.methods.credit_pool_bundle_binding`.
+//! credit pool's outputs-only bundles via `dpp.methods.credit_pool_bundle_binding`; and what the
+//! token bundle of an identity-less token pool transition binds after its own layout via
+//! `dpp.methods.token_pool_paid_fee_binding`.
 
 use crate::address_funds::PlatformAddress;
 use crate::fee::Credits;
@@ -487,7 +489,8 @@ pub fn document_token_payment_extra_sighash_data_v0(
 
 /// Extra sighash data of the token bundle of a `TokenShieldedTransferWithShieldedFee`: the
 /// state transition type and the token id, so the bundle is pinned to one token pool and one
-/// transition kind.
+/// transition kind. Where the token bundle binds its fee bundle, the fee bundle's commitment
+/// follows (see [`token_pool_paid_fee_binding_extra_sighash_data`]).
 pub fn token_shielded_transfer_with_shielded_fee_extra_sighash_data(
     token_id: &[u8; 32],
     platform_version: &PlatformVersion,
@@ -514,7 +517,9 @@ pub fn token_shielded_transfer_with_shielded_fee_extra_sighash_data_v0(
 
 /// Extra sighash data of the token bundle of a `TokenUnshieldWithShieldedFee`: the state
 /// transition type, the token id, the recipient and the amount, so the bundle cannot be
-/// replayed against another token, recipient or amount.
+/// replayed against another token, recipient or amount. Where the token bundle binds its fee
+/// bundle, the fee bundle's commitment follows (see
+/// [`token_pool_paid_fee_binding_extra_sighash_data`]).
 pub fn token_unshield_with_shielded_fee_extra_sighash_data(
     token_id: &[u8; 32],
     recipient_id: &[u8; 32],
@@ -551,7 +556,9 @@ pub fn token_unshield_with_shielded_fee_extra_sighash_data_v0(
 }
 
 /// Extra sighash data of the token bundle of a `TokenPurchaseFromShieldedPool`: the state
-/// transition type, the token id, the token count and the agreed price.
+/// transition type, the token id, the token count and the agreed price. Where the token bundle
+/// binds its fee bundle, the fee bundle's commitment follows (see
+/// [`token_pool_paid_fee_binding_extra_sighash_data`]).
 pub fn token_purchase_from_shielded_pool_extra_sighash_data(
     token_id: &[u8; 32],
     token_count: u64,
@@ -675,6 +682,51 @@ pub fn token_pool_fee_bundle_extra_sighash_data_v0(
     data.extend_from_slice(token_id);
     data.extend_from_slice(token_actions_digest);
     data
+}
+
+/// The extra sighash data of the token bundle of a `TokenShieldedTransferWithShieldedFee`,
+/// `TokenUnshieldWithShieldedFee` or `TokenPurchaseFromShieldedPool`, given the layout of its
+/// kind (`token_extra_sighash_data`, from that kind's builder above): the layout alone where the
+/// token bundle binds no fee bundle, followed by `fee_bundle_commitment`, the Orchard bundle
+/// commitment of the transition's fee bundle, from version 0.
+///
+/// The fee bundle binds a digest of the token bundle's actions
+/// ([`token_pool_fee_bundle_extra_sighash_data`]), so with the token bundle binding the fee
+/// bundle's commitment neither bundle can be paired with a bundle of different effects. The
+/// commitment covers the fee bundle's effecting data — its actions without their signatures, its
+/// flags, value balance and anchor — and not its proof or signatures. A builder therefore takes
+/// it from the fee bundle before proving it, signs the token bundle, and only then signs the fee
+/// bundle over the token bundle's signed actions.
+///
+/// Dispatches on `dpp.methods.token_pool_paid_fee_binding`, which the client builders and the
+/// consensus verifier both read.
+pub fn token_pool_paid_fee_binding_extra_sighash_data(
+    token_extra_sighash_data: Vec<u8>,
+    fee_bundle_commitment: &[u8; 32],
+    platform_version: &PlatformVersion,
+) -> Result<Vec<u8>, ProtocolError> {
+    match platform_version.dpp.methods.token_pool_paid_fee_binding {
+        None => Ok(token_extra_sighash_data),
+        Some(0) => Ok(token_pool_paid_fee_binding_extra_sighash_data_v0(
+            token_extra_sighash_data,
+            fee_bundle_commitment,
+        )),
+        Some(version) => Err(ProtocolError::UnknownVersionMismatch {
+            method: "token_pool_paid_fee_binding_extra_sighash_data".to_string(),
+            known_versions: vec![0],
+            received: version,
+        }),
+    }
+}
+
+/// Version 0 layout: the token bundle's own layout followed by the fee bundle's commitment (32).
+/// Frozen.
+pub fn token_pool_paid_fee_binding_extra_sighash_data_v0(
+    mut token_extra_sighash_data: Vec<u8>,
+    fee_bundle_commitment: &[u8; 32],
+) -> Vec<u8> {
+    token_extra_sighash_data.extend_from_slice(fee_bundle_commitment);
+    token_extra_sighash_data
 }
 
 /// Builds the transparent `extra_data` bound into a `TokenShieldedTransfer`'s platform sighash,
@@ -1318,6 +1370,62 @@ mod tests {
         assert_eq!(fee[0], 27);
         assert_eq!(&fee[1..33], &[1u8; 32]);
         assert_eq!(&fee[33..], &[3u8; 32]);
+    }
+
+    #[test]
+    fn should_append_the_fee_bundle_commitment_to_the_token_layouts_from_protocol_version_15() {
+        // Every byte here is consensus: the token bundles of protocol version 14 bind their own
+        // layout alone, those of later versions the fee bundle's commitment after it.
+        let v14 = PlatformVersion::get(14).expect("protocol version 14");
+        let latest = PlatformVersion::latest();
+        let commitment = [0xCC; 32];
+        let layouts = [
+            token_shielded_transfer_with_shielded_fee_extra_sighash_data(&[1u8; 32], latest)
+                .expect("transfer layout"),
+            token_unshield_with_shielded_fee_extra_sighash_data(
+                &[1u8; 32], &[2u8; 32], 300, latest,
+            )
+            .expect("unshield layout"),
+            token_purchase_from_shielded_pool_extra_sighash_data(&[1u8; 32], 5, 900, latest)
+                .expect("purchase layout"),
+        ];
+        for (layout, bound_length) in layouts.into_iter().zip([65, 105, 81]) {
+            assert_eq!(
+                token_pool_paid_fee_binding_extra_sighash_data(layout.clone(), &commitment, v14)
+                    .expect("protocol version 14"),
+                layout,
+                "protocol version 14 binds no fee bundle"
+            );
+            let bound =
+                token_pool_paid_fee_binding_extra_sighash_data(layout.clone(), &commitment, latest)
+                    .expect("latest protocol version");
+            assert_eq!(bound.len(), bound_length);
+            assert_eq!(&bound[..layout.len()], layout.as_slice());
+            assert_eq!(&bound[layout.len()..], &commitment);
+        }
+
+        let transfer = token_pool_paid_fee_binding_extra_sighash_data(
+            token_shielded_transfer_with_shielded_fee_extra_sighash_data_v0(&[1u8; 32]),
+            &commitment,
+            latest,
+        )
+        .expect("bound transfer");
+        let mut expected = vec![26u8];
+        expected.extend_from_slice(&[1u8; 32]);
+        expected.extend_from_slice(&[0xCC; 32]);
+        assert_eq!(transfer, expected);
+    }
+
+    #[test]
+    fn should_refuse_an_unknown_fee_binding_version() {
+        // Neither side may guess: a builder that bound one layout while the verifier rebuilt
+        // another would have every honest token pool transition refused.
+        let mut version = PlatformVersion::latest().clone();
+        version.dpp.methods.token_pool_paid_fee_binding = Some(1);
+        assert_matches::assert_matches!(
+            token_pool_paid_fee_binding_extra_sighash_data(vec![26], &[0u8; 32], &version),
+            Err(ProtocolError::UnknownVersionMismatch { received: 1, .. })
+        );
     }
 
     #[test]

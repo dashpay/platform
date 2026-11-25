@@ -1,7 +1,7 @@
 use bech32::{Bech32m, Hrp};
 use dashcore::Network;
 
-use crate::address_funds::platform_address::classify_platform_hrp;
+use crate::address_funds::platform_address::decode_platform_bech32m;
 use crate::address_funds::PlatformAddress;
 use crate::ProtocolError;
 
@@ -96,10 +96,7 @@ impl OrchardAddress {
     /// - `Err(ProtocolError)` - If the string is malformed or its HRP is not a
     ///   recognized platform HRP
     pub fn from_bech32m_string(s: &str) -> Result<Self, ProtocolError> {
-        let (hrp, data) =
-            bech32::decode(s).map_err(|e| ProtocolError::DecodingError(format!("{}", e)))?;
-
-        classify_platform_hrp(&hrp.as_str().to_ascii_lowercase())?;
+        let (_, data) = decode_platform_bech32m(s)?;
 
         // Validate payload: 1 type byte + 11 diversifier + 32 pk_d = 44 bytes
         if data.len() != 1 + ORCHARD_ADDRESS_SIZE {
@@ -203,6 +200,45 @@ mod tests {
         let decoded =
             OrchardAddress::from_bech32m_string(&encoded).expect("decoding should succeed");
         assert_eq!(decoded, address);
+    }
+
+    #[test]
+    fn should_reject_a_legacy_bech32_checksum_and_accept_bech32m() {
+        let address = test_orchard_address();
+        let hrp = Hrp::parse("tdash").unwrap();
+        let mut payload = vec![OrchardAddress::ORCHARD_TYPE];
+        payload.extend_from_slice(&address.to_raw_bytes());
+        let legacy = bech32::encode::<bech32::Bech32>(hrp, &payload).unwrap();
+        let current = bech32::encode::<Bech32m>(hrp, &payload).unwrap();
+
+        assert!(OrchardAddress::from_bech32m_string(&legacy).is_err());
+        assert_eq!(
+            OrchardAddress::from_bech32m_string(&current).unwrap(),
+            address
+        );
+    }
+
+    #[test]
+    fn should_reject_non_zero_padding_bits_under_a_valid_bech32m_checksum() {
+        use bech32::primitives::iter::{ByteIterExt, Fe32IterExt};
+        use bech32::Fe32;
+
+        // 44 bytes are 352 bits in 71 five-bit groups, so the last group
+        // carries three padding bits. Set one and checksum the result.
+        let hrp = Hrp::parse("tdash").unwrap();
+        let mut payload = vec![OrchardAddress::ORCHARD_TYPE];
+        payload.extend_from_slice(&test_orchard_address().to_raw_bytes());
+        let mut groups: Vec<Fe32> = payload.iter().copied().bytes_to_fes().collect();
+        let last = groups.pop().unwrap();
+        groups.push(Fe32::try_from(last.to_u8() | 0b001).unwrap());
+        let padded: String = groups
+            .into_iter()
+            .with_checksum::<Bech32m>(&hrp)
+            .chars()
+            .collect();
+
+        let err = OrchardAddress::from_bech32m_string(&padded).unwrap_err();
+        assert!(err.to_string().contains("padding"), "{err}");
     }
 
     #[test]

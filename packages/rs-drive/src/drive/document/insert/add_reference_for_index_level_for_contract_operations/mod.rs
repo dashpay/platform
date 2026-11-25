@@ -117,14 +117,17 @@ mod tests {
     #[test]
     fn should_describe_a_summable_index_value_entries_with_their_sum_items_from_protocol_version_15(
     ) {
-        for (platform_version, entries) in [
+        for (platform_version, tree_type, entries) in [
             // a reference to a document of a type keeping no history is 42 bytes
             (
                 PlatformVersion::get(14).expect("expected protocol version 14"),
+                TreeType::SumTree,
                 AllReference(32, 42, None),
             ),
             (
                 PlatformVersion::latest(),
+                // The tip jar's amounts may pass 2^27, so its sums are kept in 128 bits
+                TreeType::BigSumTree,
                 AllReferencesWithSumItem(32, 42, None),
             ),
         ] {
@@ -189,7 +192,7 @@ mod tests {
                     .get(&KeyInfoPath::from_known_owned_path(path))
                     .copied(),
                 Some(EstimatedLayerInformation {
-                    tree_type: TreeType::SumTree,
+                    tree_type,
                     estimated_layer_count: PotentiallyAtMaxElements,
                     estimated_layer_sizes: entries,
                 }),
@@ -224,7 +227,7 @@ mod tests {
                                 "indices": [index],
                                 "properties": {
                                     "tag": {"type": "string", "maxLength": 20, "position": 0},
-                                    "amount": {"type": "integer", "minimum": 0, "maximum": 4294967295i64, "position": 1}
+                                    "amount": {"type": "integer", "minimum": 0, "maximum": 100000000i64, "position": 1}
                                 },
                                 "required": ["tag", "amount"], "additionalProperties": false
                             }}), None, None,

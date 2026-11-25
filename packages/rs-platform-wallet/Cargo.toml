@@ -45,7 +45,9 @@ tracing = "0.1"
 hex = "0.4"
 bs58 = "0.5"
 serde = { version = "1", default-features = false, features = ["derive"], optional = true }
-serde_json = "1.0"
+# `preserve_order`: a document type's schema keeps its members in source
+# order through a contract update (protocol version 15 refuses a reorder).
+serde_json = { version = "1.0", features = ["preserve_order"] }
 
 # Image processing (DIP-15 avatar hash + fingerprint)
 sha2 = "0.10"
@@ -57,6 +59,11 @@ zeroize = "1"
 # `log` facade: the JNI layer routes `log` to Android logcat, while `tracing`
 # output is discarded there.
 log = "0.4"
+
+# Checks a profile's `shieldedAddress` bytes, which a wallet reads from other
+# identities' profiles whether or not it has the `shielded` feature. The same
+# tag `grovedb-commitment-tree` builds against, so one copy is compiled.
+orchard = { git = "https://github.com/dashpay/orchard.git", tag = "dashified-0.14.1", default-features = false }
 
 # Shielded pool (optional, behind `shielded` feature)
 grovedb-commitment-tree = { workspace = true, optional = true }
@@ -91,6 +98,9 @@ name = "shielded_chunk_timing_bench"
 required-features = ["shielded"]
 
 [dev-dependencies]
+# Builds address strings with a legacy Bech32 checksum, which the profile
+# payment address parser must refuse.
+bech32 = "0.11"
 tempfile = "3.27.0"
 # `tests::fixtures` for the state transition summary tests.
 dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"] }

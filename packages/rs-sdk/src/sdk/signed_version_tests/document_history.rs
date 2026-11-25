@@ -101,10 +101,7 @@ impl Fixture {
             .build()
             .expect("fresh unpinned SDK");
         assert!(!sdk.version_pinned);
-        assert_eq!(
-            sdk.protocol_version_number(),
-            if network == Network::Devnet { 14 } else { 13 }
-        );
+        assert_eq!(sdk.protocol_version_number(), 14);
         sdk
     }
 
@@ -249,10 +246,8 @@ async fn should_fetch_history_proof_info_as_the_first_proved_read_from_an_unpinn
         .expect("first proof-info read must reach and verify PV15")
         .unwrap();
     fixture.assert_history(&info.history);
-    assert_eq!(
-        GetDocumentHistoryResponse::from(info.response.clone()),
-        fixture.response
-    );
+    assert_eq!(info.response.clone(), fixture.response);
+    assert_eq!(info.request.clone(), fixture.request);
     assert_eq!(sdk.protocol_version_number(), 15);
     assert_eq!(
         info.verify(
@@ -294,6 +289,61 @@ fn should_verify_signed_history_directly_from_older_client_versions() {
             fixture.assert_history(&info.history);
         }
     }
+}
+
+/// On a network proven at 14, a read of the revisions from 2000 on goes out as the signed
+/// V0 request after 1999, and keeps the revision written at 2000. Proof info retains that
+/// V0 request, so it verifies again without the caller rebuilding it.
+#[tokio::test]
+async fn should_fetch_signed_pv14_history_from_an_inclusive_start_time() {
+    let fixture: Fixture = serde_json::from_str(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/vectors/document_history/pv14_time.json"
+    )))
+    .expect("signed timestamp-keyed history fixture");
+    let Some(RequestVersion::V0(sent)) = &fixture.request.version else {
+        panic!("V0 history request");
+    };
+    let query = DocumentHistoryQuery {
+        data_contract_id: Identifier::from_bytes(&sent.data_contract_id).unwrap(),
+        document_type_name: sent.document_type_name.clone(),
+        document_id: Identifier::from_bytes(&sent.document_id).unwrap(),
+        filter: DocumentHistoryFilter::StartAtTime(2000),
+        limit: sent.limit,
+    };
+    let sdk = fixture.mock_sdk(Network::Devnet).await;
+    sdk.mock_verified_protocol_version(14).unwrap();
+
+    let history = DocumentHistory::fetch(&sdk, query.clone())
+        .await
+        .expect("the V0 request verifies")
+        .unwrap();
+    assert_eq!(
+        history
+            .entries
+            .iter()
+            .map(|entry| (entry.time_ms, entry.revision))
+            .collect::<Vec<_>>(),
+        vec![(2000, 2), (3000, 3)]
+    );
+    assert_eq!(history.lifecycle, None);
+
+    let info = DocumentHistoryProofInfo::fetch(&sdk, query)
+        .await
+        .expect("the V0 request verifies")
+        .unwrap();
+    assert_eq!(info.history, history);
+    assert_eq!(info.request, fixture.request);
+    assert_eq!(
+        info.verify(
+            fixture.request.clone(),
+            Network::Devnet,
+            sdk.version(),
+            &fixture.provider()
+        )
+        .unwrap(),
+        Some(history)
+    );
 }
 
 #[test]
@@ -407,7 +457,7 @@ fn should_reject_history_protocol_version_tampering(cursor: bool) {
                     matches!(
                         &error,
                         drive_proof_verifier::Error::DriveError { error }
-                            if error == "drive: drive unknown version on verify_document_history, received: 0"
+                            if error == "drive: drive unknown version on verify_document_history_serialized, received: 0"
                     ),
                     "{kind}: {error}"
                 );

@@ -1,7 +1,7 @@
 {
   "domain": {
     "documentsMutable": false,
-    "canBeDeleted": false,
+    "canBeDeleted": true,
     "transferable": 1,
     "tradeMode": 1,
     "keepsTransferHistory": true,
@@ -175,6 +175,20 @@
       "preorderSalt"
     ],
     "propertyConstraints": {
+      "nameIsNotTombstoned": {
+        "equal": [
+          {
+            "countOf": [
+              "tombstone",
+              {
+                "normalizedParentDomainName": "normalizedParentDomainName",
+                "normalizedLabel": "normalizedLabel"
+              }
+            ]
+          },
+          0
+        ]
+      },
       "recordsIdentityIsOwner": {
         "ifThen": [
           {
@@ -268,6 +282,60 @@
         ]
       }
     },
+    "additionalProperties": false
+  },
+  "tombstone": {
+    "description": "A name its owner gave up for good: creating one deletes the owner's domain of that name, and nobody can register the name while the tombstone exists. Nobody can delete or change a tombstone. A tombstoned name may later be brought back and redistributed through a direct or indirect will of the DAO",
+    "documentsMutable": false,
+    "canBeDeleted": false,
+    "transferable": 0,
+    "tradeMode": 0,
+    "type": "object",
+    "indices": [
+      {
+        "name": "parentNameAndLabel",
+        "properties": [
+          {
+            "normalizedParentDomainName": "asc"
+          },
+          {
+            "normalizedLabel": "asc"
+          }
+        ],
+        "countable": "countable"
+      }
+    ],
+    "properties": {
+      "normalizedLabel": {
+        "type": "string",
+        "maxLength": 63,
+        "refersTo": {
+          "type": "deletableDocument",
+          "documentType": "domain",
+          "findBy": {
+            "normalizedParentDomainName": "normalizedParentDomainName",
+            "normalizedLabel": "."
+          },
+          "where": {
+            "$ownerId": "$ownerId"
+          },
+          "consume": true
+        },
+        "position": 0,
+        "description": "Normalized label of the tombstoned name, e.g. 'b0b': the creator's own domain of that name, which the create deletes"
+      },
+      "normalizedParentDomainName": {
+        "type": "string",
+        "maxLength": 63,
+        "position": 1,
+        "description": "Normalized parent domain name of the tombstoned name, e.g. 'dash'"
+      }
+    },
+    "required": [
+      "$createdAt",
+      "normalizedLabel",
+      "normalizedParentDomainName"
+    ],
     "additionalProperties": false
   }
 }

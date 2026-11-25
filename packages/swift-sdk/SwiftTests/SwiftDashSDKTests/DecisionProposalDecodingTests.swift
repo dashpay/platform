@@ -266,6 +266,22 @@ final class DecisionProposalDecodingTests: XCTestCase {
         )
         XCTAssertEqual(beforeEpoch.endDateMs, 0)
     }
+
+    // MARK: - End date
+
+    func testShouldReadTheEndDateAsDecimalMilliseconds() throws {
+        XCTAssertEqual(try DecisionProposalJSON.milliseconds(from: "1701209600123"), 1_701_209_600_123)
+        XCTAssertEqual(try DecisionProposalJSON.milliseconds(from: "18446744073709551615"), UInt64.max)
+        for notMilliseconds in ["", "-1", "1.5", "\"1701209600123\"", "18446744073709551616"] {
+            XCTAssertThrowsError(
+                try DecisionProposalJSON.milliseconds(from: notMilliseconds), notMilliseconds
+            ) { error in
+                guard case SDKError.serializationError = error else {
+                    return XCTFail("expected a serialization error, got \(error)")
+                }
+            }
+        }
+    }
 }
 
 /// Blocks as the payloads above write them: core height 42, epoch 3, a second

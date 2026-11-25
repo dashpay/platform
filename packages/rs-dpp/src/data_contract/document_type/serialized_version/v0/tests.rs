@@ -257,3 +257,36 @@ fn should_preserve_boolean_deletion_bytes_and_refuse_erasable_storage_without_hi
     assert!(policy.into_parts(false).is_err());
     assert!(StoredDeletion::of(false, true).is_err());
 }
+
+/// A total matching a key by the elements of an array of the document, parsed from protocol
+/// version 15, reads back from its stored form as it was parsed.
+#[test]
+fn should_read_back_a_total_matched_by_the_elements_of_an_array() {
+    use crate::data_contract::document_type::property_constraints::{
+        parse_property_constraints, EqualityKind,
+    };
+    use platform_value::platform_value;
+
+    let schema = platform_value!({
+        "type": "object",
+        "propertyConstraints": {
+            "noBannedTags": {
+                "equal": [{ "countOf": ["bannedTag", { "tag": { "in": "tags" } }] }, 0]
+            }
+        }
+    });
+    let rule = parse_property_constraints(
+        &schema,
+        "post",
+        &|_| Some(EqualityKind::Text),
+        PlatformVersion::latest(),
+    )
+    .expect("expected the rule to parse")
+    .remove("noBannedTags")
+    .expect("expected the rule under its name");
+    assert_eq!(rule.aggregate_reads()[0].elements_path(), Some("tags"));
+    assert_eq!(
+        round_trip(&rule).expect("expected the rule to decode"),
+        rule
+    );
+}

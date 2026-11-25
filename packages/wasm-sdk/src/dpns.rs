@@ -5,9 +5,11 @@ use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::data_contract::DataContract;
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
+use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::IdentityPublicKey;
 use dash_sdk::dpp::platform_value::{string_encoding::Encoding, Value};
 use dash_sdk::dpp::prelude::Identifier;
+use dash_sdk::platform::documents::transitions::DocumentDeleteResult;
 use dash_sdk::platform::dpns_usernames::{
     convert_to_homograph_safe_chars, is_contested_username, is_valid_username,
     RegisterDpnsNameInput,
@@ -157,6 +159,86 @@ extern "C" {
     pub type DpnsRegisterNameOptionsJs;
 }
 
+// ============================================================================
+// DPNS Delete Name / Tombstone Name
+// ============================================================================
+
+/// TypeScript interface for DPNS name deletion options
+#[wasm_bindgen(typescript_custom_section)]
+const DPNS_DELETE_NAME_OPTIONS_TS: &'static str = r#"
+/**
+ * Options for deleting a DPNS name its owner no longer wants (protocol
+ * version 15). The name is free again: anybody may register it.
+ *
+ * A contested name (3 to 19 characters of a-z, 0, 1 and -, once normalized)
+ * can not be deleted, only tombstoned: see `DpnsTombstoneNameOptions`.
+ */
+export interface DpnsDeleteNameOptions {
+  /**
+   * The name to delete: its label ("alice") or the full name ("alice.dash").
+   */
+  name: string;
+
+  /**
+   * The key of the identity holding the name that signs the delete.
+   * Get this from the identity's public keys.
+   */
+  identityKey: IdentityPublicKey;
+
+  /**
+   * Signer containing the private key that corresponds to the identity key.
+   * Use IdentitySigner to add the private key before calling.
+   */
+  signer: IdentitySigner;
+}
+
+/**
+ * Options for tombstoning a DPNS name its owner no longer wants (protocol
+ * version 15). The name is deleted and nobody can register it again while
+ * the tombstone exists.
+ *
+ * A tombstone can not be undone by anyone: neither its owner nor anybody
+ * else can delete it. The DPNS contract says only that a tombstoned name may
+ * later be brought back and redistributed through a direct or indirect will
+ * of the DAO.
+ *
+ * Any name can be tombstoned. It is the only way to give up a contested name.
+ */
+export interface DpnsTombstoneNameOptions {
+  /**
+   * The name to tombstone: its label ("alice") or the full name ("alice.dash").
+   */
+  name: string;
+
+  /**
+   * The identity holding the name.
+   * Fetch the identity first using `getIdentity()`.
+   */
+  identity: Identity;
+
+  /**
+   * The key of that identity that signs the tombstone.
+   * Get this from the identity's public keys.
+   */
+  identityKey: IdentityPublicKey;
+
+  /**
+   * Signer containing the private key that corresponds to the identity key.
+   * Use IdentitySigner to add the private key before calling.
+   */
+  signer: IdentitySigner;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "DpnsDeleteNameOptions")]
+    pub type DpnsDeleteNameOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "DpnsTombstoneNameOptions")]
+    pub type DpnsTombstoneNameOptionsJs;
+}
+
 // TS definition for DpnsUsernamesQuery used by getDpnsUsernames*
 #[wasm_bindgen(typescript_custom_section)]
 const DPNS_USERNAMES_QUERY_TS: &'static str = r#"
@@ -227,6 +309,18 @@ fn extract_callback_from_options(
 const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
 /// DPNS domain document type
 const DPNS_DOCUMENT_TYPE: &str = "domain";
+/// DPNS document type of a name given up for good, from DPNS v3
+const DPNS_TOMBSTONE_DOCUMENT_TYPE: &str = "tombstone";
+
+/// What a lookup by name reports of `domain`, the `domain` document of `username`: the name
+/// as it was asked for, the document, and its owner.
+fn dpns_username_info(username: &str, domain: &Document) -> DpnsUsernameInfoWasm {
+    DpnsUsernameInfoWasm {
+        username: username.to_string(),
+        identity_id: IdentifierWasm::from(domain.owner_id()),
+        document_id: IdentifierWasm::from(domain.id()),
+    }
+}
 
 impl WasmSdk {
     /// Get DPNS contract, checking context provider cache first, then fetching if needed.
@@ -431,6 +525,96 @@ impl WasmSdk {
             .map_err(WasmSdkError::from)
     }
 
+    /// Whether a DPNS name is tombstoned: its owner gave it up for good, and nobody
+    /// can register it while the tombstone exists. `dpnsIsNameAvailable` is false
+    /// for such a name. False for a registered name and for a free one. Before
+    /// protocol version 15 no name is tombstoned, so a read that succeeds answers
+    /// false.
+    ///
+    /// A read that fails rejects: it is never answered as false.
+    ///
+    /// @param name - The label ("alice") or the full name ("alice.dash")
+    /// @returns Promise that resolves to whether the name is tombstoned, and
+    ///          rejects when the network can not be read
+    #[wasm_bindgen(js_name = "dpnsIsNameTombstoned")]
+    pub async fn dpns_is_name_tombstoned(&self, name: &str) -> Result<bool, WasmSdkError> {
+        self.as_ref()
+            .is_dpns_name_tombstoned(name)
+            .await
+            .map_err(WasmSdkError::from)
+    }
+
+    /// Delete a DPNS name its owner no longer wants (protocol version 15). The name
+    /// is free again: anybody may register it. The owner is refunded what is left of
+    /// the name's storage fee.
+    ///
+    /// A contested name (3 to 19 characters of a-z, 0, 1 and -, once normalized) can
+    /// not be deleted, only tombstoned with `dpnsTombstoneName`: the call rejects
+    /// before anything is broadcast.
+    ///
+    /// @param options - Delete options including name, identity key, and signer
+    /// @returns Promise that resolves to the id of the deleted domain document
+    #[wasm_bindgen(js_name = "dpnsDeleteName")]
+    pub async fn dpns_delete_name(
+        &self,
+        options: DpnsDeleteNameOptionsJs,
+    ) -> Result<IdentifierWasm, WasmSdkError> {
+        let name: String = try_from_options_with(&options, "name", |v| try_to_string(v, "name"))?;
+        let identity_public_key: IdentityPublicKey =
+            IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?.into();
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
+
+        let DocumentDeleteResult::Deleted(document_id) = self
+            .as_ref()
+            .delete_dpns_name(&name, &identity_public_key, &signer)
+            .await?;
+
+        Ok(IdentifierWasm::from(document_id))
+    }
+
+    /// Tombstone a DPNS name its owner no longer wants (protocol version 15): the
+    /// name is deleted and nobody can register it again while the tombstone exists.
+    /// The owner is refunded what is left of the name's storage fee and pays for the
+    /// tombstone's.
+    ///
+    /// A tombstone can not be undone by anyone: neither its owner nor anybody else
+    /// can delete it. The DPNS contract says only that a tombstoned name may later
+    /// be brought back and redistributed through a direct or indirect will of the
+    /// DAO.
+    ///
+    /// Any name can be tombstoned. It is the only way to give up a contested name.
+    ///
+    /// @param options - Tombstone options including name, identity, identity key, and signer
+    /// @returns Promise that resolves to the tombstone document the network stored
+    #[wasm_bindgen(js_name = "dpnsTombstoneName")]
+    pub async fn dpns_tombstone_name(
+        &self,
+        options: DpnsTombstoneNameOptionsJs,
+    ) -> Result<DocumentWasm, WasmSdkError> {
+        let name: String = try_from_options_with(&options, "name", |v| try_to_string(v, "name"))?;
+        let identity: Identity = IdentityWasm::try_from_options(&options, "identity")?.into();
+        let identity_public_key: IdentityPublicKey =
+            IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?.into();
+        let signer = IdentitySignerWasm::try_from_options(&options, "signer")?;
+
+        let dpns_contract_id = Identifier::from_string(DPNS_CONTRACT_ID, Encoding::Base58)
+            .map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid DPNS contract ID: {}", e))
+            })?;
+
+        let tombstone = self
+            .as_ref()
+            .tombstone_dpns_name(&name, identity.id(), identity_public_key, &signer)
+            .await?;
+
+        Ok(DocumentWasm::new(
+            tombstone,
+            dpns_contract_id,
+            DPNS_TOMBSTONE_DOCUMENT_TYPE.to_string(),
+            None,
+        ))
+    }
+
     #[wasm_bindgen(js_name = "dpnsResolveName")]
     pub async fn dpns_resolve_name(&self, name: &str) -> Result<Option<String>, WasmSdkError> {
         let result = self.as_ref().resolve_dpns_name(name).await?;
@@ -443,41 +627,12 @@ impl WasmSdk {
         &self,
         username: &str,
     ) -> Result<Option<DpnsUsernameInfoWasm>, WasmSdkError> {
-        let parts: Vec<&str> = username.split('.').collect();
-        if parts.len() != 2 {
-            return Err(WasmSdkError::invalid_argument(
-                "Invalid username format. Expected format: label.domain",
-            ));
-        }
-        let label = parts[0];
-        let domain = parts[1];
+        let domain = self
+            .as_ref()
+            .get_dpns_domain_document_by_name(username)
+            .await?;
 
-        let dpns_contract = self.get_dpns_contract().await?;
-        let mut query = DocumentQuery::new(dpns_contract, DPNS_DOCUMENT_TYPE)?;
-
-        query = query.with_where(WhereClause {
-            field: "normalizedLabel".to_string(),
-            operator: WhereOperator::Equal,
-            value: Value::Text(label.to_lowercase()),
-        });
-
-        query = query.with_where(WhereClause {
-            field: "normalizedParentDomainName".to_string(),
-            operator: WhereOperator::Equal,
-            value: Value::Text(domain.to_lowercase()),
-        });
-
-        let documents = Document::fetch_many(self.as_ref(), query).await?;
-
-        if let Some((_, Some(document))) = documents.into_iter().next() {
-            Ok(Some(DpnsUsernameInfoWasm {
-                username: username.to_string(),
-                identity_id: IdentifierWasm::from(document.owner_id()),
-                document_id: IdentifierWasm::from(document.id()),
-            }))
-        } else {
-            Ok(None)
-        }
+        Ok(domain.map(|domain| dpns_username_info(username, &domain)))
     }
 
     #[wasm_bindgen(
@@ -488,45 +643,19 @@ impl WasmSdk {
         &self,
         username: &str,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let parts: Vec<&str> = username.split('.').collect();
-        if parts.len() != 2 {
-            return Err(WasmSdkError::invalid_argument(
-                "Invalid username format. Expected format: label.domain",
-            ));
-        }
-        let label = parts[0];
-        let domain = parts[1];
+        let (domain, metadata, proof) = self
+            .as_ref()
+            .get_dpns_domain_document_by_name_with_metadata_and_proof(username)
+            .await?;
 
-        let dpns_contract = self.get_dpns_contract().await?;
-        let mut query = DocumentQuery::new(dpns_contract, DPNS_DOCUMENT_TYPE)?;
-
-        query = query.with_where(WhereClause {
-            field: "normalizedLabel".to_string(),
-            operator: WhereOperator::Equal,
-            value: Value::Text(label.to_lowercase()),
-        });
-
-        query = query.with_where(WhereClause {
-            field: "normalizedParentDomainName".to_string(),
-            operator: WhereOperator::Equal,
-            value: Value::Text(domain.to_lowercase()),
-        });
-
-        let (documents, metadata, proof) =
-            Document::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
-
-        let data = if let Some((_, Some(document))) = documents.into_iter().next() {
-            let result = DpnsUsernameInfoWasm {
-                username: username.to_string(),
-                identity_id: IdentifierWasm::from(document.owner_id()),
-                document_id: IdentifierWasm::from(document.id()),
-            };
-
+        let data = if let Some(domain) = domain {
             // Use json_compatible() to ensure objects become plain JS objects (not Maps)
             let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-            result.serialize(&serializer).map_err(|e| {
-                WasmSdkError::serialization(format!("Failed to serialize username info: {}", e))
-            })?
+            dpns_username_info(username, &domain)
+                .serialize(&serializer)
+                .map_err(|e| {
+                    WasmSdkError::serialization(format!("Failed to serialize username info: {}", e))
+                })?
         } else {
             JsValue::NULL
         };
@@ -605,5 +734,149 @@ impl WasmSdk {
         response.set_data(username);
 
         Ok(response)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::context_provider::WasmTrustedContext;
+    #[cfg(not(target_arch = "wasm32"))]
+    use crate::error::WasmSdkErrorKind;
+    use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dash_sdk::dpp::document::DocumentV0;
+    use dash_sdk::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
+    use dash_sdk::drive::query::SelectProjection;
+    use dash_sdk::Sdk;
+
+    const DOMAIN_OWNER: [u8; 32] = [7; 32];
+    const DOMAIN_DOCUMENT_ID: [u8; 32] = [9; 32];
+
+    /// An SDK whose network holds one name, stored as DPNS stores `alice.dash`: under the
+    /// homograph-safe label `a11ce` and the parent domain `dash`. It answers the query for
+    /// that stored form and no other.
+    async fn sdk_holding_alice_dot_dash() -> WasmSdk {
+        let mut inner_sdk = Sdk::new_mock();
+        let dpns = load_system_data_contract(SystemDataContract::DPNS, inner_sdk.version())
+            .expect("the DPNS contract loads");
+        let domain = Document::V0(DocumentV0 {
+            id: Identifier::new(DOMAIN_DOCUMENT_ID),
+            owner_id: Identifier::new(DOMAIN_OWNER),
+            ..Default::default()
+        });
+        // The Rust SDK asks the context provider for the DPNS contract first, and fetches it
+        // when the provider does not hold it.
+        let context = WasmTrustedContext::for_testing(vec![]);
+        inner_sdk
+            .set_context_provider(context.clone())
+            .expect("the context provider is set");
+        inner_sdk
+            .mock()
+            .expect_fetch(dpns.id(), Some(dpns.clone()))
+            .await
+            .expect("the DPNS contract fetch is expected");
+        let stored_name_query = DocumentQuery {
+            select: SelectProjection::documents(),
+            data_contract: Arc::new(dpns),
+            document_type_name: DPNS_DOCUMENT_TYPE.to_string(),
+            where_clauses: vec![
+                WhereClause {
+                    field: "normalizedParentDomainName".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Text("dash".to_string()),
+                },
+                WhereClause {
+                    field: "normalizedLabel".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Text("a11ce".to_string()),
+                },
+            ],
+            time_range_clauses: vec![],
+            integer_range_clauses: vec![],
+            sub_queries: vec![],
+            group_by: vec![],
+            having: vec![],
+            order_by_clauses: vec![],
+            limit: 1,
+            offset: None,
+            start: None,
+        };
+        inner_sdk
+            .mock()
+            .expect_fetch_many::<Identifier, Document, DocumentQuery, Documents>(
+                stored_name_query,
+                Some([(domain.id(), Some(domain))].into_iter().collect()),
+            )
+            .await
+            .expect("the domain query is expected");
+        WasmSdk::new_for_testing(inner_sdk, Some(context))
+    }
+
+    /// DPNS keeps a name under its homograph-safe label: `alice.dash` is stored as `a11ce`
+    /// under `dash`. A lookup of the name as a user types it has to search for that form, or
+    /// it finds nothing for any label with an `i`, `l` or `o`.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn should_find_a_username_whose_label_dpns_stores_in_homograph_safe_form() {
+        let sdk = sdk_holding_alice_dot_dash().await;
+
+        let info = sdk
+            .get_dpns_username_by_name("Alice.DASH")
+            .await
+            .expect("the lookup succeeds")
+            .expect("the name is found");
+
+        assert_eq!(info.username, "Alice.DASH");
+        assert_eq!(
+            Identifier::from(info.identity_id),
+            Identifier::new(DOMAIN_OWNER)
+        );
+        assert_eq!(
+            Identifier::from(info.document_id),
+            Identifier::new(DOMAIN_DOCUMENT_ID)
+        );
+    }
+
+    /// The lookup that also returns the proof searches for the same stored form, and
+    /// reports the name as it was typed, the document's owner and the document. This
+    /// response carries the two identifiers as their bytes.
+    #[cfg(target_arch = "wasm32")]
+    #[wasm_bindgen_test::wasm_bindgen_test]
+    async fn should_find_a_username_in_homograph_safe_form_with_proof_info() {
+        let sdk = sdk_holding_alice_dot_dash().await;
+
+        let response = sdk
+            .get_dpns_username_by_name_with_proof_info("Alice.DASH")
+            .await
+            .expect("the lookup succeeds");
+
+        assert_eq!(
+            wasm_dpp2::serialization::js_value_to_json(&response.data()).expect("the info as JSON"),
+            serde_json::json!({
+                "username": "Alice.DASH",
+                "identityId": DOMAIN_OWNER,
+                "documentId": DOMAIN_DOCUMENT_ID,
+            })
+        );
+    }
+
+    /// A name that is not a label and a parent domain is refused as an invalid argument,
+    /// before anything is read: the mock SDK holds no expectation.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn should_refuse_a_username_that_is_not_a_label_and_a_domain() {
+        let sdk = WasmSdk::new_for_testing(Sdk::new_mock(), None);
+
+        let error = sdk
+            .get_dpns_username_by_name("alice")
+            .await
+            .err()
+            .expect("a bare label is refused");
+
+        assert_eq!(error.kind(), WasmSdkErrorKind::InvalidArgument);
+        assert_eq!(
+            error.message(),
+            "Invalid username format. Expected format: label.domain"
+        );
     }
 }

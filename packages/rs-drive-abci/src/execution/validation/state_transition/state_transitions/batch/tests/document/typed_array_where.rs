@@ -326,6 +326,7 @@ mod typed_array_where_tests {
                 &DocumentSystemValues::default(),
                 None,
                 None,
+                false,
                 &platform_ref,
                 &BlockInfo::default(),
                 &mut Vec::new(),

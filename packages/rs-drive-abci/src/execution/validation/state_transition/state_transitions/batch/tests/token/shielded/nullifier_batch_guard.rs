@@ -655,6 +655,16 @@ fn cap_two() -> PlatformVersion {
     version
 }
 
+/// How the Debug output of a contract fetch info names the protocol version its contract was
+/// parsed under, for a contract read at `platform_version`. It records which reader parsed the
+/// copy, which the characterizations below do not cover.
+fn parsed_under_debug_field(platform_version: &PlatformVersion) -> String {
+    format!(
+        ", parsed_under_protocol_version: {}",
+        platform_version.protocol_version
+    )
+}
+
 #[tokio::test]
 async fn should_preserve_single_entry_full_processor_fees_and_result() {
     let pool = FundedPool::new().await;
@@ -677,12 +687,15 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
                 PlatformVersion::latest(),
             )
             .unwrap();
+        // The protocol version the cached contract was parsed under is incidental Debug
+        // output; keep actions, charges and operations in the original pin.
         let snapshot = format!(
             "{:?}/{:?}/{:?}",
             validated,
             context.operations_slice(),
             operations
-        );
+        )
+        .replace(&parsed_under_debug_field(PlatformVersion::latest()), "");
         println!(
             "SINGLE ENTRY VALIDATION {mode:?}/{dry_run}: {}",
             hex::encode(hash_single(snapshot.as_bytes()))
@@ -735,7 +748,7 @@ async fn should_preserve_single_entry_full_processor_fees_and_result() {
                 .value
                 .unwrap()
         ),
-        "a31f166a75f37e3a8c2762401f52d7ba296517d0b54c945a7ce6f16cff00687c"
+        "0d32615dcce391c379ff87ffe632cbe8e389956effde3b68bb8cc6819401d589"
     );
     assert_eq!(
         pool.platform
@@ -2182,13 +2195,17 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
             .unwrap()
             .into_high_level_drive_operations(&BlockInfo::default().epoch, version)
             .unwrap();
-        // This non-history fixture cannot erase documents. Its inactive lifecycle flag is
-        // incidental Debug output; keep actions, charges and operations in the original pin.
+        // This non-history fixture cannot erase documents and sums nothing. Its inactive
+        // lifecycle flag, the sum width of its type and index levels, and the protocol version
+        // its cached contract was parsed under are incidental Debug output; keep actions,
+        // charges and operations in the original pin.
         let validation = format!(
             "{validated:?}/{:?}/{operations:?}",
             context.operations_slice()
         )
-        .replace(", documents_can_be_erased: false", "");
+        .replace(", documents_can_be_erased: false", "")
+        .replace(", big_sums: false", "")
+        .replace(&parsed_under_debug_field(version), "");
         let result = process(&pool.platform, &transition);
         let root_after = pool
             .platform
@@ -2223,39 +2240,39 @@ async fn should_preserve_single_entry_actions_errors_operations_and_settled_stat
         let (expected_validation, expected_settled) = match case {
             "shield" => (
                 "6a823c2db94612652926e6b9c1ae7feec9c2547dfd4cfc4e474318da1c16d59c",
-                "b6959ba62f0b7d74b6eb688521d10fc79b99666907b7b2517f7ec5c7b131a02d",
+                "6f079f15653c3ce2c060638558199882ab353be971c11dff202f6d1df0a3ab91",
             ),
             "valid-payment" => (
-                "9388d5cf63c4a571b9fb009679e2e34d0b681acc88f0f5195e7287c7efbd92f7",
-                "dbad5dabd04124617e5edaa111ff7504e7ba3d1db2eacd0b6ccb1c8aa604845e",
+                "c45968b193c120f67d1e9ff916dec97d4399b2fe6d2d3633d03dc80c50418a3a",
+                "7b9460a2ebc4c106283b81343342c278b52e297d659a305341d4835bc46f7cfd",
             ),
             "failed-payment" => (
                 "d9b5fe191841bea952494f2a45e3833f925f4d367a1937b2ef1235a1aa01f51e",
-                "36a1b19da647f8fa158c1f7dd7f9257967fcf616ed0469e61f2927808e81b208",
+                "11a9cfcb0d3a875989ee38850fff27d81c25b291a5e1f987320261a4db0f1532",
             ),
             "within-bundle-repeat" => (
                 "8023e03a697a20f6a78396a05503a4bc583ca8f69e19bd7ee07a6ae0ce7be478",
-                "6c8e5ef40d1e42f15bd408e0fd0220684e38884812cd5a092e1e9e0151a1ecbe",
+                "a56e5d0bc9130717950924fcdfbec2f6bf86f7d7f17889af3cb3ba15d1d41029",
             ),
             "stored-repeat" => (
                 "05652ac85c972902e8c09d20a7d8586e17e9434a478b335da136ad85f73def01",
-                "51216c2a7ffd6fddab95f03ba8fa98fb4b72efdbf726391cfb0f9c52418d9e43",
+                "4279909c02a058aaee818adfcbeb1395ba5adb54b3ee3bf88fb097064ad4544d",
             ),
             "open-mint-group" => (
                 "5c68381297c9bf68c5e85ebe6bb9e0f1289e2c07718eecfb5e6773d6009455bb",
-                "c1775c60308b62a9221d61cf00f125f45f89eda748d85501d7c3e1291a5e3033",
+                "1c4fd8a9e9a73b2065e0b5e0ca50c9d6731aa366a213c7e008218c921882a6bc",
             ),
             "closing-mint-group" => (
                 "2cedc16732c76e0605b5f46085db3d69c12936a5af55a2a82f52ec9e9ca67e38",
-                "83a7f57e1a72b02aa327d0d525a3645d48df168b32efb70d09aa52b228a7f4cd",
+                "33b3eeab935208cbc0298a8a85383b2086ecfc801f460daf802305c9716748ab",
             ),
             "open-burn-group" => (
                 "e664a045f020ff84de1ca98f364fbabccfc141ad46aa82c79491a340bb0db5f8",
-                "92e09ce07b60fb6aa41de6a7a3015e6625f3604146c8666c0373ff036d3dc5fc",
+                "0e15d1cbff1f45da08fe0134187cfbd8a3a5c7cc05ba7f74ce43edd92f1ca807",
             ),
             "closing-burn-group" => (
                 "93e1732286f168c4a91d2765931e181c5721bfca1bfd5f93b8baacca03e00b2b",
-                "956a26f7a6b6adb08668fe79f9399302cb97d458cd95122991f14f656e04c64e",
+                "65f79ba0d3a1932a94e7faf6749bea8b43bf4f9066c0a16ee0db6ee57386b860",
             ),
             _ => unreachable!("enumerated characterization case"),
         };
