@@ -52,5 +52,11 @@ jobs:
           cargo test --locked -p rs-sdk-trusted-context-provider
           --target wasm32-unknown-unknown --lib --test '*' -- --nocapture
 
+      # The tests turn `mocks` on through wasm-sdk's self dev-dependency. A
+      # plain `--lib` check leaves dev-dependencies out, so this type-checks
+      # the library as the release npm build compiles it: without mocks.
+      - name: Check the mock-free wasm-sdk library on wasm32
+        run: cargo check --locked -p wasm-sdk --target wasm32-unknown-unknown --lib
+
       - name: Test wasm-sdk on wasm32
         run: cargo test --locked -p wasm-sdk --target wasm32-unknown-unknown --lib

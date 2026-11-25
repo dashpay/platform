@@ -1579,6 +1579,7 @@ impl WasmSdk {
                 prove: self.prove(),
                 // Without a proof, ask for the owner's balance instead.
                 request_user_balance: !self.prove(),
+                prove_state_before_block: false,
             })),
         };
 

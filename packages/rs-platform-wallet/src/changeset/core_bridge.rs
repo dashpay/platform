@@ -2418,12 +2418,12 @@ fn collect_usage_deltas_from_accounts(
                         continue;
                     };
                     touched.insert(*owner_type);
-                    if seen.insert((*owner_type, pool.pool_type, pool_info.index)) {
+                    if seen.insert((*owner_type, pool.pool_type(), pool_info.index)) {
                         let mut info = pool_info.clone();
                         info.state = AddressState::Used;
                         marked_used.push(DerivedAddressInfo {
                             account_type: *owner_type,
-                            pool_type: pool.pool_type,
+                            pool_type: pool.pool_type(),
                             info,
                         });
                     }
@@ -2449,7 +2449,7 @@ fn collect_usage_deltas_from_accounts(
             } else {
                 &mut snapshot.external
             };
-            *slot = match (*slot, pool.highest_used) {
+            *slot = match (*slot, pool.highest_used()) {
                 (Some(a), Some(b)) => Some(a.max(b)),
                 (a, b) => a.or(b),
             };
@@ -4878,7 +4878,7 @@ mod contact_watch_only_projection_tests {
             ctx.managed_wallet
                 .first_bip32_managed_account_mut()
                 .expect("bip32 managed account")
-                .next_receive_address(Some(&xpub), true)
+                .next_receive_address(Some(&xpub))
                 .expect("bip32 receive address")
         };
         let bip44_funding = Transaction::dummy(&bip44_address, 0..1, &[100_000_000]);
@@ -4994,6 +4994,7 @@ mod contact_watch_only_projection_tests {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             tracked_collaterals: Default::default(),
+            funding_issuance_floors: Default::default(),
             observed_input_conflicts: Default::default(),
             finalized_spends: Default::default(),
         }
@@ -5247,22 +5248,29 @@ mod contact_watch_only_projection_tests {
         );
     }
 
-    /// The order a pooled send with change takes when its lock is late: the
-    /// block confirms the slice that holds the change, the spend-only
-    /// sibling stays unconfirmed, and then the lock arrives. The stored row
-    /// keeps the block, and both slices go out, the mined one with the coin
-    /// that came back.
+    /// A pooled send with change whose lock is late: the block confirms the
+    /// slice that holds the change, the spend-only sibling is still
+    /// unconfirmed, and then the lock arrives. The stored row keeps the
+    /// block, and both slices go out, the mined one with the coin that came
+    /// back.
     #[tokio::test]
     async fn should_re_emit_a_partly_mined_send_with_its_block_and_its_change() {
         let (mut ctx, spend) = dual_account_mempool_spend_with_change(1_000_000).await;
         let txid = spend.txid();
         ctx.check_transaction(&spend, in_block(2)).await;
         let mut info = platform_info(ctx.managed_wallet);
+        // key-wallet takes the block to every slice, the spend-only one too, so
+        // the sibling is put back to unconfirmed here.
+        set_slice_context(
+            &mut info,
+            bip32_account_0(),
+            &txid,
+            TransactionContext::Mempool,
+        );
         let mined = slice_contexts(&info, &txid);
         assert!(
-            matches!(mined[&bip44_account_0()], TransactionContext::InBlock(_))
-                && matches!(mined[&bip32_account_0()], TransactionContext::Mempool),
-            "the block reaches only the slice with an output: {mined:?}"
+            matches!(mined[&bip44_account_0()], TransactionContext::InBlock(_)),
+            "the block confirms the slice with an output: {mined:?}"
         );
         let lock = InstantLock::default();
         info.mark_instant_send_utxos(&txid, &lock);
@@ -5381,13 +5389,16 @@ mod contact_watch_only_projection_tests {
             .account_xpub;
         ctx.managed_wallet
             .accounts
-            .insert_funds_bearing_account(ManagedCoreFundsAccount::from_account(&Account {
-                parent_wallet_id: Some(ctx.wallet.wallet_id),
-                account_type: contact_external_account(),
-                network: Network::Testnet,
-                account_xpub: xpub,
-                is_watch_only: true,
-            }))
+            .insert_funds_bearing_account(
+                ManagedCoreFundsAccount::from_account(&Account {
+                    parent_wallet_id: Some(ctx.wallet.wallet_id),
+                    account_type: contact_external_account(),
+                    network: Network::Testnet,
+                    account_xpub: xpub,
+                    is_watch_only: true,
+                })
+                .expect("build the contact account"),
+            )
             .expect("insert the contact account");
         let mut info = platform_info(ctx.managed_wallet);
         let contact_slice = record_with(
@@ -5471,7 +5482,7 @@ mod contact_watch_only_projection_tests {
             .managed_wallet
             .first_bip44_managed_account_mut()
             .expect("bip44 managed account")
-            .next_change_address(Some(&xpub), true)
+            .next_change_address(Some(&xpub))
             .expect("a change address");
         let spend = spend_of(
             &funding,
@@ -6214,6 +6225,7 @@ mod tests {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             tracked_collaterals: Default::default(),
+            funding_issuance_floors: Default::default(),
         };
         manager
             .write()
@@ -6268,6 +6280,7 @@ mod tests {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             tracked_collaterals: Default::default(),
+            funding_issuance_floors: Default::default(),
         };
         info.core_wallet.update_synced_height(1_000);
         let manager = test_manager();
@@ -6335,6 +6348,7 @@ mod tests {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             tracked_collaterals: Default::default(),
+            funding_issuance_floors: Default::default(),
         };
         info.core_wallet.update_synced_height(1_000);
         let manager = test_manager();
@@ -6417,6 +6431,7 @@ mod tests {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             tracked_collaterals: Default::default(),
+            funding_issuance_floors: Default::default(),
         };
         info.core_wallet.update_synced_height(synced_height);
         let manager = test_manager();
@@ -6648,6 +6663,7 @@ mod tests {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             tracked_collaterals: Default::default(),
+            funding_issuance_floors: Default::default(),
         };
         successor.rewind_barrier.inherit(retired);
         assert!(
@@ -9591,6 +9607,7 @@ mod utxo_credit_verdict_tests {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             tracked_collaterals: Default::default(),
+            funding_issuance_floors: Default::default(),
             observed_input_conflicts: Default::default(),
             finalized_spends: Default::default(),
         };
@@ -9661,6 +9678,7 @@ mod utxo_credit_verdict_tests {
                 observed_input_conflicts: Default::default(),
                 finalized_spends: Default::default(),
                 tracked_collaterals: Default::default(),
+                funding_issuance_floors: Default::default(),
             };
             let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
             let wallet_id = wm.insert_wallet(ctx.wallet, info).unwrap();
@@ -9807,6 +9825,7 @@ mod utxo_credit_verdict_tests {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             tracked_collaterals: Default::default(),
+            funding_issuance_floors: Default::default(),
             observed_input_conflicts: Default::default(),
             finalized_spends: Default::default(),
         };
@@ -9988,12 +10007,12 @@ mod outpoint_lock_projection_tests {
 #[cfg(test)]
 mod no_change_asset_lock_block_projection_tests {
     //! A no-change asset lock (the wallet drain's shape: every input of the
-    //! funding account spent, only the OP_RETURN burn as an output) leaves
-    //! the funding account nothing key-wallet can match on a re-check: the
-    //! mempool check already removed the spent UTXO, and no output of the
-    //! account remains. So the block's `updated` list carries only the keys
-    //! account's detail-less marker, and the funding slice keeps its mempool
-    //! context in memory. Drives a real `ManagedWalletInfo` through
+    //! funding account spent, only the OP_RETURN burn as an output). key-wallet
+    //! matches the funding account on the block through the coin the mempool
+    //! check already removed, so the block's `updated` list carries the
+    //! funding slice and the keys account's detail-less marker. An event
+    //! carrying only the marker must still keep the funding accounting from
+    //! the held slice. Drives a real `ManagedWalletInfo` through
     //! `check_core_transaction` and projects the block event exactly as the
     //! event adapter does.
 
@@ -10080,7 +10099,7 @@ mod no_change_asset_lock_block_projection_tests {
             .asset_lock_shielded_address_topup
             .as_mut()
             .expect("shielded top-up account")
-            .next_address(Some(&xpub), true)
+            .next_address(Some(&xpub))
             .expect("credit address");
         let credit = FUNDING - FEE;
         let lock_tx = Transaction {
@@ -10116,14 +10135,25 @@ mod no_change_asset_lock_block_projection_tests {
         let block = managed_wallet
             .check_core_transaction(&lock_tx, in_block(BLOCK_HEIGHT), &mut wallet, true, true)
             .await;
-        // Precondition, the shape observed live (AL-002): only the keys
-        // marker is re-emitted for the block.
+        // Precondition: the block re-emits the funding slice, matched through
+        // the coin its mempool sighting already removed, and the keys marker.
+        let funding_type = managed_wallet
+            .first_bip44_managed_account()
+            .expect("bip44 account")
+            .managed_account_type()
+            .to_account_type();
         assert!(
             block.new_records.is_empty()
-                && block.updated_records.len() == 1
-                && block.updated_records[0].input_details.is_empty()
-                && block.updated_records[0].output_details.is_empty(),
-            "precondition: the block re-emits only the detail-less keys marker, got {:?}",
+                && block.updated_records.len() == 2
+                && block
+                    .updated_records
+                    .iter()
+                    .any(|r| r.account_type == funding_type && r.input_details.len() == 1)
+                && block.updated_records.iter().any(|r| r.account_type
+                    == AccountType::AssetLockShieldedAddressTopUp
+                    && r.input_details.is_empty()
+                    && r.output_details.is_empty()),
+            "precondition: the block re-emits the funding slice and the keys marker, got {:?}",
             block
                 .updated_records
                 .iter()
@@ -10136,6 +10166,14 @@ mod no_change_asset_lock_block_projection_tests {
             txid: lock_tx.txid(),
             block_updated: block.updated_records,
         }
+    }
+
+    /// Only the keys account's detail-less marker of the block's `updated`.
+    fn keys_marker_only(updated: Vec<TransactionRecord>) -> Vec<TransactionRecord> {
+        updated
+            .into_iter()
+            .filter(|r| r.account_type == AccountType::AssetLockShieldedAddressTopUp)
+            .collect()
     }
 
     /// The held BIP44 slice of `txid`.
@@ -10177,6 +10215,7 @@ mod no_change_asset_lock_block_projection_tests {
             observed_input_conflicts: Default::default(),
             finalized_spends: Default::default(),
             tracked_collaterals: Default::default(),
+            funding_issuance_floors: Default::default(),
         };
         let mut wm = WalletManager::<PlatformWalletInfo>::new(dashcore::Network::Testnet);
         let wallet_id = wm.insert_wallet(wallet, info).expect("insert wallet");
@@ -10209,7 +10248,7 @@ mod no_change_asset_lock_block_projection_tests {
             lock.managed_wallet,
             lock.wallet,
             &lock.txid,
-            lock.block_updated,
+            keys_marker_only(lock.block_updated),
         )
         .await;
 
@@ -10238,10 +10277,8 @@ mod no_change_asset_lock_block_projection_tests {
     #[tokio::test]
     async fn should_prefer_the_events_slice_over_a_held_slice_of_the_same_account() {
         let mut lock = no_change_lock().await;
-        let mut from_event = held_funding_slice(&lock.managed_wallet, &lock.txid);
-        from_event.context = in_block(BLOCK_HEIGHT);
         // Mark the held copy so folding it in would show.
-        let foreign = foreign_input(&from_event);
+        let foreign = foreign_input(&held_funding_slice(&lock.managed_wallet, &lock.txid));
         lock.managed_wallet
             .first_bip44_managed_account_mut()
             .expect("bip44 account")
@@ -10251,9 +10288,13 @@ mod no_change_asset_lock_block_projection_tests {
             .input_details
             .push(foreign);
 
-        let mut updated = lock.block_updated;
-        updated.push(from_event);
-        let row = project_block(lock.managed_wallet, lock.wallet, &lock.txid, updated).await;
+        let row = project_block(
+            lock.managed_wallet,
+            lock.wallet,
+            &lock.txid,
+            lock.block_updated,
+        )
+        .await;
 
         assert_eq!(
             row.input_details.len(),
@@ -10288,7 +10329,7 @@ mod no_change_asset_lock_block_projection_tests {
             lock.managed_wallet,
             lock.wallet,
             &lock.txid,
-            lock.block_updated,
+            keys_marker_only(lock.block_updated),
         )
         .await;
 

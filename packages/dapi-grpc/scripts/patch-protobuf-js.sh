@@ -35,3 +35,12 @@ done < <(find "$PWD/clients/core/v0/web" "$PWD/clients/core/v0/nodejs" \
   "$PWD/clients/platform/v0/web" "$PWD/clients/platform/v0/nodejs" \
   "$PWD/clients/drive/v0/web" "$PWD/clients/drive/v0/nodejs" \
   \( -name "*_pb.js" -o -name "*_protoc.js" \) -print0)
+
+# The declarations import the Platform messages from the same place as the code above
+while IFS= read -r -d '' file; do
+  replace_in_file 's/from "\.\/platform\/v0\/platform_pb";/from "..\/..\/..\/platform\/v0\/web\/platform_pb";/g' "$file"
+  if grep -q '"\./platform/v0/platform_pb"' "$file"; then
+    echo "Error: unresolved Platform import still present in $file" >&2
+    exit 1
+  fi
+done < <(find "$PWD/clients/drive/v0/web" -name "*_pb.d.ts" -print0)
