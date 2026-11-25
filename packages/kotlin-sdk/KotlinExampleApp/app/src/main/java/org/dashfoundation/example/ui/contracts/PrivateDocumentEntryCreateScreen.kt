@@ -183,8 +183,13 @@ fun PrivateDocumentEntryCreateScreen(
 
     val senders = identities.filter { it.walletId?.toHex() == selectedWalletHex }
 
-    // Default to the first wallet of this network and its first identity
-    LaunchedEffect(wallets, identities) {
+    // Default to the first wallet of this network and its first identity.
+    // Keyed on the ids and wallet links it reads: the rows compare by id, so a
+    // write that links an identity to a wallet would not restart it.
+    LaunchedEffect(
+        wallets.map { it.walletId.toHex() },
+        identities.map { it.identityId.toHex() to it.walletId?.toHex() },
+    ) {
         val current = selectedWalletHex
         if (current == null || wallets.none { it.walletId.toHex() == current }) {
             selectedWalletHex = wallets.firstOrNull()?.walletId?.toHex()

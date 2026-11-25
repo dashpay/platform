@@ -474,7 +474,7 @@ internal fun rememberDashPayActiveIdentitySelection(
         val preference by preferenceFlow.collectAsStateWithLifecycle(
             initialValue = DashPayActiveIdentityPreference.Loading,
         )
-        remember(preference, eligible) {
+        remember(preference, EmissionKey(eligible)) {
             when (val currentPreference = preference) {
                 DashPayActiveIdentityPreference.Loading ->
                     DashPayActiveIdentitySelection.Loading

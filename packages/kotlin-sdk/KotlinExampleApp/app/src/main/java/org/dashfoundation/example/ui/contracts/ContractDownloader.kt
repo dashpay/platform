@@ -105,25 +105,31 @@ object ContractDownloader {
             return Result(contract = replaced, alreadyExisted = true, updated = replaced.version?.toLong() == fetchedVersion)
         }
         if (preExisting != null) {
-            // Backfill the binary serialization for rows persisted before the
-            // with-serialization fetch, so the startup preload can pick them
-            // up, but only from the same version: a node that is behind must
-            // not pair older binary rules with the newer stored JSON.
-            val backfill = binarySerialization?.takeIf {
-                preExisting.binarySerialization == null &&
-                    fetchedVersion != null && fetchedVersion == preExisting.version?.toLong()
-            }
-            dao.upsert(
-                preExisting.copy(
+            // Touch the stored row, as it stands now: read again inside the
+            // transaction, so a newer version a token update committed after
+            // the read above is not written back over. Backfill the binary
+            // serialization for rows persisted before the with-serialization
+            // fetch, so the startup preload can pick them up, but only from
+            // the same version: a node that is behind must not pair older
+            // binary rules with the newer stored JSON. Re-materializing is how
+            // rows stored before the token materializer landed pick up their
+            // token children.
+            val current = database.withTransaction {
+                val current = dao.getById(contractIdBytes) ?: preExisting
+                val backfill = binarySerialization?.takeIf {
+                    current.binarySerialization == null &&
+                        fetchedVersion != null && fetchedVersion == current.version?.toLong()
+                }
+                val touched = current.copy(
                     lastAccessedAt = Date(),
-                    binarySerialization = backfill ?: preExisting.binarySerialization,
-                ),
-            )
-            // Re-runs are how rows stored before the token materializer
-            // landed pick up their token children.
-            org.dashfoundation.example.services.tokens.TokenMaterializer
-                .materialize(preExisting, database)
-            return Result(contract = preExisting, alreadyExisted = true)
+                    binarySerialization = backfill ?: current.binarySerialization,
+                )
+                dao.upsert(touched)
+                org.dashfoundation.example.services.tokens.TokenMaterializer
+                    .materialize(touched, database)
+                touched
+            }
+            return Result(contract = current, alreadyExisted = true)
         }
 
         val entity = entityFrom(

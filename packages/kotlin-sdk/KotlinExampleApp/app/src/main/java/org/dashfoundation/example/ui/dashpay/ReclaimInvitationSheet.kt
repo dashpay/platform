@@ -83,7 +83,7 @@ fun ReclaimInvitationSheet(
 
     var targetTopUp by remember { mutableStateOf(true) }
     var selectedIdentityB58 by remember { mutableStateOf<String?>(null) }
-    val selectedIdentity = remember(walletIdentities, selectedIdentityB58) {
+    val selectedIdentity = remember(EmissionKey(walletIdentities), selectedIdentityB58) {
         walletIdentities.firstOrNull { Base58.encode(it.identityId) == selectedIdentityB58 }
             ?: walletIdentities.firstOrNull()
     }
