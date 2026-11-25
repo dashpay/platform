@@ -114,11 +114,19 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType,
         u32,
         AssetLockStatus,
+        Option<[u8; 16]>,
     )> {
         let wm = self.wallet_manager.read().await;
         wm.get_wallet_info(&self.wallet_id)
             .and_then(|info| info.tracked_asset_locks.get(out_point))
-            .map(|lock| (lock.funding_type, lock.identity_index, lock.status.clone()))
+            .map(|lock| {
+                (
+                    lock.funding_type,
+                    lock.identity_index,
+                    lock.status.clone(),
+                    lock.operation_id,
+                )
+            })
     }
 
     /// The wallet-drain operation a tracked lock belongs to, if any.

@@ -10,7 +10,7 @@
 //! 1. **Pre-flight** — exactly-one-`None`-recipient invariant; each
 //!    address must belong to the supplied platform-payment account.
 //! 2. **Resolve funding** — delegate to the shared
-//!    [`AssetLockManager::resolve_funding_with_is_timeout_fallback`].
+//!    [`AssetLockManager::resolve_funding_with_authority`].
 //!    `FromWalletBalance` builds an asset-lock tx out of the
 //!    `AssetLockAddressTopUp` BIP44 family and waits for IS/CL;
 //!    `FromExistingAssetLock` resumes from a tracked outpoint.
@@ -27,7 +27,8 @@
 //!    and dropped from the in-memory tracked-lock map.
 
 use crate::wallet::asset_lock::orchestration::{
-    out_point_from_proof, AssetLockFunding, FundingResolution, ResolvedFunding,
+    out_point_from_proof, AssetLockFunding, ExistingLockAuthority, FundingResolution,
+    ResolvedFunding,
 };
 use crate::wallet::asset_lock::AssetLockBuiltObserver;
 use crate::wallet::PlatformAddressWallet;
@@ -35,6 +36,7 @@ use crate::{PlatformAddressChangeSet, PlatformWalletError};
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::top_up_address::TopUpAddress;
 use dash_sdk::query_types::AddressInfos;
+use dashcore::OutPoint;
 use dpp::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::balances::credits::CREDITS_PER_DUFF;
@@ -185,6 +187,7 @@ impl PlatformAddressWallet {
             settings,
             RecipientOwnership::AllOwned,
             on_asset_lock_built,
+            ExistingLockAuthority::RoleMatch,
         )
         .await
     }
@@ -259,26 +262,91 @@ impl PlatformAddressWallet {
             settings,
             RecipientOwnership::ExternalExplicitOutputs,
             on_asset_lock_built,
+            ExistingLockAuthority::RoleMatch,
         )
         .await
     }
 
-    /// Shared body behind [`PlatformAddressWallet::fund_from_asset_lock`]
-    /// and [`PlatformAddressWallet::fund_from_asset_lock_external`].
+    /// Fund this wallet's platform addresses from the remaining credit
+    /// value of a tracked `AssetLockShieldedAddressTopUp` lock.
     ///
-    /// `ownership` is the single point of divergence between the two
+    /// Platform can refuse a shield transfer after charging a penalty,
+    /// leaving the lock with a remaining credit value. Drive records that
+    /// value against the outpoint alone, with no funding type, so an
+    /// `AddressFundingFromAssetLockTransition` signed by the same
+    /// credit-output key spends it.
+    ///
+    /// | tracked funding type | `fund_from_asset_lock` resume | `fund_from_shielded_remainder_asset_lock` |
+    /// |---|---|---|
+    /// | `AssetLockShieldedAddressTopUp` | refused (`AssetLockFundingMismatch`) | **accepted** |
+    /// | `AssetLockAddressTopUp` | accepted | accepted |
+    /// | any other (including `IdentityInvitation`) | refused | refused |
+    ///
+    /// A consumed lock (`Consumed` or `DrainCompleted`) is refused with
+    /// `AssetLockAlreadyConsumed`. A lock that belongs to a wallet drain (it
+    /// carries an operation id) is refused with `AssetLockFundingMismatch`:
+    /// only the drain's own flow settles it. Any other shielded lock
+    /// qualifies, including one never submitted to
+    /// Platform (a `Built` lock is broadcast by the resume); spending it
+    /// here moves its value to transparent addresses and gives up the
+    /// shielding. The wallet cannot see Drive's remaining value, so a lock
+    /// whose remaining value is below the address-funding fee is refused
+    /// by Platform rather than locally. No local amount is checked against
+    /// the L1 output value; Platform spends the lock's stored remaining
+    /// value, and the `None` remainder bucket receives it after fees and any
+    /// explicit outputs. On success the tracked lock is consumed exactly as
+    /// on the generic path.
+    ///
+    /// See [`PlatformAddressWallet::fund_from_asset_lock`] for the
+    /// argument-by-argument reference, the latency budget and the
+    /// cancellation contract — all of which apply verbatim.
+    pub async fn fund_from_shielded_remainder_asset_lock<S, AS>(
+        &self,
+        out_point: OutPoint,
+        platform_account_index: u32,
+        addresses: BTreeMap<PlatformAddress, Option<Credits>>,
+        address_signer: &S,
+        asset_lock_signer: &AS,
+        settings: Option<PutSettings>,
+    ) -> Result<PlatformAddressChangeSet, PlatformWalletError>
+    where
+        S: Signer<PlatformAddress> + Send + Sync,
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
+    {
+        self.fund_from_asset_lock_inner(
+            AssetLockFunding::FromExistingAssetLock {
+                out_point,
+                consume_invitation_voucher: false,
+            },
+            platform_account_index,
+            addresses,
+            address_signer,
+            asset_lock_signer,
+            settings,
+            RecipientOwnership::AllOwned,
+            None,
+            ExistingLockAuthority::ShieldedRemainderToAddresses,
+        )
+        .await
+    }
+
+    /// Shared body behind [`PlatformAddressWallet::fund_from_asset_lock`],
+    /// [`PlatformAddressWallet::fund_from_asset_lock_external`] and
+    /// [`PlatformAddressWallet::fund_from_shielded_remainder_asset_lock`].
+    ///
+    /// `ownership` is the only recipient-side divergence between the
     /// public entry points; everything from Step 2 onward is identical,
     /// because nothing downstream of the pre-flight is
     /// ownership-sensitive (the proof carries every output regardless of
     /// who owns it, and reconciliation resolves whichever subset happens
-    /// to be ours).
+    /// to be ours). `authority` only widens which tracked lock roles the
+    /// `FromExistingAssetLock` resume accepts; see
+    /// [`PlatformAddressWallet::fund_from_shielded_remainder_asset_lock`].
     ///
-    /// There is deliberately no separate `resume_*` variant at this
-    /// layer: resuming is expressed as
-    /// `AssetLockFunding::FromExistingAssetLock`, a value of the
-    /// `funding` parameter, so both public entry points already cover
-    /// fresh-build and resume. (The FFI layer does expose distinct
-    /// resume symbols, because a C ABI cannot take a Rust enum.)
+    /// Resuming is expressed as `AssetLockFunding::FromExistingAssetLock`,
+    /// a value of the `funding` parameter, so the two generic entry points
+    /// cover fresh-build and resume alike. (The FFI layer does expose
+    /// distinct resume symbols, because a C ABI cannot take a Rust enum.)
     #[allow(clippy::too_many_arguments)]
     async fn fund_from_asset_lock_inner<S, AS>(
         &self,
@@ -290,6 +358,7 @@ impl PlatformAddressWallet {
         settings: Option<PutSettings>,
         ownership: RecipientOwnership,
         on_asset_lock_built: Option<&AssetLockBuiltObserver<'_>>,
+        authority: ExistingLockAuthority,
     ) -> Result<PlatformAddressChangeSet, PlatformWalletError>
     where
         S: Signer<PlatformAddress> + Send + Sync,
@@ -326,13 +395,15 @@ impl PlatformAddressWallet {
             tracked_out_point,
         } = match self
             .asset_locks
-            .resolve_funding_with_is_timeout_fallback(
+            .resolve_funding_with_authority(
                 funding,
                 AssetLockFundingType::AssetLockAddressTopUp,
                 /* destination_index */ 0,
                 None,
+                authority,
                 asset_lock_signer,
                 on_asset_lock_built,
+                |_| {},
             )
             .await?
         {
@@ -1516,6 +1587,237 @@ mod tests {
         let wm = wallet.wallet_manager().read().await;
         let info = wm.get_wallet_info(&wallet_id).expect("wallet registered");
         assert!(!info.tracked_asset_locks.contains_key(&seen[0]));
+    }
+
+    struct TrackedLockFixture {
+        _manager:
+            std::sync::Arc<crate::PlatformWalletManager<crate::test_support::NoopTestPersister>>,
+        wallet: std::sync::Arc<crate::wallet::PlatformWallet>,
+        addresses: BTreeMap<PlatformAddress, Option<Credits>>,
+        out_point: OutPoint,
+    }
+
+    async fn tracked_lock_fixture(
+        funding_type: AssetLockFundingType,
+        status: crate::wallet::asset_lock::tracked::AssetLockStatus,
+    ) -> TrackedLockFixture {
+        use crate::wallet::asset_lock::tracked::TrackedAssetLock;
+        use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+
+        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet handle");
+        let address = wallet
+            .platform()
+            .next_unused_receive_address(
+                key_wallet::account::account_collection::PlatformPaymentAccountKey {
+                    account: 0,
+                    key_class: 0,
+                },
+            )
+            .await
+            .expect("owned platform payment address");
+        let transaction = dashcore::Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        };
+        let out_point = OutPoint::new(transaction.txid(), 0);
+        let proof = dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 42,
+            out_point,
+        });
+        {
+            let mut wm = wallet.platform().wallet_manager.write().await;
+            let info = wm
+                .get_wallet_info_mut(&wallet_id)
+                .expect("wallet must remain registered");
+            info.tracked_asset_locks.insert(
+                out_point,
+                TrackedAssetLock {
+                    operation_id: None,
+                    out_point,
+                    transaction,
+                    account_index: 0,
+                    funding_type,
+                    identity_index: 0,
+                    amount: 1_000_000,
+                    status,
+                    proof: Some(proof),
+                    shielded_recipient: None,
+                },
+            );
+        }
+        TrackedLockFixture {
+            _manager: manager,
+            wallet,
+            addresses: BTreeMap::from([(address, None)]),
+            out_point,
+        }
+    }
+
+    impl TrackedLockFixture {
+        async fn generic_resume(&self) -> Result<PlatformAddressChangeSet, PlatformWalletError> {
+            self.wallet
+                .platform()
+                .fund_from_asset_lock(
+                    AssetLockFunding::FromExistingAssetLock {
+                        out_point: self.out_point,
+                        consume_invitation_voucher: false,
+                    },
+                    0,
+                    self.addresses.clone(),
+                    vec![],
+                    &NullAddressSigner,
+                    &NullAssetLockSigner,
+                    None,
+                    None,
+                )
+                .await
+        }
+
+        async fn shielded_remainder(
+            &self,
+        ) -> Result<PlatformAddressChangeSet, PlatformWalletError> {
+            self.wallet
+                .platform()
+                .fund_from_shielded_remainder_asset_lock(
+                    self.out_point,
+                    0,
+                    self.addresses.clone(),
+                    &NullAddressSigner,
+                    &NullAssetLockSigner,
+                    None,
+                )
+                .await
+        }
+    }
+
+    /// Whether the call passed authorization and reached the resume: the
+    /// fixture's lock transaction has no payload, so the resume's credit
+    /// output derivation (`rederive_credit_output_path`) refuses it with this
+    /// message.
+    fn reached_resume(result: Result<PlatformAddressChangeSet, PlatformWalletError>) -> bool {
+        matches!(
+            result,
+            Err(PlatformWalletError::AssetLockTransaction(ref message))
+                if message == "Transaction has no special transaction payload"
+        )
+    }
+
+    #[tokio::test]
+    async fn generic_resume_refuses_shielded_lock_for_address_funding() {
+        use crate::wallet::asset_lock::tracked::AssetLockStatus;
+
+        let fixture = tracked_lock_fixture(
+            AssetLockFundingType::AssetLockShieldedAddressTopUp,
+            AssetLockStatus::ChainLocked,
+        )
+        .await;
+        match fixture.generic_resume().await {
+            Err(PlatformWalletError::AssetLockFundingMismatch {
+                expected_funding_type: AssetLockFundingType::AssetLockAddressTopUp,
+                actual_funding_type: AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                ..
+            }) => {}
+            other => panic!("expected AssetLockFundingMismatch, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn shielded_remainder_entry_point_authorizes_shielded_lock_into_resume() {
+        use crate::wallet::asset_lock::tracked::AssetLockStatus;
+
+        let fixture = tracked_lock_fixture(
+            AssetLockFundingType::AssetLockShieldedAddressTopUp,
+            AssetLockStatus::ChainLocked,
+        )
+        .await;
+        let result = fixture.shielded_remainder().await;
+        assert!(
+            reached_resume(result),
+            "the shielded-remainder entry point must pass authorization and reach resume"
+        );
+    }
+
+    #[tokio::test]
+    async fn shielded_remainder_entry_point_matches_generic_resume_for_other_roles() {
+        use crate::wallet::asset_lock::tracked::AssetLockStatus;
+
+        for funding_type in [
+            AssetLockFundingType::IdentityRegistration,
+            AssetLockFundingType::IdentityTopUp,
+            AssetLockFundingType::IdentityTopUpNotBound,
+            AssetLockFundingType::IdentityInvitation,
+        ] {
+            let fixture = tracked_lock_fixture(funding_type, AssetLockStatus::ChainLocked).await;
+            for result in [
+                fixture.generic_resume().await,
+                fixture.shielded_remainder().await,
+            ] {
+                assert!(
+                    matches!(
+                        result,
+                        Err(PlatformWalletError::AssetLockFundingMismatch {
+                            actual_funding_type,
+                            ..
+                        }) if actual_funding_type == funding_type
+                    ),
+                    "{funding_type:?} lock must be refused for address funding, got {result:?}"
+                );
+            }
+        }
+
+        let fixture = tracked_lock_fixture(
+            AssetLockFundingType::AssetLockAddressTopUp,
+            AssetLockStatus::ChainLocked,
+        )
+        .await;
+        assert!(reached_resume(fixture.generic_resume().await));
+        assert!(reached_resume(fixture.shielded_remainder().await));
+    }
+
+    #[tokio::test]
+    async fn shielded_remainder_entry_point_refuses_a_wallet_drain_lock() {
+        let fixture = tracked_lock_fixture(
+            AssetLockFundingType::AssetLockShieldedAddressTopUp,
+            crate::wallet::asset_lock::tracked::AssetLockStatus::ChainLocked,
+        )
+        .await;
+        {
+            let mut wm = fixture.wallet.platform().wallet_manager.write().await;
+            let wallet_id = fixture.wallet.wallet_id();
+            wm.get_wallet_info_mut(&wallet_id)
+                .expect("wallet must remain registered")
+                .tracked_asset_locks
+                .get_mut(&fixture.out_point)
+                .expect("the tracked lock")
+                .operation_id = Some([7; 16]);
+        }
+        assert!(matches!(
+            fixture.shielded_remainder().await,
+            Err(PlatformWalletError::AssetLockFundingMismatch { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn shielded_remainder_entry_point_refuses_consumed_lock() {
+        use crate::wallet::asset_lock::tracked::AssetLockStatus;
+
+        for status in [AssetLockStatus::Consumed, AssetLockStatus::DrainCompleted] {
+            let fixture = tracked_lock_fixture(
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                status.clone(),
+            )
+            .await;
+            match fixture.shielded_remainder().await {
+                Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point)) => {
+                    assert_eq!(out_point, fixture.out_point);
+                }
+                other => panic!("expected AssetLockAlreadyConsumed for {status:?}, got {other:?}"),
+            }
+        }
     }
 
     #[test]
