@@ -1160,6 +1160,24 @@ async fn should_hold_a_fresh_shield_lock_whose_first_proof_fails() {
         "{:?}",
         tracked.status
     );
+    // The row the resume reads carries the InstantSend proof of its own
+    // funding transaction: the lock names that txid and its inputs.
+    let Some(AssetLockProof::Instant(proof)) = &tracked.proof else {
+        panic!(
+            "the held row keeps its InstantSend proof: {:?}",
+            tracked.proof
+        );
+    };
+    assert_eq!(proof.instant_lock().txid, tracked.transaction.txid());
+    assert_eq!(proof.instant_lock().txid, seen[0].txid);
+    let funding_inputs = tracked
+        .transaction
+        .input
+        .iter()
+        .map(|input| input.previous_output)
+        .collect::<Vec<_>>();
+    assert!(!proof.instant_lock().inputs.is_empty());
+    assert_eq!(proof.instant_lock().inputs, funding_inputs);
 }
 
 /// The pooled wallet drain reaches the observer through
