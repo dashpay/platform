@@ -348,6 +348,60 @@ async fn should_fail_a_pending_spend_whose_single_input_another_transition_spent
     let _ = std::fs::remove_file(&path);
 }
 
+/// A spend saved while a pass is downloading, after the pass read the
+/// competing action: the pass holds no store lock across its download, so
+/// it matches the saved spends when it commits, not when it starts, and
+/// fails this one too.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn should_fail_a_pending_spend_saved_while_the_pass_was_downloading() {
+    let path = temp_tree_path("saved_mid_pass");
+    let store = open(&path);
+    let (id, _) = subwallet();
+    let input = nullifier(0xA1);
+
+    let (entered_tx, entered_rx) = tokio::sync::oneshot::channel::<()>();
+    let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
+    let paused = futures::stream::iter(vec![Ok(pool(vec![scanned(input, cmx(9))]))]).chain(
+        futures::stream::once(async move {
+            let _ = entered_tx.send(());
+            let _ = release_rx.await;
+        })
+        .filter_map(|()| futures::future::ready(None::<BatchItem>)),
+    );
+    let pass = {
+        let store = Arc::clone(&store);
+        tokio::spawn(async move { scan(&store, paused).await })
+    };
+
+    entered_rx
+        .await
+        .expect("the pass read the competing action");
+    save_unconfirmed_spend(
+        &mut *store.write().await,
+        id,
+        SPEND,
+        &single_input_spend(),
+        &[input],
+    );
+    release_tx.send(()).expect("release the pass");
+    let result = pass.await.expect("the pass task");
+
+    let store = store.read().await;
+    assert_eq!(status(&store, id, SPEND), ShieldedActivityStatus::Failed);
+    assert_eq!(
+        reported(&result, id, SPEND),
+        vec![ShieldedActivityStatus::Failed],
+        "the host is told"
+    );
+    assert!(unspent(&store, id).is_empty());
+    assert!(
+        store.pending_redrives(id).expect("records").is_empty(),
+        "its transition is never broadcast again"
+    );
+    drop(store);
+    let _ = std::fs::remove_file(&path);
+}
+
 /// The same after a restart: the reopened store restores the saved
 /// transition, the host restores the note and the pending row, and the scan
 /// that then reads the competing action fails the row. A later restart finds

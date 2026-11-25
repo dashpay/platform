@@ -294,8 +294,8 @@ async fn should_emit_the_balance_a_completed_scan_found() {
 }
 
 /// A pool whose first chunk is full and served, and whose later chunks the
-/// mock has no answer for: a scan takes the store, commits the first chunk,
-/// then fails on the next fetch.
+/// mock has no answer for: a scan appends the first chunk, then fails on the
+/// next fetch.
 async fn pool_failing_after_one_chunk() -> dash_sdk::Sdk {
     let mut sdk = dash_sdk::Sdk::new_mock();
     let count = 2048
@@ -328,7 +328,7 @@ async fn pool_failing_after_one_chunk() -> dash_sdk::Sdk {
 /// emitter watching. The scan is paused inside its download, after it
 /// committed its first chunk.
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
-async fn should_emit_once_a_failed_scan_releases_the_store() {
+async fn should_emit_once_a_held_store_is_released_while_a_scan_is_paused() {
     let coordinator = coordinator_with(pool_failing_after_one_chunk().await, &tree_path());
     let wallet = [2; 32];
     register(&coordinator, wallet, &[0]).await;
@@ -386,7 +386,7 @@ async fn should_emit_once_a_failed_scan_releases_the_store() {
 
 /// A wallet that was unregistered is read first in a pass: its `Unbound`
 /// needs no store, so it is not held up behind a bound wallet's read while
-/// a scan holds the store.
+/// a writer holds the store.
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
 async fn should_emit_an_unregistered_wallet_before_bound_ones_wait_for_the_store() {
     let coordinator = coordinator(&tree_path());
@@ -414,7 +414,7 @@ async fn should_emit_an_unregistered_wallet_before_bound_ones_wait_for_the_store
     }
 
     // Park the emitter in a delivery for the last wallet, unregister the
-    // middle one, then hold the store as a scan would.
+    // middle one, then hold the store as a writer would.
     pause.arm();
     coordinator
         .store()

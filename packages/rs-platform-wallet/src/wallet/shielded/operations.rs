@@ -4731,8 +4731,8 @@ where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = Result<(HashSet<[u8; 32]>, u64), PlatformWalletError>>,
 {
-    // `try_read`, not `read().await`: when a sync holds the store, waiting
-    // here would serialize the lock wait in front of the fetch below, which
+    // `try_read`, not `read().await`: when a writer (a sync's append or
+    // commit, another spend) holds the store, waiting here would serialize the lock wait in front of the fetch below, which
     // otherwise overlaps it. A contended lock simply takes the fetch path
     // and leaves the cache untouched (no pre-fetch tree size to pin).
     let tree_size_before_fetch = match store.try_read() {

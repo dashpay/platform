@@ -160,8 +160,9 @@ pub struct NetworkShieldedCoordinator {
 
     /// Most recently fetched Platform recorded-anchor set, reused by the
     /// spend path while fresh so a send can skip that round trip. Filled by
-    /// a send's fetch when it read the tree size first (not while a sync
-    /// holds the store), and by the stranded-reservation release pass. A set
+    /// a send's fetch when it read the tree size first (not while a writer,
+    /// such as a sync's append or commit, holds the store), and by the
+    /// stranded-reservation release pass. A set
     /// helps only until the next sync appends to the tree. See
     /// [`RecordedAnchorCache`].
     anchor_cache: RecordedAnchorCache,
@@ -2226,18 +2227,22 @@ impl NetworkShieldedCoordinator {
                 // the host would see a completion event for no work. A
                 // stop during the prefetch or a superseded retry lands
                 // here too: the scan checks the token before it starts.
-                Ok(NoteSyncOutcome::Cancelled) => return self.cancelled_pass_summary(),
+                Ok(NoteSyncOutcome::Cancelled) => {
+                    return self.cut_short_pass_summary("cancelled");
+                }
                 // A scan that stopped at a gap between two fetched ranges
                 // published nothing, and knows the pool holds notes it did
                 // not read: it ends the pass as a cancelled one does, so no
                 // wallet reads as synced from it, the manager reports no
                 // completion, and the next pass walks Platform at once
                 // instead of taking the cooldown skip.
-                Ok(NoteSyncOutcome::StoppedAtGap) => return self.cancelled_pass_summary(),
+                Ok(NoteSyncOutcome::StoppedAtGap) => {
+                    return self.cut_short_pass_summary("stopped at a gap between fetched ranges");
+                }
                 // A stop that lands after a supersession: don't retry, and
                 // don't report the exhausted-retries failure either.
                 Ok(NoteSyncOutcome::Superseded) if cancel.is_cancelled() => {
-                    return self.cancelled_pass_summary();
+                    return self.cut_short_pass_summary("cancelled after a supersession");
                 }
                 // A lifecycle change (wallet removed, accounts re-keyed,
                 // snapshot restored, Clear) landed mid-download and
@@ -2561,15 +2566,19 @@ impl NetworkShieldedCoordinator {
         }
     }
 
-    /// The empty summary of a pass whose scan was cut short. The scan may
-    /// have appended new leaves before the stop, so the chain has moved past
-    /// whatever the last completed pass saw: drop the caught-up stamp so the
-    /// next pass walks Platform at once instead of taking the cooldown skip.
-    fn cancelled_pass_summary(&self) -> ShieldedSyncPassSummary {
+    /// The empty summary of a pass whose scan was cut short, for `reason`
+    /// (a stop, or a gap between fetched ranges). The scan may have appended
+    /// new leaves before it ended, so the chain has moved past whatever the
+    /// last completed pass saw: drop the caught-up stamp so the next pass
+    /// walks Platform at once instead of taking the cooldown skip.
+    fn cut_short_pass_summary(&self, reason: &'static str) -> ShieldedSyncPassSummary {
         if let Ok(mut guard) = self.last_caught_up_at.lock() {
             *guard = None;
         }
-        tracing::debug!("Coordinator sync cancelled; the scan published nothing");
+        tracing::debug!(
+            reason,
+            "Coordinator sync cut short; the scan published nothing"
+        );
         ShieldedSyncPassSummary::default()
     }
 

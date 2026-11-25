@@ -1385,7 +1385,7 @@ struct SavedSpendInput {
 
 /// A saved spend an action other than its own took an input of.
 struct SpendSpentElsewhere {
-    /// The spend's saved record, as it read when the pass began.
+    /// The spend's saved record, as it read under the pass's commit guard.
     record: Arc<PendingRedrive>,
     /// The highest proved height of a batch that held such an action: the
     /// transition it belongs to executed at or below it.
