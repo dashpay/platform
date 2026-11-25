@@ -33,14 +33,16 @@ The file name contains the version, so it changes with every release; this downl
 Download it before you stop the node, so a failed download never leaves the node stopped:
 
 ```bash
+DASHMATE_DEB=""
 DASHMATE_DEB_URL="$(curl -fsSL https://api.github.com/repos/dashpay/platform/releases/latest \
   | grep -o "https://[^\"]*_$(dpkg --print-architecture)\.deb" \
   | head -n 1)"
-DASHMATE_DEB="$(mktemp -d)/$(basename "$DASHMATE_DEB_URL")"
-if [ -n "$DASHMATE_DEB_URL" ] && curl -fL -o "$DASHMATE_DEB" "$DASHMATE_DEB_URL"; then
+DASHMATE_DEB_DIR="$(mktemp -d)"
+if [ -n "$DASHMATE_DEB_URL" ] && [ -n "$DASHMATE_DEB_DIR" ] && [ -d "$DASHMATE_DEB_DIR" ] \
+  && curl -fL -o "$DASHMATE_DEB_DIR/$(basename "$DASHMATE_DEB_URL")" "$DASHMATE_DEB_URL"; then
+  DASHMATE_DEB="$DASHMATE_DEB_DIR/$(basename "$DASHMATE_DEB_URL")"
   echo "Downloaded $DASHMATE_DEB"
 else
-  DASHMATE_DEB=""
   echo "Could not download the dashmate package. Try again later." >&2
 fi
 ```
@@ -52,12 +54,14 @@ Download it with this block instead of the one above, replacing the example link
 As with a stable release, download it before you stop the node:
 
 ```bash
+DASHMATE_DEB=""
 DASHMATE_DEB_URL="https://github.com/dashpay/platform/releases/download/v5.1.0-dev.3/dashmate_5.1.0.dev.3-1_amd64.deb"
-DASHMATE_DEB="$(mktemp -d)/$(basename "$DASHMATE_DEB_URL")"
-if curl -fL -o "$DASHMATE_DEB" "$DASHMATE_DEB_URL"; then
+DASHMATE_DEB_DIR="$(mktemp -d)"
+if [ -n "$DASHMATE_DEB_DIR" ] && [ -d "$DASHMATE_DEB_DIR" ] \
+  && curl -fL -o "$DASHMATE_DEB_DIR/$(basename "$DASHMATE_DEB_URL")" "$DASHMATE_DEB_URL"; then
+  DASHMATE_DEB="$DASHMATE_DEB_DIR/$(basename "$DASHMATE_DEB_URL")"
   echo "Downloaded $DASHMATE_DEB"
 else
-  DASHMATE_DEB=""
   echo "Could not download the dashmate package. Check the link and try again." >&2
 fi
 ```
