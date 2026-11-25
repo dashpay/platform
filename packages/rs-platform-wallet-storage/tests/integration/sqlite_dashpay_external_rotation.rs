@@ -75,10 +75,10 @@ fn pool_entries_extended(
         account_xpub: xpub,
         is_watch_only: true,
     };
-    let mut managed = ManagedCoreFundsAccount::from_account(&account);
+    let mut managed = ManagedCoreFundsAccount::from_account(&account).expect("managed account");
     if extra > 0 {
         for pool in managed.managed_account_type_mut().address_pools_mut() {
-            pool.generate_addresses(extra, &KeySource::Public(xpub), true)
+            pool.generate_addresses(extra, &KeySource::Public(xpub))
                 .expect("extend the pool");
         }
     }
@@ -86,12 +86,12 @@ fn pool_entries_extended(
         .managed_account_type()
         .address_pools()
         .into_iter()
-        .filter(|pool| !pool.addresses.is_empty())
+        .filter(|pool| !pool.addresses().is_empty())
         .map(|pool| AccountAddressPoolEntry {
             account_type: external_account(),
-            pool_type: pool.pool_type,
+            pool_type: pool.pool_type(),
             addresses: pool
-                .addresses
+                .addresses()
                 .values()
                 .cloned()
                 .map(|mut info| {
@@ -126,7 +126,7 @@ fn infos(entries: &[AccountAddressPoolEntry]) -> Vec<&AddressInfo> {
 fn scripts_of(xpub: ExtendedPubKey) -> BTreeSet<Vec<u8>> {
     infos(&pool_entries(xpub, &[]))
         .into_iter()
-        .map(|info| info.script_pubkey.to_bytes())
+        .map(|info| info.address.script_pubkey().to_bytes())
         .collect()
 }
 
@@ -193,7 +193,11 @@ fn loaded_account(
         .managed_account_type()
         .address_pools()
         .into_iter()
-        .flat_map(|pool| pool.addresses.values().map(|i| i.script_pubkey.to_bytes()))
+        .flat_map(|pool| {
+            pool.addresses()
+                .values()
+                .map(|i| i.address.script_pubkey().to_bytes())
+        })
         .collect();
     (xpub, scripts)
 }
@@ -235,7 +239,7 @@ fn new_xpub_rotation_retires_the_old_pool() {
         scripts_of(a)
     );
     for info in infos(&pool_entries(a, &[])) {
-        let (xpub, used) = &history[&info.script_pubkey.to_bytes()];
+        let (xpub, used) = &history[&info.address.script_pubkey().to_bytes()];
         assert_eq!(xpub, &a.encode().to_vec());
         assert_eq!(*used, matches!(info.index, 0 | 2), "index {}", info.index);
     }
@@ -268,7 +272,9 @@ fn same_xpub_rebuild_retires_nothing() {
 
     assert_eq!(live_scripts(&persister, &w), scripts_of(a));
     assert!(retired(&persister, &w).is_empty());
-    assert!(used_scripts(&persister, &w).contains(&address_at(a, 1).script_pubkey.to_bytes()));
+    assert!(
+        used_scripts(&persister, &w).contains(&address_at(a, 1).address.script_pubkey().to_bytes())
+    );
     assert_eq!(loaded_account(&persister, &w).0, a);
 }
 
@@ -290,7 +296,7 @@ fn rotation_survives_a_relaunch() {
     let (xpub, scripts) = loaded_account(&persister, &w);
     assert_eq!(xpub, b);
     assert_eq!(scripts, scripts_of(b));
-    let old = address_at(a, 1).script_pubkey.to_bytes();
+    let old = address_at(a, 1).address.script_pubkey().to_bytes();
     assert!(!scripts.contains(&old));
     assert!(!used_scripts(&persister, &w).contains(&old));
     assert_eq!(retired(&persister, &w)[&old], (a.encode().to_vec(), true));
@@ -332,7 +338,9 @@ fn a_failure_mid_flush_rolls_the_rotation_back() {
     let (xpub, scripts) = loaded_account(&persister, &w);
     assert_eq!(xpub, a);
     assert_eq!(scripts, scripts_of(a));
-    assert!(used_scripts(&persister, &w).contains(&address_at(a, 0).script_pubkey.to_bytes()));
+    assert!(
+        used_scripts(&persister, &w).contains(&address_at(a, 0).address.script_pubkey().to_bytes())
+    );
 
     persister.store(w, registration(b, &[])).unwrap();
     assert_eq!(live_scripts(&persister, &w), scripts_of(b));
@@ -373,7 +381,7 @@ fn a_late_snapshot_of_the_retired_xpub_lands_in_history() {
     let history = retired(&persister, &w);
     assert_eq!(history.len(), infos(&late).len());
     for info in infos(&late) {
-        let (xpub, used) = &history[&info.script_pubkey.to_bytes()];
+        let (xpub, used) = &history[&info.address.script_pubkey().to_bytes()];
         assert_eq!(xpub, &a.encode().to_vec());
         assert_eq!(*used, matches!(info.index, 3 | 12), "index {}", info.index);
     }
@@ -383,7 +391,7 @@ fn a_late_snapshot_of_the_retired_xpub_lands_in_history() {
     persister.store(w, pools_only(grown.clone())).unwrap();
     let grown_scripts: BTreeSet<_> = infos(&grown)
         .iter()
-        .map(|i| i.script_pubkey.to_bytes())
+        .map(|i| i.address.script_pubkey().to_bytes())
         .collect();
     assert_eq!(live_scripts(&persister, &w), grown_scripts);
 }
@@ -414,7 +422,7 @@ fn rotations_merged_into_one_flush_land_by_derivation() {
         .iter()
         .map(|i| {
             (
-                i.script_pubkey.to_bytes(),
+                i.address.script_pubkey().to_bytes(),
                 (a.encode().to_vec(), i.index == 4),
             )
         })
@@ -423,7 +431,7 @@ fn rotations_merged_into_one_flush_land_by_derivation() {
         .iter()
         .map(|i| {
             (
-                i.script_pubkey.to_bytes(),
+                i.address.script_pubkey().to_bytes(),
                 (b.encode().to_vec(), i.index == 2),
             )
         })
@@ -446,15 +454,15 @@ fn rotating_back_restores_the_earlier_generation() {
 
     assert_eq!(live_scripts(&persister, &w), scripts_of(a));
     let used = used_scripts(&persister, &w);
-    assert!(used.contains(&address_at(a, 1).script_pubkey.to_bytes()));
-    assert!(!used.contains(&address_at(b, 0).script_pubkey.to_bytes()));
+    assert!(used.contains(&address_at(a, 1).address.script_pubkey().to_bytes()));
+    assert!(!used.contains(&address_at(b, 0).address.script_pubkey().to_bytes()));
     let history = retired(&persister, &w);
     assert_eq!(
         history.keys().cloned().collect::<BTreeSet<_>>(),
         scripts_of(b)
     );
     assert_eq!(
-        history[&address_at(b, 0).script_pubkey.to_bytes()],
+        history[&address_at(b, 0).address.script_pubkey().to_bytes()],
         (b.encode().to_vec(), true)
     );
     assert_eq!(loaded_account(&persister, &w).0, a);
@@ -517,7 +525,9 @@ fn a_pre_v024_database_migrates_in_place() {
     let persister = reopen(&path);
     assert_eq!(live_scripts(&persister, &w), scripts_of(a));
     assert!(retired(&persister, &w).is_empty());
-    assert!(used_scripts(&persister, &w).contains(&address_at(a, 2).script_pubkey.to_bytes()));
+    assert!(
+        used_scripts(&persister, &w).contains(&address_at(a, 2).address.script_pubkey().to_bytes())
+    );
     assert_eq!(loaded_account(&persister, &w).0, a);
 
     let b = contact_xpub(0x0B);
@@ -658,7 +668,9 @@ fn v024_adopts_a_downstream_retired_pool_table() {
     // A rotation back restores the adopted generation, used flag included.
     persister.store(w, registration(a, &[])).unwrap();
     assert_eq!(live_scripts(&persister, &w), scripts_of(a));
-    assert!(used_scripts(&persister, &w).contains(&address_at(a, 1).script_pubkey.to_bytes()));
+    assert!(
+        used_scripts(&persister, &w).contains(&address_at(a, 1).address.script_pubkey().to_bytes())
+    );
     assert_eq!(
         retired(&persister, &w)
             .keys()
@@ -689,7 +701,9 @@ fn a_corrupt_retired_xpub_does_not_block_live_writes() {
     persister
         .store(w, pools_only(pool_entries_extended(b, &[1], 2)))
         .unwrap();
-    assert!(used_scripts(&persister, &w).contains(&address_at(b, 1).script_pubkey.to_bytes()));
+    assert!(
+        used_scripts(&persister, &w).contains(&address_at(b, 1).address.script_pubkey().to_bytes())
+    );
 }
 
 /// Re-registering the same xpub decoded under another network (decoding maps
@@ -728,7 +742,9 @@ fn the_same_xpub_under_another_network_is_not_a_rotation() {
         .unwrap();
     assert_eq!(live_scripts(&persister, &w), scripts_of(a));
     assert!(retired(&persister, &w).is_empty());
-    assert!(used_scripts(&persister, &w).contains(&address_at(a, 1).script_pubkey.to_bytes()));
+    assert!(
+        used_scripts(&persister, &w).contains(&address_at(a, 1).address.script_pubkey().to_bytes())
+    );
 }
 
 /// A coin an older build persisted at a contact's address stays with the
@@ -757,7 +773,7 @@ fn a_stale_contact_coin_stays_out_of_the_balance_after_a_rotation() {
         .unwrap();
     let (a, b) = (contact_xpub(0x0A), contact_xpub(0x0B));
     persister.store(w, registration(a, &[])).unwrap();
-    let stale = address_at(a, 0).script_pubkey.to_bytes();
+    let stale = address_at(a, 0).address.script_pubkey().to_bytes();
     let outpoint = blob::encode_outpoint(&dashcore::OutPoint {
         txid: <dashcore::Txid as dashcore::hashes::Hash>::from_byte_array([0x5C; 32]),
         vout: 0,
