@@ -12175,7 +12175,12 @@ mod tests {
         // The store held no tree when it was opened: no bound.
         let journal = fixture.journal_snapshot().await;
         assert_eq!(
-            heightless_tree_bounds(&*fixture.coordinator.store().read().await, &[], &journal),
+            heightless_tree_bounds(
+                &*fixture.coordinator.store().read().await,
+                &[],
+                &journal,
+                &[]
+            ),
             None,
             "no tree held at open"
         );
@@ -12206,7 +12211,7 @@ mod tests {
             .collect();
         assert_eq!(journal[0].1.anchor_height, None, "its height stays unknown");
         let (tree_bound, anchor_floors) =
-            heightless_tree_bounds(&*reopened.store().read().await, &[], &journal)
+            heightless_tree_bounds(&*reopened.store().read().await, &[], &journal, &[])
                 .expect("bounded");
         assert_eq!(tree_bound, TREE, "the tree the earlier process held");
         // (set height, scan coverage, pool leaves and their height, discharged)

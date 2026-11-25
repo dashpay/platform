@@ -98,7 +98,10 @@ use super::store::{
 };
 use super::CAUGHT_UP_COOLDOWN;
 use crate::error::PlatformWalletError;
-use crate::manager::shielded_sync::{ShieldedSyncPassSummary, WalletShieldedOutcome};
+use crate::manager::shielded_sync::{
+    FedHeightlessSpends, HeldNullifierState, HostHeightlessSpend, ShieldedPassEvidence,
+    ShieldedPassId, ShieldedPassNullifiers, ShieldedSyncPassSummary, WalletShieldedOutcome,
+};
 use crate::wallet::identity::network::dashpay_contract;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
@@ -199,6 +202,38 @@ pub struct NetworkShieldedCoordinator {
     /// discharges it; then it leaves this set too. In memory only: a restart
     /// reads the store for it once more.
     landed_private_payments: std::sync::Mutex<BTreeSet<(WalletId, [u8; 32])>>,
+
+    /// Whether every pass reads Platform's recorded anchor set before its
+    /// note scan, so its summary carries the pass's evidence
+    /// ([`Self::set_pass_evidence_wanted`]).
+    pass_evidence_wanted: std::sync::atomic::AtomicBool,
+
+    /// The host's spends whose anchors' heights it does not know, fed to
+    /// every pass while the host asks for evidence
+    /// ([`Self::set_host_heightless_spends`]).
+    host_heightless: std::sync::Mutex<Arc<Vec<HostHeightlessSpend>>>,
+
+    /// The pass started last, and the last pass that ran to its end
+    /// uncancelled, started last and with the store's notes changed only by
+    /// its own scan meanwhile, with the subwallets it scanned
+    /// ([`Self::last_completed_pass`]).
+    passes: std::sync::Mutex<PassMarks>,
+
+    /// Run just before a pass marks itself completed, for tests to change
+    /// the store at that point.
+    #[cfg(test)]
+    before_pass_completes: std::sync::Mutex<Option<PassCompletionHook>>,
+
+    /// Moves, under the store's write guard, whenever notes change other
+    /// than by a pass's scan: a restore from the host, a purge, an
+    /// unregister or a clear. A pass completes as the last one only if it
+    /// did not move while the pass ran.
+    notes_epoch: std::sync::atomic::AtomicU64,
+
+    /// The evidence the last release judged by, for tests to compare with
+    /// the pass's reported evidence.
+    #[cfg(test)]
+    release_evidence_seen: std::sync::Mutex<Option<ReleaseEvidenceSeen>>,
 
     /// Optional progress callback fired once per chunk inside
     /// `sync_shielded_notes`. Lets the manager translate chunk-level
@@ -504,6 +539,14 @@ impl NetworkShieldedCoordinator {
             persisters: Arc::new(RwLock::new(BTreeMap::new())),
             last_caught_up_at: std::sync::Mutex::new(None),
             landed_private_payments: std::sync::Mutex::new(BTreeSet::new()),
+            pass_evidence_wanted: std::sync::atomic::AtomicBool::new(false),
+            host_heightless: std::sync::Mutex::new(Arc::default()),
+            passes: std::sync::Mutex::new(PassMarks::default()),
+            #[cfg(test)]
+            before_pass_completes: std::sync::Mutex::new(None),
+            notes_epoch: std::sync::atomic::AtomicU64::new(0),
+            #[cfg(test)]
+            release_evidence_seen: std::sync::Mutex::new(None),
             progress_handler: std::sync::Mutex::new(None),
             tree_progress_handler: std::sync::Mutex::new(None),
             lifecycle: tokio::sync::Mutex::new(()),
@@ -540,6 +583,144 @@ impl NetworkShieldedCoordinator {
         if let Ok(mut slot) = self.progress_handler.lock() {
             *slot = handler;
         }
+    }
+
+    /// Have every sync pass read Platform's recorded anchor set before its
+    /// note scan, even with no reservation or journal record of its own to
+    /// judge, so its summary carries the pass's evidence
+    /// ([`ShieldedSyncPassSummary::evidence`]). For a host holding spends the
+    /// coordinator does not know of; costs one query a pass while set.
+    pub fn set_pass_evidence_wanted(&self, wanted: bool) {
+        self.pass_evidence_wanted
+            .store(wanted, std::sync::atomic::Ordering::Release);
+    }
+
+    /// The host's held spends whose anchors' heights it does not know,
+    /// replacing those set before. While the host asks for evidence
+    /// ([`Self::set_pass_evidence_wanted`]), every pass raises their anchors'
+    /// tree floors from the notes it holds, fetches the pool's leaf count
+    /// for them, and reports them as fed
+    /// ([`ShieldedPassEvidence::proves_heightless_spend_cannot_execute`]).
+    /// Floors only raise the bar, so the coordinator's own releases are
+    /// never eased by them.
+    ///
+    /// Only spends saved before this build first opened this store may be
+    /// fed: the store's tree bound covers those anchors' trees and no others.
+    /// A spend this build made always keeps its anchor's height.
+    pub fn set_host_heightless_spends(&self, spends: Vec<HostHeightlessSpend>) {
+        *self
+            .host_heightless
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Arc::new(spends);
+    }
+
+    fn host_heightless_spends(&self) -> Arc<Vec<HostHeightlessSpend>> {
+        if !self
+            .pass_evidence_wanted
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return Arc::default();
+        }
+        Arc::clone(
+            &self
+                .host_heightless
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+    }
+
+    /// The last pass that ran to its end uncancelled, with no other pass
+    /// started and no restore, purge, unregister or clear since it started.
+    /// `None` from the start of a pass until that pass completes, after a
+    /// pass that failed or was cancelled, and after any of those changes to
+    /// the store's notes.
+    pub fn last_completed_pass(&self) -> Option<ShieldedPassId> {
+        self.completed_pass().map(|(pass_id, _)| pass_id)
+    }
+
+    fn pass_marks(&self) -> std::sync::MutexGuard<'_, PassMarks> {
+        self.passes
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn completed_pass(&self) -> Option<CompletedPass> {
+        self.pass_marks().completed.clone()
+    }
+
+    fn start_pass(&self, pass_id: ShieldedPassId) {
+        let mut marks = self.pass_marks();
+        marks.started = Some(pass_id);
+        marks.completed = None;
+    }
+
+    /// Marks `pass_id` the last completed pass if no pass started after it.
+    fn complete_pass(&self, pass_id: ShieldedPassId, scanned: BTreeSet<SubwalletId>) -> bool {
+        let mut marks = self.pass_marks();
+        if marks.started != Some(pass_id) {
+            return false;
+        }
+        marks.completed = Some((pass_id, Arc::new(scanned)));
+        true
+    }
+
+    fn notes_epoch(&self) -> u64 {
+        self.notes_epoch.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    /// Notes changed other than by a pass's scan: no pass is the last
+    /// completed one until a pass starts and completes after this. Called
+    /// with the store's write guard held, which `_held` stands for.
+    fn notes_changed(&self, _held: &FileBackedShieldedStore) {
+        self.notes_epoch
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        self.pass_marks().completed = None;
+    }
+
+    /// How each of `nullifiers` reads in the notes of the subwallets the last
+    /// completed pass scanned, with that pass, taken under the same store
+    /// guard. With no last completed pass, or for a note outside what it
+    /// scanned, a nullifier reads [`HeldNullifierState::Unknown`]; so does
+    /// every one a store that does not read leaves unread.
+    pub async fn read_held_nullifiers(&self, nullifiers: &[[u8; 32]]) -> ShieldedPassNullifiers {
+        let mut states: BTreeMap<[u8; 32], HeldNullifierState> = nullifiers
+            .iter()
+            .map(|nullifier| (*nullifier, HeldNullifierState::Unknown))
+            .collect();
+        let store = self.store.read().await;
+        let Some((pass_id, scanned)) = self.completed_pass() else {
+            return ShieldedPassNullifiers::new(None, states);
+        };
+        for &id in scanned.iter() {
+            match store.get_all_notes(id) {
+                Ok(notes) => {
+                    for note in notes {
+                        if let Some(state) = states.get_mut(&note.nullifier) {
+                            if note.is_spent {
+                                *state = HeldNullifierState::Spent;
+                            } else if *state == HeldNullifierState::Unknown {
+                                *state = HeldNullifierState::Unspent;
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(id.wallet_id),
+                        account = id.account_index,
+                        error = %e,
+                        "held nullifier read: notes did not read; none reads unspent"
+                    );
+                    for state in states.values_mut() {
+                        if *state == HeldNullifierState::Unspent {
+                            *state = HeldNullifierState::Unknown;
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        ShieldedPassNullifiers::new(Some(pass_id), states)
     }
 
     /// Snapshot of the currently installed progress handler.
@@ -622,6 +803,9 @@ impl NetworkShieldedCoordinator {
     /// Reference to the shared store. The full sync / spend
     /// surfaces land on the coordinator itself; this accessor
     /// exists for tests and for migration scaffolding in Phase 1.
+    /// A write through it must not save a note or clear a spent mark:
+    /// [`Self::read_held_nullifiers`] would read it under a pass that did
+    /// not scan it.
     pub fn store(&self) -> &Arc<RwLock<FileBackedShieldedStore>> {
         &self.store
     }
@@ -932,6 +1116,7 @@ impl NetworkShieldedCoordinator {
         // dropped; retained accounts are left untouched.
         if !stale.is_empty() {
             let mut store = self.store.write().await;
+            self.notes_changed(&store);
             for (id, _) in stale {
                 if let Err(e) = store.purge_subwallet(id) {
                     tracing::warn!(
@@ -1059,7 +1244,9 @@ impl NetworkShieldedCoordinator {
         }
         self.persisters.write().await.remove(&wallet_id);
         self.hydrated.write().await.remove(&wallet_id);
-        if let Err(e) = self.store.write().await.purge_wallet(wallet_id) {
+        let mut store = self.store.write().await;
+        self.notes_changed(&store);
+        if let Err(e) = store.purge_wallet(wallet_id) {
             tracing::warn!(
                 wallet_id = %hex::encode(wallet_id),
                 error = %e,
@@ -1204,6 +1391,7 @@ impl NetworkShieldedCoordinator {
         }
 
         let mut store = self.store.write().await;
+        self.notes_changed(&store);
         for (id, sub) in &snapshot.per_subwallet {
             // Only restore subwallets that are registered on this
             // coordinator — `registered` holds `wallet_id`'s alone, so
@@ -1384,6 +1572,7 @@ impl NetworkShieldedCoordinator {
         let mut first_err: Option<crate::error::PlatformWalletError> = None;
         {
             let mut store = self.store.write().await;
+            self.notes_changed(&store);
             if let Err(e) = store.reset_commitment_tree() {
                 tracing::warn!(error = %e, "Failed to reset commitment tree on clear");
                 first_err.get_or_insert_with(|| {
@@ -1583,6 +1772,10 @@ impl NetworkShieldedCoordinator {
 
         #[cfg(test)]
         let pass_key = super::sync::pass_pause::key(&self.store);
+        // Taken before the registry snapshot: a restore, purge or clear from
+        // here on keeps this pass from completing as the last one.
+        let epoch = self.notes_epoch();
+
         // Snapshot the flat subwallet registry. This Vec is both
         // the IVK fan-out for sync_notes_across and the
         // identity-map for per-wallet summary demux below. Each
@@ -1606,6 +1799,10 @@ impl NetworkShieldedCoordinator {
             summary.sync_unix_seconds = Self::now_unix();
             return summary;
         }
+        // From here the store may change: no earlier pass is the last
+        // completed one until this one is.
+        let pass_id = ShieldedPassId::next();
+        self.start_pass(pass_id);
 
         // Snapshot armed reservations and prefetch Platform's recorded
         // anchor set BEFORE the note scan. The release pass after the scan
@@ -1690,6 +1887,22 @@ impl NetworkShieldedCoordinator {
         // `notes` result and `notes.changeset` the receipts do.
         let newly_spent_per_sub = notes.per_subwallet_newly_spent.clone();
 
+        // The pass's evidence for the host: the PRE-scan set the release below
+        // judges by, from a completed scan that covers a height. A set read
+        // after the scan proves nothing about a spend that executed past the
+        // scan's coverage.
+        let host_evidence = match (stranded_release.as_ref(), notes.covered_height) {
+            (Some(pre), Some(covered)) if !cancelled => Some(ShieldedPassEvidence::new(
+                pass_id,
+                Arc::new(pre.recorded.clone()),
+                pre.recorded_height,
+                covered,
+                pre.heightless.clone(),
+                Arc::clone(&pre.fed),
+            )),
+            _ => None,
+        };
+
         // Residual-spend resolution: `sync_notes_across` above marked every
         // landed spend (clearing its reservation and dropping its redrive
         // record via the store hook). Two passes over what's left, both
@@ -1713,6 +1926,7 @@ impl NetworkShieldedCoordinator {
             recorded,
             recorded_height,
             heightless,
+            fed: _,
         }) = stranded_release.filter(|_| !cancelled)
         {
             // Judged only for what the scan replayed: a skipped subwallet's
@@ -1747,6 +1961,15 @@ impl NetworkShieldedCoordinator {
                     scan_covered_height: notes.covered_height,
                     heightless: heightless.as_ref(),
                 };
+                #[cfg(test)]
+                if let Ok(mut seen) = self.release_evidence_seen.lock() {
+                    *seen = Some((
+                        recorded.clone(),
+                        recorded_height,
+                        notes.covered_height,
+                        heightless.clone(),
+                    ));
+                }
                 self.release_stranded_spends(stale, evidence).await;
                 self.discharge_expired_private_payments(&journal, evidence)
                     .await;
@@ -1880,6 +2103,26 @@ impl NetworkShieldedCoordinator {
         summary =
             build_per_wallet_summary(&subwallets, &notes, &newly_spent_per_sub, &balances_per_sub);
         summary.sync_unix_seconds = Self::now_unix();
+        #[cfg(test)]
+        {
+            let hook = self
+                .before_pass_completes
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .take();
+            if let Some(hook) = hook {
+                hook(self);
+            }
+        }
+        // Under the store guard, so no restore, purge or clear lands between
+        // the check and the mark.
+        let completed = {
+            let _store = self.store.read().await;
+            !cancelled
+                && self.notes_epoch() == epoch
+                && self.complete_pass(pass_id, subwallets.iter().map(|(id, _)| *id).collect())
+        };
+        summary.evidence = host_evidence.filter(|_| completed);
         summary
     }
 
@@ -1944,8 +2187,10 @@ impl NetworkShieldedCoordinator {
     ) -> Option<PreScanEvidence> {
         // Gather anchored reservations across every synced subwallet, and the
         // journal records of their wallets. The common case is none, and then
-        // the network round-trip is skipped.
-        let (stale, journal, tree_bounds, tree_size) = {
+        // the network round-trip is skipped, unless the host asked for the
+        // pass's evidence.
+        let host = self.host_heightless_spends();
+        let (stale, journal, tree_bounds, tree_size, fed) = {
             let store = self.store.read().await;
             let mut stale: Vec<(SubwalletId, StalePendingSpend)> = Vec::new();
             for (id, _) in subwallets {
@@ -1963,11 +2208,16 @@ impl NetworkShieldedCoordinator {
                 &*store,
                 subwallets.iter().map(|(id, _)| id.wallet_id),
             );
-            if stale.is_empty() && journal.is_empty() {
+            if stale.is_empty()
+                && journal.is_empty()
+                && !self
+                    .pass_evidence_wanted
+                    .load(std::sync::atomic::Ordering::Acquire)
+            {
                 return None;
             }
-            let tree_bounds = heightless_tree_bounds(&*store, &stale, &journal);
-            (stale, journal, tree_bounds, store.tree_size().ok())
+            let (tree_bounds, fed) = heightless_bounds_and_fed(&*store, &stale, &journal, &host);
+            (stale, journal, tree_bounds, store.tree_size().ok(), fed)
         };
 
         use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
@@ -2020,6 +2270,7 @@ impl NetworkShieldedCoordinator {
                     recorded,
                     recorded_height: metadata.height,
                     heightless,
+                    fed: Arc::new(fed),
                 })
             }
             Err(e) => {
@@ -2841,12 +3092,14 @@ impl PrunedAnchorEvidence<'_> {
 ///   saves keeps its anchor height, so one without was saved by an earlier
 ///   build, from a tree no larger than this store held when this build first
 ///   opened it, and every reset since kept the size it reset first. A reset
-///   by an earlier build before that is not seen; the floors below still
-///   bound such an anchor's tree. The tree grows only by proved note
+///   by an earlier build before that is not seen, and nothing here bounds
+///   such an anchor's tree from above. The tree grows only by proved note
 ///   batches, so the pool reaches that size.
 /// - S is more than the position of every note spent on the anchor: a
 ///   witness to a note proves it in the tree the anchor is a root of
-///   ([`Self::anchor_floors`]).
+///   ([`Self::anchor_floors`]). A floor is a lower bound only: one above
+///   [`Self::tree_bound`] shows the bound below S, an unseen reset, and the
+///   anchor is then never shown recorded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HeightlessAnchorEvidence {
     /// The largest commitment tree the store has held.
@@ -2863,51 +3116,97 @@ pub(crate) struct HeightlessAnchorEvidence {
 impl HeightlessAnchorEvidence {
     /// Whether Platform recorded `anchor`, named without its height, at or
     /// below `height`: the pool was proved at or below `height` to hold at
-    /// least [`Self::tree_bound`] leaves, and at least one more than every
-    /// note spent on it.
+    /// least [`Self::tree_bound`] leaves, and no note spent on it lies at or
+    /// past that bound.
     pub(crate) fn recorded_by(&self, anchor: &[u8; 32], height: u64) -> bool {
         let floor = self.anchor_floors.get(anchor).copied().unwrap_or(0);
-        self.pool_height <= height && self.pool_leaves >= self.tree_bound.max(floor)
+        floor <= self.tree_bound
+            && self.pool_height <= height
+            && self.pool_leaves >= self.tree_bound
     }
 }
 
 /// The bounds `store` keeps on the trees of the anchors that `stale` and
-/// `journal` name without their heights: the largest tree it has held
+/// `journal` name without their heights, and of the anchors of the host's
+/// `host` spends: the largest tree it has held
 /// ([`HeightlessAnchorEvidence::tree_bound`]) and the floors of those anchors
 /// ([`HeightlessAnchorEvidence::anchor_floors`]). `None` when no anchor is
 /// named without its height, or the store keeps no such bound.
+#[cfg(test)]
 pub(crate) fn heightless_tree_bounds<S: ShieldedStore>(
     store: &S,
     stale: &[(SubwalletId, StalePendingSpend)],
     journal: &[(WalletId, PrivatePaymentRecord)],
-) -> Option<(u64, BTreeMap<[u8; 32], u64>)> {
-    let heightless = stale
-        .iter()
-        .any(|(_, (_, _, _, anchor_height))| anchor_height.is_none())
+    host: &[HostHeightlessSpend],
+) -> Option<TreeBounds> {
+    heightless_bounds_and_fed(store, stale, journal, host).0
+}
+
+/// The largest tree the store has held and the floors of the anchors named
+/// without their heights ([`HeightlessAnchorEvidence`]).
+type TreeBounds = (u64, BTreeMap<[u8; 32], u64>);
+
+/// The bounds the store keeps on the trees of the anchors that `stale` and
+/// `journal` name without their heights and that the host's `host` spends
+/// name (`None` when no anchor is named without its height, or the store
+/// keeps no such bound), and those spends as fed to the pass, from the same
+/// read of the notes ([`heightless_floors_and_fed`]).
+fn heightless_bounds_and_fed<S: ShieldedStore>(
+    store: &S,
+    stale: &[(SubwalletId, StalePendingSpend)],
+    journal: &[(WalletId, PrivatePaymentRecord)],
+    host: &[HostHeightlessSpend],
+) -> (Option<TreeBounds>, FedHeightlessSpends) {
+    let heightless = !host.is_empty()
+        || stale
+            .iter()
+            .any(|(_, (_, _, _, anchor_height))| anchor_height.is_none())
         || journal
             .iter()
             .any(|(_, record)| record.anchor_height.is_none());
-    if !heightless {
-        return None;
-    }
-    let tree_bound = store.legacy_anchor_tree_bound()?;
-    Some((tree_bound, heightless_anchor_floors(store, stale, journal)))
+    let tree_bound = match store.legacy_anchor_tree_bound() {
+        Some(tree_bound) if heightless => tree_bound,
+        _ => return (None, FedHeightlessSpends::new()),
+    };
+    let (floors, fed) = heightless_floors_and_fed(store, stale, journal, host);
+    (Some((tree_bound, floors)), fed)
 }
 
 /// Per anchor that a reservation in `stale` or a record in `journal` names
-/// without its height, one past the highest commitment tree position among
-/// the notes spent on it that `store` holds
-/// ([`HeightlessAnchorEvidence::anchor_floors`]). A note the store does not
-/// hold, or a subwallet whose notes do not read, raises no floor.
+/// without its height, or that a host spend in `host` names, one past the
+/// highest commitment tree position among the notes spent on it that `store`
+/// holds ([`HeightlessAnchorEvidence::anchor_floors`]). A note the store does
+/// not hold, or a subwallet whose notes do not read, raises no floor.
+#[cfg(test)]
 fn heightless_anchor_floors<S: ShieldedStore>(
     store: &S,
     stale: &[(SubwalletId, StalePendingSpend)],
     journal: &[(WalletId, PrivatePaymentRecord)],
+    host: &[HostHeightlessSpend],
 ) -> BTreeMap<[u8; 32], u64> {
+    heightless_floors_and_fed(store, stale, journal, host).0
+}
+
+/// Per anchor named without its height, one past the highest tree position
+/// among the notes spent on it that `store` holds
+/// ([`HeightlessAnchorEvidence::anchor_floors`]), and the host's spends as
+/// fed to the pass:
+/// per anchor, the nullifiers of every host spend whose notes `store` holds,
+/// each of them, in the subwallet named with it. Each raised the anchor's
+/// floor in the same read. A spend with a nullifier the store does not hold
+/// there is not fed, nor is any other spend on its anchor: all are held.
+fn heightless_floors_and_fed<S: ShieldedStore>(
+    store: &S,
+    stale: &[(SubwalletId, StalePendingSpend)],
+    journal: &[(WalletId, PrivatePaymentRecord)],
+    host: &[HostHeightlessSpend],
+) -> (BTreeMap<[u8; 32], u64>, FedHeightlessSpends) {
     let spends = stale
         .iter()
         .filter(|(_, (_, _, _, anchor_height))| anchor_height.is_none())
-        .map(|(id, (nullifier, anchor, _, _))| (*id, *anchor, std::slice::from_ref(nullifier)))
+        .map(|(id, (nullifier, anchor, _, _))| {
+            (*id, *anchor, std::slice::from_ref(nullifier), false)
+        })
         .chain(
             journal
                 .iter()
@@ -2917,12 +3216,23 @@ fn heightless_anchor_floors<S: ShieldedStore>(
                         SubwalletId::new(*wallet_id, record.account_index),
                         record.anchor,
                         record.nullifiers.as_slice(),
+                        false,
                     )
                 }),
-        );
+        )
+        .chain(host.iter().map(|spend| {
+            (
+                spend.subwallet,
+                spend.anchor,
+                spend.nullifiers.as_slice(),
+                true,
+            )
+        }));
     let mut positions: BTreeMap<SubwalletId, BTreeMap<[u8; 32], u64>> = BTreeMap::new();
     let mut floors: BTreeMap<[u8; 32], u64> = BTreeMap::new();
-    for (id, anchor, nullifiers) in spends {
+    let mut fed = FedHeightlessSpends::new();
+    let mut not_fed: BTreeSet<[u8; 32]> = BTreeSet::new();
+    for (id, anchor, nullifiers, from_host) in spends {
         let notes = positions
             .entry(id)
             .or_insert_with(|| match store.get_all_notes(id) {
@@ -2948,8 +3258,25 @@ fn heightless_anchor_floors<S: ShieldedStore>(
             let floor = floors.entry(anchor).or_insert(0);
             *floor = (*floor).max(position.saturating_add(1));
         }
+        if !from_host {
+            continue;
+        }
+        if !nullifiers.is_empty()
+            && nullifiers
+                .iter()
+                .all(|nullifier| notes.contains_key(nullifier))
+        {
+            fed.entry(anchor)
+                .or_default()
+                .extend(nullifiers.iter().copied());
+        } else {
+            not_fed.insert(anchor);
+        }
     }
-    floors
+    // A spend on the anchor whose notes the store lacks raised no floor for
+    // them, so no spend on that anchor is judged.
+    fed.retain(|anchor, _| !not_fed.contains(anchor));
+    (floors, fed)
 }
 
 /// What a sync pass reads before its note scan, for the steps after it that
@@ -2968,10 +3295,35 @@ struct PreScanEvidence {
     /// The height of the proof the anchor set was read from.
     recorded_height: u64,
     /// What bounds the trees of the anchors `stale` and `journal` name
-    /// without their heights, read before the anchor set; `None` when none
-    /// does, or none was needed.
+    /// without their heights, and the host's fed spends name, read before
+    /// the anchor set; `None` when none does, or none was needed.
     heightless: Option<HeightlessAnchorEvidence>,
+    /// The host's heightless spends fed into `heightless`.
+    fed: Arc<FedHeightlessSpends>,
 }
+
+/// What a test runs as a pass completes.
+#[cfg(test)]
+type PassCompletionHook = Box<dyn FnOnce(&NetworkShieldedCoordinator) + Send>;
+
+/// A pass that completed and the subwallets it scanned.
+type CompletedPass = (ShieldedPassId, Arc<BTreeSet<SubwalletId>>);
+
+#[derive(Default)]
+struct PassMarks {
+    started: Option<ShieldedPassId>,
+    completed: Option<CompletedPass>,
+}
+
+/// The evidence a release judged by: the set, its height, the scan's covered
+/// height and the heightless bounds.
+#[cfg(test)]
+type ReleaseEvidenceSeen = (
+    HashSet<[u8; 32]>,
+    u64,
+    Option<u64>,
+    Option<HeightlessAnchorEvidence>,
+);
 
 /// The private payment journal records of `wallet_ids`, each wallet once, in
 /// order. A wallet whose journal does not read has none here: nothing of it is
@@ -5007,7 +5359,14 @@ mod tests {
         };
         let held = (true, true, Some(ShieldedActivityStatus::Pending));
 
-        coordinator.sync(true, &CancellationToken::new()).await;
+        let summary = coordinator.sync(true, &CancellationToken::new()).await;
+        let evidence = assert_reports_release_evidence(&coordinator, &summary);
+        for (_, anchor, _, anchor_height) in &spends {
+            assert!(
+                !evidence.proves_pruned(anchor, *anchor_height),
+                "the reported evidence judges as the release did"
+            );
+        }
         {
             let store = coordinator.store().read().await;
             for (nullifier, _, activity, _) in &spends {
@@ -5021,7 +5380,10 @@ mod tests {
 
         sdk.mock()
             .set_response_height_of::<ShieldedEncryptedNotes>(SET_HEIGHT);
-        coordinator.sync(true, &CancellationToken::new()).await;
+        let summary = coordinator.sync(true, &CancellationToken::new()).await;
+        let evidence = assert_reports_release_evidence(&coordinator, &summary);
+        assert!(evidence.proves_pruned(&spends[0].1, spends[0].3));
+        assert!(!evidence.proves_pruned(&spends[1].1, spends[1].3));
         let store = coordinator.store().read().await;
         assert_eq!(
             state(&store, spends[0].0, spends[0].2),
@@ -5034,6 +5396,446 @@ mod tests {
             "an anchor read above the set may be newer than it"
         );
         drop(store);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The evidence `summary` reports, checked equal to what that pass's
+    /// release judged by.
+    fn assert_reports_release_evidence(
+        coordinator: &NetworkShieldedCoordinator,
+        summary: &ShieldedSyncPassSummary,
+    ) -> ShieldedPassEvidence {
+        let evidence = summary
+            .evidence
+            .clone()
+            .expect("a completed pass reports its evidence");
+        let seen = coordinator
+            .release_evidence_seen
+            .lock()
+            .unwrap()
+            .take()
+            .expect("the pass ran its release");
+        let (recorded, height, covered, heightless) = evidence.parts();
+        assert_eq!(
+            (recorded, height, Some(covered), heightless),
+            (&seen.0, seen.1, seen.2, seen.3.as_ref()),
+            "the reported evidence is the release's own"
+        );
+        assert_eq!(
+            coordinator.last_completed_pass(),
+            Some(evidence.heights().0)
+        );
+        evidence
+    }
+
+    /// A host holding spends the coordinator does not know of asks every
+    /// pass for its evidence and reads its held nullifiers after the pass.
+    /// A scan proved a block below the set shows nothing about the set's own
+    /// block; a read is bound to the pass last completed when it was taken,
+    /// so one pass's evidence never judges another's read; and whatever is
+    /// unknown, unread or without a height is held.
+    #[tokio::test]
+    async fn should_report_a_passs_anchor_evidence_to_a_host_that_asked_for_it() {
+        use drive_proof_verifier::types::{
+            NoParamQuery, ShieldedAnchors, ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery,
+        };
+
+        const SET_HEIGHT: u64 = 50;
+        let still_recorded = [0xEE; 32];
+        let pruned = [0x22; 32];
+        let unspent = [0x61; 32];
+        let spent = [0x62; 32];
+        let unknown = [0x63; 32];
+        let not_read = [0x64; 32];
+        let held = [unspent, spent, unknown];
+        let mut sdk = dash_sdk::Sdk::new_mock();
+        let count = 2048
+            * u32::from(
+                sdk.version()
+                    .drive_abci
+                    .query
+                    .shielded_queries
+                    .max_query_chunks,
+            );
+        for chunk in 0..16 {
+            sdk.mock()
+                .expect_fetch(
+                    ShieldedEncryptedNotesQuery {
+                        start_index: u64::from(count) * chunk,
+                        count,
+                    },
+                    Some(ShieldedEncryptedNotes {
+                        notes: Vec::new(),
+                        total_count: 0,
+                    }),
+                )
+                .await
+                .expect("an empty chunk");
+        }
+        sdk.mock()
+            .expect_fetch(NoParamQuery {}, Some(ShieldedAnchors(vec![still_recorded])))
+            .await
+            .expect("the anchor set");
+        sdk.mock()
+            .set_response_height_of::<ShieldedAnchors>(SET_HEIGHT)
+            .set_response_height_of::<ShieldedEncryptedNotes>(SET_HEIGHT - 1);
+
+        let dir = temp_dir("pass_evidence");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let db_path = dir.join("tree.sqlite");
+        let coordinator = Arc::new(NetworkShieldedCoordinator::new(
+            Arc::new(sdk.clone()),
+            dashcore::Network::Testnet,
+            db_path.clone(),
+            FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store"),
+        ));
+        // What the last completed pass read as each chunk of a pass came in.
+        let seen_during_pass: Arc<std::sync::Mutex<Vec<Option<ShieldedPassId>>>> = Arc::default();
+        {
+            let watched = Arc::downgrade(&coordinator);
+            let seen = Arc::clone(&seen_during_pass);
+            coordinator.install_progress_handler(Some(Arc::new(move |_, _| {
+                if let Some(coordinator) = watched.upgrade() {
+                    seen.lock().unwrap().push(coordinator.last_completed_pass());
+                }
+            })));
+        }
+        let wallet_id: WalletId = [0x11; 32];
+        let views = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+            .expect("derive viewing keys")
+            .viewing_keys();
+        coordinator
+            .register_wallet(
+                wallet_id,
+                BTreeMap::from([(1u32, views)]),
+                WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence)),
+            )
+            .await
+            .expect("register wallet");
+        {
+            let mut store = coordinator.store().write().await;
+            for (position, (nullifier, is_spent)) in
+                [(unspent, false), (spent, true)].into_iter().enumerate()
+            {
+                let note = ShieldedNote {
+                    position: position as u64,
+                    cmx: [0x70 + position as u8; 32],
+                    nullifier,
+                    block_height: 1,
+                    is_spent,
+                    value: 1_000,
+                    note_data: vec![0u8; 115],
+                };
+                store
+                    .save_note(SubwalletId::new(wallet_id, 1), &note)
+                    .expect("note");
+            }
+        }
+        assert_eq!(
+            coordinator.read_held_nullifiers(&held).await.pass_id(),
+            None,
+            "no pass has completed"
+        );
+
+        let unasked = coordinator.sync(true, &CancellationToken::new()).await;
+        assert!(
+            unasked.evidence.is_none(),
+            "with nothing of its own to judge, a pass reads no set unless asked"
+        );
+
+        coordinator.set_pass_evidence_wanted(true);
+        let pass = || async {
+            coordinator
+                .sync(true, &CancellationToken::new())
+                .await
+                .evidence
+                .expect("an asked-for pass reports its evidence")
+        };
+        let behind = pass().await;
+        let behind_read = coordinator.read_held_nullifiers(&held).await;
+        assert_eq!(behind.heights().1, SET_HEIGHT);
+        assert_eq!(behind.heights().2, SET_HEIGHT - 1);
+        assert_eq!(behind_read.pass_id(), Some(behind.heights().0));
+        assert_eq!(behind_read.state(&unspent), HeldNullifierState::Unspent);
+        assert_eq!(behind_read.state(&spent), HeldNullifierState::Spent);
+        assert_eq!(behind_read.state(&unknown), HeldNullifierState::Unknown);
+        assert_eq!(behind_read.state(&not_read), HeldNullifierState::Unknown);
+        assert_eq!(behind.anchor_recorded_at(&still_recorded), Some(SET_HEIGHT));
+        assert_eq!(behind.anchor_recorded_at(&pruned), None);
+        assert!(
+            !behind.proves_pruned(&pruned, SET_HEIGHT - 5),
+            "a scan a block below the set proves nothing"
+        );
+        assert!(!behind.proves_spend_cannot_execute(
+            &behind_read,
+            &pruned,
+            SET_HEIGHT - 5,
+            &[unspent]
+        ));
+
+        sdk.mock()
+            .set_response_height_of::<ShieldedEncryptedNotes>(SET_HEIGHT);
+        let covering = pass().await;
+        let read = coordinator.read_held_nullifiers(&held).await;
+        let cannot_execute = |anchor: &[u8; 32], height: u64, nullifiers: &[[u8; 32]]| {
+            covering.proves_spend_cannot_execute(&read, anchor, height, nullifiers)
+        };
+        assert_eq!(covering.heights().2, SET_HEIGHT);
+        assert!(
+            cannot_execute(&pruned, SET_HEIGHT - 5, &[unspent]),
+            "absent from a set the scan covers, in the set before it, nullifier unspent"
+        );
+        assert!(
+            cannot_execute(&pruned, SET_HEIGHT, &[unspent]),
+            "taken from a set at the same height"
+        );
+        assert!(
+            !cannot_execute(&pruned, SET_HEIGHT + 1, &[unspent]),
+            "an anchor taken above the set may be newer than it"
+        );
+        assert!(
+            !cannot_execute(&still_recorded, SET_HEIGHT - 5, &[unspent]),
+            "a recorded anchor can still be spent against"
+        );
+        assert_eq!(
+            covering.anchor_recorded_at(&pruned),
+            None,
+            "a set lacking the anchor gives it no height to prove by"
+        );
+        assert!(
+            !cannot_execute(&pruned, SET_HEIGHT - 5, &[unspent, spent]),
+            "a spent nullifier goes to the executed path, not this one"
+        );
+        assert!(
+            !cannot_execute(&pruned, SET_HEIGHT - 5, &[unspent, unknown]),
+            "a nullifier the library does not know is held"
+        );
+        assert!(
+            !cannot_execute(&pruned, SET_HEIGHT - 5, &[unspent, not_read]),
+            "a nullifier the read did not cover is held"
+        );
+        assert!(
+            !cannot_execute(&pruned, SET_HEIGHT - 5, &[]),
+            "a spend without nullifiers is never proven"
+        );
+
+        let next = pass().await;
+        let next_read = coordinator.read_held_nullifiers(&held).await;
+        assert!(next.heights().0 > covering.heights().0, "pass ids increase");
+        assert!(
+            next.proves_spend_cannot_execute(&next_read, &pruned, SET_HEIGHT - 5, &[unspent]),
+            "the next pass proves it on a read taken after it"
+        );
+        assert!(
+            !next.proves_spend_cannot_execute(&read, &pruned, SET_HEIGHT - 5, &[unspent]),
+            "a pass's evidence never judges a read taken before it"
+        );
+        assert!(
+            !covering.proves_spend_cannot_execute(&next_read, &pruned, SET_HEIGHT - 5, &[unspent]),
+            "nor a read taken after a later pass"
+        );
+
+        let during = std::mem::take(&mut *seen_during_pass.lock().unwrap());
+        assert!(
+            !during.is_empty() && during.iter().all(Option::is_none),
+            "while a pass runs, no pass is the last completed one: {during:?}"
+        );
+
+        // A wallet bound after the pass, with a note an earlier session left
+        // in the store, reads Unknown under the pass that never scanned it.
+        let other: WalletId = [0x12; 32];
+        let restored = [0x65; 32];
+        let left = [0x66; 32];
+        {
+            let mut store = coordinator.store().write().await;
+            store
+                .save_note(
+                    SubwalletId::new(other, 0),
+                    &ShieldedNote {
+                        position: 8,
+                        cmx: [0x78; 32],
+                        nullifier: left,
+                        block_height: 1,
+                        is_spent: false,
+                        value: 1_000,
+                        note_data: vec![0u8; 115],
+                    },
+                )
+                .expect("note");
+        }
+        let other_views = |account: u32| {
+            BTreeMap::from([(
+                account,
+                OrchardKeySet::from_seed(&[0x43u8; 64], dashcore::Network::Testnet, account)
+                    .expect("derive viewing keys")
+                    .viewing_keys(),
+            )])
+        };
+        coordinator
+            .register_wallet(
+                other,
+                other_views(0),
+                WalletPersister::new(other, Arc::new(NoPlatformPersistence)),
+            )
+            .await
+            .expect("register the other wallet");
+        let after_register = coordinator.read_held_nullifiers(&[unspent, left]).await;
+        assert_eq!(after_register.pass_id(), Some(next.heights().0));
+        assert_eq!(after_register.state(&unspent), HeldNullifierState::Unspent);
+        assert_eq!(
+            after_register.state(&left),
+            HeldNullifierState::Unknown,
+            "the pass never scanned the wallet bound after it"
+        );
+        assert!(
+            !next.proves_spend_cannot_execute(&after_register, &pruned, SET_HEIGHT - 5, &[left]),
+            "a note the pass never scanned is held"
+        );
+
+        // Restored from the host with a note the pass never scanned, it
+        // reads under no pass until one scans it.
+        let snapshot = crate::changeset::ShieldedSyncStartState {
+            per_subwallet: BTreeMap::from([(
+                SubwalletId::new(other, 0),
+                crate::changeset::ShieldedSubwalletStartState {
+                    notes: vec![ShieldedNote {
+                        position: 7,
+                        cmx: [0x77; 32],
+                        nullifier: restored,
+                        block_height: 1,
+                        is_spent: false,
+                        value: 1_000,
+                        note_data: vec![0u8; 115],
+                    }],
+                    ..Default::default()
+                },
+            )]),
+            ..Default::default()
+        };
+        coordinator
+            .restore_for_wallet(other, &snapshot)
+            .await
+            .expect("restore the other wallet");
+        let after_restore = coordinator.read_held_nullifiers(&[unspent, restored]).await;
+        assert_eq!(after_restore.state(&restored), HeldNullifierState::Unknown);
+        assert_eq!(
+            after_restore.pass_id(),
+            None,
+            "a restore ends the last pass"
+        );
+        assert!(
+            !next.proves_spend_cannot_execute(&after_restore, &pruned, SET_HEIGHT - 5, &[restored]),
+            "a note restored after the pass was never scanned by it"
+        );
+        let scanned = pass().await;
+        assert!(
+            scanned.proves_spend_cannot_execute(
+                &coordinator.read_held_nullifiers(&[restored]).await,
+                &pruned,
+                SET_HEIGHT - 5,
+                &[restored]
+            ),
+            "a pass that scanned it proves it"
+        );
+        coordinator.unregister_wallet(other).await;
+        let after_unregister = coordinator.read_held_nullifiers(&[unspent]).await;
+        assert_eq!(
+            after_unregister.pass_id(),
+            None,
+            "an unregister ends the last pass"
+        );
+        assert!(!scanned.proves_spend_cannot_execute(
+            &after_unregister,
+            &pruned,
+            SET_HEIGHT - 5,
+            &[unspent]
+        ));
+
+        coordinator
+            .register_wallet(
+                other,
+                other_views(0),
+                WalletPersister::new(other, Arc::new(NoPlatformPersistence)),
+            )
+            .await
+            .expect("register the other wallet again");
+        let rebound = pass().await;
+        assert_eq!(coordinator.last_completed_pass(), Some(rebound.heights().0));
+        coordinator
+            .register_wallet(
+                other,
+                other_views(1),
+                WalletPersister::new(other, Arc::new(NoPlatformPersistence)),
+            )
+            .await
+            .expect("re-bind the other wallet to another account");
+        assert_eq!(
+            coordinator.last_completed_pass(),
+            None,
+            "a re-bind that purges a dropped account ends the last pass"
+        );
+
+        // A restore landing after the pass's scan but before it completes
+        // leaves it neither completed nor reporting.
+        *coordinator.before_pass_completes.lock().unwrap() = Some(Box::new(|coordinator| {
+            let store = coordinator
+                .store
+                .try_write()
+                .expect("no store guard held as a pass completes");
+            coordinator.notes_changed(&store);
+        }));
+        assert!(
+            coordinator
+                .sync(true, &CancellationToken::new())
+                .await
+                .evidence
+                .is_none(),
+            "notes changed during the pass"
+        );
+        assert_eq!(coordinator.last_completed_pass(), None);
+        let completed = pass().await;
+        assert_eq!(
+            coordinator.last_completed_pass(),
+            Some(completed.heights().0)
+        );
+
+        // Nor does a pass that another pass started after.
+        *coordinator.before_pass_completes.lock().unwrap() = Some(Box::new(|coordinator| {
+            coordinator.start_pass(ShieldedPassId::next());
+        }));
+        assert!(
+            coordinator
+                .sync(true, &CancellationToken::new())
+                .await
+                .evidence
+                .is_none(),
+            "a later pass started before this one completed"
+        );
+        assert_eq!(coordinator.last_completed_pass(), None);
+        let completed = pass().await;
+        assert_eq!(
+            coordinator.last_completed_pass(),
+            Some(completed.heights().0)
+        );
+
+        coordinator.set_pass_evidence_wanted(false);
+        assert!(
+            coordinator
+                .sync(true, &CancellationToken::new())
+                .await
+                .evidence
+                .is_none(),
+            "withdrawn, the pass reads no set again"
+        );
+        assert!(!next.proves_spend_cannot_execute(
+            &coordinator.read_held_nullifiers(&held).await,
+            &pruned,
+            SET_HEIGHT - 5,
+            &[unspent]
+        ));
+
+        coordinator.clear().await.expect("clear");
+        assert_eq!(coordinator.last_completed_pass(), None, "a clear ends it");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -5224,7 +6026,7 @@ mod tests {
             let heightless = {
                 let store = coordinator.store.read().await;
                 let (tree_bound, anchor_floors) =
-                    heightless_tree_bounds(&*store, &snapshot, &[]).expect("bounded");
+                    heightless_tree_bounds(&*store, &snapshot, &[], &[]).expect("bounded");
                 assert_eq!(tree_bound, TREE, "the tree the earlier process held");
                 pool.map(|(pool_leaves, pool_height)| HeightlessAnchorEvidence {
                     tree_bound,
@@ -5251,9 +6053,10 @@ mod tests {
 
     /// The floor of an anchor named without its height is one past the
     /// highest position of the notes spent on it that the store holds, over
-    /// every reservation and journal record naming it, and a pool count
-    /// shows the anchor recorded only once it reaches both that floor and the
-    /// tree bound. A note the store does not hold raises no floor.
+    /// every reservation, journal record and host spend naming it. A pool
+    /// count shows the anchor recorded once it reaches the tree bound, unless
+    /// the floor lies past the bound. A note the store does not hold raises
+    /// no floor.
     #[test]
     fn should_bound_a_heightless_anchor_s_tree_by_the_notes_spent_on_it() {
         let (anchor, other, dated) = ([0x51; 32], [0x52; 32], [0x53; 32]);
@@ -5298,19 +6101,416 @@ mod tests {
                 store_position: None,
             },
         )];
-        let floors = heightless_anchor_floors(&store, &stale, &journal);
+        let floors = heightless_anchor_floors(&store, &stale, &journal, &[]);
         assert_eq!(floors, BTreeMap::from([(anchor, 9)]));
-        let evidence = |pool_leaves| HeightlessAnchorEvidence {
-            tree_bound: 6,
+        let evidence = |tree_bound, pool_leaves| HeightlessAnchorEvidence {
+            tree_bound,
             pool_leaves,
             pool_height: 10,
             anchor_floors: floors.clone(),
         };
-        assert!(!evidence(8).recorded_by(&anchor, 10), "below its floor");
-        assert!(evidence(9).recorded_by(&anchor, 10), "at its floor");
-        assert!(!evidence(5).recorded_by(&other, 10), "below the bound");
-        assert!(evidence(6).recorded_by(&other, 10), "at the bound");
-        assert!(!evidence(9).recorded_by(&anchor, 9), "proved above the set");
+        assert!(
+            !evidence(6, 9).recorded_by(&anchor, 10),
+            "a floor past the bound shows a reset the bound missed"
+        );
+        assert!(!evidence(9, 8).recorded_by(&anchor, 10), "below the bound");
+        assert!(evidence(9, 9).recorded_by(&anchor, 10), "at the bound");
+        assert!(!evidence(6, 5).recorded_by(&other, 10), "below the bound");
+        assert!(evidence(6, 6).recorded_by(&other, 10), "at the bound");
+        assert!(
+            !evidence(9, 9).recorded_by(&anchor, 9),
+            "proved above the set"
+        );
+
+        // A host spend raises its anchor's floor from the store's own notes;
+        // one whose notes the store does not hold raises nothing.
+        let unheld = [0x54; 32];
+        let host = [
+            HostHeightlessSpend {
+                subwallet: id,
+                anchor: other,
+                nullifiers: vec![[0x63; 32]],
+            },
+            HostHeightlessSpend {
+                subwallet: id,
+                anchor: unheld,
+                nullifiers: vec![[0x66; 32]],
+            },
+            HostHeightlessSpend {
+                subwallet: SubwalletId::new(wallet_id, 1),
+                anchor,
+                nullifiers: vec![[0x63; 32]],
+            },
+        ];
+        assert_eq!(
+            heightless_anchor_floors(&store, &stale, &journal, &host),
+            BTreeMap::from([(anchor, 9), (other, 21)]),
+            "positions come from the named subwallet's notes only"
+        );
+    }
+
+    /// Host spends fed into a pass's heightless bounds leave the library's
+    /// own records with other anchors judged exactly as before, and can only
+    /// hold a record sharing an anchor, never release one.
+    #[test]
+    fn should_judge_the_librarys_heightless_records_no_easier_for_host_spends() {
+        const TREE: u64 = 8;
+        const H: u64 = 50;
+        let dir = temp_dir("host_heightless_h3");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let db_path = dir.join("tree.sqlite");
+        {
+            let mut store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open");
+            for leaf in 0..TREE {
+                store
+                    .append_commitment(&[leaf as u8 + 1; 32], true)
+                    .expect("appended");
+            }
+        }
+        let mut store = FileBackedShieldedStore::open_path(&db_path, 100).expect("reopened");
+        let id = SubwalletId::new([0x11; 32], 0);
+        let (library, other) = ([0x51; 32], [0x52; 32]);
+        for (position, nullifier) in [(3u64, 0x61u8), (5, 0x62), (TREE, 0x63)] {
+            store
+                .save_note(
+                    id,
+                    &ShieldedNote {
+                        position,
+                        cmx: [nullifier; 32],
+                        nullifier: [nullifier; 32],
+                        block_height: 1,
+                        is_spent: false,
+                        value: 1,
+                        note_data: vec![],
+                    },
+                )
+                .expect("saved");
+        }
+        let stale = vec![(id, ([0x61; 32], library, None, None))];
+        let host_on = |anchor: [u8; 32], nullifier: u8| {
+            vec![HostHeightlessSpend {
+                subwallet: id,
+                anchor,
+                nullifiers: vec![[nullifier; 32]],
+            }]
+        };
+        let recorded = HashSet::new();
+        let decides = |host: &[HostHeightlessSpend], pool_leaves: u64| {
+            let (tree_bound, anchor_floors) =
+                heightless_tree_bounds(&store, &stale, &[], host).expect("bounded");
+            assert_eq!(tree_bound, TREE, "the bound stays the store's");
+            let heightless = HeightlessAnchorEvidence {
+                tree_bound,
+                pool_leaves,
+                pool_height: H,
+                anchor_floors,
+            };
+            PrunedAnchorEvidence {
+                recorded: &recorded,
+                height: H,
+                scan_covered_height: Some(H),
+                heightless: Some(&heightless),
+            }
+            .proves_pruned(&library, None)
+        };
+        for pool_leaves in [TREE - 1, TREE] {
+            let alone = decides(&[], pool_leaves);
+            assert_eq!(alone, pool_leaves >= TREE);
+            for host in [host_on(other, 0x62), host_on(other, 0x63)] {
+                assert_eq!(
+                    decides(&host, pool_leaves),
+                    alone,
+                    "another anchor's host spend changes nothing"
+                );
+            }
+            assert_eq!(
+                decides(&host_on(library, 0x62), pool_leaves),
+                alone,
+                "a host floor within the bound changes nothing"
+            );
+            assert!(
+                !decides(&host_on(library, 0x63), pool_leaves),
+                "a host floor past the bound holds a shared anchor"
+            );
+        }
+        assert!(
+            decides(&[], TREE) && !decides(&host_on(library, 0x63), TREE),
+            "release goes to hold"
+        );
+        assert!(
+            !decides(&[], TREE - 1) && !decides(&host_on(library, 0x62), TREE - 1),
+            "hold never goes to release"
+        );
+        drop(store);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A host's heightless spend fed to a pass is judged on the pass's own
+    /// bounds: the store's tree bound, the floors of its notes, and a pool
+    /// count proved at or below the set before it. Only an anchor and
+    /// nullifiers fed to that pass are judged, and a floor past the bound
+    /// holds.
+    #[tokio::test]
+    async fn should_judge_a_hosts_heightless_spend_by_the_stores_tree_bound() {
+        const TREE: u64 = 8;
+        let held_spend = [0x22; 32];
+        let past_bound = [0x23; 32];
+        let not_fed = [0x24; 32];
+        let misnamed_anchor = [0x25; 32];
+        let partly_held = [0x26; 32];
+        let shares_unheld = [0x27; 32];
+        let (spendable_2, spendable_3, unheld) = ([0x65; 32], [0x66; 32], [0x67; 32]);
+        let (spendable, beyond, unfed, spent) = ([0x61; 32], [0x62; 32], [0x63; 32], [0x64; 32]);
+        for pool_leaves in [TREE - 1, TREE] {
+            let (coordinator, dir) = heightless_host_fixture(TREE, pool_leaves).await;
+            let id = SubwalletId::new([0x11; 32], 1);
+            {
+                let mut store = coordinator.store().write().await;
+                for (position, nullifier, is_spent) in [
+                    (3, spendable, false),
+                    (TREE, beyond, false),
+                    (2, unfed, false),
+                    (1, spent, true),
+                    (4, spendable_2, false),
+                    (5, spendable_3, false),
+                ] {
+                    store
+                        .save_note(
+                            id,
+                            &ShieldedNote {
+                                position,
+                                cmx: [position as u8 + 0x70; 32],
+                                nullifier,
+                                block_height: 1,
+                                is_spent,
+                                value: 1_000,
+                                note_data: vec![0u8; 115],
+                            },
+                        )
+                        .expect("note");
+                }
+            }
+            coordinator.set_host_heightless_spends(vec![
+                HostHeightlessSpend {
+                    subwallet: id,
+                    anchor: held_spend,
+                    nullifiers: vec![spendable, spent],
+                },
+                HostHeightlessSpend {
+                    subwallet: id,
+                    anchor: past_bound,
+                    nullifiers: vec![beyond],
+                },
+                HostHeightlessSpend {
+                    subwallet: SubwalletId::new([0x11; 32], 0),
+                    anchor: misnamed_anchor,
+                    nullifiers: vec![spendable],
+                },
+                HostHeightlessSpend {
+                    subwallet: id,
+                    anchor: partly_held,
+                    nullifiers: vec![spendable_2, unheld],
+                },
+                HostHeightlessSpend {
+                    subwallet: id,
+                    anchor: shares_unheld,
+                    nullifiers: vec![spendable_3],
+                },
+                HostHeightlessSpend {
+                    subwallet: id,
+                    anchor: shares_unheld,
+                    nullifiers: vec![unheld],
+                },
+            ]);
+            coordinator.set_pass_evidence_wanted(true);
+            let evidence = coordinator
+                .sync(true, &CancellationToken::new())
+                .await
+                .evidence
+                .expect("an asked-for pass reports its evidence");
+            let read = coordinator
+                .read_held_nullifiers(&[spendable, beyond, unfed, spent, spendable_2, spendable_3])
+                .await;
+            assert_eq!(read.pass_id(), Some(evidence.heights().0));
+            assert_eq!(
+                evidence.fed(),
+                &BTreeMap::from([
+                    (held_spend, BTreeSet::from([spendable, spent])),
+                    (past_bound, BTreeSet::from([beyond])),
+                ])
+            );
+            let heightless = evidence.parts().3.expect("bounded");
+            assert_eq!(heightless.tree_bound, TREE);
+            assert_eq!(heightless.pool_leaves, pool_leaves);
+            assert_eq!(
+                heightless.anchor_floors,
+                BTreeMap::from([
+                    (held_spend, 4),
+                    (past_bound, TREE + 1),
+                    (partly_held, 5),
+                    (shares_unheld, 6),
+                ])
+            );
+            assert_eq!(
+                evidence.proves_heightless_spend_cannot_execute(&read, &held_spend, &[spendable]),
+                pool_leaves >= TREE,
+                "proven once the pool reached the bound"
+            );
+            assert!(
+                !evidence.proves_heightless_spend_cannot_execute(
+                    &read,
+                    &held_spend,
+                    &[spendable, unfed]
+                ),
+                "a nullifier not fed is held"
+            );
+            assert!(
+                !evidence.proves_heightless_spend_cannot_execute(&read, &not_fed, &[spendable]),
+                "an anchor not fed is held"
+            );
+            assert!(
+                !evidence.proves_heightless_spend_cannot_execute(&read, &past_bound, &[beyond]),
+                "a floor past the bound holds"
+            );
+            assert!(
+                !evidence.proves_heightless_spend_cannot_execute(&read, &held_spend, &[]),
+                "a spend without nullifiers is never proven"
+            );
+            assert!(
+                !evidence.proves_heightless_spend_cannot_execute(
+                    &read,
+                    &misnamed_anchor,
+                    &[spendable]
+                ),
+                "a nullifier fed with a subwallet that does not hold its note is held"
+            );
+            assert_eq!(read.state(&spendable_2), HeldNullifierState::Unspent);
+            assert!(
+                !evidence.proves_heightless_spend_cannot_execute(
+                    &read,
+                    &partly_held,
+                    &[spendable_2]
+                ),
+                "a spend with a note the store lacks is not fed, even its held part"
+            );
+            assert_eq!(read.state(&spendable_3), HeldNullifierState::Unspent);
+            assert!(
+                !evidence.proves_heightless_spend_cannot_execute(
+                    &read,
+                    &shares_unheld,
+                    &[spendable_3]
+                ),
+                "nor is a held spend sharing its anchor with one the store lacks"
+            );
+            assert!(
+                !evidence.proves_heightless_spend_cannot_execute(
+                    &read,
+                    &held_spend,
+                    &[spendable, spent]
+                ),
+                "a spent nullifier is held"
+            );
+
+            coordinator.set_pass_evidence_wanted(false);
+            let unasked = coordinator.sync(true, &CancellationToken::new()).await;
+            assert!(
+                unasked.evidence.is_none(),
+                "unasked, nothing is fed or read"
+            );
+            let later = coordinator.read_held_nullifiers(&[spendable]).await;
+            assert!(
+                later.pass_id().is_some() && later.pass_id() != Some(evidence.heights().0),
+                "read under the later pass"
+            );
+            assert_eq!(later.state(&spendable), HeldNullifierState::Unspent);
+            assert!(
+                !evidence.proves_heightless_spend_cannot_execute(&later, &held_spend, &[spendable]),
+                "a read under a later pass is held"
+            );
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
+    /// A coordinator over a store whose tree held `tree` leaves when this
+    /// build first opened it, one wallet bound, and an SDK whose pool holds
+    /// `pool_leaves` leaves at the height of its anchor set.
+    async fn heightless_host_fixture(
+        tree: u64,
+        pool_leaves: u64,
+    ) -> (NetworkShieldedCoordinator, PathBuf) {
+        use drive_proof_verifier::types::{
+            NoParamQuery, ShieldedAnchors, ShieldedEncryptedNotes, ShieldedEncryptedNotesQuery,
+            ShieldedNotesCount,
+        };
+
+        const SET_HEIGHT: u64 = 50;
+        let mut sdk = dash_sdk::Sdk::new_mock();
+        let count = 2048
+            * u32::from(
+                sdk.version()
+                    .drive_abci
+                    .query
+                    .shielded_queries
+                    .max_query_chunks,
+            );
+        for chunk in 0..16 {
+            sdk.mock()
+                .expect_fetch(
+                    ShieldedEncryptedNotesQuery {
+                        start_index: u64::from(count) * chunk,
+                        count,
+                    },
+                    Some(ShieldedEncryptedNotes {
+                        notes: Vec::new(),
+                        total_count: 0,
+                    }),
+                )
+                .await
+                .expect("an empty chunk");
+        }
+        sdk.mock()
+            .expect_fetch(NoParamQuery {}, Some(ShieldedAnchors(vec![[0xEE; 32]])))
+            .await
+            .expect("the anchor set");
+        sdk.mock()
+            .expect_fetch(NoParamQuery {}, Some(ShieldedNotesCount(pool_leaves)))
+            .await
+            .expect("the pool's leaf count");
+        sdk.mock()
+            .set_response_height_of::<ShieldedAnchors>(SET_HEIGHT)
+            .set_response_height_of::<ShieldedNotesCount>(SET_HEIGHT)
+            .set_response_height_of::<ShieldedEncryptedNotes>(SET_HEIGHT);
+
+        let dir = temp_dir("host_heightless");
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let db_path = dir.join("tree.sqlite");
+        {
+            let mut store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open");
+            for leaf in 0..tree {
+                store
+                    .append_commitment(&[leaf as u8 + 1; 32], true)
+                    .expect("appended");
+            }
+        }
+        let coordinator = NetworkShieldedCoordinator::new(
+            Arc::new(sdk),
+            dashcore::Network::Testnet,
+            db_path.clone(),
+            FileBackedShieldedStore::open_path(&db_path, 100).expect("reopened"),
+        );
+        let wallet_id: WalletId = [0x11; 32];
+        let views = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+            .expect("derive viewing keys")
+            .viewing_keys();
+        coordinator
+            .register_wallet(
+                wallet_id,
+                BTreeMap::from([(1u32, views)]),
+                WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence)),
+            )
+            .await
+            .expect("register wallet");
+        (coordinator, dir)
     }
 
     /// A token cancelled before the pass starts: no network call (the
