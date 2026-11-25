@@ -1,5 +1,6 @@
 """Repack oclif's Dashmate debs under Debian versions that apt orders by release, adding the
 apt repository's source file and keyring."""
+import hashlib
 import io
 import json
 import os
@@ -28,9 +29,13 @@ SOURCES = 'etc/apt/sources.list.d/dashmate.sources'
 KEYRING = 'etc/apt/keyrings/dashmate-archive-keyring.gpg'
 PREFERENCES = 'etc/apt/preferences.d/dashmate.pref'
 
-# The primary key of the keyring infra handed over for the repository. A keyring with any
-# other primary key has to come with a deliberate change here.
+# The keyring infra handed over for the repository: its digest, its primary key and its two
+# signing subkeys, the online one and the standby. A renewed or replaced keyring has to come
+# with a deliberate change here.
+REPOSITORY_KEYRING_SHA256 = '08006df56f24e282f19012a29e539dad431654abefefd697832ac61918b01230'
 REPOSITORY_KEY_FINGERPRINT = 'A5F90926475EF25346DCE26836EF5BF853D100FE'
+REPOSITORY_SUBKEY_FINGERPRINTS = ['94E1AA9232F710AF51400D2242D07EC597C92A74',
+                                  '51C0AF253270F3DACE9F40078A30392F222E0ACC']
 
 # The stanza infra specified for the repository. The suite stays `stable` for every version,
 # prereleases included: switching to `testing` is the operator's choice, and the file is a
@@ -331,6 +336,7 @@ class RewriteDebVersionsTests(unittest.TestCase):
 
     def test_should_ship_the_committed_keyring_of_the_repository_key(self):
         committed = (ROOT / 'packages/dashmate/deb/dashmate-archive-keyring.gpg').read_bytes()
+        self.assertEqual(hashlib.sha256(committed).hexdigest(), REPOSITORY_KEYRING_SHA256)
         home = Path(tempfile.mkdtemp(dir='/tmp' if os.path.isdir('/tmp') else None))
         try:
             keys = subprocess.run(
@@ -339,9 +345,11 @@ class RewriteDebVersionsTests(unittest.TestCase):
         finally:
             subprocess.run(['gpgconf', '--homedir', str(home), '--kill', 'all'], capture_output=True)
             shutil.rmtree(home, ignore_errors=True)
-        # the fingerprint of the primary key is the record that follows its `pub` record
+        # the fingerprint of a key is the record that follows its `pub` or `sub` record
         primary = [keys[i + 1].split(':')[9] for i, line in enumerate(keys) if line.startswith('pub:')]
+        subkeys = [keys[i + 1].split(':')[9] for i, line in enumerate(keys) if line.startswith('sub:')]
         self.assertEqual(primary, [REPOSITORY_KEY_FINGERPRINT])
+        self.assertEqual(subkeys, REPOSITORY_SUBKEY_FINGERPRINTS)
 
         # the repack's guard accepts it, and ships it byte for byte
         self.use_keyring(committed)
