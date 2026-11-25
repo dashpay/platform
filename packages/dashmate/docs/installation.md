@@ -51,11 +51,17 @@ The package configures Dash's apt repository, `https://apt.services.dash.org/das
 
 - `/etc/apt/sources.list.d/dashmate.sources`, the repository source. It names the `stable` suite, which carries final releases only. To follow prereleases as well, change `Suites: stable` to `Suites: testing` in this file. Upgrades keep the change without asking, since the package's copy of the file stays the same.
 - `/etc/apt/keyrings/dashmate-archive-keyring.gpg`, the key the repository is signed with. An unmodified copy is replaced on upgrade, which is how a renewed key arrives.
-- `/etc/apt/preferences.d/dashmate.pref`, which limits the repository to the dashmate package: apt does not take any other package from it, in any architecture.
+- `/etc/apt/preferences.d/dashmate.pref`, which limits the repository to the dashmate package: apt does not choose any other package from it as a candidate, in any architecture. This does not make it safe for the repository to list other packages. When it lists a package at the same version as the distribution and with identical contents, apt treats the two as one version, and the pin then hides the distribution's copy as well. The repository's publisher accepts only the dashmate package, and that check is what keeps other packages out.
 
-`apt remove dashmate` keeps the three files and `apt purge dashmate` deletes them.
+`apt remove dashmate` keeps the three files and `apt purge dashmate` deletes them. Once dashmate is removed, upgrades no longer renew the key, so when the key expires, `apt update` reports a signature error for the repository. To take dashmate off a host for good, purge it. To keep the source, with its suite choice, without using it, add `Enabled: no` to `dashmate.sources`; a later install keeps that line, so delete it to use the repository again.
 
-Do not create these files yourself, and do not create others with the same names. If one of them already exists with different content when the package is installed, dpkg asks whether to keep it. An install with no terminal to answer that question, such as an `apt-get -y` run from a script, fails at the prompt and leaves dashmate unconfigured. A repository source written by hand belongs in a file of another name, such as `/etc/apt/sources.list.d/dashmate-testing.sources`, with its key under another name as well. Once dashmate is installed from a package that ships `dashmate.sources`, delete both of those hand-written files first, then set `Suites:` in `dashmate.sources`: while both sources name the same suite with different keys, `apt update` fails with `Conflicting values set for option Signed-By`.
+Do not create these files yourself, and do not create others with the same names. If one of them already exists with different content when the package is installed, dpkg asks whether to keep it. An install with no terminal to answer that question, such as an `apt-get -y` run from a script, fails at the prompt and leaves dashmate unconfigured. A repository configured by hand, for example to install a prerelease that does not ship these files yet, belongs in files of other names:
+
+- a copy of the records in `dashmate.pref`, as `/etc/apt/preferences.d/dashmate-testing.pref`, created before the first `apt update` that reads the source;
+- the key, as `/etc/apt/keyrings/dashmate-testing-archive-keyring.gpg`;
+- the source, as `/etc/apt/sources.list.d/dashmate-testing.sources`, with `Signed-By` naming that key.
+
+Once dashmate is installed from a package that ships `dashmate.sources`, delete those three hand-written files first, then set `Suites:` in `dashmate.sources`: while both sources name the same suite with different keys, `apt update` fails with `Conflicting values set for option Signed-By`.
 
 ### Node package
 
