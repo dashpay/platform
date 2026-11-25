@@ -31,6 +31,7 @@
 * **swift-example-app:** show the moderation offer when a contract is opened from search results ([#6224](https://github.com/dashpay/platform/issues/6224))
 * **swift-example-app:** show the shielded token send fee and keep Send off until it is quoted ([#6229](https://github.com/dashpay/platform/issues/6229))
 * **swift-example-app:** show the words on the proposal list's poll state badge ([#6250](https://github.com/dashpay/platform/issues/6250))
+* **swift-example-app:** wrap the proposal list title at accessibility text sizes ([#6263](https://github.com/dashpay/platform/issues/6263))
 
 
 ### Continuous Integration
