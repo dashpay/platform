@@ -198,7 +198,7 @@ where
 
     // Mainnet's vote-cleanup incident began at 32326 (platform#2309). Tenderdash#966
     // let validators continue after the resulting commit conflict with partially committed
-    // state and updated caches. Reproduce that outcome only for the expected Busy error.
+    // state and updated caches. Reproduce that outcome only for a commit conflict.
     // The upper bound must match Drive::remove_all_votes_given_by_identities: starting
     // at 32329, vote deletions stay inside the block transaction again.
     let config = &app.platform().config;
@@ -207,13 +207,7 @@ where
         && (32326..32329).contains(&block_height)
         && matches!(
             &result,
-            Err(Error::Drive(drive::error::Error::GroveDB(error)))
-                if matches!(
-                    error.as_ref(),
-                    drive::grovedb::Error::StorageError(
-                        drive::grovedb_storage::error::Error::RocksDBError(error)
-                    ) if error.kind() == rocksdb::ErrorKind::Busy
-                )
+            Err(Error::Drive(drive::error::Error::GroveDB(error))) if error.is_commit_conflict()
         );
 
     if historical_conflict {
@@ -376,6 +370,8 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::version::PlatformVersion;
     use drive::grovedb::Transaction;
+    use drive::grovedb_path::SubtreePath;
+    use drive::grovedb_storage::error::{CommitError, Error as StorageError};
     use std::sync::{Arc, Mutex, RwLock};
     use tenderdash_abci::proto::abci::CommitInfo;
     use tenderdash_abci::proto::google::protobuf::Timestamp;
@@ -387,7 +383,7 @@ mod tests {
 
     /// An ABCI application whose `commit_transaction` always fails.
     ///
-    /// Injects either a real RocksDB error or an unrelated execution error to verify
+    /// Injects either a real commit conflict or another error to verify
     /// that only historical transaction conflicts are tolerated.
     struct FailingCommitApplication<'a> {
         platform: &'a Platform<MockCoreRPCLike>,
@@ -730,26 +726,48 @@ mod tests {
         config
     }
 
-    /// Produce the actual RocksDB error returned when another transaction writes the same key.
+    /// Produce the actual error a commit returns when a write outside its transaction
+    /// took a key the transaction wrote.
     fn busy_commit_error() -> Error {
         let directory = tempfile::tempdir().expect("temporary database directory");
-        let db = rocksdb::OptimisticTransactionDB::<rocksdb::SingleThreaded>::open_default(
-            directory.path(),
-        )
-        .expect("open database");
-        let transaction = db.transaction();
-        transaction
-            .put(b"key", b"pending")
+        let grove = drive::grovedb::GroveDb::open(directory.path()).expect("open database");
+        let grove_version = &PlatformVersion::latest().drive.grove_version;
+        let item = |value: &[u8]| drive::grovedb::Element::new_item(value.to_vec());
+        let transaction = grove.start_transaction();
+        grove
+            .insert(
+                SubtreePath::empty(),
+                b"key",
+                item(b"pending"),
+                None,
+                Some(&transaction),
+                grove_version,
+            )
+            .unwrap()
             .expect("transaction write");
-        db.put(b"key", b"committed").expect("independent write");
-        let error = transaction
-            .commit()
+        grove
+            .insert(
+                SubtreePath::empty(),
+                b"key",
+                item(b"committed"),
+                None,
+                None,
+                grove_version,
+            )
+            .unwrap()
+            .expect("independent write");
+        let error = grove
+            .commit_transaction(transaction)
+            .unwrap()
             .expect_err("conflicting commit must fail");
-        assert_eq!(error.kind(), rocksdb::ErrorKind::Busy);
-        drive::grovedb::Error::StorageError(drive::grovedb_storage::error::Error::RocksDBError(
-            error,
-        ))
-        .into()
+        assert!(error.is_commit_conflict(), "not a conflict: {error:?}");
+        error.into()
+    }
+
+    /// A commit error of the storage that is no conflict.
+    fn storage_commit_error(error: StorageError) -> Error {
+        assert!(!error.is_commit_conflict());
+        drive::grovedb::Error::StorageError(error).into()
     }
 
     #[test]
@@ -841,11 +859,22 @@ mod tests {
         )
         .expect_err("WAL path is not a directory");
         assert_eq!(error.kind(), rocksdb::ErrorKind::IOError);
-        let error = drive::grovedb::Error::StorageError(
-            drive::grovedb_storage::error::Error::RocksDBError(error),
-        )
-        .into();
+        let error = storage_commit_error(StorageError::RocksDBError(error));
         let _ = finalize_block_with_failing_commit(mainnet_evo1_config(), 32328, error);
+    }
+
+    #[test]
+    #[should_panic(expected = "commit transaction")]
+    fn finalize_block_panics_on_a_commit_that_is_not_durable_during_incident() {
+        let error = storage_commit_error(StorageError::Commit(CommitError::NotDurable));
+        let _ = finalize_block_with_failing_commit(mainnet_evo1_config(), 32327, error);
+    }
+
+    #[test]
+    #[should_panic(expected = "commit transaction")]
+    fn finalize_block_panics_on_an_unsettled_commit_during_incident() {
+        let error = storage_commit_error(StorageError::Commit(CommitError::Unsettled));
+        let _ = finalize_block_with_failing_commit(mainnet_evo1_config(), 32326, error);
     }
 
     #[test]
