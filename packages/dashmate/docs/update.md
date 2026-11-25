@@ -172,7 +172,15 @@ In some cases, you must also additionally reset platform data:
 * When the `dashmate setup` command exited with errors or was interrupted
 * When the platform layer was wiped on the network
 
-The reset and update process for major updates follows the same rules: one step at a time, stop at the first one that fails, and check `dashmate --version` before you reset platform data:
+The reset and update process for major updates also runs one step at a time and stops at the first one that fails.
+Check that `dashmate --version` shows the new version before you reset platform data.
+
+What to do after a failure depends on whether the reset has run:
+
+* Before `dashmate reset --platform --hard`, no Platform data has been removed: `dashmate start` brings the node back up on the dashmate version now installed.
+* After it, `dashmate start` does not bring the old node back. The reset deletes Platform data and resets the Platform part of the configuration to its defaults, or removes a configuration that has no defaults, and nothing restores them. Fix the problem and finish the remaining steps: `dashmate update`, then `dashmate setup` to configure Platform again, then `dashmate start`.
+
+The process:
 
 ```bash
 # Debian package only: download the new package first (see above)
