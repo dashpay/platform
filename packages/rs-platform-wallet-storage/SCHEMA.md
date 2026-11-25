@@ -42,7 +42,7 @@ Any `meta_*` row whose parent object does not exist — because it was never cre
 
 A future garbage-collection pass is expected to reap orphan metadata — rows with no live parent object older than approximately one week — but no such GC is implemented yet. Callers should not rely on orphan metadata persisting forever, nor assume it will be cleaned up promptly. `meta_global` is intentionally parentless and always survives.
 
-The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. The diagrams cover 21 of V001's 23 tables; `pending_contact_crypto` and `ignored_senders` appear in the [Tables](#tables) section but are not diagrammed. They show the V001 tables as amended in place by every later migration that changes one of them (the current `core_utxos`, `core_transactions`, `platform_addresses`, and `asset_locks` shapes). Fifteen tables added by later migrations are not yet diagrammed here: `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V009, plus its V010–V011 `core_address_pool` columns), `invitations` (V003), `shielded_viewing_keys` (V013), `dpns_name_states` (V005), `tracked_masternodes` (V006), the `identity_scan_states` / `identity_scan_failed_indices` pair (V017), `core_transaction_inputs` / `core_transaction_record_originals` (V021), `core_locked_outpoints` (V022), `core_address_pool_retired` (V024), and the `core_block_spends` / `core_block_spends_migrated` pair (V023) — see the [Migrations](#migrations) log for what each adds in the meantime.
+The tables are split into five domain diagrams below. `WALLETS` is the root anchor and appears in each diagram. The diagrams cover 21 of V001's 23 tables; `pending_contact_crypto` and `ignored_senders` appear in the [Tables](#tables) section but are not diagrammed. They show the V001 tables as amended in place by every later migration that changes one of them (the current `core_utxos`, `core_transactions`, `platform_addresses`, and `asset_locks` shapes). Fifteen tables added by later migrations are not yet diagrammed here: `core_address_pool`, `meta_data_versions`, and `meta_store_generation` (V009, plus its V010–V011 `core_address_pool` columns), `invitations` (V003), `shielded_viewing_keys` (V013), `dpns_name_states` (V005), `tracked_masternodes` (V006), the `identity_scan_states` / `identity_scan_failed_indices` pair (V017), `core_transaction_inputs` / `core_transaction_record_originals` (V021), `core_locked_outpoints` (V022), `core_address_pool_retired` (V024), and the `core_block_spends` / `core_block_spends_migrated` pair (V025) — see the [Migrations](#migrations) log for what each adds in the meantime.
 
 ## Diagram 1 — Core / L1 (Bitcoin/Dash layer)
 
@@ -501,7 +501,7 @@ payable.
 
 ### `core_block_spends`
 
-V023. One row per wallet coin a processed block spent: the coin's outpoint,
+V025. One row per wallet coin a processed block spent: the coin's outpoint,
 the block's height and hash, and the spending transaction. The wallet's own
 note of such a spend lives only in memory and is pruned once the block is
 final; this row is its durable form, written in the same transaction as the
@@ -539,9 +539,9 @@ chain truncation is not otherwise mirrored to the store.
 
 ### `core_block_spends_migrated`
 
-V023. One row per wallet whose block spends from before `core_block_spends`
+V025. One row per wallet whose block spends from before `core_block_spends`
 existed were recovered by the host's one-time rescan. No row means the
-recovery is still owed, so every wallet of a store upgraded to V023 owes it.
+recovery is still owed, so every wallet of a store upgraded to V025 owes it.
 Set only by `mark_block_spends_migration_done`; a reset of the chain data
 keeps it.
 
@@ -977,4 +977,4 @@ table-rebuild migration, as V004 does.
 | V022 | `V022__core_locked_outpoints.rs` | Adds `core_locked_outpoints`, one row per `(wallet_id, outpoint)` the wallet keeps out of coin selection: the collateral of a registered masternode, or an outpoint locked by hand. A table of its own rather than a `core_utxos` column, because a lock can exist before its coin and outlives the coin's spend. Deleting the row unlocks the outpoint. Purely additive; an upgraded database starts with no locks. |
 | V023 | `V023__instant_lock_verified.rs` | Adds `core_instant_locks.verified INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0, 1))`. Rows already on disk read 0 and are no longer restored: they may hold a lock that was never verified. Every row written from here on carries 1 (sound only while the SPV client hands the wallet verified locks alone). A record whose lock is no longer trusted also stops vetoing a sweep release of its inputs until its lock is stored again or it is mined. Applied only when the column is missing (`migrations::v023`): a database that already has it with this definition keeps it and its values, and one with another definition is refused with `ColumnDefinitionMismatch`. An affected payment shows as unconfirmed until its lock is announced again or it is mined. |
 | V024 | `V024__core_address_pool_retired.rs` | Adds `core_address_pool_retired` (a rotated DashPay contact's old pool rows, keyed by the xpub they derive from) plus `idx_core_address_pool_retired_script`, so a new-xpub registration no longer fails as a typed-key conflict on every retry. `IF NOT EXISTS`: a file that already holds this exact table and index, created by a downstream build, adopts them in place with their rows. Otherwise purely additive. |
-| V023 | `V023__core_block_spends.rs` | Adds `core_block_spends`, one row per wallet coin a processed block spent (outpoint, block height and hash, spender txid), so a coin a block spent is never handed back as unspent after the wallet's in-memory note is pruned at finality; and `core_block_spends_migrated`, one row per wallet whose earlier block spends were recovered. Idempotent (`IF NOT EXISTS`): a file a downstream build wrote with these exact tables adopts them with their rows. Purely additive otherwise. |
+| V025 | `V025__core_block_spends.rs` | Adds `core_block_spends`, one row per wallet coin a processed block spent (outpoint, block height and hash, spender txid), so a coin a block spent is never handed back as unspent after the wallet's in-memory note is pruned at finality; and `core_block_spends_migrated`, one row per wallet whose earlier block spends were recovered. Idempotent (`IF NOT EXISTS`): a file a downstream build wrote with these exact tables adopts them with their rows. Purely additive otherwise. |
