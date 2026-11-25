@@ -4985,8 +4985,9 @@ fn select_recorded_spends<S: ShieldedStore>(
 /// with newer metadata since `notes` were selected.
 ///
 /// The round is queued before that guard drops, downgraded to a read guard
-/// so balance reads don't wait out the host I/O. Until the round has reached
-/// the host, no writer gets in:
+/// so balance reads can run alongside the host I/O, unless a writer has
+/// queued ahead of them. Until the round has reached the host, no writer
+/// gets in:
 /// - a sync pass can't commit a newer copy of a note and have its round
 ///   overtake this one, which would roll the host back to older metadata;
 /// - a Clear can't purge the store and return. The host deletes its rows

@@ -6797,7 +6797,10 @@ mod tests {
                     ))
             })
         };
-        parked_rx.await.expect("the spend's round reaches the host");
+        tokio::time::timeout(Duration::from_secs(5), parked_rx)
+            .await
+            .expect("timed out waiting for the spend's host round")
+            .expect("the spend's round reaches the host");
 
         // The host wipes its rows as soon as Clear returns; `wiped_at` is how
         // many rounds had landed by then.
