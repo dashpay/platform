@@ -20,6 +20,8 @@ Installing the Linux, MacOS, or Windows packages from the [GitHub releases page]
 
 ### Debian package
 
+<!-- The Debian download and install blocks below also appear in update.md. Keep both copies identical. -->
+
 Download the newest dashmate installation package for your architecture from the [GitHub releases page](https://github.com/dashpay/platform/releases/latest).
 This installs stable releases only: the snippet below reads `releases/latest`, which leaves prereleases out.
 If you run a prerelease, use the [prerelease download](#downloading-a-prerelease-package) below instead.

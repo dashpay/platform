@@ -23,6 +23,8 @@ Install the new version of dashmate the same way you installed it originally (se
 
 #### Debian package
 
+<!-- The Debian download and install blocks below also appear in installation.md. Keep both copies identical. -->
+
 If you installed dashmate from the Debian package, download the newest dashmate installation package for your architecture from the [GitHub releases page](https://github.com/dashpay/platform/releases/latest).
 This installs stable releases only: the snippet below reads `releases/latest`, which leaves prereleases out.
 If you run a prerelease, use the [prerelease download](#downloading-a-prerelease-package) below instead.
