@@ -633,7 +633,8 @@ async fn should_checkpoint_leaves_a_failed_pass_appended_on_the_next_pass() {
         &cancel,
         futures::stream::iter(vec![batch(0, 4, 4)].into_iter().map(Ok)),
     )
-    .await;
+    .await
+    .finished();
     let failed = sync_notes_from_stream(
         &store,
         &StoreEpoch::default().watch(),
@@ -671,7 +672,8 @@ async fn should_checkpoint_leaves_a_failed_pass_appended_on_the_next_pass() {
         &cancel,
         futures::stream::iter(vec![batch(0, 4, 8), batch(4, 4, 8)].into_iter().map(Ok)),
     )
-    .await;
+    .await
+    .finished();
 
     let store = store.read().await;
     assert_eq!(store.tree_size().unwrap(), 8, "nothing is re-appended");
@@ -701,7 +703,8 @@ async fn should_keep_the_checkpoints_when_nothing_is_past_the_latest() {
             &cancel,
             futures::stream::iter(stream.into_iter().map(Ok)),
         )
-        .await;
+        .await
+        .finished();
     }
     let before = {
         let store = store.read().await;
@@ -723,7 +726,8 @@ async fn should_keep_the_checkpoints_when_nothing_is_past_the_latest() {
         &cancel,
         futures::stream::iter(vec![batch(0, 4, 8), batch(4, 4, 8)].into_iter().map(Ok)),
     )
-    .await;
+    .await
+    .finished();
 
     let store = store.read().await;
     let after = (
