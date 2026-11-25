@@ -45,12 +45,15 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.persistence.entities.DashpayPaymentEntity
 import org.dashfoundation.dashsdk.tokens.ContactInfoPublishOutcome
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
+import org.dashfoundation.example.navigation.DashPaySendShieldedTip
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.ui.theme.appStatusColors
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.formatDuffs
@@ -64,6 +67,11 @@ import org.dashfoundation.example.util.toHex
  * device-synced alias / note / hide controls backed by
  * `dashpay.setContactInfo` — surfacing the DIP-15 deferred / watch-only
  * publish outcomes as notices.
+ *
+ * Below the header, the contact's last known payment addresses from its
+ * cached profile row (`DashPayPublishedPaymentAddressesSection`, hidden when
+ * the contact publishes none, noting they may have changed since), as
+ * `ContactDetailView.swift` shows them.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -85,7 +93,7 @@ fun ContactDetailScreen(
 
     val identity by remember(idBytes) {
         container.database.identityDao().observeByIdentityId(idBytes)
-    }.collectAsStateWithLifecycle(initialValue = null)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
     val walletId = identity?.walletId
 
     val allRows by remember(idBytes) {
@@ -97,6 +105,18 @@ fun ContactDetailScreen(
     val contactProfile by remember(idBytes, contactBytes) {
         container.database.dashpayDao().observeContactProfile(idBytes, contactBytes)
     }.collectAsStateWithLifecycle(initialValue = null)
+    // A contact that is another identity of this same wallet is not kept in
+    // the contact-profile cache (the wallet's own copy is authoritative, and
+    // a row cached before the identity joined the wallet is no longer
+    // refreshed); its profile is that identity's own profile row.
+    val contactOwnProfileRow by remember(contactBytes) {
+        container.database.dashpayDao().observeProfileByIdentity(contactBytes)
+    }.collectAsStateWithLifecycle(initialValue = null)
+    val contactIdentity by remember(contactBytes) {
+        container.database.identityDao().observeByIdentityId(contactBytes)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
+    val contactIsSameWallet = walletId != null &&
+        contactIdentity?.walletId?.contentEquals(walletId) == true
     val payments by remember(idBytes, contactBytes) {
         container.database.dashpayDao().observePayments(idBytes, contactBytes)
     }.collectAsStateWithLifecycle(emptyList())
@@ -243,6 +263,25 @@ fun ContactDetailScreen(
                 contactAccountLabel?.let { LabeledContent("Their account", it) }
             }
 
+            // Rendered for the identity's own network, never the selected
+            // one: a route restored after a network switch still names the
+            // old network's identities, and the stored Core and Platform
+            // bytes carry no network, so another network would render them
+            // as addresses the contact never published there. Rows of
+            // another network are not shown.
+            val identityNetworkRaw = identity?.networkRaw
+            DashPayPublishedPaymentAddressesSection(
+                profile = if (contactIsSameWallet) {
+                    contactOwnProfileRow?.takeIf { it.networkRaw == identityNetworkRaw }?.toDashPayProfile()
+                } else {
+                    contactProfile?.takeIf { it.networkRaw == identityNetworkRaw }?.toDashPayProfile()
+                },
+                network = identityNetworkRaw?.let { raw -> Network.entries.firstOrNull { it.ffiValue == raw } },
+                identifierPrefix = "dashpay.contact.paymentAddress",
+                showsUnpublished = false,
+                isLastKnown = true,
+            )
+
             // Send
             FormSection {
                 ListItem(
@@ -258,6 +297,45 @@ fun ContactDetailScreen(
                         )
                     },
                 )
+                if (container.shieldedService.isAvailable) {
+                    // The wallet refuses the tip if the contact's saved name
+                    // now belongs to another identity (contactIdentityId).
+                    val tipUsername = dpnsHint
+                    ListItem(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(enabled = tipUsername != null) {
+                                if (tipUsername != null) {
+                                    navController.navigate(
+                                        DashPaySendShieldedTip(identityIdHex, contactIdHex, tipUsername),
+                                    )
+                                }
+                            }
+                            .testTag("dashpay.tip.contactEntry"),
+                        leadingContent = { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null) },
+                        headlineContent = {
+                            Text(
+                                "Send Shielded Tip",
+                                color = if (tipUsername == null) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
+                            )
+                        },
+                        supportingContent = if (tipUsername == null) {
+                            {
+                                Text(
+                                    ShieldedTipMessages.NO_USERNAME,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.testTag("dashpay.tip.contactNoUsername"),
+                                )
+                            }
+                        } else {
+                            null
+                        },
+                    )
+                }
                 if (channelBroken) {
                     Text(
                         "Payment channel broken — ask the contact to send a new request",

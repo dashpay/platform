@@ -20,7 +20,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
 
-fn read_id32(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Option<[u8; 32]> {
+pub(crate) fn read_id32(env: &mut JNIEnv, arr: &JByteArray, field: &str) -> Option<[u8; 32]> {
     if arr.is_null() {
         throw_sdk_exception(env, 1, &format!("{field} must not be null"));
         return None;
@@ -46,7 +46,7 @@ fn read_optional_id32(
     read_id32(env, arr, field).map(Some).ok_or(())
 }
 
-fn read_cstring(env: &mut JNIEnv, value: &JString, field: &str) -> Option<CString> {
+pub(crate) fn read_cstring(env: &mut JNIEnv, value: &JString, field: &str) -> Option<CString> {
     if value.is_null() {
         throw_sdk_exception(env, 1, &format!("{field} must not be null"));
         return None;
@@ -88,7 +88,7 @@ fn json_string(value: &str) -> String {
     out
 }
 
-fn hex32(value: &[u8; 32]) -> String {
+pub(crate) fn hex32(value: &[u8; 32]) -> String {
     value.iter().map(|b| format!("{b:02x}")).collect()
 }
 
@@ -100,7 +100,7 @@ unsafe fn cstr(value: *const c_char) -> String {
     }
 }
 
-fn new_jstring(env: &mut JNIEnv, value: String) -> jstring {
+pub(crate) fn new_jstring(env: &mut JNIEnv, value: String) -> jstring {
     env.new_string(value)
         .map(|value| value.into_raw())
         .unwrap_or(ptr::null_mut())

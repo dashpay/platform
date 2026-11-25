@@ -43,10 +43,9 @@ impl IdentityWallet {
     /// Platform charges the owner the multiple choice proposal processing
     /// fee (0.2 Dash, `Sdk::multiple_choice_proposal_processing_fee`) on
     /// top of the fees; the create does not state it. The transition is
-    /// signed with the owner's first AUTHENTICATION + ECDSA key at a
-    /// security level the `multipleChoiceProposal` type accepts that
-    /// `signer` can sign with, and the owner's balance the proof carries
-    /// is kept. Platform refuses a proposal that gives neither a
+    /// signed with the owner's key [`usable_signing_key`] picks for a
+    /// `multipleChoiceProposal` create that `signer` can sign with, and
+    /// the owner's balance the proof carries is kept. Platform refuses a proposal that gives neither a
     /// description document nor a url. The proposal's id is the id of the
     /// returned document.
     ///

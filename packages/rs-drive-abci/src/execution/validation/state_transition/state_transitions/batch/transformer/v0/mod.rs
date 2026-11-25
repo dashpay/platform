@@ -43,6 +43,7 @@ use dpp::consensus::basic::document::{
 };
 use dpp::consensus::basic::value_error::ValueError;
 use dpp::consensus::basic::BasicError;
+use dpp::ProtocolError;
 
 use dpp::consensus::state::contract_moderation::ContractModerationCounterpartyRole;
 use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
@@ -962,6 +963,30 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
         match transition {
             DocumentTransition::Create(document_create_transition) => {
+                // A type summing a property it lists as transient, which registration refuses
+                // from protocol version 15 and a contract registered earlier may hold: its
+                // documents are stored without the value, so a create, contested or not, would
+                // reach Drive with nothing for the type's sums to read. Refused with the error
+                // registration refuses the type with, before anything is written. Edited in
+                // place: the method's gate, `validate_no_transient_summed_property`, is `None`
+                // before protocol version 15, so it refuses nothing there
+                if let Ok(document_type) = data_contract_fetch_info
+                    .contract
+                    .document_type_for_name(document_create_transition.base().document_type_name())
+                {
+                    match document_type.validate_no_transient_summed_property(platform_version) {
+                        Ok(()) => {}
+                        Err(ProtocolError::ConsensusError(error)) => {
+                            return Self::failed_per_transition_action(
+                                document_create_transition.base(),
+                                owner_id,
+                                vec![*error],
+                                platform_version,
+                            );
+                        }
+                        Err(error) => return Err(error.into()),
+                    }
+                }
                 let (mut document_create_action, fee_result) = DocumentCreateTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(
                     drive, owner_id, transaction,
                     document_create_transition, block_info, user_fee_increase, |_identifier| {

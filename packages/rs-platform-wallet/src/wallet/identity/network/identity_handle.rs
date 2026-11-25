@@ -530,12 +530,17 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     pub(crate) document_erase_gate: Arc<super::DocumentEraseGate>,
     /// Serializes DPNS marketplace mutations and sync reconciliation for
     /// this wallet. Every cloned handle shares the same gate.
-    pub(crate) dpns_operation_gate: Arc<tokio::sync::Mutex<()>>,
+    pub(crate) dpns_operation_gate: Arc<super::dpns_marketplace::DpnsOperationGate>,
     /// Bounded ownership-scan cursors, one per wallet identity. This is a
     /// short-lived in-memory optimization; durable marketplace rows remain
     /// the source rendered after process restart.
     pub(crate) dpns_sync_progress:
         Arc<StdMutex<BTreeMap<Identifier, super::dpns_marketplace::DpnsMarketplaceSyncProgress>>>,
+    /// The platform wallet's shielded viewing keys, from which the address a contact
+    /// request carries is derived
+    /// ([`Self::contact_shielded_address`]).
+    #[cfg(feature = "shielded")]
+    pub(crate) contact_shielded_addresses: crate::wallet::shielded::ContactShieldedAddresses,
 }
 
 // Manual `Debug`: the derive would require `B: Debug`, which is not part
@@ -565,6 +570,8 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
             document_erase_gate: Arc::clone(&self.document_erase_gate),
             dpns_operation_gate: Arc::clone(&self.dpns_operation_gate),
             dpns_sync_progress: Arc::clone(&self.dpns_sync_progress),
+            #[cfg(feature = "shielded")]
+            contact_shielded_addresses: self.contact_shielded_addresses.clone(),
         }
     }
 }

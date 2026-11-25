@@ -887,6 +887,7 @@ mod list_element_reference_tests {
                     None,
                     // A create: there is no stored document
                     None,
+                    false,
                     &platform_ref,
                     &BlockInfo::default(),
                     &mut Vec::new(),

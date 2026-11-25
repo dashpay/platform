@@ -1,5 +1,6 @@
 mod v0;
 mod v1;
+mod v2;
 
 use crate::drive::Drive;
 use std::collections::BTreeMap;
@@ -52,9 +53,16 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            2 => self.remove_contested_resource_vote_poll_documents_operations_v2(
+                vote_polls,
+                clean_up_testnet_corrupted_reference_issue,
+                batch_operations,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "remove_contested_resource_vote_poll_documents_operations".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }

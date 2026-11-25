@@ -11,7 +11,7 @@ impl DriveDocumentSumQuery<'_> {
     /// Verifies a combined PCPS carrier proof
     /// (`AggregateCountAndSumOnRange` on a carrier subquery) and
     /// returns `(root_hash, per_key_count_sums)` — one
-    /// `(in_key, u64 count, i64 sum)` triple per resolved In branch.
+    /// `(in_key, u64 count, i128 sum)` triple per resolved In branch.
     ///
     /// Combined-axis analog of
     /// [`Self::verify_carrier_aggregate_sum_proof`]. Requires the
@@ -28,7 +28,7 @@ impl DriveDocumentSumQuery<'_> {
         limit: Option<u16>,
         left_to_right: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, Vec<(Vec<u8>, u64, i64)>), Error> {
+    ) -> Result<(RootHash, Vec<(Vec<u8>, u64, i128)>), Error> {
         match platform_version
             .drive
             .methods

@@ -47,7 +47,7 @@ class TeardownGate {
      */
     suspend fun <T> withOp(block: suspend () -> T): T {
         lock.withLock {
-            check(!closing) { "PlatformWalletManager is closed" }
+            check(!closing) { CLOSED_MESSAGE }
             active++
         }
         try {
@@ -64,6 +64,11 @@ class TeardownGate {
                 }
             }
         }
+    }
+
+    internal companion object {
+        /** The [IllegalStateException] message [withOp] refuses with once closing. */
+        const val CLOSED_MESSAGE = "PlatformWalletManager is closed"
     }
 
     /**

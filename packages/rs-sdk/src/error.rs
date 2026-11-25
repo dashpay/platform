@@ -20,6 +20,16 @@ use rs_dapi_client::{CanRetry, DapiClientError, ExecutionError};
 use std::fmt::Debug;
 use std::time::Duration;
 
+/// The advice that ends the [`Error::Config`] message of a request that ran out of attempts
+/// on answers below the SDK's protocol version, before any verified answer showed the network
+/// running it. The message reports the answers the request received before its retries
+/// ended, not every node: the retries can end with nodes left unasked. It names the Rust
+/// builder method; a binding whose callers set the version under another name replaces this
+/// suffix with advice that names theirs.
+pub const SDK_AHEAD_OF_NETWORK_ADVICE: &str = "if the SDK was set ahead of its network, let it \
+     follow the network's protocol version instead, or seed it with the network's version \
+     (with_initial_version)";
+
 /// Error type for the SDK
 // TODO: Propagate server address and retry information so that the user can retrieve it
 #[allow(clippy::large_enum_variant)]
@@ -61,7 +71,12 @@ pub enum Error {
     ExecutionNotProved(String),
     /// A state transition may have been submitted but its outcome is unresolved.
     /// The cause is diagnostic, not permission to create a replacement operation.
-    #[error("state transition outcome is unconfirmed; reconcile the original operation before submitting a replacement: {0}")]
+    ///
+    /// The cause is the last error the submission or its result check ended on. It does
+    /// not have to be why the outcome is unknown: after an attempt that may have reached a
+    /// node, later attempts can all fail before connecting, and the last of them is the
+    /// cause.
+    #[error("state transition outcome is unconfirmed: a node accepted it or may have received it; reconcile the original operation before submitting a replacement; last error: {0}")]
     StateTransitionResultUnconfirmed(#[source] Box<Error>),
     /// DAPI client error, for example, connection error
     #[error("Dapi client error: {0}")]
@@ -241,6 +256,18 @@ impl Error {
         }
     }
 
+    /// Whether the node answered gRPC `NOT_FOUND`: it does not hold what was asked for, as
+    /// opposed to a transport or proof failure. Looks through retry-exhaustion wrappers.
+    pub(crate) fn is_not_found(&self) -> bool {
+        match self {
+            Self::DapiClientError(DapiClientError::Transport(TransportError::Grpc(status))) => {
+                status.code() == Code::NotFound
+            }
+            Self::NoAvailableAddressesToRetry(inner) => inner.is_not_found(),
+            _ => false,
+        }
+    }
+
     /// Whether this is an [`Error::ProtocolVersionNotActive`] refusal that may lift soon: the
     /// SDK could not learn the network's version for a reason that can pass, such as nodes
     /// or a quorum source not answering, so the network may serve the request already.
@@ -307,7 +334,10 @@ impl Error {
     pub(crate) fn spares_responder(&self) -> bool {
         matches!(
             self,
-            Self::StaleNode(StaleNodeError::ProtocolVersion { .. })
+            Self::StaleNode(
+                StaleNodeError::ProtocolVersion { .. }
+                    | StaleNodeError::NewerProtocolVersion { .. }
+            )
         )
     }
 
@@ -317,17 +347,31 @@ impl Error {
     /// When every node asked answered a document query at an older protocol version than the
     /// SDK's, while no verified answer has shown the network running the SDK's version, the
     /// request fails as a configuration error: the SDK may be set ahead of its network.
+    ///
+    /// When no answer could be verified on a network proven to run a protocol version newer
+    /// than this build knows, the request fails as a configuration error too: the SDK has to
+    /// be updated.
     pub(crate) fn into_exhausted_error(self) -> Self {
         match self {
+            // The message holds none of the verifier's own text, which the bindings that
+            // classify an error by its words would read.
+            Self::StaleNode(StaleNodeError::NewerProtocolVersion {
+                supported_protocol_version: supported,
+                network_protocol_version: network,
+                ..
+            }) => Self::Config(format!(
+                "the network runs protocol version {network}, and this SDK knows protocol \
+                 versions up to {supported}: it cannot read every answer of the newer version, \
+                 and could read no answer to this request; update the SDK to a release that \
+                 knows protocol version {network}"
+            )),
             Self::StaleNode(StaleNodeError::ProtocolVersion {
                 received_protocol_version: signed,
                 expected_protocol_version: sdk,
             }) => Self::Config(format!(
                 "the last answer names protocol version {signed}, below the SDK's protocol \
                  version {sdk}, and no verified answer has yet shown the network running \
-                 {sdk}; if the SDK was set ahead of its network, let it follow the network's \
-                 protocol version instead, or seed it with the network's version \
-                 (with_initial_version)"
+                 {sdk}; {SDK_AHEAD_OF_NETWORK_ADVICE}"
             )),
             error => error,
         }
@@ -678,6 +722,27 @@ pub enum StaleNodeError {
         expected_protocol_version: u32,
         /// Protocol version named in the server's response metadata
         received_protocol_version: u32,
+    },
+    /// Server's answer could not be read, it names a protocol version newer than any this SDK
+    /// build knows, and a verified answer has shown the network running such a version
+    ///
+    /// A protocol upgrade can store and prove state in forms an older build cannot read, as
+    /// protocol version 15 does for data contracts, and then every node's answer fails alike.
+    /// So the node is not banned: the request moves to another node. A request whose every
+    /// attempt ends with this error fails with [`Error::Config`] instead, also when no node is
+    /// left to ask: the SDK has to be updated.
+    ///
+    /// Only a failure to read what the proof holds ends this way. An answer without a proof,
+    /// or one whose signature is refused, is its node's fault on any network.
+    #[error("could not read an answer of a network at protocol version {network_protocol_version}, newer than this SDK knows ({supported_protocol_version}): {error}; try another server")]
+    NewerProtocolVersion {
+        /// Newest protocol version this SDK build knows
+        supported_protocol_version: u32,
+        /// Newest protocol version a verified answer has shown the network running
+        network_protocol_version: u32,
+        /// Why the answer could not be read
+        #[source]
+        error: Box<drive_proof_verifier::Error>,
     },
     /// Server answered a request that needs a newer protocol version with a response
     /// signed at an older one: it is behind the network's protocol upgrade.

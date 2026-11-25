@@ -2,6 +2,9 @@ use crate::consensus::basic::overflow_error::OverflowError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::state::identity::IdentityInsufficientBalanceError;
 use crate::consensus::ConsensusError;
+use crate::decision_proposal::{
+    is_multiple_choice_proposal, multiple_choice_proposal_processing_fee,
+};
 use crate::fee::Credits;
 use crate::shielded::compute_shielded_verification_fee;
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
@@ -10,6 +13,7 @@ use crate::state_transition::batch_transition::batched_transition::token_transit
 use crate::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use crate::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
 use crate::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use crate::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
 use crate::state_transition::batch_transition::BatchTransition;
 use crate::state_transition::StateTransitionHasUserFeeIncrease;
 use crate::state_transition::{
@@ -43,11 +47,43 @@ impl StateTransitionIdentityEstimatedFeeValidation for BatchTransition {
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         let base_fees = self.calculate_min_required_fee(platform_version)?;
-        self.validate_estimated_principal_and_fees(identity_known_balance, base_fees)
+        // Edited in place: the proposal fee is 0 before protocol version 15
+        self.validate_estimated_principal_and_fees(
+            identity_known_balance,
+            base_fees.saturating_add(self.multiple_choice_proposal_fees(platform_version)?),
+        )
     }
 }
 
 impl BatchTransition {
+    /// The flat processing fee of the multiple choice proposals the batch creates (protocol
+    /// version 15): `multiple_choice_proposal_processing_fee` for each. A block adds it to the
+    /// batch's processing fee after raising that by the user fee increase, so it is not raised
+    /// here either. 0 before protocol version 15, whose fee schedules carry 0.
+    pub fn multiple_choice_proposal_fees(
+        &self,
+        platform_version: &PlatformVersion,
+    ) -> Result<Credits, ProtocolError> {
+        let proposals = self
+            .transitions_iter()
+            .filter(|transition| match transition {
+                BatchedTransitionRef::Document(document_transition) => {
+                    transition.as_transition_create().is_some()
+                        && is_multiple_choice_proposal(
+                            &document_transition.data_contract_id(),
+                            document_transition.document_type_name(),
+                        )
+                }
+                BatchedTransitionRef::Token(_) => false,
+            })
+            .count();
+        multiple_choice_proposal_processing_fee(platform_version)
+            .checked_mul(proposals as u64)
+            .ok_or(ProtocolError::Overflow(
+                "multiple choice proposal fees overflow",
+            ))
+    }
+
     /// Whether every transition of the batch asks the contract owner to pay its gas: each one is
     /// a document transition whose token payment info requests `ContractOwner` or
     /// `PreferContractOwner`. Only the data contracts can say whether that request is honoured,
@@ -187,9 +223,12 @@ impl BatchTransition {
         let base_fees = self
             .calculate_min_required_fee(platform_version)?
             .saturating_add(self.shielded_bundle_compute_fee(platform_version)?);
+        // The proposal fee is added after the increase, as a block adds it. Edited in place:
+        // it is 0 before protocol version 15
         self.validate_estimated_principal_and_fees(
             identity_known_balance,
-            self.fees_raised_by_the_chosen_increase(base_fees),
+            self.fees_raised_by_the_chosen_increase(base_fees)
+                .saturating_add(self.multiple_choice_proposal_fees(platform_version)?),
         )
     }
 

@@ -1572,7 +1572,7 @@ fn element_totals(
     drive: &Drive,
     contract: &DataContract,
     elements: &[&str],
-) -> BTreeMap<String, (u64, i64)> {
+) -> BTreeMap<String, (u64, i128)> {
     let platform_version = PlatformVersion::latest();
     let document_type = contract.document_type_for_name("post").expect("post");
     let drive_config = DriveConfig::default();
@@ -1625,7 +1625,7 @@ fn element_totals(
         drive_config: &drive_config,
     };
 
-    let sums = |entries: Vec<SumEntry>| -> BTreeMap<String, i64> {
+    let sums = |entries: Vec<SumEntry>| -> BTreeMap<String, i128> {
         entries
             .into_iter()
             .map(|entry| {
@@ -1662,7 +1662,7 @@ fn element_totals(
         "proved and unproved sums agree"
     );
 
-    let totals = |entries: Vec<AverageEntry>| -> BTreeMap<String, (u64, i64)> {
+    let totals = |entries: Vec<AverageEntry>| -> BTreeMap<String, (u64, i128)> {
         entries
             .into_iter()
             .map(|entry| {
@@ -1746,7 +1746,7 @@ fn should_sum_and_average_each_element_through_updates() {
         document
     };
     let all = ["crypto", "dash", "news"];
-    let totals = |expected: [(&str, (u64, i64)); 3]| {
+    let totals = |expected: [(&str, (u64, i128)); 3]| {
         BTreeMap::from(expected.map(|(element, total)| (element.to_string(), total)))
     };
 

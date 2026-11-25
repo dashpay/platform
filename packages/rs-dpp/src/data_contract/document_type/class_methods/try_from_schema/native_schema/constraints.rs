@@ -263,7 +263,7 @@ impl Checker<'_> {
     }
 
     /// The filter of a `countOf` or `sumOf`: property paths or `$ownerId`, each to a path,
-    /// `$ownerId`, `$id`, an integer or a constant.
+    /// `$ownerId`, `$id`, an integer, a constant or the elements of an array (`{ "in": path }`).
     fn aggregate_filter(&self, value: &JsonValue) -> Checked {
         let map = self.object(value)?;
         self.property_count(map, Some(1), None)?;
@@ -281,6 +281,17 @@ impl Checker<'_> {
                     } else {
                         Err(c.pattern_error(filter, OWNER_ID_OR_PATH_PATTERN))
                     }
+                }
+                // `{ "in": path }`: any element of a typed array of the document
+                JsonValue::Object(elements) if elements.contains_key("in") => {
+                    c.closed(elements, &["in"])?;
+                    c.member(elements, "in", |c, path| {
+                        if c.string(path).is_ok_and(is_path) {
+                            Ok(())
+                        } else {
+                            Err(c.pattern_error(path, PATH_PATTERN))
+                        }
+                    })
                 }
                 JsonValue::Object(constant) => {
                     c.closed(constant, &["const"])?;

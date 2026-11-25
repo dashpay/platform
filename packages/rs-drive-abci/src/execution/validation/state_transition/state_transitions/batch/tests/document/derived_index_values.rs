@@ -144,6 +144,7 @@ fn should_record_the_derived_values_the_reference_validation_read() {
             &DocumentSystemValues::default(),
             None,
             None,
+            false,
             &platform_ref,
             &BlockInfo::default(),
             &mut Vec::new(),

@@ -6,6 +6,7 @@ use crate::abci::AbciError;
 use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::ConsensusError;
 use dpp::fee::fee_result::FeeResult;
+use dpp::fee::Credits;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 
@@ -57,6 +58,11 @@ pub struct CheckTxResult {
     /// The fee_result if there was one
     /// There might not be one in the case of a very cheap recheck
     pub fee_result: Option<FeeResult>,
+    /// The gas the transition wants, reported to Tenderdash, which fills a block's gas with it:
+    /// `fee_result`'s total without the bounds check tx reserved on top of the estimate for
+    /// state it did not validate (`CheckTxReservation::bounds`). 0 when there is no
+    /// `fee_result`.
+    pub gas_wanted: Credits,
     /// A set of unique identifiers, if any are found already in the mempool then tenderdash should
     /// reject the transition. All transitions return only 1 unique identifier except the documents
     /// batch transition that returns 1 for each document transition

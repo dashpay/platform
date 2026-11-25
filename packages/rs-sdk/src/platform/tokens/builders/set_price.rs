@@ -1,3 +1,4 @@
+use super::public_note_for_signer;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::Identifier;
 use crate::{Error, Sdk};
@@ -106,6 +107,10 @@ impl TokenChangeDirectPurchasePriceTransitionBuilder {
     }
 
     /// Adds a public note to the token change direct purchase price transition
+    ///
+    /// Only the proposer of a group action writes a note. When the group info marks the
+    /// signer as another signer who is not the proposer, `sign` leaves the note off and
+    /// the action keeps the proposer's note.
     ///
     /// # Arguments
     ///
@@ -220,7 +225,7 @@ impl TokenChangeDirectPurchasePriceTransitionBuilder {
             self.data_contract.id(),
             self.token_position,
             self.token_pricing_schedule.clone(),
-            self.public_note.clone(),
+            public_note_for_signer(self.public_note, self.using_group_info.as_ref()),
             self.using_group_info,
             identity_public_key,
             identity_contract_nonce,

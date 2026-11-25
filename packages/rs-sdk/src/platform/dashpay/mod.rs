@@ -12,6 +12,7 @@ mod private_contact_request;
 mod profile;
 
 pub use contact_request::{
+    dashpay_contact_requests_carry_shielded_address,
     recipient_key_purpose_is_acceptable_on_receive, recipient_key_purpose_is_valid,
     sender_key_purpose_is_acceptable_on_receive, ContactRequestInput, ContactRequestResult,
     EcdhProvider, PreparedContactRequest, RecipientIdentity, SendContactRequestInput,
@@ -35,7 +36,7 @@ pub use private_contact_request::{
     PRIVATE_CONTACT_REQUEST_AUTO_ACCEPT_PROOF_MIN_LEN, PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
     PRIVATE_CONTACT_REQUEST_SHIELDED_ADDRESS_LEN, PRIVATE_CONTACT_REQUEST_SIGNING_KEY_TYPES,
 };
-pub use profile::ProfileFields;
+pub use profile::{PaymentAddressUpdate, ProfileFields};
 
 use crate::{Error, Sdk};
 use dpp::prelude::Identifier;

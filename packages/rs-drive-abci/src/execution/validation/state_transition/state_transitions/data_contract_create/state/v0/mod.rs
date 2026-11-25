@@ -437,6 +437,13 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
             )
         })
         .and_then(|action| {
+            // A parse that does not validate (check tx) skips the cap on a private type's
+            // entries, whose store the fee estimate prices: held to it here, as registration
+            // holds it. Edited in place: no type is private before protocol version 15, and a
+            // block's parse, which validates, refused any type over the cap already
+            action
+                .data_contract_ref()
+                .ensure_private_entry_sizes(platform_version)?;
             // A contract stored compiled must fit its cap, measured on the action's contract,
             // with the fields the action adds, so check_tx refuses it as a block does. The
             // compile is charged. Edited in place: through protocol version 14, which stores
@@ -444,6 +451,14 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
             action
                 .data_contract_ref()
                 .ensure_compiled_size(&mut validation_operations, platform_version)?;
+            // A document type summing a property it lists as transient is refused on the
+            // contract registration would store, after the parse, so parsing a contract stored
+            // earlier, as decoding a document with its contract does, never refuses it. Edited
+            // in place: the method's gate, `validate_no_transient_summed_property`, is `None`
+            // before protocol version 15, so it refuses nothing there
+            action
+                .data_contract_ref()
+                .validate_no_transient_summed_property(platform_version)?;
             Ok(action)
         });
 
