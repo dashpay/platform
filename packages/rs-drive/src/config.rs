@@ -391,16 +391,24 @@ const fn default_data_contracts_cache_size() -> u64 {
 ///
 /// Drive's own unit tests, and a build of Drive with its `test-storage-engine-env`
 /// feature, read `DRIVE_TEST_STORAGE_ENGINE` first, so that one build of a test suite
-/// runs on either engine. A value that names no engine is a panic, so that a run with a
-/// mistyped value does not pass on RocksDB. The feature is no default feature: a test
-/// build asks for it, and a build that does not never reads the variable.
+/// runs on either engine. A value that names no engine, text or not, is a panic, so that
+/// a run with a mistyped value does not pass on RocksDB. The feature is no default
+/// feature, and no build of this repository that ships asks for it. Beside Drive's unit
+/// tests, a build reads the variable only where it is asked for the feature, also by
+/// another package of the same build.
 fn default_storage_engine() -> StorageEngine {
     #[cfg(any(test, feature = "test-storage-engine-env"))]
     {
-        if let Ok(named) = std::env::var("DRIVE_TEST_STORAGE_ENGINE") {
-            return named
-                .parse()
-                .unwrap_or_else(|error| panic!("DRIVE_TEST_STORAGE_ENGINE: {error}"));
+        match std::env::var("DRIVE_TEST_STORAGE_ENGINE") {
+            Ok(named) => {
+                return named
+                    .parse()
+                    .unwrap_or_else(|error| panic!("DRIVE_TEST_STORAGE_ENGINE: {error}"));
+            }
+            Err(std::env::VarError::NotUnicode(named)) => {
+                panic!("DRIVE_TEST_STORAGE_ENGINE: {named:?} names no storage engine")
+            }
+            Err(std::env::VarError::NotPresent) => {}
         }
     }
     StorageEngine::RocksDb
