@@ -201,7 +201,8 @@ serial_test = "4"
 # outside — `cfg(test)` alone would satisfy it from within the crate.
 platform-wallet-storage = { path = ".", default-features = false, features = ["sqlite", "cli", "secrets", "kv", "__test-helpers", "test-util"] }
 # The adapter is a tokio task; the durability test drives it and awaits its
-# join handle. Current-thread runtime only — nothing here needs threads.
+# join handle. The SPV end-to-end test runs the client on a multi-thread
+# runtime (`block_in_place` around the dashd harness's blocking calls).
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "sync", "time"] }
 # `test-utils` exposes `MockNetworkManager`, so a test can run the real SPV
 # client over an injected network.
