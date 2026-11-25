@@ -26,7 +26,7 @@ pub(crate) enum FoldStoreFailure {
 
 /// Where the MASTER auth pubkey hash that probes a single identity
 /// index comes from. The two `load_identity_by_index*` entry points
-/// differ *only* in this: everything else (Platform unique-hash lookup,
+/// differ *only* in this: everything else (Platform master-key-hash lookup,
 /// identity folding, DPNS enrichment) is shared in
 /// [`IdentityWallet::load_identity_by_index_inner`].
 ///
@@ -139,7 +139,7 @@ impl IdentityWallet {
     }
 
     /// Master-xpriv variant of [`Self::load_identity_by_index`]: run the
-    /// identical Platform unique-hash lookup / identity-folding /
+    /// identical Platform master-key-hash lookup / identity-folding /
     /// DPNS-enrichment logic, but derive the probe's MASTER auth pubkey
     /// hash from the supplied master `ExtendedPrivKey` instead of from
     /// the in-memory wallet.
@@ -172,7 +172,7 @@ impl IdentityWallet {
     /// two callers vary is `source`, which decides how the probe's
     /// MASTER auth pubkey hash is derived (in-memory wallet under a read
     /// lock, vs. a resolved master xpriv). Everything downstream — the
-    /// Platform unique-hash lookup, identity folding, derivation
+    /// Platform master-key-hash lookup, identity folding, derivation
     /// breadcrumb, and DPNS enrichment — is identical, so it lives here
     /// once.
     async fn load_identity_by_index_inner(
@@ -181,8 +181,6 @@ impl IdentityWallet {
         source: LoadKeyHashSource<'_>,
     ) -> Result<Option<Identity>, PlatformWalletError> {
         use crate::wallet::identity::state::managed_identity::key_storage::IdentityStatus;
-        use dash_sdk::platform::types::identity::PublicKeyHash;
-        use dash_sdk::platform::Fetch;
 
         let wallet_id = self.wallet_id;
 
@@ -219,9 +217,7 @@ impl IdentityWallet {
 
         // Query Platform for an identity registered with this key hash.
         let (mut identity, block_time) =
-            match Identity::fetch_with_metadata(&self.sdk, PublicKeyHash(key_hash_array), None)
-                .await
-            {
+            match self.fetch_identity_by_master_key_hash(key_hash_array).await {
                 Ok((Some(identity), metadata)) => (identity, BlockTime::from(metadata)),
                 Ok((None, _)) => {
                     // "No identity here" is about this handle's wallet only
@@ -591,7 +587,8 @@ mod tests {
     use crate::error::PlatformWalletError;
     use crate::events::{EventHandler, PlatformEventHandler};
     use crate::PlatformWalletManager;
-    use dash_sdk::platform::types::identity::PublicKeyHash;
+    use dash_sdk::platform::types::identity::{NonUniquePublicKeyHashQuery, PublicKeyHash};
+    use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::v0::IdentityV0;
     use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
@@ -877,6 +874,98 @@ mod tests {
         }
     }
 
+    /// An identity whose MASTER key is `ECDSA_HASH160` (as Dash Evo Tool
+    /// registers them) is indexed only in Platform's non-unique key-hash
+    /// tree. The load finds it there after the unique tree answers empty, and
+    /// the MASTER key verifies against the seed by its hash.
+    #[tokio::test]
+    async fn should_load_an_identity_whose_master_key_is_ecdsa_hash160() {
+        struct Events;
+        impl EventHandler for Events {}
+        impl PlatformEventHandler for Events {}
+
+        const SEED: [u8; 64] = [7; 64];
+        let network = Network::Testnet;
+        let master = ExtendedPrivKey::new_master(network, &SEED).unwrap();
+        let identity_id = Identifier::from([0x6B; 32]);
+        let probe =
+            derive_load_probe_hash(ResolvedLoadKeyHashSource::Master(&master), network, 0).unwrap();
+        let master_key: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: MASTER_KEY_INDEX,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_HASH160,
+            read_only: false,
+            data: BinaryData::new(probe.to_vec()),
+            disabled_at: None,
+        }
+        .into();
+        let on_chain = Identity::V0(IdentityV0 {
+            id: identity_id,
+            public_keys: [(MASTER_KEY_INDEX, master_key)].into(),
+            balance: 1_000_000,
+            revision: 1,
+        });
+
+        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
+        sdk.mock()
+            .expect_fetch(PublicKeyHash(probe), None::<Identity>)
+            .await
+            .unwrap();
+        sdk.mock()
+            .expect_fetch(
+                NonUniquePublicKeyHashQuery {
+                    key_hash: probe,
+                    after: None,
+                },
+                Some(on_chain),
+            )
+            .await
+            .unwrap();
+        let store = Arc::new(CapturingStore::default());
+        let manager = PlatformWalletManager::new(Arc::new(sdk), store.clone(), Arc::new(Events));
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                network,
+                &SEED,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .unwrap();
+        store.take();
+
+        let loaded = wallet
+            .identity()
+            .load_identity_by_index_from_master(0, &master)
+            .await
+            .unwrap()
+            .expect("the identity at index 0 is found in the non-unique tree");
+
+        assert_eq!(loaded.id(), identity_id);
+        let row = store
+            .take()
+            .iter()
+            .find_map(|changeset| {
+                changeset
+                    .identity_keys
+                    .as_ref()?
+                    .upserts
+                    .get(&(identity_id, MASTER_KEY_INDEX))
+                    .cloned()
+            })
+            .expect("the MASTER key is stored");
+        assert_eq!(
+            row.derivation_indices,
+            Some(IdentityKeyDerivationIndices {
+                identity_index: 0,
+                key_index: MASTER_KEY_INDEX,
+            }),
+            "the HASH160 MASTER key carries its breadcrumb"
+        );
+    }
+
     /// A handle taken before its wallet was removed and re-created under the
     /// same id says nothing about the replacement: a load through it is
     /// refused as not found, not answered with "no identity at this index".
@@ -894,6 +983,16 @@ mod tests {
             derive_load_probe_hash(ResolvedLoadKeyHashSource::Master(&master), network, 0).unwrap();
         sdk.mock()
             .expect_fetch(PublicKeyHash(probe), None::<Identity>)
+            .await
+            .unwrap();
+        sdk.mock()
+            .expect_fetch(
+                NonUniquePublicKeyHashQuery {
+                    key_hash: probe,
+                    after: None,
+                },
+                None::<Identity>,
+            )
             .await
             .unwrap();
         let manager = PlatformWalletManager::new(

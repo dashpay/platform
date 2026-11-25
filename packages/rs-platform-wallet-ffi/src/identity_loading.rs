@@ -7,7 +7,7 @@
 //! `load_identity_by_index_from_master`): derives the MASTER
 //! authentication key from the wallet's DIP-9 tree at the supplied
 //! identity index, queries Platform for a registered identity bound to
-//! that key hash (unique pubkey-hash lookup), and — if found — folds it
+//! that key hash (unique, then non-unique key-hash lookup), and — if found — folds it
 //! into the wallet's `IdentityManager`.
 //!
 //! Unlike [`crate::identity_discovery::platform_wallet_discover_identities`],

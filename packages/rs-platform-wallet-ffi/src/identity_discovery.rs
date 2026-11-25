@@ -5,7 +5,7 @@
 //! `IdentityWallet::discover` (or `discover_from_master`): derives
 //! consecutive MASTER authentication keys from the wallet's DIP-9 tree,
 //! queries Platform for a registered identity bound to each key hash
-//! (unique pubkey-hash lookup), and stops after `gap_limit` consecutive
+//! (unique, then non-unique key-hash lookup), and stops after `gap_limit` consecutive
 //! misses.
 //!
 //! Resume vs full rescan is controlled by `start_index_or_neg1`:

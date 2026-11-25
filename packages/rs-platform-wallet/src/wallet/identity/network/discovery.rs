@@ -1,5 +1,8 @@
 //! Identity discovery via gap-limit HD scan.
 
+use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
+use dash_sdk::platform::types::identity::{NonUniquePublicKeyHashQuery, PublicKeyHash};
+use dash_sdk::platform::Fetch;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 use key_wallet::bip32::ExtendedPrivKey;
@@ -127,7 +130,9 @@ fn breadcrumb_decisions(
 /// covers every identity this crate registers (see `registration.rs`:
 /// `key_index = 0` is always the MASTER authentication key and is
 /// always registered with its pubkey hash indexed on Platform, so it's
-/// always discoverable via the unique-key query). Identities
+/// always discoverable via the unique-key query), and those Dash Evo Tool
+/// registers with an `ECDSA_HASH160` MASTER key, found through the
+/// non-unique-key query. Identities
 /// registered by foreign clients using non-zero key indices are not
 /// covered; that's a deliberate simplification since we haven't
 /// encountered wallets that need it.
@@ -159,7 +164,9 @@ impl IdentityWallet {
     /// when `None`), derives the ECDSA authentication public key at
     /// key index 0 from the BIP-32 tree and queries Platform for a
     /// registered identity bound to that key hash (the unique-key
-    /// lookup). Stops after `opts.gap_limit` consecutive misses.
+    /// lookup, then the non-unique one; see
+    /// [`Self::fetch_identity_by_master_key_hash`]). Stops after
+    /// `opts.gap_limit` consecutive misses.
     ///
     /// For every discovered identity this method also:
     /// - queries DPNS for associated usernames,
@@ -318,12 +325,36 @@ impl IdentityWallet {
         ))
     }
 
+    /// Fetch the identity whose MASTER key hashes to `key_hash`: the probe
+    /// shared by the discovery scan and the index load.
+    ///
+    /// Platform indexes an `ECDSA_SECP256K1` key in its unique key-hash tree
+    /// and an `ECDSA_HASH160` key, whose data is this same hash (the MASTER
+    /// key type Dash Evo Tool registers), only in its non-unique one. So an
+    /// empty unique answer is followed by a non-unique probe, and
+    /// `Ok((None, _))` means both trees answered empty.
+    pub(crate) async fn fetch_identity_by_master_key_hash(
+        &self,
+        key_hash: [u8; 20],
+    ) -> Result<(Option<Identity>, ResponseMetadata), dash_sdk::Error> {
+        match Identity::fetch_with_metadata(&self.sdk, PublicKeyHash(key_hash), None).await? {
+            (None, _) => {
+                let query = NonUniquePublicKeyHashQuery {
+                    key_hash,
+                    after: None,
+                };
+                Identity::fetch_with_metadata(&self.sdk, query, None).await
+            }
+            found => Ok(found),
+        }
+    }
+
     /// Shared gap-limit scan body for [`Self::discover`] and
     /// [`Self::discover_from_master`]. The only thing the two callers
     /// vary is `source`, which decides how each probe's MASTER auth
     /// pubkey hash is derived (in-memory wallet under a per-index read
     /// lock, vs. a resolved master xpriv). Everything downstream — the
-    /// Platform unique-hash lookup, identity folding, derivation
+    /// Platform master-key-hash lookup, identity folding, derivation
     /// breadcrumb, and DPNS enrichment — is identical, so it lives here
     /// once.
     async fn discover_inner(
@@ -334,8 +365,6 @@ impl IdentityWallet {
     ) -> Result<Vec<Identity>, PlatformWalletError> {
         use super::identity_handle::{derive_identity_auth_key_hash_from_master, MASTER_KEY_INDEX};
         use crate::wallet::identity::state::managed_identity::key_storage::IdentityStatus;
-        use dash_sdk::platform::types::identity::PublicKeyHash;
-        use dash_sdk::platform::Fetch;
 
         // `MASTER_KEY_INDEX = 0` pulled in from `identity_handle` —
         // only key_index 0 is ever registered as the MASTER auth
@@ -412,10 +441,8 @@ impl IdentityWallet {
                 };
 
                 // Query Platform for an identity registered with this key
-                // hash. No locks are held during this network call.
-                let fetch_result =
-                    Identity::fetch_with_metadata(&self.sdk, PublicKeyHash(key_hash_array), None)
-                        .await;
+                // hash. No locks are held during these network calls.
+                let fetch_result = self.fetch_identity_by_master_key_hash(key_hash_array).await;
 
                 match fetch_result {
                     Ok((Some(identity), metadata)) => {
@@ -836,8 +863,15 @@ impl ScanTally {
 
 #[cfg(test)]
 mod tests {
-    use super::super::identity_handle::derive_ecdsa_identity_auth_keypair_from_master;
-    use super::{breadcrumb_decisions, PlatformWalletError, ScanTally};
+    use super::super::identity_handle::{
+        derive_ecdsa_identity_auth_keypair_from_master, derive_identity_auth_key_hash_from_master,
+        MASTER_KEY_INDEX,
+    };
+    use super::{breadcrumb_decisions, IdentityDiscoveryOptions, PlatformWalletError, ScanTally};
+    use crate::changeset::IdentityScanStateEntry;
+    use crate::test_support::NoopTestPersister;
+    use dash_sdk::platform::types::identity::{NonUniquePublicKeyHashQuery, PublicKeyHash};
+    use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::v0::IdentityV0;
@@ -1465,5 +1499,202 @@ mod tests {
             verdict.probed_through > 0,
             "the scan walked its window; only the enrichment tail is bounded"
         );
+    }
+
+    /// The MASTER key hash the scan probes at `identity_index` for
+    /// [`test_master`], the seed of `test_platform_wallet_manager`'s wallet.
+    fn master_key_hash(identity_index: u32) -> [u8; 20] {
+        derive_identity_auth_key_hash_from_master(
+            &test_master(),
+            Network::Testnet,
+            identity_index,
+            MASTER_KEY_INDEX,
+        )
+        .expect("derive master key hash")
+    }
+
+    /// An identity whose MASTER key (key id 0) is `key_type` with `data`.
+    fn identity_with_master_key(id_byte: u8, key_type: KeyType, data: Vec<u8>) -> Identity {
+        let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: MASTER_KEY_INDEX,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            key_type,
+            read_only: false,
+            data: dpp::platform_value::BinaryData::new(data),
+            disabled_at: None,
+        });
+        Identity::V0(IdentityV0 {
+            id: Identifier::from([id_byte; 32]),
+            public_keys: BTreeMap::from([(MASTER_KEY_INDEX, key)]),
+            balance: 0,
+            revision: 0,
+        })
+    }
+
+    /// Answer the unique-tree probe for `key_hash` with `identity`.
+    async fn expect_unique(
+        sdk: &mut dash_sdk::Sdk,
+        key_hash: [u8; 20],
+        identity: Option<Identity>,
+    ) {
+        sdk.mock()
+            .expect_fetch(PublicKeyHash(key_hash), identity)
+            .await
+            .expect("unique-tree expectation");
+    }
+
+    /// Answer the non-unique-tree probe for `key_hash` with `identity`.
+    async fn expect_non_unique(
+        sdk: &mut dash_sdk::Sdk,
+        key_hash: [u8; 20],
+        identity: Option<Identity>,
+    ) {
+        sdk.mock()
+            .expect_fetch(
+                NonUniquePublicKeyHashQuery {
+                    key_hash,
+                    after: None,
+                },
+                identity,
+            )
+            .await
+            .expect("non-unique-tree expectation");
+    }
+
+    async fn scan_verdict(
+        manager: &crate::PlatformWalletManager<NoopTestPersister>,
+        wallet_id: &[u8; 32],
+    ) -> IdentityScanStateEntry {
+        let wm = manager.wallet_manager.read().await;
+        wm.get_wallet_info(wallet_id)
+            .expect("wallet info")
+            .identity_manager
+            .identity_scan_state(wallet_id)
+            .expect("the scan published a verdict")
+            .clone()
+    }
+
+    /// Dash Evo Tool registers identities with an `ECDSA_HASH160` MASTER key,
+    /// which Platform indexes only in its non-unique key-hash tree. The scan
+    /// finds them there, at their own identity index, and a run of them does
+    /// not end the scan early: only an index both trees answer empty is a miss.
+    #[tokio::test]
+    async fn should_discover_identities_whose_master_key_is_ecdsa_hash160() {
+        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let mut sdk = manager.sdk().clone();
+        for (index, id_byte) in [(0u32, 0xA0u8), (1, 0xA1)] {
+            let hash = master_key_hash(index);
+            let identity = identity_with_master_key(id_byte, KeyType::ECDSA_HASH160, hash.to_vec());
+            expect_unique(&mut sdk, hash, None).await;
+            expect_non_unique(&mut sdk, hash, Some(identity)).await;
+        }
+        expect_unique(&mut sdk, master_key_hash(2), None).await;
+        expect_non_unique(&mut sdk, master_key_hash(2), None).await;
+
+        let discovered = wallet
+            .identity()
+            .discover_from_master(
+                IdentityDiscoveryOptions {
+                    start_index: Some(0),
+                    gap_limit: 1,
+                },
+                &test_master(),
+            )
+            .await
+            .expect("every probe was answered");
+
+        let ids: Vec<Identifier> = discovered.iter().map(|identity| identity.id()).collect();
+        assert_eq!(
+            ids,
+            vec![Identifier::from([0xA0; 32]), Identifier::from([0xA1; 32])]
+        );
+        {
+            let wm = manager.wallet_manager.read().await;
+            let identities = &wm
+                .get_wallet_info(&wallet_id)
+                .expect("wallet info")
+                .identity_manager;
+            assert_eq!(identities.identity_index(&ids[0]), Some(0));
+            assert_eq!(identities.identity_index(&ids[1]), Some(1));
+        }
+        let verdict = scan_verdict(&manager, &wallet_id).await;
+        assert!(verdict.complete, "every index was answered: {verdict:?}");
+        assert_eq!(verdict.probed_through, 3, "the scan stopped at the gap");
+    }
+
+    /// An `ECDSA_SECP256K1` MASTER key is found in the unique tree, and the
+    /// non-unique tree is not asked about that index: the mock has no answer
+    /// for it, so a probe there would show up as an unanswered index.
+    #[tokio::test]
+    async fn should_find_a_secp256k1_master_identity_without_probing_the_non_unique_tree() {
+        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let mut sdk = manager.sdk().clone();
+        let pubkey = derive_ecdsa_identity_auth_keypair_from_master(
+            &test_master(),
+            Network::Testnet,
+            0,
+            MASTER_KEY_INDEX,
+        )
+        .expect("derive")
+        .public_key;
+        let identity = identity_with_master_key(0xB0, KeyType::ECDSA_SECP256K1, pubkey.to_vec());
+        expect_unique(&mut sdk, master_key_hash(0), Some(identity)).await;
+        expect_unique(&mut sdk, master_key_hash(1), None).await;
+        expect_non_unique(&mut sdk, master_key_hash(1), None).await;
+
+        let discovered = wallet
+            .identity()
+            .discover_from_master(
+                IdentityDiscoveryOptions {
+                    start_index: Some(0),
+                    gap_limit: 1,
+                },
+                &test_master(),
+            )
+            .await
+            .expect("every probe was answered");
+
+        assert_eq!(discovered.len(), 1);
+        assert_eq!(discovered[0].id(), Identifier::from([0xB0; 32]));
+        let verdict = scan_verdict(&manager, &wallet_id).await;
+        assert!(
+            verdict.complete && verdict.failed_indices.is_empty(),
+            "no index went unanswered: {verdict:?}"
+        );
+    }
+
+    /// A failed non-unique probe leaves its index unanswered, never a miss:
+    /// an `ECDSA_HASH160` identity may sit there.
+    #[tokio::test]
+    async fn should_report_an_index_whose_non_unique_probe_failed_as_unanswered() {
+        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+        let mut sdk = manager.sdk().clone();
+        // The non-unique probe has no expectation, so the mock fails it.
+        expect_unique(&mut sdk, master_key_hash(0), None).await;
+
+        let err = wallet
+            .identity()
+            .discover_from_master(
+                IdentityDiscoveryOptions {
+                    start_index: Some(0),
+                    gap_limit: 1,
+                },
+                &test_master(),
+            )
+            .await
+            .expect_err("the only probe went unanswered");
+
+        assert!(
+            matches!(err, PlatformWalletError::IdentityDiscoveryIncomplete { .. }),
+            "{err:?}"
+        );
+        let verdict = scan_verdict(&manager, &wallet_id).await;
+        assert!(!verdict.complete);
+        assert_eq!(verdict.failed_indices, vec![0]);
     }
 }
