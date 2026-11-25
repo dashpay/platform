@@ -72,7 +72,6 @@ After stopping the node with `dashmate stop` (see the examples below), install t
 
 ```bash
 if [ -n "$DASHMATE_DEB" ] && [ -f "$DASHMATE_DEB" ]; then
-  sudo apt update
   sudo apt install "$DASHMATE_DEB"
 else
   echo "No downloaded dashmate package found, so nothing was installed. Run the download step again in this shell." >&2

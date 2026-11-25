@@ -67,7 +67,6 @@ Install the package that either download block saved. It is installed by its pat
 
 ```bash
 if [ -n "$DASHMATE_DEB" ] && [ -f "$DASHMATE_DEB" ]; then
-  sudo apt update
   sudo apt install "$DASHMATE_DEB"
 else
   echo "No downloaded dashmate package found, so nothing was installed. Run the download step again in this shell." >&2
