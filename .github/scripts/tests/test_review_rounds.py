@@ -92,7 +92,6 @@ def history():
             commit("h3", "fix: keep the old key"),
         ],
         "resolved": {1: True, 2: True, 5: False, 6: True, 7: True},
-        "base_merges": {},
         "compares": {
             ("base", "h1"): compared({
                 "src/store.rs": changed(40, 0, status="added"),
@@ -188,7 +187,7 @@ class ReviewRoundsTest(unittest.TestCase):
         raw["commits"].insert(1, commit("merge", "Merge branch 'v5.1-dev'", "h1", "tip"))
         raw["compares"][("h1", "h2")]["files"]["src/view.rs"] = changed(7, 3)
         raw["compares"][("h1", "merge")] = compared({"src/view.rs": changed(7, 3)})
-        raw["base_merges"] = {"merge": True}
+        raw["pr"]["commits"] = 4
         report = rounds.build_report(raw)
         response = report["passes"][0]["response"]
         self.assertEqual([item["path"] for item in response["files"]], ["src/store.rs"])
@@ -196,16 +195,20 @@ class ReviewRoundsTest(unittest.TestCase):
         self.assertEqual(report["passes"][1]["threads"][2]["place"], rounds.OLD_CODE)
         self.assertIn("a merge from the base branch is left out", rounds.render(report, 0))
         passes = rounds.review_passes(raw["pr"], raw["reviews"], raw["comments"])
-        self.assertIn(
-            ("h1", "merge"),
-            rounds.compare_pairs(raw["pr"], passes, raw["commits"], raw["base_merges"]),
-        )
+        self.assertIn(("h1", "merge"), rounds.compare_pairs(raw["pr"], passes, raw["commits"]))
 
     def test_should_keep_a_merge_of_another_branch_as_the_authors_change(self):
+        # The merged-in commit is one of the pull request's own commits, so it
+        # was not on the base branch. That stays true after the pull request is
+        # merged, when every commit of it is reachable from the base branch.
         raw = history()
-        raw["commits"].insert(1, commit("merge", "Merge branch 'feat/stacked'", "h1", "tip"))
+        raw["commits"][1:1] = [
+            commit("tip", "feat: stacked work"),
+            commit("merge", "Merge branch 'feat/stacked'", "h1", "tip"),
+        ]
+        raw["pr"]["commits"] = 5
         raw["compares"][("h1", "h2")]["files"]["src/view.rs"] = changed(7, 3)
-        raw["base_merges"] = {"merge": False}
+        self.assertEqual(rounds.base_merges(raw["pr"], raw["commits"]), {"merge": False})
         report = rounds.build_report(raw)
         response = report["passes"][0]["response"]
         self.assertEqual(
@@ -214,15 +217,15 @@ class ReviewRoundsTest(unittest.TestCase):
         self.assertFalse(response["merged"])
         self.assertEqual(report["passes"][1]["threads"][2]["place"], rounds.CHANGED_FILE)
         passes = rounds.review_passes(raw["pr"], raw["reviews"], raw["comments"])
-        self.assertNotIn(
-            ("h1", "merge"),
-            rounds.compare_pairs(raw["pr"], passes, raw["commits"], raw["base_merges"]),
-        )
+        self.assertNotIn(("h1", "merge"), rounds.compare_pairs(raw["pr"], passes, raw["commits"]))
 
     def test_should_call_a_response_partial_when_a_merge_cannot_be_traced(self):
+        # GitHub lists at most 250 commits; with a longer history a merged-in
+        # commit that is not listed could be on either side.
         raw = history()
-        raw["commits"].insert(1, commit("merge", "Merge branch 'gone'", "h1", "tip"))
-        raw["base_merges"] = {"merge": None}
+        raw["commits"].insert(1, commit("merge", "Merge branch 'v5.1-dev'", "h1", "tip"))
+        raw["pr"]["commits"] = 400
+        self.assertEqual(rounds.base_merges(raw["pr"], raw["commits"]), {"merge": None})
         report = rounds.build_report(raw)
         self.assertTrue(report["passes"][0]["response"]["truncated"])
 
@@ -309,7 +312,7 @@ class ReviewRoundsTest(unittest.TestCase):
         raw = history()
         passes = rounds.review_passes(raw["pr"], raw["reviews"], raw["comments"])
         self.assertEqual(
-            rounds.compare_pairs(raw["pr"], passes, raw["commits"], raw["base_merges"]),
+            rounds.compare_pairs(raw["pr"], passes, raw["commits"]),
             [("base", "h1"), ("h1", "h2"), ("h2", "h3")],
         )
 

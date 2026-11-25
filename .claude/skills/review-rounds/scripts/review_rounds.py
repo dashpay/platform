@@ -240,6 +240,25 @@ def is_merge(commit):
     return len(commit.get("parents") or []) > 1
 
 
+def base_merges(pr, commits):
+    """For each merge commit: whether what it merged in came from the base branch.
+
+    A pull request's commit list holds the commits that are not on its base,
+    and GitHub keeps that list as it was once the pull request is merged. So a
+    merged-in parent that is in the list is another branch's work, and one that
+    is not was already on the base branch. None when the list is incomplete.
+    """
+    own = {item["sha"] for item in commits}
+    complete = len(commits) >= pr["commits"]
+    found = {}
+    for item in filter(is_merge, commits):
+        if any(parent["sha"] in own for parent in item["parents"][1:]):
+            found[item["sha"]] = False
+        else:
+            found[item["sha"]] = True if complete else None
+    return found
+
+
 def merges_between(commits, old, new):
     """The merge commits after `old` up to `new`, or None when unknowable."""
     order = [item["sha"] for item in commits]
@@ -250,7 +269,7 @@ def merges_between(commits, old, new):
     ]
 
 
-def compare_pairs(pr, passes, commits, base_merges):
+def compare_pairs(pr, passes, commits):
     """The (from, to) commit pairs whose difference the report needs."""
     heads = [entry["head"] for entry in passes if entry["head"] != "unknown"]
     if not heads:
@@ -265,7 +284,7 @@ def compare_pairs(pr, passes, commits, base_merges):
     # pull request's side.
     pairs += [
         (item["parents"][0]["sha"], item["sha"])
-        for item in commits if base_merges.get(item["sha"])
+        for item in commits if base_merges(pr, commits).get(item["sha"])
     ]
     return list(OrderedDict.fromkeys(
         pair for pair in pairs if pair[0] != pair[1] and "unknown" not in pair
@@ -283,10 +302,11 @@ def own_change(raw, old, new):
     if change is None:
         return None
     merges = merges_between(raw["commits"], old, new)
+    origins = base_merges(raw["pr"], raw["commits"])
     files = {path: dict(item) for path, item in change["files"].items()}
     merged, partial = False, change["truncated"]
     for merge in merges or []:
-        from_base = raw["base_merges"].get(merge["sha"])
+        from_base = origins[merge["sha"]]
         if from_base is False:
             continue
         brought = raw["compares"].get((merge["parents"][0]["sha"], merge["sha"]))
@@ -511,23 +531,6 @@ def fetch_resolved(repo, number):
         return None
 
 
-def fetch_base_merges(repo, base, commits):
-    """For each merge commit: whether everything it merged in is on `base`.
-
-    None when GitHub cannot say, for example once the base branch is deleted.
-    """
-    found = {}
-    for item in filter(is_merge, commits):
-        try:
-            found[item["sha"]] = all(
-                json.loads(gh("api", f"repos/{repo}/compare/{base}...{parent['sha']}"))["ahead_by"] == 0
-                for parent in item["parents"][1:]
-            )
-        except (GhError, KeyError):
-            found[item["sha"]] = None
-    return found
-
-
 def fetch(repo, number):
     base = f"repos/{repo}/pulls/{number}"
     raw = {
@@ -539,11 +542,10 @@ def fetch(repo, number):
         "commits": gh_list(base + "/commits"),
         "resolved": fetch_resolved(repo, number),
     }
-    raw["base_merges"] = fetch_base_merges(repo, raw["pr"]["base"]["ref"], raw["commits"])
     passes = review_passes(raw["pr"], raw["reviews"], raw["comments"])
     raw["compares"] = {
         pair: fetch_compare(repo, *pair)
-        for pair in compare_pairs(raw["pr"], passes, raw["commits"], raw["base_merges"])
+        for pair in compare_pairs(raw["pr"], passes, raw["commits"])
     }
     return raw
 
