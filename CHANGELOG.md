@@ -1,3 +1,15 @@
+## [Unreleased]
+
+### Changed
+
+- **platform-wallet (breaking):** Core → Shielded funding
+  (`PlatformWallet::shielded_fund_from_asset_lock`) proves its Orchard bundle
+  while the asset lock's InstantSend lock is awaited, on Tokio's blocking pool,
+  and reuses that proof for the ChainLock fallback and retries. The prover is
+  moved into that task, so the method now requires
+  `P: OrchardProver + Copy + Send + 'static`: pass `&CachedOrchardProver`
+  instead of a borrowed, non-`'static` prover.
+
 ## [5.1.0-dev.1](https://github.com/dashpay/platform/compare/v5.0.3...v5.1.0-dev.1) (2026-11-13)
 
 

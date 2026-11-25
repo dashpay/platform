@@ -20,6 +20,10 @@ struct TestQuorums {
 }
 
 impl ContextProvider for TestQuorums {
+    fn policy_revision(&self) -> Option<u64> {
+        Some(0)
+    }
+
     fn get_quorum_public_key(
         &self,
         _quorum_type: u32,

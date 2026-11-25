@@ -72,8 +72,7 @@ fn should_activate_lifecycle_handlers_and_limits_only_with_erase_wire_bounds() {
 
 #[test]
 fn should_extend_the_current_protocol_fifteen_tables_for_lifecycle() {
-    let version = PlatformVersion::latest();
-    assert_eq!(version.protocol_version, 15);
+    let version = PlatformVersion::get(15).expect("expected protocol version 15");
     let contract = &version.dpp.contract_versions;
     assert_eq!(
         contract

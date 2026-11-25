@@ -358,6 +358,7 @@ mod tests {
             version: Some(WaitVersion::V0(WaitForStateTransitionResultResponseV0 {
                 result: Some(WaitResult::Proof(proof)),
                 metadata: Some(metadata),
+                state_before_block: None,
             })),
         };
         (
