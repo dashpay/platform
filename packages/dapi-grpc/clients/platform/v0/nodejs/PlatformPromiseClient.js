@@ -76,6 +76,8 @@ const {
             GetOwnerTransactionsInBlockResponse: PBJSGetOwnerTransactionsInBlockResponse,
             GetBlocksRequest: PBJSGetBlocksRequest,
             GetBlocksResponse: PBJSGetBlocksResponse,
+            SubscribeToStateTransitionsRequest: PBJSSubscribeToStateTransitionsRequest,
+            SubscribeToStateTransitionsResponse: PBJSSubscribeToStateTransitionsResponse,
           },
         },
       },
@@ -109,6 +111,7 @@ const {
   GetRecentStateTransitionStatusResponse: ProtocGetRecentStateTransitionStatusResponse,
   GetOwnerTransactionsInBlockResponse: ProtocGetOwnerTransactionsInBlockResponse,
   GetBlocksResponse: ProtocGetBlocksResponse,
+  SubscribeToStateTransitionsResponse: ProtocSubscribeToStateTransitionsResponse,
 } = require('./platform_protoc');
 
 const getPlatformDefinition = require('../../../../lib/getPlatformDefinition');
@@ -1067,6 +1070,49 @@ class PlatformPromiseClient {
             ),
             protobufToJsonFactory(
               PBJSGetBlocksRequest,
+            ),
+          ),
+        ],
+      },
+    );
+  }
+
+  /**
+   * Committed state transitions matching the request's filters, block by block, with
+   * checkpoints to resume from. The node asserts what it sends and does not prove it.
+   *
+   * @param {!SubscribeToStateTransitionsRequest} subscribeToStateTransitionsRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @return {!grpc.web.ClientReadableStream<!SubscribeToStateTransitionsResponse>|undefined}
+   */
+  subscribeToStateTransitions(
+    subscribeToStateTransitionsRequest,
+    metadata = {},
+    options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    // A caller's interceptors run outside the conversion between protobuf messages and the
+    // plain objects the service sends, so they see the messages and the conversion still runs.
+    const { interceptors: callerInterceptors = [], ...callOptions } = options;
+
+    return this.client.subscribeToStateTransitions(
+      subscribeToStateTransitionsRequest,
+      convertObjectToMetadata(metadata),
+      {
+        ...callOptions,
+        interceptors: [
+          ...callerInterceptors,
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocSubscribeToStateTransitionsResponse,
+              PBJSSubscribeToStateTransitionsResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSSubscribeToStateTransitionsRequest,
             ),
           ),
         ],

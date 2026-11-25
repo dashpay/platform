@@ -71,4 +71,52 @@ describe('PlatformPromiseClient (web)', () => {
         .to.be.rejectedWith(error);
     });
   });
+
+  describe('#subscribeToStateTransitions', () => {
+    let stream;
+    let handlers;
+
+    beforeEach(function beforeEach() {
+      handlers = {};
+      stream = {
+        on: this.sinon.spy((type, handler) => {
+          handlers[type] = handler;
+        }),
+      };
+      platformPromiseClient.client.subscribeToStateTransitions = this.sinon.stub()
+        .returns(stream);
+    });
+
+    it('should return the stream of the service without waiting for it', () => {
+      const result = platformPromiseClient.subscribeToStateTransitions(request, metadata);
+
+      expect(result).to.equal(stream);
+      expect(platformPromiseClient.client.subscribeToStateTransitions)
+        .to.be.calledOnceWith(request, metadata);
+    });
+
+    it('should report a stream that ends with a failed status as an error', () => {
+      const errors = [];
+      platformPromiseClient.subscribeToStateTransitions(request)
+        .on('error', (error) => errors.push(error));
+
+      handlers.end({ code: 14, details: 'unavailable', metadata: { key: 'value' } });
+      handlers.end({ code: 0, details: 'ok', metadata: {} });
+
+      expect(errors).to.have.lengthOf(1);
+      expect(errors[0].code).to.equal(14);
+      expect(errors[0].message).to.equal('unavailable');
+      expect(errors[0].metadata).to.deep.equal({ key: 'value' });
+    });
+
+    it('should pass the events of the stream through', () => {
+      const messages = [];
+      platformPromiseClient.subscribeToStateTransitions(request)
+        .on('data', (message) => messages.push(message));
+
+      handlers.data(response);
+
+      expect(messages).to.deep.equal([response]);
+    });
+  });
 });

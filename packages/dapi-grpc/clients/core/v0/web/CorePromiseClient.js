@@ -6,47 +6,9 @@ function promisify(fn) {
     fn(...args, (err, result) => (err ? reject(err) : resolve(result)));
   });
 }
-const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
+const rewireStream = require('../../../../lib/utils/rewireStream');
 
 const { CoreClient } = require('./core_pb_service');
-
-/**
- * Function rewires @imporbable-eng/grpc-web stream
- * to comply with the EventEmitter interface
- * @param stream
- * @return {!grpc.web.ClientReadableStream}
- */
-const rewireStream = (stream) => {
-  const defaultOnFunction = stream.on.bind(stream);
-
-  // Rewire default on function to comply with EventEmitter interface
-  stream.on = ((type, handler) => {
-   if (type === 'error') { // Handle `error` event using `end` event
-      return stream.on('end', (payload) => {
-        if (payload) {
-          const { code, details, metadata } = payload;
-          if (code !== 0) {
-            const error = new GrpcError(code, details);
-            // It is important to assign metadata to the error object
-            // instead of passing it as GrpcError constructor argument
-            // Otherwise it will be converted to grpc-js metadata
-            // Which is not compatible with web
-            error.metadata = metadata;
-            handler(error);
-          }
-        }
-      });
-    } else {
-      // `data` event could be processed normally
-      return defaultOnFunction(type, handler);
-    }
-  });
-
-  // Assign an empty function to `once` method
-  // because @imporbable-eng/grpc-web doesn't expose it and
-  // stream cancellation detaches all handlers internally
-  stream.removeListener = () => {}
-}
 
 class CorePromiseClient {
   /**
