@@ -4984,14 +4984,14 @@ fn select_recorded_spends<S: ShieldedStore>(
 /// read under the same guard: a sync pass may have re-saved the note
 /// with newer metadata since `notes` were selected.
 ///
-/// The round is queued after that guard drops: a persister round is host
-/// I/O behind the persister's blocking round lock, and holding the store
-/// across it would park every send and balance read behind a sync pass's
-/// delivery. A pass can then commit a newer copy and have its round reach
-/// the host before this one, so once this round is queued the store's
-/// copies are read again and any that changed are saved in a follow-up
-/// round. A pass committing after that read queues its round after this
-/// one, so the host ends on the store's copy either way.
+/// The round is queued before that guard drops, downgraded to a read guard
+/// so balance reads don't wait out the host I/O. Until the round has reached
+/// the host, no writer gets in:
+/// - a sync pass can't commit a newer copy of a note and have its round
+///   overtake this one, which would roll the host back to older metadata;
+/// - a Clear can't purge the store and return. The host deletes its rows
+///   once Clear returns, so a round landing after that would put a deleted
+///   note back.
 pub(super) async fn mark_notes_spent<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
@@ -5000,40 +5000,20 @@ pub(super) async fn mark_notes_spent<S: ShieldedStore>(
     notes: &[ShieldedNote],
 ) -> Result<(), PlatformWalletError> {
     let mut changeset = ShieldedChangeSet::default();
-    let mut saved = Vec::new();
-    {
-        let mut store = store.write().await;
-        for note in notes {
-            if store
-                .mark_spent(id, &note.nullifier)
-                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
-            {
-                if let Some(stored) = stored_note_to_save(&*store, id, &note.nullifier) {
-                    saved.push(stored);
-                }
-                changeset.record_nullifier_spent(id, note.nullifier);
+    let mut store = store.write().await;
+    for note in notes {
+        if store
+            .mark_spent(id, &note.nullifier)
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
+        {
+            if let Some(stored) = stored_note_to_save(&*store, id, &note.nullifier) {
+                changeset.record_note(id, stored);
             }
+            changeset.record_nullifier_spent(id, note.nullifier);
         }
     }
-    for note in &saved {
-        changeset.record_note(id, note.clone());
-    }
+    let _round_guard = store.downgrade();
     queue_shielded_changeset(persister, wallet_id, changeset);
-    if persister.is_none() || saved.is_empty() {
-        return Ok(());
-    }
-    let mut follow_up = ShieldedChangeSet::default();
-    {
-        let store = store.read().await;
-        for sent in &saved {
-            if let Some(current) = stored_note_to_save(&*store, id, &sent.nullifier) {
-                if current != *sent {
-                    follow_up.record_note(id, current);
-                }
-            }
-        }
-    }
-    queue_shielded_changeset(persister, wallet_id, follow_up);
     Ok(())
 }
 

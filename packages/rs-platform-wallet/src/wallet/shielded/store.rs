@@ -59,7 +59,7 @@ impl SubwalletId {
 /// pulling the orchard crate into this trait. The actual
 /// `orchard::Note` is in `note_data` as 115 bytes
 /// (`recipient(43) || value(8 LE) || rho(32) || rseed(32)`).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ShieldedNote {
     /// Global position in the commitment tree.

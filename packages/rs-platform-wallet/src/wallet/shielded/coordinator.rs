@@ -6689,14 +6689,13 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// A spend's host round runs without the store guard, so sends and
-    /// balance reads never wait out host I/O behind it. A pass that commits a
-    /// newer copy of the note during that round can have its own round reach
-    /// the host first; the spend then saves the store's copy again in a
-    /// follow-up round, so the host never ends on the older metadata.
+    /// A spend's round reaches the host before any sync pass can commit a
+    /// newer copy of the note, so a pass's later round can't overtake it with
+    /// metadata the spend then rolls back. The guard it holds over the round
+    /// is a read guard, so balance reads still go ahead.
     #[tokio::test]
-    async fn should_not_hold_the_store_guard_across_a_spend_round_nor_roll_back_a_newer_copy() {
-        let dir = temp_dir("spend_round_without_guard");
+    async fn should_keep_writers_but_not_readers_out_during_a_spend_round() {
+        let dir = temp_dir("spend_round_under_read_guard");
         let coordinator = coordinator_with_one_wallet(&dir).await;
         let wallet_id: WalletId = [0x11; 32];
         let id = SubwalletId::new(wallet_id, 0);
@@ -6709,24 +6708,14 @@ mod tests {
             .await
             .save_note(id, &note)
             .unwrap();
-        let rescanned = ShieldedNote {
-            block_height: note.block_height + 50,
-            ..note.clone()
-        };
-        // A pass commits a re-scanned copy while the spend's round is being
-        // delivered.
         let store = Arc::clone(coordinator.store());
-        let guard_free_during_delivery = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let guard_free = Arc::clone(&guard_free_during_delivery);
-        let mut pass_commit = Some(rescanned.clone());
+        let during_round = Arc::new(std::sync::Mutex::new(None));
+        let observed = Arc::clone(&during_round);
         *recorder.1.lock().unwrap() = Some(Box::new(move || {
-            let Some(rescanned) = pass_commit.take() else {
-                return;
-            };
-            if let Ok(mut guard) = store.try_write() {
-                guard_free.store(true, std::sync::atomic::Ordering::SeqCst);
-                guard.save_note(id, &rescanned).unwrap();
-            }
+            observed
+                .lock()
+                .unwrap()
+                .get_or_insert((store.try_write().is_ok(), store.try_read().is_ok()));
         }));
         super::super::operations::mark_notes_spent(
             coordinator.store(),
@@ -6738,27 +6727,113 @@ mod tests {
         .await
         .unwrap();
 
+        let (writer_got_in, reader_got_in) = during_round
+            .lock()
+            .unwrap()
+            .expect("the spend queues a round");
         assert!(
-            guard_free_during_delivery.load(std::sync::atomic::Ordering::SeqCst),
-            "the store guard must not be held across the spend's host round"
+            !writer_got_in,
+            "no pass may commit while the spend's round is being delivered"
         );
-        let rounds = recorder.0.lock().unwrap();
-        assert_eq!(
-            rounds.len(),
-            2,
-            "the spend round, then a follow-up with the newer copy"
-        );
-        let last = rounds[1]
-            .notes_saved
-            .get(&id)
-            .expect("the follow-up saves the note");
-        assert_eq!(last.len(), 1);
-        assert!(last[0].is_spent, "the follow-up keeps the note spent");
-        assert_eq!(
-            last[0].block_height, rescanned.block_height,
-            "the host must end on the pass's newer copy"
-        );
-        drop(rounds);
+        assert!(reader_got_in, "reads must not wait out the spend's round");
+        assert_eq!(recorder.0.lock().unwrap().len(), 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Clear must not return while a spend's round is still on its way to the
+    /// host. The host deletes its shielded rows once Clear returns, and the
+    /// round carries the whole note, so landing after that deletion would put
+    /// the deleted note back. The round here is held up in the host (as one
+    /// waiting on the persister's round lock would be) while Clear runs.
+    #[tokio::test]
+    async fn should_not_let_a_delayed_spend_round_recreate_a_note_after_clear() {
+        let dir = temp_dir("spend_round_vs_clear");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let recorder = Arc::new(RecordingPersistence::default());
+
+        let note = test_note([0xA6; 32], 12, false);
+        coordinator
+            .store()
+            .write()
+            .await
+            .save_note(id, &note)
+            .unwrap();
+        let (parked_tx, parked_rx) = tokio::sync::oneshot::channel::<()>();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let mut park = Some((parked_tx, release_rx));
+        *recorder.1.lock().unwrap() = Some(Box::new(move || {
+            if let Some((parked, release)) = park.take() {
+                let _ = parked.send(());
+                let _ = release.recv();
+            }
+        }));
+        // The host round blocks its thread, so the send runs on its own.
+        let spend = {
+            let store = Arc::clone(coordinator.store());
+            let persister = WalletPersister::new(wallet_id, recorder.clone());
+            let note = note.clone();
+            std::thread::spawn(move || {
+                tokio::runtime::Builder::new_current_thread()
+                    .build()
+                    .expect("spend runtime")
+                    .block_on(super::super::operations::mark_notes_spent(
+                        &store,
+                        Some(&persister),
+                        wallet_id,
+                        id,
+                        std::slice::from_ref(&note),
+                    ))
+            })
+        };
+        parked_rx.await.expect("the spend's round reaches the host");
+
+        // The host wipes its rows as soon as Clear returns; `wiped_at` is how
+        // many rounds had landed by then.
+        let clear = coordinator.clear();
+        tokio::pin!(clear);
+        let wiped_at = match tokio::time::timeout(Duration::from_millis(200), clear.as_mut()).await
+        {
+            Ok(cleared) => {
+                cleared.unwrap();
+                let wiped_at = recorder.0.lock().unwrap().len();
+                release_tx.send(()).unwrap();
+                wiped_at
+            }
+            Err(_) => {
+                release_tx.send(()).unwrap();
+                clear.await.unwrap();
+                recorder.0.lock().unwrap().len()
+            }
+        };
+        spend.join().expect("spend thread").unwrap();
+
+        {
+            let rounds = recorder.0.lock().unwrap();
+            assert_eq!(rounds.len(), 1, "the spend's round");
+            assert!(
+                rounds[0].notes_saved.contains_key(&id),
+                "the spend's round saves the note"
+            );
+            let recreated: Vec<_> = rounds[wiped_at..]
+                .iter()
+                .filter_map(|round| round.notes_saved.get(&id))
+                .flatten()
+                .collect();
+            assert!(
+                recreated.is_empty(),
+                "a spend round landing after the host's wipe recreates the deleted note"
+            );
+        }
+        assert!(coordinator
+            .store()
+            .read()
+            .await
+            .get_note(id, &note.nullifier)
+            .unwrap()
+            .is_none());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
