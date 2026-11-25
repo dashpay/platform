@@ -25,7 +25,7 @@ where
     /// interval's checkpoint attempt so that `should_checkpoint` does not ask again
     /// before the next interval boundary. A failed attempt leaves nothing behind so that the
     /// caller's immediate retry starts clean: a checkpoint directory this attempt
-    /// created is removed again, while a directory it did not create (RocksDB
+    /// created is removed again, while a directory it did not create (GroveDB
     /// refuses an existing target) is left alone. Nothing is registered in the
     /// caches until the checkpoint is complete.
     ///
@@ -64,7 +64,7 @@ where
             .and_then(|()| std::fs::create_dir_all(&checkpoints_path))
             .map_err(|err| io_error(CheckpointStep::CreateDirectory, &checkpoints_path, err))?;
 
-        // Create checkpoint DB (this creates the checkpoint_path directory). RocksDB
+        // Create checkpoint DB (this creates the checkpoint_path directory). GroveDB
         // refuses an existing target, so the directory belongs to this attempt from
         // here on and is removed again if a later step fails.
         fail_if_injected(injected_fault, CheckpointStep::CreateCheckpoint)
@@ -75,9 +75,10 @@ where
             match complete_checkpoint(&checkpoint_path, &platform_state, injected_fault) {
                 Ok(checkpoint_db) => checkpoint_db,
                 Err(error) => {
-                    // Nothing references the directory yet. Remove it so a restart does
-                    // not load a checkpoint that has no platform state next to it.
-                    if let Err(cleanup_error) = std::fs::remove_dir_all(&checkpoint_path) {
+                    // Nothing references the directory yet, and no database is open on
+                    // it. Delete it so a restart does not load a checkpoint that has no
+                    // platform state next to it.
+                    if let Err(cleanup_error) = Checkpoint::delete_closed(&checkpoint_path) {
                         tracing::warn!(
                             error = ?cleanup_error,
                             path = ?checkpoint_path,
@@ -320,7 +321,7 @@ mod tests {
         assert_checkpoint_registered(&platform, "retry after directory creation failure");
     }
 
-    /// RocksDB refuses to checkpoint into an existing directory. The directory is
+    /// GroveDB refuses to checkpoint into an existing directory. The directory is
     /// not this attempt's to remove, nothing is registered, and the attempt after
     /// the directory is cleared succeeds.
     #[test]
