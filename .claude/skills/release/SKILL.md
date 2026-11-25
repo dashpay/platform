@@ -88,7 +88,26 @@ gh release view v<version> --repo dashpay/platform --json assets --jq '.assets[]
 
 Expect two debs, `dashmate_5.1.0-1_amd64.deb` and `_arm64.deb` (for a prerelease the `-` before its id becomes `.`: `dashmate_5.1.0.beta.1-1_amd64.deb`), `dashmate-v<version>-<sha>-linux-x64.tar.gz` and `-linux-arm64.tar.gz`, `-x64.exe`, `-x64.pkg` and `-arm64.pkg`, and `SHA256SUMS`. For a stable release, check which release is now Latest: `gh api repos/dashpay/platform/releases/latest --jq .tag_name`. A failed job is re-run only with the user's go.
 
-**The apt publish is off until infra confirms the digest check.** The `Publish Dashmate debs to apt` job runs only when the repository variable `DASHMATE_APT_PUBLISH` is `true`; it is unset, so instead the `Dashmate apt publish is off` job says so in a notice, and infra publishes the release by hand. Turn it on, with the user's go, only once infra confirms the publisher refuses a request whose `SHA256SUMS` does not have the sha256 the job sends as `sha256sums_sha256` (requested on #4246):
+**The apt publish is off until infra confirms the digest check.** The `Publish Dashmate debs to apt` job runs only when the repository variable `DASHMATE_APT_PUBLISH` is `true`; it is unset, so instead the `Dashmate apt publish is off` job says so in a notice, and infra publishes the release by hand. Turn it on, with the user's go, only once infra confirms the publisher refuses a request whose `SHA256SUMS` does not have the sha256 the job sends as `sha256sums_sha256` (requested on #4246).
+
+Before setting the variable, also confirm what keeps the job's AWS role to release tags. The `dashmate-apt-publish` environment must exist and deploy only from tags matching `v*`. The active tag ruleset `Release tags: maintainers only` must still limit creating, updating and deleting `refs/tags/v*` to release maintainers. It must have no excluded refs, and its only bypass actors must be the two maintainers' accounts (user ids 24296 and 11468583). Stop and ask the user if any of these prints something else, or nothing:
+
+```sh
+# expect {"custom_branch_policies":true,"protected_branches":false}
+gh api repos/dashpay/platform/environments/dashmate-apt-publish --jq '.deployment_branch_policy'
+# expect exactly one line: tag	v*
+gh api repos/dashpay/platform/environments/dashmate-apt-publish/deployment-branch-policies \
+  --jq '.branch_policies[] | [.type, .name] | @tsv'
+# expect: active	["refs/tags/v*"]	[]	["creation","update","deletion"]	["User:11468583:always","User:24296:always"]
+gh api repos/dashpay/platform/rulesets --jq '.[] | select(.target == "tag" and .name == "Release tags: maintainers only") | .id' \
+  | xargs -I{} gh api repos/dashpay/platform/rulesets/{} \
+  --jq '[.enforcement, (.conditions.ref_name.include | tojson), (.conditions.ref_name.exclude | tojson),
+    ([.rules[].type] | tojson),
+    (if has("bypass_actors") then [.bypass_actors[] | "\(.actor_type):\(.actor_id):\(.bypass_mode)"] | sort | tojson
+     else "no bypass_actors field" end)] | @tsv'
+```
+
+Then:
 
 ```sh
 gh variable set DASHMATE_APT_PUBLISH --body true --repo dashpay/platform
