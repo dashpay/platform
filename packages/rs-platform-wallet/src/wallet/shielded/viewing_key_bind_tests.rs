@@ -2005,6 +2005,58 @@ async fn should_keep_a_retired_tip_account_bound_by_the_bind_after_a_clear() {
     );
 }
 
+/// The same after a restart: a Clear, then a new process with a new wallet
+/// handle and the store reopened, with no bind in between. Nothing of the
+/// retired account is left on the host or in memory; the coordinator's store
+/// kept its number, and the first bind registers it again.
+#[tokio::test]
+async fn should_keep_a_retired_tip_account_bound_after_a_clear_and_a_restart() {
+    let retired = crate::shielded_identity_account_index(7).unwrap();
+    let persister = Arc::new(CapturingPersistence::default());
+    let dir = temp_dir("retired_tips_restart");
+    let retired_id = {
+        let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+        let row = |account: u32| {
+            let keys = super::OrchardKeySet::from_seed(&BIND_SEED[..], Network::Testnet, account)
+                .expect("derive the account");
+            (
+                SubwalletId::new(wallet.wallet_id(), account),
+                keys.full_viewing_key.to_bytes().to_vec(),
+            )
+        };
+        persister.serve_viewing_keys(BTreeMap::from([row(0), row(retired)]));
+        let coordinator = coordinator_at(&dir);
+        wallet
+            .attach_shielded_coordinator_for_test(&coordinator)
+            .await;
+        assert!(wallet.bind_shielded_from_persisted(&[0]).await.unwrap());
+        coordinator.clear(&*persister).await.expect("clear");
+        SubwalletId::new(wallet.wallet_id(), retired)
+    };
+    assert!(
+        !persister.captured_viewing_keys().contains_key(&retired_id),
+        "no bind has written the retired account's row"
+    );
+
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&dir);
+    wallet
+        .attach_shielded_coordinator_for_test(&coordinator)
+        .await;
+    wallet.bind_shielded(&BIND_SEED, &[0]).await.unwrap();
+    assert!(
+        coordinator
+            .registered_subwallets()
+            .await
+            .contains(&retired_id),
+        "the retired tip account is scanned again"
+    );
+    assert!(
+        persister.captured_viewing_keys().contains_key(&retired_id),
+        "and its viewing key is written again"
+    );
+}
+
 /// A host rebind passes only ordinary accounts (FFI and host SDKs cap the
 /// request at 64 entries); Rust adds every persisted tip account itself. With
 /// more than 64 tip accounts on record, a `[0]` request must still bind them

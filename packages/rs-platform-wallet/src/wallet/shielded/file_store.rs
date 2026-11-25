@@ -211,6 +211,10 @@ pub struct FileBackedShieldedStore {
     /// its rows, as `shielded_store_meta` keeps it
     /// ([`Self::set_host_wipe_pending`]).
     host_wipe_pending: bool,
+    /// The identity accounts each wallet has had registered, as
+    /// `shielded_identity_accounts` keeps them
+    /// ([`Self::keep_identity_accounts`]).
+    kept_identity_accounts: BTreeMap<WalletId, BTreeSet<u32>>,
 }
 
 /// The private contact request association a saved record carries.
@@ -687,6 +691,22 @@ impl FileBackedShieldedStore {
         super::token_pool::create_tables(&pending_conn).map_err(|e| {
             FileShieldedStoreError::Storage(format!("create token pool tables: {e}"))
         })?;
+        // The identity accounts each wallet has had registered: the account
+        // numbers alone, so the account of an identity removed from the
+        // device is still scanned after a Clear wiped the host's viewing key
+        // rows. Dropped with its wallet, kept by a Clear.
+        pending_conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS shielded_identity_accounts (
+                    wallet_id     BLOB    NOT NULL,
+                    account_index INTEGER NOT NULL,
+                    PRIMARY KEY (wallet_id, account_index)
+                )",
+                [],
+            )
+            .map_err(|e| {
+                FileShieldedStoreError::Storage(format!("create identity accounts table: {e}"))
+            })?;
         // The recipient each wallet last confirmed for a name it tipped.
         // Dropped with its wallet, kept by a Clear.
         tip_recipients::create_table(&pending_conn).map_err(|e| {
@@ -706,6 +726,7 @@ impl FileBackedShieldedStore {
             unreadable_private_payment_journal: BTreeSet::new(),
             legacy_anchor_tree_bound: None,
             host_wipe_pending: false,
+            kept_identity_accounts: BTreeMap::new(),
         };
         // Every record loaded below without an anchor height was saved by an
         // earlier process, from a tree no larger than the largest the store
@@ -715,6 +736,7 @@ impl FileBackedShieldedStore {
         let largest = store.raise_largest_tree_size(size)?;
         store.legacy_anchor_tree_bound = (largest > 0).then_some(largest);
         store.host_wipe_pending = store.read_host_wipe_pending()?;
+        store.kept_identity_accounts = store.read_kept_identity_accounts()?;
         store.rehydrate_pending_spends()?;
         store.load_private_payment_journal()?;
         Ok(store)
@@ -772,6 +794,80 @@ impl FileBackedShieldedStore {
         drop(conn);
         self.host_wipe_pending = pending;
         Ok(())
+    }
+
+    /// The identity accounts each wallet has had registered on this store
+    /// ([`Self::keep_identity_accounts`]), as read when it was opened and
+    /// kept since.
+    pub(crate) fn kept_identity_accounts(&self) -> &BTreeMap<WalletId, BTreeSet<u32>> {
+        &self.kept_identity_accounts
+    }
+
+    /// Durably record that `wallet_id` has `accounts` among its identity
+    /// accounts. A Clear keeps the record and a removal of the wallet drops
+    /// it ([`ShieldedStore::purge_wallet`]). Recording an account again
+    /// changes nothing.
+    pub(crate) fn keep_identity_accounts(
+        &mut self,
+        wallet_id: WalletId,
+        accounts: &BTreeSet<u32>,
+    ) -> Result<(), FileShieldedStoreError> {
+        {
+            let mut conn = self
+                .pending_conn
+                .lock()
+                .map_err(|e| FileShieldedStoreError::Storage(format!("pending_conn mutex: {e}")))?;
+            let tx = conn.transaction().map_err(|e| {
+                FileShieldedStoreError::Storage(format!("begin identity accounts write: {e}"))
+            })?;
+            for account in accounts {
+                tx.execute(
+                    "INSERT OR IGNORE INTO shielded_identity_accounts \
+                     (wallet_id, account_index) VALUES (?1, ?2)",
+                    rusqlite::params![wallet_id.as_slice(), account],
+                )
+                .map_err(|e| {
+                    FileShieldedStoreError::Storage(format!("write identity account: {e}"))
+                })?;
+            }
+            tx.commit().map_err(|e| {
+                FileShieldedStoreError::Storage(format!("commit identity accounts write: {e}"))
+            })?;
+        }
+        self.kept_identity_accounts
+            .entry(wallet_id)
+            .or_default()
+            .extend(accounts);
+        Ok(())
+    }
+
+    fn read_kept_identity_accounts(
+        &self,
+    ) -> Result<BTreeMap<WalletId, BTreeSet<u32>>, FileShieldedStoreError> {
+        let read = |e: rusqlite::Error| {
+            FileShieldedStoreError::Storage(format!("read identity accounts: {e}"))
+        };
+        let conn = self
+            .pending_conn
+            .lock()
+            .map_err(|e| FileShieldedStoreError::Storage(format!("pending_conn mutex: {e}")))?;
+        let mut statement = conn
+            .prepare("SELECT wallet_id, account_index FROM shielded_identity_accounts")
+            .map_err(read)?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, u32>(1)?))
+            })
+            .map_err(read)?;
+        let mut kept: BTreeMap<WalletId, BTreeSet<u32>> = BTreeMap::new();
+        for row in rows {
+            let (wallet_id, account) = row.map_err(read)?;
+            // A row whose wallet id is not 32 bytes names no wallet.
+            if let Ok(wallet_id) = WalletId::try_from(wallet_id.as_slice()) {
+                kept.entry(wallet_id).or_default().insert(account);
+            }
+        }
+        Ok(kept)
     }
 
     fn read_host_wipe_pending(&self) -> Result<bool, FileShieldedStoreError> {
@@ -1940,6 +2036,13 @@ impl ShieldedStore for FileBackedShieldedStore {
             tip_recipients::purge_wallet(&tx, wallet_id).map_err(|e| {
                 FileShieldedStoreError::Storage(format!("purge tip recipients for wallet: {e}"))
             })?;
+            tx.execute(
+                "DELETE FROM shielded_identity_accounts WHERE wallet_id = ?1",
+                rusqlite::params![wallet_id.as_slice()],
+            )
+            .map_err(|e| {
+                FileShieldedStoreError::Storage(format!("purge identity accounts for wallet: {e}"))
+            })?;
             tx.commit().map_err(|e| {
                 FileShieldedStoreError::Storage(format!("commit wallet purge: {e}"))
             })?;
@@ -1960,6 +2063,7 @@ impl ShieldedStore for FileBackedShieldedStore {
             .remove(&Some(wallet_id));
         // The wallet's recovery rows, damaged ones included, are deleted above.
         self.unloaded_note_spends.remove(&Some(wallet_id));
+        self.kept_identity_accounts.remove(&wallet_id);
         Ok(())
     }
 

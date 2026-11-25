@@ -99,6 +99,7 @@ use super::store::{
     StalePendingSpend, SubwalletId,
 };
 use super::sync::NoteScan;
+use super::tips::is_shielded_identity_account;
 use super::token_pool::{ShieldedTokenPoolBalance, ShieldedTokenPoolWatch, TokenPoolConnection};
 use super::CAUGHT_UP_COOLDOWN;
 use crate::changeset::{PlatformWalletChangeSet, PlatformWalletPersistence, ShieldedChangeSet};
@@ -318,6 +319,18 @@ pub struct NetworkShieldedCoordinator {
     /// for, yet it may have reset the tree under their notes. A payment
     /// needs a bind made after it, as after a Clear that succeeded.
     bound_since_clear: RwLock<BTreeSet<WalletId>>,
+
+    /// The identity accounts each wallet has had registered, as the store
+    /// keeps them durably ([`FileBackedShieldedStore::keep_identity_accounts`]):
+    /// the copy a bind reads, so it takes no store lock for it.
+    ///
+    /// A bind adds them to the accounts it registers
+    /// ([`kept_identity_accounts`](Self::kept_identity_accounts)). The
+    /// host's viewing key rows record the same accounts until a Clear wipes
+    /// them; this record is what then keeps the account of an identity
+    /// removed from the device scanning, in this process or the next. A
+    /// Clear keeps it, and a removal of the wallet drops it.
+    identity_accounts: RwLock<BTreeMap<WalletId, BTreeSet<u32>>>,
 
     /// The shielded admission: the one shared/exclusive lock every durable
     /// shielded mutation and a [Clear](Self::clear_admitted) agree on. See
@@ -721,6 +734,7 @@ impl NetworkShieldedCoordinator {
         let anchor_cache = RecordedAnchorCache::new();
         let _ = anchor_cache.for_sdk(&sdk);
         let balance_change = store.balance_change_signal();
+        let identity_accounts = store.kept_identity_accounts().clone();
         Self {
             sdk,
             network,
@@ -738,6 +752,7 @@ impl NetworkShieldedCoordinator {
             clear_admission_held: AtomicBool::new(false),
             hydrated: RwLock::new(std::collections::BTreeSet::new()),
             bound_since_clear: RwLock::new(BTreeSet::new()),
+            identity_accounts: RwLock::new(identity_accounts),
             admission: RwLock::new(clear_state),
             balance_change,
         }
@@ -1352,6 +1367,33 @@ impl NetworkShieldedCoordinator {
             .map(|(id, _)| id.account_index)
             .filter(|account_index| account_views.contains_key(account_index))
             .collect();
+        // The registration's identity accounts not kept yet go to the store
+        // before anything changes, so a failed write registers nothing. A
+        // registration that adds none, an identical re-bind among them, does
+        // not touch the store.
+        let unkept: BTreeSet<u32> = {
+            let kept = self.identity_accounts.read().await;
+            let kept = kept.get(&wallet_id);
+            account_views
+                .keys()
+                .copied()
+                .filter(|account| is_shielded_identity_account(*account))
+                .filter(|account| !kept.is_some_and(|kept| kept.contains(account)))
+                .collect()
+        };
+        if !unkept.is_empty() {
+            self.store
+                .write()
+                .await
+                .keep_identity_accounts(wallet_id, &unkept)
+                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+            self.identity_accounts
+                .write()
+                .await
+                .entry(wallet_id)
+                .or_default()
+                .extend(unkept);
+        }
         self.persisters.write().await.insert(wallet_id, persister);
         {
             let mut accounts = self.accounts.write().await;
@@ -1554,6 +1596,19 @@ impl NetworkShieldedCoordinator {
                 "Failed to purge per-subwallet store state on unregister"
             );
         }
+        self.identity_accounts.write().await.remove(&wallet_id);
+    }
+
+    /// The identity accounts `wallet_id` has had registered on this
+    /// coordinator's store, in this process or an earlier one (see the
+    /// `identity_accounts` field). Takes no store lock.
+    pub(crate) async fn kept_identity_accounts(&self, wallet_id: WalletId) -> BTreeSet<u32> {
+        self.identity_accounts
+            .read()
+            .await
+            .get(&wallet_id)
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// Drop `wallet_id`'s live registration (its accounts, persister and
@@ -7089,6 +7144,62 @@ mod tests {
             coordinator.registered_subwallets().await.is_empty(),
             "the queued unregister runs as soon as the transaction commits"
         );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The store keeps the number of every identity account a wallet has had
+    /// registered: through a Clear, which wipes the host's viewing key rows,
+    /// and across a reopen. A removal of the wallet drops them.
+    #[tokio::test]
+    async fn should_keep_identity_accounts_through_a_clear_and_drop_them_with_the_wallet() {
+        let dir = temp_dir("identity_accounts_kept");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let tip = crate::shielded_identity_account_index(7).expect("a tip account");
+        let views = |account: u32| {
+            OrchardKeySet::from_seed(&[0u8; 64], dashcore::Network::Testnet, account)
+                .expect("derive keys")
+                .viewing_keys()
+        };
+        assert!(coordinator
+            .kept_identity_accounts(wallet_id)
+            .await
+            .is_empty());
+        coordinator
+            .register_wallet(
+                wallet_id,
+                BTreeMap::from([(0u32, views(0)), (tip, views(tip))]),
+                WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence)),
+            )
+            .await
+            .expect("register with a tip account");
+        let kept = BTreeSet::from([tip]);
+        assert_eq!(coordinator.kept_identity_accounts(wallet_id).await, kept);
+
+        coordinator
+            .clear(&WipeCountingPersistence::default())
+            .await
+            .expect("clear");
+        assert_eq!(coordinator.kept_identity_accounts(wallet_id).await, kept);
+        let reopened = || {
+            FileBackedShieldedStore::open_path(coordinator.db_path(), 100)
+                .expect("reopen the store")
+                .kept_identity_accounts()
+                .clone()
+        };
+        assert_eq!(
+            reopened(),
+            BTreeMap::from([(wallet_id, kept)]),
+            "the next process reads them from the store"
+        );
+
+        coordinator.unregister_wallet(wallet_id).await;
+        assert!(coordinator
+            .kept_identity_accounts(wallet_id)
+            .await
+            .is_empty());
+        assert!(reopened().is_empty(), "a removed wallet's are dropped");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

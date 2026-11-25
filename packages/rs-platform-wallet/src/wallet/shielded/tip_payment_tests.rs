@@ -975,7 +975,10 @@ async fn should_not_report_an_amount_read_before_a_clear_once_the_account_is_pre
         let wallet = wallet.clone();
         tokio::spawn(async move { wallet.shielded_identity_balance(&id).await })
     };
-    copied.await.expect("the read copied its amount");
+    tokio::time::timeout(std::time::Duration::from_secs(5), copied)
+        .await
+        .expect("the balance read reaches its pause point")
+        .expect("the read copied its amount");
 
     coordinator
         .clear(&WipeCountingPersistence::default())

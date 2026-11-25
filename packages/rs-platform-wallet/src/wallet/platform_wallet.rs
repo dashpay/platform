@@ -1224,12 +1224,10 @@ impl PlatformWallet {
     ///   every identity this wallet holds with a recorded index;
     /// - every identity account with a persisted viewing key, so the
     ///   account of an identity removed since keeps scanning;
-    /// - every identity account this handle holds keys for. A Clear wipes
-    ///   the persisted viewing keys and keeps the handle's, so the bind that
-    ///   follows a Clear in the same process still adds the account of a
-    ///   removed identity. Once the process has ended after a Clear, or on a
-    ///   handle that never bound, that account is added again only when its
-    ///   identity is back on the device.
+    /// - every identity account this wallet has had registered on the
+    ///   manager's coordinator. Its store keeps their numbers through a
+    ///   Clear, which wipes the persisted viewing keys, so the bind that
+    ///   follows a Clear still adds the account of a removed identity.
     ///
     /// The bound set can therefore be larger than the request, and each
     /// added account is one more to scan. Pass the ordinary accounts
@@ -1366,16 +1364,11 @@ impl PlatformWallet {
                 })
                 .map(|id| id.account_index),
         );
-        // A Clear wipes those rows and leaves this handle its keys: the
-        // retired tip accounts bound before it are read from the handle, so
-        // the bind that follows a Clear keeps scanning them and writes
-        // their rows again.
-        accounts.extend(
-            self.shielded_account_indices()
-                .await
-                .into_iter()
-                .filter(|account| is_shielded_identity_account(*account)),
-        );
+        // A Clear wipes those rows. The coordinator's store keeps the
+        // account numbers through it, so the bind that follows a Clear, in
+        // this process or the next, keeps scanning them and writes their
+        // rows again.
+        accounts.extend(coordinator.kept_identity_accounts(self.wallet_id).await);
         let mut account_views: std::collections::BTreeMap<u32, AccountViewingKeys> =
             std::collections::BTreeMap::new();
         for &account in &accounts {
