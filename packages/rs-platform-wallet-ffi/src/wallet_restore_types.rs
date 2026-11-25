@@ -388,7 +388,7 @@ pub struct PaymentRestoreEntryFFI {
 /// the managed identity's contact-profile cache (keyed by the contact's identity
 /// id) at load. Mirrors the persist-side
 /// [`crate::identity_persistence::ContactProfileRowFFI`] field-for-field
-/// (the leading `contact_id` key, the five public profile fields with
+/// (the leading `contact_id` key, the public profile fields with
 /// their `_present` byte-array flags, and the trailing `checked_at_ms`
 /// self-heal timestamp).
 ///
@@ -420,6 +420,20 @@ pub struct ContactProfileRestoreEntryFFI {
     pub avatar_fingerprint: [u8; 8],
     /// `true` iff the source `avatar_fingerprint` was `Some(_)`.
     pub avatar_fingerprint_present: bool,
+    /// `corePaymentAddress` in storage form: a 0x00 (P2PKH) or 0x01 (P2SH)
+    /// type byte, then the 20-byte HASH160. Zeroed when absent.
+    pub core_payment_address: [u8; 21],
+    /// `true` iff the row carries a `corePaymentAddress`.
+    pub core_payment_address_present: bool,
+    /// `platformPaymentAddress`, same 21-byte form. Zeroed when absent.
+    pub platform_payment_address: [u8; 21],
+    /// `true` iff the row carries a `platformPaymentAddress`.
+    pub platform_payment_address_present: bool,
+    /// `shieldedAddress`: the raw 43-byte Orchard address. Zeroed when
+    /// absent.
+    pub shielded_address: [u8; 43],
+    /// `true` iff the row carries a `shieldedAddress`.
+    pub shielded_address_present: bool,
     /// NUL-terminated `publicMessage`, or null when `None`.
     pub public_message: *const std::os::raw::c_char,
     /// Wall-clock ms of the last fetch attempt — the

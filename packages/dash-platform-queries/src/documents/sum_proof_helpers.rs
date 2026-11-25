@@ -4,7 +4,7 @@
 //! Mirror of [`super::count_proof_helpers::verify_count_query`] for
 //! the sum surface. Both consumers reduce to "give me verified
 //! `Vec<SumEntry>` for this `DocumentQuery`" — [`DocumentSum`] sums
-//! the entries into a single `i64`, [`DocumentSplitSums`] passes
+//! the entries into a single `i128`, [`DocumentSplitSums`] passes
 //! them through.
 //!
 //! Routing is driven by drive's [`SumProofPlan`] (via
@@ -319,10 +319,10 @@ pub(super) fn verify_sum_query(
     Ok((Some(entries), mtd.clone(), proof.clone()))
 }
 
-/// Wrap a single `i64` from an aggregate primitive (range-aggregate
+/// Wrap a single sum from an aggregate primitive (range-aggregate
 /// or primary-key direct read) as a one-element `Vec<SumEntry>` so
 /// call sites see a uniform shape.
-fn single_empty_key_entry(sum: i64) -> Vec<SumEntry> {
+fn single_empty_key_entry(sum: i128) -> Vec<SumEntry> {
     vec![SumEntry {
         in_key: None,
         key: Vec::new(),

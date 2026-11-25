@@ -1,6 +1,6 @@
 //! Shield credits from an identity balance straight into the Orchard pool.
 
-use super::broadcast::BroadcastStateTransition;
+use super::broadcast::{shield_from_identity_requirement, BroadcastStateTransition};
 use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
 use crate::platform::transition::waitable::Waitable;
@@ -49,6 +49,14 @@ impl ShieldFromIdentity for Identity {
                 "shield amount must be greater than zero".to_string(),
             ));
         }
+
+        // Refused before the nonce is bumped or anything is signed when the network does
+        // not serve the transition yet; the broadcast checks it again.
+        sdk.establish_protocol_requirement(
+            shield_from_identity_requirement(),
+            settings.map(|settings| settings.request_settings),
+        )
+        .await?;
 
         let new_identity_nonce = sdk.get_identity_nonce(self.id(), true, settings).await?;
         let user_fee_increase = settings

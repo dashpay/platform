@@ -238,14 +238,22 @@ struct ContractsTabView: View {
             // types + indexes, and groups all surface via the
             // existing drill-down screens. The container lives on
             // `preview` and is dropped when the sheet dismisses.
+            // The moderation hub holds no preview rows: it runs on the
+            // app's store, where the wallets' identities and keys are.
+            // The environment objects are forwarded like the sibling
+            // sheets do; the hub needs the wallet manager.
             DataContractDetailsView(
                 contract: preview.contract,
                 onSave: isAlreadySaved(preview.contractIdBase58)
                     ? nil
                     : { Task { await savePreview(preview) } },
-                isSaving: isSavingPreview
+                isSaving: isSavingPreview,
+                appModelContainer: modelContext.container,
+                moderationGeneration: preview.sdkGeneration
             )
             .environmentObject(platformState)
+            .environmentObject(walletManager)
+            .environmentObject(transitionState)
             .modelContainer(preview.container)
         }
         .alert("Error", isPresented: $showError) {
@@ -795,12 +803,15 @@ struct ContractsTabView: View {
             await MainActor.run { searchError = "SDK not initialized" }
             return
         }
+        // The connection of the SDK the fetch goes through, read with it
+        let sdkGeneration = platformState.sdkGeneration
 
         await MainActor.run { searchInFlight = true }
         do {
             let preview = try await ContractDownloader.previewContractInMemory(
                 contractId: result.contractIdBase58,
                 sdk: sdk,
+                sdkGeneration: sdkGeneration,
                 network: platformState.currentNetwork
             )
             await MainActor.run {

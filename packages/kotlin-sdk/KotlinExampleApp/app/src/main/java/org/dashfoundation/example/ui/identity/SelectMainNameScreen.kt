@@ -29,6 +29,7 @@ import androidx.navigation.NavHostController
 import kotlinx.coroutines.launch
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.ui.components.FormSection
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.hexToBytes
 
 /**
@@ -44,9 +45,9 @@ fun SelectMainNameScreen(identityIdHex: String, navController: NavHostController
     val scope = rememberCoroutineScope()
     val idBytes = remember(identityIdHex) { identityIdHex.hexToBytes() }
 
-    val identity by container.database.identityDao()
-        .observeByIdentityId(idBytes)
-        .collectAsStateWithLifecycle(initialValue = null)
+    val identity by remember(idBytes) {
+        container.database.identityDao().observeByIdentityId(idBytes)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
     val names by container.database.dpnsNameDao()
         .observeByIdentity(idBytes)
         .collectAsStateWithLifecycle(initialValue = emptyList())
@@ -115,7 +116,8 @@ private fun setMain(
     label: String?,
 ) {
     scope.launch {
-        val existing = container.database.identityDao().getByIdentityId(idBytes) ?: return@launch
-        container.database.identityDao().upsert(existing.copy(mainDpnsName = label))
+        // Only the main name is written: a whole-row write of a copy read earlier would put back
+        // fields written in between (a voting key check, its revision).
+        container.database.identityDao().updateMainDpnsName(idBytes, label, System.currentTimeMillis())
     }
 }

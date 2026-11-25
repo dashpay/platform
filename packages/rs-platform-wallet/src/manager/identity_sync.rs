@@ -50,7 +50,7 @@
 //! Not auto-started. Call [`IdentitySyncManager::start`] once
 //! identities are registered and the SDK is connected.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -300,8 +300,9 @@ where
     /// Add or replace the registry row for `identity_id`.
     ///
     /// Idempotent — calling with the same identity overwrites the
-    /// existing row and resets `last_sync_unix` to `0`. Each token
-    /// in `token_ids` becomes a watched row with `balance = 0`,
+    /// existing row and resets `last_sync_unix` to `0`. Each distinct
+    /// token in `token_ids` (a repeated id is watched once) becomes a
+    /// watched row with `balance = 0`,
     /// `contract_id = Identifier::default()`,
     /// `identity_contract_nonce = 0`. The next sync pass populates
     /// real values.
@@ -309,7 +310,7 @@ where
     where
         I: IntoIterator<Item = Identifier>,
     {
-        let tokens: Vec<IdentityTokenSyncInfo> = token_ids
+        let tokens: Vec<IdentityTokenSyncInfo> = distinct_token_ids(token_ids)
             .into_iter()
             .map(|token_id| IdentityTokenSyncInfo {
                 token_id,
@@ -367,7 +368,7 @@ where
     where
         I: IntoIterator<Item = Identifier>,
     {
-        let new_tokens: Vec<Identifier> = token_ids.into_iter().collect();
+        let new_tokens = distinct_token_ids(token_ids);
         let mut state = self.state.write().await;
         let Some(row) = state.get_mut(&identity_id) else {
             return;
@@ -557,7 +558,20 @@ where
     /// gate is left closed and the caller must fail closed.
     #[must_use = "None means the pass did NOT drain; the caller must fail closed"]
     pub(crate) async fn quiesce_held_within(&self, budget: Duration) -> Option<QuiesceGuard<'_>> {
-        self.sync.drain(|| self.stop(), budget).await
+        // One deadline for both waits: a store stalled inside the persister
+        // holds the slot and the registry lock, and must not use the budget
+        // twice.
+        let deadline = tokio::time::Instant::now() + budget;
+        let guard = self.sync.drain(|| self.stop(), budget).await;
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if !self.persistence_barrier(remaining).await {
+            // A store admitted before the gate closed is still running (a
+            // stalled persister): report the drain as incomplete and keep
+            // admission shut until that pass releases `is_syncing`.
+            self.sync.latch_admission_closed();
+            return None;
+        }
+        guard
     }
 
     /// [`quiesce_within`](Self::quiesce_within) that **seals** the gate:
@@ -570,8 +584,27 @@ where
     /// drain concluded and fire persister / completion callbacks through
     /// a context the host has since freed.
     pub(crate) async fn quiesce_sealed_within(&self, budget: Duration) -> bool {
-        // Seals before the drain's guard drops, so its Drop cannot reopen.
-        self.sync.drain_sealed(|| self.stop(), budget).await
+        // Through `quiesce_held_within`, so the sealed drain waits out the
+        // persistence barrier too.
+        let guard = self.quiesce_held_within(budget).await;
+        let drained = guard.is_some();
+        // Seal before the guard drops so its Drop cannot reopen.
+        self.sync.seal_admission();
+        drop(guard);
+        drained
+    }
+
+    /// Wait, at most `budget` (the quiesce's remaining time), for a result application already past its
+    /// gate check. Results are applied under the `state` write lock after
+    /// checking the gate, so once the gate is closed and this lock has been
+    /// taken once, no pass (including one whose drain timed out) stores
+    /// anything more. `false` means a store admitted earlier is still running
+    /// at the deadline; the caller reports the quiesce as incomplete instead
+    /// of waiting on the persister without limit.
+    async fn persistence_barrier(&self, budget: Duration) -> bool {
+        tokio::time::timeout(budget, self.state.write())
+            .await
+            .is_ok()
     }
 
     /// Test-only: claim the `is_syncing` slot and never release it,
@@ -588,6 +621,12 @@ where
     #[cfg(test)]
     pub(crate) fn release_sync_slot_for_test(&self) {
         self.sync.release_slot_for_test();
+    }
+
+    /// Test-only: seal admission as manager shutdown does, without a drain.
+    #[cfg(test)]
+    pub(crate) fn seal_sync_admission_for_test(&self) {
+        self.sync.seal_admission();
     }
 
     /// Test-only: whether new sync passes are currently barred — a drain in
@@ -610,14 +649,27 @@ where
     /// `!Send` (no `tokio::spawn`) and because the design brief
     /// explicitly forbids it.
     pub async fn sync_now(&self) -> IdentitySyncPassSummary {
+        match self.try_sync_pass().await {
+            SyncAttempt::Ran(summary) => summary,
+            SyncAttempt::Busy | SyncAttempt::Closed => IdentitySyncPassSummary::default(),
+        }
+    }
+
+    /// One attempt at a pass: [`SyncAttempt::Busy`] when another pass holds
+    /// the slot, [`SyncAttempt::Closed`] when the quiesce gate is shut,
+    /// [`SyncAttempt::Ran`], with the pass's summary, after this call ran the
+    /// pass itself.
+    async fn try_sync_pass(&self) -> SyncAttempt {
         // Bail without running a pass when another one holds the slot, or
         // when a `quiesce()` has closed the gate — so the drain can complete
         // and shutdown gets a true barrier (no further `persister.store(...)`
         // after quiesce returns). The permit holds `is_syncing` until it
         // drops at the end of this function, on panic unwind too, so a
         // failed pass can never wedge `quiesce()`'s drain.
-        let Admission::Admitted(_permit) = self.sync.admit() else {
-            return IdentitySyncPassSummary::default();
+        let _permit = match self.sync.admit() {
+            Admission::Admitted(permit) => permit,
+            Admission::Busy => return SyncAttempt::Busy,
+            Admission::Closed => return SyncAttempt::Closed,
         };
 
         // Snapshot the per-identity watch list under a short read
@@ -642,7 +694,41 @@ where
         let now = SyncLoop::unix_now();
         summary.sync_unix_seconds = now;
         self.sync.record_completed(now);
-        summary
+        SyncAttempt::Ran(summary)
+    }
+
+    /// [`sync_now`](Self::sync_now) for a manual caller that has just
+    /// registered identities or tokens and reads the stored balances once it
+    /// returns: it runs a pass of its own, waiting out any pass in flight
+    /// (which may have read the watch list before the registration, and
+    /// whose results may not be stored yet) and retrying when another caller
+    /// takes the slot first. Returns `true` once its own pass ran, and
+    /// `false` without a pass when the quiesce gate closes or when other
+    /// passes keep the slot past [`COORDINATOR_DRAIN_BUDGET`] (a wedged pass
+    /// must not hold the caller, and through the FFI the manager registry,
+    /// indefinitely); the caller then reports that no pass ran. Timer ticks
+    /// keep using `sync_now`, so they never wait.
+    pub async fn sync_now_after_in_flight(&self) -> bool {
+        let deadline = tokio::time::Instant::now() + COORDINATOR_DRAIN_BUDGET;
+        loop {
+            match self.try_sync_pass().await {
+                SyncAttempt::Ran(_) => return true,
+                SyncAttempt::Closed => return false,
+                SyncAttempt::Busy => {
+                    while self.sync.is_syncing() {
+                        if self.sync.admission_closed() || tokio::time::Instant::now() >= deadline {
+                            return false;
+                        }
+                        tokio::time::sleep(Duration::from_millis(20)).await;
+                    }
+                    // The slot may have freed only after the deadline passed
+                    // (between two polls): do not start a pass past it.
+                    if tokio::time::Instant::now() >= deadline {
+                        return false;
+                    }
+                }
+            }
+        }
     }
 
     /// Sync a single identity's watched tokens against Platform.
@@ -722,28 +808,45 @@ where
         identity_id: Identifier,
         fresh_balances: BTreeMap<Identifier, Option<TokenAmount>>,
     ) {
-        let mut cs = TokenBalanceChangeSet::default();
-        for (token_id, maybe_balance) in &fresh_balances {
-            let key = (identity_id, *token_id);
-            match maybe_balance {
-                Some(amount) => {
-                    cs.balances.insert(key, *amount);
-                }
-                None => {
-                    cs.removed_balances.insert(key);
-                }
-            }
-        }
-
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
 
         let mut state = self.state.write().await;
+        // A pass that outlived a quiesce (its drain timed out, or shutdown
+        // sealed the gate while it was reading) stores nothing: after
+        // `quiesce` returns no `persister.store(...)` may follow, or a
+        // retired manager could overwrite balances its replacement wrote.
+        // Checked under the write lock the quiesce barrier takes.
+        if self.sync.admission_closed() {
+            return;
+        }
         let Some(existing_row) = state.get(&identity_id).cloned() else {
             return;
         };
+
+        // Persist only tokens still watched now: a registration that
+        // replaced the watch list while this pass was reading (for example
+        // after the host deleted the token's contract) must not have a
+        // stale result written back. Checked under the same write lock
+        // the registration takes.
+        let mut cs = TokenBalanceChangeSet::default();
+        for prior in &existing_row.tokens {
+            let key = (identity_id, prior.token_id);
+            match fresh_balances.get(&prior.token_id) {
+                Some(Some(amount)) => {
+                    cs.balances.insert(key, *amount);
+                }
+                Some(None) => {
+                    cs.removed_balances.insert(key);
+                }
+                None => {}
+            }
+        }
+        if cs.balances.is_empty() && cs.removed_balances.is_empty() {
+            return;
+        }
 
         // The persister API is wallet-scoped (`store(wallet_id, ..)`)
         // but this manager is identity-scoped. Use the zero-byte
@@ -769,7 +872,14 @@ where
                         ..*prior
                     });
                 }
-                Some(None) => {}
+                // Proved absent: the persisted row was removed above, but
+                // the token stays watched so a later pass sees it arrive.
+                Some(None) => {
+                    new_tokens.push(IdentityTokenSyncInfo {
+                        balance: 0,
+                        ..*prior
+                    });
+                }
                 None => {
                     new_tokens.push(*prior);
                 }
@@ -798,6 +908,31 @@ where
     async fn background_pass(&self) {
         self.sync_now().await;
     }
+}
+
+/// Outcome of one [`IdentitySyncManager`] pass attempt.
+#[derive(Debug)]
+enum SyncAttempt {
+    /// This call held the slot and ran the pass, with what the pass read.
+    Ran(IdentitySyncPassSummary),
+    /// Another pass held the slot.
+    Busy,
+    /// The quiesce gate was shut; no pass ran.
+    Closed,
+}
+
+/// `token_ids` with repeats removed, in first-seen order. A balance batch
+/// with a repeated id fails proof verification as a whole, so the watch
+/// list never holds one.
+fn distinct_token_ids<I>(token_ids: I) -> Vec<Identifier>
+where
+    I: IntoIterator<Item = Identifier>,
+{
+    let mut seen = BTreeSet::new();
+    token_ids
+        .into_iter()
+        .filter(|token_id| seen.insert(*token_id))
+        .collect()
 }
 
 impl<P> std::fmt::Debug for IdentitySyncManager<P>
@@ -1346,6 +1481,236 @@ mod tests {
         let unknown = Identifier::from([99u8; 32]);
         mgr.update_watched_tokens(unknown, [token_x]).await;
         assert!(mgr.state_for_identity(&unknown).await.is_none());
+    }
+
+    /// A repeated token id is watched once, by `register_identity` and by
+    /// `update_watched_tokens`: one balance batch with a repeat fails
+    /// proof verification as a whole and would hide every other token in
+    /// it.
+    #[tokio::test]
+    async fn should_watch_a_repeated_token_id_once() {
+        let mgr = make_manager();
+        let id_a = Identifier::from([1u8; 32]);
+        let token_x = Identifier::from([10u8; 32]);
+        let token_y = Identifier::from([11u8; 32]);
+
+        mgr.register_identity(id_a, [token_x, token_y, token_x])
+            .await;
+        let row = mgr.state_for_identity(&id_a).await.unwrap();
+        let ids: Vec<Identifier> = row.tokens.iter().map(|t| t.token_id).collect();
+        assert_eq!(ids, vec![token_x, token_y]);
+
+        mgr.update_watched_tokens(id_a, [token_y, token_y]).await;
+        let row = mgr.state_for_identity(&id_a).await.unwrap();
+        let ids: Vec<Identifier> = row.tokens.iter().map(|t| t.token_id).collect();
+        assert_eq!(ids, vec![token_y]);
+    }
+
+    /// A result for a token that left the watch list while the pass was
+    /// reading is not persisted, so a deleted contract's balance is not
+    /// written back after the host replaced the watch list.
+    #[tokio::test]
+    async fn should_not_persist_a_result_for_a_token_no_longer_watched() {
+        let (mgr, persister) = make_recording_manager();
+        let id_a = Identifier::from([1u8; 32]);
+        let token_x = Identifier::from([10u8; 32]);
+        let token_y = Identifier::from([11u8; 32]);
+        mgr.register_identity(id_a, [token_x]).await;
+        // The watch list changed after the pass snapshotted [token_x].
+        mgr.register_identity(id_a, [token_y]).await;
+
+        let mut fresh = BTreeMap::new();
+        fresh.insert(token_x, Some(5u64));
+        mgr.apply_fresh_balances(id_a, fresh).await;
+
+        assert_eq!(persister.stores.load(AtomicOrdering::SeqCst), 0);
+        let row = mgr.state_for_identity(&id_a).await.unwrap();
+        assert_eq!(row.tokens.len(), 1);
+        assert_eq!(row.tokens[0].token_id, token_y);
+        assert_eq!(row.tokens[0].balance, 0);
+    }
+
+    /// A pass that resumes after shutdown sealed the gate (its drain timed
+    /// out) stores nothing, so a retired manager cannot overwrite balances
+    /// its replacement wrote.
+    #[tokio::test]
+    async fn should_not_persist_a_result_after_the_gate_is_sealed() {
+        let (mgr, persister) = make_recording_manager();
+        let id_a = Identifier::from([1u8; 32]);
+        let token_x = Identifier::from([10u8; 32]);
+        mgr.register_identity(id_a, [token_x]).await;
+        // A pass is still reading when shutdown gives up on the drain.
+        assert!(mgr.wedge_sync_slot_for_test());
+        assert!(!mgr.quiesce_sealed_within(Duration::from_millis(50)).await);
+
+        let mut fresh = BTreeMap::new();
+        fresh.insert(token_x, Some(5u64));
+        mgr.apply_fresh_balances(id_a, fresh).await;
+
+        assert_eq!(persister.stores.load(AtomicOrdering::SeqCst), 0);
+        mgr.release_sync_slot_for_test();
+    }
+
+    /// A quiesce whose barrier cannot take the registry lock in time (a
+    /// store stalled inside the persister holds it) reports an incomplete
+    /// drain instead of waiting without limit, and keeps admission shut.
+    #[tokio::test]
+    async fn should_report_a_quiesce_timeout_while_a_store_is_stalled() {
+        let mgr = make_manager();
+        let stalled_store = mgr.state.write().await;
+
+        let drained = mgr.quiesce_within(Duration::from_millis(50)).await;
+
+        assert!(!drained);
+        assert!(mgr.sync_admission_closed());
+        drop(stalled_store);
+    }
+
+    /// The manual sync waits for a pass in flight and then runs its own, so
+    /// a registration that pass snapshotted past is still synced.
+    #[tokio::test]
+    async fn should_run_a_manual_pass_after_the_pass_in_flight() {
+        let mgr = make_manager();
+        assert!(mgr.wedge_sync_slot_for_test());
+        let releaser = {
+            let mgr = Arc::clone(&mgr);
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(60)).await;
+                mgr.release_sync_slot_for_test();
+            })
+        };
+
+        assert!(mgr.sync_now_after_in_flight().await);
+
+        releaser.await.unwrap();
+        assert!(mgr.last_sync_unix_seconds().is_some(), "its own pass ran");
+        assert!(!mgr.is_syncing());
+    }
+
+    /// A manual sync already waiting returns `false` as soon as the gate
+    /// closes, well before its wait budget runs out.
+    #[tokio::test(start_paused = true)]
+    async fn should_report_no_pass_when_the_gate_closes_while_waiting() {
+        let mgr = make_manager();
+        assert!(mgr.wedge_sync_slot_for_test());
+        let started = tokio::time::Instant::now();
+        let closer = {
+            let mgr = Arc::clone(&mgr);
+            tokio::spawn(async move {
+                // Close the gate while the manual sync is already waiting.
+                tokio::time::sleep(Duration::from_millis(100)).await;
+                mgr.seal_sync_admission_for_test();
+            })
+        };
+
+        assert!(!mgr.sync_now_after_in_flight().await);
+
+        closer.await.unwrap();
+        assert!(
+            started.elapsed() < COORDINATOR_DRAIN_BUDGET / 2,
+            "returned on the gate, not the deadline"
+        );
+        mgr.release_sync_slot_for_test();
+    }
+
+    /// A slot the waiter first sees free only once the wait budget has run
+    /// out does not start a pass.
+    #[tokio::test(start_paused = true)]
+    async fn should_not_start_a_pass_after_the_wait_budget() {
+        let mgr = make_manager();
+        assert!(mgr.wedge_sync_slot_for_test());
+        let releaser = {
+            let mgr = Arc::clone(&mgr);
+            tokio::spawn(async move {
+                // Released between the waiter's last poll before the
+                // deadline and its first poll at it, so the waiter first sees
+                // the slot free once the budget has run out.
+                tokio::time::sleep(COORDINATOR_DRAIN_BUDGET - Duration::from_millis(10)).await;
+                mgr.release_sync_slot_for_test();
+            })
+        };
+
+        assert!(!mgr.sync_now_after_in_flight().await);
+
+        releaser.await.unwrap();
+        assert!(mgr.last_sync_unix_seconds().is_none(), "no pass ran");
+    }
+
+    /// When another caller takes the slot the moment it frees, the manual
+    /// sync waits again and runs its own pass instead of returning while the
+    /// other pass is still under way.
+    #[tokio::test]
+    async fn should_retry_when_another_caller_takes_the_slot_first() {
+        let mgr = make_manager();
+        assert!(mgr.wedge_sync_slot_for_test());
+        let other = {
+            let mgr = Arc::clone(&mgr);
+            tokio::spawn(async move {
+                // Release, then immediately hold the slot again as a second
+                // caller would, for another stretch.
+                tokio::time::sleep(Duration::from_millis(40)).await;
+                mgr.release_sync_slot_for_test();
+                assert!(mgr.wedge_sync_slot_for_test());
+                tokio::time::sleep(Duration::from_millis(60)).await;
+                mgr.release_sync_slot_for_test();
+            })
+        };
+
+        assert!(matches!(mgr.try_sync_pass().await, SyncAttempt::Busy));
+        assert!(mgr.sync_now_after_in_flight().await);
+
+        other.await.unwrap();
+        assert!(mgr.last_sync_unix_seconds().is_some(), "its own pass ran");
+    }
+
+    /// A store stalled inside the persister holds both the slot and the
+    /// registry lock; the quiesce still reports within one budget. Time is
+    /// paused, so the bound measures the deadline, not the runner.
+    #[tokio::test(start_paused = true)]
+    async fn should_report_within_one_budget_while_a_store_holds_slot_and_lock() {
+        let mgr = make_manager();
+        assert!(mgr.wedge_sync_slot_for_test());
+        let stalled_store = mgr.state.write().await;
+
+        let started = tokio::time::Instant::now();
+        let drained = mgr.quiesce_within(Duration::from_millis(100)).await;
+
+        assert!(!drained);
+        assert!(started.elapsed() < Duration::from_millis(180));
+        drop(stalled_store);
+        mgr.release_sync_slot_for_test();
+    }
+
+    /// A token proved absent (the identity holds none yet) has its stored
+    /// row removed but stays watched, so a later pass sees it arrive
+    /// without the caller registering it again.
+    #[tokio::test]
+    async fn should_keep_watching_a_token_proved_absent() {
+        let (mgr, persister) = make_recording_manager();
+        let id_a = Identifier::from([1u8; 32]);
+        let token_x = Identifier::from([10u8; 32]);
+        let token_y = Identifier::from([11u8; 32]);
+        mgr.register_identity(id_a, [token_x, token_y]).await;
+
+        let mut fresh = BTreeMap::new();
+        fresh.insert(token_x, None);
+        fresh.insert(token_y, Some(5u64));
+        mgr.apply_fresh_balances(id_a, fresh).await;
+        assert_eq!(persister.stores.load(AtomicOrdering::SeqCst), 1);
+
+        let row = mgr.state_for_identity(&id_a).await.unwrap();
+        let by_id: BTreeMap<Identifier, IdentityTokenSyncInfo> =
+            row.tokens.iter().map(|t| (t.token_id, *t)).collect();
+        assert_eq!(by_id.get(&token_x).map(|t| t.balance), Some(0));
+        assert_eq!(by_id.get(&token_y).map(|t| t.balance), Some(5));
+
+        // The next balance arrives for the still-watched token.
+        let mut later = BTreeMap::new();
+        later.insert(token_x, Some(7u64));
+        mgr.apply_fresh_balances(id_a, later).await;
+        let row = mgr.state_for_identity(&id_a).await.unwrap();
+        let x = row.tokens.iter().find(|t| t.token_id == token_x).unwrap();
+        assert_eq!(x.balance, 7);
     }
 
     /// Poll until the coordinator has stamped a completed pass.

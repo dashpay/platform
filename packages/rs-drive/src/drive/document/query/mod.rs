@@ -4,6 +4,8 @@
 //!
 
 mod fetch_document_history_query;
+#[cfg(feature = "server")]
+mod fetch_document_type_sum;
 mod query_chained_documents;
 mod query_composite_documents;
 /// query of the vote state

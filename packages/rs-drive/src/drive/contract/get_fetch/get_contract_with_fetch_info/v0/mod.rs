@@ -166,6 +166,11 @@ impl Drive {
                                 storage_flags: contract_fetch_info.storage_flags.clone(),
                                 cost: contract_fetch_info.cost.clone(),
                                 fee: Some(fee.clone()),
+                                // The same parse, so the same protocol version. This generation
+                                // never reads it, and generation 1 never bills a stored fee, so
+                                // a fee priced here never reaches a reader of another version.
+                                parsed_under_protocol_version: contract_fetch_info
+                                    .parsed_under_protocol_version,
                             });
                             // we override the cache for the contract as the fee is now calculated
                             cache_contract(updated_contract_fetch_info);

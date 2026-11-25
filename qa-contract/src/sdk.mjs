@@ -12,7 +12,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const QA_DIR = resolve(__dirname, '..');
@@ -159,14 +159,54 @@ export function resolveIdentityKey(identity, privateKey) {
 }
 
 // Load identity + signer + signing key together. Returns { identity, signer, identityKey, privateKey }.
+// Every script that signs goes through here, so this is also where a network
+// the SDK build cannot follow is refused, before anything is broadcast.
 export async function loadOwnerAuth(sdk, mod, network) {
   const ownerId = (process.env.QA_IDENTITY_ID || '').trim();
   if (!ownerId) throw new Error('Missing QA identity (set QA_IDENTITY_ID).');
+  await requireKnownProtocolVersion(sdk, mod, network);
   const { signer, privateKey } = buildSigner(mod, process.env.QA_PRIVATE_KEY, network);
   const identity = await sdk.identities.fetch(ownerId);
   if (!identity) throw new Error(`Identity ${ownerId} not found on ${network}.`);
   const identityKey = resolveIdentityKey(identity, privateKey);
   return { ownerId, identity, signer, identityKey, privateKey };
+}
+
+// ---------------------------------------------------------------------------
+// Admin list
+// ---------------------------------------------------------------------------
+
+// The `admin` document naming `identityId`, or undefined. testRun.ownerRefersTo
+// reads the same unique index (`byIdentity`), so an identity with a document
+// here is one the platform lets record runs. An identifier is compared by its
+// base58 string, as in any query on an identifier property.
+export async function findAdmin(sdk, contractId, identityId) {
+  const res = await sdk.documents.query({
+    dataContractId: contractId,
+    documentTypeName: 'admin',
+    where: [['identity', '==', String(identityId)]],
+    limit: 1,
+  });
+  for (const doc of res.values()) if (doc) return doc;
+  return undefined;
+}
+
+// Create the `admin` document that lets `identityId` record runs. Only the
+// contract owner may sign it.
+export async function addAdmin(sdk, mod, {
+  contractId, ownerId, identityId, label, signer, identityKey,
+}) {
+  const { Document, Identifier } = mod;
+  const properties = { identity: new Identifier(String(identityId)) };
+  if (label) properties.label = label;
+  const doc = new Document({
+    ownerId,
+    dataContractId: contractId,
+    documentTypeName: 'admin',
+    properties,
+    entropy: Uint8Array.from(randomBytes(32)),
+  });
+  await sdk.documents.create({ document: doc, identityKey, signer });
 }
 
 // ---------------------------------------------------------------------------
@@ -194,4 +234,54 @@ export function writeConfig(cfg, network = getNetwork()) {
   const p = configPath(network);
   writeFileSync(p, `${JSON.stringify(cfg, null, 2)}\n`);
   return p;
+}
+
+// Refuse to run against a contract registered with another schema. A contract
+// keeps the schema it was registered with, so after a schema change the
+// contract-id file still names the old contract until register.mjs --force
+// publishes the new one. Scripts that read or write the changed types (admin,
+// testRun) would otherwise fail with an unknown type or a missing index.
+export function requireCurrentSchema(cfg, network = getNetwork()) {
+  const current = schemaSha();
+  if (cfg?.schemaSha && cfg.schemaSha !== current) {
+    throw new Error(
+      `Contract ${cfg.contractId} on ${network} was registered with schema ${cfg.schemaSha}, `
+      + `but this checkout's schema is ${current}. The contract owner has to publish the new one `
+      + '(node src/register.mjs --force, then seed.mjs, admin.mjs add and migrate-runs.mjs; see '
+      + '"Moving to a new contract" in the README) and commit the new contract-id file. '
+      + 'To keep using the old contract, check out the commit its schema came from.',
+    );
+  }
+}
+
+// Refuse to write to a network that runs a protocol version this SDK build does
+// not know. The write itself can land while the SDK fails to read the proof that
+// confirms it: a registration then costs its credits and saves no contract id,
+// and a run sent again is recorded twice. Returns the network's protocol version.
+//
+// `andUpcoming` also refuses while the masternodes are voting for a version the
+// SDK does not know. register.mjs asks for it: a registration is paid for once,
+// so it must not be sent by an SDK that an upgrade could overtake before the
+// confirmation is read. The votes are cleared when a version is locked in for
+// the next epoch, and the blocks that follow record them again, so they are
+// visible through the epoch that ends with the activation.
+export async function requireKnownProtocolVersion(sdk, mod, network = getNetwork(), { andUpcoming = false } = {}) {
+  const state = await sdk.protocol.versionUpgradeState();
+  const plain = state?.toJSON?.() ?? state;
+  const current = Number(plain?.currentProtocolVersion);
+  const known = Number(await mod.EvoSDK.getLatestVersionNumber());
+  if (!Number.isInteger(current) || !Number.isInteger(known)) {
+    throw new Error(`Could not compare the protocol version of ${network} (${current}) with the SDK's (${known}).`);
+  }
+  const useNewerSdk = 'Use an SDK built for that version: set EVO_SDK_BUNDLE to a workspace build '
+    + '(see "Install & run" in the README).';
+  if (current > known) {
+    throw new Error(`${network} runs protocol version ${current}, but this SDK build knows versions up to ${known}. ${useNewerSdk}`);
+  }
+  const upcoming = plain?.nextProtocolVersion;
+  if (andUpcoming && upcoming != null && Number(upcoming) > known) {
+    throw new Error(`${network} is voting for protocol version ${Number(upcoming)}, but this SDK build knows versions up to ${known}. `
+      + `If it activates before this write is confirmed, the SDK cannot read the confirmation. ${useNewerSdk}`);
+  }
+  return current;
 }

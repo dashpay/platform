@@ -79,25 +79,45 @@ impl Drive {
             }
 
             // We also need to delete all the references
-
-            for resource_vote_choice in vote_choices.keys() {
-                if matches!(resource_vote_choice, ResourceVoteChoice::TowardsIdentity(_)) {
-                    let contender_path =
-                        vote_poll.contender_path(resource_vote_choice, platform_version)?;
-                    self.batch_delete(
-                        contender_path.as_slice().into(),
-                        vec![0].as_slice(),
-                        BatchDeleteApplyType::StatefulBatchDelete {
-                            is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
-                        },
-                        transaction,
-                        batch_operations,
-                        &platform_version.drive,
-                    )?;
-                }
-            }
+            self.remove_contested_resource_vote_poll_contender_references_operations_v1(
+                vote_poll,
+                vote_choices,
+                batch_operations,
+                transaction,
+                platform_version,
+            )?;
         }
 
+        Ok(())
+    }
+
+    /// Deletes the reference each contender of a contest holds to its document. Moved here
+    /// unchanged from the body above, which protocol versions 2 to 14 select, so that version 2
+    /// shares it: the same operations in the same order.
+    pub(in crate::drive::votes) fn remove_contested_resource_vote_poll_contender_references_operations_v1(
+        &self,
+        vote_poll: &ContestedDocumentResourceVotePollWithContractInfo,
+        vote_choices: &BTreeMap<ResourceVoteChoice, Vec<Identifier>>,
+        batch_operations: &mut Vec<LowLevelDriveOperation>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        for resource_vote_choice in vote_choices.keys() {
+            if matches!(resource_vote_choice, ResourceVoteChoice::TowardsIdentity(_)) {
+                let contender_path =
+                    vote_poll.contender_path(resource_vote_choice, platform_version)?;
+                self.batch_delete(
+                    contender_path.as_slice().into(),
+                    vec![0].as_slice(),
+                    BatchDeleteApplyType::StatefulBatchDelete {
+                        is_known_to_be_subtree_with_sum: Some(MaybeTree::NotTree),
+                    },
+                    transaction,
+                    batch_operations,
+                    &platform_version.drive,
+                )?;
+            }
+        }
         Ok(())
     }
 }

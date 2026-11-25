@@ -336,6 +336,13 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
                 if (fs.existsSync(oldFilePath)) {
                   fs.mkdirSync(path.dirname(newFilePath), { recursive: true });
                   fs.copyFileSync(oldFilePath, newFilePath);
+
+                  // A copy keeps the permissions of the source, and the private key
+                  // must not be readable by other users on the host
+                  if (filename === 'private.key') {
+                    fs.chmodSync(newFilePath, 0o600);
+                  }
+
                   fs.rmSync(oldFilePath, { recursive: true });
                 }
               }
@@ -717,6 +724,13 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
                 if (fs.existsSync(oldFilePath)) {
                   fs.mkdirSync(path.dirname(newFilePath), { recursive: true });
                   fs.copyFileSync(oldFilePath, newFilePath);
+
+                  // A copy keeps the permissions of the source, and the private key
+                  // must not be readable by other users on the host
+                  if (filename === 'private.key') {
+                    fs.chmodSync(newFilePath, 0o600);
+                  }
+
                   fs.rmSync(oldFilePath, { recursive: true });
                 }
               }
@@ -1899,9 +1913,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
-      // Sorts after every 5.1 prerelease key, so it runs for configs stamped by any 5.1
-      // prerelease build. Configs stamped 5.1.0 skip any 5.1 prerelease key added later.
-      '5.1.0': (configFile) => {
+      // Runs for formats before 5.1.0-dev.2, including configs stamped 5.1.0-dev.1.
+      '5.1.0-dev.2': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             const tenderdash = options.platform?.drive?.tenderdash;

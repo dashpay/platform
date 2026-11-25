@@ -262,14 +262,31 @@ fn should_read_the_bounds_through_a_ref() {
     ));
 }
 
+/// At protocol version 14, where no other rule bounds a summed property: from protocol
+/// version 15 every summed property is held to bounds that refuse what this rule refuses.
 #[test]
-fn should_leave_a_summed_type_without_a_ttl_unbounded() {
-    parse(story_schema(
-        amount(None, None),
-        false,
-        documents_summable(),
-        platform_value!({}),
-    ))
+fn should_leave_a_summed_type_without_a_ttl_unbounded_at_protocol_version_14() {
+    let platform_version = PlatformVersion::get(14).expect("protocol version 14 exists");
+    let config = DataContractConfig::default_for_version(platform_version)
+        .expect("default config available");
+    DocumentType::try_from_schema(
+        Identifier::new([1; 32]),
+        1,
+        config.version(),
+        "story",
+        story_schema(
+            amount(None, None),
+            false,
+            documents_summable(),
+            platform_value!({}),
+        ),
+        None,
+        &BTreeMap::new(),
+        &config,
+        true,
+        &mut vec![],
+        platform_version,
+    )
     .expect("a summed type without a ttl registers without bounds");
 }
 

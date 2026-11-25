@@ -4,7 +4,7 @@ import XCTest
 
 /// Pins the order of `rebuildSdkAndMoveWalletManager`, the sequence every
 /// SDK rebuild runs: check the app is still on the network the rebuild was
-/// started on, stop SPV, prepare the settings the build reads, build the
+/// started on and that no funding is in flight, stop SPV, prepare the settings the build reads, build the
 /// SDK, move the wallet manager onto exactly that SDK, then
 /// publish the SDK and its network together and rebind the wallet-scoped
 /// services. A manager activated with an SDK other than the one published
@@ -35,6 +35,7 @@ final class SdkRebuildSequenceTests: XCTestCase {
         var currentNetwork: Network
         var publishedSdk = FakeSdk()
         var activatedSdk: FakeSdk?
+        var fundingChecks = 0
 
         init(currentNetwork: Network) {
             self.currentNetwork = currentNetwork
@@ -47,7 +48,8 @@ final class SdkRebuildSequenceTests: XCTestCase {
         to target: Network,
         stopSucceeds: Bool = true,
         buildSucceeds: Bool = true,
-        activationSucceeds: Bool = true
+        activationSucceeds: Bool = true,
+        fundingInFlight: @escaping @MainActor () -> Bool = { false }
     ) async -> SdkRebuildOutcome {
         await rebuildSdkAndMoveWalletManager(
             from: network,
@@ -57,6 +59,7 @@ final class SdkRebuildSequenceTests: XCTestCase {
                 return stopSucceeds
             },
             currentNetwork: { app.currentNetwork },
+            fundingInFlight: fundingInFlight,
             prepare: { app.steps.append(.prepare) },
             buildSdk: { (network: Network) -> FakeSdk? in
                 app.steps.append(.buildSdk(network))
@@ -157,6 +160,49 @@ final class SdkRebuildSequenceTests: XCTestCase {
         let outcome = await run(app, from: .testnet, to: .testnet)
 
         XCTAssertEqual(outcome, .networkChanged)
+        XCTAssertEqual(app.steps, [])
+    }
+
+    /// A funding waiting for a ChainLock would never get it from a stopped
+    /// SPV, and a manager shutdown would wait for it forever: with one in
+    /// flight nothing runs, SPV keeps running and nothing is published.
+    func testShouldRunNoStepWhileAFundingIsInFlight() async {
+        let app = AppModel(currentNetwork: .testnet)
+        let previousSdk = app.publishedSdk
+
+        let outcome = await run(app, from: .testnet, to: .regtest, fundingInFlight: { true })
+
+        XCTAssertEqual(outcome, .fundingInFlight)
+        XCTAssertEqual(app.steps, [], "no stop, prepare, build, activation, publish or rebind")
+        XCTAssertEqual(app.currentNetwork, .testnet)
+        XCTAssertTrue(app.publishedSdk === previousSdk)
+        XCTAssertNil(app.activatedSdk)
+    }
+
+    /// The same refusal on a same-network rebuild: the Docker toggle and
+    /// devnet edits.
+    func testShouldRunNoStepForASameNetworkRebuildWhileAFundingIsInFlight() async {
+        let app = AppModel(currentNetwork: .regtest)
+
+        let outcome = await run(app, from: .regtest, to: .regtest, fundingInFlight: { true })
+
+        XCTAssertEqual(outcome, .fundingInFlight)
+        XCTAssertEqual(app.steps, [])
+        XCTAssertNil(app.activatedSdk)
+    }
+
+    /// A tap from a network the app has left is refused as that, before
+    /// the funding check is consulted.
+    func testShouldReportTheNetworkChangeBeforeAFundingInFlight() async {
+        let app = AppModel(currentNetwork: .devnet)
+
+        let outcome = await run(app, from: .testnet, to: .testnet, fundingInFlight: {
+            app.fundingChecks += 1
+            return true
+        })
+
+        XCTAssertEqual(outcome, .networkChanged)
+        XCTAssertEqual(app.fundingChecks, 0)
         XCTAssertEqual(app.steps, [])
     }
 

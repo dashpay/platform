@@ -87,6 +87,8 @@ final class ShieldFromIdentityToRecipientAdmissionTests: XCTestCase {
     /// `clearShielded` would wipe the recovery state the admitted spend is
     /// about to write or has just armed, so it is refused while the spend is
     /// in flight and is no longer refused by the gate once the spend finished.
+    /// The refusal is the typed one Rust gives for an operation in flight
+    /// (`shieldedOperationInProgress`), so a host keeps its binding and rows.
     func testShouldRejectClearShieldedWhileSpendIsInFlight() async throws {
         let ok: PlatformWalletNativeTeardownCalls.Call = { _ in
             PlatformWalletFFIResult(code: PLATFORM_WALLET_FFI_RESULT_CODE_SUCCESS, message: nil)
@@ -116,7 +118,7 @@ final class ShieldFromIdentityToRecipientAdmissionTests: XCTestCase {
         do {
             try manager.clearShielded()
             XCTFail("clearShielded must be rejected while the spend is in flight")
-        } catch PlatformWalletError.invalidHandle(let message) {
+        } catch PlatformWalletError.shieldedOperationInProgress(let message) {
             XCTAssertTrue(message.contains("in flight"), "clearShielded rejected for another reason: \(message)")
         }
 
@@ -127,6 +129,8 @@ final class ShieldFromIdentityToRecipientAdmissionTests: XCTestCase {
         // fail; it must no longer be the admission gate that refuses it.
         do {
             try manager.clearShielded()
+        } catch PlatformWalletError.shieldedOperationInProgress(let message) {
+            XCTAssertFalse(message.contains("in flight"), "clearShielded still gated after the spend: \(message)")
         } catch PlatformWalletError.invalidHandle(let message) {
             XCTAssertFalse(message.contains("in flight"), "clearShielded still gated after the spend: \(message)")
         } catch {}

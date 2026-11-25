@@ -120,6 +120,7 @@ mod tests {
             storage_flags: None,
             cost: Default::default(),
             fee: None,
+            parsed_under_protocol_version: PlatformVersion::latest().protocol_version,
         });
         let base = DocumentBaseTransitionAction::V0(DocumentBaseTransitionActionV0 {
             id: document_id,

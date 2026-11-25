@@ -1221,8 +1221,8 @@ fn should_sum_likes_by_the_source_index_name() {
             .verify_point_lookup_sum_proof(&proof, platform_version())
             .expect("the sum proof verifies");
         assert_live_root_hash(&drive, root_hash);
-        let proved: i64 = entries.iter().filter_map(|entry| entry.sum).sum();
-        assert_eq!(proved, total, "{clauses:?}");
+        let proved: i128 = entries.iter().filter_map(|entry| entry.sum).sum();
+        assert_eq!(proved, i128::from(total), "{clauses:?}");
     }
 }
 
@@ -2181,8 +2181,8 @@ fn should_sum_and_average_likes_from_the_last_property_s_tree() {
                 .verify_point_lookup_sum_proof(&proof, pv)
                 .expect("the sum proof verifies");
             assert_live_root_hash(&drive, root_hash);
-            let proved: i64 = entries.iter().filter_map(|entry| entry.sum).sum();
-            assert_eq!(proved, likes, "proved {clauses:?}");
+            let proved: i128 = entries.iter().filter_map(|entry| entry.sum).sum();
+            assert_eq!(proved, i128::from(likes), "proved {clauses:?}");
 
             let average = |prove| {
                 drive
@@ -2231,13 +2231,13 @@ fn should_sum_and_average_likes_from_the_last_property_s_tree() {
             .verify_point_lookup_count_and_sum_proof(&proof, pv)
             .expect("the average proof verifies");
             assert_live_root_hash(&drive, root_hash);
-            let proved = entries.iter().fold((0u64, 0i64), |(count, sum), entry| {
+            let proved = entries.iter().fold((0u64, 0i128), |(count, sum), entry| {
                 (
                     count + entry.count.unwrap_or_default(),
                     sum + entry.sum.unwrap_or_default(),
                 )
             });
-            assert_eq!(proved, (posts, likes), "proved {clauses:?}");
+            assert_eq!(proved, (posts, i128::from(likes)), "proved {clauses:?}");
         }
     }
 }

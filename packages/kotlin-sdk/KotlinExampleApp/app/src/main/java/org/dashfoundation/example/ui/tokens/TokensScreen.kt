@@ -26,6 +26,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +37,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.TokenEntity
 import org.dashfoundation.example.di.LocalAppContainer
@@ -43,9 +45,11 @@ import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.TokenActionPermissions
 import org.dashfoundation.example.navigation.TokenDetail
 import org.dashfoundation.example.navigation.TokenSearch
+import org.dashfoundation.example.services.tokens.IdentityTokenSync
 import org.dashfoundation.example.services.tokens.TokenAmounts
 import org.dashfoundation.example.ui.components.AccessiblePicker
 import org.dashfoundation.example.ui.components.FormSection
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.toHex
 import org.dashfoundation.example.util.truncateMiddle
@@ -68,7 +72,7 @@ fun TokensScreen(navController: NavHostController) {
     val identitiesFlow = remember(network) {
         container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
     }
-    val identities by identitiesFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val identities by identitiesFlow.collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     var selectedIdentityHex by rememberSaveable { mutableStateOf<String?>(null) }
     val selectedIdentity = identities.firstOrNull { it.identityId.toHex() == selectedIdentityHex }
@@ -77,7 +81,9 @@ fun TokensScreen(navController: NavHostController) {
     val tokensFlow = remember(network) {
         container.database.tokenDao().observeTokensByNetwork(network.ffiValue)
     }
-    val tokens by tokensFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    // Every emission: a list of rows equal by id compares equal even when a
+    // row (the paused flag) was rewritten.
+    val tokens by tokensFlow.collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     var filter by rememberSaveable { mutableStateOf(TokenCapabilityFilter.ALL.name) }
     val selectedFilter = TokenCapabilityFilter.valueOf(filter)
@@ -88,11 +94,49 @@ fun TokensScreen(navController: NavHostController) {
             container.database.tokenDao().observeBalancesByIdentity(it.identityId)
         }
     }
-    val balances by (balancesFlow ?: remember {
+    val identityBalances by (balancesFlow ?: remember {
         kotlinx.coroutines.flow.flowOf(
             emptyList<org.dashfoundation.dashsdk.persistence.entities.TokenBalanceEntity>(),
         )
     }).collectAsStateWithLifecycle(initialValue = emptyList())
+    // Rows are kept per network; this screen shows the active network's only.
+    val balances = identityBalances.filter { it.networkRaw == network.ffiValue }
+
+    // Watch the selected identity's tokens in the Rust identity-token sync,
+    // which persists their balances into `token_balances` (the list above
+    // and the token action forms read it); the other wallet identities are
+    // registered with none. Re-runs when the selection, the identities, the
+    // manager or the set of locally saved tokens changes (a contract load or
+    // removal). Port of `IdentityDetailView.reloadTokenBalances`.
+    val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
+    val sdk by appState.sdk.collectAsStateWithLifecycle()
+    val identitySetKey = identities.joinToString(",") { it.identityId.toHex() }
+    val tokenSetKey = tokens.joinToString(",") { it.id.toHex() }
+    LaunchedEffect(manager, sdk, selectedIdentity?.identityId?.toHex(), identitySetKey, tokenSetKey) {
+        val activeManager = manager ?: return@LaunchedEffect
+        val activeSdk = sdk ?: return@LaunchedEffect
+        // During a network switch the new SDK is published before its
+        // manager: never pair them across networks.
+        if (activeManager.network != activeSdk.network) return@LaunchedEffect
+        val identity = selectedIdentity ?: return@LaunchedEffect
+        val otherIds = identities.map { it.identityId }
+        val catalog = tokens
+        val identityDao = container.database.identityDao()
+        val tokenDao = container.database.tokenDao()
+        // Application scope: leaving the screen must not cancel the pass.
+        container.applicationScope.launch {
+            IdentityTokenSync.refresh(
+                identityId = identity.identityId,
+                otherIdentityIds = otherIds,
+                tokens = catalog,
+                calculateTokenId = activeSdk.tokenQueries::calculateTokenId,
+                register = activeManager::registerIdentityForTokenSync,
+                syncNow = activeManager::syncIdentityTokensNow,
+                isStillStored = { identityDao.getByIdentityId(identity.identityId) != null },
+                isTokenStillSaved = { tokenDao.getTokenById(it.id) != null },
+            )
+        }
+    }
 
     Scaffold(
         topBar = {

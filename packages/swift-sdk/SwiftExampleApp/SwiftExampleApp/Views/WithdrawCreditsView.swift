@@ -23,9 +23,13 @@
 // On the L1 side there is NO immediate transaction id: Platform
 // withdrawals are pooled and processed asynchronously by the network,
 // and the withdraw FFI path returns only the void / new balance. The
-// success screen therefore shows the destination address + amount plus
-// a note that the L1 payout is processed asynchronously, rather than a
-// (non-existent) txid.
+// success screen therefore shows the destination address + amount and
+// a "View withdrawals" link to `IdentityWithdrawalsView`, this
+// identity's withdrawal history as the withdrawals system contract
+// records it; the new withdrawal appears there once Platform has
+// recorded it. Platform state stores only the asset unlock index of
+// the Core transaction, never its txid, so no txid is shown there
+// either.
 
 import SwiftUI
 import SwiftDashSDK
@@ -219,12 +223,23 @@ struct WithdrawCreditsView: View {
                 }
                 // Platform withdrawals are pooled and broadcast to L1 by
                 // the network asynchronously, so there is no immediate
-                // L1 transaction id to show here. The credit-balance
-                // decrease reflects automatically via the
-                // persister → SwiftData → @Query path.
-                Text("The Layer 1 payout is processed asynchronously by the network and may take a while to appear on-chain.")
+                // L1 transaction id to show here; "View withdrawals" opens
+                // this identity's withdrawal history, where the new one
+                // appears once Platform has recorded it.
+                // The credit-balance decrease reflects automatically via
+                // the persister → SwiftData → @Query path.
+                Text("The Layer 1 payout is processed asynchronously by the network and may take a while to appear on-chain. View withdrawals opens this identity's withdrawal history, where this withdrawal appears once Platform has recorded it.")
                     .font(.caption)
                     .foregroundColor(.secondary)
+                NavigationLink {
+                    IdentityWithdrawalsView(identity: identity)
+                } label: {
+                    Label("View withdrawals", systemImage: "list.bullet.rectangle")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .padding(.top, 4)
+                .accessibilityIdentifier("withdrawCredits.trackWithdrawal")
                 Button {
                     dismiss()
                 } label: {

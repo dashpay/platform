@@ -15,7 +15,8 @@ const CONTENDER_FLAGS: &str =
     "The owner is the contender whose document created the level, who is \
      refunded when the poll is cleaned up. Written without storage flags, it carries none.";
 const POLL_FLAGS: &str = "The owner is the identity whose contested document started the \
-                          poll. A yes/no poll is opened by the system and carries none.";
+                          poll. A yes/no poll is opened by the system and carries none, and \
+                          so does a contest the system lists under the left open end date.";
 const OWNED: [FlagsKind; 2] = [FlagsKind::EpochOwned, FlagsKind::None];
 const CONTESTED_DOCUMENT: &str =
     "votes.contested_resource.active_polls.contract.document_type.storage.document";
@@ -121,7 +122,14 @@ pub(crate) fn structure() -> StructureNode {
             )
             .kind(ElementKind::Tree)
             .flags(&OWNED, POLL_FLAGS)
-            .describe("The polls ending at this time.")
+            .describe(
+                "The polls ending at this time. The last key, \
+                 VOTE_POLLS_LEFT_OPEN_END_DATE (i64::MAX), is a time no block \
+                 reaches: it lists the contests whose end left them open because \
+                 the winner could not be awarded its document (protocol version \
+                 15). Such a contest keeps its contenders, documents, votes, \
+                 record and prefunded balance.",
+            )
             .child(
                 StructureNode::dynamic(
                     "poll",

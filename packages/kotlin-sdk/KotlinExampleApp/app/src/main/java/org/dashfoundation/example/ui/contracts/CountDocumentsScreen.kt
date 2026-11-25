@@ -218,15 +218,24 @@ internal data class AggregateResult(
 /**
  * Parse a count/sum result JSON: a bare number is the ungrouped total; an
  * object maps group keys to numbers, with `""` (or `total`) as the total.
- * The FFI wraps that map in a single-key envelope — `{"counts": {...}}` /
- * `{"sums": {...}}` per `dash_sdk_document_count`/`_sum`'s contract — so
- * unwrap it before reading entries.
+ * The FFI wraps that map in an envelope — `{"counts": {...}}` /
+ * `{"grouped": <bool>, "sums": {...}}` per `dash_sdk_document_count`/`_sum`'s
+ * contract — so unwrap it before reading entries.
+ *
+ * A sum result says whether it is grouped. In a grouped result `""` is a
+ * real group (documents missing an optional range value), not the total,
+ * so it stays among the groups and there is no total.
  */
 internal fun parseAggregateResult(response: String?): AggregateResult? {
     if (response.isNullOrBlank()) return null
     var element = LenientJson.parseToJsonElement(response)
-    (element as? JsonObject)?.takeIf { it.size == 1 }?.let { root ->
-        (root["counts"] ?: root["sums"])?.let { if (it is JsonObject) element = it }
+    var grouped = false
+    (element as? JsonObject)?.let { root ->
+        val envelope = root["counts"] ?: root["sums"]
+        if (envelope is JsonObject && root.keys.all { it in AGGREGATE_ENVELOPE_KEYS }) {
+            grouped = groupedFlagOf(root)
+            element = envelope
+        }
     }
     return when (val el = element) {
         is JsonPrimitive -> AggregateResult(total = el.content, groups = emptyMap())
@@ -234,6 +243,7 @@ internal fun parseAggregateResult(response: String?): AggregateResult? {
             val entries = el.entries.mapNotNull { (key, value) ->
                 (value as? JsonPrimitive)?.content?.let { key to it }
             }.toMap()
+            if (grouped) return AggregateResult(total = null, groups = entries)
             AggregateResult(
                 total = entries[""] ?: entries["total"]
                     ?: entries.values.singleOrNull().takeIf { entries.size <= 1 },
@@ -242,4 +252,17 @@ internal fun parseAggregateResult(response: String?): AggregateResult? {
         }
         else -> null
     }
+}
+
+/** The keys an aggregate result envelope may carry next to its map. */
+private val AGGREGATE_ENVELOPE_KEYS = setOf("counts", "sums", "averages", "grouped")
+
+/**
+ * The `grouped` flag of a sum or average result envelope: `false` when
+ * absent (a count result has none), and refused when it is not a boolean.
+ */
+internal fun groupedFlagOf(root: JsonObject): Boolean {
+    val flag = root["grouped"] ?: return false
+    return (flag as? JsonPrimitive)?.takeIf { !it.isString }?.content?.toBooleanStrictOrNull()
+        ?: throw IllegalArgumentException("Expected a boolean `grouped` in the aggregate result")
 }

@@ -25,7 +25,8 @@
 //! The choices contend in a masternode vote, in which a choice is named by its document id.
 //! [`dash_sdk_multiple_choice_proposal_cast_vote`] answers for a masternode from its voting
 //! private key and pro_tx_hash, exactly as `dash_sdk_decision_proposal_cast_vote` answers a
-//! yes/no proposal (see `crate::voting::masternode_vote`).
+//! yes/no proposal, and [`dash_sdk_multiple_choice_proposal_cast_vote_with_signer`] from its
+//! voting address and the host's signer (see `crate::voting::masternode_vote`).
 
 mod json;
 
@@ -35,9 +36,11 @@ use self::json::{
 };
 use super::queries::page;
 use super::{json_result, optional_identifier, required_identifier, sdk_wrapper, string_result};
-use crate::types::{FFINetwork, SDKHandle};
+use crate::types::{FFINetwork, SDKHandle, SignerHandle};
 use crate::voting::masternode_vote::{pro_tx_hash_from_wire_order, MasternodeVoter};
 use crate::{DashSDKResult, FFIError};
+use dash_sdk::dpp::identity::signer::Signer;
+use dash_sdk::dpp::prelude::IdentityPublicKey;
 use dash_sdk::platform::decision_proposals::multiple_choice::{
     multiple_choice_proposal_vote, MultipleChoiceVoteChoice,
 };
@@ -497,33 +500,87 @@ pub unsafe extern "C" fn dash_sdk_multiple_choice_proposal_cast_vote(
     voting_private_key: *const u8,
     network: FFINetwork,
 ) -> DashSDKResult {
-    match cast_vote_inner(
-        sdk_handle,
-        proposal_id,
-        vote_choice,
-        choice_id,
-        voter_pro_tx_hash,
-        voting_private_key,
-        network,
-    ) {
+    match cast_vote_inner(sdk_handle, proposal_id, vote_choice, choice_id, || {
+        MasternodeVoter::from_raw(voter_pro_tx_hash, voting_private_key, network)
+    }) {
         Ok(()) => DashSDKResult::success(std::ptr::null_mut()),
         Err(error) => DashSDKResult::error(error.into()),
     }
 }
 
-unsafe fn cast_vote_inner(
+/// Votes in the vote among a multiple choice proposal's choices for a masternode with the
+/// host's signer: the same vote as `dash_sdk_multiple_choice_proposal_cast_vote`, from the
+/// same proposal and choice arguments read the same way, signed by `signer_handle` instead of
+/// a raw voting private key. Every argument is read before anything reaches the network.
+///
+/// Rust builds the voting key from `voting_address` (key id 0, purpose `VOTING`, type
+/// `ECDSA_HASH160`, data the 20-byte address) and asks the signer to sign with that key, so
+/// the signer's callback receives the voting address as the key data. The private key stays
+/// with the host. A refused voting key is explained as for
+/// `dash_sdk_decision_proposal_cast_vote`.
+///
+/// # Parameters
+/// * `sdk_handle` - Handle to the SDK instance.
+/// * `proposal_id` - The proposal's id, base58.
+/// * `vote_choice` - `0` = for the choice `choice_id` names, `1` = none of the choices, `2` =
+///   abstain. Any other value is refused with `InvalidParameter`.
+/// * `choice_id` - The document id (base58) of the choice voted for. Required for
+///   `vote_choice` `0` and null otherwise; anything else is refused with `InvalidParameter`.
+/// * `voter_pro_tx_hash` - Pointer to the masternode's 32-byte pro_tx_hash in wire order, as
+///   `dash_sdk_decision_proposal_cast_vote` takes it (NOT the byte order of the hex Core
+///   displays, which is its reverse). The bytes are reversed here.
+/// * `voting_address` - Pointer to the masternode's 20-byte voting address: the hash160 of the
+///   compressed voting public key (`dash_sdk_masternode_voting_address_from_private_key`
+///   forms it from the private key).
+/// * `signer_handle` - The signer that signs with the voting key.
+///
+/// # Returns
+/// No data on success, or an error. A signer that cannot sign with the voting key fails the
+/// call with the signer's error.
+///
+/// # Safety
+/// - `sdk_handle` must be a valid pointer to an initialized `SDKHandle`.
+/// - `proposal_id` must be a valid pointer to a NUL-terminated string, and `choice_id` null or
+///   one.
+/// - `voter_pro_tx_hash` must point to 32 readable bytes and `voting_address` to 20. All must
+///   stay valid for the duration of the call.
+/// - `signer_handle` must be a valid signer handle that outlives the call.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_multiple_choice_proposal_cast_vote_with_signer(
     sdk_handle: *const SDKHandle,
     proposal_id: *const c_char,
     vote_choice: u8,
     choice_id: *const c_char,
     voter_pro_tx_hash: *const u8,
-    voting_private_key: *const u8,
-    network: FFINetwork,
-) -> Result<(), FFIError> {
+    voting_address: *const u8,
+    signer_handle: *const SignerHandle,
+) -> DashSDKResult {
+    match cast_vote_inner(sdk_handle, proposal_id, vote_choice, choice_id, || {
+        MasternodeVoter::from_signer_handle(voter_pro_tx_hash, voting_address, signer_handle)
+    }) {
+        Ok(()) => DashSDKResult::success(std::ptr::null_mut()),
+        Err(error) => DashSDKResult::error(error.into()),
+    }
+}
+
+/// The body both entry points share. `read_voter` reads the masternode's arguments (see
+/// `crate::voting::masternode_vote`), after the proposal and the answer and before anything
+/// reaches the network.
+unsafe fn cast_vote_inner<S, F>(
+    sdk_handle: *const SDKHandle,
+    proposal_id: *const c_char,
+    vote_choice: u8,
+    choice_id: *const c_char,
+    read_voter: F,
+) -> Result<(), FFIError>
+where
+    S: Signer<IdentityPublicKey>,
+    F: FnOnce() -> Result<MasternodeVoter<S>, FFIError>,
+{
     let wrapper = sdk_wrapper(sdk_handle)?;
     let proposal_id = required_identifier(proposal_id, "proposal_id")?;
     let vote_choice = vote_choice_from_ffi(vote_choice, choice_id)?;
-    let voter = MasternodeVoter::from_raw(voter_pro_tx_hash, voting_private_key, network)?;
+    let voter = read_voter()?;
     let vote = multiple_choice_proposal_vote(proposal_id, vote_choice);
     wrapper
         .runtime
@@ -534,10 +591,13 @@ unsafe fn cast_vote_inner(
 mod tests {
     use super::json::vote_choice_name;
     use super::*;
+    use crate::signer::{dash_sdk_signer_destroy, signer_handle_from_single_key};
     use crate::test_utils::test_utils::{create_mock_sdk_handle, destroy_mock_sdk_handle};
+    use crate::types::Network;
     use crate::{dash_sdk_error_free, DashSDKErrorCode};
     use dash_sdk::dpp::platform_value::string_encoding::Encoding;
     use dash_sdk::dpp::platform_value::Identifier;
+    use simple_signer::SingleKeySigner;
     use std::ffi::CString;
 
     /// `result` failed with `InvalidParameter`; its error is freed.
@@ -789,6 +849,121 @@ mod tests {
             ] {
                 assert_invalid_parameter(result);
             }
+            destroy_mock_sdk_handle(handle);
+        }
+    }
+
+    /// The signer form reads every argument, the voting address and the signer included,
+    /// before it reaches the network.
+    #[test]
+    fn should_refuse_a_vote_with_a_signer_with_unreadable_arguments() {
+        let handle = create_mock_sdk_handle();
+        let signer = signer_handle_from_single_key(
+            SingleKeySigner::new_from_slice(&[2u8; 32], Network::Testnet).expect("a valid key"),
+        );
+        let sdk_handle: *const SDKHandle = handle;
+        let signer_ptr: *const SignerHandle = signer;
+        let proposal_id = base58(Identifier::new([4; 32]));
+        let choice_id = base58(Identifier::new([9; 32]));
+        let not_base58 = CString::new("0OIl").expect("no NUL");
+        let pro_tx_hash = [1u8; 32];
+        let voting_address = [3u8; 20];
+        unsafe {
+            for (sdk, proposal, choice, choice_id, pro_tx_hash, address, signer_handle) in [
+                (
+                    std::ptr::null(),
+                    proposal_id.as_ptr(),
+                    0,
+                    choice_id.as_ptr(),
+                    pro_tx_hash.as_ptr(),
+                    voting_address.as_ptr(),
+                    signer_ptr,
+                ),
+                (
+                    sdk_handle,
+                    std::ptr::null(),
+                    0,
+                    choice_id.as_ptr(),
+                    pro_tx_hash.as_ptr(),
+                    voting_address.as_ptr(),
+                    signer_ptr,
+                ),
+                (
+                    sdk_handle,
+                    not_base58.as_ptr(),
+                    0,
+                    choice_id.as_ptr(),
+                    pro_tx_hash.as_ptr(),
+                    voting_address.as_ptr(),
+                    signer_ptr,
+                ),
+                // A vote for a choice names it, the other answers name none
+                (
+                    sdk_handle,
+                    proposal_id.as_ptr(),
+                    0,
+                    std::ptr::null(),
+                    pro_tx_hash.as_ptr(),
+                    voting_address.as_ptr(),
+                    signer_ptr,
+                ),
+                (
+                    sdk_handle,
+                    proposal_id.as_ptr(),
+                    2,
+                    choice_id.as_ptr(),
+                    pro_tx_hash.as_ptr(),
+                    voting_address.as_ptr(),
+                    signer_ptr,
+                ),
+                (
+                    sdk_handle,
+                    proposal_id.as_ptr(),
+                    3,
+                    std::ptr::null(),
+                    pro_tx_hash.as_ptr(),
+                    voting_address.as_ptr(),
+                    signer_ptr,
+                ),
+                (
+                    sdk_handle,
+                    proposal_id.as_ptr(),
+                    1,
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    voting_address.as_ptr(),
+                    signer_ptr,
+                ),
+                (
+                    sdk_handle,
+                    proposal_id.as_ptr(),
+                    1,
+                    std::ptr::null(),
+                    pro_tx_hash.as_ptr(),
+                    std::ptr::null(),
+                    signer_ptr,
+                ),
+                (
+                    sdk_handle,
+                    proposal_id.as_ptr(),
+                    2,
+                    std::ptr::null(),
+                    pro_tx_hash.as_ptr(),
+                    voting_address.as_ptr(),
+                    std::ptr::null(),
+                ),
+            ] {
+                assert_invalid_parameter(dash_sdk_multiple_choice_proposal_cast_vote_with_signer(
+                    sdk,
+                    proposal,
+                    choice,
+                    choice_id,
+                    pro_tx_hash,
+                    address,
+                    signer_handle,
+                ));
+            }
+            dash_sdk_signer_destroy(signer);
             destroy_mock_sdk_handle(handle);
         }
     }

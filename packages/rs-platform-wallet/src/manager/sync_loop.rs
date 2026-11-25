@@ -147,6 +147,27 @@ impl SyncLoop {
         Admission::Admitted(PassPermit { _slot: slot })
     }
 
+    /// Whether new sync passes are currently barred — a drain in flight, a
+    /// held guard, a latched timeout, or the terminal seal `shutdown`
+    /// applies. A pass that outlived a drain reads this before it stores.
+    pub(crate) fn admission_closed(&self) -> bool {
+        self.gate.is_closed()
+    }
+
+    /// Latch admission closed until the pass now holding the slot has
+    /// released it — what a timed-out [`drain`](Self::drain) does itself.
+    /// For a coordinator whose drain has a second wait of its own that can
+    /// time out after the slot fell.
+    pub(crate) fn latch_admission_closed(&self) {
+        self.gate.latch_closed();
+    }
+
+    /// Close admission for good. Call it while still holding the drain's
+    /// guard, so the guard's drop cannot reopen the gate.
+    pub(crate) fn seal_admission(&self) {
+        self.gate.seal();
+    }
+
     /// Record `unix` as the completion time of the pass that just ran.
     pub(crate) fn record_completed(&self, unix: u64) {
         self.last_sync_unix.store(unix, Ordering::Release);
@@ -181,7 +202,7 @@ impl SyncLoop {
         let guard = self.drain(stop, budget).await;
         let drained = guard.is_some();
         // Seal before the guard drops so its Drop cannot reopen.
-        self.gate.seal();
+        self.seal_admission();
         drop(guard);
         drained
     }
@@ -202,13 +223,6 @@ impl SyncLoop {
     #[cfg(test)]
     pub(crate) fn release_slot_for_test(&self) {
         self.is_syncing.store(false, Ordering::Release);
-    }
-
-    /// Test-only: whether new sync passes are currently barred — a drain in
-    /// flight, a latched timeout, or the terminal seal `shutdown` applies.
-    #[cfg(test)]
-    pub(crate) fn admission_closed(&self) -> bool {
-        self.gate.is_closed()
     }
 }
 

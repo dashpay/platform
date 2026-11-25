@@ -15,6 +15,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -34,10 +35,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.launch
 import org.dashfoundation.example.di.LocalAppContainer
+import org.dashfoundation.example.navigation.IdentityWithdrawals
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.hexToBytes
 
@@ -47,7 +50,12 @@ import org.dashfoundation.example.util.hexToBytes
  * `platform_wallet_withdraw_credits_with_signer` via
  * [org.dashfoundation.dashsdk.credits.IdentityCredits.withdraw]. The L1
  * payout is pooled + broadcast asynchronously (no txid returned), so the
- * success note mirrors Swift's async-payout caveat.
+ * success note mirrors Swift's async-payout caveat and offers "View
+ * withdrawals" (`withdrawCredits.trackWithdrawal`), which opens
+ * [org.dashfoundation.example.ui.identity.IdentityWithdrawalsScreen] for
+ * this identity, where the new withdrawal appears once Platform has
+ * recorded it. Nothing is persisted for it: the withdrawal's state lives
+ * on Platform and is read back from there, as in Swift.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,9 +63,9 @@ fun WithdrawCreditsScreen(identityIdHex: String, navController: NavHostControlle
     val container = LocalAppContainer.current
     val idBytes = remember(identityIdHex) { identityIdHex.hexToBytes() }
 
-    val identity by container.database.identityDao()
-        .observeByIdentityId(idBytes)
-        .collectAsStateWithLifecycle(initialValue = null)
+    val identity by remember(idBytes) {
+        container.database.identityDao().observeByIdentityId(idBytes)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
 
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val wallet = rememberManagedWalletFor(identity?.walletId)
@@ -132,10 +140,16 @@ fun WithdrawCreditsScreen(identityIdHex: String, navController: NavHostControlle
             if (done) {
                 Text(
                     "Withdrawal submitted. The L1 payout is processed asynchronously " +
-                        "by the network and may take a while to appear on-chain.",
+                        "by the network and may take a while to appear on-chain. View " +
+                        "withdrawals opens this identity's withdrawal history, where this " +
+                        "withdrawal appears once Platform has recorded it.",
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.testTag("withdrawCredits.done"),
                 )
+                OutlinedButton(
+                    onClick = { navController.navigate(IdentityWithdrawals(identityIdHex)) },
+                    modifier = Modifier.fillMaxWidth().testTag("withdrawCredits.trackWithdrawal"),
+                ) { Text("View withdrawals") }
             }
 
             SubmitButton(

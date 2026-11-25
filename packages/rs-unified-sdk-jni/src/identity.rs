@@ -31,6 +31,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
+use crate::decision_proposals::to_unsigned;
 use crate::pubkey_rows::decode_registration_pubkeys_blob;
 use crate::support::{guard, net_from_ord, take_pwffi_error, throw_sdk_exception};
 use jni::objects::{JByteArray, JClass, JString, JValue};
@@ -1213,10 +1214,14 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_create
 /// `documentsSchemaJson` are required; `tokens`/`groups`/`keywords`/
 /// `description`/`config` are optional (null or empty ⇒ omitted). Unlike
 /// the document ops this takes NO `signingKeyId` — the wallet selects the
-/// key internally. Returns the 32-byte updated contract id.
+/// key internally. `expectedCurrentVersion` is the contract version the
+/// caller reviewed (`ContractUpdateNative.previewDataContractUpdate`'s
+/// `currentVersion`): the wallet refuses the update when Platform now holds
+/// another version; 0 means no check. It must fit a `u32`. Returns the
+/// 32-byte updated contract id.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
-pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_updateDataContract(
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_updateDataContractAtReviewedVersion(
     mut env: JNIEnv,
     _class: JClass,
     wallet_handle: jlong,
@@ -1228,6 +1233,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_update
     keywords_json: JString,
     description: JString,
     config_json: JString,
+    expected_current_version: jlong,
     signer_handle: jlong,
 ) -> jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
@@ -1235,6 +1241,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_update
             return ptr::null_mut();
         };
         let Some(contract) = read_id32(env, &contract_id, "contractId") else {
+            return ptr::null_mut();
+        };
+        let Some(expected_current_version) =
+            to_unsigned::<u32>(env, expected_current_version, "expectedCurrentVersion")
+        else {
             return ptr::null_mut();
         };
 
@@ -1291,6 +1302,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_IdentityNative_update
                 opt_ptr(&keywords),
                 opt_ptr(&desc),
                 opt_ptr(&config),
+                expected_current_version,
                 signer_handle as *mut SignerHandle,
                 out_contract_id.as_mut_ptr(),
             )

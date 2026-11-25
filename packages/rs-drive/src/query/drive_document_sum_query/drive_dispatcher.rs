@@ -19,6 +19,7 @@ use crate::query::drive_document_sum_query::{
     DocumentSumMode, DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery,
     RangeSumOptions, RangeSumWalkMode, SumMode,
 };
+use crate::query::sum_width::sum_in_64_bits;
 use crate::query::{
     key_array_element_clauses, validate_and_canonicalize_where_clauses,
     validate_resolved_time_range_clause_shapes, OrderClause, WhereClause,
@@ -108,7 +109,9 @@ impl Drive {
                     transaction,
                     platform_version,
                 )?;
-                let total = entries.first().and_then(|e| e.sum).unwrap_or(0);
+                // An unproven sum is read at 64 bits (`sum_width::element_sum`), so it fits
+                // the response's 64 bits.
+                let total = sum_in_64_bits(entries.first().and_then(|e| e.sum).unwrap_or(0))?;
                 Ok(DocumentSumResponse::Aggregate(total))
             }
             DocumentSumMode::PerInValue => {
@@ -161,7 +164,7 @@ impl Drive {
                     platform_version,
                 )?;
                 if matches!(request.mode, SumMode::Aggregate) {
-                    let total = entries.first().and_then(|e| e.sum).unwrap_or(0);
+                    let total = sum_in_64_bits(entries.first().and_then(|e| e.sum).unwrap_or(0))?;
                     Ok(DocumentSumResponse::Aggregate(total))
                 } else {
                     Ok(DocumentSumResponse::Entries(entries))
