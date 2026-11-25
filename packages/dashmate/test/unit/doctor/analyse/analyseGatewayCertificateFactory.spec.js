@@ -1241,6 +1241,61 @@ describe('analyseGatewayCertificateFactory', () => {
       expect(renewal.getSolution()).to.contain('doctor report');
     });
 
+    // The helper container keeps the version that started it, so after a
+    // manual CLI upgrade it refuses to save over the newer config. One restart
+    // fixes it, and nothing was asked of the authority.
+    it('should tell an operator to restart the node when the helper is outdated', () => {
+      installedValid();
+      renewalFailed({ code: 'HELPER_OUTDATED', detail: null });
+
+      const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+
+      expect(renewal.getSolution()).to.contain('dashmate restart');
+      // The dashmate reading the record may be the outdated one itself.
+      expect(renewal.getSolution()).to.contain('the dashmate that last updated its configuration');
+      expect(renewal.getSolution()).to.contain('resumes by itself');
+      expect(renewal.getSolution()).to.not.contain('doctor report');
+      expect(renewal.getSolution()).to.not.contain('ssl obtain');
+    });
+
+    it('should obtain and then restart when an outdated helper let the certificate expire', () => {
+      installedValid({
+        status: 'INVALID',
+        validTo: validTo(-1),
+        reasons: [{ code: 'EXPIRED', message: 'The installed certificate expired on 2026-08-20' }],
+      });
+      renewalFailed({ code: 'HELPER_OUTDATED', detail: null });
+
+      const [expired] = analyseGatewayCertificate(samples)
+        .filter((p) => p.getDescription().includes('expired'));
+
+      const solution = expired.getSolution();
+
+      // The certificate first: a restart reloads whatever pair is on disk.
+      expect(solution.indexOf('ssl obtain')).to.be.within(0, solution.indexOf('dashmate restart'));
+      expect(solution).to.not.contain('doctor report');
+    });
+
+    // An outdated helper never succeeds, so a marker an earlier attempt left
+    // stays - and with it the restart that ends the failures.
+    ['issuanceSpentAt', 'issuanceUncertainAt'].forEach((marker) => {
+      it(`should still tell an operator to restart an outdated helper when ${marker} is carried`, () => {
+        installedValid();
+        renewalFailed({
+          code: 'HELPER_OUTDATED',
+          detail: null,
+          [marker]: new Date(Date.now() - DAY_MS).toISOString(),
+        });
+
+        const [renewal] = analyse(served()).filter((p) => p.getDescription().includes('not being renewed'));
+
+        expect(renewal.getSolution()).to.contain('dashmate restart');
+        // Nothing repairs the pair on disk first, and a restart reloads it.
+        expect(renewal.getSolution()).to.contain('Once the certificate files on disk work');
+        expect(renewal.getSolution()).to.not.contain('ssl obtain');
+      });
+    });
+
     it('should defuse terminal escapes in a record that came from someone else', () => {
       // `doctor --samples` reads a third party's archive straight into the
       // samples without passing through the reader that validates a local

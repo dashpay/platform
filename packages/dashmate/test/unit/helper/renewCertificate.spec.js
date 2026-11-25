@@ -265,11 +265,10 @@ describe('renewCertificate', () => {
     }).then(() => null, (e) => e);
 
     expect(refusal).to.be.an('error').with.property('message').that.matches(/updated by a newer dashmate/);
-    // Recorded without a cause. A cause would let doctor prescribe a repair,
-    // and a safe one for an outdated helper does not exist yet: anything that
-    // restarts the node reloads the gateway from unchecked files on disk.
+    // Recorded as a cause a restart fixes, not as one that may have spent an
+    // issuance: nothing was asked of the authority.
     expect(classifyRenewalFailure(refusal, { provider: 'zerossl' }).code)
-      .to.equal(RENEWAL_FAILURE_CODES.UNKNOWN);
+      .to.equal(RENEWAL_FAILURE_CODES.HELPER_OUTDATED);
 
     expect(obtainCertificateTask).to.not.have.been.called();
     expect(writeConfigTemplates).to.not.have.been.called();
