@@ -16,7 +16,7 @@ use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet::Wallet;
 use platform_wallet::changeset::{
-    spawn_wallet_event_adapter, AccountAddressPoolEntry, AccountRegistrationEntry,
+    spawn_wallet_event_adapter, AccountAddressPoolEntry, AccountRegistrationEntry, CoreChangeSet,
     PlatformWalletChangeSet, PlatformWalletPersistence, WalletMetadataEntry,
 };
 use platform_wallet::key_wallet_manager::WalletEvent;
@@ -201,111 +201,598 @@ async fn bip44_coins_past_the_gap_in_one_transaction_survive_a_reload() {
     .await;
 }
 
-/// Block 100 pays CoinJoin external index 0 and a far index past the gap,
-/// so its own pass credits only vout 0. Block 101 pays a near index, which
-/// extends the pool over the far one, and dash-spv re-scans block 100 for
-/// the addresses it derived. That pass credits the far output to the record
-/// the wallet already holds, so the event reports the record as updated.
-/// The store holds an unspent row for the far coin, and a reload restores it
-/// and the balance.
-#[tokio::test]
-async fn a_coin_a_rescan_of_an_earlier_block_credits_survives_a_reload() {
-    let (persister, _tmp, path) = fresh_persister();
-    let persister = Arc::new(persister);
-    let wallet = Wallet::new_random(
-        key_wallet::Network::Testnet,
-        WalletAccountCreationOptions::Default,
-    )
-    .expect("wallet");
-    let coinjoin = AccountType::CoinJoin { index: 0 };
-    let gap = external_gap(&wallet, coinjoin);
-    let (near, far) = (2 * gap / 3, gap + gap / 3);
-    let addresses = external_addresses(&wallet, coinjoin, far + 1);
-    let paying_far = transaction_paying(
-        &[addresses[0].clone(), addresses[far as usize].clone()],
-        VALUE,
-        1,
-    );
-    let extending = transaction_paying(&[addresses[near as usize].clone()], VALUE, 2);
-    let funding = dashcore::Block::dummy(HEIGHT, vec![paying_far.clone()]);
-    let later = dashcore::Block::dummy(HEIGHT + 1, vec![extending.clone()]);
-    let manifest_wallet = wallet.clone();
-    let (manager, wallet_id, mut queued) = wallet_manager_with_persistence(wallet);
-    register(&persister, wallet_id, &manifest_wallet);
-    let far_coin = OutPoint {
-        txid: paying_far.txid(),
-        vout: 1,
-    };
-    let held =
-        |manager: &platform_wallet::key_wallet_manager::WalletManager<PlatformWalletInfo>| {
-            manager
-                .get_wallet_info(&wallet_id)
-                .expect("wallet")
-                .core_wallet
-                .accounts
-                .funds_account(&coinjoin)
-                .expect("account")
-                .utxos
-                .contains_key(&far_coin)
-        };
+type Manager = platform_wallet::key_wallet_manager::WalletManager<PlatformWalletInfo>;
 
-    process_block_with_rescans(&manager, wallet_id, &funding, HEIGHT).await;
-    assert!(
-        !held(&*manager.read().await),
-        "block 100's own pass does not reach the far output"
-    );
-    process_block_with_rescans(&manager, wallet_id, &later, HEIGHT + 1).await;
-    process_block_with_rescans(&manager, wallet_id, &funding, HEIGHT).await;
-    assert!(
-        held(&*manager.read().await),
-        "the re-scan of block 100 credits the far output"
-    );
-    persist_queued(&manager, &mut queued, &persister).await;
-    persister.flush(wallet_id).expect("flush");
-    drop(persister);
+/// One wallet registered in a fresh store, and two CoinJoin transactions:
+/// `paying_far` pays external index 0 (vout 0) and a far index past the gap
+/// (vout 1), and `extending` pays a near index that extends the pool over
+/// the far one. With both in one block, key-wallet's in-block re-check
+/// (rust-dashcore #1368) credits the far output on the block's first call.
+/// With `extending` in a later block, only dash-spv's re-scan of the earlier
+/// block credits it, to the record the wallet already holds.
+struct FarCoins {
+    persister: Option<Arc<SqlitePersister>>,
+    _tmp: tempfile::TempDir,
+    path: std::path::PathBuf,
+    manager: Arc<RwLock<Manager>>,
+    wallet_id: WalletId,
+    queued: mpsc::UnboundedReceiver<WalletEvent>,
+    paying_far: dashcore::Transaction,
+    extending: dashcore::Transaction,
+    /// The addresses `paying_far` vout 0, its far output and `extending` pay.
+    addresses: [dashcore::Address; 3],
+    /// BIP44 receive addresses, for change and a second account's coins.
+    bip44: Vec<dashcore::Address>,
+}
 
-    assert_eq!(
-        stored_unspent_rows(
-            &path,
-            &[
+/// After a restart: every coin the funds accounts hold, and the balance.
+#[derive(Debug, PartialEq)]
+struct Restarted {
+    coins: std::collections::BTreeSet<OutPoint>,
+    balance: u64,
+}
+
+impl FarCoins {
+    async fn new() -> Self {
+        let (persister, tmp, path) = fresh_persister();
+        let persister = Arc::new(persister);
+        let wallet = Wallet::new_random(
+            key_wallet::Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .expect("wallet");
+        let coinjoin = AccountType::CoinJoin { index: 0 };
+        let gap = external_gap(&wallet, coinjoin);
+        let (near, far) = (2 * gap / 3, gap + gap / 3);
+        let addresses = external_addresses(&wallet, coinjoin, far + 1);
+        let bip44 = external_addresses(&wallet, bip44_account_0(), 5);
+        let paying_far = transaction_paying(
+            &[addresses[0].clone(), addresses[far as usize].clone()],
+            VALUE,
+            1,
+        );
+        let extending = transaction_paying(&[addresses[near as usize].clone()], VALUE, 2);
+        let manifest_wallet = wallet.clone();
+        let (manager, wallet_id, queued) = wallet_manager_with_persistence(wallet);
+        register(&persister, wallet_id, &manifest_wallet);
+        FarCoins {
+            persister: Some(persister),
+            _tmp: tmp,
+            path,
+            manager,
+            wallet_id,
+            queued,
+            paying_far,
+            extending,
+            addresses: [
                 addresses[0].clone(),
                 addresses[far as usize].clone(),
-                addresses[near as usize].clone()
-            ]
+                addresses[near as usize].clone(),
+            ],
+            bip44,
+        }
+    }
+
+    fn coin(tx: &dashcore::Transaction, vout: u32) -> OutPoint {
+        OutPoint::new(tx.txid(), vout)
+    }
+
+    fn far(&self) -> OutPoint {
+        Self::coin(&self.paying_far, 1)
+    }
+
+    async fn process(&self, height: u32, block: &dashcore::Block) {
+        process_block_with_rescans(&self.manager, self.wallet_id, block, height).await;
+    }
+
+    async fn holds(&self, outpoint: OutPoint) -> bool {
+        self.manager
+            .read()
+            .await
+            .get_wallet_info(&self.wallet_id)
+            .expect("wallet")
+            .core_wallet
+            .accounts
+            .all_funding_accounts()
+            .into_iter()
+            .any(|account| account.utxos.contains_key(&outpoint))
+    }
+
+    /// Stores every queued event through the adapter, as one drain.
+    async fn persist(&mut self) {
+        let persister = self.persister.as_ref().expect("open");
+        persist_queued(&self.manager, &mut self.queued, persister).await;
+        persister.flush(self.wallet_id).expect("flush");
+    }
+
+    /// Closes the store, reopens it and loads the wallet.
+    fn restart(&mut self) -> Restarted {
+        drop(self.persister.take());
+        let reopened =
+            SqlitePersister::open(SqlitePersisterConfig::new(&self.path)).expect("reopen");
+        let reloaded = reopened
+            .load()
+            .expect("load")
+            .wallets
+            .remove(&self.wallet_id)
+            .expect("the wallet loads")
+            .wallet_info;
+        Restarted {
+            coins: reloaded
+                .accounts
+                .all_funding_accounts()
+                .into_iter()
+                .flat_map(|account| account.utxos.keys().copied())
+                .collect(),
+            balance: reloaded.balance.total(),
+        }
+    }
+}
+
+fn block_at(height: u32, txdata: Vec<dashcore::Transaction>) -> dashcore::Block {
+    dashcore::Block::dummy(height, txdata)
+}
+
+fn coins(outpoints: impl IntoIterator<Item = OutPoint>) -> std::collections::BTreeSet<OutPoint> {
+    outpoints.into_iter().collect()
+}
+
+/// A spend of `outpoint` paying half to an outside address and the rest,
+/// less a fee, to `back` (a wallet address).
+fn spend_with_change(outpoint: OutPoint, back: &dashcore::Address) -> dashcore::Transaction {
+    use platform_wallet::test_support::core_fixtures::{foreign_address, pay, spend_of};
+    spend_of(
+        &[outpoint],
+        vec![pay(VALUE / 2, &foreign_address(7)), pay(CHANGE, back)],
+    )
+}
+
+const CHANGE: u64 = VALUE / 2 - 1_000;
+
+/// A spend of `outpoint` paying everything, less a fee, to an outside address.
+fn spend_away(outpoint: OutPoint) -> dashcore::Transaction {
+    use platform_wallet::test_support::core_fixtures::{foreign_address, pay, spend_of};
+    spend_of(&[outpoint], vec![pay(VALUE - 1_000, &foreign_address(7))])
+}
+
+/// One block pays both transactions, and the next spends the far coin; one
+/// drain stores both. After a restart the far coin is spent: it is not a
+/// coin and not in the balance. Vout 0 and the near coin are.
+#[tokio::test]
+async fn in_block_far_coin_spent_in_the_next_block_stays_spent_after_a_restart() {
+    let mut w = FarCoins::new().await;
+    let far = w.far();
+    w.process(
+        HEIGHT,
+        &block_at(HEIGHT, vec![w.paying_far.clone(), w.extending.clone()]),
+    )
+    .await;
+    assert!(
+        w.holds(far).await,
+        "the block's first call credits the far output"
+    );
+    w.process(HEIGHT + 1, &block_at(HEIGHT + 1, vec![spend_away(far)]))
+        .await;
+    w.persist().await;
+
+    assert_eq!(
+        stored_unspent_rows(&w.path, &w.addresses),
+        vec![1, 0, 1],
+        "the far coin has no unspent row"
+    );
+    assert_eq!(
+        w.restart(),
+        Restarted {
+            coins: coins([
+                FarCoins::coin(&w.paying_far, 0),
+                FarCoins::coin(&w.extending, 0)
+            ]),
+            balance: 2 * VALUE,
+        }
+    );
+}
+
+/// One block pays both transactions; the next spends vout 0 with change to
+/// the wallet; then the first block is delivered again. Each block is stored
+/// as it arrives. After a restart vout 0 is spent, and the far coin, the near
+/// coin and the change are coins.
+#[tokio::test]
+async fn in_block_coin_spent_later_stays_spent_when_its_block_is_redelivered() {
+    let mut w = FarCoins::new().await;
+    let funding = block_at(HEIGHT, vec![w.paying_far.clone(), w.extending.clone()]);
+    let spend = spend_with_change(FarCoins::coin(&w.paying_far, 0), &w.bip44[0]);
+    w.process(HEIGHT, &funding).await;
+    w.persist().await;
+    w.process(HEIGHT + 1, &block_at(HEIGHT + 1, vec![spend.clone()]))
+        .await;
+    w.persist().await;
+    w.process(HEIGHT, &funding).await;
+    w.persist().await;
+
+    assert_eq!(
+        stored_unspent_rows(&w.path, &w.addresses),
+        vec![0, 1, 1],
+        "vout 0 has no unspent row"
+    );
+    assert_eq!(
+        w.restart(),
+        Restarted {
+            coins: coins([
+                w.far(),
+                FarCoins::coin(&w.extending, 0),
+                FarCoins::coin(&spend, 1)
+            ]),
+            balance: 2 * VALUE + CHANGE,
+        }
+    );
+}
+
+/// One block pays both CoinJoin transactions and five BIP44 receive
+/// addresses. After a restart every coin is held, the BIP44 ones in the
+/// BIP44 account, and the balance counts all eight.
+#[tokio::test]
+async fn in_block_coins_of_two_accounts_survive_a_restart_in_their_accounts() {
+    let mut w = FarCoins::new().await;
+    let bip44_pay = transaction_paying(&w.bip44, VALUE, 3);
+    w.process(
+        HEIGHT,
+        &block_at(
+            HEIGHT,
+            vec![w.paying_far.clone(), w.extending.clone(), bip44_pay.clone()],
         ),
+    )
+    .await;
+    w.persist().await;
+
+    let bip44_coins: Vec<OutPoint> = (0..5).map(|v| FarCoins::coin(&bip44_pay, v)).collect();
+    let mut expected = coins(bip44_coins.clone());
+    expected.extend([
+        FarCoins::coin(&w.paying_far, 0),
+        w.far(),
+        FarCoins::coin(&w.extending, 0),
+    ]);
+    assert_eq!(
+        w.restart(),
+        Restarted {
+            coins: expected,
+            balance: 8 * VALUE,
+        }
+    );
+    let held = reloaded_account_coins(&w.path, w.wallet_id, bip44_account_0());
+    assert!(bip44_coins.iter().all(|c| held.contains(c)));
+}
+
+/// Block 100 pays `paying_far`, so its own pass credits only vout 0. Block
+/// 101 pays the near index, and dash-spv re-scans block 100, which credits
+/// the far coin to the record the wallet already holds. After a restart the
+/// far coin is held and in the balance.
+#[tokio::test]
+async fn a_coin_a_rescan_of_an_earlier_block_credits_survives_a_reload() {
+    let mut w = FarCoins::new().await;
+    let funding = block_at(HEIGHT, vec![w.paying_far.clone()]);
+    w.process(HEIGHT, &funding).await;
+    assert!(
+        !w.holds(w.far()).await,
+        "block 100's own pass does not reach the far output"
+    );
+    w.process(HEIGHT + 1, &block_at(HEIGHT + 1, vec![w.extending.clone()]))
+        .await;
+    w.process(HEIGHT, &funding).await;
+    assert!(w.holds(w.far()).await, "the re-scan credits the far output");
+    w.persist().await;
+
+    assert_eq!(
+        stored_unspent_rows(&w.path, &w.addresses),
         vec![1, 1, 1],
         "the store holds an unspent row for every coin, the far one included"
     );
-    let reopened = SqlitePersister::open(SqlitePersisterConfig::new(&path)).expect("reopen");
-    let reloaded = reopened
-        .load()
-        .expect("load")
-        .wallets
-        .remove(&wallet_id)
-        .expect("the wallet loads")
-        .wallet_info;
-    let coins: std::collections::BTreeSet<OutPoint> = reloaded
+    assert_eq!(
+        w.restart(),
+        Restarted {
+            coins: coins([
+                FarCoins::coin(&w.paying_far, 0),
+                w.far(),
+                FarCoins::coin(&w.extending, 0)
+            ]),
+            balance: 3 * VALUE,
+        }
+    );
+}
+
+/// `paying_far` is seen in the mempool, where only vout 0 is the wallet's,
+/// and is stored. The block that confirms it also pays the near index, so
+/// the block credits the far coin to the record the wallet already holds.
+/// After a restart all three coins are held and in the balance.
+#[tokio::test]
+async fn a_mempool_transaction_confirmed_after_its_pools_grew_keeps_every_coin_after_a_restart() {
+    use platform_wallet::key_wallet_manager::WalletInterface;
+
+    let mut w = FarCoins::new().await;
+    w.manager
+        .write()
+        .await
+        .process_mempool_transaction(&w.paying_far, None)
+        .await;
+    assert!(
+        !w.holds(w.far()).await,
+        "the mempool sighting misses the far output"
+    );
+    w.persist().await;
+    w.process(
+        HEIGHT,
+        &block_at(HEIGHT, vec![w.paying_far.clone(), w.extending.clone()]),
+    )
+    .await;
+    assert!(w.holds(w.far()).await, "the block credits the far output");
+    w.persist().await;
+
+    assert_eq!(
+        stored_unspent_rows(&w.path, &w.addresses),
+        vec![1, 1, 1],
+        "the store holds an unspent row for every coin, the far one included"
+    );
+    assert_eq!(
+        w.restart(),
+        Restarted {
+            coins: coins([
+                FarCoins::coin(&w.paying_far, 0),
+                w.far(),
+                FarCoins::coin(&w.extending, 0)
+            ]),
+            balance: 3 * VALUE,
+        }
+    );
+}
+
+/// The re-scan of block 100 credits the far coin, and block 102 spends it
+/// before any of it is stored; one drain stores everything. After a restart
+/// the far coin is spent: not a coin and not in the balance.
+#[tokio::test]
+async fn a_far_coin_spent_before_its_rescan_is_stored_stays_spent_after_a_restart() {
+    let mut w = FarCoins::new().await;
+    let funding = block_at(HEIGHT, vec![w.paying_far.clone()]);
+    w.process(HEIGHT, &funding).await;
+    w.process(HEIGHT + 1, &block_at(HEIGHT + 1, vec![w.extending.clone()]))
+        .await;
+    w.process(HEIGHT, &funding).await;
+    assert!(w.holds(w.far()).await, "the re-scan credits the far output");
+    w.process(HEIGHT + 2, &block_at(HEIGHT + 2, vec![spend_away(w.far())]))
+        .await;
+    w.persist().await;
+
+    assert_eq!(
+        stored_unspent_rows(&w.path, &w.addresses),
+        vec![1, 0, 1],
+        "the far coin has no unspent row"
+    );
+    assert_eq!(
+        w.restart(),
+        Restarted {
+            coins: coins([
+                FarCoins::coin(&w.paying_far, 0),
+                FarCoins::coin(&w.extending, 0)
+            ]),
+            balance: 2 * VALUE,
+        }
+    );
+}
+
+/// Block 100 pays `paying_far` and is stored; block 101 spends vout 0 with
+/// change to the wallet and pays the near index, and is stored; then the
+/// re-scan of block 100 credits the far coin and is stored. After a restart
+/// vout 0 is spent, and the far coin, the near coin and the change are coins.
+#[tokio::test]
+async fn a_rescan_after_a_later_spend_keeps_the_spent_coin_spent_after_a_restart() {
+    let mut w = FarCoins::new().await;
+    let funding = block_at(HEIGHT, vec![w.paying_far.clone()]);
+    let spend = spend_with_change(FarCoins::coin(&w.paying_far, 0), &w.bip44[0]);
+    w.process(HEIGHT, &funding).await;
+    w.persist().await;
+    w.process(
+        HEIGHT + 1,
+        &block_at(HEIGHT + 1, vec![spend.clone(), w.extending.clone()]),
+    )
+    .await;
+    w.persist().await;
+    w.process(HEIGHT, &funding).await;
+    assert!(w.holds(w.far()).await, "the re-scan credits the far output");
+    w.persist().await;
+
+    assert_eq!(
+        stored_unspent_rows(&w.path, &w.addresses),
+        vec![0, 1, 1],
+        "vout 0 has no unspent row, the far coin has one"
+    );
+    assert_eq!(
+        w.restart(),
+        Restarted {
+            coins: coins([
+                w.far(),
+                FarCoins::coin(&w.extending, 0),
+                FarCoins::coin(&spend, 1)
+            ]),
+            balance: 2 * VALUE + CHANGE,
+        }
+    );
+}
+
+/// The store already holds the far coin as spent (a spend it recorded, or a
+/// row the host marked spent) while the wallet still holds it, and then the
+/// re-scan's events reach the store. A re-scan only fills rows the store
+/// lacks: the far coin's row stays spent, and after a restart the far coin
+/// is neither held nor in the balance.
+#[tokio::test]
+async fn a_rescan_never_unspends_a_coin_the_store_holds_spent() {
+    let mut w = FarCoins::new().await;
+    let funding = block_at(HEIGHT, vec![w.paying_far.clone()]);
+    w.process(HEIGHT, &funding).await;
+    w.process(HEIGHT + 1, &block_at(HEIGHT + 1, vec![w.extending.clone()]))
+        .await;
+    w.process(HEIGHT, &funding).await;
+    let far_utxo = w
+        .manager
+        .read()
+        .await
+        .get_wallet_info(&w.wallet_id)
+        .expect("wallet")
+        .core_wallet
         .accounts
         .all_funding_accounts()
         .into_iter()
-        .flat_map(|account| account.utxos.keys().copied())
-        .collect();
+        .find_map(|account| account.utxos.get(&w.far()).cloned())
+        .expect("the wallet holds the far coin");
+    w.persister
+        .as_ref()
+        .expect("open")
+        .store(
+            w.wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    spent_utxos: vec![far_utxo],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .expect("store the far coin as spent");
+    w.persist().await;
+
     assert_eq!(
-        coins,
-        std::collections::BTreeSet::from([
-            OutPoint {
-                txid: paying_far.txid(),
-                vout: 0
-            },
-            far_coin,
-            OutPoint {
-                txid: extending.txid(),
-                vout: 0
-            },
-        ]),
-        "a reload restores the far coin"
+        stored_unspent_rows(&w.path, &w.addresses),
+        vec![1, 0, 1],
+        "the far coin's row stays spent"
     );
-    assert_eq!(reloaded.balance.total(), 3 * VALUE, "and the balance");
+    assert_eq!(
+        w.restart(),
+        Restarted {
+            coins: coins([
+                FarCoins::coin(&w.paying_far, 0),
+                FarCoins::coin(&w.extending, 0)
+            ]),
+            balance: 2 * VALUE,
+        }
+    );
+}
+
+/// The store holds the far coin as a stamped sweep placeholder (a spent
+/// row with no value or script, which the collector deletes once the
+/// finality boundary passes its stamp unless a delivery materialises it)
+/// while the wallet holds the coin, and the re-scan's events reach the
+/// store. The re-send materialises the row and keeps it spent, so when the
+/// ChainLock and the synced height pass the stamp the row survives. A later
+/// re-scan reaching the store then finds the spent row and leaves it, and
+/// after a restart the far coin is neither held nor in the balance.
+#[tokio::test]
+async fn a_rescan_materialises_a_spent_sweep_placeholder_without_unspending_it() {
+    use dashcore::bls_sig_utils::BLSSignature;
+    use dashcore::ephemerealdata::chain_lock::ChainLock;
+
+    let mut w = FarCoins::new().await;
+    let funding = block_at(HEIGHT, vec![w.paying_far.clone()]);
+    w.process(HEIGHT, &funding).await;
+    w.process(HEIGHT + 1, &block_at(HEIGHT + 1, vec![w.extending.clone()]))
+        .await;
+    w.process(HEIGHT, &funding).await;
+    let far_utxo = w
+        .manager
+        .read()
+        .await
+        .get_wallet_info(&w.wallet_id)
+        .expect("wallet")
+        .core_wallet
+        .accounts
+        .all_funding_accounts()
+        .into_iter()
+        .find_map(|account| account.utxos.get(&w.far()).cloned())
+        .expect("the wallet holds the far coin");
+    let persister = w.persister.as_ref().expect("open");
+    persister
+        .store(
+            w.wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    spent_utxos: vec![far_utxo.clone()],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .expect("store the far coin as spent");
+    let far_script = w.addresses[1].script_pubkey();
+    let placed = rusqlite::Connection::open(&w.path)
+        .expect("open the store")
+        .execute(
+            "UPDATE core_utxos SET is_sweep_placeholder = 1, winner_mined_height = ?1, \
+             value = 0, script = X'' WHERE script = ?2 AND spent = 1",
+            rusqlite::params![i64::from(HEIGHT + 2), far_script.as_bytes()],
+        )
+        .expect("make the row a stamped placeholder");
+    assert_eq!(placed, 1);
+    w.persist().await;
+    let past = HEIGHT + 5;
+    w.persister
+        .as_ref()
+        .expect("open")
+        .store(
+            w.wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    last_processed_height: Some(past),
+                    synced_height: Some(past),
+                    last_applied_chain_lock: Some(ChainLock {
+                        block_height: past,
+                        block_hash: dashcore::BlockHash::all_zeros(),
+                        signature: BLSSignature::from([0u8; 96]),
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .expect("move the boundary past the stamp");
+
+    let kept: i64 = rusqlite::Connection::open(&w.path)
+        .expect("open the store")
+        .query_row(
+            "SELECT COUNT(*) FROM core_utxos \
+             WHERE script = ?1 AND spent = 1 AND is_sweep_placeholder = 0",
+            [far_script.as_bytes()],
+            |row| row.get(0),
+        )
+        .expect("count rows");
+    assert_eq!(
+        kept, 1,
+        "the far coin's row is materialised and stays spent"
+    );
+    w.persister
+        .as_ref()
+        .expect("open")
+        .store(
+            w.wallet_id,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    rescan_utxos: vec![far_utxo],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .expect("a later re-scan reaches the store");
+    assert_eq!(
+        stored_unspent_rows(&w.path, &w.addresses),
+        vec![1, 0, 1],
+        "the far coin's row stays spent"
+    );
+    assert_eq!(
+        w.restart(),
+        Restarted {
+            coins: coins([
+                FarCoins::coin(&w.paying_far, 0),
+                FarCoins::coin(&w.extending, 0)
+            ]),
+            balance: 2 * VALUE,
+        }
+    );
 }
 
 fn bip44_account_0() -> AccountType {
