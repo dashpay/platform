@@ -934,6 +934,24 @@ async fn should_give_token_notes_paths_to_the_root_of_the_kept_leaves() {
     ));
 }
 
+/// A token pool tree that does not build from its kept leaves is a store
+/// fault no sync repairs, not the retry-after-sync witness refusal (code 88)
+/// that a note past those leaves gets.
+#[test]
+fn should_report_a_token_pool_tree_that_does_not_build_as_a_store_error() {
+    for error in [
+        grovedb_commitment_tree::CommitmentTreeError::TreeFull,
+        grovedb_commitment_tree::CommitmentTreeError::InvalidData("bad leaf".into()),
+    ] {
+        let err = tree_build_error(token().token_id, error);
+        assert!(
+            matches!(&err, PlatformWalletError::ShieldedStoreError(message)
+                if message.contains("does not build")),
+            "a tree that does not build is a store error, got {err:?}"
+        );
+    }
+}
+
 /// The sweep judges only the accounts it was given: a reservation of an
 /// account not registered now (its records unread) is kept, even in a pool
 /// another account's scan completed.

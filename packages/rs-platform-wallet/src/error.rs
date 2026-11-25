@@ -1389,6 +1389,9 @@ pub enum PlatformWalletError {
     /// No checkpoint of the local commitment tree covers a note selected for a
     /// shielded spend yet: the note's position was appended after the latest
     /// checkpoint (a sync pass that appended and stopped before checkpointing).
+    /// A token pool spend (token transfer or unshield) raises it for a note
+    /// past the leaves its pool's scan kept; a token pool tree that does not
+    /// build from those leaves is [`Self::ShieldedStoreError`].
     ///
     /// Raised while the spend is assembled, **before** any proof is built or
     /// anything is broadcast; the caller's generic error path releases the
