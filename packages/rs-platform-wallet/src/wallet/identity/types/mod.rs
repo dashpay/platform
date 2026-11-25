@@ -8,6 +8,7 @@
 pub mod block_time;
 pub mod dashpay;
 pub mod key_storage;
+pub mod withdrawal_outcome;
 
 pub use block_time::BlockTime;
 pub use dashpay::{
@@ -15,3 +16,4 @@ pub use dashpay::{
     PaymentDirection, PaymentEntry, PaymentStatus, ProfileUpdate,
 };
 pub use key_storage::{DpnsFetch, DpnsNameInfo, IdentityStatus, KeyStorage, PrivateKeyData};
+pub use withdrawal_outcome::WithdrawalOutcome;

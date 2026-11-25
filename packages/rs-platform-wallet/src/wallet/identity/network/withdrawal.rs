@@ -13,12 +13,10 @@ use dpp::ProtocolError;
 use dpp::identity::signer::Signer;
 
 use dash_sdk::platform::transition::put_settings::PutSettings;
-use dash_sdk::platform::transition::withdraw_from_identity::{
-    WithdrawFromIdentity, WithdrawFromIdentityWithMetadata,
-};
+use dash_sdk::platform::transition::withdraw_from_identity::WithdrawFromIdentityWithMetadata;
 
 use crate::error::PlatformWalletError;
-use crate::BlockTime;
+use crate::{BlockTime, WithdrawalOutcome};
 
 use super::signing_key::credit_signing_key;
 use super::*;
@@ -148,7 +146,11 @@ impl IdentityWallet {
     /// the platform-wallet `IdentityManager` (e.g. evo-tool's
     /// `QualifiedIdentity`).
     ///
-    /// Returns the remaining credit balance after the withdrawal.
+    /// Returns the remaining credit balance after the withdrawal, with the
+    /// block that proved it.
+    // TODO: test that `proved_at` is the wait response's metadata. The rs-sdk
+    // mock cannot be given a WaitForStateTransitionResult proof expectation
+    // from outside rs-sdk, and without one it verifies a real proof.
     #[allow(clippy::too_many_arguments)]
     pub async fn withdraw_credits_with_signer<S: Signer<IdentityPublicKey> + Send>(
         &self,
@@ -158,11 +160,11 @@ impl IdentityWallet {
         signing_withdrawal_key_to_use: Option<&IdentityPublicKey>,
         signer: S,
         settings: Option<PutSettings>,
-    ) -> Result<u64, dash_sdk::Error> {
+    ) -> Result<WithdrawalOutcome, dash_sdk::Error> {
         let signing_key =
             credit_signing_key(identity, signing_withdrawal_key_to_use, &signer, true)?;
-        identity
-            .withdraw(
+        let (remaining_credits, metadata) = identity
+            .withdraw_with_metadata(
                 &self.sdk,
                 to_address,
                 amount,
@@ -171,7 +173,8 @@ impl IdentityWallet {
                 signer,
                 settings,
             )
-            .await
+            .await?;
+        Ok(WithdrawalOutcome::proved(remaining_credits, metadata))
     }
 }
 

@@ -44,6 +44,7 @@ use key_wallet::bip32::{ChildNumber, DerivationPath};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::signer::{Signer as CoreSigner, SignerMethod};
 
+use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::Fetch;
 use dpp::identity::core_script::CoreScript;
@@ -63,6 +64,7 @@ use crate::wallet::core::is_signable_funding_account;
 use crate::wallet::identity::network::{
     select_owner_withdrawal_key, select_transfer_withdrawal_key,
 };
+use crate::wallet::identity::WithdrawalOutcome;
 use crate::wallet::platform_wallet::PlatformWallet;
 use crate::wallet::provider_key_at_index::ProviderKeyKind;
 
@@ -282,7 +284,7 @@ impl PlatformWallet {
     /// identity, signed with the wallet key chosen in `request.signing_key`
     /// and derived through `signer` at the path resolved by
     /// [`Self::masternode_withdrawal_keys`] (`keys`). Returns the identity's
-    /// remaining credit balance as proven by Platform.
+    /// remaining credit balance as proven by Platform, with the proving block.
     ///
     /// Guards (all fail WITHOUT broadcasting):
     /// - owner path with a destination, or a key the wallet doesn't hold;
@@ -304,7 +306,7 @@ impl PlatformWallet {
         request: MasternodeWithdrawalRequest,
         keys: &MasternodeWithdrawalKeys,
         signer: &S,
-    ) -> Result<u64, PlatformWalletError> {
+    ) -> Result<WithdrawalOutcome, PlatformWalletError> {
         // Resolve (path, expected hash160, destination) per signing key.
         let (path, expected_hash160, destination) = match request.signing_key {
             MasternodeWithdrawalKey::Owner => {
@@ -405,7 +407,7 @@ pub(crate) async fn execute_masternode_withdrawal<S: CoreSigner + ?Sized + Sync>
     path: DerivationPath,
     destination: Option<DashAddress>,
     signer: &S,
-) -> Result<u64, PlatformWalletError> {
+) -> Result<WithdrawalOutcome, PlatformWalletError> {
     if amount_credits == 0 {
         return Err(PlatformWalletError::InvalidParameter(
             "masternode withdrawal amount must be greater than zero".to_string(),
@@ -498,18 +500,19 @@ async fn broadcast_masternode_withdrawal(
     state_transition: &StateTransition,
     identity_id: Identifier,
     amount_credits: u64,
-) -> Result<u64, PlatformWalletError> {
+) -> Result<WithdrawalOutcome, PlatformWalletError> {
     let delivery = broadcast_tracking_delivery(sdk, state_transition, None).await;
     settle_masternode_withdrawal(identity_id, amount_credits, delivery, || {
-        state_transition.wait_for_affected_state::<StateTransitionProofResult>(sdk, None)
+        state_transition
+            .wait_for_affected_state_with_metadata::<StateTransitionProofResult>(sdk, None)
     })
     .await
 }
 
 /// What a signed masternode withdrawal's broadcast (`delivery`) and result
 /// wait (`wait`, run only when a dispatch may have reached a node) came to:
-/// the identity's proved remaining balance, or the error the withdrawal
-/// reports.
+/// the identity's proved remaining balance with the block that proved it, or
+/// the error the withdrawal reports.
 ///
 /// Only a transition that never left the wallet
 /// ([`BroadcastDelivery::NeverDelivered`]: refused before anything was sent)
@@ -532,10 +535,12 @@ async fn settle_masternode_withdrawal<W, Fut>(
     amount_credits: u64,
     delivery: BroadcastDelivery,
     wait: W,
-) -> Result<u64, PlatformWalletError>
+) -> Result<WithdrawalOutcome, PlatformWalletError>
 where
     W: FnOnce() -> Fut,
-    Fut: std::future::Future<Output = Result<StateTransitionProofResult, dash_sdk::Error>>,
+    Fut: std::future::Future<
+        Output = Result<(StateTransitionProofResult, ResponseMetadata), dash_sdk::Error>,
+    >,
 {
     // What the broadcast was answered with, kept for the reason an
     // unconfirmed withdrawal reports.
@@ -566,8 +571,9 @@ where
     };
 
     match wait().await {
-        Ok(StateTransitionProofResult::VerifiedPartialIdentity(partial)) => partial
+        Ok((StateTransitionProofResult::VerifiedPartialIdentity(partial), metadata)) => partial
             .balance
+            .map(|balance| WithdrawalOutcome::proved(balance, metadata))
             .ok_or_else(|| unconfirmed("the result proof carried no identity balance".to_string())),
         // Verified, but not the identity balance a withdrawal's result
         // carries: the remaining balance is not proved.
@@ -786,6 +792,7 @@ where
 mod tests {
     use super::*;
     use crate::broadcast_outcome::test_sdks::{sdk_refusing_connections, sdk_without_addresses};
+    use crate::BlockTime;
     use dash_sdk::dapi_client::transport::TransportError;
     use dash_sdk::dapi_client::DapiClientError;
     use dash_sdk::dapi_grpc::tonic::{Code, Status};
@@ -835,17 +842,28 @@ mod tests {
         dash_sdk::Error::TimeoutReached(std::time::Duration::from_secs(80), "waiting".to_string())
     }
 
-    fn proved_balance(balance: Option<u64>) -> StateTransitionProofResult {
-        StateTransitionProofResult::VerifiedPartialIdentity(PartialIdentity {
+    /// The block a result proof is answered at.
+    fn proving_block() -> ResponseMetadata {
+        ResponseMetadata {
+            height: 1234,
+            core_chain_locked_height: 42,
+            time_ms: 1_700_000_000_000,
+            ..Default::default()
+        }
+    }
+
+    fn proved_balance(balance: Option<u64>) -> (StateTransitionProofResult, ResponseMetadata) {
+        let result = StateTransitionProofResult::VerifiedPartialIdentity(PartialIdentity {
             id: Identifier::from(WITHDRAWN_FROM),
             loaded_public_keys: Default::default(),
             balance,
             revision: None,
             not_found_public_keys: Default::default(),
-        })
+        });
+        (result, proving_block())
     }
 
-    fn is_unconfirmed(settled: &Result<u64, PlatformWalletError>) -> bool {
+    fn is_unconfirmed(settled: &Result<WithdrawalOutcome, PlatformWalletError>) -> bool {
         matches!(
             settled,
             Err(PlatformWalletError::MasternodeWithdrawalUnconfirmed {
@@ -934,9 +952,9 @@ mod tests {
         assert!(!waited.get(), "nothing was sent, so nothing is waited for");
     }
 
-    /// A proved result returns the identity's remaining balance, whatever the
-    /// broadcast answered; a proof that carries no balance leaves the
-    /// withdrawal unconfirmed.
+    /// A proved result returns the identity's remaining balance and the block
+    /// that proved it, whatever the broadcast answered; a proof that carries
+    /// no balance leaves the withdrawal unconfirmed.
     #[tokio::test]
     async fn should_return_a_masternode_withdrawal_s_proved_balance() {
         for delivery in [
@@ -950,7 +968,13 @@ mod tests {
                 || std::future::ready(Ok(proved_balance(Some(7)))),
             )
             .await;
-            assert!(matches!(settled, Ok(7)), "{settled:?}");
+            assert_eq!(
+                settled.ok(),
+                Some(WithdrawalOutcome {
+                    remaining_credits: 7,
+                    proved_at: BlockTime::new(1234, 42, 1_700_000_000_000),
+                })
+            );
         }
         let settled = settle_masternode_withdrawal(
             Identifier::from(WITHDRAWN_FROM),
