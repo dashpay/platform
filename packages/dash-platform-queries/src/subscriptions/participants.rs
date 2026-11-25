@@ -9,7 +9,6 @@ use dpp::state_transition::identity_create_from_addresses_transition::accessors:
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_from_addresses_transition::accessors::IdentityTopUpFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::shield_from_asset_lock_transition::accessors::ShieldFromAssetLockTransitionAccessorsV0;
-use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
 use dpp::state_transition::unshield_transition::accessors::UnshieldTransitionAccessorsV0;
 use dpp::state_transition::StateTransition;
 
@@ -38,10 +37,6 @@ pub(super) fn addresses(state_transition: &StateTransition) -> Vec<(PlatformAddr
         StateTransition::ShieldFromAssetLock(transition) => {
             transition.surplus_output().into_iter().collect()
         }
-        // Credited instead when the identity cannot be created.
-        StateTransition::IdentityCreateFromShieldedPool(transition) => {
-            vec![transition.send_to_address_on_creation_failure()]
-        }
         // Shield spends address inputs (listed below) but credits the shielded pool.
         StateTransition::Shield(_)
         | StateTransition::DataContractCreate(_)
@@ -58,6 +53,9 @@ pub(super) fn addresses(state_transition: &StateTransition) -> Vec<(PlatformAddr
         | StateTransition::MasternodeVote(_)
         | StateTransition::ShieldFromIdentity(_)
         | StateTransition::IdentityTopUpFromShieldedPool(_)
+        // Names an address that is credited only when the identity cannot be created. The
+        // transition then fails, and a failed transition is not delivered.
+        | StateTransition::IdentityCreateFromShieldedPool(_)
         // Shielded senders and recipients are not public.
         | StateTransition::ShieldedTransfer(_)
         | StateTransition::ShieldedWithdrawal(_)

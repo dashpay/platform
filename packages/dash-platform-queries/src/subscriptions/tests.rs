@@ -368,25 +368,6 @@ fn address_role_cases() -> Vec<(
             vec![],
         ),
         (
-            name("identity create from shielded pool"),
-            StateTransition::IdentityCreateFromShieldedPool(
-                IdentityCreateFromShieldedPoolTransition::V0(
-                    IdentityCreateFromShieldedPoolTransitionV0 {
-                        public_keys: vec![],
-                        denomination: 1000,
-                        actions: vec![],
-                        anchor: [0; 32],
-                        proof: vec![],
-                        binding_signature: [0; 64],
-                        send_to_address_on_creation_failure: r1,
-                        identity_id: id(7),
-                    },
-                ),
-            ),
-            vec![],
-            vec![r1],
-        ),
-        (
             name("identity credit transfer to addresses"),
             StateTransition::IdentityCreditTransferToAddresses(
                 IdentityCreditTransferToAddressesTransition::V0(
@@ -435,6 +416,38 @@ fn should_classify_address_roles_for_every_variant_naming_addresses() {
         for role in [Role::Sender, Role::Recipient, Role::Any] {
             assert!(!matched(stranger, role), "{name}: stranger as {role:?}");
         }
+    }
+}
+
+/// An identity creation from the shielded pool names an address that is credited only when
+/// the identity cannot be created. The transition then fails and is not delivered, so a
+/// delivered one never credits the address, and no address filter matches it.
+#[test]
+fn should_not_match_the_address_an_identity_creation_falls_back_to() {
+    let contract = contract();
+    let fallback = address(3);
+    let creation = StateTransition::IdentityCreateFromShieldedPool(
+        IdentityCreateFromShieldedPoolTransition::V0(IdentityCreateFromShieldedPoolTransitionV0 {
+            public_keys: vec![],
+            denomination: 1000,
+            actions: vec![],
+            anchor: [0; 32],
+            proof: vec![],
+            binding_signature: [0; 64],
+            send_to_address_on_creation_failure: fallback,
+            identity_id: id(7),
+        }),
+    );
+    for role in [Role::Sender, Role::Recipient, Role::Any] {
+        let filters = resolve(
+            vec![StateTransitionFilter::Addresses {
+                addresses: vec![fallback],
+                role,
+            }],
+            &contract,
+        )
+        .unwrap();
+        assert!(matches(&filters, &creation).is_none(), "{role:?}");
     }
 }
 
