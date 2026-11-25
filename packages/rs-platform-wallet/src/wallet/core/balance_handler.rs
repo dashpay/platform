@@ -99,6 +99,9 @@ impl EventHandler for BalanceUpdateHandler {
             // and/or advance `last_applied_chain_lock`; neither
             // changes UTXO state or balances.
             WalletEvent::ChainLockProcessed { .. } => return,
+            // No balance on DismissalsChanged: the event that caused it
+            // carries any balance change.
+            WalletEvent::DismissalsChanged { .. } => return,
         };
 
         // Wait-free snapshot of the wallets map; cannot fail or block, so

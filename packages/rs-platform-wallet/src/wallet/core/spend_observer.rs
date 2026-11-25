@@ -158,7 +158,8 @@ fn observing_wallet(event: &WalletEvent) -> Option<&WalletId> {
         | WalletEvent::ChainLockProcessed { .. }
         | WalletEvent::SyncHeightAdvanced { .. }
         | WalletEvent::TransactionsSwept { .. }
-        | WalletEvent::ChainTruncated { .. } => None,
+        | WalletEvent::ChainTruncated { .. }
+        | WalletEvent::DismissalsChanged { .. } => None,
     }
 }
 
@@ -209,6 +210,7 @@ pub(crate) fn observed_spends(event: &WalletEvent) -> Vec<dashcore::OutPoint> {
         // TODO(#5380): a fence already retired by a spend the truncation
         // undid is not re-armed.
         WalletEvent::ChainTruncated { .. } => Vec::new(),
+        WalletEvent::DismissalsChanged { .. } => Vec::new(),
     }
 }
 

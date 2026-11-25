@@ -274,7 +274,8 @@ fn dashpay_payment_records(event: &WalletEvent) -> Vec<&TransactionRecord> {
         | WalletEvent::TransactionsSwept { .. }
         | WalletEvent::ChainTruncated { .. }
         | WalletEvent::SyncHeightAdvanced { .. }
-        | WalletEvent::ChainLockProcessed { .. } => Vec::new(),
+        | WalletEvent::ChainLockProcessed { .. }
+        | WalletEvent::DismissalsChanged { .. } => Vec::new(),
     }
 }
 
@@ -300,7 +301,8 @@ fn drives_payment_hooks(event: &WalletEvent) -> bool {
         | WalletEvent::TransactionsSwept { .. }
         | WalletEvent::ChainTruncated { .. }
         | WalletEvent::SyncHeightAdvanced { .. }
-        | WalletEvent::ChainLockProcessed { .. } => false,
+        | WalletEvent::ChainLockProcessed { .. }
+        | WalletEvent::DismissalsChanged { .. } => false,
     }
 }
 

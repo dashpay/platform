@@ -1934,6 +1934,8 @@ async fn build_core_changeset(
             );
             CoreChangeSet::default()
         }
+        // The persister has no dismissal rows yet, so nothing is stored.
+        WalletEvent::DismissalsChanged { .. } => CoreChangeSet::default(),
         WalletEvent::SyncHeightAdvanced { wallet_id, height } => {
             // A watermark queued before a rewind must not land after it.
             // `reconcile_dashpay_rescan` lowers the in-memory cursor and
@@ -2093,7 +2095,8 @@ fn sent_payment_evidence(event: &WalletEvent) -> Vec<(String, SentPaymentEvidenc
         // the verdict it already has.
         WalletEvent::SyncHeightAdvanced { .. }
         | WalletEvent::ChainLockProcessed { .. }
-        | WalletEvent::ChainTruncated { .. } => Vec::new(),
+        | WalletEvent::ChainTruncated { .. }
+        | WalletEvent::DismissalsChanged { .. } => Vec::new(),
     }
 }
 
