@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::common::{
     ensure_wallet_meta, fresh_persister, fresh_persister_with_mode, wid, FlushMode,
 };
-use key_wallet::account::AccountType;
+use key_wallet::account::{AccountType, StandardAccountType};
 use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::managed_account::address_pool::{AddressState, KeySource};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
@@ -24,7 +24,7 @@ use platform_wallet::changeset::{
     PlatformWalletPersistence,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
-use platform_wallet_storage::sqlite::schema::core_pool;
+use platform_wallet_storage::sqlite::schema::{blob, core_pool};
 use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig, WalletStorageError};
 
 const OWNER: [u8; 32] = [0x71; 32];
@@ -690,4 +690,110 @@ fn a_corrupt_retired_xpub_does_not_block_live_writes() {
         .store(w, pools_only(pool_entries_extended(b, &[1], 2)))
         .unwrap();
     assert!(used_scripts(&persister, &w).contains(&address_at(b, 1).script_pubkey.to_bytes()));
+}
+
+/// Re-registering the same xpub decoded under another network (decoding maps
+/// every non-mainnet network to Testnet) is not a rotation: the live pool is
+/// left alone.
+#[test]
+fn the_same_xpub_under_another_network_is_not_a_rotation() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xEC);
+    ensure_wallet_meta(&persister, &w);
+    let a = contact_xpub(0x0A);
+    persister.store(w, registration(a, &[1])).unwrap();
+    persister
+        .lock_conn_for_test()
+        .execute_batch(
+            "CREATE TEMP TRIGGER no_pool_delete BEFORE DELETE ON core_address_pool \
+             BEGIN SELECT RAISE(ABORT, 'the live pool was retired'); END;",
+        )
+        .unwrap();
+
+    let regtest = ExtendedPubKey {
+        network: Network::Regtest,
+        ..a
+    };
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_registrations: vec![AccountRegistrationEntry {
+                    account_type: external_account(),
+                    account_xpub: regtest,
+                }],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(live_scripts(&persister, &w), scripts_of(a));
+    assert!(retired(&persister, &w).is_empty());
+    assert!(used_scripts(&persister, &w).contains(&address_at(a, 1).script_pubkey.to_bytes()));
+}
+
+/// A coin an older build persisted at a contact's address stays with the
+/// contact account, outside the wallet's balance, after the contact rotates
+/// away from that address: the retired generation still names its owner.
+#[test]
+fn a_stale_contact_coin_stays_out_of_the_balance_after_a_rotation() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xED);
+    ensure_wallet_meta(&persister, &w);
+    let funds = AccountRegistrationEntry {
+        account_type: AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        },
+        account_xpub: contact_xpub(0x01),
+    };
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                account_registrations: vec![funds],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let (a, b) = (contact_xpub(0x0A), contact_xpub(0x0B));
+    persister.store(w, registration(a, &[])).unwrap();
+    let stale = address_at(a, 0).script_pubkey.to_bytes();
+    let outpoint = blob::encode_outpoint(&dashcore::OutPoint {
+        txid: <dashcore::Txid as dashcore::hashes::Hash>::from_byte_array([0x5C; 32]),
+        vout: 0,
+    })
+    .unwrap();
+    persister
+        .lock_conn_for_test()
+        .execute(
+            "INSERT INTO core_utxos (wallet_id, outpoint, value, script, spent) \
+             VALUES (?1, ?2, 70000, ?3, 0)",
+            rusqlite::params![w.as_slice(), outpoint, stale],
+        )
+        .unwrap();
+    let total = |persister: &SqlitePersister| {
+        let state = persister.load().expect("load");
+        state
+            .wallets
+            .get(&w)
+            .expect("wallet")
+            .wallet_info
+            .balance
+            .total()
+    };
+    assert_eq!(
+        total(&persister),
+        0,
+        "a contact's coin is outside the balance"
+    );
+
+    persister.store(w, registration(b, &[])).unwrap();
+    drop(persister);
+    let persister = reopen(&path);
+    assert_eq!(loaded_account(&persister, &w).0, b);
+    assert_eq!(
+        total(&persister),
+        0,
+        "still outside the balance after the rotation"
+    );
 }

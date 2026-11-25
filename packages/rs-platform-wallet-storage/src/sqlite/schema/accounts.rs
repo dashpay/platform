@@ -200,6 +200,10 @@ pub fn apply_registrations(
 /// the new pool are written (and an earlier generation of the new xpub comes
 /// back). Any other account keeps its xpub for life, and a changed one still
 /// meets the pool writer's typed-key conflict.
+///
+/// Only the public key and chain code drive derivation, so an xpub that
+/// differs in anything else (decoding maps every non-mainnet network to
+/// Testnet) is the same generation and retires nothing.
 fn retire_rotated_dashpay_pool(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -212,7 +216,12 @@ fn retire_rotated_dashpay_pool(
         return Ok(());
     }
     match stored_registration(tx, wallet_id, &entry.account_type)? {
-        Some(stored) if stored.account_xpub != entry.account_xpub => {
+        Some(stored)
+            if (
+                stored.account_xpub.public_key,
+                stored.account_xpub.chain_code,
+            ) != (entry.account_xpub.public_key, entry.account_xpub.chain_code) =>
+        {
             crate::sqlite::schema::core_pool::rotate_account_pool(
                 tx,
                 wallet_id,
@@ -225,7 +234,9 @@ fn retire_rotated_dashpay_pool(
     }
 }
 
-/// The registration stored for `account_type`, if any.
+/// The registration stored for `account_type`, if any. A stored xpub that
+/// does not decode is an error, so a corrupt registration fails closed: its
+/// account's registration and pool flushes fail rather than overwrite it.
 pub(crate) fn stored_registration(
     conn: &Connection,
     wallet_id: &WalletId,

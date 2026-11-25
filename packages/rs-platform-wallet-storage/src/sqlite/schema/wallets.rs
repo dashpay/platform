@@ -102,7 +102,10 @@ pub(crate) fn network_of(
     let label: String = conn
         .prepare_cached("SELECT network FROM wallets WHERE wallet_id = ?1")?
         .query_row(params![wallet_id.as_slice()], |row| row.get(0))?;
-    parse_network(&label).ok_or_else(|| WalletStorageError::blob_decode("wallets.network"))
+    parse_network(&label).ok_or_else(|| WalletStorageError::UnknownWalletNetwork {
+        wallet_id: *wallet_id,
+        label,
+    })
 }
 
 /// Inverse of `network_to_str`.

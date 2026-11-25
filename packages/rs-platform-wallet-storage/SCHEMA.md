@@ -485,9 +485,12 @@ external pool row by the xpub it derives from: the registered one's to
 the same flush) here, merging `used`; a row of an xpub the account never
 had is still a typed-key conflict. So a pool snapshot taken before a
 rotation and flushed after it, of any length, never reaches the live
-pool. Read only by `SqlitePersister::retired_pool_addresses`, for history
-and attribution: `load()` never derives a pool or the used-address set
-from it, so nothing here is payable.
+pool. Read by `SqlitePersister::retired_pool_addresses`, for history and
+attribution. A script only a retired generation holds still counts as a
+contact's in transaction accounting, and `load()` restores no unspent coin
+at such a script (no account derives it any more). `load()` never derives
+a pool or the used-address set from this table, so nothing here is
+payable.
 
 - PK: `(wallet_id, account_type, account_index, key_class, user_identity_id, friend_identity_id, account_xpub, pool_type, address_index)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.

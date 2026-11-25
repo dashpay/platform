@@ -674,6 +674,35 @@ pub(crate) fn owning_account_for_script(
     }))
 }
 
+/// Whether `core_address_pool_retired` exists yet: V021 replays history
+/// through readers that consult it before V023 creates it.
+pub(crate) fn retired_pool_exists(conn: &Connection) -> Result<bool, WalletStorageError> {
+    Ok(conn
+        .prepare_cached(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master \
+                 WHERE type = 'table' AND name = 'core_address_pool_retired')",
+        )?
+        .query_row([], |r| r.get(0))?)
+}
+
+/// Whether `script` is held only by a DashPay contact generation the contact
+/// rotated away from: a retired row, and no live pool row. Callers check
+/// [`retired_pool_exists`] first.
+pub(crate) fn retired_only_script(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    script: &[u8],
+) -> Result<bool, WalletStorageError> {
+    Ok(conn
+        .prepare_cached(
+            "SELECT NOT EXISTS(SELECT 1 FROM core_address_pool \
+                     WHERE wallet_id = ?1 AND script = ?2) \
+                 AND EXISTS(SELECT 1 FROM core_address_pool_retired \
+                     WHERE wallet_id = ?1 AND script = ?2)",
+        )?
+        .query_row(params![wallet_id.as_slice(), script], |r| r.get(0))?)
+}
+
 /// Used addresses for a wallet, read verbatim from `core_address_pool`
 /// (`used = 1`), each paired with its owning account. This is the
 /// *known-owner* reuse-guard source: the pool row carries the account
