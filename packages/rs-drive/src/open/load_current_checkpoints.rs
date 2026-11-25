@@ -5,7 +5,7 @@ use std::sync::Arc;
 use arc_swap::ArcSwap;
 use dpp::prelude::{BlockHeight, TimestampMillis};
 
-use super::storage_engine::{open_grove, Role};
+use super::storage_engine::{no_entry_says_a_database, open_grove, Role};
 use crate::config::DriveConfig;
 use crate::drive::{Checkpoint, CheckpointInfo, CheckpointsMap};
 use crate::error::Error;
@@ -15,7 +15,9 @@ use crate::error::Error;
 /// This function scans the `<db_path>/checkpoints/` directory for existing checkpoint
 /// subdirectories (named by block height), opens each one as a checkpoint on the storage
 /// engine of `config`, and returns an ArcSwap containing the loaded checkpoints. A directory
-/// that holds no database of that engine is skipped, and none is made in it.
+/// that holds no database of that engine is skipped, and none is made in it. Each skip is
+/// logged with the directory: as a warning with the error of the open, or as information
+/// where no entry of the directory says a database, which every start meets again.
 ///
 /// # Arguments
 /// * `db_path` - The path to the database directory (parent of the checkpoints directory)
@@ -64,7 +66,22 @@ pub fn load_current_checkpoints<P: AsRef<Path>>(
         // Try to open the checkpoint as a GroveDb
         let grove_db = match open_grove(&path, config, Role::Checkpoint) {
             Ok(db) => db,
-            Err(_) => continue, // Skip corrupted or invalid checkpoints
+            Err(error) => {
+                if no_entry_says_a_database(&path) {
+                    tracing::info!(
+                        "the checkpoint directory {} holds no database and is skipped",
+                        path.display()
+                    );
+                } else {
+                    tracing::warn!(
+                        %error,
+                        "the checkpoint directory {} could not be opened as a checkpoint and \
+                         is skipped",
+                        path.display()
+                    );
+                }
+                continue;
+            }
         };
 
         // Get the modification time as the checkpoint timestamp

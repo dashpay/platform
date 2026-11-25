@@ -1440,4 +1440,69 @@ mod tests {
             );
         }
     }
+
+    /// A start says which directories of checkpoints it did not load. One that could not
+    /// be opened is a warning. One in which no database was ever made is skipped at every
+    /// start and is no warning.
+    #[test]
+    fn a_start_logs_each_checkpoint_directory_it_skips() {
+        let platform = checkpointing_platform();
+        let app = FullAbciApplication::new(&platform.platform);
+        let [first_time, _, _] = block_times_around_a_checkpoint_interval();
+        finalize_real_block(&platform, &app, 1, first_time, None).expect("first block");
+        assert_eq!(registered_checkpoint_heights(&platform), vec![1]);
+
+        let checkpoints_path = platform.config.db_path.join("checkpoints");
+        let loaded = checkpoints_path.join("1");
+        let never_made = checkpoints_path.join("7");
+        let damaged = checkpoints_path.join("8");
+        std::fs::create_dir(&never_made).expect("a directory with no database");
+        std::fs::create_dir(&damaged).expect("a directory for a damaged database");
+        std::fs::write(damaged.join("CURRENT"), b"no manifest")
+            .expect("a file that names no manifest");
+
+        drop(app);
+        let TempPlatform {
+            platform: closed,
+            tempdir,
+        } = platform;
+        drop(closed);
+        let logs = CapturedLogs::default();
+        let platform =
+            logs.capture(|| TempPlatform::open_with_tempdir(tempdir, checkpointing_config()));
+
+        assert_eq!(registered_checkpoint_heights(&platform), vec![1]);
+        let skipped = |level: tracing::Level, directory: &std::path::Path| {
+            let directory = directory.display().to_string();
+            logs.events().iter().any(|(event_level, message)| {
+                *event_level == level && message.contains(&directory) && message.contains("skipped")
+            })
+        };
+        assert!(
+            skipped(tracing::Level::WARN, &damaged),
+            "{:?}",
+            logs.events()
+        );
+        assert!(
+            skipped(tracing::Level::INFO, &never_made),
+            "{:?}",
+            logs.events()
+        );
+        assert!(
+            !skipped(tracing::Level::WARN, &never_made),
+            "{:?}",
+            logs.events()
+        );
+        assert!(
+            !skipped(tracing::Level::WARN, &loaded) && !skipped(tracing::Level::INFO, &loaded),
+            "{:?}",
+            logs.events()
+        );
+        assert_eq!(
+            std::fs::read_dir(&never_made)
+                .expect("the entries of the directory with no database")
+                .count(),
+            0
+        );
+    }
 }

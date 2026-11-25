@@ -176,6 +176,12 @@ pub(crate) fn open_grove(path: &Path, config: &DriveConfig, role: Role) -> Resul
     Ok(GroveDb::from_engine(engine))
 }
 
+/// Whether no entry of the directory at `path` says a database of either engine, as in a
+/// directory in which none was ever made. A directory that cannot be listed is not one.
+pub(crate) fn no_entry_says_a_database(path: &Path) -> bool {
+    matches!(EitherEngine::found_at(path), Ok(None))
+}
+
 /// The storage engine `grove` is on.
 pub(crate) fn storage_engine_of(grove: &GroveDb) -> StorageEngine {
     grove.engine().held()
