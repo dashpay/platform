@@ -140,7 +140,7 @@ where
         // The genesis height is excluded because its re-proposal path relies on a
         // single-savepoint discipline: init_chain sets one savepoint, and each genesis round
         // rewinds to it with one `rollback_to_savepoint()` (see prepare_proposal /
-        // process_proposal). Savepoints of KEPT transitions stay on the stack — RocksDB
+        // process_proposal). Savepoints of KEPT transitions stay on the stack — GroveDB
         // exposes no pop-without-rollback — and extra savepoints on the genesis transaction
         // would redirect that rewind. At every other height each proposal round runs in a
         // freshly started transaction that is either committed (leftover savepoints are inert
@@ -196,7 +196,7 @@ where
                         // it from the block (see `rollback_dropped_transitions` above). The
                         // mint accumulator mirrors applied state, so it rewinds with it.
                         if rollback_dropped_transitions {
-                            transaction.set_savepoint();
+                            self.drive.grove.set_savepoint(transaction)?;
                         }
                         let credit_mints_at_savepoint = block_credit_mints;
 
@@ -256,9 +256,7 @@ where
                                     // in the state the app hash is computed over. A rollback
                                     // failure means the proposal can no longer match the
                                     // block — fail it rather than continue on leaked state.
-                                    transaction
-                                        .rollback_to_savepoint()
-                                        .map_err(drive::grovedb::error::Error::StorageError)?;
+                                    self.drive.grove.rollback_to_savepoint(transaction)?;
                                     // The rollback discarded this transition's writes; drop
                                     // its mints with them, or the block would record a
                                     // credit inflow for a transition the proposal omits and

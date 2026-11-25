@@ -10645,7 +10645,11 @@ mod tests {
                 .expect("should apply operations");
 
             // If validation fails, rollback
-            validation_tx.rollback().expect("should rollback");
+            platform
+                .drive
+                .grove
+                .rollback_transaction(&validation_tx)
+                .expect("should rollback");
 
             // Balance should be unchanged
             let final_info = platform
@@ -10716,7 +10720,11 @@ mod tests {
                 .expect("should apply operations");
 
             // Simulate failure before modifying second address
-            exec_tx.rollback().expect("should rollback");
+            platform
+                .drive
+                .grove
+                .rollback_transaction(&exec_tx)
+                .expect("should rollback");
 
             // Both addresses should be unchanged
             let info1 = platform
