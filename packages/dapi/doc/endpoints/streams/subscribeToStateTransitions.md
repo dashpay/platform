@@ -46,7 +46,12 @@ The first message is a checkpoint at the height before the first scanned block: 
 follows every block with a match and repeats every 10 seconds otherwise. A checkpoint at `h`
 means every match from the first scanned block through `h` was sent: resume with
 `fromBlockHeight = h + 1`. Any end of the stream, including one with status `OK` (for example
-at the gateway's 600-second limit), means the same: resume from the last checkpoint.
+at the gateway's 600-second limit), means the same: resume from the highest checkpoint.
+
+Keep the highest checkpoint received, not the last. A stream resumed on a node that starts at
+its tip opens with a checkpoint below the one the client holds, and repeats matches the client
+may have. Resuming from that lower checkpoint could ask for a height nodes no longer replay.
+The Rust SDK does this: the checkpoints it gives an app never go down.
 
 **Example Usage** (Rust SDK):
 ```rust
@@ -91,11 +96,13 @@ Filters are evaluated against what a transition itself names, so:
 
 The stream is the node's assertion. A client can check that a delivered transition's hash
 matches its bytes, but not that the transition was committed or that nothing was left out, and
-block heights and times are the node's word. A checkpoint is too: one that names a height the
-chain had not reached hides the blocks committed between its arrival and the next stream's
-start, up to that height (at most 1,000 blocks), since the next node starts no higher than its
-own tip and scans only what is committed after it opens. No honest node sends such a
-checkpoint; it is one way a node leaves matches out. Delivery is at least once. Act on a transition by
+block heights and times are the node's word. A checkpoint is too. One that names a height the
+chain had not reached hides blocks until a stream reaches that height: each stream opened
+meanwhile starts at its node's tip, so what is committed between two streams is scanned by
+neither, and nothing below the tip of the first of them is. How many blocks that is depends on
+how far above the chain the checkpoint was; the 1,000 blocks a node lets a start be above its
+tip limit which starts it admits, not this. No honest node sends such a checkpoint; it is one
+way a node leaves matches out. Delivery is at least once. Act on a transition by
 reading the state it changed with a proved query; catch up after being offline from a proved
 read's `metadata.height + 1`.
 

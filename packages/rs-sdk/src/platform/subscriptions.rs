@@ -14,22 +14,26 @@
 //! height after the last checkpoint, possibly on another node, so transitions after it may be
 //! delivered again. A node that sends something invalid (a wrong hash, indexes or positions out
 //! of range, a stream that opens above the height it was asked to start at or with anything
-//! but a checkpoint, a later checkpoint going backwards) is banned (only moved out of the
-//! rotation when `ban_failed_address` is off) and the stream resumed elsewhere. A node that
+//! but a checkpoint, a checkpoint below an earlier one of its stream) is banned (only moved
+//! out of the rotation when `ban_failed_address` is off) and the stream resumed elsewhere. A node that
 //! lacks the heights asked for, or has no room for another stream, still serves other requests:
 //! the stream moves off it and it is not banned. A transition this SDK cannot decode is asked
 //! of another node first; when a second node delivers the same bytes the subscription ends:
 //! the SDK is likely older than the network.
 //!
+//! The place to resume from only moves up, and so do the checkpoints an app is given, which
+//! makes them safe to save. A node whose chain has not reached that place starts the stream
+//! at its own tip, below it: its transitions are delivered, possibly again, and its
+//! checkpoints are kept back until they pass the place to resume from.
+//!
 //! A checkpoint is the node's word like the rest of the stream, and one that names a height
-//! the chain has not reached is taken as it is. It hides the blocks committed between its
-//! arrival and the next stream's start, up to that height (at most 1,000 blocks): the next
-//! node starts no higher than the block after its own tip, opens with the checkpoint there,
-//! and the place to resume from follows it down, so only blocks committed after it opens are
-//! scanned. No honest node sends such a checkpoint; this is one way a node leaves matches
-//! out, and a proved read is the remedy. A node more than 1,000 blocks short of the height
-//! asked for refuses the stream, as a node that pruned a height does: once 8 in a row lack
-//! the heights asked for, the subscription ends, and the app catches up from a proved read.
+//! the chain has not reached is taken as it is. Until a stream reaches that height, each
+//! reconnect then starts at the next node's tip, and the blocks committed between two streams
+//! are scanned by neither. No honest node sends such a checkpoint; this is one way a node
+//! leaves matches out, and a proved read is the remedy. A node more than 1,000 blocks short
+//! of the height asked for refuses the stream, as a node that pruned a height does: once 8 in
+//! a row lack the heights asked for, the subscription ends, and the app catches up from a
+//! proved read.
 //!
 //! ```no_run
 //! use dash_sdk::dash_platform_queries::subscriptions::{DocumentFilter, StateTransitionFilter};
@@ -142,6 +146,7 @@ pub enum SubscriptionEvent {
     /// A matching transition.
     StateTransition(Box<StateTransitionEvent>),
     /// Every match through `block_height` was delivered; resume from `block_height + 1`.
+    /// Never lower than the checkpoint before it, so the last one is the one to save.
     Checkpoint {
         /// The highest fully scanned height.
         block_height: u64,
@@ -158,6 +163,8 @@ struct OpenStream {
     address: Address,
     opened: Clock,
     first_message: FirstMessage,
+    /// The last checkpoint this stream sent: a node scans in order, so none is lower.
+    last_checkpoint: Option<u64>,
 }
 
 /// What a stream must send before anything else: the checkpoint that says where it starts.
@@ -167,8 +174,7 @@ enum FirstMessage {
     /// opened at, and less than [`MAX_START_ABOVE_TIP`] below it. A node starts there, or
     /// lower when its chain has not reached it, which only delivers again. One that starts
     /// higher would move the place to resume from past blocks nobody scanned. No node
-    /// starts lower than that: it refuses a start so far above its tip, and following one
-    /// that did could put the place to resume from behind what any node replays.
+    /// starts lower than that: it refuses a start so far above its tip.
     CheckpointUpTo(u64),
     /// A checkpoint at the height the node starts after: a live start names none.
     AnyCheckpoint,
@@ -187,6 +193,7 @@ impl OpenStream {
                 Some(height) => FirstMessage::CheckpointUpTo(height.saturating_sub(1)),
                 None => FirstMessage::AnyCheckpoint,
             },
+            last_checkpoint: None,
         }
     }
 }
@@ -405,9 +412,6 @@ impl StateTransitionSubscription {
     /// a live start broke before its first checkpoint, two nodes delivered a transition this
     /// SDK cannot decode or the only node that answers kept delivering it, or no node holds the
     /// heights asked for), and every later call fails too.
-    ///
-    /// A checkpoint can be lower than one before it: a stream that resumes on a node whose
-    /// chain has not reached the place to resume from starts at that node's tip.
     pub async fn next(&mut self) -> Result<SubscriptionEvent, Error> {
         if let Some(reason) = &self.terminated {
             return Err(Error::Cancelled(format!(
@@ -427,7 +431,8 @@ impl StateTransitionSubscription {
         }
     }
 
-    /// The height a new stream would start from: the last checkpoint + 1.
+    /// The height a new stream would start from: the highest checkpoint + 1. It never goes
+    /// down.
     pub fn resume_height(&self) -> Option<u64> {
         self.resume_from
     }
@@ -461,7 +466,7 @@ impl StateTransitionSubscription {
             Some(Some(Ok(response))) => {
                 self.idle.heard();
                 match self.accept(response) {
-                    Ok(event) => return Ok(Some(event)),
+                    Ok(event) => return Ok(event),
                     Err(Refusal::NodeFault(fault)) => (fault, true, false),
                     Err(Refusal::AskAnotherNode(cause)) => (cause, false, true),
                     Err(Refusal::Undecodable(error)) => return Err(error),
@@ -589,11 +594,11 @@ impl StateTransitionSubscription {
         }
     }
 
-    /// The event a response carries.
+    /// The event a response carries; none for a checkpoint below the place to resume from.
     fn accept(
         &mut self,
         response: SubscribeToStateTransitionsResponse,
-    ) -> Result<SubscriptionEvent, Refusal> {
+    ) -> Result<Option<SubscriptionEvent>, Refusal> {
         let Some(Version::V0(response)) = response.version else {
             return Err(node_fault("unknown response version").into());
         };
@@ -602,15 +607,12 @@ impl StateTransitionSubscription {
             Some(stream) => std::mem::replace(&mut stream.first_message, FirstMessage::Sent),
             None => FirstMessage::Sent,
         };
-        let opens = match (first_message, &response.responses) {
-            (FirstMessage::Sent, _) => false,
-            (FirstMessage::AnyCheckpoint, Some(Responses::Checkpoint(_))) => true,
+        match (first_message, &response.responses) {
+            (FirstMessage::Sent, _)
+            | (FirstMessage::AnyCheckpoint, Some(Responses::Checkpoint(_))) => {}
             (FirstMessage::CheckpointUpTo(height), Some(Responses::Checkpoint(checkpoint)))
                 if checkpoint.block_height <= height
-                    && checkpoint.block_height.saturating_add(MAX_START_ABOVE_TIP) > height =>
-            {
-                true
-            }
+                    && checkpoint.block_height.saturating_add(MAX_START_ABOVE_TIP) > height => {}
             _ => {
                 return Err(node_fault(
                     "the stream did not open with a checkpoint at its start, or within what \
@@ -618,40 +620,57 @@ impl StateTransitionSubscription {
                 )
                 .into())
             }
-        };
+        }
         match response.responses {
             Some(Responses::Checkpoint(checkpoint)) => {
-                let resume_from = checkpoint
-                    .block_height
-                    .checked_add(1)
-                    .ok_or_else(|| node_fault("checkpoint at the maximum height"))?;
-                let behind = self
-                    .resume_from
-                    .is_some_and(|current| resume_from < current);
-                // Only the checkpoint a stream opens with may be behind: its node starts at
-                // its own tip when the chain it sees has not reached the height asked for,
-                // and the place to resume from follows it, so nothing in between is skipped.
-                if behind && !opens {
-                    return Err(node_fault("checkpoint before the previous one").into());
-                }
-                if self.resume_from.is_none_or(|current| resume_from > current) {
-                    self.retry_delay = FIRST_RETRY_DELAY;
-                    self.lacking_heights_in_a_row = 0;
-                }
-                self.resume_from = Some(resume_from);
-                // A stream got past the block: what an earlier one sent of it is settled.
-                if self.undecoded.as_ref().is_some_and(|undecoded| {
-                    undecoded.transition.block_height <= checkpoint.block_height
-                }) {
-                    self.undecoded = None;
-                }
-                Ok(SubscriptionEvent::Checkpoint {
-                    block_height: checkpoint.block_height,
-                })
+                self.accept_checkpoint(checkpoint.block_height)
             }
-            Some(Responses::StateTransition(matched)) => self.accept_transition(matched),
+            Some(Responses::StateTransition(matched)) => self.accept_transition(matched).map(Some),
             None => Err(node_fault("unknown response kind").into()),
         }
+    }
+
+    /// Take a checkpoint at `block_height`. The place to resume from only moves up: a stream
+    /// whose node started below it, at its own tip, is read on, and its checkpoints are kept
+    /// back until they reach that place. Nothing a node sends can move it back, so a
+    /// checkpoint given to the app is never lower than one before it.
+    fn accept_checkpoint(
+        &mut self,
+        block_height: u64,
+    ) -> Result<Option<SubscriptionEvent>, Refusal> {
+        let resume_from = block_height
+            .checked_add(1)
+            .ok_or_else(|| node_fault("checkpoint at the maximum height"))?;
+        // A node scans in order: within one stream a checkpoint never goes back.
+        if let Some(stream) = self.stream.as_mut() {
+            if stream
+                .last_checkpoint
+                .is_some_and(|last| block_height < last)
+            {
+                return Err(node_fault("checkpoint before the previous one").into());
+            }
+            stream.last_checkpoint = Some(block_height);
+        }
+        // A stream got past the block: what an earlier one sent of it is settled.
+        if self
+            .undecoded
+            .as_ref()
+            .is_some_and(|undecoded| undecoded.transition.block_height <= block_height)
+        {
+            self.undecoded = None;
+        }
+        if self
+            .resume_from
+            .is_some_and(|current| resume_from < current)
+        {
+            return Ok(None);
+        }
+        if self.resume_from != Some(resume_from) {
+            self.retry_delay = FIRST_RETRY_DELAY;
+            self.lacking_heights_in_a_row = 0;
+        }
+        self.resume_from = Some(resume_from);
+        Ok(Some(SubscriptionEvent::Checkpoint { block_height }))
     }
 
     fn accept_transition(
@@ -908,11 +927,9 @@ mod tests {
     /// resumes from `resume_from`.
     fn opened(resume_from: u64) -> StateTransitionSubscription {
         let (mut subscription, _) = subscription(Some(resume_from), ending(vec![]), vec![]);
-        subscription
-            .stream
-            .as_mut()
-            .expect("a stream")
-            .first_message = FirstMessage::Sent;
+        let stream = subscription.stream.as_mut().expect("a stream");
+        stream.first_message = FirstMessage::Sent;
+        stream.last_checkpoint = Some(resume_from - 1);
         subscription
     }
 
@@ -1056,7 +1073,7 @@ mod tests {
     }
 
     /// What `accept` makes of a transition.
-    fn outcome(result: Result<SubscriptionEvent, Refusal>) -> Result<(), String> {
+    fn outcome(result: Result<Option<SubscriptionEvent>, Refusal>) -> Result<(), String> {
         match result {
             Ok(_) => Ok(()),
             Err(Refusal::NodeFault(error)) => Err(format!("node fault: {error}")),
@@ -1303,46 +1320,83 @@ mod tests {
     }
 
     /// A node whose chain has not reached the height it is asked to start at starts at its
-    /// own tip and says so with its opening checkpoint. The place to resume from follows it
-    /// down, which only delivers again. After the opening, a checkpoint never goes back.
+    /// own tip and says so with its opening checkpoint. The place to resume from does not
+    /// follow it down: that stream's transitions are delivered, and its checkpoints are kept
+    /// back until they reach the place to resume from, so the app is never given a
+    /// checkpoint lower than one it has. Within the stream a checkpoint still never goes back.
     #[tokio::test(start_paused = true)]
-    async fn should_follow_a_stream_that_opens_below_its_start_and_no_other_checkpoint_back() {
-        let first = silent(vec![checkpoint(30), checkpoint(35), checkpoint(34)]);
-        let second = silent(vec![checkpoint(35)]);
-        let (mut subscription, opened) = subscription(Some(42), first, vec![second]);
-        for expected in [30, 35] {
+    async fn should_keep_the_place_to_resume_from_when_a_stream_opens_below_it() {
+        let mut below = transition(transfer());
+        below.block_height = 36;
+        let first = silent(vec![
+            checkpoint(30),
+            checkpoint(35),
+            Ok(Responses::StateTransition(below)),
+            checkpoint(41),
+            checkpoint(45),
+            checkpoint(44),
+        ]);
+        let second = silent(vec![checkpoint(45)]);
+        let (mut lagging, reopened) = subscription(Some(42), first, vec![second]);
+
+        // The transition below 42 is delivered, possibly again; 30 and 35 are not published.
+        let Ok(SubscriptionEvent::StateTransition(event)) = lagging.next().await else {
+            panic!("expected the transition below the place to resume from");
+        };
+        assert_eq!(event.block_height, 36);
+        assert_eq!(lagging.resume_height(), Some(42));
+        for expected in [41, 45] {
             assert!(matches!(
-                subscription.next().await,
+                lagging.next().await,
                 Ok(SubscriptionEvent::Checkpoint { block_height }) if block_height == expected
             ));
-            assert_eq!(subscription.resume_height(), Some(expected + 1));
+            assert_eq!(lagging.resume_height(), Some(expected + 1));
         }
-        // 34 after 35 is a node fault: the stream resumes from 36 on another node.
+        // 44 after 45 is a node fault: the stream resumes from 46 on another node.
+        assert!(matches!(
+            lagging.next().await,
+            Ok(SubscriptionEvent::Checkpoint { block_height: 45 })
+        ));
+        assert_eq!(opens(&reopened), vec![Some(46)]);
+
+        // The same fault below the place to resume from: 34 after 35, and the place stays.
+        let first = silent(vec![checkpoint(30), checkpoint(35), checkpoint(34)]);
+        let second = silent(vec![checkpoint(41)]);
+        let (mut subscription, opened) = subscription(Some(42), first, vec![second]);
         assert!(matches!(
             subscription.next().await,
-            Ok(SubscriptionEvent::Checkpoint { block_height: 35 })
+            Ok(SubscriptionEvent::Checkpoint { block_height: 41 })
         ));
-        assert_eq!(opens(&opened), vec![Some(36)]);
+        assert_eq!(opens(&opened), vec![Some(42)]);
+        assert_eq!(subscription.resume_height(), Some(42));
     }
 
-    /// A node refuses a start more than 1,000 blocks above its tip, so no node opens a stream
-    /// lower than that below the height asked for. One that does is at fault: following it
-    /// could put the place to resume from behind what any node replays, and end a
-    /// subscription whose place was good. Nothing of it is published.
+    /// A stream that opens as far below its start as a node may, and then breaks, leaves
+    /// the place to resume from where it was. Were it moved down, a place within 1,000 blocks
+    /// of the oldest height nodes replay would fall behind it, and the next node, which
+    /// could have served the place asked for, would end the subscription. A stream that
+    /// opens lower than a node may is a node fault.
     #[tokio::test(start_paused = true)]
-    async fn should_follow_an_opening_checkpoint_only_as_far_down_as_a_node_may_start() {
+    async fn should_reopen_where_it_asked_after_a_stream_that_opened_below() {
         let asked = 100_001;
         let lowest = asked - MAX_START_ABOVE_TIP;
 
-        let (mut followed, _) = subscription(Some(asked), silent(vec![checkpoint(lowest)]), vec![]);
+        let first = ending(vec![
+            checkpoint(lowest),
+            checkpoint(lowest + 5),
+            Err(Status::unavailable("gone")),
+        ]);
+        let second = silent(vec![checkpoint(asked - 1)]);
+        let (mut lagging, reopened) = subscription(Some(asked), first, vec![second]);
         assert!(matches!(
-            followed.next().await,
-            Ok(SubscriptionEvent::Checkpoint { block_height }) if block_height == lowest
+            lagging.next().await,
+            Ok(SubscriptionEvent::Checkpoint { block_height }) if block_height == asked - 1
         ));
-        assert_eq!(followed.resume_height(), Some(lowest + 1));
+        assert_eq!(opens(&reopened), vec![Some(asked)]);
+        assert_eq!(lagging.resume_height(), Some(asked));
 
         for below in [lowest - 1, 0] {
-            let first = silent(vec![checkpoint(below), checkpoint(below + 1)]);
+            let first = silent(vec![checkpoint(below), checkpoint(asked)]);
             let second = silent(vec![checkpoint(asked - 1)]);
             let (mut subscription, opened) = subscription(Some(asked), first, vec![second]);
             assert!(matches!(
@@ -1356,9 +1410,10 @@ mod tests {
 
     /// A node names a height the chain has not reached in a checkpoint, and the stream then
     /// breaks. The next node is honest and 5 blocks behind that height: it starts at its own
-    /// tip, so the block committed since, and its match, is not skipped.
+    /// tip, so the block committed after it opens, and its match, is delivered. Its
+    /// checkpoints stay below the one the app was given and are kept back.
     #[tokio::test(start_paused = true)]
-    async fn should_not_skip_blocks_committed_after_a_checkpoint_ahead_of_the_chain() {
+    async fn should_deliver_what_is_committed_after_a_checkpoint_ahead_of_the_chain() {
         let lying = ending(vec![
             checkpoint(41),
             checkpoint(1_000),
@@ -1370,24 +1425,28 @@ mod tests {
             checkpoint(995),
             Ok(Responses::StateTransition(committed_since)),
             checkpoint(996),
+            checkpoint(1_000),
         ]);
         let (mut subscription, opened) = subscription(Some(42), lying, vec![honest]);
-        for expected in [41, 1_000, 995] {
+        for expected in [41, 1_000] {
             assert!(matches!(
                 subscription.next().await,
                 Ok(SubscriptionEvent::Checkpoint { block_height }) if block_height == expected
             ));
         }
-        assert_eq!(opens(&opened), vec![Some(1_001)]);
         let Ok(SubscriptionEvent::StateTransition(event)) = subscription.next().await else {
             panic!("expected the transition committed since");
         };
         assert_eq!(event.block_height, 996);
+        assert_eq!(opens(&opened), vec![Some(1_001)]);
+        // 995 and 996 were kept back; the stream has now reached the checkpoint given.
         assert!(matches!(
             subscription.next().await,
-            Ok(SubscriptionEvent::Checkpoint { block_height: 996 })
+            Ok(SubscriptionEvent::Checkpoint {
+                block_height: 1_000
+            })
         ));
-        assert_eq!(subscription.resume_height(), Some(997));
+        assert_eq!(subscription.resume_height(), Some(1_001));
     }
 
     #[test]
