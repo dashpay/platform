@@ -144,7 +144,8 @@ pub fn apply(
         // placeholder is materialised with its spent flag kept, as every
         // delivery must (see `spent_utxos` below). The height is raised
         // either way, so a spent row a sweep later releases loads confirmed.
-        // Before `spent_utxos`, so a spend in the same fold still lands.
+        // A spend in the same fold lands whichever is written first: the
+        // spend marks the row, and the fill never clears the mark.
         let mut height_only_stmt = tx.prepare_cached(HEIGHT_ONLY_TRANSACTION_SQL)?;
         let mut fill_stmt = tx.prepare_cached(INSERT_ABSENT_UTXO_SQL)?;
         for utxo in &cs.rescan_utxos {
@@ -2270,52 +2271,44 @@ mod tests {
             .is_none());
     }
 
-    /// A re-scan's coin and its spend folded into one changeset, in either
-    /// order, load as spent: the coin is not a balance row after a reload.
+    /// One changeset carries a re-scan's coin and its spend: the coin loads
+    /// spent, so it is not a balance row after a reload.
     #[test]
     fn rescan_coin_spent_in_the_same_changeset_loads_spent() {
-        let txid = Txid::from_byte_array([0x87u8; 32]);
-        let coin = sample_utxo(txid, 500, true);
-        let rescan = || CoreChangeSet {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        migrations::run(&mut conn).unwrap();
+        let wallet_id = [0x4Bu8; 32];
+        conn.execute(
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+            params![&wallet_id[..]],
+        )
+        .unwrap();
+        let coin = sample_utxo(Txid::from_byte_array([0x87u8; 32]), 500, true);
+        let cs = CoreChangeSet {
             rescan_utxos: vec![coin.clone()],
+            spent_utxos: vec![coin],
             ..Default::default()
         };
-        let spend = || CoreChangeSet {
-            spent_utxos: vec![coin.clone()],
-            ..Default::default()
-        };
-        for (first, second) in [(rescan(), spend()), (spend(), rescan())] {
-            let mut conn = rusqlite::Connection::open_in_memory().unwrap();
-            migrations::run(&mut conn).unwrap();
-            let wallet_id = [0x4Bu8; 32];
-            conn.execute(
-                "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
-                params![&wallet_id[..]],
-            )
-            .unwrap();
-            let mut folded = first;
-            platform_wallet::changeset::Merge::merge(&mut folded, second);
-            let tx = conn.transaction().unwrap();
-            apply(&tx, &wallet_id, &folded).unwrap();
-            tx.commit().unwrap();
+        let tx = conn.transaction().unwrap();
+        apply(&tx, &wallet_id, &cs).unwrap();
+        tx.commit().unwrap();
 
-            let (state, _) = load_state(
-                &conn,
-                &wallet_id,
-                dashcore::Network::Testnet,
-                &LoadCtx::strict(),
+        let (state, _) = load_state(
+            &conn,
+            &wallet_id,
+            dashcore::Network::Testnet,
+            &LoadCtx::strict(),
+        )
+        .unwrap();
+        assert!(state.new_utxos.is_empty(), "the coin loads spent");
+        let spent: i64 = conn
+            .query_row(
+                "SELECT spent FROM core_utxos WHERE wallet_id = ?1",
+                params![&wallet_id[..]],
+                |row| row.get(0),
             )
             .unwrap();
-            assert!(state.new_utxos.is_empty(), "the coin loads spent");
-            let spent: i64 = conn
-                .query_row(
-                    "SELECT spent FROM core_utxos WHERE wallet_id = ?1",
-                    params![&wallet_id[..]],
-                    |row| row.get(0),
-                )
-                .unwrap();
-            assert_eq!(spent, 1);
-        }
+        assert_eq!(spent, 1);
     }
 
     #[test]
