@@ -67,6 +67,7 @@ mod sqlite_provider_key_accounts;
 mod sqlite_qa_identity_removal;
 mod sqlite_recovery_mode;
 mod sqlite_recovery_mode_write_block;
+mod sqlite_release_on_shutdown;
 mod sqlite_restore_cross_process_exclusion;
 mod sqlite_restore_open_path_guard;
 mod sqlite_restore_staged_validation;

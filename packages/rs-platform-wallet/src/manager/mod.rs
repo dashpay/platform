@@ -387,10 +387,14 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     pub(super) sdk: Arc<dash_sdk::Sdk>,
     pub(super) wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     /// Map of registered wallets. Held in an `Arc` so the
-    /// `BalanceUpdateHandler` can hold a clone and look up wallets to
-    /// update their lock-free balance atomics from event-handler
-    /// context, without touching the SPV-contended `wallet_manager`
-    /// lock.
+    /// `BalanceUpdateHandler` and `SpendObservationHandler` can hold a
+    /// `Weak` and look up wallets to update their lock-free balance
+    /// atomics and fences from event-handler context, without touching
+    /// the SPV-contended `wallet_manager` lock. Only `Weak`s may reach
+    /// it from the event fan-out: a strong clone there closes a cycle
+    /// through each wallet's SPV broadcaster. The sync coordinators and
+    /// a `TxoReconciler` hold strong clones, which can keep it alive
+    /// past the manager until they drop.
     ///
     /// An [`arc_swap::ArcSwap`] rather than a lock: readers take a
     /// wait-free snapshot that can never fail or block, which the
@@ -630,22 +634,21 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         );
 
         // Build handler list: app handler + internal handlers.
-        // BalanceUpdateHandler holds a clone of the wallets map (a
+        // BalanceUpdateHandler holds a weak handle on the wallets map (a
         // wait-free `ArcSwap`, separate from the wallet_manager lock)
         // so it can look up PlatformWallets and write to their
         // lock-free balance atomics from broadcast-handler context
         // without contending with SPV's write lock — and without any
         // window in which a lifecycle write could make the lookup fail.
         let lock_handler = Arc::new(LockNotifyHandler::new(Arc::clone(&lock_notify)));
-        let balance_handler = Arc::new(BalanceUpdateHandler::new(Arc::clone(&wallets)));
+        let balance_handler = Arc::new(BalanceUpdateHandler::new(&wallets));
         // SpendObservationHandler releases in-broadcast input fences when the
         // wallet observes the fenced outpoints spent — the evidence that ends
         // the fence a dispatch installs. It takes the
         // same `wallets` map, and for the same lock reason as the balance
         // handler: the event fires inside SPV's block-processing write section,
         // so the generation cannot be resolved through the wallet-manager lock.
-        let spend_observation_handler =
-            Arc::new(SpendObservationHandler::new(Arc::clone(&wallets)));
+        let spend_observation_handler = Arc::new(SpendObservationHandler::new(&wallets));
         // DashPayPaymentHandler records incoming DashPay payments and
         // confirms sent ones off the wallet-event fan-out, keeping that
         // domain logic out of the generic core-changeset bridge. It holds
@@ -1499,6 +1502,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 /// the manager, and with it the persister, alive while it joins the task, and
 /// reports a status back.
 ///
+/// A dirty drop does not stop SPV, and neither does a shutdown whose SPV stop
+/// did not complete. Once the wallets map is gone, the balance and
+/// spend-observation handlers ignore events for a wallet the host still holds:
+/// its balance goes stale and its fences stay up until restart.
+///
 /// Having a `Drop` at all changes teardown for every holder of this public
 /// type: a plain drop stops the adapter instead of detaching it, and the type's
 /// fields can no longer be moved out.
@@ -2205,7 +2213,7 @@ mod tests {
 
         // The production unit under test, holding the same map the
         // manager registers at construction.
-        let handler = BalanceUpdateHandler::new(Arc::clone(&manager.wallets));
+        let handler = BalanceUpdateHandler::new(&manager.wallets);
 
         // Park a lifecycle writer mid-publication: its `rcu` closure has
         // read the current map but not yet committed the replacement.
@@ -2260,6 +2268,49 @@ mod tests {
 
         release_tx.send(()).expect("writer still parked");
         writer.join().expect("writer thread completes");
+    }
+
+    /// The balance handler the constructor registers holds only a `Weak` on
+    /// the wallets map, so it must be the manager's own map that it upgrades:
+    /// a balance-bearing event dispatched through the manager's fan-out has to
+    /// reach a wallet registered through the public lifecycle. A handler built
+    /// over a map nobody else owns would upgrade to nothing and drop every
+    /// snapshot, which this catches.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn balance_event_through_the_manager_fanout_reaches_a_live_wallet() {
+        use std::collections::BTreeMap;
+
+        use crate::test_support::test_platform_wallet_manager;
+        use key_wallet::wallet::balance::WalletCoreBalance;
+
+        let (manager, wallet_id) = test_platform_wallet_manager().await;
+        let wallet = manager
+            .get_wallet(&wallet_id)
+            .await
+            .expect("fixture wallet is registered");
+        assert_ne!(wallet.balance().confirmed(), 4_321);
+
+        let snapshot = WalletCoreBalance::new(4_321, 0, 0, 0);
+        manager
+            .event_manager
+            .on_wallet_event(&crate::events::WalletEvent::BlockProcessed {
+                wallet_id,
+                height: 1_000,
+                chain_lock: None,
+                inserted: vec![],
+                updated: vec![],
+                matured: vec![],
+                balance: snapshot,
+                account_balances: BTreeMap::new(),
+                addresses_derived: vec![],
+                locked_outpoints: vec![],
+            });
+
+        assert_eq!(
+            wallet.balance().confirmed(),
+            snapshot.confirmed(),
+            "a balance event through the manager's fan-out must reach the live wallet"
+        );
     }
 
     /// A dirty drop CANCELS the wallet-event adapter; it must never `abort` it.
