@@ -8,7 +8,6 @@ import classifyRenewalFailure, {
 } from '../../../src/ssl/renewal-failure.js';
 import LegoArtifactsMissingError from '../../../src/ssl/errors/LegoArtifactsMissingError.js';
 import ConfigurationLockLostError from '../../../src/ssl/errors/ConfigurationLockLostError.js';
-import ConfigFileFormatTooNewError from '../../../src/config/errors/ConfigFileFormatTooNewError.js';
 import VerificationServerUnreachableError from '../../../src/ssl/errors/VerificationServerUnreachableError.js';
 import ProviderUnreachableError from '../../../src/ssl/errors/ProviderUnreachableError.js';
 import CertificateFileMissingError from '../../../src/ssl/errors/CertificateFileMissingError.js';
@@ -227,19 +226,6 @@ describe('renewalFailure', () => {
       const CARRIED = [
         ['a lost configuration lock', () => new ConfigurationLockLostError('Lost the configuration lock'),
           RENEWAL_FAILURE_CODES.RENEWAL_INTERRUPTED],
-        // An older helper refusing, before any work, to save over a config a
-        // newer dashmate updated. As "could not work out why" it would send the
-        // operator to support and withhold a certificate nothing made unsafe.
-        ['an outdated helper', () => new ConfigFileFormatTooNewError('/home/op/.dashmate/config.json', '5.2.0', '5.1.0', {
-          isBeforeAnyWork: true,
-        }), RENEWAL_FAILURE_CODES.HELPER_OUTDATED],
-        // The same refusal after the lease was taken can only follow a stolen
-        // lock, and by then a certificate may have been issued.
-        ['a newer config met after the work started', () => new ConfigFileFormatTooNewError(
-          '/home/op/.dashmate/config.json',
-          '5.2.0',
-          '5.1.0',
-        ), RENEWAL_FAILURE_CODES.RESULT_UNKNOWN],
         ['an unreachable provider', () => new ProviderUnreachableError('fetch failed'),
           RENEWAL_FAILURE_CODES.PROVIDER_UNREACHABLE],
         ['a missing certificate file', () => new CertificateFileMissingError('/home/op/bundle.crt'),

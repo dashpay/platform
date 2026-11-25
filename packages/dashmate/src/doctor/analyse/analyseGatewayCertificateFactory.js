@@ -297,24 +297,6 @@ Already open? Then something else is answering there - find it with
 }
 
 /**
- * The restart that replaces an outdated dashmate helper.
- *
- * Names the dashmate that last updated the configuration rather than this
- * one: the helper image follows the CLI that starts the node, and the dashmate
- * reading this report may itself be the outdated one.
- *
- * @param {string} cfg
- * @param {string} lead - how the sentence opens, e.g. 'Restart'
- * @return {string}
- */
-function renderHelperRestart(cfg, lead) {
-  return chalk`${lead} the node with the dashmate that last updated its configuration
-(or start it, if it is stopped), so the dashmate helper runs that version - its
-next renewal fails the same way until then:
-{bold.cyanBright dashmate restart ${cfg}}`;
-}
-
-/**
  * The ending an operator is given, chosen by what the cause allows.
  *
  * A cause that cannot be repaired by asking again must never end in a command
@@ -328,27 +310,10 @@ next renewal fails the same way until then:
  * @param {Object} options
  * @return {string|null} null when there is nothing for the operator to do
  */
-function renderRemedy(options) {
-  const {
-    code, remedy, cfg, configName, force, isIssuanceSpent, isIssuanceUncertain,
-    safeAction, issuanceStatus,
-  } = options;
-
-  // An earlier attempt left an issuance outstanding, which withholds every
-  // request below. The outdated helper still has to be replaced or it never
-  // records the success that settles it, and restarting it asks for nothing
-  // the helper would not ask for by itself.
-  if (code === RENEWAL_FAILURE_CODES.HELPER_OUTDATED && (isIssuanceSpent || isIssuanceUncertain)) {
-    const withheld = renderRemedy({ ...options, code: null });
-
-    // Conditional: a restart makes the gateway reload the pair on disk, and with
-    // the request withheld nothing here can repair that pair first.
-    return [
-      renderHelperRestart(cfg, 'Once the certificate files on disk work, restart'),
-      withheld,
-    ].filter(Boolean).join('\n');
-  }
-
+function renderRemedy({
+  code, remedy, cfg, configName, force, isIssuanceSpent, isIssuanceUncertain,
+  isCertificateUsable, safeAction, issuanceStatus,
+}) {
   const obtain = renderObtainCommand({
     configName, guidance: { safeAction, issuanceStatus }, force: force !== '',
   });
@@ -408,19 +373,6 @@ of certificates this way. It needs inbound port 80 open to the internet,
 permanently - and if you cannot open it, there is no other way to get a
 certificate for an IP address.
 ${obtain}`;
-  }
-
-  // The cause is known and a restart removes it. With a broken certificate the
-  // certificate comes first: asking from this dashmate is safe - the helper
-  // asked for nothing - and a restart before it would make the gateway reload
-  // whatever is on disk.
-  if (remedy === REMEDY_CLASS.RESTART_NODE) {
-    return safeAction === SAFE_ACTION.OBTAIN_AFTER_LOCAL_FIX
-      ? `Get a working certificate:
-${obtain}
-${renderHelperRestart(cfg, 'Then restart')}`
-      : `${renderHelperRestart(cfg, 'Restart')}
-Renewal resumes by itself after the restart.`;
   }
 
   // Nothing actionable was established, so asking the authority again is a

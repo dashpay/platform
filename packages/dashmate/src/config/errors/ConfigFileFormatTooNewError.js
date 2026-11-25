@@ -13,11 +13,8 @@ export default class ConfigFileFormatTooNewError extends AbstractError {
    * @param {string} configFilePath
    * @param {string} recordedVersion - the format recorded in the file
    * @param {string} ownVersion - the format this build produces
-   * @param {Object} [options={}]
-   * @param {boolean} [options.isBeforeAnyWork=false] - refused when the lock was
-   *   taken, before the caller did anything, rather than at a later save
    */
-  constructor(configFilePath, recordedVersion, ownVersion, { isBeforeAnyWork = false } = {}) {
+  constructor(configFilePath, recordedVersion, ownVersion) {
     super(`Config file '${configFilePath}' was updated by a newer dashmate (config format`
       + ` ${recordedVersion}; this dashmate writes config format ${ownVersion}). Nothing was saved,`
       + ' so the newer settings were not overwritten with older ones. Run this command with the'
@@ -29,6 +26,5 @@ export default class ConfigFileFormatTooNewError extends AbstractError {
     this.configFilePath = configFilePath;
     this.recordedVersion = recordedVersion;
     this.ownVersion = ownVersion;
-    this.isBeforeAnyWork = isBeforeAnyWork;
   }
 }

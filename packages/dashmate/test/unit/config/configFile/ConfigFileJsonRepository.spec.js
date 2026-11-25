@@ -1007,24 +1007,6 @@ describe('ConfigFileJsonRepository', () => {
       expect(newer.read().getConfig('base').get('platform.gateway.docker.image')).to.equal(NEWER_IMAGE);
     });
 
-    // Renewal records a refusal from acquire() as one that asked the authority
-    // for nothing. A later save may follow an issuance, and must not say so.
-    it('should mark only the refusal made when the lock is taken as before any work', () => {
-      const refusalOf = (fn) => {
-        try {
-          fn();
-        } catch (e) {
-          return e;
-        }
-
-        return null;
-      };
-
-      expect(refusalOf(() => older.acquire())).to.have.property('isBeforeAnyWork', true);
-      expect(refusalOf(() => older.write(older.read()))).to.have.property('isBeforeAnyWork', false);
-      expect(refusalOf(() => older.update(() => {}))).to.have.property('isBeforeAnyWork', false);
-    });
-
     it('should name both versions and the way out in the refusal', () => {
       expect(() => older.write(older.read())).to.throw(Error)
         .with.property('message')
