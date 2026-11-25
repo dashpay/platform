@@ -10936,6 +10936,239 @@ mod block_spend_tests {
         assert_eq!(captured(&info), vec![a, c]);
     }
 
+    /// Insert a wallet holding one coin, funded at 100 from `outside(marker)`,
+    /// and an unconfirmed payment of it recorded in `context`.
+    async fn insert_paying_wallet(
+        wm: &mut WalletManager<PlatformWalletInfo>,
+        context: TransactionContext,
+        marker: u8,
+    ) -> (WalletId, OutPoint, Transaction) {
+        let (wallet, core_wallet, address) = wallet_with_receive_address();
+        let mut info = PlatformWalletInfo::from_wallet(&wallet, 0);
+        info.core_wallet = core_wallet;
+        let wallet_id = wm.insert_wallet(wallet, info).expect("insert");
+        let funding = spend_of(&[outside(marker)], vec![pay(50_000, &address)]);
+        let coin = OutPoint {
+            txid: funding.txid(),
+            vout: 0,
+        };
+        let payment = spend_of(&[coin], vec![pay(40_000, &foreign_address(8))]);
+        let (wallet, info) = wm.get_wallet_mut_and_info_mut(&wallet_id).expect("wallet");
+        for (tx, context) in [(&funding, in_block(100)), (&payment, context)] {
+            assert!(
+                info.check_core_transaction(tx, context, wallet, true, true)
+                    .await
+                    .is_relevant
+            );
+        }
+        info.drain_block_spends();
+        (wallet_id, coin, payment)
+    }
+
+    /// A manager holding a paying wallet (see [`insert_paying_wallet`]) and
+    /// an empty one the blocks are fetched for, and its persistence channel.
+    async fn paying_wallet_beside_a_fetched_one(
+        context: TransactionContext,
+    ) -> (
+        WalletManager<PlatformWalletInfo>,
+        WalletId,
+        WalletId,
+        OutPoint,
+        Transaction,
+        tokio::sync::mpsc::UnboundedReceiver<WalletEvent>,
+    ) {
+        let mut wm = WalletManager::<PlatformWalletInfo>::new(key_wallet::Network::Testnet);
+        let events = wm.take_persistence_receiver().expect("receiver");
+        let (held, coin, payment) = insert_paying_wallet(&mut wm, context, 0xF3).await;
+        let other = new_wallet();
+        let other_info = PlatformWalletInfo::from_wallet(&other, 0);
+        let fetched = wm.insert_wallet(other, other_info).expect("insert");
+        (wm, held, fetched, coin, payment, events)
+    }
+
+    /// The txids each `TransactionsSwept` of `wallet_id` removed.
+    fn swept_of(
+        events: &mut tokio::sync::mpsc::UnboundedReceiver<WalletEvent>,
+        wallet_id: &WalletId,
+    ) -> Vec<Vec<Txid>> {
+        let mut swept = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            if let WalletEvent::TransactionsSwept {
+                wallet_id: id,
+                txids,
+                ..
+            } = event
+            {
+                if id == *wallet_id {
+                    swept.push(txids);
+                }
+            }
+        }
+        swept
+    }
+
+    /// A ChainLocked block fetched only for another wallet: the manager
+    /// sweeps this wallet's payment through the forwarded sweep, and the coin
+    /// the winner took is captured with the winner's block and txid.
+    #[tokio::test]
+    async fn a_chain_locked_winner_in_a_block_not_fetched_for_the_wallet_captures_its_coin() {
+        let (mut wm, held, fetched, coin, payment, mut events) =
+            paying_wallet_beside_a_fetched_one(TransactionContext::Mempool).await;
+        wm.apply_chain_lock(ChainLock::dummy(200));
+        let winner = spending(coin);
+        let block = dashcore::Block::dummy(150, vec![winner.clone()]);
+        wm.process_block_for_wallets(&block, block.block_hash(), 150, &BTreeSet::from([fetched]))
+            .await;
+
+        assert_eq!(swept_of(&mut events, &held), vec![vec![payment.txid()]]);
+        assert_eq!(
+            wm.get_wallet_info(&held).unwrap().drain_block_spends(),
+            vec![BlockSpend {
+                outpoint: coin,
+                height: 150,
+                block_hash: block.block_hash(),
+                spender_txid: winner.txid(),
+            }]
+        );
+        assert_ne!(winner.txid(), payment.txid());
+        assert!(captured(wm.get_wallet_info(&fetched).unwrap()).is_empty());
+    }
+
+    /// The ChainLock path: a plain block's winner cannot beat an
+    /// InstantSend-locked payment, so the payment is swept only when a
+    /// ChainLock covers the winner's block. The coin's block spend is in the
+    /// winner's block, not the ChainLock's.
+    #[tokio::test]
+    async fn a_chain_lock_sweep_captures_the_coin_in_the_winners_own_block() {
+        let (mut wm, held, fetched, coin, payment, mut events) =
+            paying_wallet_beside_a_fetched_one(TransactionContext::InstantSend(
+                InstantLock::default(),
+            ))
+            .await;
+        let winner = spending(coin);
+        let block = dashcore::Block::dummy(150, vec![winner.clone()]);
+        wm.process_block_for_wallets(&block, block.block_hash(), 150, &BTreeSet::from([fetched]))
+            .await;
+        assert!(swept_of(&mut events, &held).is_empty());
+        wm.get_wallet_info(&held).unwrap().drain_block_spends();
+
+        let chain_lock = ChainLock {
+            block_hash: BlockHash::from_byte_array([0xCC; 32]),
+            ..ChainLock::dummy(160)
+        };
+        wm.apply_chain_lock(chain_lock);
+
+        assert_eq!(swept_of(&mut events, &held), vec![vec![payment.txid()]]);
+        assert_eq!(
+            wm.get_wallet_info(&held).unwrap().drain_block_spends(),
+            vec![BlockSpend {
+                outpoint: coin,
+                height: 150,
+                block_hash: block.block_hash(),
+                spender_txid: winner.txid(),
+            }]
+        );
+    }
+
+    /// An input of the winner funded by a transaction the same sweep removes
+    /// is nobody's coin: it gets no block spend.
+    #[tokio::test]
+    async fn the_forwarded_sweep_captures_no_output_of_a_transaction_it_removes() {
+        let (mut wm, held, _, coin, payment, _events) =
+            paying_wallet_beside_a_fetched_one(TransactionContext::Mempool).await;
+        let dead = OutPoint {
+            txid: payment.txid(),
+            vout: 0,
+        };
+        let winner = spend_of(&[coin, dead], vec![pay(1_001, &foreign_address(9))]);
+        let block = BlockInfo::new(150, BlockHash::from_byte_array(BLOCK_HASH), 1_700_000_000);
+        let info = wm.get_wallet_info_mut(&held).unwrap();
+
+        let sweep =
+            info.sweep_conflicts_only(&winner, &TransactionContext::InChainLockedBlock(block));
+
+        assert_eq!(sweep.txids, vec![payment.txid()]);
+        assert_eq!(
+            info.drain_block_spends(),
+            vec![BlockSpend {
+                outpoint: coin,
+                height: 150,
+                block_hash: BlockHash::from_byte_array(BLOCK_HASH),
+                spender_txid: winner.txid(),
+            }]
+        );
+    }
+
+    /// A sweep whose context names no block writes no block spend, and does
+    /// not release the coin the winner takes either.
+    #[tokio::test]
+    async fn the_forwarded_sweep_without_a_block_captures_nothing_and_keeps_the_coin_spent() {
+        let (mut wm, held, _, coin, payment, _events) =
+            paying_wallet_beside_a_fetched_one(TransactionContext::Mempool).await;
+        let info = wm.get_wallet_info_mut(&held).unwrap();
+
+        let sweep = info.sweep_conflicts_only(
+            &spending(coin),
+            &TransactionContext::InstantSend(InstantLock::default()),
+        );
+
+        assert_eq!(sweep.txids, vec![payment.txid()]);
+        assert!(!sweep.released_outpoints.contains(&coin));
+        assert!(info.drain_block_spends().is_empty());
+        assert!(!info
+            .get_spendable_utxos()
+            .iter()
+            .any(|utxo| utxo.outpoint == coin));
+    }
+
+    /// Two wallets, each swept through the forwarded call by a block fetched
+    /// only for the other: each captures its own coin, with its own winner
+    /// and block.
+    #[tokio::test]
+    async fn each_wallet_captures_the_coin_a_block_fetched_for_the_other_took() {
+        let mut wm = WalletManager::<PlatformWalletInfo>::new(key_wallet::Network::Testnet);
+        let mut events = wm.take_persistence_receiver().expect("receiver");
+        let (a, coin_a, payment_a) =
+            insert_paying_wallet(&mut wm, TransactionContext::Mempool, 0xF4).await;
+        let (b, coin_b, payment_b) =
+            insert_paying_wallet(&mut wm, TransactionContext::Mempool, 0xF5).await;
+        let (winner_a, winner_b) = (spending(coin_a), spending(coin_b));
+        let block_a = dashcore::Block::dummy(150, vec![winner_a.clone()]);
+        let block_b = dashcore::Block::dummy(151, vec![winner_b.clone()]);
+        wm.process_block_for_wallets(&block_a, block_a.block_hash(), 150, &BTreeSet::from([b]))
+            .await;
+        wm.process_block_for_wallets(&block_b, block_b.block_hash(), 151, &BTreeSet::from([a]))
+            .await;
+
+        let mut seen = Vec::new();
+        while let Ok(event) = events.try_recv() {
+            if let WalletEvent::TransactionsSwept {
+                wallet_id, txids, ..
+            } = event
+            {
+                seen.push((wallet_id, txids));
+            }
+        }
+        assert_eq!(
+            seen,
+            vec![(a, vec![payment_a.txid()]), (b, vec![payment_b.txid()])]
+        );
+        for (wallet_id, coin, winner, block, height) in [
+            (a, coin_a, &winner_a, &block_a, 150),
+            (b, coin_b, &winner_b, &block_b, 151),
+        ] {
+            assert_eq!(
+                wm.get_wallet_info(&wallet_id).unwrap().drain_block_spends(),
+                vec![BlockSpend {
+                    outpoint: coin,
+                    height,
+                    block_hash: block.block_hash(),
+                    spender_txid: winner.txid(),
+                }]
+            );
+        }
+    }
+
     #[test]
     fn merge_appends_block_spends_and_counts_them_as_content() {
         let mut older = CoreChangeSet {

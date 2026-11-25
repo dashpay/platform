@@ -205,12 +205,44 @@ impl WalletInfoInterface for PlatformWalletInfo {
         self.core_wallet.unconfirmed_spent_outpoints()
     }
 
+    /// Forwarded, and a mined `tx` beating this wallet's records is captured
+    /// as a block spend of each input it takes from the wallet, in `tx`'s own
+    /// block: the manager calls this for a wallet the block was not fetched
+    /// for and on a ChainLock that finalizes `tx`, and neither records `tx`,
+    /// so the coin it took has no record left to keep it spent. Captured are
+    /// the inputs the wallet holds, has a claim on or spends in an unconfirmed
+    /// record, and, once the sweep removed something, every input of `tx`,
+    /// as `check_core_transaction` does. An output of a transaction this
+    /// sweep removed is nobody's coin and is never captured. A context that
+    /// names no block captures nothing.
     fn sweep_conflicts_only(
         &mut self,
         tx: &Transaction,
         context: &TransactionContext,
     ) -> WalletConflictSweep {
-        self.core_wallet.sweep_conflicts_only(tx, context)
+        let block = context.block_info().filter(|_| !tx.is_coin_base()).copied();
+        let mut spent: BTreeSet<OutPoint> = match block {
+            Some(_) => {
+                let unconfirmed = self.unconfirmed_record_inputs();
+                tx.input
+                    .iter()
+                    .map(|input| input.previous_output)
+                    .filter(|outpoint| {
+                        unconfirmed.contains(outpoint) || self.holds_or_claims(outpoint)
+                    })
+                    .collect()
+            }
+            None => BTreeSet::new(),
+        };
+        let sweep = self.core_wallet.sweep_conflicts_only(tx, context);
+        if let Some(block) = block {
+            if !sweep.txids.is_empty() {
+                spent.extend(tx.input.iter().map(|input| input.previous_output));
+            }
+            spent.retain(|outpoint| !sweep.txids.contains(&outpoint.txid));
+            self.capture_block_spends(spent, &block, tx.txid());
+        }
+        sweep
     }
 
     fn synced_height(&self) -> CoreBlockHeight {

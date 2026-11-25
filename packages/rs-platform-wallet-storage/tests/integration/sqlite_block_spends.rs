@@ -11,6 +11,7 @@ use std::time::Duration;
 
 use common::{ensure_wallet_meta, fresh_persister};
 use dashcore::ephemerealdata::chain_lock::ChainLock;
+use dashcore::ephemerealdata::instant_lock::InstantLock;
 use dashcore::{BlockHash, OutPoint, ScriptBuf, Transaction, TxIn, TxOut, Txid, Witness};
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::{Utxo, Wallet};
@@ -21,10 +22,14 @@ use platform_wallet::changeset::{
     PlatformWalletPersistence, WalletMetadataEntry,
 };
 use platform_wallet::key_wallet_manager::{WalletEvent, WalletInterface, WalletManager};
-use platform_wallet::test_support::core_fixtures::{foreign_address, outside, pay, spend_of};
+use platform_wallet::test_support::core_fixtures::{
+    foreign_address, outside, pay, spend_of, wallet_with_receive_address,
+};
 use platform_wallet::test_support::wallet_manager_with_persistence;
 use platform_wallet::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+use platform_wallet_storage::sqlite::schema::{blob, core_state};
 use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
+use rusqlite::OptionalExtension;
 use tokio::sync::{mpsc, RwLock};
 
 /// The SQLite persister, recording each stored round's truncation height.
@@ -1060,4 +1065,304 @@ async fn a_truncation_without_its_event_keeps_every_later_spend_through_the_next
         BTreeSet::from([base, first, second]),
         "every spend captured after either truncation is kept"
     );
+}
+
+// --- Block spends captured by the forwarded conflict sweep ------------------
+
+/// A store and a manager holding a wallet with an unconfirmed `payment`,
+/// beside a second wallet the blocks are fetched for. With `funded`, the
+/// wallet holds `coin` (funded at 100 by `funding`) and the payment spends
+/// it to a stranger; without, the funding is unknown and the payment pays
+/// the wallet. The payment is InstantSend-locked with `locked`. Every
+/// round so far is stored.
+struct PayingWallet {
+    persister: Arc<Recording>,
+    _tmp: tempfile::TempDir,
+    path: std::path::PathBuf,
+    manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    held: WalletId,
+    fetched: WalletId,
+    coin: OutPoint,
+    funding: Transaction,
+    address: dashcore::Address,
+    payment: Transaction,
+    queued: mpsc::UnboundedReceiver<WalletEvent>,
+}
+
+async fn paying_wallet(funded: bool, locked: bool) -> PayingWallet {
+    use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+
+    let (persister, tmp, path) = fresh_persister();
+    let (wallet, core_wallet, address) = wallet_with_receive_address();
+    let other = Wallet::new_random(
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .expect("wallet");
+    let mut wm = WalletManager::<PlatformWalletInfo>::new(key_wallet::Network::Testnet);
+    let mut queued = wm.take_persistence_receiver().expect("receiver");
+    let mut info = PlatformWalletInfo::from_wallet(&wallet, 0);
+    info.core_wallet = core_wallet;
+    let held = wm.insert_wallet(wallet.clone(), info).expect("insert");
+    let other_info = PlatformWalletInfo::from_wallet(&other, 0);
+    let fetched = wm.insert_wallet(other.clone(), other_info).expect("insert");
+    register(&persister, held, &wallet);
+    register(&persister, fetched, &other);
+
+    let funding = spend_of(&[outside(0xF3)], vec![pay(50_000, &address)]);
+    let coin = OutPoint::new(funding.txid(), 0);
+    let payee = if funded {
+        foreign_address(8)
+    } else {
+        address.clone()
+    };
+    let payment = spend_of(&[coin], vec![pay(40_000, &payee)]);
+    if funded {
+        let block = dashcore::Block::dummy(100, vec![funding.clone()]);
+        wm.process_block_for_wallets(&block, block.block_hash(), 100, &BTreeSet::from([held]))
+            .await;
+        wm.update_wallet_last_processed_height(&held, 100);
+        wm.update_wallet_synced_height(&held, 100);
+    }
+    let lock = locked.then(|| InstantLock {
+        txid: payment.txid(),
+        ..InstantLock::default()
+    });
+    wm.process_mempool_transaction(&payment, lock).await;
+    assert_eq!(
+        wm.get_wallet_info(&held)
+            .unwrap()
+            .unconfirmed_spent_outpoints()
+            .into_keys()
+            .collect::<Vec<_>>(),
+        vec![coin]
+    );
+
+    let persister = Arc::new(Recording {
+        inner: persister,
+        truncations: Mutex::new(Vec::new()),
+    });
+    let manager = Arc::new(RwLock::new(wm));
+    persist_queued(&manager, &mut queued, &persister).await;
+    persister.flush(held).expect("flush");
+    PayingWallet {
+        persister,
+        _tmp: tmp,
+        path,
+        manager,
+        held,
+        fetched,
+        coin,
+        funding,
+        address,
+        payment,
+        queued,
+    }
+}
+
+/// The coins the store would offer `wallet_id`.
+fn offered(persister: &SqlitePersister, wallet_id: &WalletId) -> BTreeSet<OutPoint> {
+    core_state::list_unspent_utxos(&persister.lock_conn_for_test(), wallet_id)
+        .unwrap()
+        .into_values()
+        .flatten()
+        .map(|row| row.outpoint)
+        .collect()
+}
+
+fn has_coin_row(persister: &SqlitePersister, wallet_id: &WalletId, outpoint: &OutPoint) -> bool {
+    let key = blob::encode_outpoint(outpoint).unwrap();
+    persister
+        .lock_conn_for_test()
+        .query_row(
+            "SELECT 1 FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+            rusqlite::params![wallet_id.as_slice(), &key[..]],
+            |_| Ok(()),
+        )
+        .optional()
+        .unwrap()
+        .is_some()
+}
+
+/// The ChainLock path: a plain block fetched for another wallet cannot beat
+/// the InstantSend-locked payment; the ChainLock above it does. The stored
+/// row is in the winner's block, not the ChainLock's, and the header check
+/// keeps it.
+#[tokio::test]
+async fn a_chain_lock_sweep_stores_the_coin_in_the_winners_block_and_the_header_check_keeps_it() {
+    let mut p = paying_wallet(true, true).await;
+    let winner = spending(p.coin);
+    let block = dashcore::Block::dummy(150, vec![winner.clone()]);
+    let chain_lock = ChainLock {
+        block_hash: BlockHash::from_byte_array([0xCC; 32]),
+        ..ChainLock::dummy(160)
+    };
+    {
+        let mut wm = p.manager.write().await;
+        wm.process_block_for_wallets(
+            &block,
+            block.block_hash(),
+            150,
+            &BTreeSet::from([p.fetched]),
+        )
+        .await;
+        // Only the ChainLock's capture reaches the store.
+        wm.get_wallet_info(&p.held).unwrap().drain_block_spends();
+        wm.apply_chain_lock(chain_lock.clone());
+    }
+    persist_queued(&p.manager, &mut p.queued, &p.persister).await;
+    p.persister.flush(p.held).expect("flush");
+
+    let expected = BTreeMap::from([(
+        p.coin,
+        BlockSpend {
+            outpoint: p.coin,
+            height: 150,
+            block_hash: block.block_hash(),
+            spender_txid: winner.txid(),
+        },
+    )]);
+    assert_eq!(
+        p.persister.inner.block_spent_outpoints(&p.held).unwrap(),
+        expected
+    );
+    let chain = BTreeMap::from([
+        (150, Some(block.block_hash())),
+        (160, Some(chain_lock.block_hash)),
+    ]);
+    assert_eq!(
+        p.persister
+            .inner
+            .delete_block_spends_off_chain(&p.held, &chain)
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        p.persister.inner.block_spent_outpoints(&p.held).unwrap(),
+        expected
+    );
+    assert!(!offered(&p.persister.inner, &p.held).contains(&p.coin));
+}
+
+/// A coin the wallet only has a claim on: its funding is not in the store,
+/// so the sweep of the payment holds it as a placeholder, which the
+/// ChainLock boundary then collects. The winner's row outlives that, so
+/// the funding arriving later, a release and a restart never offer it.
+#[tokio::test]
+async fn a_claimed_coin_the_forwarded_sweep_took_is_never_offered_once_its_placeholder_is_gone() {
+    let mut p = paying_wallet(false, false).await;
+    let winner = spending(p.coin);
+    {
+        let mut wm = p.manager.write().await;
+        wm.get_wallet_info_mut(&p.held)
+            .unwrap()
+            .restore_spent_outpoints(&[(p.coin, Some(p.payment.txid()))]);
+        wm.apply_chain_lock(ChainLock::dummy(200));
+        let block = dashcore::Block::dummy(150, vec![winner.clone()]);
+        wm.process_block_for_wallets(
+            &block,
+            block.block_hash(),
+            150,
+            &BTreeSet::from([p.fetched]),
+        )
+        .await;
+        wm.update_wallet_last_processed_height(&p.held, 200);
+        wm.update_wallet_synced_height(&p.held, 200);
+    }
+    persist_queued(&p.manager, &mut p.queued, &p.persister).await;
+    p.persister.flush(p.held).expect("flush");
+    assert!(
+        !has_coin_row(&p.persister.inner, &p.held, &p.coin),
+        "the ChainLock boundary collected the placeholder"
+    );
+    let rows = p.persister.inner.block_spent_outpoints(&p.held).unwrap();
+    assert_eq!(rows[&p.coin].spender_txid, winner.txid());
+    assert_eq!(rows[&p.coin].height, 150);
+
+    let mut funded = Utxo::new(
+        p.coin,
+        p.funding.output[0].clone(),
+        p.address.clone(),
+        100,
+        false,
+    );
+    funded.is_confirmed = true;
+    p.persister
+        .inner
+        .store(
+            p.held,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    new_utxos: vec![funded],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    p.persister.inner.flush(p.held).unwrap();
+    release(&p.persister.inner, p.held, p.coin);
+    assert!(!offered(&p.persister.inner, &p.held).contains(&p.coin));
+
+    let (held, path) = (p.held, p.path.clone());
+    drop(p.manager);
+    drop(p.persister);
+    let reopened = SqlitePersister::open(SqlitePersisterConfig::new(&path)).expect("reopen");
+    reopened.load().expect("load");
+    assert!(!offered(&reopened, &held).contains(&p.coin));
+    assert_eq!(reopened.block_spent_outpoints(&held).unwrap(), rows);
+}
+
+/// A late event drains the forwarded sweep's capture after a reorg, and the
+/// truncation projected after it keeps the row.
+#[tokio::test]
+async fn a_forwarded_sweep_capture_after_a_truncation_survives_an_older_queued_event() {
+    let mut p = paying_wallet(true, false).await;
+    let old = coin(0x65);
+    let winner = spending(p.coin);
+    let new_block = dashcore::Block::dummy(101, vec![winner.clone()]);
+    let mut events = Vec::new();
+    {
+        let mut wm = p.manager.write().await;
+        wm.get_wallet_info_mut(&p.held)
+            .unwrap()
+            .restore_spent_outpoints(&[(old, None)]);
+        process_spend(&mut wm, p.held, 101, old).await;
+        while let Ok(event) = p.queued.try_recv() {
+            events.push(event);
+        }
+        wm.truncate_above(100).expect("truncates");
+        wm.process_block_for_wallets(
+            &new_block,
+            new_block.block_hash(),
+            101,
+            &BTreeSet::from([p.fetched]),
+        )
+        .await;
+    }
+    while let Ok(event) = p.queued.try_recv() {
+        events.push(event);
+    }
+    let truncated = events
+        .iter()
+        .position(|event| matches!(event, WalletEvent::ChainTruncated { height: 100, .. }))
+        .expect("the reorg's truncation is queued");
+    assert!(
+        events[truncated..]
+            .iter()
+            .any(|event| matches!(event, WalletEvent::TransactionsSwept { .. })),
+        "the forwarded sweep runs after the truncation"
+    );
+
+    persist_events(&p.manager, events, &p.persister, p.held).await;
+
+    let rows = p.persister.inner.block_spent_outpoints(&p.held).unwrap();
+    assert_eq!(
+        rows.keys().copied().collect::<BTreeSet<_>>(),
+        BTreeSet::from([p.coin]),
+        "the old branch's spend is gone and the new branch's is kept"
+    );
+    assert_eq!(rows[&p.coin].height, 101);
+    assert_eq!(rows[&p.coin].block_hash, new_block.block_hash());
+    assert_eq!(rows[&p.coin].spender_txid, winner.txid());
 }
