@@ -792,6 +792,23 @@ pub enum PlatformWalletError {
         requested: Identifier,
     },
 
+    /// An external Platform-address funding lock (it recorded the Platform
+    /// addresses it pays) is being resumed through a flow that would pay
+    /// something else: an owned top-up, or an external funding to other
+    /// recipients. Nothing was submitted or paid and the lock stays tracked.
+    /// Resume it with the recorded recipients (see
+    /// `PlatformAddressWallet::resume_platform_address_funding_to_recorded_recipients`).
+    /// The FFI reports it with the same code as
+    /// [`Self::AssetLockRecipientMismatch`].
+    #[error(
+        "Asset lock {out_point} was built to pay recorded Platform addresses and cannot be \
+         resumed to pay anything else"
+    )]
+    AssetLockPlatformAddressRecipientMismatch {
+        out_point: dashcore::OutPoint,
+        recorded: Box<crate::changeset::PlatformAddressRecipients>,
+    },
+
     /// An unbound identity top-up lock records no recipient (it was rebuilt
     /// from the chain, for example after a restore from the seed, and its
     /// credit output names no identity), so no resume pays it: it may have
@@ -1963,7 +1980,10 @@ impl PlatformWalletError {
             Self::FinalityTimeout(out_point)
             | Self::AssetLockInputContested { out_point, .. }
             | Self::AssetLockRecipientMismatch { out_point, .. }
-            | Self::AssetLockIdentityRecipientMismatch { out_point, .. } => LockHeld(*out_point),
+            | Self::AssetLockIdentityRecipientMismatch { out_point, .. }
+            | Self::AssetLockPlatformAddressRecipientMismatch { out_point, .. } => {
+                LockHeld(*out_point)
+            }
             // An identity top-up lock a resume cannot pay yet: it records no
             // identity (the user assigns one), or its bound identity is not
             // loaded. Nothing was submitted; the lock is held and the payment
@@ -2281,6 +2301,7 @@ impl PlatformWalletError {
                 | Self::AssetLockInputContested { .. }
                 | Self::AssetLockRecipientMismatch { .. }
                 | Self::AssetLockIdentityRecipientMismatch { .. }
+                | Self::AssetLockPlatformAddressRecipientMismatch { .. }
                 | Self::AssetLockRecipientUnknown(_)
                 | Self::AssetLockIdentityNotLoaded { .. }
                 | Self::AssetLockProofWait(_)
@@ -3285,7 +3306,7 @@ mod payment_delivery_tests {
     }
 
     /// Variants of [`PlatformWalletError`]: one past the highest ordinal.
-    const VARIANT_COUNT: usize = 134;
+    const VARIANT_COUNT: usize = 135;
 
     /// The ordinal of `error`'s variant. No wildcard arm: a new variant does
     /// not compile until it gets the next ordinal here (and
@@ -3428,6 +3449,7 @@ mod payment_delivery_tests {
             E::AssetLockRecipientUnknown(_) => 131,
             E::AssetLockIdentityNotLoaded { .. } => 132,
             E::AssetLockConsumptionUnknown(_) => 133,
+            E::AssetLockPlatformAddressRecipientMismatch { .. } => 134,
         }
     }
 
@@ -3578,6 +3600,18 @@ mod payment_delivery_tests {
             ),
             (
                 E::AssetLockRecipientUnknown(out_point()),
+                LockHeld(out_point()),
+            ),
+            (
+                E::AssetLockPlatformAddressRecipientMismatch {
+                    out_point: out_point(),
+                    recorded: Box::new(
+                        crate::changeset::PlatformAddressRecipients::new(
+                            [(dpp::address_funds::PlatformAddress::P2pkh([3u8; 20]), None)].into(),
+                        )
+                        .expect("one remainder"),
+                    ),
+                },
                 LockHeld(out_point()),
             ),
             (
@@ -4069,9 +4103,10 @@ mod payment_delivery_tests {
             .collect();
         assert_eq!(
             held.len(),
-            7,
+            8,
             "FinalityTimeout, contested, recipient mismatch, identity recipient mismatch, \
-             unknown identity recipient, identity not loaded, a refusal after dispatch"
+             Platform-address recipient mismatch, unknown identity recipient, identity not \
+             loaded, a refusal after dispatch"
         );
         for (error, _) in held {
             assert!(!error.is_retryable(), "{error:?}");

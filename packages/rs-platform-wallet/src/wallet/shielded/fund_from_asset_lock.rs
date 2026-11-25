@@ -548,7 +548,9 @@ impl PlatformWallet {
         // to Platform; a resumed one (a drain retried under its operation id
         // arrives here as a resume too) may have been by an earlier call.
         let fresh_lock = !matches!(funding, AssetLockFunding::FromExistingAssetLock { .. });
-        let resolve = self.asset_locks.resolve_funding_observing_out_point(
+        // Boxed: inline, the resolution overflows a 2 MiB test-thread stack
+        // in debug builds.
+        let resolve = Box::pin(self.asset_locks.resolve_funding_observing_out_point(
             funding,
             AssetLockFundingType::AssetLockShieldedAddressTopUp,
             /* destination_index */ 0,
@@ -558,7 +560,7 @@ impl PlatformWallet {
             move |out_point| {
                 let _ = out_point_tx.send(out_point);
             },
-        );
+        ));
         // Resolution never waits on speculation: whatever has not started
         // proving by the time the lock resolves is dropped.
         let (resolution, speculative) = resolve_while_speculating(resolve, speculate).await;
@@ -1898,6 +1900,7 @@ mod tests {
                     operation_id: None,
                     shielded_recipient: None,
                     identity_recipient: None,
+                    platform_address_recipients: None,
                     out_point,
                     transaction,
                     account_index: 0,

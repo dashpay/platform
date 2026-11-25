@@ -1436,6 +1436,7 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS)
             .union(PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS)
             .union(PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS)
+            .union(PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS)
             .union(PersistenceCapabilities::TRACKED_MASTERNODES)
             .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
             .union(PersistenceCapabilities::DASHPAY_PAYMENTS)

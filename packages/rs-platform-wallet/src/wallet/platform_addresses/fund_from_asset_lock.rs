@@ -26,6 +26,7 @@
 //!    tracked outpoint so the row is marked `Consumed` (terminal)
 //!    and dropped from the in-memory tracked-lock map.
 
+use crate::changeset::{AssetLockRecipient, PlatformAddressRecipients};
 use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, AssetLockFunding, FundingResolution, ResolvedFunding,
 };
@@ -41,7 +42,12 @@ use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::state_transition::address_funding_from_asset_lock_transition::calculate_address_funding_from_asset_lock_min_required_fee;
+use dpp::state_transition::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
+use dpp::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
+use dpp::state_transition::errors::StateTransitionError;
+use dpp::state_transition::{StateTransition, StateTransitionStructureValidation};
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::PlatformP2PKHAddress;
 use std::collections::BTreeMap;
@@ -176,7 +182,7 @@ impl PlatformAddressWallet {
         S: Signer<PlatformAddress> + Send + Sync,
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
-        self.fund_from_asset_lock_inner(
+        Box::pin(self.fund_from_asset_lock_inner(
             funding,
             platform_account_index,
             addresses,
@@ -185,7 +191,7 @@ impl PlatformAddressWallet {
             settings,
             RecipientOwnership::AllOwned,
             on_asset_lock_built,
-        )
+        ))
         .await
     }
 
@@ -232,6 +238,25 @@ impl PlatformAddressWallet {
     /// while the sender's remainder output resolves and is credited as
     /// usual.
     ///
+    /// # Recovery
+    ///
+    /// The recipient map is recorded on the tracked lock
+    /// ([`TrackedAssetLock::platform_address_recipients`]) and made durable
+    /// before the lock is sent, so the caller does not have to associate the
+    /// outpoint with its recipients itself, and `on_asset_lock_built` is
+    /// informational only. A backend that does not declare
+    /// [`EXTERNAL_PLATFORM_ADDRESS_FUNDING`](crate::changeset::PersistenceCapabilities::EXTERNAL_PLATFORM_ADDRESS_FUNDING)
+    /// is refused before anything is built. A lock left behind by a failed or
+    /// interrupted call is resumed with
+    /// [`PlatformAddressWallet::resume_platform_address_funding_to_recorded_recipients`],
+    /// or with `AssetLockFunding::FromExistingAssetLock` through this entry
+    /// point and the recorded recipients. Any other resume of it — through
+    /// [`PlatformAddressWallet::fund_from_asset_lock`], or to other
+    /// recipients — is refused before anything is submitted, so the payment
+    /// is made or not at all, and is never consumed back into the wallet.
+    ///
+    /// [`TrackedAssetLock::platform_address_recipients`]: crate::wallet::asset_lock::tracked::TrackedAssetLock::platform_address_recipients
+    ///
     /// See [`PlatformAddressWallet::fund_from_asset_lock`] for the
     /// argument-by-argument reference, the latency budget and the
     /// cancellation contract — all of which apply verbatim.
@@ -250,7 +275,7 @@ impl PlatformAddressWallet {
         S: Signer<PlatformAddress> + Send + Sync,
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
-        self.fund_from_asset_lock_inner(
+        Box::pin(self.fund_from_asset_lock_inner(
             funding,
             platform_account_index,
             addresses,
@@ -259,8 +284,120 @@ impl PlatformAddressWallet {
             settings,
             RecipientOwnership::ExternalExplicitOutputs,
             on_asset_lock_built,
+        ))
+        .await
+    }
+
+    /// Resume an interrupted external Platform-address funding to the
+    /// recipients its lock recorded. The caller names no recipients, so a
+    /// host's recovery cannot redirect someone else's payment, or consume it
+    /// into the wallet, and needs no outpoint → recipients association of
+    /// its own.
+    ///
+    /// The remainder (change) recipient is the wallet's own address; the
+    /// platform payment account that holds it is the one whose balances the
+    /// funding updates, as `platform_account_index` does for
+    /// [`Self::fund_from_asset_lock_external`], which this resumes through
+    /// with `AssetLockFunding::FromExistingAssetLock`.
+    ///
+    /// Refused before anything is submitted: a lock that is not tracked
+    /// ([`PlatformWalletError::AssetLockNotTracked`]), one of another funding
+    /// type ([`PlatformWalletError::AssetLockFundingMismatch`]), a consumed
+    /// one ([`PlatformWalletError::AssetLockAlreadyConsumed`]), a
+    /// Platform-address lock that records no recipients
+    /// ([`PlatformWalletError::InvalidParameter`]: an owned funding, or an
+    /// external payment tracked before recipients were recorded, which the
+    /// wallet cannot tell apart; the host resumes the latter to the payees it
+    /// saved with the payment, and only a lock it knows funds the wallet's own
+    /// addresses with [`Self::fund_from_asset_lock`]), and one whose remainder
+    /// address no platform payment account of the wallet holds
+    /// ([`PlatformWalletError::AddressNotFound`]).
+    pub async fn resume_platform_address_funding_to_recorded_recipients<S, AS>(
+        &self,
+        out_point: dashcore::OutPoint,
+        address_signer: &S,
+        asset_lock_signer: &AS,
+        settings: Option<PutSettings>,
+    ) -> Result<PlatformAddressChangeSet, PlatformWalletError>
+    where
+        S: Signer<PlatformAddress> + Send + Sync,
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
+    {
+        let lock = self
+            .asset_locks
+            .tracked_resume_metadata(&out_point)
+            .await
+            .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
+        if lock.funding_type != AssetLockFundingType::AssetLockAddressTopUp {
+            return Err(PlatformWalletError::AssetLockFundingMismatch {
+                out_point,
+                expected_funding_type: AssetLockFundingType::AssetLockAddressTopUp,
+                expected_identity_index: 0,
+                actual_funding_type: lock.funding_type,
+                actual_identity_index: lock.identity_index,
+            });
+        }
+        if lock.status.is_consumed() {
+            return Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point));
+        }
+        let recipients = lock.platform_address_recipients.ok_or_else(|| {
+            PlatformWalletError::InvalidParameter(format!(
+                "asset lock {out_point} records no recipients: resume it to the payees \
+                 saved with the payment if it was an external payment tracked before \
+                 recipients were recorded, and as an owned funding only if it is known \
+                 to fund the wallet's own Platform addresses"
+            ))
+        })?;
+        let platform_account_index = self
+            .account_holding_remainder(&out_point, &recipients)
+            .await?;
+        self.fund_from_asset_lock_external(
+            AssetLockFunding::FromExistingAssetLock {
+                out_point,
+                consume_invitation_voucher: false,
+            },
+            platform_account_index,
+            recipients.as_map().clone(),
+            address_signer,
+            asset_lock_signer,
+            settings,
+            None,
         )
         .await
+    }
+
+    /// The index of the platform payment account holding the remainder
+    /// address of `recipients`, recorded by the lock at `out_point`.
+    async fn account_holding_remainder(
+        &self,
+        out_point: &dashcore::OutPoint,
+        recipients: &PlatformAddressRecipients,
+    ) -> Result<u32, PlatformWalletError> {
+        let not_held = || {
+            PlatformWalletError::AddressNotFound(format!(
+                "the remainder address asset lock {out_point} recorded is in no platform \
+                 payment account of this wallet"
+            ))
+        };
+        let Some(PlatformAddress::P2pkh(hash)) = recipients.remainder() else {
+            return Err(not_held());
+        };
+        let remainder = PlatformP2PKHAddress::new(*hash);
+        let wm = self.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+            PlatformWalletError::WalletNotFound(format!(
+                "Wallet {:?} not found in wallet manager",
+                hex::encode(self.wallet_id)
+            ))
+        })?;
+        info.core_wallet
+            .accounts
+            .platform_payment_accounts
+            .iter()
+            .filter(|(key, _)| key.key_class == 0)
+            .find(|(_, account)| account.contains_platform_address(&remainder))
+            .map(|(key, _)| key.account)
+            .ok_or_else(not_held)
     }
 
     /// Shared body behind [`PlatformAddressWallet::fund_from_asset_lock`]
@@ -305,15 +442,45 @@ impl PlatformAddressWallet {
         // computed correctly outside this layer.
         let fee_strategy = remainder_fee_strategy(&addresses)?;
 
+        // With the fee strategy in hand, check the address-funding
+        // transition this map becomes before any lock is resolved: that it
+        // is active at the SDK's protocol version, and DPP's own structure
+        // validation. The SDK runs the structure check only after the lock
+        // is broadcast, and Platform refuses an inactive transition only
+        // then; a map refused there would strand Core funds in a lock, one
+        // that recorded recipients pin to this map.
+        validate_funding_transition(&addresses, &fee_strategy, self.sdk.version())?;
+
         // Step 1c: a fresh L1 asset lock is single-use and
         // non-refundable. Reject or floor it before build/broadcast if
-        // it cannot satisfy DPP's static admission fee for this
-        // address-funding transition shape.
+        // it cannot pay the explicit outputs and DPP's static admission
+        // fee for this address-funding transition shape — the funds
+        // Platform checks the transition for once the lock is on chain.
         let funding = enforce_asset_lock_amount_covers_address_funding_floor(
             funding,
-            addresses.len(),
+            &addresses,
             self.sdk.version(),
         )?;
+
+        // Step 1d: an external funding records its recipients with the lock
+        // before the lock is sent, and a resume must name the same ones. The
+        // resolver refuses any other resume of such a lock — the owned path
+        // included — so a lock built to pay a third party pays it or no one,
+        // and is never consumed back into the wallet. An owned funding
+        // records nothing.
+        let recipient = match ownership {
+            RecipientOwnership::AllOwned => None,
+            RecipientOwnership::ExternalExplicitOutputs => {
+                Some(AssetLockRecipient::PlatformAddresses(
+                    PlatformAddressRecipients::new(addresses.clone()).map_err(|error| {
+                        PlatformWalletError::AddressOperation(format!(
+                            "the recipients cannot be recorded with the asset lock; nothing was \
+                             built: {error}"
+                        ))
+                    })?,
+                ))
+            }
+        };
 
         // Step 2: resolve funding. `AssetLockAddressTopUp` selects the
         // BIP44 funding family for the Core asset-lock tx. The
@@ -330,7 +497,7 @@ impl PlatformAddressWallet {
                 funding,
                 AssetLockFundingType::AssetLockAddressTopUp,
                 /* destination_index */ 0,
-                None,
+                recipient,
                 asset_lock_signer,
                 on_asset_lock_built,
             )
@@ -614,12 +781,83 @@ fn remainder_fee_strategy(
     Ok(vec![AddressFundsFeeStrategyStep::ReduceOutput(index)])
 }
 
+/// Checks the address-funding transition that
+/// [`TopUpAddress::top_up_with_signers`] will build from `addresses` (no
+/// inputs, `fee_strategy` as derived) before the asset lock exists: that it
+/// is active at `platform_version`, and DPP's structure validation. The
+/// asset-lock proof and witnesses are placeholders: neither rule reads them.
+/// The transition generation is the one the submission's conversion
+/// (`AddressFundingFromAssetLockTransition::try_from_asset_lock_with_signers`)
+/// selects for `platform_version`, and a generation this wallet cannot build
+/// is refused here, before the lock, as that conversion would refuse it
+/// after. An inactive transition is refused with the
+/// `StateTransitionIsNotActiveError` DPP returns for it, and a structure
+/// rejection with the same [`dash_sdk::Error`] the SDK's own pre-broadcast
+/// check produces.
+fn validate_funding_transition(
+    addresses: &BTreeMap<PlatformAddress, Option<Credits>>,
+    fee_strategy: &AddressFundsFeeStrategy,
+    platform_version: &PlatformVersion,
+) -> Result<(), PlatformWalletError> {
+    let transition = match platform_version
+        .dpp
+        .state_transition_conversion_versions
+        .address_funding_from_asset_lock_transition
+    {
+        0 => AddressFundingFromAssetLockTransition::V0(AddressFundingFromAssetLockTransitionV0 {
+            outputs: addresses.clone(),
+            fee_strategy: fee_strategy.clone(),
+            ..Default::default()
+        }),
+        version => {
+            return Err(PlatformWalletError::Sdk(dash_sdk::Error::Protocol(
+                ProtocolError::UnknownVersionMismatch {
+                    method: "validate_funding_transition".to_string(),
+                    known_versions: vec![0],
+                    received: version,
+                },
+            )))
+        }
+    };
+    let state_transition = StateTransition::AddressFundingFromAssetLock(transition.clone());
+    let active_version_range = state_transition.active_version_range();
+    if !active_version_range.contains(&platform_version.protocol_version) {
+        return Err(PlatformWalletError::Sdk(dash_sdk::Error::Protocol(
+            ProtocolError::StateTransitionError(
+                StateTransitionError::StateTransitionIsNotActiveError {
+                    state_transition_type: state_transition.name(),
+                    active_version_range,
+                    current_protocol_version: platform_version.protocol_version,
+                },
+            ),
+        )));
+    }
+    let result = transition.validate_structure(platform_version);
+    if result.is_valid() {
+        Ok(())
+    } else {
+        Err(PlatformWalletError::Sdk(dash_sdk::Error::from(result)))
+    }
+}
+
+/// Refuses, or floors, a fresh asset lock that cannot fund `addresses`, before
+/// it is built or broadcast. Platform checks the funding transition against
+/// the lock's value only once the lock is on chain: the value must cover DPP's
+/// count-based admission fee, the explicit outputs
+/// (`AddressesNotEnoughFunds`, with a penalty charged to the lock), and the
+/// fee the remainder output absorbs (`ReduceOutput`). The lock therefore has
+/// to hold the explicit outputs plus that admission fee, the fee estimate the
+/// transition itself is admitted on; a remainder smaller than it is refused
+/// here. A `FromWalletBalance` amount below it is refused; a
+/// `DrainAccountBalance`, whose value is known only once it is built, gets it
+/// as its floor, which the build enforces on the built lock before it is
+/// tracked or broadcast. A resumed lock already exists and is not judged here.
 fn enforce_asset_lock_amount_covers_address_funding_floor(
     funding: AssetLockFunding,
-    output_count: usize,
+    addresses: &BTreeMap<PlatformAddress, Option<Credits>>,
     platform_version: &PlatformVersion,
 ) -> Result<AssetLockFunding, PlatformWalletError> {
-    let required = minimum_address_funding_asset_lock_duffs(output_count, platform_version);
+    let required = required_address_funding_asset_lock_duffs(addresses, platform_version);
 
     match funding {
         AssetLockFunding::FromWalletBalance {
@@ -655,17 +893,23 @@ fn enforce_asset_lock_amount_covers_address_funding_floor(
     }
 }
 
-/// Minimum L1 asset-lock value that can pass DPP's count-based
-/// `AddressFundingFromAssetLock` admission-floor fee check.
-fn minimum_address_funding_asset_lock_duffs(
-    output_count: usize,
+/// L1 asset-lock value that pays `addresses`' explicit outputs and leaves the
+/// remainder DPP's count-based admission fee for the transition, rounded up to
+/// whole duffs. A sum past `u64` saturates, so no lock can meet it.
+fn required_address_funding_asset_lock_duffs(
+    addresses: &BTreeMap<PlatformAddress, Option<Credits>>,
     platform_version: &PlatformVersion,
 ) -> u64 {
-    ceil_credits_to_duffs(calculate_address_funding_from_asset_lock_min_required_fee(
+    let explicit_outputs: Credits = addresses
+        .values()
+        .flatten()
+        .fold(0, |sum: Credits, amount| sum.saturating_add(*amount));
+    let fee = calculate_address_funding_from_asset_lock_min_required_fee(
         ADDRESS_FUNDING_FROM_ASSET_LOCK_INPUT_COUNT,
-        output_count,
+        addresses.len(),
         platform_version,
-    ))
+    );
+    ceil_credits_to_duffs(explicit_outputs.saturating_add(fee))
 }
 
 fn ceil_credits_to_duffs(credits: Credits) -> u64 {
@@ -858,9 +1102,38 @@ mod tests {
     use crate::test_support::{fund_test_platform_wallet, test_platform_wallet_manager};
     use dash_sdk::query_types::AddressInfo;
     use dashcore::OutPoint;
+    use dpp::consensus::basic::BasicError;
+    use dpp::consensus::ConsensusError;
     use dpp::version::LATEST_PLATFORM_VERSION;
     use key_wallet::account::account_collection::PlatformPaymentAccountKey;
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
+
+    /// Minimum L1 asset-lock value that can pass DPP's count-based
+    /// `AddressFundingFromAssetLock` admission-floor fee check.
+    fn minimum_address_funding_asset_lock_duffs(
+        output_count: usize,
+        platform_version: &PlatformVersion,
+    ) -> u64 {
+        ceil_credits_to_duffs(calculate_address_funding_from_asset_lock_min_required_fee(
+            ADDRESS_FUNDING_FROM_ASSET_LOCK_INPUT_COUNT,
+            output_count,
+            platform_version,
+        ))
+    }
+
+    /// A payee's explicit output of `credits` and the remainder.
+    fn payee_and_remainder(credits: Credits) -> BTreeMap<PlatformAddress, Option<Credits>> {
+        BTreeMap::from([(p2pkh(0xBB), Some(credits)), (p2pkh(0xAA), None)])
+    }
+
+    /// The explicit output the floor tests pay: DPP's minimum output.
+    fn min_output() -> Credits {
+        LATEST_PLATFORM_VERSION
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_output_amount
+    }
 
     #[derive(Debug)]
     struct NullAddressSigner;
@@ -1206,6 +1479,143 @@ mod tests {
         assert_eq!(addresses[&keys[1]], None);
     }
 
+    /// The preflight refuses an address-funding transition that is not
+    /// active at the SDK's protocol version (it exists from version 11),
+    /// before any asset lock exists; it passes on the first version that has
+    /// it.
+    #[test]
+    fn should_refuse_a_funding_transition_inactive_at_the_sdk_protocol_version() {
+        let addresses = payee_and_remainder(min_output());
+        let strategy = remainder_fee_strategy(&addresses).expect("one remainder");
+
+        let before = PlatformVersion::get(10).expect("protocol version 10");
+        let refused = validate_funding_transition(&addresses, &strategy, before);
+        assert!(
+            matches!(
+                &refused,
+                Err(PlatformWalletError::Sdk(dash_sdk::Error::Protocol(
+                    ProtocolError::StateTransitionError(
+                        StateTransitionError::StateTransitionIsNotActiveError {
+                            current_protocol_version: 10,
+                            ..
+                        }
+                    )
+                )))
+            ),
+            "got {refused:?}"
+        );
+
+        let first = PlatformVersion::get(11).expect("protocol version 11");
+        validate_funding_transition(&addresses, &strategy, first)
+            .expect("the transition is active from protocol version 11");
+    }
+
+    /// An SDK at a protocol version before the address-funding transition
+    /// builds no asset lock for it: the refusal comes before any Core funds
+    /// are committed.
+    #[tokio::test]
+    async fn should_build_no_lock_for_a_funding_transition_the_sdk_version_does_not_have() {
+        use key_wallet::mnemonic::Mnemonic;
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+
+        let persister = Arc::new(RecipientRecordingPersister::new(
+            crate::changeset::PersistenceCapabilities::EXTERNAL_PLATFORM_ADDRESS_FUNDING,
+        ));
+        let sdk = Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_network(dashcore::Network::Testnet)
+                .with_version(PlatformVersion::get(10).expect("protocol version 10"))
+                .build()
+                .expect("mock sdk"),
+        );
+        let manager = Arc::new(crate::PlatformWalletManager::new(
+            sdk,
+            Arc::clone(&persister),
+            Arc::new(crate::test_support::NoopTestEventHandler)
+                as Arc<dyn crate::events::PlatformEventHandler>,
+        ));
+        let seed = Mnemonic::from_phrase(crate::test_support::TEST_PLATFORM_WALLET_MNEMONIC)
+            .expect("valid test mnemonic")
+            .to_seed("");
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                dashcore::Network::Testnet,
+                &seed,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("create test wallet");
+        let signer =
+            fund_test_platform_wallet(wallet.wallet_manager(), &wallet.wallet_id(), 10_000_000)
+                .await;
+        let recipients = external_recipients(&wallet).await;
+        let seen = Mutex::new(Vec::new());
+        let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+
+        let error = wallet
+            .platform()
+            .fund_from_asset_lock_external(
+                AssetLockFunding::FromWalletBalance {
+                    amount_duffs: 1_000_000,
+                    account_index: 0,
+                },
+                0,
+                recipients,
+                &NullAddressSigner,
+                &signer,
+                None,
+                Some(&observer),
+            )
+            .await
+            .expect_err("the funding must be refused");
+
+        assert!(
+            matches!(
+                &error,
+                PlatformWalletError::Sdk(dash_sdk::Error::Protocol(
+                    ProtocolError::StateTransitionError(
+                        StateTransitionError::StateTransitionIsNotActiveError { .. }
+                    )
+                ))
+            ),
+            "{error:?}"
+        );
+        assert!(seen.into_inner().unwrap().is_empty(), "no lock was built");
+        assert_eq!(persister.stored_rows(), 0, "no lock row was stored");
+    }
+
+    /// The preflight validates the transition generation the submission
+    /// would build at `platform_version`; a generation this wallet cannot
+    /// build is refused before the asset lock exists instead of after it.
+    #[test]
+    fn should_refuse_a_funding_transition_generation_the_preflight_cannot_build() {
+        let mut addresses = BTreeMap::new();
+        addresses.insert(p2pkh(0x0A), Some(1_000_000));
+        addresses.insert(p2pkh(0xBB), None);
+        let strategy = remainder_fee_strategy(&addresses).expect("one remainder");
+
+        let latest = PlatformVersion::latest();
+        validate_funding_transition(&addresses, &strategy, latest)
+            .expect("the generation the latest version selects validates");
+
+        let mut unknown = latest.clone();
+        unknown
+            .dpp
+            .state_transition_conversion_versions
+            .address_funding_from_asset_lock_transition = 1;
+        let refused = validate_funding_transition(&addresses, &strategy, &unknown);
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::Sdk(dash_sdk::Error::Protocol(
+                    ProtocolError::UnknownVersionMismatch { received: 1, .. }
+                )))
+            ),
+            "got {refused:?}"
+        );
+    }
+
     /// P2SH sorts after every P2PKH (variant discriminant first), which
     /// is part of the ordering contract even though the pre-flight
     /// rejects P2SH recipients today. Pinned directly on the ordering
@@ -1258,9 +1668,83 @@ mod tests {
         );
     }
 
+    /// The lock must hold the explicit outputs on top of the admission fee
+    /// the remainder pays: Platform checks both against the lock's value
+    /// only once the lock is on chain.
+    #[test]
+    fn should_require_the_explicit_outputs_on_top_of_the_admission_fee() {
+        let fee = calculate_address_funding_from_asset_lock_min_required_fee(
+            ADDRESS_FUNDING_FROM_ASSET_LOCK_INPUT_COUNT,
+            2,
+            LATEST_PLATFORM_VERSION,
+        );
+        let explicit = 1_000_000 * CREDITS_PER_DUFF + 1;
+        assert_eq!(
+            required_address_funding_asset_lock_duffs(
+                &payee_and_remainder(explicit),
+                LATEST_PLATFORM_VERSION
+            ),
+            ceil_credits_to_duffs(explicit + fee)
+        );
+        // Only the remainder: the count-based floor alone.
+        assert_eq!(
+            required_address_funding_asset_lock_duffs(
+                &BTreeMap::from([(p2pkh(0xAA), None)]),
+                LATEST_PLATFORM_VERSION
+            ),
+            minimum_address_funding_asset_lock_duffs(1, LATEST_PLATFORM_VERSION)
+        );
+        // A sum past u64 saturates instead of wrapping onto a small floor.
+        let overflowing = BTreeMap::from([
+            (p2pkh(1), Some(u64::MAX)),
+            (p2pkh(2), Some(1)),
+            (p2pkh(0xAA), None),
+        ]);
+        assert_eq!(
+            required_address_funding_asset_lock_duffs(&overflowing, LATEST_PLATFORM_VERSION),
+            ceil_credits_to_duffs(u64::MAX)
+        );
+    }
+
+    /// An explicit output the lock could pay only by eating into the fee is
+    /// refused, although the lock clears the count-based floor many times.
+    #[test]
+    fn should_refuse_a_fresh_lock_whose_value_the_explicit_outputs_exceed() {
+        let amount_duffs = 1_000_000;
+        let addresses = payee_and_remainder(amount_duffs * CREDITS_PER_DUFF);
+        let funding = AssetLockFunding::FromWalletBalance {
+            amount_duffs,
+            account_index: 0,
+        };
+
+        let err = enforce_asset_lock_amount_covers_address_funding_floor(
+            funding,
+            &addresses,
+            LATEST_PLATFORM_VERSION,
+        )
+        .expect_err("the outputs leave nothing for the fee");
+
+        match err {
+            PlatformWalletError::AssetLockInsufficientFunds {
+                available,
+                required,
+            } => {
+                assert_eq!(available, amount_duffs);
+                assert_eq!(
+                    required,
+                    required_address_funding_asset_lock_duffs(&addresses, LATEST_PLATFORM_VERSION)
+                );
+                assert!(required > amount_duffs);
+            }
+            other => panic!("expected AssetLockInsufficientFunds, got {other:?}"),
+        }
+    }
+
     #[test]
     fn fresh_asset_lock_floor_rejects_undersized_exact_amount() {
-        let required = minimum_address_funding_asset_lock_duffs(2, LATEST_PLATFORM_VERSION);
+        let addresses = payee_and_remainder(min_output());
+        let required =
+            required_address_funding_asset_lock_duffs(&addresses, LATEST_PLATFORM_VERSION);
         let funding = AssetLockFunding::FromWalletBalance {
             amount_duffs: required - 1,
             account_index: 0,
@@ -1268,7 +1752,7 @@ mod tests {
 
         let err = enforce_asset_lock_amount_covers_address_funding_floor(
             funding,
-            2,
+            &addresses,
             LATEST_PLATFORM_VERSION,
         )
         .expect_err("fresh asset lock below the admission floor must be rejected");
@@ -1287,7 +1771,9 @@ mod tests {
 
     #[test]
     fn fresh_asset_lock_floor_accepts_exact_minimum() {
-        let required = minimum_address_funding_asset_lock_duffs(2, LATEST_PLATFORM_VERSION);
+        let addresses = payee_and_remainder(min_output());
+        let required =
+            required_address_funding_asset_lock_duffs(&addresses, LATEST_PLATFORM_VERSION);
         let funding = AssetLockFunding::FromWalletBalance {
             amount_duffs: required,
             account_index: 0,
@@ -1295,7 +1781,7 @@ mod tests {
 
         let funding = enforce_asset_lock_amount_covers_address_funding_floor(
             funding,
-            2,
+            &addresses,
             LATEST_PLATFORM_VERSION,
         )
         .expect("DPP rejects only amounts below the admission floor");
@@ -1313,7 +1799,9 @@ mod tests {
     fn address_funding_floor_is_installed_for_fresh_drain_builds() {
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount;
 
-        let required = minimum_address_funding_asset_lock_duffs(2, LATEST_PLATFORM_VERSION);
+        let addresses = payee_and_remainder(min_output());
+        let required =
+            required_address_funding_asset_lock_duffs(&addresses, LATEST_PLATFORM_VERSION);
         let funding = AssetLockFunding::DrainAccountBalance {
             account: AssetLockFundingAccount::Bip44 { account_index: 0 },
             minimum_lock_duffs: None,
@@ -1321,7 +1809,7 @@ mod tests {
 
         let funding = enforce_asset_lock_amount_covers_address_funding_floor(
             funding,
-            2,
+            &addresses,
             LATEST_PLATFORM_VERSION,
         )
         .expect("drain builds should be floored before broadcast");
@@ -1338,7 +1826,9 @@ mod tests {
     fn address_funding_floor_preserves_higher_fresh_drain_floor() {
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount;
 
-        let required = minimum_address_funding_asset_lock_duffs(2, LATEST_PLATFORM_VERSION);
+        let addresses = payee_and_remainder(min_output());
+        let required =
+            required_address_funding_asset_lock_duffs(&addresses, LATEST_PLATFORM_VERSION);
         let higher_floor = required + 1;
         let funding = AssetLockFunding::DrainAccountBalance {
             account: AssetLockFundingAccount::Bip44 { account_index: 0 },
@@ -1347,7 +1837,7 @@ mod tests {
 
         let funding = enforce_asset_lock_amount_covers_address_funding_floor(
             funding,
-            2,
+            &addresses,
             LATEST_PLATFORM_VERSION,
         )
         .expect("caller-supplied drain floors should survive when stricter");
@@ -1362,6 +1852,7 @@ mod tests {
 
     #[test]
     fn address_funding_floor_does_not_block_existing_asset_lock_resume() {
+        let addresses = payee_and_remainder(min_output());
         let funding = AssetLockFunding::FromExistingAssetLock {
             out_point: dashcore::OutPoint::null(),
             consume_invitation_voucher: false,
@@ -1369,7 +1860,7 @@ mod tests {
 
         let funding = enforce_asset_lock_amount_covers_address_funding_floor(
             funding,
-            2,
+            &addresses,
             LATEST_PLATFORM_VERSION,
         )
         .expect("existing locks are resumed rather than pre-sized");
@@ -1483,10 +1974,16 @@ mod tests {
     }
 
     /// The same pass-through for the third-party entry point, whose
-    /// remainder output is the wallet's own address.
+    /// remainder output is the wallet's own address. Its backend keeps the
+    /// recipients, which an external funding requires.
     #[tokio::test]
     async fn should_report_the_built_lock_to_the_caller_of_fund_from_asset_lock_external() {
-        let (manager, wallet_id) = test_platform_wallet_manager().await;
+        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager_with(
+            Arc::new(RecipientRecordingPersister::new(
+                crate::changeset::PersistenceCapabilities::EXTERNAL_PLATFORM_ADDRESS_FUNDING,
+            )),
+        )
+        .await;
         let wallet = manager.get_wallet(&wallet_id).await.expect("wallet handle");
         let signer =
             fund_test_platform_wallet(wallet.wallet_manager(), &wallet_id, 10_000_000).await;
@@ -1528,6 +2025,238 @@ mod tests {
         let wm = wallet.wallet_manager().read().await;
         let info = wm.get_wallet_info(&wallet_id).expect("wallet registered");
         assert!(!info.tracked_asset_locks.contains_key(&seen[0]));
+    }
+
+    /// Runs `fund_from_asset_lock_external` on a funded wallet with `explicit`
+    /// third-party outputs plus the wallet's own remainder address, and
+    /// returns the error together with every lock the builder reported.
+    async fn fund_external_with_explicit_outputs(
+        explicit: BTreeMap<PlatformAddress, Option<Credits>>,
+    ) -> (PlatformWalletError, Vec<OutPoint>) {
+        let (manager, wallet_id) = test_platform_wallet_manager().await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet handle");
+        let signer =
+            fund_test_platform_wallet(wallet.wallet_manager(), &wallet_id, 100_000_000).await;
+        let remainder = wallet
+            .platform()
+            .next_unused_receive_address(PlatformPaymentAccountKey {
+                account: 0,
+                key_class: 0,
+            })
+            .await
+            .expect("owned platform payment address");
+        let mut addresses = explicit;
+        addresses.insert(remainder, None);
+        let output_count = addresses.len();
+        let seen = Mutex::new(Vec::new());
+        let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+
+        let error = wallet
+            .platform()
+            .fund_from_asset_lock_external(
+                AssetLockFunding::FromWalletBalance {
+                    amount_duffs: minimum_address_funding_asset_lock_duffs(
+                        output_count,
+                        LATEST_PLATFORM_VERSION,
+                    ),
+                    account_index: 0,
+                },
+                0,
+                addresses,
+                &NullAddressSigner,
+                &signer,
+                None,
+                Some(&observer),
+            )
+            .await
+            .expect_err("the call must fail");
+        (error, seen.into_inner().unwrap())
+    }
+
+    /// An explicit output below DPP's `min_output_amount` would be rejected
+    /// by the SDK's structure check after the lock is broadcast, so it is
+    /// rejected before any lock is built.
+    #[tokio::test]
+    async fn should_refuse_an_external_output_below_the_minimum_before_building_a_lock() {
+        let min_output_amount = LATEST_PLATFORM_VERSION
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_output_amount;
+        let mut explicit = BTreeMap::new();
+        explicit.insert(p2pkh(0xBB), Some(min_output_amount - 1));
+
+        let (error, built) = fund_external_with_explicit_outputs(explicit).await;
+
+        assert!(built.is_empty(), "a lock was built: {error:?}");
+        assert!(
+            matches!(
+                error.consensus_error(),
+                Some(ConsensusError::BasicError(
+                    BasicError::OutputBelowMinimumError(_)
+                ))
+            ),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    /// More outputs than DPP's `max_address_outputs` would be rejected by the
+    /// SDK's structure check after the lock is broadcast, so the map is
+    /// rejected before any lock is built.
+    #[tokio::test]
+    async fn should_refuse_too_many_external_outputs_before_building_a_lock() {
+        let max_outputs = LATEST_PLATFORM_VERSION
+            .dpp
+            .state_transitions
+            .max_address_outputs;
+        let min_output_amount = LATEST_PLATFORM_VERSION
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_output_amount;
+        // `max_outputs` explicit outputs plus the remainder: one too many.
+        let explicit: BTreeMap<_, _> = (0..max_outputs)
+            .map(|i| {
+                let mut hash = [0xBB; 20];
+                hash[..2].copy_from_slice(&i.to_be_bytes());
+                (PlatformAddress::P2pkh(hash), Some(min_output_amount))
+            })
+            .collect();
+
+        let (error, built) = fund_external_with_explicit_outputs(explicit).await;
+
+        assert!(built.is_empty(), "a lock was built: {error:?}");
+        assert!(
+            matches!(
+                error.consensus_error(),
+                Some(ConsensusError::BasicError(
+                    BasicError::TransitionOverMaxOutputsError(_)
+                ))
+            ),
+            "unexpected error: {error:?}"
+        );
+    }
+
+    /// Runs `fund_from_asset_lock_external` with `funding` on a wallet holding
+    /// 1 DASH, paying `explicit` credits to a third party with the wallet's
+    /// own remainder address. Returns the error, every lock the builder
+    /// reported (it reports a lock once it is tracked, before it is sent) and
+    /// how many locks the wallet tracks afterwards.
+    async fn fund_external_paying(
+        funding: AssetLockFunding,
+        explicit: Credits,
+    ) -> (PlatformWalletError, Vec<OutPoint>, usize) {
+        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager_with(
+            Arc::new(RecipientRecordingPersister::new(
+                crate::changeset::PersistenceCapabilities::EXTERNAL_PLATFORM_ADDRESS_FUNDING,
+            )),
+        )
+        .await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet handle");
+        let signer =
+            fund_test_platform_wallet(wallet.wallet_manager(), &wallet_id, 100_000_000).await;
+        let remainder = wallet
+            .platform()
+            .next_unused_receive_address(PlatformPaymentAccountKey {
+                account: 0,
+                key_class: 0,
+            })
+            .await
+            .expect("owned platform payment address");
+        let addresses = BTreeMap::from([(p2pkh(0xBB), Some(explicit)), (remainder, None)]);
+        let seen = Mutex::new(Vec::new());
+        let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+
+        let error = wallet
+            .platform()
+            .fund_from_asset_lock_external(
+                funding,
+                0,
+                addresses,
+                &NullAddressSigner,
+                &signer,
+                None,
+                Some(&observer),
+            )
+            .await
+            .expect_err("the call must fail");
+        let wm = wallet.wallet_manager().read().await;
+        let tracked = wm
+            .get_wallet_info(&wallet_id)
+            .expect("wallet registered")
+            .tracked_asset_locks
+            .len();
+        (error, seen.into_inner().unwrap(), tracked)
+    }
+
+    /// Explicit outputs above what the lock can pay past the fee would be
+    /// refused by Platform only after the lock is broadcast (with a penalty
+    /// charged to it), leaving it pinned to a payment it cannot make. A fixed
+    /// amount is refused before any lock is built.
+    #[tokio::test]
+    async fn should_refuse_explicit_outputs_over_the_lock_value_before_building_a_lock() {
+        let amount_duffs = 1_000_000;
+        let explicit = amount_duffs * CREDITS_PER_DUFF;
+
+        let (error, built, tracked) = fund_external_paying(
+            AssetLockFunding::FromWalletBalance {
+                amount_duffs,
+                account_index: 0,
+            },
+            explicit,
+        )
+        .await;
+
+        assert!(built.is_empty(), "a lock was built: {error:?}");
+        assert_eq!(tracked, 0, "a lock was recorded: {error:?}");
+        match error {
+            PlatformWalletError::AssetLockInsufficientFunds {
+                available,
+                required,
+            } => {
+                assert_eq!(available, amount_duffs);
+                assert!(required > amount_duffs, "{required}");
+            }
+            other => panic!("expected AssetLockInsufficientFunds, got {other:?}"),
+        }
+    }
+
+    /// A drain's value is known only once it is built: explicit outputs the
+    /// drained lock cannot pay past the fee abandon the built lock before it
+    /// is tracked or broadcast.
+    #[tokio::test]
+    async fn should_abandon_a_drain_the_explicit_outputs_exceed_before_broadcast() {
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingAccount;
+
+        // The whole 1 DASH balance: more than the drained lock, which pays
+        // the Core fee out of it.
+        let explicit = 100_000_000 * CREDITS_PER_DUFF;
+
+        let (error, built, tracked) = fund_external_paying(
+            AssetLockFunding::DrainAccountBalance {
+                account: AssetLockFundingAccount::Bip44 { account_index: 0 },
+                minimum_lock_duffs: None,
+            },
+            explicit,
+        )
+        .await;
+
+        assert!(built.is_empty(), "a lock was tracked: {error:?}");
+        assert_eq!(tracked, 0, "a lock was recorded: {error:?}");
+        // The drain floor reports a short lock as a short selection
+        // (`NotSent`): nothing was broadcast.
+        assert!(
+            matches!(
+                &error,
+                PlatformWalletError::AssetLockInsufficientFunds { available, required }
+                    if available < required
+            ),
+            "unexpected error: {error:?}"
+        );
+        assert_eq!(
+            error.payment_delivery(),
+            crate::error::PaymentDelivery::NotSent
+        );
     }
 
     #[test]
@@ -1593,5 +2322,544 @@ mod tests {
         address_infos.insert(p2pkh(2), Some(info(p2pkh(2))));
         validate_address_infos_complete(&addresses, &address_infos)
             .expect("complete proof must pass");
+    }
+
+    /// What a backend saw, in order: each asset-lock changeset it was handed
+    /// and each flush.
+    #[derive(Debug)]
+    enum Recorded {
+        Store(crate::changeset::AssetLockChangeSet),
+        Flush,
+    }
+
+    /// Records asset-lock rounds and attests `capabilities`.
+    struct RecipientRecordingPersister {
+        capabilities: crate::changeset::PersistenceCapabilities,
+        events: Mutex<Vec<Recorded>>,
+    }
+
+    impl RecipientRecordingPersister {
+        fn new(capabilities: crate::changeset::PersistenceCapabilities) -> Self {
+            Self {
+                capabilities,
+                events: Mutex::new(Vec::new()),
+            }
+        }
+
+        /// The first stored row for `out_point`, and whether a flush
+        /// followed it before any other asset-lock round.
+        fn first_row(
+            &self,
+            out_point: &OutPoint,
+        ) -> Option<(crate::changeset::AssetLockEntry, bool)> {
+            let events = self.events.lock().unwrap();
+            let index = events.iter().position(|event| {
+                matches!(event, Recorded::Store(cs) if cs.asset_locks.contains_key(out_point))
+            })?;
+            let Recorded::Store(cs) = &events[index] else {
+                unreachable!("position matched a store")
+            };
+            let flushed_next = matches!(events.get(index + 1), Some(Recorded::Flush));
+            Some((cs.asset_locks[out_point].clone(), flushed_next))
+        }
+
+        fn stored_rows(&self) -> usize {
+            self.events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|event| matches!(event, Recorded::Store(cs) if !cs.asset_locks.is_empty()))
+                .count()
+        }
+    }
+
+    impl crate::changeset::PlatformWalletPersistence for RecipientRecordingPersister {
+        fn persistence_capabilities(&self) -> crate::changeset::PersistenceCapabilities {
+            self.capabilities
+        }
+
+        fn store(
+            &self,
+            _wallet_id: crate::wallet::platform_wallet::WalletId,
+            changeset: crate::changeset::PlatformWalletChangeSet,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            if let Some(asset_locks) = changeset.asset_locks {
+                self.events
+                    .lock()
+                    .unwrap()
+                    .push(Recorded::Store(asset_locks));
+            }
+            Ok(())
+        }
+
+        fn flush(
+            &self,
+            _wallet_id: crate::wallet::platform_wallet::WalletId,
+        ) -> Result<(), crate::changeset::PersistenceError> {
+            self.events.lock().unwrap().push(Recorded::Flush);
+            Ok(())
+        }
+
+        fn load(
+            &self,
+        ) -> Result<crate::changeset::ClientStartState, crate::changeset::PersistenceError>
+        {
+            Ok(crate::changeset::ClientStartState::default())
+        }
+    }
+
+    /// An external payment of 1_000_000 credits to a third party, with the
+    /// wallet's own next address as the remainder.
+    async fn external_recipients(
+        wallet: &crate::wallet::PlatformWallet,
+    ) -> BTreeMap<PlatformAddress, Option<Credits>> {
+        let remainder = wallet
+            .platform()
+            .next_unused_receive_address(PlatformPaymentAccountKey {
+                account: 0,
+                key_class: 0,
+            })
+            .await
+            .expect("owned platform payment address");
+        BTreeMap::from([(remainder, None), (p2pkh(0x77), Some(1_000_000))])
+    }
+
+    /// A wallet over `persister` funded with 0.1 DASH, and its signer.
+    async fn funded_wallet_over(
+        persister: Arc<RecipientRecordingPersister>,
+    ) -> (
+        Arc<crate::PlatformWalletManager<RecipientRecordingPersister>>,
+        Arc<crate::wallet::PlatformWallet>,
+        crate::test_support::WalletSigner,
+    ) {
+        let (manager, wallet_id) =
+            crate::test_support::test_platform_wallet_manager_with(persister).await;
+        let wallet = manager.get_wallet(&wallet_id).await.expect("wallet handle");
+        let signer =
+            fund_test_platform_wallet(wallet.wallet_manager(), &wallet_id, 10_000_000).await;
+        (manager, wallet, signer)
+    }
+
+    /// Builds an external payment on a backend attesting
+    /// `ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS`, with an `on_asset_lock_built`
+    /// observer that records nothing (as a host callback that threw would).
+    /// Returns the wallet, the backend, the recipients and the row the
+    /// backend stored for the built lock.
+    async fn external_payment_with_recorded_row() -> (
+        Arc<crate::PlatformWalletManager<RecipientRecordingPersister>>,
+        Arc<crate::wallet::PlatformWallet>,
+        Arc<RecipientRecordingPersister>,
+        BTreeMap<PlatformAddress, Option<Credits>>,
+        crate::changeset::AssetLockEntry,
+        crate::test_support::WalletSigner,
+    ) {
+        let persister = Arc::new(RecipientRecordingPersister::new(
+            crate::changeset::PersistenceCapabilities::EXTERNAL_PLATFORM_ADDRESS_FUNDING,
+        ));
+        let (manager, wallet, signer) = funded_wallet_over(persister.clone()).await;
+        let recipients = external_recipients(&wallet).await;
+        let seen = Mutex::new(Vec::new());
+        // The host's callback records nothing: recoverability must not
+        // depend on it.
+        let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+
+        wallet
+            .platform()
+            .fund_from_asset_lock_external(
+                AssetLockFunding::FromWalletBalance {
+                    amount_duffs: 1_000_000,
+                    account_index: 0,
+                },
+                0,
+                recipients.clone(),
+                &NullAddressSigner,
+                &signer,
+                None,
+                Some(&observer),
+            )
+            .await
+            .expect_err("the never-started SPV client refuses to send");
+        let built = seen.into_inner().unwrap();
+        assert_eq!(built.len(), 1);
+        let (row, flushed) = persister
+            .first_row(&built[0])
+            .expect("the built lock's row was stored");
+        assert!(flushed, "the row must be flushed before the lock is sent");
+        (manager, wallet, persister, recipients, row, signer)
+    }
+
+    /// An external payment records its recipients on the lock row and
+    /// flushes it before the lock is sent, whatever the host's built-lock
+    /// callback did with the outpoint.
+    #[tokio::test]
+    async fn should_record_the_external_recipients_durably_before_the_lock_is_sent() {
+        let (_manager, _wallet, _persister, recipients, row, _signer) =
+            external_payment_with_recorded_row().await;
+        assert_eq!(
+            row.platform_address_recipients,
+            Some(PlatformAddressRecipients::new(recipients).unwrap())
+        );
+        assert_eq!(
+            row.funding_type,
+            AssetLockFundingType::AssetLockAddressTopUp
+        );
+    }
+
+    /// An owned funding records no recipients and keeps its best-effort row.
+    #[tokio::test]
+    async fn should_record_no_recipients_for_an_owned_top_up() {
+        let persister = Arc::new(RecipientRecordingPersister::new(
+            crate::changeset::PersistenceCapabilities::EXTERNAL_PLATFORM_ADDRESS_FUNDING,
+        ));
+        let (_manager, wallet, signer) = funded_wallet_over(persister.clone()).await;
+        let mut recipients = external_recipients(&wallet).await;
+        recipients.retain(|_, amount| amount.is_none());
+        let seen = Mutex::new(Vec::new());
+        let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+        wallet
+            .platform()
+            .fund_from_asset_lock(
+                AssetLockFunding::FromWalletBalance {
+                    amount_duffs: 1_000_000,
+                    account_index: 0,
+                },
+                0,
+                recipients,
+                vec![],
+                &NullAddressSigner,
+                &signer,
+                None,
+                Some(&observer),
+            )
+            .await
+            .expect_err("the never-started SPV client refuses to send");
+        let built = seen.into_inner().unwrap();
+        let (row, _) = persister.first_row(&built[0]).expect("row stored");
+        assert_eq!(row.platform_address_recipients, None);
+    }
+
+    /// A backend that would lose the recipients across a restart, or keep
+    /// them apart from the lock's row or its funding key, gets no external
+    /// funding: nothing is built, stored or reported, and the refusal names
+    /// what is missing.
+    #[tokio::test]
+    async fn should_refuse_an_external_funding_on_a_backend_that_cannot_keep_its_recipients() {
+        use crate::changeset::PersistenceCapabilities as C;
+        let without = |dropped: C| {
+            C::from_bits_retain(C::EXTERNAL_PLATFORM_ADDRESS_FUNDING.bits() & !dropped.bits())
+        };
+        for (declared, missing) in [
+            (
+                C::ASSET_LOCK_IDENTITY_RECIPIENTS,
+                "asset_lock_platform_address_recipients",
+            ),
+            (without(C::ATOMIC_CHANGESETS), "atomic_changesets"),
+            (
+                without(C::ASSET_LOCK_FUNDING_INDICES),
+                "asset_lock_funding_indices",
+            ),
+        ] {
+            let persister = Arc::new(RecipientRecordingPersister::new(declared));
+            let (_manager, wallet, signer) = funded_wallet_over(persister.clone()).await;
+            let recipients = external_recipients(&wallet).await;
+            let seen = Mutex::new(Vec::new());
+            let observer = |out_point: OutPoint| seen.lock().unwrap().push(out_point);
+
+            let error = wallet
+                .platform()
+                .fund_from_asset_lock_external(
+                    AssetLockFunding::FromWalletBalance {
+                        amount_duffs: 1_000_000,
+                        account_index: 0,
+                    },
+                    0,
+                    recipients,
+                    &NullAddressSigner,
+                    &signer,
+                    None,
+                    Some(&observer),
+                )
+                .await
+                .expect_err("the funding must be refused");
+
+            assert!(
+                matches!(&error, PlatformWalletError::Persistence(message)
+                    if message.contains(missing)),
+                "{missing}: {error:?}"
+            );
+            assert!(
+                seen.into_inner().unwrap().is_empty(),
+                "{missing}: no lock was built"
+            );
+            assert_eq!(
+                persister.stored_rows(),
+                0,
+                "{missing}: no lock row was stored"
+            );
+            let wm = wallet.wallet_manager().read().await;
+            assert!(
+                wm.get_wallet_info(&wallet.wallet_id())
+                    .expect("wallet registered")
+                    .tracked_asset_locks
+                    .is_empty(),
+                "{missing}"
+            );
+        }
+    }
+
+    /// Re-installs `row` as a tracked lock whose Core finality is proven, as
+    /// a restart finds an external payment whose Platform submit failed.
+    async fn restart_with_failed_submit(
+        wallet: &crate::wallet::PlatformWallet,
+        row: &crate::changeset::AssetLockEntry,
+    ) {
+        use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+        let mut wm = wallet.wallet_manager().write().await;
+        let info = wm
+            .get_wallet_info_mut(&wallet.wallet_id())
+            .expect("wallet registered");
+        info.tracked_asset_locks.insert(
+            row.out_point,
+            crate::wallet::asset_lock::tracked::TrackedAssetLock {
+                operation_id: row.operation_id,
+                out_point: row.out_point,
+                transaction: row.transaction.clone(),
+                account_index: row.account_index,
+                funding_type: row.funding_type,
+                identity_index: row.identity_index,
+                amount: row.amount_duffs,
+                status: row.status.clone(),
+                proof: Some(dpp::prelude::AssetLockProof::Chain(ChainAssetLockProof {
+                    core_chain_locked_height: 42,
+                    out_point: row.out_point,
+                })),
+                shielded_recipient: row.shielded_recipient,
+                identity_recipient: row.identity_recipient,
+                platform_address_recipients: row.platform_address_recipients.clone(),
+            },
+        );
+    }
+
+    /// `row` as a restart finds it after the lock was chain-locked.
+    fn chain_locked(mut row: crate::changeset::AssetLockEntry) -> crate::changeset::AssetLockEntry {
+        row.status = crate::AssetLockStatus::ChainLocked;
+        row
+    }
+
+    /// After a restart, an external payment whose Platform submit failed
+    /// cannot be resumed as an owned top-up (which would refund the sender),
+    /// nor to other recipients. The refusal leaves the lock tracked and
+    /// unconsumed, and the recorded recipients still resolve it.
+    #[tokio::test]
+    async fn should_refuse_an_owned_resume_of_an_external_payment_after_restart() {
+        let (_manager, wallet, _persister, recipients, row, signer) =
+            external_payment_with_recorded_row().await;
+        restart_with_failed_submit(&wallet, &chain_locked(row.clone())).await;
+        let resume = || AssetLockFunding::FromExistingAssetLock {
+            out_point: row.out_point,
+            consume_invitation_voucher: false,
+        };
+        let recorded = PlatformAddressRecipients::new(recipients.clone()).unwrap();
+
+        let mut owned = recipients.clone();
+        owned.retain(|_, amount| amount.is_none());
+        let refused = wallet
+            .platform()
+            .fund_from_asset_lock(
+                resume(),
+                0,
+                owned,
+                vec![],
+                &NullAddressSigner,
+                &signer,
+                None,
+                None,
+            )
+            .await
+            .expect_err("an owned resume of an external payment must be refused");
+        assert!(
+            matches!(
+                &refused,
+                PlatformWalletError::AssetLockPlatformAddressRecipientMismatch {
+                    out_point,
+                    recorded: r,
+                } if *out_point == row.out_point && **r == recorded
+            ),
+            "{refused:?}"
+        );
+
+        let mut redirected = recipients.clone();
+        redirected.remove(&p2pkh(0x77));
+        redirected.insert(p2pkh(0x78), Some(1_000_000));
+        let refused = wallet
+            .platform()
+            .fund_from_asset_lock_external(
+                resume(),
+                0,
+                redirected,
+                &NullAddressSigner,
+                &signer,
+                None,
+                None,
+            )
+            .await
+            .expect_err("an external resume to other recipients must be refused");
+        assert!(
+            matches!(
+                refused,
+                PlatformWalletError::AssetLockPlatformAddressRecipientMismatch { .. }
+            ),
+            "{refused:?}"
+        );
+
+        let tracked = wallet.platform().asset_locks.list_tracked_locks().await;
+        let lock = tracked
+            .iter()
+            .find(|lock| lock.out_point == row.out_point)
+            .expect("a refused resume leaves the lock tracked");
+        assert!(!lock.status.is_consumed());
+
+        let resolved = wallet
+            .platform()
+            .asset_locks
+            .resolve_funding_with_is_timeout_fallback(
+                resume(),
+                AssetLockFundingType::AssetLockAddressTopUp,
+                0,
+                Some(AssetLockRecipient::PlatformAddresses(recorded)),
+                &signer,
+                None,
+            )
+            .await
+            .expect("the recorded recipients resume the lock");
+        assert!(matches!(
+            resolved,
+            FundingResolution::Resolved(ResolvedFunding {
+                tracked_out_point: Some(out_point),
+                ..
+            }) if out_point == row.out_point
+        ));
+    }
+
+    /// A Platform-address lock that records no recipients (an owned funding,
+    /// or one tracked before recipients were recorded) is not refused by the
+    /// owned path, as before: the wallet cannot tell the two apart, so which
+    /// path resumes it is the host's call.
+    #[tokio::test]
+    async fn should_resume_a_lock_without_recipients_as_owned() {
+        let (_manager, wallet, _persister, _recipients, mut row, signer) =
+            external_payment_with_recorded_row().await;
+        row.platform_address_recipients = None;
+        restart_with_failed_submit(&wallet, &chain_locked(row.clone())).await;
+        let resolved = wallet
+            .platform()
+            .asset_locks
+            .resolve_funding_with_is_timeout_fallback(
+                AssetLockFunding::FromExistingAssetLock {
+                    out_point: row.out_point,
+                    consume_invitation_voucher: false,
+                },
+                AssetLockFundingType::AssetLockAddressTopUp,
+                0,
+                None,
+                &signer,
+                None,
+            )
+            .await
+            .expect("a lock without recipients resumes through the owned path");
+        assert!(matches!(resolved, FundingResolution::Resolved(_)));
+    }
+
+    /// The recipient-less resume pays only what a lock recorded: an untracked
+    /// lock, one of another funding type, a consumed one and one that
+    /// records no recipients are refused before anything is submitted.
+    #[tokio::test]
+    async fn should_refuse_to_resume_to_recorded_recipients_a_lock_that_records_none() {
+        let (_manager, wallet, _persister, _recipients, row, signer) =
+            external_payment_with_recorded_row().await;
+        let resume = |out_point| {
+            let wallet = Arc::clone(&wallet);
+            let signer = signer.clone();
+            async move {
+                wallet
+                    .platform()
+                    .resume_platform_address_funding_to_recorded_recipients(
+                        out_point,
+                        &NullAddressSigner,
+                        &signer,
+                        None,
+                    )
+                    .await
+                    .expect_err("the resume must be refused")
+            }
+        };
+
+        let untracked = resume(row.out_point).await;
+        assert!(
+            matches!(untracked, PlatformWalletError::AssetLockNotTracked(o) if o == row.out_point),
+            "{untracked:?}"
+        );
+
+        let mut owned = chain_locked(row.clone());
+        owned.platform_address_recipients = None;
+        restart_with_failed_submit(&wallet, &owned).await;
+        let refused = resume(row.out_point).await;
+        assert!(
+            matches!(refused, PlatformWalletError::InvalidParameter(_)),
+            "{refused:?}"
+        );
+
+        let mut other_kind = chain_locked(row.clone());
+        other_kind.funding_type = AssetLockFundingType::IdentityTopUp;
+        restart_with_failed_submit(&wallet, &other_kind).await;
+        let refused = resume(row.out_point).await;
+        assert!(
+            matches!(
+                refused,
+                PlatformWalletError::AssetLockFundingMismatch { .. }
+            ),
+            "{refused:?}"
+        );
+
+        let mut consumed = row.clone();
+        consumed.status = crate::AssetLockStatus::Consumed;
+        restart_with_failed_submit(&wallet, &consumed).await;
+        let refused = resume(row.out_point).await;
+        assert!(
+            matches!(refused, PlatformWalletError::AssetLockAlreadyConsumed(o) if o == row.out_point),
+            "{refused:?}"
+        );
+    }
+
+    /// The account a recipient-less resume credits is the one holding the
+    /// recorded remainder address; a remainder no account holds is refused.
+    #[tokio::test]
+    async fn should_resolve_the_remainder_account_from_the_recorded_recipients() {
+        let (_manager, wallet, _persister, recipients, row, _signer) =
+            external_payment_with_recorded_row().await;
+        let recorded = PlatformAddressRecipients::new(recipients).unwrap();
+        assert_eq!(
+            wallet
+                .platform()
+                .account_holding_remainder(&row.out_point, &recorded)
+                .await
+                .expect("the wallet holds its own remainder"),
+            0
+        );
+
+        let foreign = PlatformAddressRecipients::new(BTreeMap::from([
+            (p2pkh(0x77), Some(1_000_000)),
+            (p2pkh(0x79), None),
+        ]))
+        .unwrap();
+        let refused = wallet
+            .platform()
+            .account_holding_remainder(&row.out_point, &foreign)
+            .await
+            .expect_err("no account holds a foreign remainder");
+        assert!(
+            matches!(refused, PlatformWalletError::AddressNotFound(_)),
+            "{refused:?}"
+        );
     }
 }

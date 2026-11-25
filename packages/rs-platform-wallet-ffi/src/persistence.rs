@@ -216,6 +216,28 @@ pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_ST
 /// wallet builds no unbound top-up lock, and assigns no recipient, for a host
 /// that does not declare all three.
 pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_IDENTITY_RECIPIENTS: u64 = 1 << 17;
+/// The Platform addresses an external Platform-address funding was built to
+/// pay survive store and load with its row, so a resume after restart pays
+/// those recipients or is refused, and never consumes the lock as an owned
+/// top-up. Attested when the host wires both
+/// `on_persist_asset_lock_platform_address_recipients_fn` and
+/// `on_load_asset_lock_platform_address_recipients_fn` next to the legacy
+/// asset-lock persist callback, the wallet-list restore pair and the
+/// begin/end pair, and also declares `ATOMIC_CHANGESETS`: the row and its
+/// recipients arrive in separate callbacks, and only an atomic round commits
+/// them as one unit. Required: the wallet builds no external Platform-address
+/// funding for a host that does not declare it.
+pub const PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS: u64 =
+    1 << 18;
+/// Capacity of the buffer `on_load_asset_lock_platform_address_recipients_fn`
+/// writes into: the largest record the wallet ever hands to
+/// `on_persist_asset_lock_platform_address_recipients_fn`. A literal so
+/// cbindgen emits it; pinned to the wallet's bound below.
+pub const PLATFORM_WALLET_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS_MAX_LEN: usize = 4096;
+const _: () = assert!(
+    PLATFORM_WALLET_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS_MAX_LEN
+        == platform_wallet::changeset::PLATFORM_ADDRESS_RECIPIENTS_MAX_SIZE
+);
 
 /// Locked outpoints (masternode collateral, and outpoints locked by hand)
 /// are persisted AND restored. Requires the extension trio
@@ -541,6 +563,40 @@ pub type LoadAssetLockIdentityRecipientFn = unsafe extern "C" fn(
     out_identity_id_32: *mut u8,
 ) -> i32;
 
+/// Associate the immutable Platform-address recipients of an external
+/// Platform-address funding with a 36-byte raw outpoint. `recipients` is
+/// `recipients_len` (1..=`PLATFORM_WALLET_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS_MAX_LEN`)
+/// opaque bytes the host stores as given and hands back on load; only the
+/// wallet reads them (`platform_wallet_get_asset_lock_platform_address_recipients`
+/// shows a tracked lock's recipients). Runs after the legacy asset-lock
+/// upsert and the other sidecars, inside the same atomic changeset. Every
+/// pointer is readable for the duration of the callback. A host holding
+/// different bytes for the outpoint returns an error: the recipients never
+/// change once stored.
+pub type PersistAssetLockPlatformAddressRecipientsFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    out_point: *const u8,
+    recipients: *const u8,
+    recipients_len: usize,
+) -> i32;
+
+/// Read the optional Platform-address recipients for a restored outpoint,
+/// including consumed rows. `out_recipients` points to `recipients_capacity`
+/// (`PLATFORM_WALLET_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS_MAX_LEN`) writable
+/// bytes; the host copies the stored bytes there and their length to
+/// `out_recipients_len`. An unreadable or missing asset-lock row must return
+/// an error, not a successful `out_found = false`.
+pub type LoadAssetLockPlatformAddressRecipientsFn = unsafe extern "C" fn(
+    context: *mut c_void,
+    wallet_id: *const u8,
+    out_point: *const u8,
+    out_found: *mut bool,
+    out_recipients: *mut u8,
+    recipients_capacity: usize,
+    out_recipients_len: *mut usize,
+) -> i32;
+
 /// Size- and version-tagged additive persistence callbacks.
 ///
 /// `context` is the context in the accompanying [`PersistenceCallbacks`]
@@ -843,6 +899,33 @@ pub struct PersistenceCallbacksExtension {
             out_identity_id_32: *mut u8,
         ) -> i32,
     >,
+    /// Additive sidecar for the Platform addresses an external
+    /// Platform-address funding pays (see
+    /// [`PersistAssetLockPlatformAddressRecipientsFn`]). Appended under the
+    /// same version for the same reason as the slots above. Both slots, the
+    /// legacy asset-lock persist callback, the wallet-list restore pair, the
+    /// begin/end pair and a declared `ATOMIC_CHANGESETS` are required before
+    /// the host can attest `ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS`.
+    pub on_persist_asset_lock_platform_address_recipients_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            out_point: *const u8,
+            recipients: *const u8,
+            recipients_len: usize,
+        ) -> i32,
+    >,
+    pub on_load_asset_lock_platform_address_recipients_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            out_point: *const u8,
+            out_found: *mut bool,
+            out_recipients: *mut u8,
+            recipients_capacity: usize,
+            out_recipients_len: *mut usize,
+        ) -> i32,
+    >,
 }
 
 impl Default for PersistenceCallbacksExtension {
@@ -875,6 +958,8 @@ impl Default for PersistenceCallbacksExtension {
             on_load_wallet_locked_outpoints_free_fn: None,
             on_persist_asset_lock_identity_recipient_fn: None,
             on_load_asset_lock_identity_recipient_fn: None,
+            on_persist_asset_lock_platform_address_recipients_fn: None,
+            on_load_asset_lock_platform_address_recipients_fn: None,
         }
     }
 }
@@ -908,6 +993,10 @@ pub struct PersistenceExtensionCallbacks {
     pub load_wallet_locked_outpoints_free: Option<FreeWalletLockedOutpointsFn>,
     pub persist_asset_lock_identity_recipient: Option<PersistAssetLockIdentityRecipientFn>,
     pub load_asset_lock_identity_recipient: Option<LoadAssetLockIdentityRecipientFn>,
+    pub persist_asset_lock_platform_address_recipients:
+        Option<PersistAssetLockPlatformAddressRecipientsFn>,
+    pub load_asset_lock_platform_address_recipients:
+        Option<LoadAssetLockPlatformAddressRecipientsFn>,
 }
 
 /// Return value by which a persistence callback reports a **retryable**
@@ -2142,6 +2231,29 @@ impl FFIPersister {
         {
             capabilities =
                 capabilities.union(PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS);
+        }
+        // The row and its recipients arrive in separate callbacks, so they
+        // commit as one unit only in a round the host commits or rolls back
+        // whole: a host that kept the row without its recipients would
+        // reload an external funding as the wallet's own.
+        if wallet_restore
+            && self.callbacks.on_persist_asset_locks_fn.is_some()
+            && self
+                .tracked_masternodes_callbacks
+                .persist_asset_lock_platform_address_recipients
+                .is_some()
+            && self
+                .tracked_masternodes_callbacks
+                .load_asset_lock_platform_address_recipients
+                .is_some()
+            && self.callbacks.on_changeset_begin_fn.is_some()
+            && self.callbacks.on_changeset_end_fn.is_some()
+            && self
+                .declared_capabilities
+                .contains(PersistenceCapabilities::ATOMIC_CHANGESETS)
+        {
+            capabilities =
+                capabilities.union(PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS);
         }
         if self
             .tracked_masternodes_callbacks
@@ -3437,6 +3549,36 @@ impl PlatformWalletPersistence for FFIPersister {
                     outcome.record(rc);
                 }
             }
+            // The Platform-address recipients are a fourth sidecar, with the
+            // identity recipient's rule: the wallet records them only for a
+            // host that attests `ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS`, so
+            // recipients with no slot to take them fail the round.
+            for entry in al_cs.asset_locks.values() {
+                let Some(recipients) = entry.platform_address_recipients.as_ref() else {
+                    continue;
+                };
+                let Some(cb) = self
+                    .tracked_masternodes_callbacks
+                    .persist_asset_lock_platform_address_recipients
+                else {
+                    outcome.record(1);
+                    continue;
+                };
+                let out_point = outpoint_to_bytes(&entry.out_point);
+                let bytes = recipients.to_bytes();
+                let rc = unsafe {
+                    cb(
+                        self.callbacks.context,
+                        wallet_id.as_ptr(),
+                        out_point.as_ptr(),
+                        bytes.as_ptr(),
+                        bytes.len(),
+                    )
+                };
+                if rc != 0 {
+                    outcome.record(rc);
+                }
+            }
         }
 
         // Send invitation changeset — DIP-13 sent-invitation records, one
@@ -4277,6 +4419,17 @@ impl PlatformWalletPersistence for FFIPersister {
                 })
             {
                 load_asset_lock_identity_recipients(
+                    cb,
+                    self.callbacks.context,
+                    &entry.wallet_id,
+                    &mut wallet_state.unused_asset_locks,
+                )?;
+            }
+            if let Some(cb) = self
+                .tracked_masternodes_callbacks
+                .load_asset_lock_platform_address_recipients
+            {
+                load_asset_lock_platform_address_recipients(
                     cb,
                     self.callbacks.context,
                     &entry.wallet_id,
@@ -6886,6 +7039,60 @@ fn load_asset_lock_identity_recipients(
     )
 }
 
+/// Rehydrate the Platform-address recipient sidecar after decoding the frozen
+/// legacy rows. A failed read, an over-long length or bytes the wallet cannot
+/// read invalidate the whole load: a row that silently lost its recipients
+/// would let a resume consume a third-party payment into the wallet.
+fn load_asset_lock_platform_address_recipients(
+    callback: LoadAssetLockPlatformAddressRecipientsFn,
+    context: *mut c_void,
+    wallet_id: &WalletId,
+    locks: &mut BTreeMap<u32, BTreeMap<dashcore::OutPoint, platform_wallet::TrackedAssetLock>>,
+) -> Result<(), PersistenceError> {
+    for lock in locks.values_mut().flat_map(|locks| locks.values_mut()) {
+        let out_point = outpoint_to_bytes(&lock.out_point);
+        let mut found = false;
+        let mut buffer = vec![0u8; PLATFORM_WALLET_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS_MAX_LEN];
+        let mut len = 0usize;
+        let rc = unsafe {
+            callback(
+                context,
+                wallet_id.as_ptr(),
+                out_point.as_ptr(),
+                &mut found,
+                buffer.as_mut_ptr(),
+                buffer.len(),
+                &mut len,
+            )
+        };
+        if rc != 0 {
+            return Err(persist_callback_error(
+                rc,
+                "Loading asset-lock Platform-address recipients failed",
+            ));
+        }
+        lock.platform_address_recipients = if found {
+            let bytes = buffer.get(..len).ok_or_else(|| {
+                PersistenceError::backend(
+                    "tracked asset locks: Platform-address recipients too long",
+                )
+            })?;
+            Some(
+                platform_wallet::changeset::PlatformAddressRecipients::from_bytes(bytes).map_err(
+                    |_| {
+                        PersistenceError::backend(
+                            "tracked asset locks: malformed Platform-address recipients",
+                        )
+                    },
+                )?,
+            )
+        } else {
+            None
+        };
+    }
+    Ok(())
+}
+
 /// Ask the host for one `N`-byte recipient sidecar per restored lock and hand
 /// each answer to `set`. The shielded and identity loaders share it; their
 /// callback types have this same shape.
@@ -7282,6 +7489,7 @@ fn build_unused_asset_locks(
             operation_id: None,
             shielded_recipient: None,
             identity_recipient: None,
+            platform_address_recipients: None,
             status,
             proof,
         };
@@ -11736,6 +11944,7 @@ mod tests {
                 operation_id,
                 shielded_recipient: None,
                 identity_recipient: None,
+                platform_address_recipients: None,
             };
             let (entries, _storage) = build_asset_lock_entries(&[&entry]);
             let wallet = WalletRestoreEntryFFI {
@@ -11861,6 +12070,7 @@ mod tests {
             operation_id: None,
             shielded_recipient: Some(raw),
             identity_recipient: None,
+            platform_address_recipients: None,
         };
         let (entries, _storage) = build_asset_lock_entries(&[&entry]);
         let wallet = WalletRestoreEntryFFI {
@@ -12118,6 +12328,7 @@ mod tests {
             operation_id: None,
             shielded_recipient: None,
             identity_recipient: Some(identity),
+            platform_address_recipients: None,
         };
         let (entries, _storage) = build_asset_lock_entries(&[&entry]);
         let wallet = WalletRestoreEntryFFI {
@@ -12217,6 +12428,216 @@ mod tests {
                 .contains(PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS)
             );
         }
+    }
+
+    /// The Platform-address recipient sidecar round-trips next to the frozen
+    /// row: a host with both slots gets every recorded record on store and
+    /// hands it back on load; a row without one loads with none; unreadable
+    /// bytes fail the load. The bit is attested only with both slots and a
+    /// declared atomic round (the row and its recipients arrive in separate
+    /// callbacks), and a host without the persist slot fails the round
+    /// instead of dropping the recipients.
+    #[test]
+    fn should_roundtrip_platform_address_recipients_and_require_an_atomic_round() {
+        use dpp::address_funds::PlatformAddress;
+        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+        use platform_wallet::changeset::PlatformAddressRecipients;
+
+        let recipients = PlatformAddressRecipients::new(
+            [
+                (PlatformAddress::P2pkh([0x44; 20]), Some(1_000_000)),
+                (PlatformAddress::P2pkh([0x01; 20]), None),
+            ]
+            .into(),
+        )
+        .unwrap();
+        unsafe extern "C" fn load_recipients(
+            context: *mut c_void,
+            _: *const u8,
+            _: *const u8,
+            found: *mut bool,
+            output: *mut u8,
+            capacity: usize,
+            len: *mut usize,
+        ) -> i32 {
+            let stored = &*(context as *const Option<Vec<u8>>);
+            *found = stored.is_some();
+            if let Some(stored) = stored {
+                assert!(stored.len() <= capacity);
+                std::ptr::copy_nonoverlapping(stored.as_ptr(), output, stored.len());
+                *len = stored.len();
+            }
+            0
+        }
+        let entry = platform_wallet::changeset::AssetLockEntry {
+            out_point: dashcore::OutPoint {
+                txid: dashcore::Txid::from_byte_array([6; 32]),
+                vout: 0,
+            },
+            transaction: dashcore::Transaction {
+                version: 3,
+                lock_time: 0,
+                input: vec![],
+                output: vec![],
+                special_transaction_payload: None,
+            },
+            account_index: 2,
+            funding_type: AssetLockFundingType::AssetLockAddressTopUp,
+            identity_index: 0,
+            amount_duffs: 1000,
+            status: platform_wallet::AssetLockStatus::Broadcast,
+            proof: None,
+            operation_id: None,
+            shielded_recipient: None,
+            identity_recipient: None,
+            platform_address_recipients: Some(recipients.clone()),
+        };
+        let (entries, _storage) = build_asset_lock_entries(&[&entry]);
+        let wallet = WalletRestoreEntryFFI {
+            tracked_asset_locks: entries.as_ptr(),
+            tracked_asset_locks_count: entries.len(),
+            ..Default::default()
+        };
+        let mut restored = build_unused_asset_locks(&wallet).expect("valid persisted lock");
+        assert_eq!(
+            restored[&2][&entry.out_point].platform_address_recipients, None,
+            "legacy ABI has no recipients field"
+        );
+        for stored in [None, Some(recipients.clone())] {
+            let bytes = stored.as_ref().map(PlatformAddressRecipients::to_bytes);
+            load_asset_lock_platform_address_recipients(
+                load_recipients,
+                (&bytes as *const Option<Vec<u8>>).cast_mut().cast(),
+                &[42; 32],
+                &mut restored,
+            )
+            .expect("valid recipient sidecar");
+            assert_eq!(
+                restored[&2][&entry.out_point].platform_address_recipients,
+                stored
+            );
+        }
+        let malformed = Some(vec![0x09u8, 0, 1]);
+        assert!(load_asset_lock_platform_address_recipients(
+            load_recipients,
+            (&malformed as *const Option<Vec<u8>>).cast_mut().cast(),
+            &[42; 32],
+            &mut restored,
+        )
+        .is_err());
+
+        let changeset = PlatformWalletChangeSet {
+            asset_locks: Some(platform_wallet::changeset::AssetLockChangeSet {
+                asset_locks: [(entry.out_point, entry.clone())].into(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let callbacks = || PersistenceCallbacks {
+            on_changeset_begin_fn: Some(noop_begin),
+            on_changeset_end_fn: Some(noop_end),
+            on_persist_asset_locks_fn: Some(noop_asset_locks),
+            on_load_wallet_list_fn: Some(noop_load_wallets),
+            on_load_wallet_list_free_fn: Some(noop_free_wallets),
+            ..Default::default()
+        };
+        let legacy = FFIPersister::new(callbacks());
+        assert!(legacy.store([42; 32], changeset.clone()).is_err());
+        assert!(!legacy
+            .persistence_capabilities()
+            .contains(PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS));
+
+        unsafe extern "C" fn persist_recipients(
+            context: *mut c_void,
+            wallet: *const u8,
+            _: *const u8,
+            recipients: *const u8,
+            len: usize,
+        ) -> i32 {
+            assert_eq!(slice::from_raw_parts(wallet, 32), &[42; 32]);
+            *(context as *mut Option<Vec<u8>>) =
+                Some(slice::from_raw_parts(recipients, len).to_vec());
+            0
+        }
+        let mut seen: Option<Vec<u8>> = None;
+        let extensions = PersistenceExtensionCallbacks {
+            persist_asset_lock_platform_address_recipients: Some(persist_recipients),
+            load_asset_lock_platform_address_recipients: Some(load_recipients),
+            ..Default::default()
+        };
+        let attested = PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS
+            .union(PersistenceCapabilities::ATOMIC_CHANGESETS);
+        let writer = FFIPersister::new_with_persistence_capabilities_and_extensions(
+            PersistenceCallbacks {
+                context: std::ptr::addr_of_mut!(seen).cast(),
+                ..callbacks()
+            },
+            attested,
+            extensions,
+        );
+        assert!(writer
+            .persistence_capabilities()
+            .contains(PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS));
+        writer
+            .store([42; 32], changeset)
+            .expect("recipient sidecar persisted with the base row");
+        assert_eq!(seen, Some(recipients.to_bytes()));
+
+        let not_attested = |callbacks: PersistenceCallbacks,
+                            declared: PersistenceCapabilities,
+                            extensions: PersistenceExtensionCallbacks| {
+            !FFIPersister::new_with_persistence_capabilities_and_extensions(
+                callbacks, declared, extensions,
+            )
+            .persistence_capabilities()
+            .contains(PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS)
+        };
+        // Either slot missing.
+        for incomplete in [
+            PersistenceExtensionCallbacks {
+                persist_asset_lock_platform_address_recipients: None,
+                ..extensions
+            },
+            PersistenceExtensionCallbacks {
+                load_asset_lock_platform_address_recipients: None,
+                ..extensions
+            },
+        ] {
+            assert!(not_attested(callbacks(), attested, incomplete));
+        }
+        // No declared atomic round, or no begin/end pair to run one.
+        assert!(not_attested(
+            callbacks(),
+            PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS,
+            extensions,
+        ));
+        assert!(not_attested(
+            PersistenceCallbacks {
+                on_changeset_begin_fn: None,
+                on_changeset_end_fn: None,
+                ..callbacks()
+            },
+            attested,
+            extensions,
+        ));
+        // No legacy asset-lock row callback, or no wallet-list restore.
+        assert!(not_attested(
+            PersistenceCallbacks {
+                on_persist_asset_locks_fn: None,
+                ..callbacks()
+            },
+            attested,
+            extensions,
+        ));
+        assert!(not_attested(
+            PersistenceCallbacks {
+                on_load_wallet_list_fn: None,
+                on_load_wallet_list_free_fn: None,
+                ..callbacks()
+            },
+            attested,
+            extensions,
+        ));
     }
 
     #[test]
@@ -12699,6 +13120,26 @@ mod tests {
                 PersistenceCallbacksExtension,
                 on_load_asset_lock_identity_recipient_fn
             ) + std::mem::size_of::<Option<LoadAssetLockIdentityRecipientFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_asset_lock_platform_address_recipients_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_persist_asset_lock_platform_address_recipients_fn
+            ) + std::mem::size_of::<Option<PersistAssetLockPlatformAddressRecipientsFn>>(),
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_asset_lock_platform_address_recipients_fn
+            )
+        );
+        assert_eq!(
+            std::mem::offset_of!(
+                PersistenceCallbacksExtension,
+                on_load_asset_lock_platform_address_recipients_fn
+            ) + std::mem::size_of::<Option<LoadAssetLockPlatformAddressRecipientsFn>>(),
             std::mem::size_of::<PersistenceCallbacksExtension>()
         );
         assert_eq!(
@@ -12768,6 +13209,10 @@ mod tests {
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_IDENTITY_RECIPIENTS,
             PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS.bits()
+        );
+        assert_eq!(
+            PLATFORM_WALLET_PERSISTENCE_CAPABILITY_ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS,
+            PersistenceCapabilities::ASSET_LOCK_PLATFORM_ADDRESS_RECIPIENTS.bits()
         );
         assert_eq!(
             PLATFORM_WALLET_PERSISTENCE_CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE,
@@ -15068,6 +15513,7 @@ mod tests {
             operation_id: None,
             shielded_recipient: None,
             identity_recipient: None,
+            platform_address_recipients: None,
         };
         let out_point = entry.out_point;
         let host = Arc::new(Host {

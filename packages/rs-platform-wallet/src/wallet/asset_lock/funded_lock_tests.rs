@@ -139,6 +139,7 @@ async fn track_chain_locked_lock_at(
                 operation_id: None,
                 shielded_recipient: None,
                 identity_recipient: None,
+                platform_address_recipients: None,
                 out_point,
                 transaction,
                 account_index: 0,

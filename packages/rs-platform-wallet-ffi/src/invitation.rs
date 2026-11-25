@@ -878,6 +878,7 @@ mod tests {
                         operation_id: None,
                         shielded_recipient: None,
                         identity_recipient: None,
+                        platform_address_recipients: None,
                         out_point: tracked,
                         transaction: dashcore::Transaction {
                             version: 3,
