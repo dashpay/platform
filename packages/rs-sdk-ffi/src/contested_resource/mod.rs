@@ -1,4 +1,5 @@
 // Contested resource modules
+pub(crate) mod contender_document;
 mod queries;
 mod transitions;
 

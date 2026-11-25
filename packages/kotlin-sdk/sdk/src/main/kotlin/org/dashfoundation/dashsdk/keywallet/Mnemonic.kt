@@ -6,12 +6,12 @@ import org.dashfoundation.dashsdk.ffi.MnemonicNative
 
 /**
  * BIP-39 mnemonic operations — port of `SwiftDashSDK/KeyWallet/Mnemonic.swift`.
- * Generation runs entirely in Rust (key-wallet-ffi); the phrase transits
+ * Generation runs entirely in Rust (platform-wallet-ffi); the phrase transits
  * Kotlin only to be shown for backup and stored encrypted.
  */
 object Mnemonic {
 
-    /** Mirror of the iOS `MnemonicLanguage` enum (FFILanguage ordinals). */
+    /** Mirror of the iOS `MnemonicLanguage` enum (FFIMnemonicLanguage ordinals). */
     enum class Language(val ffiValue: Int) {
         ENGLISH(0),
         CHINESE_SIMPLIFIED(1),
@@ -19,6 +19,10 @@ object Mnemonic {
         CZECH(3),
         FRENCH(4),
         ITALIAN(5),
+        JAPANESE(6),
+        KOREAN(7),
+        PORTUGUESE(8),
+        SPANISH(9),
     }
 
     /**

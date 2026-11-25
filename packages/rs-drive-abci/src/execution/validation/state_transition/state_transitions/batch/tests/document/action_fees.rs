@@ -6,8 +6,8 @@
 //! sum of all credits changes by the gas alone.
 
 use super::gas_sponsorship::gas_sponsorship_tests::{
-    balance_of, process_alone, total_fee, Sponsorship, GAS_SPONSOR_INSUFFICIENT_BALANCE,
-    IDENTITY_INSUFFICIENT_BALANCE,
+    balance_of, credits_in_trees_of, process_alone, total_fee, Sponsorship,
+    GAS_SPONSOR_INSUFFICIENT_BALANCE, IDENTITY_INSUFFICIENT_BALANCE,
 };
 use super::*;
 
@@ -21,6 +21,8 @@ mod action_fee_tests {
     use dpp::balances::credits::MAX_CREDITS;
     use dpp::block::epoch::Epoch;
     use dpp::consensus::codes::ErrorWithCode;
+    use dpp::consensus::basic::BasicError;
+    use dpp::consensus::ConsensusError;
     use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::data_contract::accessors::v1::DataContractV1Getters;
     use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
@@ -790,7 +792,6 @@ mod action_fee_tests {
                 true,
                 None,
                 setup.platform_version,
-                None,
             )
             .expect("expected to rewrite the contract with the raised moderators part");
 
@@ -986,8 +987,11 @@ mod action_fee_tests {
         assert!(
             matches!(
                 &result,
-                StateTransitionExecutionResult::InternalError(message)
-                    if message.contains("DocumentsBatch") && message.contains("not active")
+                UnpaidConsensusError(ConsensusError::BasicError(
+                    BasicError::StateTransitionNotActiveError(error)
+                )) if error.state_transition_type().starts_with("DocumentsBatch")
+                    && error.current_protocol_version() == 13
+                    && error.required_protocol_version() == 14
             ),
             "expected the batch to be inactive before protocol version 14, got {result:?}"
         );
@@ -1232,19 +1236,6 @@ mod action_fee_tests {
                 .credits
         };
         (pot(ContractFeePot::Owner), pot(ContractFeePot::Moderators))
-    }
-
-    fn credits_in_trees_of(
-        platform: &TempPlatform<MockCoreRPCLike>,
-        tx: &Transaction,
-        platform_version: &PlatformVersion,
-    ) -> Credits {
-        platform
-            .drive
-            .calculate_total_credits_balance(Some(tx), &platform_version.drive)
-            .expect("expected to sum the credits")
-            .total_in_trees()
-            .expect("expected the credits to add up")
     }
 
     /// The agreement to what `document_type` declares for `action`, at the fee multiplier of
@@ -1535,7 +1526,6 @@ mod action_fee_tests {
                 true,
                 None,
                 setup.platform_version,
-                None,
             )
             .expect("expected to take credits from the contract owner");
     }

@@ -37,8 +37,10 @@ import androidx.navigation.NavHostController
 import kotlinx.coroutines.launch
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.AddressQueries
+import org.dashfoundation.example.navigation.DecisionProposalsList
 import org.dashfoundation.example.navigation.Diagnostics
 import org.dashfoundation.example.navigation.GroveDbPathElements
+import org.dashfoundation.example.navigation.MultipleChoiceProposalsList
 import org.dashfoundation.example.navigation.QueryDetail
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.SubmitButton
@@ -121,6 +123,33 @@ fun QueriesListScreen(navController: NavHostController) {
                 modifier = Modifier
                     .clickable { navController.navigate(AddressQueries) }
                     .testTag("queries.row.addressQueries"),
+            )
+            ListItem(
+                headlineContent = { Text("Decision Proposals") },
+                supportingContent = {
+                    Text(
+                        "Browse, file, edit and vote on yes/no questions put to the " +
+                            "masternodes (protocol version 15)",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                },
+                modifier = Modifier
+                    .clickable { navController.navigate(DecisionProposalsList) }
+                    .testTag("votingQueries.decisionProposalsLink"),
+            )
+            ListItem(
+                headlineContent = { Text("Multiple Choice Proposals") },
+                supportingContent = {
+                    Text(
+                        "Browse, file and edit questions answered by the choices entered " +
+                            "for them, enter choices and vote among them (protocol " +
+                            "version 15)",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                },
+                modifier = Modifier
+                    .clickable { navController.navigate(MultipleChoiceProposalsList) }
+                    .testTag("votingQueries.multipleChoiceProposalsLink"),
             )
             ListItem(
                 headlineContent = { Text("Run All Queries") },

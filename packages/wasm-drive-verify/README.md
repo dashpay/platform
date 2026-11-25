@@ -60,10 +60,13 @@ const result = verifyFullIdentityByNonUniquePublicKeyHash(
 );
 ```
 
-This direct verifier accepts one complete GroveDB proof blob. It proves the first
-matching identity after the exclusive cursor, including its keys, balance and
-revision, or complete absence. It replaces the earlier two-blob signature;
-callers must migrate together with the server's standard `Proof` response.
+This direct verifier accepts one complete GroveDB proof blob: the standard `Proof`
+of a V1 answer. It proves the first matching identity after the exclusive cursor,
+including its keys, balance and revision, or complete absence. It does not accept
+a V0 answer, which carries separate index and identity proofs. The SDK sends V0
+until it has verified a signed answer from protocol 14 or later. For a V0 answer,
+the proof that `getIdentityByNonUniquePublicKeyHashWithProofInfo` returns is the
+index proof alone, and this function cannot verify it.
 The producer version is the authenticated response metadata protocol version.
 The verification version is the caller's security table, normally latest supported
 and never below its verification floor. Authenticate the returned root and

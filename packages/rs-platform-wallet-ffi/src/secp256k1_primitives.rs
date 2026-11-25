@@ -2,8 +2,8 @@
 
 use std::slice;
 
-use dashcore::secp256k1::ecdh::shared_secret_point;
-use dashcore::secp256k1::{PublicKey, SecretKey};
+use dpp::secp256k1::ecdh::shared_secret_point;
+use dpp::secp256k1::{PublicKey, SecretKey};
 use zeroize::Zeroizing;
 
 use crate::error::*;

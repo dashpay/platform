@@ -44,7 +44,7 @@ use crate::types::{FFINetwork, Network};
 use key_wallet::bip32::{DerivationPath, ExtendedPrivKey};
 use zeroize::Zeroizing;
 
-use crate::identity_keys_from_mnemonic::parse_mnemonic_any_language;
+use platform_wallet::parse_mnemonic_any_language;
 use rs_sdk_ffi::{
     mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
 };
@@ -253,7 +253,7 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
     };
 
     // ---- Derive seed + derivation path --------------------------------------
-    let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(""));
+    let seed: Zeroizing<[u8; 64]> = mnemonic.to_seed("");
     drop(mnemonic);
 
     let path_str = match CStr::from_ptr(derivation_path_cstr).to_str() {
@@ -277,7 +277,7 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
         Ok(d) => d,
         Err(_) => return fail(SIGN_WITH_RESOLVER_ERR_DERIVATION),
     };
-    let secret_bytes: Zeroizing<[u8; 32]> = Zeroizing::new(derived.private_key.to_secret_bytes());
+    let secret_bytes: Zeroizing<[u8; 32]> = derived.private_key.to_bytes();
 
     // ---- Bind the derived key to the expected on-chain key -------------------
     // Reject before signing if the key derived here doesn't reproduce the
@@ -290,7 +290,7 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
     if !expected_key_data.is_null() && expected_key_data_len > 0 {
         let derived_pubkey = key_wallet::bip32::ExtendedPubKey::from_priv(&derived)
             .public_key
-            .serialize();
+            .to_compressed();
         // Build the expected slice only for the two lengths the binding
         // policy accepts (33 or 20), never from the caller-supplied
         // `expected_key_data_len` directly: a malformed huge length must not
@@ -492,11 +492,13 @@ mod tests {
         // same mnemonic the resolver returns.
         let mnemonic = parse_mnemonic_any_language(ENGLISH_PHRASE).expect("mnemonic");
         let seed = mnemonic.to_seed("");
-        let master = ExtendedPrivKey::new_master(Network::Testnet, &seed).expect("master");
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &*seed).expect("master");
         let derived = master
             .derive_priv(&DerivationPath::from_str(path_str).unwrap())
             .expect("derive");
-        let expected_pubkey = ExtendedPubKey::from_priv(&derived).public_key.serialize();
+        let expected_pubkey = ExtendedPubKey::from_priv(&derived)
+            .public_key
+            .to_compressed();
 
         let mut sig_buf = [0u8; 128];
         let mut sig_len: usize = 0;
@@ -585,11 +587,13 @@ mod tests {
 
         let mnemonic = parse_mnemonic_any_language(ENGLISH_PHRASE).expect("mnemonic");
         let seed = mnemonic.to_seed("");
-        let master = ExtendedPrivKey::new_master(Network::Testnet, &seed).expect("master");
+        let master = ExtendedPrivKey::new_master(Network::Testnet, &*seed).expect("master");
         let derived = master
             .derive_priv(&DerivationPath::from_str(path_str).unwrap())
             .expect("derive");
-        let pubkey = ExtendedPubKey::from_priv(&derived).public_key.serialize();
+        let pubkey = ExtendedPubKey::from_priv(&derived)
+            .public_key
+            .to_compressed();
         let expected_hash = dash_sdk::dpp::util::hash::ripemd160_sha256(&pubkey);
 
         let mut sig_buf = [0u8; 128];

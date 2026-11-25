@@ -6,7 +6,6 @@ use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::{Identifier, UserFeeIncrease};
 use dash_sdk::platform::documents::transitions::DocumentTransferTransitionBuilder;
 use dash_sdk::platform::IdentityPublicKey;
-use drive_proof_verifier::ContextProvider;
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
@@ -110,25 +109,8 @@ pub unsafe extern "C" fn dash_sdk_document_transfer_to_identity(
             FFIError::InternalError(format!("Failed to increment document revision: {}", e))
         })?;
 
-        // Get contract from trusted context provider
-        let data_contract = if let Some(ref provider) = wrapper.trusted_provider {
-            let platform_version = wrapper.sdk.version();
-            provider
-                .get_data_contract(&contract_id, platform_version)
-                .map_err(|e| {
-                    FFIError::InternalError(format!("Failed to get contract from context: {}", e))
-                })?
-                .ok_or_else(|| {
-                    FFIError::InternalError(format!(
-                        "Contract {} not found in trusted context",
-                        contract_id_str
-                    ))
-                })?
-        } else {
-            return Err(FFIError::InternalError(
-                "No trusted context provider configured".to_string(),
-            ));
-        };
+        // Get contract from the SDK's context provider
+        let data_contract = wrapper.data_contract(&contract_id)?;
 
         // Convert FFI types to Rust types
         let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;
@@ -279,25 +261,8 @@ pub unsafe extern "C" fn dash_sdk_document_transfer_to_identity_and_wait(
             FFIError::InternalError(format!("Failed to increment document revision: {}", e))
         })?;
 
-        // Get contract from trusted context provider
-        let data_contract = if let Some(ref provider) = wrapper.trusted_provider {
-            let platform_version = wrapper.sdk.version();
-            provider
-                .get_data_contract(&contract_id, platform_version)
-                .map_err(|e| {
-                    FFIError::InternalError(format!("Failed to get contract from context: {}", e))
-                })?
-                .ok_or_else(|| {
-                    FFIError::InternalError(format!(
-                        "Contract {} not found in trusted context",
-                        contract_id_str
-                    ))
-                })?
-        } else {
-            return Err(FFIError::InternalError(
-                "No trusted context provider configured".to_string(),
-            ));
-        };
+        // Get contract from the SDK's context provider
+        let data_contract = wrapper.data_contract(&contract_id)?;
 
         // Convert FFI types to Rust types
         let token_payment_info_converted = convert_token_payment_info(token_payment_info)?;

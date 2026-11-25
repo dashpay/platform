@@ -17,37 +17,20 @@
 //! thread. The tests therefore run on a multi-thread runtime and call it
 //! through `block_in_place` — which is also how a caller must treat it.
 
-use std::sync::Arc;
-
 use tokio::task::block_in_place;
 
 use dashcore::Network;
 use key_wallet::account::StandardAccountType;
 
-use crate::test_support::{funded_wallet_manager, NoopTestPersister};
+use crate::test_support::{funded_wallet_manager, platform_wallet_in};
 use crate::wallet::platform_wallet::PlatformWallet;
 use crate::wallet::provider_key_at_index::ProviderKeyKind;
 
 /// A `PlatformWallet` over a fresh, seed-bearing test wallet.
 async fn platform_wallet() -> PlatformWallet {
-    let (wallet_manager, wallet_id, balance, _signer) =
+    let (wallet_manager, wallet_id, _, _) =
         funded_wallet_manager(StandardAccountType::BIP44Account).await;
-    let sdk = Arc::new(dash_sdk::Sdk::new_mock());
-    let spv = Arc::new(crate::spv::SpvRuntime::new(
-        Arc::clone(&wallet_manager),
-        Arc::new(crate::events::PlatformEventManager::new(Vec::new())),
-    ));
-    PlatformWallet::new(
-        sdk,
-        wallet_id,
-        wallet_manager,
-        balance,
-        Arc::new(tokio::sync::Notify::new()),
-        Arc::new(NoopTestPersister) as Arc<dyn crate::changeset::PlatformWalletPersistence>,
-        Arc::new(crate::broadcaster::SpvBroadcaster::new(spv)),
-        Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        crate::changeset::DurableCursors::default(),
-    )
+    platform_wallet_in(wallet_manager, wallet_id).await
 }
 
 /// The network the test wallet was created on, so address expectations are not
@@ -116,7 +99,7 @@ async fn private_reveal_is_internally_consistent() {
             // WIF and raw scalar must be the same key.
             let from_wif = PrivateKey::from_wif(wif).expect("valid WIF");
             assert_eq!(
-                from_wif.inner.to_secret_bytes().to_vec(),
+                from_wif.inner.to_bytes().to_vec(),
                 **scalar,
                 "{kind:?}#{index}: WIF and raw scalar disagree"
             );
@@ -236,7 +219,7 @@ async fn explicitly_supplied_seed_matches_the_resident_one() {
     };
 
     let supplied = block_in_place(|| {
-        wallet.derive_provider_key_at_index(ProviderKeyKind::Voting, 3, Some(&seed), true)
+        wallet.derive_provider_key_at_index(ProviderKeyKind::Voting, 3, Some(&*seed), true)
     })
     .expect("supplied-seed derivation");
 

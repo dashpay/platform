@@ -2470,9 +2470,9 @@ final class SweptTransactionPersistTests: XCTestCase {
     /// tombstone stores the WINNER'S own mined height and is collected
     /// exactly when the finality boundary `min(chainlockHeight,
     /// syncedHeight)` reaches it — upstream key-wallet's
-    /// `prune_finalized_observed_spends` condition verbatim, no
-    /// observation-age margin. At that boundary the funding transaction of
-    /// the guarded outpoint (necessarily mined at or below the winner's
+    /// `prune_finalized_observed_spends` condition over applied chainlocks,
+    /// no observation-age margin. At that boundary the funding transaction
+    /// of the guarded outpoint (necessarily mined at or below the winner's
     /// height) has been filter-scanned with no false negatives, so an
     /// undrained tombstone is provably not guarding the wallet's coin.
     func testASweptTombstoneIsCollectedAtFinalityAndNotBefore() throws {
@@ -2513,8 +2513,8 @@ final class SweptTransactionPersistTests: XCTestCase {
     /// blob proves a chainlock was once applied, but says nothing about
     /// how far finality reaches. Only the NUMERIC chainlock height
     /// delivered through the extension slot supplies the boundary's
-    /// chainlock half, mirroring upstream's (and the SQLite store's)
-    /// "no-op until a chainlock height has been persisted".
+    /// chainlock half, mirroring the SQLite store's "no-op until a
+    /// chainlock height has been persisted".
     func testASweptTombstoneOutlivesSyncProgressWithoutANumericChainLockHeight() throws {
         let (handler, container) = try makeHandler()
         let context = ModelContext(container)

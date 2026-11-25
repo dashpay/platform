@@ -851,7 +851,7 @@ mod tests {
     /// Derive the compressed secp256k1 pubkey (`[u8; 33]`) for a fixed
     /// in-range scalar — the shape a breadcrumb re-derivation produces.
     fn fixed_scalar_and_compressed_pubkey() -> ([u8; 32], [u8; 33]) {
-        use dashcore::secp256k1::{PublicKey, SecretKey};
+        use dpp::secp256k1::{PublicKey, SecretKey};
         let mut scalar = [0u8; 32];
         scalar[31] = 7;
         let sk = SecretKey::from_secret_bytes(scalar).expect("in-range scalar");

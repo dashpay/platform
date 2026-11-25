@@ -152,8 +152,11 @@ describe('Wallet#createAccount', function suite() {
     expect(worker.getStartBlockHeight()).to.equal(1);
 
     const genesisChain = await mineHeadersChain('regtest', 2);
+    blockHeadersProvider.on(
+      BlockHeadersProvider.EVENTS.CHAIN_UPDATED,
+      worker.historicalChainUpdateHandler,
+    );
     blockHeadersProvider.spvChain.addHeaders(genesisChain);
-    worker.historicalChainUpdateHandler();
     await wallet.storage.saveState();
 
     expect(chainStore.state.lastSyncedHeaderHeight).to.equal(1);

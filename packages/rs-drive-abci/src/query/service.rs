@@ -1,46 +1,58 @@
+use crate::error::execution::ExecutionError;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::metrics::{abci_response_code_metric_label, query_duration_metric};
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
+use crate::platform_types::state_transition_execution_proofs::{
+    ProofOfStateAtBlock, RegistrationLease, RegistrationRefused, StateTransitionExecutionProofs,
+    StateTransitionHash,
+};
 use crate::query::QueryValidationResult;
 use crate::rpc::core::DefaultCoreRPC;
 use crate::utils::spawn_blocking_task_with_name_if_supported;
 use async_trait::async_trait;
 use dapi_grpc::drive::v0::drive_internal_server::DriveInternal;
-use dapi_grpc::drive::v0::{GetProofsRequest, GetProofsResponse};
+use dapi_grpc::drive::v0::get_state_transition_execution_proof_response::StateAtBlock;
+use dapi_grpc::drive::v0::{
+    GetProofsRequest, GetProofsResponse, GetStateTransitionExecutionProofRequest,
+    GetStateTransitionExecutionProofResponse, RegisterStateTransitionExecutionProofRequest,
+    RegisterStateTransitionExecutionProofResponse, UnregisterStateTransitionExecutionProofRequest,
+    UnregisterStateTransitionExecutionProofResponse,
+};
 use dapi_grpc::platform::v0::get_path_elements_request;
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
 use dapi_grpc::platform::v0::{
     BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetAddressInfoRequest,
     GetAddressInfoResponse, GetAddressesBranchStateRequest, GetAddressesBranchStateResponse,
     GetAddressesInfosRequest, GetAddressesInfosResponse, GetAddressesTrunkStateRequest,
-    GetAddressesTrunkStateResponse, GetConsensusParamsRequest, GetConsensusParamsResponse,
-    GetContestedResourceIdentityVotesRequest, GetContestedResourceIdentityVotesResponse,
-    GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse,
-    GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse,
-    GetContestedResourcesRequest, GetContestedResourcesResponse,
-    GetContractDocumentRemovalsRequest, GetContractDocumentRemovalsResponse,
-    GetContractFeePotsRequest, GetContractFeePotsResponse, GetContractGroupInfoRequest,
-    GetContractGroupInfoResponse, GetContractGroupMembersRequest, GetContractGroupMembersResponse,
-    GetContractGroupsForContractRequest, GetContractGroupsForContractResponse,
-    GetContractModerationActionCountsRequest, GetContractModerationActionCountsResponse,
-    GetContractModerationEntriesRequest, GetContractModerationEntriesResponse,
-    GetContractModerationStatusRequest, GetContractModerationStatusResponse,
-    GetContractTeamActionSignersRequest, GetContractTeamActionSignersResponse,
-    GetContractTeamActionsRequest, GetContractTeamActionsResponse, GetCurrentQuorumsInfoRequest,
-    GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
-    GetDataContractRequest, GetDataContractResponse, GetDataContractsByRangeRequest,
-    GetDataContractsLatestVersionsRequest, GetDataContractsLatestVersionsResponse,
-    GetDataContractsRequest, GetDataContractsResponse, GetDocumentHistoryRequest,
-    GetDocumentHistoryResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
-    GetEpochsInfoResponse, GetEvonodesProposedEpochBlocksByIdsRequest,
-    GetEvonodesProposedEpochBlocksByRangeRequest, GetEvonodesProposedEpochBlocksResponse,
-    GetFinalizedEpochInfosRequest, GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest,
-    GetGroupActionSignersResponse, GetGroupActionsRequest, GetGroupActionsResponse,
-    GetGroupInfoRequest, GetGroupInfoResponse, GetGroupInfosRequest, GetGroupInfosResponse,
-    GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
+    GetAddressesTrunkStateResponse, GetBlocksRequest, GetBlocksResponse, GetConsensusParamsRequest,
+    GetConsensusParamsResponse, GetContestedResourceIdentityVotesRequest,
+    GetContestedResourceIdentityVotesResponse, GetContestedResourceVoteStateRequest,
+    GetContestedResourceVoteStateResponse, GetContestedResourceVotersForIdentityRequest,
+    GetContestedResourceVotersForIdentityResponse, GetContestedResourcesRequest,
+    GetContestedResourcesResponse, GetContractDocumentRemovalsRequest,
+    GetContractDocumentRemovalsResponse, GetContractFeePotsRequest, GetContractFeePotsResponse,
+    GetContractGroupInfoRequest, GetContractGroupInfoResponse, GetContractGroupMembersRequest,
+    GetContractGroupMembersResponse, GetContractGroupsForContractRequest,
+    GetContractGroupsForContractResponse, GetContractModerationActionCountsRequest,
+    GetContractModerationActionCountsResponse, GetContractModerationEntriesRequest,
+    GetContractModerationEntriesResponse, GetContractModerationStatusRequest,
+    GetContractModerationStatusResponse, GetContractTeamActionSignersRequest,
+    GetContractTeamActionSignersResponse, GetContractTeamActionsRequest,
+    GetContractTeamActionsResponse, GetCurrentQuorumsInfoRequest, GetCurrentQuorumsInfoResponse,
+    GetDataContractHistoryRequest, GetDataContractHistoryResponse, GetDataContractRequest,
+    GetDataContractResponse, GetDataContractsByRangeRequest, GetDataContractsLatestVersionsRequest,
+    GetDataContractsLatestVersionsResponse, GetDataContractsRequest, GetDataContractsResponse,
+    GetDocumentHistoryRequest, GetDocumentHistoryResponse, GetDocumentsRequest,
+    GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
+    GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
+    GetEvonodesProposedEpochBlocksResponse, GetFinalizedEpochInfosRequest,
+    GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest, GetGroupActionSignersResponse,
+    GetGroupActionsRequest, GetGroupActionsResponse, GetGroupInfoRequest, GetGroupInfoResponse,
+    GetGroupInfosRequest, GetGroupInfosResponse, GetIdentitiesBalancesRequest,
+    GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
     GetIdentitiesContractKeysResponse, GetIdentitiesTokenBalancesRequest,
     GetIdentitiesTokenBalancesResponse, GetIdentitiesTokenInfosRequest,
     GetIdentitiesTokenInfosResponse, GetIdentityBalanceAndRevisionRequest,
@@ -52,28 +64,34 @@ use dapi_grpc::platform::v0::{
     GetIdentityKeysRequest, GetIdentityKeysResponse, GetIdentityNonceRequest,
     GetIdentityNonceResponse, GetIdentityRequest, GetIdentityResponse,
     GetIdentityTokenBalancesRequest, GetIdentityTokenBalancesResponse,
-    GetIdentityTokenInfosRequest, GetIdentityTokenInfosResponse,
-    GetMostRecentShieldedAnchorRequest, GetMostRecentShieldedAnchorResponse,
-    GetPathElementsRequest, GetPathElementsResponse, GetPrefundedSpecializedBalanceRequest,
-    GetPrefundedSpecializedBalanceResponse, GetProtocolVersionUpgradeStateRequest,
-    GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest,
-    GetProtocolVersionUpgradeVoteStatusResponse, GetRecentAddressBalanceChangesRequest,
-    GetRecentAddressBalanceChangesResponse, GetRecentCompactedAddressBalanceChangesRequest,
-    GetRecentCompactedAddressBalanceChangesResponse, GetShieldedAnchorsRequest,
-    GetShieldedAnchorsResponse, GetShieldedEncryptedNotesRequest,
-    GetShieldedEncryptedNotesResponse, GetShieldedNotesCountRequest, GetShieldedNotesCountResponse,
-    GetShieldedNullifiersRequest, GetShieldedNullifiersResponse, GetShieldedPoolStateRequest,
-    GetShieldedPoolStateResponse, GetStatusRequest, GetStatusResponse, GetTokenContractInfoRequest,
-    GetTokenContractInfoResponse, GetTokenDirectPurchasePricesRequest,
-    GetTokenDirectPurchasePricesResponse, GetTokenPerpetualDistributionLastClaimRequest,
-    GetTokenPerpetualDistributionLastClaimResponse, GetTokenPreProgrammedDistributionsRequest,
-    GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
-    GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
+    GetIdentityTokenInfosRequest, GetIdentityTokenInfosResponse, GetMasternodeYesNoVoteRequest,
+    GetMasternodeYesNoVoteResponse, GetMostRecentShieldedAnchorRequest,
+    GetMostRecentShieldedAnchorResponse, GetOwnerTransactionsInBlockRequest,
+    GetOwnerTransactionsInBlockResponse, GetPathElementsRequest, GetPathElementsResponse,
+    GetPrefundedSpecializedBalanceRequest, GetPrefundedSpecializedBalanceResponse,
+    GetPrivateDocumentEntriesRequest, GetPrivateDocumentEntriesResponse,
+    GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse,
+    GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse,
+    GetRecentAddressBalanceChangesRequest, GetRecentAddressBalanceChangesResponse,
+    GetRecentCompactedAddressBalanceChangesRequest,
+    GetRecentCompactedAddressBalanceChangesResponse, GetRecentStateTransitionStatusRequest,
+    GetRecentStateTransitionStatusResponse, GetShieldedAnchorsRequest, GetShieldedAnchorsResponse,
+    GetShieldedEncryptedNotesRequest, GetShieldedEncryptedNotesResponse,
+    GetShieldedNotesCountRequest, GetShieldedNotesCountResponse, GetShieldedNullifiersRequest,
+    GetShieldedNullifiersResponse, GetShieldedPoolStateRequest, GetShieldedPoolStateResponse,
+    GetStatusRequest, GetStatusResponse, GetTokenContractInfoRequest, GetTokenContractInfoResponse,
+    GetTokenDirectPurchasePricesRequest, GetTokenDirectPurchasePricesResponse,
+    GetTokenPerpetualDistributionLastClaimRequest, GetTokenPerpetualDistributionLastClaimResponse,
+    GetTokenPreProgrammedDistributionsRequest, GetTokenPreProgrammedDistributionsResponse,
+    GetTokenStatusesRequest, GetTokenStatusesResponse, GetTokenTotalSupplyRequest,
+    GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
     GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
+    GetYesNoVotePollStateRequest, GetYesNoVotePollStateResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Code, Request, Response, Status};
 use dpp::version::PlatformVersion;
+use drive::error::drive::DriveError as DriveInternalError;
 use drive::error::Error as DriveError;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -609,6 +627,27 @@ impl PlatformService for QueryService {
         respond_with_unimplemented("wait_for_state_transition_result")
     }
 
+    async fn get_recent_state_transition_status(
+        &self,
+        _request: Request<GetRecentStateTransitionStatusRequest>,
+    ) -> Result<Response<GetRecentStateTransitionStatusResponse>, Status> {
+        respond_with_unimplemented("get_recent_state_transition_status")
+    }
+
+    async fn get_owner_transactions_in_block(
+        &self,
+        _request: Request<GetOwnerTransactionsInBlockRequest>,
+    ) -> Result<Response<GetOwnerTransactionsInBlockResponse>, Status> {
+        respond_with_unimplemented("get_owner_transactions_in_block")
+    }
+
+    async fn get_blocks(
+        &self,
+        _request: Request<GetBlocksRequest>,
+    ) -> Result<Response<GetBlocksResponse>, Status> {
+        respond_with_unimplemented("get_blocks")
+    }
+
     async fn get_consensus_params(
         &self,
         _request: Request<GetConsensusParamsRequest>,
@@ -721,6 +760,30 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_vote_polls_by_end_date_query,
             "get_vote_polls_by_end_date",
+        )
+        .await
+    }
+
+    async fn get_yes_no_vote_poll_state(
+        &self,
+        request: Request<GetYesNoVotePollStateRequest>,
+    ) -> Result<Response<GetYesNoVotePollStateResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_yes_no_vote_poll_state,
+            "get_yes_no_vote_poll_state",
+        )
+        .await
+    }
+
+    async fn get_masternode_yes_no_vote(
+        &self,
+        request: Request<GetMasternodeYesNoVoteRequest>,
+    ) -> Result<Response<GetMasternodeYesNoVoteResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_masternode_yes_no_vote,
+            "get_masternode_yes_no_vote",
         )
         .await
     }
@@ -1132,6 +1195,18 @@ impl PlatformService for QueryService {
         )
         .await
     }
+
+    async fn get_private_document_entries(
+        &self,
+        request: Request<GetPrivateDocumentEntriesRequest>,
+    ) -> Result<Response<GetPrivateDocumentEntriesResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_private_document_entries,
+            "get_private_document_entries",
+        )
+        .await
+    }
 }
 
 #[async_trait]
@@ -1147,6 +1222,111 @@ impl DriveInternal for QueryService {
         )
         .await
     }
+
+    async fn register_state_transition_execution_proof(
+        &self,
+        request: Request<RegisterStateTransitionExecutionProofRequest>,
+    ) -> Result<Response<RegisterStateTransitionExecutionProofResponse>, Status> {
+        register_state_transition_execution_proof(
+            &self.platform.state_transition_execution_proofs,
+            request.get_ref(),
+        )
+        .map(Response::new)
+    }
+
+    async fn unregister_state_transition_execution_proof(
+        &self,
+        request: Request<UnregisterStateTransitionExecutionProofRequest>,
+    ) -> Result<Response<UnregisterStateTransitionExecutionProofResponse>, Status> {
+        unregister_state_transition_execution_proof(
+            &self.platform.state_transition_execution_proofs,
+            request.get_ref(),
+        )
+        .map(Response::new)
+    }
+
+    async fn get_state_transition_execution_proof(
+        &self,
+        request: Request<GetStateTransitionExecutionProofRequest>,
+    ) -> Result<Response<GetStateTransitionExecutionProofResponse>, Status> {
+        get_state_transition_execution_proof(
+            &self.platform.state_transition_execution_proofs,
+            request.get_ref(),
+        )
+        .map(Response::new)
+    }
+}
+
+/// Registers a state transition for an execution proof. `RESOURCE_EXHAUSTED` when Drive holds
+/// as many registrations as it keeps.
+fn register_state_transition_execution_proof(
+    proofs: &StateTransitionExecutionProofs,
+    request: &RegisterStateTransitionExecutionProofRequest,
+) -> Result<RegisterStateTransitionExecutionProofResponse, Status> {
+    let hash = state_transition_hash(&request.state_transition_hash)?;
+    let lease = registration_lease(&request.lease)?;
+
+    proofs
+        .register(hash, lease)
+        .map_err(|refused| match refused {
+            RegistrationRefused::TooManyRegistered => Status::resource_exhausted(
+                "too many state transitions are registered for an execution proof",
+            ),
+            RegistrationRefused::LeaseReleased => Status::failed_precondition(
+                "the registration lease was released already; register with a new lease",
+            ),
+        })?;
+
+    Ok(RegisterStateTransitionExecutionProofResponse {})
+}
+
+/// Releases one registration of a state transition for an execution proof.
+fn unregister_state_transition_execution_proof(
+    proofs: &StateTransitionExecutionProofs,
+    request: &UnregisterStateTransitionExecutionProofRequest,
+) -> Result<UnregisterStateTransitionExecutionProofResponse, Status> {
+    let hash = state_transition_hash(&request.state_transition_hash)?;
+    let lease = registration_lease(&request.lease)?;
+
+    proofs.unregister(&hash, &lease);
+
+    Ok(UnregisterStateTransitionExecutionProofResponse {})
+}
+
+/// The execution proof Drive made for a state transition, both sides absent when it has none.
+fn get_state_transition_execution_proof(
+    proofs: &StateTransitionExecutionProofs,
+    request: &GetStateTransitionExecutionProofRequest,
+) -> Result<GetStateTransitionExecutionProofResponse, Status> {
+    let hash = state_transition_hash(&request.state_transition_hash)?;
+
+    let proof = proofs.get(&hash);
+    let state_at_block = |state: &ProofOfStateAtBlock| StateAtBlock {
+        proof: Some(state.proof.clone()),
+        metadata: Some(state.metadata.clone()),
+    };
+
+    Ok(GetStateTransitionExecutionProofResponse {
+        before: proof.as_deref().map(|proof| state_at_block(&proof.before)),
+        after: proof.as_deref().map(|proof| state_at_block(&proof.after)),
+    })
+}
+
+/// The hash a state transition is registered and fetched by, which is 32 bytes.
+fn state_transition_hash(bytes: &[u8]) -> Result<StateTransitionHash, Status> {
+    bytes.try_into().map_err(|_| {
+        Status::invalid_argument(format!(
+            "state_transition_hash must be 32 bytes, got {}",
+            bytes.len()
+        ))
+    })
+}
+
+/// The lease a registration is held by, which is 16 bytes.
+fn registration_lease(bytes: &[u8]) -> Result<RegistrationLease, Status> {
+    bytes.try_into().map_err(|_| {
+        Status::invalid_argument(format!("lease must be 16 bytes, got {}", bytes.len()))
+    })
 }
 
 fn query_error_into_status(error: QueryError) -> Status {
@@ -1160,6 +1340,12 @@ fn query_error_into_status(error: QueryError) -> Status {
         QueryError::ResourceExhausted(message) => {
             Status::resource_exhausted(bounded_message(message))
         }
+        // A feature the current protocol version does not have yet. Whether it is active
+        // depends only on the protocol version, which every node at this height shares, not on
+        // this node's build, so the refusal is no fault of this node and must not get it banned.
+        error @ QueryError::Drive(DriveError::Drive(DriveInternalError::VersionNotActive {
+            ..
+        })) => Status::invalid_argument(bounded_message(error.to_string())),
         // A request this node cannot decode, or a request version it does not serve, may be
         // one a newer node serves, so these stay retryable on another node.
         _ => {
@@ -1193,6 +1379,14 @@ fn error_into_status(error: Error) -> Status {
         // error, clients would retry it on every other node and stop using each one.
         Error::Drive(DriveError::Query(error)) => {
             Status::invalid_argument(bounded_message(error.to_string()))
+        }
+        // A feature the current protocol version does not have yet, refused alike by every node
+        // at this height whatever its build.
+        error @ (Error::Drive(DriveError::Drive(DriveInternalError::VersionNotActive {
+            ..
+        }))
+        | Error::Execution(ExecutionError::VersionNotActive { .. })) => {
+            Status::invalid_argument(bounded_message(format!("query: {}", error)))
         }
         error => Status::internal(bounded_message(format!("query: {}", error))),
     }
@@ -1253,6 +1447,149 @@ mod tests {
     use super::*;
     use dapi_grpc::platform::v0::get_path_elements_request::GetPathElementsRequestV0;
 
+    mod state_transition_execution_proofs {
+        use super::*;
+        use crate::platform_types::state_transition_execution_proofs::{
+            StateTransitionExecutionProof, MAX_REGISTERED_STATE_TRANSITIONS,
+        };
+        use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
+
+        fn register(
+            proofs: &StateTransitionExecutionProofs,
+            hash: Vec<u8>,
+            lease: Vec<u8>,
+        ) -> Result<(), Status> {
+            register_state_transition_execution_proof(
+                proofs,
+                &RegisterStateTransitionExecutionProofRequest {
+                    state_transition_hash: hash,
+                    lease,
+                },
+            )
+            .map(|_| ())
+        }
+
+        fn unregister(
+            proofs: &StateTransitionExecutionProofs,
+            hash: Vec<u8>,
+            lease: Vec<u8>,
+        ) -> Result<(), Status> {
+            unregister_state_transition_execution_proof(
+                proofs,
+                &UnregisterStateTransitionExecutionProofRequest {
+                    state_transition_hash: hash,
+                    lease,
+                },
+            )
+            .map(|_| ())
+        }
+
+        fn get(
+            proofs: &StateTransitionExecutionProofs,
+            hash: Vec<u8>,
+        ) -> Result<GetStateTransitionExecutionProofResponse, Status> {
+            get_state_transition_execution_proof(
+                proofs,
+                &GetStateTransitionExecutionProofRequest {
+                    state_transition_hash: hash,
+                },
+            )
+        }
+
+        fn side(height: u64) -> ProofOfStateAtBlock {
+            ProofOfStateAtBlock {
+                proof: Proof {
+                    grovedb_proof: vec![height as u8],
+                    ..Default::default()
+                },
+                metadata: ResponseMetadata {
+                    height,
+                    ..Default::default()
+                },
+            }
+        }
+
+        #[test]
+        fn should_answer_a_full_registry_with_resource_exhausted_until_a_slot_is_freed() {
+            let proofs = StateTransitionExecutionProofs::default();
+            for index in 0..MAX_REGISTERED_STATE_TRANSITIONS {
+                let mut hash = vec![0; 32];
+                hash[..8].copy_from_slice(&(index as u64).to_be_bytes());
+                let mut lease = vec![0; 16];
+                lease[..8].copy_from_slice(&(index as u64).to_be_bytes());
+                register(&proofs, hash, lease).expect("expected to register");
+            }
+
+            let status = register(&proofs, vec![255; 32], vec![255; 16]).unwrap_err();
+            assert_eq!(status.code(), Code::ResourceExhausted);
+
+            unregister(&proofs, vec![0; 32], vec![0; 16]).expect("expected to unregister");
+            register(&proofs, vec![255; 32], vec![255; 16]).expect("expected a freed slot");
+        }
+
+        #[test]
+        fn should_answer_a_registration_after_its_release_with_failed_precondition() {
+            let proofs = StateTransitionExecutionProofs::default();
+            unregister(&proofs, vec![1; 32], vec![1; 16]).expect("expected to unregister");
+
+            let status = register(&proofs, vec![1; 32], vec![1; 16]).unwrap_err();
+
+            assert_eq!(status.code(), Code::FailedPrecondition);
+            assert!(!proofs.has_registered());
+        }
+
+        #[test]
+        fn should_answer_both_sides_of_a_proof_and_none_without_one() {
+            let proofs = StateTransitionExecutionProofs::default();
+            proofs.store(
+                [1; 32],
+                10,
+                StateTransitionExecutionProof {
+                    before: side(9),
+                    after: side(10),
+                },
+            );
+
+            let response = get(&proofs, vec![1; 32]).expect("expected an answer");
+            let before = response.before.expect("expected the state before");
+            let after = response.after.expect("expected the state after");
+            assert_eq!(before.metadata.map(|metadata| metadata.height), Some(9));
+            assert_eq!(before.proof.map(|proof| proof.grovedb_proof), Some(vec![9]));
+            assert_eq!(after.metadata.map(|metadata| metadata.height), Some(10));
+            assert_eq!(after.proof.map(|proof| proof.grovedb_proof), Some(vec![10]));
+
+            let response = get(&proofs, vec![2; 32]).expect("expected an answer");
+            assert_eq!(response.before, None);
+            assert_eq!(response.after, None);
+        }
+
+        #[test]
+        fn should_refuse_a_hash_that_is_not_32_bytes_or_a_lease_that_is_not_16() {
+            let proofs = StateTransitionExecutionProofs::default();
+
+            for status in [
+                register(&proofs, vec![1; 31], vec![1; 16]).unwrap_err(),
+                register(&proofs, vec![1; 32], vec![1; 15]).unwrap_err(),
+                unregister(&proofs, vec![1; 33], vec![1; 16]).unwrap_err(),
+                unregister(&proofs, vec![1; 32], vec![]).unwrap_err(),
+                get(&proofs, vec![]).unwrap_err(),
+            ] {
+                assert_eq!(status.code(), Code::InvalidArgument);
+            }
+            assert!(!proofs.has_registered());
+        }
+    }
+
+    #[test]
+    fn should_take_a_state_transition_hash_of_32_bytes_only() {
+        assert_eq!(state_transition_hash(&[7; 32]).unwrap(), [7; 32]);
+
+        for length in [0, 31, 33] {
+            let status = state_transition_hash(&vec![7; length]).unwrap_err();
+            assert_eq!(status.code(), Code::InvalidArgument);
+        }
+    }
+
     #[test]
     fn path_elements_request_is_bounded_before_debug_formatting() {
         let request = GetPathElementsRequest {
@@ -1279,8 +1616,8 @@ mod query_error_status_tests {
     use dapi_grpc::platform::v0::get_documents_request::GetDocumentsRequestV0;
     use dpp::dashcore::Network;
     use dpp::system_data_contracts::dpns_contract;
-    use drive::error::drive::DriveError as DriveInternalError;
     use drive::error::query::QuerySyntaxError;
+    use rs_dapi_client::CanRetry;
 
     #[test]
     fn resource_exhausted_query_error_maps_to_retryable_grpc_status() {
@@ -1318,6 +1655,75 @@ mod query_error_status_tests {
             "could not decode data contracts query".to_string(),
         ));
         assert_eq!(undecodable.code(), Code::Unknown);
+    }
+
+    /// Every node at a height runs the same protocol version, so a feature that version does not
+    /// have yet is refused by all of them alike, whichever route reports it.
+    #[test]
+    fn should_answer_a_feature_not_active_yet_with_invalid_argument() {
+        let not_active = || DriveInternalError::VersionNotActive {
+            method: "prove_identity_keys_remaining_budgets".to_string(),
+            known_versions: vec![0],
+        };
+
+        let from_validation =
+            query_error_into_status(QueryError::Drive(DriveError::Drive(not_active())));
+        assert_eq!(from_validation.code(), Code::InvalidArgument);
+        assert!(from_validation
+            .message()
+            .contains("prove_identity_keys_remaining_budgets not active"));
+
+        let from_drive = error_into_status(Error::Drive(DriveError::Drive(not_active())));
+        assert_eq!(from_drive.code(), Code::InvalidArgument);
+
+        let from_platform = error_into_status(Error::Execution(ExecutionError::VersionNotActive {
+            method: "validate_identity_public_keys_limits".to_string(),
+            known_versions: vec![0],
+        }));
+        assert_eq!(from_platform.code(), Code::InvalidArgument);
+
+        for status in [from_validation, from_drive, from_platform] {
+            assert!(!status.can_retry(), "{status}");
+        }
+    }
+
+    /// A version the code does not know is a fault in this build, and a request version this
+    /// node does not serve may be served by a newer node: both stay retryable on another node.
+    #[test]
+    fn should_keep_unknown_versions_and_unsupported_request_versions_retryable() {
+        let unknown = || DriveInternalError::UnknownVersionMismatch {
+            method: "prove_identity_keys_remaining_budgets".to_string(),
+            known_versions: vec![0],
+            received: 1,
+        };
+
+        let from_validation =
+            query_error_into_status(QueryError::Drive(DriveError::Drive(unknown())));
+        assert_eq!(from_validation.code(), Code::Unknown);
+
+        let from_drive = error_into_status(Error::Drive(DriveError::Drive(unknown())));
+        assert_eq!(from_drive.code(), Code::Internal);
+
+        let from_platform =
+            error_into_status(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method: "validate_identity_public_keys_limits".to_string(),
+                known_versions: vec![0],
+                received: 1,
+            }));
+        assert_eq!(from_platform.code(), Code::Internal);
+
+        let unsupported = query_error_into_status(QueryError::UnsupportedQueryVersion(
+            "identity_keys_remaining_budgets".to_string(),
+            0,
+            0,
+            14,
+            1,
+        ));
+        assert_eq!(unsupported.code(), Code::Unknown);
+
+        for status in [from_validation, from_drive, from_platform, unsupported] {
+            assert!(status.can_retry(), "{status}");
+        }
     }
 
     #[test]

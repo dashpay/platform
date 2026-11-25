@@ -803,9 +803,8 @@ mod refund_tests {
     }
 
     #[tokio::test]
-    async fn test_document_refund_after_10_epochs_on_different_fee_version_increasing_fees() {
+    async fn test_document_refund_after_10_epochs() {
         let platform_version = PlatformVersion::latest();
-        let platform_version_with_higher_fees = platform_version.clone();
 
         let mut platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
@@ -859,17 +858,13 @@ mod refund_tests {
                 0,
                 None,
                 &signer,
-                &platform_version_with_higher_fees,
+                platform_version,
                 None,
             )
             .await
             .expect("expect to create documents batch transition");
 
-        let mut platform_state = platform.state.load().clone().deref().clone();
-
-        platform_state
-            .previous_fee_versions_mut()
-            .insert(5, platform_version_with_higher_fees.fee_version.as_static());
+        let platform_state = platform.state.load().clone().deref().clone();
 
         let (mut fee_results, _) = process_state_transitions(
             &platform,
@@ -883,7 +878,7 @@ mod refund_tests {
         let credits_verified = platform
             .platform
             .drive
-            .calculate_total_credits_balance(None, &platform_version_with_higher_fees.drive)
+            .calculate_total_credits_balance(None, &platform_version.drive)
             .expect("expected to check sum trees");
 
         let balanced = credits_verified
@@ -909,7 +904,7 @@ mod refund_tests {
         fetch_expected_identity_balance(
             &platform,
             identity.id(),
-            &platform_version_with_higher_fees,
+            platform_version,
             expected_user_balance_after_deletion,
         );
     }

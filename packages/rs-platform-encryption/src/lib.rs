@@ -10,6 +10,8 @@
 //! - [`account_label`] — `encryptedAccountLabel`.
 //! - [`contact_info`] — `contactInfo` (`encToUserId` + `privateData`).
 //! - [`account_reference`] — the masked `accountReference`.
+//! - [`private_document_envelope`] — the standard private document envelope (version 1).
+//! - [`shielded_address`]: `encryptedShieldedAddress` and the per-contact index rule.
 //! - [`error`] — the shared [`CryptoError`].
 //!
 //! Every public item is re-exported at the crate root, so the API is flat
@@ -22,9 +24,14 @@ mod compact_xpub;
 mod contact_info;
 mod ecdh;
 mod error;
+mod private_document_envelope;
+mod shielded_address;
 
 pub use account_label::{decrypt_account_label, encrypt_account_label};
-pub use account_reference::{calculate_account_reference, unmask_account_reference};
+pub use account_reference::{
+    account_reference_version, calculate_account_reference, unmask_account_reference,
+    ACCOUNT_REFERENCE_VERSION_SHIFT,
+};
 pub use aes::{decrypt_aes_256_cbc, encrypt_aes_256_cbc};
 pub use compact_xpub::{
     compact_xpub_bytes, decrypt_extended_public_key, encrypt_extended_public_key,
@@ -35,3 +42,18 @@ pub use contact_info::{
 };
 pub use ecdh::derive_shared_key_ecdh;
 pub use error::CryptoError;
+pub use private_document_envelope::{
+    open_private_document_entry, private_document_outgoing_viewing_key,
+    private_document_signing_data, recover_private_document_signer,
+    recover_sent_private_document_entry, seal_private_document_entry,
+    sign_private_document_signing_data, OpenedPrivateDocumentEntry, PrivateDocumentAuthMode,
+    PrivateDocumentEnvelopeError, PrivateDocumentRecipient, PrivateDocumentRecipientKeys,
+    PrivateDocumentSender, PrivateDocumentTarget, PRIVATE_DOCUMENT_ENVELOPE_BODY_HEADER_LEN,
+    PRIVATE_DOCUMENT_ENVELOPE_OVERHEAD_LEN, PRIVATE_DOCUMENT_ENVELOPE_VERSION,
+    PRIVATE_DOCUMENT_ENVELOPE_WRAPPER_LEN,
+};
+pub use shielded_address::{
+    decrypt_shielded_address, encrypt_shielded_address, is_shielded_contact_index,
+    shielded_contact_index, shielded_contact_index_key, ENCRYPTED_SHIELDED_ADDRESS_LEN,
+    SHIELDED_ADDRESS_LEN, SHIELDED_DIVERSIFIER_INDEX_LEN, SHIELDED_FULL_VIEWING_KEY_LEN,
+};

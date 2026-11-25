@@ -1,26 +1,21 @@
-//! Implements in Drive a function which adds estimated costs to a hashmap for adding an asset lock (version 0).
+//! Implements in Drive a function which adds estimated costs to `EstimatedLayers` for adding an asset lock (version 0).
 
 mod add_estimation_costs_for_adding_asset_lock;
 
 use crate::drive::Drive;
-
-use grovedb::batch::KeyInfoPath;
-
-use grovedb::EstimatedLayerInformation;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::version::drive_versions::DriveVersion;
 
-use std::collections::HashMap;
-
 impl Drive {
-    /// Add estimated costs to a hashmap for adding an asset lock (version 0).
+    /// Add estimated costs to an `EstimatedLayers` for adding an asset lock (version 0).
     ///
-    /// This function modifies the provided hashmap, `estimated_costs_only_with_layer_info`,
+    /// This function modifies the provided `EstimatedLayers`, `estimated_costs_only_with_layer_info`,
     /// by inserting two sets of key-value pairs related to the estimation costs for adding an asset lock.
     pub(crate) fn add_estimation_costs_for_adding_asset_lock(
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
         drive_version: &DriveVersion,
     ) -> Result<(), Error> {
         match drive_version

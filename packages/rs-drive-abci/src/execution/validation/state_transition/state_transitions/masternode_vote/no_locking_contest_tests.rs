@@ -9,6 +9,7 @@ use crate::execution::validation::state_transition::state_transitions::tests::{
     get_vote_states, perform_vote, perform_votes_multi, serialized_dpns_name_vote,
     setup_identity, setup_masternode_voting_identity,
 };
+use super::end_date_cleanup_tests::end_of_block_test_versions;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
@@ -21,7 +22,8 @@ use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
 use dpp::consensus::state::voting::vote_choice_not_allowed_for_vote_poll_error::VoteChoiceNotAllowedForVotePollError;
 use dpp::dash_to_credits;
 use dpp::dashcore::Network;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+use dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use dpp::data_contract::document_type::random_document::{
     CreateRandomDocument, DocumentFieldFillSize, DocumentFieldFillType,
 };
@@ -34,6 +36,7 @@ use dpp::prelude::Identifier;
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::batch_transition::BatchTransition;
+use dpp::tests::json_document::json_document_to_json_value;
 use dpp::util::hash::hash_double;
 use dpp::util::strings::convert_to_homograph_safe_chars;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
@@ -52,6 +55,7 @@ use drive::util::test_helpers::{setup_contract, vote_poll_end_dates};
 use platform_version::version::PlatformVersion;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
+use serde_json::json;
 use simple_signer::signer::SimpleSigner;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -80,9 +84,20 @@ fn setup() -> (
     DataContract,
     StdRng,
 ) {
-    let platform_version = PlatformVersion::latest();
+    setup_at(PlatformVersion::latest())
+}
+
+/// [`setup`] on a chain born at `platform_version`.
+fn setup_at(
+    platform_version: &'static PlatformVersion,
+) -> (
+    TempPlatform<MockCoreRPCLike>,
+    &'static PlatformVersion,
+    DataContract,
+    StdRng,
+) {
     let mut platform = TestPlatformBuilder::new()
-        .with_latest_protocol_version()
+        .with_initial_protocol_version(platform_version.protocol_version)
         .build_with_mock_rpc()
         .set_genesis_state();
     let mut rng = StdRng::seed_from_u64(0x9010_C41A);
@@ -676,7 +691,7 @@ async fn should_open_the_vote_window_when_a_second_contender_joins() {
         BTreeMap::from([(
             start + poll_duration,
             BTreeSet::from([vote_poll(&contract)
-                .unique_id()
+                .unique_id(platform_version)
                 .expect("expected a vote poll id")]),
         )]),
         "no end date is left at the end of the join window"
@@ -734,7 +749,15 @@ async fn should_open_the_vote_window_when_a_second_contender_joins() {
 /// Both then end in the one block at the end of their vote window.
 #[tokio::test]
 async fn should_keep_a_shared_join_window_end_date_until_its_last_contest_moves() {
-    let (mut platform, platform_version, contract, mut rng) = setup();
+    for platform_version in end_of_block_test_versions() {
+        keep_a_shared_join_window_end_date_until_its_last_contest_moves(platform_version).await;
+    }
+}
+
+async fn keep_a_shared_join_window_end_date_until_its_last_contest_moves(
+    platform_version: &'static PlatformVersion,
+) {
+    let (mut platform, platform_version, contract, mut rng) = setup_at(platform_version);
     let (join_window, poll_duration) = windows(&platform, platform_version);
     let alice = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
     let bob = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
@@ -742,7 +765,7 @@ async fn should_keep_a_shared_join_window_end_date_until_its_last_contest_moves(
     let dave = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
     let unique_id = |name| {
         vote_poll_for(&contract, name)
-            .unique_id()
+            .unique_id(platform_version)
             .expect("expected a vote poll id")
     };
 
@@ -830,7 +853,13 @@ async fn should_keep_a_shared_join_window_end_date_until_its_last_contest_moves(
 /// block; the block removes them first and ends the contest behind them.
 #[tokio::test]
 async fn should_end_a_contest_behind_end_dates_left_empty() {
-    let (mut platform, platform_version, contract, mut rng) = setup();
+    for platform_version in end_of_block_test_versions() {
+        end_a_contest_behind_end_dates_left_empty(platform_version).await;
+    }
+}
+
+async fn end_a_contest_behind_end_dates_left_empty(platform_version: &'static PlatformVersion) {
+    let (mut platform, platform_version, contract, mut rng) = setup_at(platform_version);
     let (join_window, _) = windows(&platform, platform_version);
     let alice = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
     let start = join(
@@ -868,7 +897,7 @@ async fn should_end_a_contest_behind_end_dates_left_empty() {
     end_dates_before.insert(
         start + join_window,
         BTreeSet::from([vote_poll(&contract)
-            .unique_id()
+            .unique_id(platform_version)
             .expect("expected a vote poll id")]),
     );
     assert_eq!(
@@ -1473,4 +1502,106 @@ async fn should_count_a_vote_towards_the_lock_key_as_lock_at_protocol_version_13
         tallies,
         vec![(contender_1.id(), Some(0)), (contender_2.id(), Some(0))]
     );
+}
+
+/// [`setup`], with one more index on `domain`: the domains of a parent domain created in the
+/// same ten minutes, in buckets that expire ten minutes after they start.
+fn setup_with_an_expiring_index() -> (
+    TempPlatform<MockCoreRPCLike>,
+    &'static PlatformVersion,
+    DataContract,
+    StdRng,
+) {
+    let platform_version = PlatformVersion::latest();
+    let mut platform = TestPlatformBuilder::new()
+        .with_initial_protocol_version(platform_version.protocol_version)
+        .build_with_mock_rpc()
+        .set_genesis_state();
+    let mut rng = StdRng::seed_from_u64(0x9010_C41A);
+    let owner = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let mut schema =
+        json_document_to_json_value(NO_LOCKING_CONTRACT).expect("expected the contract fixture");
+    schema["documentSchemas"]["domain"]["indices"]
+        .as_array_mut()
+        .expect("expected the domain indices")
+        .push(json!({
+            "name": "recentInParent",
+            "properties": [{"$createdAt": "asc"}, {"normalizedParentDomainName": "asc"}],
+            "timeRange": {"on": "$createdAt", "range": 600, "step": 600, "ttl": 600}
+        }));
+    let mut contract =
+        DataContract::from_json(schema, true, platform_version).expect("expected a valid contract");
+    contract.set_owner_id(owner.0.id());
+    platform
+        .drive
+        .apply_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            None,
+            None,
+            platform_version,
+        )
+        .expect("expected to apply the contract");
+    (platform, platform_version, contract, rng)
+}
+
+/// A winner is inserted when its contest ends, with the `$createdAt` it joined with. By then
+/// the bucket of an expiring time range index that timestamp falls in has expired, and here
+/// it still holds the entry of a domain outside the contest, registered a minute after the
+/// winner joined. The award is the write that drops the bucket, and it writes the winner no
+/// entry there.
+#[tokio::test]
+async fn should_award_a_winner_whose_time_range_bucket_has_expired() {
+    let (mut platform, platform_version, contract, mut rng) = setup_with_an_expiring_index();
+    let (join_window, _) = windows(&platform, platform_version);
+    let alice = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    let bob = setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+    // The start of a bucket, long after the first one.
+    let bucket_start: TimestampMillis = 600_000 * 1_000;
+    let start = join(
+        &platform,
+        &contract,
+        &alice,
+        1,
+        bucket_start + 10_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    assert_eq!(
+        end_dates(&platform, platform_version),
+        vec![(start + join_window, vote_poll(&contract))]
+    );
+    // A label the contest rules do not match: its domain is registered at once.
+    join_contest_for(
+        &platform,
+        &contract,
+        "a-name-nobody-contests",
+        &bob,
+        2,
+        bucket_start + 70_000,
+        &mut rng,
+        platform_version,
+    )
+    .await;
+    assert_eq!(
+        end_dates(&platform, platform_version),
+        vec![(start + join_window, vote_poll(&contract))]
+    );
+
+    end_polls_at(&platform, start + join_window, 11, platform_version);
+
+    assert_eq!(
+        winner(&platform, &contract, platform_version),
+        Some(alice.0.id())
+    );
+    // Nothing the block dropped was written again: all of it is reclaimed.
+    let report = platform
+        .drive
+        .grove
+        .flush_pending_prefix_drops(&platform_version.drive.grove_version)
+        .expect("expected to reclaim the dropped buckets");
+    assert_eq!(report.skipped_live, 0);
+    assert!(report.reclaimed_records > 0);
 }

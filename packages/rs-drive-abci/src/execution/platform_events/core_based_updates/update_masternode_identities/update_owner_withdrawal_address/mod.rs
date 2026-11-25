@@ -164,7 +164,6 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply drive operations");
     }
@@ -239,7 +238,6 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply drive operations");
     }
@@ -313,7 +311,6 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply drive operations");
 
@@ -340,7 +337,6 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply drive operations");
     }

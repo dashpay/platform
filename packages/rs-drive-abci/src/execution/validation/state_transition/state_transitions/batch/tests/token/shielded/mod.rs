@@ -291,9 +291,16 @@ mod token_shielded_pool_tests {
     }
 
     pub(super) fn assert_tokens_conserved(platform: &TempPlatform<MockCoreRPCLike>) {
+        assert_tokens_conserved_at_protocol_version(platform, PlatformVersion::latest());
+    }
+
+    pub(super) fn assert_tokens_conserved_at_protocol_version(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        platform_version: &PlatformVersion,
+    ) {
         let total = platform
             .drive
-            .calculate_total_tokens_balance(None, PlatformVersion::latest())
+            .calculate_total_tokens_balance(None, platform_version)
             .expect("total tokens balance");
         assert!(
             total.ok().expect("conservation check"),
@@ -306,7 +313,15 @@ mod token_shielded_pool_tests {
         platform: &TempPlatform<MockCoreRPCLike>,
         transition: &StateTransition,
     ) -> StateTransitionsProcessingResult {
-        let platform_version = PlatformVersion::latest();
+        process_at_protocol_version(platform, transition, PlatformVersion::latest())
+    }
+
+    /// Processes one transition at `platform_version` in its own transaction and commits it.
+    pub(super) fn process_at_protocol_version(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        transition: &StateTransition,
+        platform_version: &PlatformVersion,
+    ) -> StateTransitionsProcessingResult {
         let platform_state = platform.state.load();
         let serialized = transition
             .serialize_to_bytes()
@@ -3647,7 +3662,8 @@ mod document_shielded_token_payment_tests {
     use super::token_shielded_pool_tests::{
         assert_check_tx_accepts, assert_tokens_conserved, build_shield_bundle, build_spend_bundle,
         dummy_bundle, identity_token_balance, insert_token_pool_anchor, nullifier_is_spent,
-        platform_with_latest_version, pool_balance, process, spendable_note,
+        platform_with_latest_version, pool_balance, process, process_at_protocol_version,
+        spendable_note,
     };
     use super::*;
     use crate::execution::validation::state_transition::state_transitions::tests::add_tokens_to_identity;
@@ -3815,7 +3831,7 @@ mod document_shielded_token_payment_tests {
         )
         .await
         .expect("token shield transition");
-        let result = process(platform, &shield);
+        let result = process_at_protocol_version(platform, &shield, platform_version);
         assert_matches!(
             result.execution_results().as_slice(),
             [StateTransitionExecutionResult::SuccessfulExecution { .. }]
@@ -4542,7 +4558,6 @@ mod token_pool_paid_transitions_tests {
                     true,
                     None,
                     platform_version,
-                    None,
                 )
                 .expect("credit a token balance")
         };
@@ -4810,8 +4825,8 @@ mod token_pool_paid_transitions_tests {
         // the batch itself decodes.
         assert_matches!(
             result.execution_results().as_slice(),
-            [StateTransitionExecutionResult::InternalError(message)]
-                if message.contains("TokenPurchaseFromShieldedPool") && message.contains("not active")
+            [StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error)))]
+                if error.state_transition_type().starts_with("TokenPurchaseFromShieldedPool")
         );
     }
 

@@ -3,10 +3,9 @@ import DashSDKFFI
 
 /// The Dash network the SDK is operating on.
 ///
-/// Single Swift wrapper for `dash-network`'s `FFINetwork` C-ABI mirror
-/// (the `#[repr(C)]` enum exposed by the `dash-network` Rust crate's
-/// `ffi` module). Every Rust-side FFI surface — `rs-platform-wallet-ffi`,
-/// `rs-sdk-ffi`, `rs-key-wallet-ffi`, `dash-spv-ffi` — takes / returns
+/// Single Swift wrapper for the `FFINetwork` C-ABI mirror (the
+/// `#[repr(C)]` enum defined in `rs-sdk-ffi`). Every Rust-side FFI
+/// surface — `rs-platform-wallet-ffi` and `rs-sdk-ffi` — takes / returns
 /// `FFINetwork`; this Swift enum is the matching surface on the iOS
 /// side so callers never reach for `UInt32` or per-module mirror enums.
 public enum Network: UInt32, Sendable, Hashable, CaseIterable, Codable {
@@ -15,7 +14,7 @@ public enum Network: UInt32, Sendable, Hashable, CaseIterable, Codable {
     case devnet = 2
     case regtest = 3
 
-    /// Build from the C-ABI `FFINetwork` mirror exposed by `dash-network`.
+    /// Build from the C-ABI `FFINetwork` mirror exposed by `rs-sdk-ffi`.
     public init(ffiNetwork: FFINetwork) {
         switch ffiNetwork {
         case FFINetwork_Mainnet: self = .mainnet
@@ -29,7 +28,7 @@ public enum Network: UInt32, Sendable, Hashable, CaseIterable, Codable {
     /// The matching `FFINetwork` value; pass to any function whose
     /// signature in the cbindgen-generated header takes
     /// `enum FFINetwork`. Named `ffiValue` to match the convention
-    /// sibling enums in this module already use (`AccountType`,
+    /// sibling enums in this module already use (`KeyType`,
     /// `KeyPurpose`, …).
     public var ffiValue: FFINetwork {
         switch self {

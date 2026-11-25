@@ -20,12 +20,14 @@ use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::document::query::query_contested_documents_storage::QueryContestedDocumentsOutcomeV0Methods;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
+use drive::drive::document::query::QueryDocumentsWithFlagsOutcomeV0Methods;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::query::drive_contested_document_query::{
     DriveContestedDocumentQuery, PrimaryContestedInternalClauses,
 };
 use drive::query::{DriveDocumentQuery, InternalClauses, OrderClause, WhereClause, WhereOperator};
+use drive::util::storage_flags::StorageFlags;
 use std::collections::BTreeMap;
 
 // ============================================================================
@@ -410,6 +412,69 @@ fn fetch_document_with_id_v1(
     } else {
         Ok(Some(documents.remove(0)))
     }
+}
+
+// ============================================================================
+// fetch_document_with_id_and_storage_flags
+// ============================================================================
+
+/// `fetch_document_with_id` for a caller that also needs the storage flags of the document's
+/// stored element, which name who holds its storage: the same query by `$id`, read through
+/// `query_documents_with_flags` and billed the same way.
+///
+/// Only protocol version 15 code calls it (a moderator's field change, which is written in
+/// the name of whoever holds the document), so it has one generation.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn fetch_document_with_id_and_storage_flags(
+    drive: &Drive,
+    contract: &DataContract,
+    document_type: DocumentTypeRef,
+    id: Identifier,
+    epoch: &Epoch,
+    execution_context: &mut StateTransitionExecutionContext,
+    transaction: TransactionArg,
+    platform_version: &PlatformVersion,
+) -> Result<Option<(Document, Option<StorageFlags>)>, Error> {
+    let drive_query = DriveDocumentQuery {
+        contract,
+        document_type,
+        internal_clauses: InternalClauses {
+            primary_key_in_clause: None,
+            primary_key_equal_clause: Some(WhereClause {
+                field: "$id".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(id.to_buffer()),
+            }),
+            in_clauses: Vec::new(),
+            range_clause: None,
+            equal_clauses: Default::default(),
+        },
+        offset: None,
+        limit: Some(1),
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time_ms: None,
+        resolved_time_ranges: vec![],
+        sub_queries: vec![],
+    };
+
+    let documents_outcome = drive.query_documents_with_flags(
+        drive_query,
+        Some(epoch),
+        false,
+        transaction,
+        Some(platform_version.protocol_version),
+    )?;
+    execution_context.add_operation(ValidationOperation::PrecalculatedOperation(FeeResult {
+        storage_fee: 0,
+        processing_fee: documents_outcome.cost(),
+        fee_refunds: Default::default(),
+        removed_bytes_from_system: 0,
+        lifetime_storage_fees: Default::default(),
+    }));
+
+    Ok(documents_outcome.documents_owned().into_iter().next())
 }
 
 // ============================================================================

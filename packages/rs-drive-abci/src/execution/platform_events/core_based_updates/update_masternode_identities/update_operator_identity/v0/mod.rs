@@ -7,7 +7,6 @@ use crate::rpc::core::CoreRPCLike;
 
 use dpp::dashcore::ProTxHash;
 
-use dpp::dashcore::hashes::Hash;
 use dpp::identifier::{Identifier, MasternodeIdentifiers};
 use dpp::identity::accessors::IdentityGettersV0;
 
@@ -415,7 +414,7 @@ mod tests {
         platform: &TempPlatform<C>,
         rng: &mut StdRng,
     ) -> (ProTxHash, Identity, [u8; 20], Vec<u8>, [u8; 20]) {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
 
         // Create a dummy ProTxHash
         let pro_tx_hash_bytes: [u8; 32] = rng.gen();
@@ -427,16 +426,7 @@ mod tests {
         let node_id_bytes: [u8; 20] = rng.gen();
 
         // Create a public key operator and payout address
-        let private_key_operator_bytes = bls_signatures::PrivateKey::generate_dash(rng)
-            .expect("expected to generate a private key")
-            .to_bytes()
-            .to_vec();
-        let private_key_operator = BlsPrivateKey::from_be_bytes(
-            &private_key_operator_bytes
-                .try_into()
-                .expect("expected the secret key to be 32 bytes"),
-        )
-        .expect("Core fixture secret key must decode");
+        let private_key_operator = BlsPrivateKey::random(&mut *rng);
         let pub_key_operator = private_key_operator.public_key().to_bytes().to_vec();
 
         let operator_key: IdentityPublicKey = IdentityPublicKeyV0 {
@@ -508,8 +498,9 @@ mod tests {
 
     #[test]
     fn test_update_operator_payout_address() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -582,15 +573,15 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply drive operations");
     }
 
     #[test]
     fn test_update_operator_change_back_to_previous_operator_address() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -663,7 +654,6 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply drive operations");
 
@@ -723,15 +713,15 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply drive operations");
     }
 
     #[test]
     fn test_update_operator_platform_node_id() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -804,15 +794,15 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply drive operations");
     }
 
     #[test]
     fn test_update_operator_change_back_to_previous_node_id() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -886,7 +876,6 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply drive operations");
 
@@ -947,15 +936,15 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply drive operations");
     }
 
     #[test]
     fn test_update_operator_public_key() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -972,16 +961,7 @@ mod tests {
         ) = create_operator_identity(&platform, &mut rng);
 
         // Generate a new public key operator
-        let private_key_operator_bytes = bls_signatures::PrivateKey::generate_dash(&mut rng)
-            .expect("expected to generate a private key")
-            .to_bytes()
-            .to_vec();
-        let private_key_operator = BlsPrivateKey::from_be_bytes(
-            &private_key_operator_bytes
-                .try_into()
-                .expect("expected the secret key to be 32 bytes"),
-        )
-        .expect("Core fixture secret key must decode");
+        let private_key_operator = BlsPrivateKey::random(&mut rng);
         let new_pub_key_operator = private_key_operator.public_key().to_bytes().to_vec();
 
         // Create an old masternode state
@@ -1045,15 +1025,15 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply drive operations");
     }
 
     #[test]
     fn test_update_operator_identity_reuses_node_id_without_change() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -1070,16 +1050,7 @@ mod tests {
         ) = create_operator_identity(&platform, &mut rng);
 
         // Pre-create an operator identity for the new operator key that lacks the platform node key
-        let private_key_operator_bytes = bls_signatures::PrivateKey::generate_dash(&mut rng)
-            .expect("expected to generate a private key")
-            .to_bytes()
-            .to_vec();
-        let private_key_operator = BlsPrivateKey::from_be_bytes(
-            &private_key_operator_bytes
-                .try_into()
-                .expect("expected the secret key to be 32 bytes"),
-        )
-        .expect("Core fixture secret key must decode");
+        let private_key_operator = BlsPrivateKey::random(&mut rng);
         let new_pub_key_operator = private_key_operator.public_key().to_bytes().to_vec();
 
         let new_operator_identifier = Identifier::create_operator_identifier(
@@ -1193,8 +1164,9 @@ mod tests {
 
     #[test]
     fn test_update_operator_change_back_to_previous_public_key() {
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
         let platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(14)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -1211,16 +1183,7 @@ mod tests {
         ) = create_operator_identity(&platform, &mut rng);
 
         // Generate a new public key operator
-        let private_key_operator_bytes = bls_signatures::PrivateKey::generate_dash(&mut rng)
-            .expect("expected to generate a private key")
-            .to_bytes()
-            .to_vec();
-        let private_key_operator = BlsPrivateKey::from_be_bytes(
-            &private_key_operator_bytes
-                .try_into()
-                .expect("expected the secret key to be 32 bytes"),
-        )
-        .expect("Core fixture secret key must decode");
+        let private_key_operator = BlsPrivateKey::random(&mut rng);
         let new_pub_key_operator = private_key_operator.public_key().to_bytes().to_vec();
 
         // Create an old masternode state with original public key operator
@@ -1284,7 +1247,6 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply drive operations");
 
@@ -1345,7 +1307,6 @@ mod tests {
                 &block_info,
                 Some(&transaction),
                 platform_version,
-                None,
             )
             .expect("expected to apply drive operations");
     }

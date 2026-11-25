@@ -400,6 +400,34 @@ public struct TransitionDefinitions {
             ]
         ),
 
+        "documentErase": TransitionDefinition(
+            key: "documentErase",
+            label: "Document Erase",
+            description: "Erase the retained revisions of a deleted keep-history document",
+            inputs: [
+                TransitionInput(
+                    name: "contractId",
+                    type: "contractPicker",
+                    label: "Data Contract",
+                    required: true
+                ),
+                TransitionInput(
+                    name: "documentType",
+                    type: "documentTypePicker",
+                    label: "Document Type",
+                    required: true,
+                    placeholder: "" // Will be filled with selected contractId
+                ),
+                TransitionInput(
+                    name: "documentId",
+                    type: "text",
+                    label: "Document ID",
+                    required: true,
+                    placeholder: "ID of the deleted document"
+                )
+            ]
+        ),
+
         "documentTransfer": TransitionDefinition(
             key: "documentTransfer",
             label: "Document Transfer",

@@ -2,6 +2,7 @@ mod v0;
 mod v1;
 mod v2;
 
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::storage_flags::StorageFlags;
 
 use crate::drive::Drive;
@@ -13,10 +14,8 @@ use crate::fees::op::LowLevelDriveOperation;
 use dpp::data_contract::document_type::IndexLevel;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
 
-use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
-use std::collections::HashMap;
+use grovedb::{TransactionArg, TreeType};
 
 impl Drive {
     /// Adds indices for an index level and recurses.
@@ -43,9 +42,7 @@ impl Drive {
         parent_value_tree_type: TreeType,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         event_id: [u8; 32],
         transaction: TransactionArg,
         batch_operations: &mut Vec<LowLevelDriveOperation>,

@@ -208,7 +208,20 @@ fun ClaimInvitationSheet(
                 ).close()
                 onClose()
             } catch (t: Throwable) {
-                errorMessage = t.message ?: "Sending the contact request failed."
+                // One that may have gone through (18, 20), or that the wallet
+                // refused while an earlier one awaits its outcome (76), is not
+                // a failure: the DashPay sync settles it.
+                // ← Swift `ClaimInvitationSheet.sendContact`.
+                errorMessage = when (ContactRequestSubmissionOutcome.of(t)) {
+                    ContactRequestSubmissionOutcome.MayHaveGoneThrough,
+                    ContactRequestSubmissionOutcome.PublicRequestUnconfirmed,
+                    -> {
+                        kickDashPaySync(container.applicationScope, mgr)
+                        "Identity claimed. " +
+                            ContactRequestSubmissionOutcome.PUBLIC_REQUEST_UNCONFIRMED_MESSAGE
+                    }
+                    else -> t.message ?: "Sending the contact request failed."
+                }
             }
         }
     }

@@ -8,7 +8,15 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::prelude::{DataContract, Identifier};
+use dpp::version::v12::PROTOCOL_VERSION_12;
+use dpp::version::PlatformVersion;
 use drive::query::{DriveDocumentQuery, OrderClause, WhereClause};
+
+/// The protocol version that signed the recorded document vectors. The SDK replaying them
+/// starts there: document query answers verify only at the protocol version that signed them.
+fn recorded_version() -> &'static PlatformVersion {
+    PlatformVersion::get(PROTOCOL_VERSION_12).expect("known protocol version")
+}
 
 /// Given some data contract ID, document type and document ID, when I fetch it, then I get it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
@@ -16,7 +24,9 @@ async fn document_read() {
     setup_logs();
 
     let cfg = Config::new();
-    let sdk = cfg.setup_api("document_read").await;
+    let sdk = cfg
+        .setup_api_with_initial_version("document_read", recorded_version())
+        .await;
 
     let data_contract_id = cfg.existing_data_contract_id;
 
@@ -83,7 +93,9 @@ async fn document_read_no_document() {
     setup_logs();
 
     let cfg = Config::new();
-    let sdk = cfg.setup_api("document_read_no_document").await;
+    let sdk = cfg
+        .setup_api_with_initial_version("document_read_no_document", recorded_version())
+        .await;
 
     let data_contract_id = cfg.existing_data_contract_id;
     let document_id = [0; 32].into();
@@ -109,7 +121,9 @@ async fn document_list_drive_query() {
     setup_logs();
 
     let cfg = Config::new();
-    let sdk = cfg.setup_api("document_list_drive_query").await;
+    let sdk = cfg
+        .setup_api_with_initial_version("document_list_drive_query", recorded_version())
+        .await;
 
     let data_contract_id = cfg.existing_data_contract_id;
 
@@ -156,7 +170,9 @@ async fn document_list_document_query() {
     setup_logs();
 
     let cfg = Config::new();
-    let sdk = cfg.setup_api("document_list_document_query").await;
+    let sdk = cfg
+        .setup_api_with_initial_version("document_list_document_query", recorded_version())
+        .await;
 
     let data_contract_id = cfg.existing_data_contract_id;
 
@@ -198,7 +214,10 @@ async fn document_list_bug_value_text_decode_base58_PLAN_653() {
 
     let cfg = Config::new();
     let sdk = cfg
-        .setup_api("document_list_bug_value_text_decode_base58")
+        .setup_api_with_initial_version(
+            "document_list_bug_value_text_decode_base58",
+            recorded_version(),
+        )
         .await;
 
     let data_contract_id = cfg.existing_data_contract_id;

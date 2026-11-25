@@ -183,7 +183,9 @@ result = lib.dash_sdk_create(byref(config))
 - `dash_sdk_document_create()` - Create a new document
 - `dash_sdk_document_update()` - Update an existing document
 - `dash_sdk_document_delete()` - Delete a document
+- `dash_sdk_document_erase()` - Erase the retained revisions of a deleted keep-history document
 - `dash_sdk_document_fetch()` - Fetch documents by query
+- `dash_sdk_document_fetch_history()` - Fetch a document's revision history and lifecycle state
 
 #### Data Contract Operations
 - `dash_sdk_data_contract_create()` - Create a new data contract
@@ -203,11 +205,6 @@ result = lib.dash_sdk_create(byref(config))
 - `dash_spv_ffi_client_watch_address()` - Watch address for transactions
 - `dash_spv_ffi_client_broadcast_transaction()` - Broadcast transaction
 - `dash_spv_ffi_client_get_transaction()` - Get transaction details
-
-#### HD Wallet Functions
-- `key_wallet_ffi_mnemonic_generate()` - Generate HD wallet mnemonic
-- `key_wallet_ffi_derive_address()` - Derive addresses from HD wallet
-- `key_wallet_ffi_sign_transaction()` - Sign transactions with HD keys
 
 ## Architecture
 

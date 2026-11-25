@@ -339,7 +339,6 @@ mod tests {
                 &block(day_one),
                 Some(&transaction),
                 &platform_version,
-                None,
             )
             .expect("expected to apply the pooling operations");
         drive
@@ -572,7 +571,6 @@ mod tests {
                 &block(t2),
                 Some(&transaction),
                 &platform_version,
-                None,
             )
             .expect("expected to apply the pooling operations");
         drive

@@ -1,6 +1,6 @@
 #[cfg(any(feature = "serde-conversion", feature = "bls-signatures"))]
 pub mod dashcore;
-#[cfg(feature = "json-conversion")]
+#[cfg(feature = "serde-conversion")]
 pub mod json;
 // Not gated behind `serde-conversion`: this fixed-size byte-array helper is
 // needed by modules that derive serde unconditionally (e.g. the always-serde
@@ -17,7 +17,7 @@ pub use dpp_json_convertible_derive::json_safe_fields;
 pub use dpp_json_convertible_derive::JsonConvertible;
 #[cfg(feature = "value-conversion")]
 pub use dpp_json_convertible_derive::ValueConvertible;
-#[cfg(feature = "json-conversion")]
+#[cfg(feature = "serde-conversion")]
 pub use json::safe_integer::{
     json_safe_i64, json_safe_option_i64, json_safe_option_u64, json_safe_u128,
     json_safe_u128_content, json_safe_u64,

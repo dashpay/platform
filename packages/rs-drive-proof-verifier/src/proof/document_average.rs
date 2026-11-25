@@ -22,7 +22,7 @@
 //! `DocumentAverageMode`.
 
 use crate::error::MapGroveDbError;
-use crate::verify::{supported_grovedb_proof_bytes, verify_tenderdash_proof};
+use crate::verify::{document_query_proof_bytes, verify_tenderdash_proof};
 use crate::{ContextProvider, Error};
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::version::PlatformVersion;
@@ -38,6 +38,10 @@ use drive::query::drive_document_sum_query::DriveDocumentSumQuery;
 /// Used by the prove path's `Aggregate` + Equal/In + no range
 /// shape when the chosen index declares BOTH `summable: "<prop>"`
 /// AND a `countable` terminator.
+///
+/// `platform_version` must be the protocol version `mtd` names, or the latest known
+/// version when `mtd` names a newer one; otherwise the answer is refused with
+/// [`Error::ProofProtocolVersionMismatch`].
 pub fn verify_point_lookup_count_and_sum_proof(
     query: &DriveDocumentSumQuery,
     proof: &Proof,
@@ -47,7 +51,7 @@ pub fn verify_point_lookup_count_and_sum_proof(
 ) -> Result<Vec<AverageEntry>, Error> {
     let (root_hash, entries) = query
         .verify_point_lookup_count_and_sum_proof(
-            supported_grovedb_proof_bytes(proof)?,
+            document_query_proof_bytes(proof, mtd, platform_version)?,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
@@ -67,6 +71,10 @@ pub fn verify_point_lookup_count_and_sum_proof(
 /// [`DriveDocumentSumQuery::verify_distinct_count_and_sum_proof`].
 /// Used by the prove path's `GroupByRange` / `GroupByCompound` +
 /// range shape on the AVG surface.
+///
+/// `platform_version` must be the protocol version `mtd` names, or the latest known
+/// version when `mtd` names a newer one; otherwise the answer is refused with
+/// [`Error::ProofProtocolVersionMismatch`].
 pub fn verify_distinct_count_and_sum_proof(
     query: &DriveDocumentSumQuery,
     proof: &Proof,
@@ -78,7 +86,7 @@ pub fn verify_distinct_count_and_sum_proof(
 ) -> Result<Vec<AverageEntry>, Error> {
     let (root_hash, entries) = query
         .verify_distinct_count_and_sum_proof(
-            supported_grovedb_proof_bytes(proof)?,
+            document_query_proof_bytes(proof, mtd, platform_version)?,
             limit,
             left_to_right,
             platform_version,
@@ -140,6 +148,10 @@ impl DocumentAverage {
 /// Both metrics come from one root-hash-committed traversal of the
 /// PCPS terminator — no way for the server to splice a count from
 /// one set with a sum from another.
+///
+/// `platform_version` must be the protocol version `mtd` names, or the latest known
+/// version when `mtd` names a newer one; otherwise the answer is refused with
+/// [`Error::ProofProtocolVersionMismatch`].
 pub fn verify_aggregate_count_and_sum_proof(
     query: &DriveDocumentSumQuery,
     proof: &Proof,
@@ -149,7 +161,7 @@ pub fn verify_aggregate_count_and_sum_proof(
 ) -> Result<(u64, i64), Error> {
     let (root_hash, count, sum) = query
         .verify_aggregate_count_and_sum_proof(
-            supported_grovedb_proof_bytes(proof)?,
+            document_query_proof_bytes(proof, mtd, platform_version)?,
             platform_version,
         )
         .map_drive_error(proof, mtd)?;
@@ -171,6 +183,10 @@ pub fn verify_aggregate_count_and_sum_proof(
 /// set, with empty where clauses — the server proves the
 /// primary-key element directly and the SDK extracts both metrics
 /// from one verified element.
+///
+/// `platform_version` must be the protocol version `mtd` names, or the latest known
+/// version when `mtd` names a newer one; otherwise the answer is refused with
+/// [`Error::ProofProtocolVersionMismatch`].
 pub fn verify_primary_key_count_sum_tree_proof(
     contract_id: [u8; 32],
     document_type_name: &str,
@@ -180,7 +196,7 @@ pub fn verify_primary_key_count_sum_tree_proof(
     provider: &dyn ContextProvider,
 ) -> Result<(u64, i64), Error> {
     let (root_hash, count, sum) = DriveDocumentSumQuery::verify_primary_key_count_sum_tree_proof(
-        supported_grovedb_proof_bytes(proof)?,
+        document_query_proof_bytes(proof, mtd, platform_version)?,
         contract_id,
         document_type_name,
         platform_version,
@@ -211,6 +227,10 @@ pub fn verify_primary_key_count_sum_tree_proof(
 /// `sum = Some(v)`. Absent In branches are omitted; the count and
 /// sum axes never disagree on present/absent because the proof
 /// commits both metrics from the same merk traversal.
+///
+/// `platform_version` must be the protocol version `mtd` names, or the latest known
+/// version when `mtd` names a newer one; otherwise the answer is refused with
+/// [`Error::ProofProtocolVersionMismatch`].
 pub fn verify_carrier_aggregate_count_and_sum_proof(
     query: &DriveDocumentSumQuery,
     proof: &Proof,
@@ -222,7 +242,7 @@ pub fn verify_carrier_aggregate_count_and_sum_proof(
 ) -> Result<Vec<AverageEntry>, Error> {
     let (root_hash, per_key_count_sum) = query
         .verify_carrier_aggregate_count_and_sum_proof(
-            supported_grovedb_proof_bytes(proof)?,
+            document_query_proof_bytes(proof, mtd, platform_version)?,
             limit,
             left_to_right,
             platform_version,

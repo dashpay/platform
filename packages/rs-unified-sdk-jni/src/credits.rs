@@ -10,8 +10,12 @@
 //! entry point (no stitching, per `packages/kotlin-sdk/CLAUDE.md`):
 //! - [`platform_wallet_transfer_credits_with_signer`] — identity → identity.
 //! - [`platform_wallet_withdraw_credits_with_signer`] — identity → L1 address.
-//! - [`platform_wallet_top_up_from_addresses_with_signer`] — top up an
-//!   existing identity from Platform-address inputs (ID-06).
+//! - [`platform_wallet_top_up_identity_from_addresses_with_signer`] — top up
+//!   any identity, the wallet's own or someone else's, from Platform-address
+//!   inputs (ID-06).
+//! - [`platform_wallet_top_up_from_addresses_with_signer`] — **deprecated**
+//!   managed-only variant of the above: refuses an identity the wallet does
+//!   not manage.
 //! - [`platform_wallet_top_up_identity_with_funding_signer`] — top up an
 //!   existing identity from a **new Core asset lock** (ID-05); this one
 //!   takes a `MnemonicResolverHandle` (the Core asset-lock signer) rather
@@ -30,6 +34,7 @@ use jni::objects::{JByteArray, JClass, JString};
 use jni::sys::{jboolean, jint, jlong};
 use jni::JNIEnv;
 use platform_wallet_ffi::core_wallet_types::OutPointFFI;
+use platform_wallet_ffi::error::PlatformWalletFFIResult;
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_registration::IdentityFundingInputFFI;
 use platform_wallet_ffi::identity_transfer::PlatformAddressCreditOutputFFI;
@@ -165,14 +170,46 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_withdra
 
 // ── Top up (existing identity ← Platform-address inputs) ───────────────
 
-/// Top up an existing identity's credit balance from one or more
-/// Platform-address inputs, signed per-address via `signerHandle` (the
-/// platform-address signer). Returns the post-transition credit balance.
+/// Top up an identity's credit balance from one or more Platform-address
+/// inputs, whoever owns the identity (the wallet's or someone else's),
+/// signed per-address via `signerHandle` (the platform-address signer).
+/// Returns the identity's post-transition credit balance.
 ///
 /// `inputsBlob` layout (big-endian): `u32 rowCount` then per row
 /// `u8 addressType (0 P2PKH / 1 P2SH), u8[20] hash, u64 credits`.
 ///
-/// Wraps `platform_wallet_top_up_from_addresses_with_signer`.
+/// Wraps `platform_wallet_top_up_identity_from_addresses_with_signer`, which
+/// fetches the identity from Platform, never adds it to the wallet, and
+/// updates the balance of an identity the wallet manages.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpIdentityFromAddresses(
+    mut env: JNIEnv,
+    _class: JClass,
+    wallet_handle: jlong,
+    identity_id: JByteArray,
+    inputs_blob: JByteArray,
+    signer_handle: jlong,
+) -> jlong {
+    address_top_up(
+        &mut env,
+        wallet_handle,
+        identity_id,
+        inputs_blob,
+        signer_handle,
+        platform_wallet_ffi::platform_wallet_top_up_identity_from_addresses_with_signer,
+    )
+}
+
+/// Top up an identity the wallet manages from one or more Platform-address
+/// inputs, signed per-address via `signerHandle` (the platform-address
+/// signer). Returns the post-transition credit balance.
+///
+/// **Deprecated:** use `topUpIdentityFromAddresses`, which tops up any
+/// identity; this one refuses an identity the wallet does not manage.
+///
+/// `inputsBlob` layout as for `topUpIdentityFromAddresses`.
+///
+/// Wraps the deprecated `platform_wallet_top_up_from_addresses_with_signer`.
 #[no_mangle]
 pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpFromAddresses(
     mut env: JNIEnv,
@@ -182,21 +219,46 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpFr
     inputs_blob: JByteArray,
     signer_handle: jlong,
 ) -> jlong {
-    guard(&mut env, 0i64, |env| {
+    address_top_up(
+        &mut env,
+        wallet_handle,
+        identity_id,
+        inputs_blob,
+        signer_handle,
+        platform_wallet_ffi::platform_wallet_top_up_from_addresses_with_signer,
+    )
+}
+
+/// The marshalling the address top-up bridges share: decode the arguments,
+/// call `export` and return the balance it writes, or throw its error.
+fn address_top_up(
+    env: &mut JNIEnv,
+    wallet_handle: jlong,
+    identity_id: JByteArray,
+    inputs_blob: JByteArray,
+    signer_handle: jlong,
+    export: unsafe extern "C" fn(
+        Handle,
+        *const [u8; 32],
+        *const IdentityFundingInputFFI,
+        usize,
+        *mut SignerHandle,
+        *mut u64,
+    ) -> PlatformWalletFFIResult,
+) -> jlong {
+    guard(env, 0i64, |env| {
         let Some(id) = read_id32(env, &identity_id, "identityId") else {
             return 0;
         };
+        // Zero decoded rows go through: the wallet refuses them as an
+        // invalid parameter after its handle and generation checks.
         let Some(inputs) = decode_inputs_blob(env, &inputs_blob) else {
             return 0;
         };
-        if inputs.is_empty() {
-            throw_sdk_exception(env, 1, "inputsBlob contained no funding inputs");
-            return 0;
-        }
 
         let mut out_balance: u64 = 0;
         let result = unsafe {
-            platform_wallet_ffi::platform_wallet_top_up_from_addresses_with_signer(
+            export(
                 wallet_handle as Handle,
                 &id as *const [u8; 32],
                 inputs.as_ptr(),
@@ -389,11 +451,59 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_CreditsNative_topUpId
     })
 }
 
-/// Decode a credit-rows BLOB into owned `(address_type, hash, credits)`
+/// Size of one credit row: `u8 addressType, u8[20] hash, u64 credits`.
+const CREDIT_ROW_LEN: usize = 1 + 20 + 8;
+
+/// Parse a credit-rows BLOB into owned `(address_type, hash, credits)`
 /// tuples. Layout (big-endian): `u32 rowCount` then per row
-/// `u8 addressType (0 P2PKH / 1 P2SH), u8[20] hash, u64 credits`. Throws +
-/// returns None on a malformed blob or an out-of-range (sign-bit-set)
-/// credit amount. [`field`] names the blob in error messages
+/// `u8 addressType (0 P2PKH / 1 P2SH), u8[20] hash, u64 credits`. Bytes
+/// after the last row are ignored. Fails on a malformed blob or an
+/// out-of-range (sign-bit-set) credit amount; `field` names the blob in the
+/// error message, which never echoes a hash or amount.
+///
+/// The one parser for this wire format: [`decode_credit_rows`] wraps it for
+/// the JNI exports here and in `identity.rs`, and `wallet_manager.rs` maps its
+/// rows into `AddressBalanceEntryFFI` (wallet-signed transfer outputs) and
+/// `ExplicitInputFFI` (explicit withdrawal inputs).
+pub(crate) fn parse_credit_rows(
+    bytes: &[u8],
+    field: &str,
+) -> Result<Vec<(u8, [u8; 20], u64)>, String> {
+    let (count_bytes, body) = bytes
+        .split_first_chunk::<4>()
+        .ok_or_else(|| format!("{field} truncated (row count)"))?;
+    let count = u32::from_be_bytes(*count_bytes) as usize;
+    // Reject an impossible row count before allocating: rows are a fixed
+    // 29 bytes, so a header claiming more than the remaining payload can
+    // hold is malformed. Guards the raw-JNI boundary against a huge
+    // `with_capacity` abort on a short/hostile blob.
+    if count
+        .checked_mul(CREDIT_ROW_LEN)
+        .is_none_or(|need| body.len() < need)
+    {
+        return Err(format!("{field} claims {count} rows but body is too short"));
+    }
+    let (rows, _) = body.as_chunks::<CREDIT_ROW_LEN>();
+    let mut out = Vec::with_capacity(count);
+    for (i, row) in rows.iter().take(count).enumerate() {
+        // The row is a `[u8; 29]`, so this pattern is irrefutable and binds
+        // `hash` as `[u8; 20]`.
+        let &[address_type, ref hash @ .., c0, c1, c2, c3, c4, c5, c6, c7] = row;
+        let credits = u64::from_be_bytes([c0, c1, c2, c3, c4, c5, c6, c7]);
+        // The Kotlin encoder writes this field from a signed long; a set
+        // sign bit means a negative amount crossed the boundary — reject
+        // rather than treat it as a huge unsigned credit value.
+        if credits & (1 << 63) != 0 {
+            return Err(format!("{field} row {i} credits amount out of range"));
+        }
+        out.push((address_type, *hash, credits));
+    }
+    Ok(out)
+}
+
+/// Decode a credit-rows BLOB (see [`parse_credit_rows`]) from a Java
+/// `byte[]`. Throws + returns None on a null array, a malformed blob or an
+/// out-of-range credit amount. [`field`] names the blob in error messages
 /// (`"inputsBlob"` / `"outputsBlob"`).
 ///
 /// Shared by the top-up (ID-06) and transfer-to-addresses (ID-11) credit
@@ -413,68 +523,13 @@ pub(crate) fn decode_credit_rows(
             return None;
         }
     };
-    let mut cursor = 0usize;
-    let read = |cursor: &mut usize, n: usize| -> Option<&[u8]> {
-        if *cursor + n > bytes.len() {
-            return None;
+    match parse_credit_rows(&bytes, field) {
+        Ok(rows) => Some(rows),
+        Err(msg) => {
+            throw_sdk_exception(env, 1, &msg);
+            None
         }
-        let s = &bytes[*cursor..*cursor + n];
-        *cursor += n;
-        Some(s)
-    };
-    let Some(count_bytes) = read(&mut cursor, 4) else {
-        throw_sdk_exception(env, 1, &format!("{field} truncated (row count)"));
-        return None;
-    };
-    let count = u32::from_be_bytes(count_bytes.try_into().ok()?) as usize;
-    // Reject an impossible row count before allocating: rows are a fixed
-    // 29 bytes, so a header claiming more than the remaining payload can
-    // hold is malformed. Guards the raw-JNI boundary against a huge
-    // `with_capacity` abort on a short/hostile blob (the per-row reads
-    // below still throw precise truncation errors for valid-sized claims).
-    if count
-        .checked_mul(29)
-        .is_none_or(|need| bytes.len() - cursor < need)
-    {
-        throw_sdk_exception(
-            env,
-            1,
-            &format!("{field} claims {count} rows but body is too short"),
-        );
-        return None;
     }
-    let mut rows = Vec::with_capacity(count);
-    for i in 0..count {
-        let Some(type_byte) = read(&mut cursor, 1) else {
-            throw_sdk_exception(env, 1, &format!("{field} truncated at row {i} type"));
-            return None;
-        };
-        let address_type = type_byte[0];
-        let Some(hash_bytes) = read(&mut cursor, 20) else {
-            throw_sdk_exception(env, 1, &format!("{field} truncated at row {i} hash"));
-            return None;
-        };
-        let mut hash = [0u8; 20];
-        hash.copy_from_slice(hash_bytes);
-        let Some(credits_bytes) = read(&mut cursor, 8) else {
-            throw_sdk_exception(env, 1, &format!("{field} truncated at row {i} credits"));
-            return None;
-        };
-        let credits = u64::from_be_bytes(credits_bytes.try_into().ok()?);
-        // The Kotlin encoder writes this field from a signed long; a set
-        // sign bit means a negative amount crossed the boundary — reject
-        // rather than treat it as a huge unsigned credit value.
-        if credits & (1 << 63) != 0 {
-            throw_sdk_exception(
-                env,
-                1,
-                &format!("{field} row {i} credits amount out of range"),
-            );
-            return None;
-        }
-        rows.push((address_type, hash, credits));
-    }
-    Some(rows)
 }
 
 /// Decode the top-up inputs BLOB into owned [`IdentityFundingInputFFI`]

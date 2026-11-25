@@ -1,4 +1,4 @@
-mod grpc;
+pub(crate) mod grpc;
 mod jsonrpc;
 mod metrics;
 mod state;

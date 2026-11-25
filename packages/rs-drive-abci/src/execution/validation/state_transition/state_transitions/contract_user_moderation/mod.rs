@@ -26,6 +26,7 @@ use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::contract_user_moderation::basic_structure::v0::ContractUserModerationStateTransitionStructureValidationV0;
 use crate::execution::validation::state_transition::contract_user_moderation::state::v0::ContractUserModerationStateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::contract_user_moderation::state::v1::ContractUserModerationStateTransitionStateValidationV1;
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
@@ -60,9 +61,16 @@ impl StateTransitionActionTransformer for ContractUserModerationTransition {
                 tx,
                 platform_version,
             ),
+            1 => self.transform_into_action_v1(
+                platform,
+                block_info,
+                execution_context,
+                tx,
+                platform_version,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "contract user moderation transition: transform_into_action".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -101,7 +109,7 @@ impl StateTransitionStateValidation for ContractUserModerationTransition {
         &self,
         _action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
-        _validation_mode: ValidationMode,
+        validation_mode: ValidationMode,
         block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
@@ -115,13 +123,16 @@ impl StateTransitionStateValidation for ContractUserModerationTransition {
             .state
         {
             // The state validation is the transformation: the contract and the target's
-            // status are read and checked while the action that carries them is built.
-            0 => self.transform_into_action_v0(
+            // status are read and checked while the action that carries them is built. So it
+            // runs the generation of the transformation the version tables select, which at
+            // every protocol version before 15 is generation 0.
+            0 => self.transform_into_action(
                 platform,
                 block_info,
+                &None,
+                validation_mode,
                 execution_context,
                 tx,
-                platform_version,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "contract user moderation transition: validate_state".to_string(),

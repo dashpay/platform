@@ -24,6 +24,27 @@ impl Drive {
         let vote_path_ref =
             vote_contested_resource_identity_votes_tree_path_for_identity(identity_id.as_bytes());
 
+        self.remove_identity_vote_references_operations_v0(
+            &vote_path_ref,
+            votes,
+            batch_operations,
+            transaction,
+            platform_version,
+        )
+    }
+
+    /// The loop of `remove_specific_vote_references_given_by_identity_v0`, moved here unchanged
+    /// (in place: the same deletes in the same order at every protocol version that selects
+    /// it) so the yes/no identity votes index, which differs only in its path, removes its
+    /// entries the same way.
+    pub(in crate::drive::votes::cleanup) fn remove_identity_vote_references_operations_v0(
+        &self,
+        vote_path_ref: &[&[u8]; 4],
+        votes: &[&Identifier],
+        batch_operations: &mut Vec<LowLevelDriveOperation>,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
         for vote_identifier_to_remove in votes {
             self.batch_delete(
                 vote_path_ref.as_slice().into(),

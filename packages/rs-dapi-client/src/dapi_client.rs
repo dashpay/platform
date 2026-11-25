@@ -88,6 +88,13 @@ impl CanRetry for DapiClientError {
             _ => None,
         }
     }
+
+    fn is_node_busy(&self) -> bool {
+        match self {
+            DapiClientError::Transport(te) => te.is_node_busy(),
+            _ => false,
+        }
+    }
 }
 
 /// Serialization of [DapiClientError].
@@ -231,7 +238,11 @@ pub fn update_address_ban_status<R, E>(
         Err(error) => {
             if error.can_retry() {
                 if let Some(address) = error.address.as_ref() {
-                    if applied_settings.ban_failed_address {
+                    // A node that says it is busy is working, and a request can ask that it
+                    // is not banned for saying so.
+                    let ban = applied_settings.ban_failed_address
+                        && (applied_settings.ban_busy_address || !error.is_node_busy());
+                    if ban {
                         let reason = Some(error.to_string());
                         let period_opt = error.rate_limit_ban_duration();
                         let banned = match period_opt {
@@ -266,14 +277,14 @@ pub fn update_address_ban_status<R, E>(
                             );
                         }
                     } else {
-                        // Banning is disabled for this request, but failover
-                        // must still move traffic away from the failing node:
+                        // The request does not ban a node for this failure, but
+                        // failover must still move traffic away from the failing node:
                         // drop it from the sticky rotation, ban state untouched.
                         address_list.evict_from_rotation(address);
                         tracing::debug!(
                             ?error,
                             ?address,
-                            "banning is disabled; evicted address {address} from rotation due to the error"
+                            "not banning for this error; evicted address {address} from rotation"
                         );
                     }
                 } else {
@@ -302,6 +313,7 @@ mod tests {
             timeout: Duration::from_secs(10),
             retries: 5,
             ban_failed_address: ban,
+            ban_busy_address: true,
             max_decoding_message_size: None,
             #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
@@ -454,6 +466,7 @@ mod tests {
             .insert("ratelimit-reset", MetadataValue::try_from("45").unwrap());
 
         let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+            possibly_accepted: false,
             inner: DapiClientError::Transport(TransportError::Grpc(status)),
             retries: 0,
             address: Some(addr.clone()),
@@ -487,6 +500,7 @@ mod tests {
         address_list.add(addr.clone());
 
         let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+            possibly_accepted: false,
             inner: DapiClientError::Transport(TransportError::Grpc(
                 dapi_grpc::tonic::Status::resource_exhausted("429"),
             )),
@@ -577,6 +591,7 @@ mod tests {
         let transport_err =
             TransportError::Grpc(dapi_grpc::tonic::Status::unavailable("temporary"));
         let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+            possibly_accepted: false,
             inner: DapiClientError::Transport(transport_err),
             retries: 0,
             address: Some(addr.clone()),
@@ -605,6 +620,7 @@ mod tests {
         let transport_err =
             TransportError::Grpc(dapi_grpc::tonic::Status::unavailable("temporary"));
         let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+            possibly_accepted: false,
             inner: DapiClientError::Transport(transport_err),
             retries: 0,
             address: Some(addr.clone()),
@@ -622,6 +638,7 @@ mod tests {
         address_list.add(addr.clone());
 
         let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+            possibly_accepted: false,
             inner: DapiClientError::NoAvailableAddresses,
             retries: 0,
             address: Some(addr.clone()),
@@ -638,6 +655,7 @@ mod tests {
         let transport_err =
             TransportError::Grpc(dapi_grpc::tonic::Status::unavailable("temporary"));
         let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+            possibly_accepted: false,
             inner: DapiClientError::Transport(transport_err),
             retries: 0,
             address: None,
@@ -675,6 +693,7 @@ mod tests {
         let transport_err =
             TransportError::Grpc(dapi_grpc::tonic::Status::unavailable("temporary"));
         let result: ExecutionResult<i32, DapiClientError> = Err(ExecutionError {
+            possibly_accepted: false,
             inner: DapiClientError::Transport(transport_err),
             retries: 0,
             address: Some(addr),
@@ -1110,6 +1129,7 @@ impl DapiRequestExecutor for DapiClient {
         // same way; see `TransportRequest::names_nothing`.
         if let Some(refusal) = request.names_nothing() {
             return Err(ExecutionError {
+                possibly_accepted: false,
                 inner: DapiClientError::Transport(TransportError::Grpc(Status::invalid_argument(
                     refusal,
                 ))),
@@ -1139,6 +1159,7 @@ impl DapiRequestExecutor for DapiClient {
         let retry_delay = Duration::from_millis(10);
 
         let mut retries: usize = 0;
+        let mut possibly_accepted = false;
         // Track the last transport error for when all addresses get exhausted
         let mut last_transport_error: Option<TransportError> = None;
 
@@ -1159,6 +1180,7 @@ impl DapiRequestExecutor for DapiClient {
                     };
 
                     return Err(ExecutionError {
+                        possibly_accepted,
                         inner: error,
                         retries,
                         address: None,
@@ -1204,6 +1226,7 @@ impl DapiRequestExecutor for DapiClient {
                         let cloned_error = transport_error.clone();
 
                         let execution_error = ExecutionError {
+                            possibly_accepted,
                             inner: DapiClientError::Transport(transport_error),
                             retries,
                             address: Some(address.clone()),
@@ -1265,6 +1288,8 @@ impl DapiRequestExecutor for DapiClient {
                     attempt.await
                 };
 
+                let classification = result.as_ref().err().map(|error| request.classify_error(error));
+                if let Some(classification) = classification { possibly_accepted |= classification.possibly_accepted; }
                 let execution_result = match result {
                     Ok(response) => {
                         tracing::trace!(response = ?response, "received {} response", response_name);
@@ -1277,6 +1302,7 @@ impl DapiRequestExecutor for DapiClient {
                     Err(transport_error) => {
                         tracing::debug!(error = ?transport_error, "received error: {transport_error}");
                         Err(ExecutionError {
+                            possibly_accepted,
                             inner: DapiClientError::Transport(transport_error),
                             retries,
                             address: Some(address.clone()),
@@ -1293,7 +1319,7 @@ impl DapiRequestExecutor for DapiClient {
                 match execution_result {
                     Ok(response) => return Ok(response),
                     Err(error) => {
-                        if error.can_retry() && retries < max_retries {
+                        if classification.is_some_and(|outcome| outcome.retry) && retries < max_retries {
                             // Store last transport error
                             if let DapiClientError::Transport(ref te) = error.inner {
                                 last_transport_error = Some(te.clone());

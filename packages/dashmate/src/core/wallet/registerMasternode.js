@@ -53,8 +53,10 @@ export default async function registerMasternode(
     proTxArgs.push(platformHttpPort.toString());
   }
 
-  const { result: proRegTxId } = await coreService.getRpcClient().protx(
-    ...proTxArgs,
+  // Core v24 accepts collateralIndex only as a number, which dashd-rpc's `protx` would stringify
+  const { result: proRegTxId } = await coreService.getRpcClient().callWithParams(
+    'protx',
+    proTxArgs,
     { wallet: 'main' },
   );
 

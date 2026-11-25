@@ -2,20 +2,24 @@
 
 use std::future::Future;
 use std::pin::pin;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use tokio::sync::{Notify, RwLock};
 use tokio::task::{JoinError, JoinHandle};
 
+use dashcore::blockdata::transaction::special_transaction::coinbase::CoinbasePayload;
 use dashcore::sml::llmq_entry_verification::LLMQEntryVerificationStatus;
 use dashcore::sml::llmq_type::LLMQType;
 use dashcore::sml::masternode_list::MasternodeList;
+use dashcore::sml::masternode_list_entry::MasternodeListEntry;
 use dashcore::{PubkeyHash, QuorumHash, Transaction};
 
 use dash_spv::network::PeerNetworkManager;
-use dash_spv::sync::SyncProgress;
-use dash_spv::{BroadcastResult, ClientConfig, DashSpvClient, EventHandler, Hash};
+use dash_spv::{
+    BroadcastResult, ClientConfig, DashSpvClient, EventHandler, SyncProgress, SyncState,
+};
 
 use key_wallet_manager::WalletManager;
 
@@ -24,9 +28,54 @@ use crate::error::PlatformWalletError;
 use crate::events::PlatformEventManager;
 use crate::masternode::list::MasternodeListSummary;
 use crate::spv::peers::{classify_peers, PeerTracker, SpvPeerInfo};
+use crate::wallet::asset_lock::sync::locate::HeaderLookup;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 type SpvClient = DashSpvClient<WalletManager<PlatformWalletInfo>, PeerNetworkManager>;
+
+/// Build the masternode-engine lookup key from a proof-supplied quorum hash.
+///
+/// The SDK's proof verifier supplies the quorum hash in display (big-endian)
+/// byte order — the same order the trusted HTTP provider matches against — but
+/// the masternode engine keys its quorum map in internal (little-endian) order.
+/// The bytes must therefore be reversed before building the [`QuorumHash`] key;
+/// without this every real quorum misses. Verified against a synced testnet
+/// node: the engine stores the reversed form of each requested hash (e.g.
+/// requested `0000…7f`, stored `…000000`).
+///
+/// [`SpvRuntime::get_quorum_public_key_with_status`] calls this so the
+/// byte-order regression test exercises the exact transform the production
+/// lookup uses.
+fn quorum_lookup_key(display_order: [u8; 32]) -> QuorumHash {
+    let mut internal_order = display_order;
+    internal_order.reverse();
+    QuorumHash::from_byte_array(internal_order)
+}
+
+/// How many blocks the newest masternode list may trail the header tip
+/// while SPV still counts as synced.
+///
+/// dash-spv requests a diff for each new tip, so the list normally trails
+/// the tip only while that diff is in flight, by a block or two. It keeps
+/// masternode sync `Synced` when those updates fail, so a list further
+/// behind no longer follows the chain: it misses every quorum mined since.
+const MASTERNODE_LIST_TIP_LAG: u32 = 2;
+
+/// Whether `progress` reports header and masternode-list synchronization
+/// complete, with the newest masternode list at most
+/// [`MASTERNODE_LIST_TIP_LAG`] blocks behind the header tip.
+fn is_synced_to_tip(progress: &SyncProgress) -> bool {
+    progress
+        .headers()
+        .is_ok_and(|headers| headers.state() == SyncState::Synced)
+        && progress.masternodes().is_ok_and(|masternodes| {
+            masternodes.state() == SyncState::Synced
+                && masternodes
+                    .current_height()
+                    .saturating_add(MASTERNODE_LIST_TIP_LAG)
+                    >= masternodes.block_header_tip_height()
+        })
+}
 
 /// A quorum public key from the SPV masternode state, see
 /// [`SpvRuntime::get_quorum_public_key_with_status`].
@@ -77,7 +126,15 @@ pub struct SpvRuntime {
     /// Teardown state. Held across client construction, run-loop spawning and
     /// each stop or storage clear, so none of them interleave.
     shutdown: tokio::sync::Mutex<Shutdown>,
+    /// Set once by [`release_owner`](Self::release_owner) when the object
+    /// that owns this runtime is going away. Read by the owner check of
+    /// [`start_and_spawn`](Self::start_and_spawn) instead of any shared
+    /// registry: that check runs under the `shutdown` lock, and a lookup in
+    /// a lock other callers hold while they wait for `shutdown` would cycle.
+    owner_released: AtomicBool,
     peer_tracker: Arc<PeerTracker>,
+    /// Successful [`start`](Self::start)s so far; see [`Self::run_session`].
+    run_sessions: AtomicU64,
     /// Woken (`notify_waiters`) on every transition that can make
     /// [`Self::is_broadcast_ready`] true: a client stored by `start`, and a
     /// `PeersUpdated` snapshot stored by `peer_tracker`. Losing readiness
@@ -123,30 +180,141 @@ impl SpvRuntime {
             last_config: RwLock::new(None),
             task: Mutex::new(None),
             shutdown: tokio::sync::Mutex::new(Shutdown::Idle),
+            owner_released: AtomicBool::new(false),
             peer_tracker: Arc::new(PeerTracker::new(Arc::clone(&readiness_changed))),
+            run_sessions: AtomicU64::new(0),
             readiness_changed,
         }
     }
 
     /// Start SPV sync.
+    ///
+    /// Fails with [`PlatformWalletError::InvalidParameter`] for a `config`
+    /// whose network is not the wallet manager's.
     pub async fn start(&self, config: ClientConfig) -> Result<(), PlatformWalletError> {
+        self.ensure_startable(&config).await?;
+        let shutdown = self.shutdown.lock().await;
+        self.start_locked(config, &shutdown).await
+    }
+
+    /// The checks a start runs before it queues for the `shutdown` lock: not
+    /// already running, nothing left unjoined by an earlier start or stop
+    /// (fail fast instead of queueing behind a stop that is still joining),
+    /// and a `config` for the wallet manager's network.
+    ///
+    /// The wallet manager's network is its SDK's, which the manager's SPV
+    /// quorum source serves keys for. A client of another network would sync
+    /// that chain, and its quorums would vouch for the SDK's proofs. Checked
+    /// last, so a start on a running client is refused before it could wait
+    /// for the wallet manager behind that client's sync.
+    async fn ensure_startable(&self, config: &ClientConfig) -> Result<(), PlatformWalletError> {
         if self.client.read().await.is_some() {
             return Err(PlatformWalletError::SpvAlreadyRunning);
         }
-        // Fail fast instead of queueing behind a stop that is still joining.
         self.ensure_no_live_run_loop()?;
-        let shutdown = self.shutdown.lock().await;
+        let network = self.wallet_manager.read().await.network();
+        if config.network != network {
+            return Err(PlatformWalletError::InvalidParameter(format!(
+                "the SPV client is configured for {:?}, but the wallet manager is on {:?}",
+                config.network, network
+            )));
+        }
+        Ok(())
+    }
+
+    /// Start SPV sync and publish its run loop as one operation under the
+    /// shutdown lock.
+    ///
+    /// [`start`](Self::start) followed by [`spawn_run_loop`](Self::spawn_run_loop)
+    /// releases that lock between the two, so a concurrent [`stop`](Self::stop)
+    /// can take the freshly built client out in between; the run loop spawned
+    /// afterwards then fails at once and sits unjoined in the task slot, and
+    /// every later start reports `ShutdownIncomplete` until another stop joins
+    /// it. Here a stop issued during the start waits for the published run
+    /// loop and tears it down with the client.
+    ///
+    /// The owner is checked twice. First right after the lock is taken,
+    /// before the store is opened: an owner whose teardown ran ahead of this
+    /// start ([`release_owner`](Self::release_owner), then a stop that found
+    /// no client) must not have the store opened and its lock file held for
+    /// seconds on its behalf — a manager created on the same directory
+    /// meanwhile would find it locked. Then `publish` runs between
+    /// construction and publication, still under the lock, and says whether
+    /// the caller still owns the client — typically `!owner_released()`. It
+    /// must not take a lock that another caller may hold while waiting for
+    /// `shutdown` (a stop issued through a handle registry holds that
+    /// registry's read guard while it waits): with a writer queued on such a
+    /// lock, the check would wait on the writer, the writer on the stop's
+    /// guard, and the stop on this `shutdown`. `false` means the owner went
+    /// away during the start: the client just built is stopped under the same
+    /// lock and `Ok(false)` is returned, so no run loop ever runs for an
+    /// unowned client. A stop that does not complete is logged, not returned:
+    /// the caller has no owner left to retry it through.
+    ///
+    /// Like [`start`](Self::start), it refuses a `config` for another network
+    /// than the wallet manager's before any of this.
+    pub async fn start_and_spawn<F>(
+        self: &Arc<Self>,
+        config: ClientConfig,
+        publish: F,
+    ) -> Result<bool, PlatformWalletError>
+    where
+        F: FnOnce() -> bool + Send,
+    {
+        self.ensure_startable(&config).await?;
+        let mut shutdown = self.shutdown.lock().await;
+        if self.owner_released() {
+            return Ok(false);
+        }
+        self.start_locked(config, &shutdown).await?;
+
+        if !publish() {
+            if let Err(error) = self
+                .stop_locked(&mut shutdown, |client| async move { client.stop().await })
+                .await
+            {
+                tracing::warn!(
+                    %error,
+                    "orphaned SPV client stop failed: its owner was destroyed during the start"
+                );
+            }
+            return Ok(false);
+        }
+
+        self.spawn_run_loop_locked();
+        Ok(true)
+    }
+
+    /// Record that the object owning this runtime is going away, before its
+    /// teardown stops SPV. A start whose owner check (`publish` in
+    /// [`start_and_spawn`](Self::start_and_spawn)) runs after this never
+    /// publishes a run loop: with the owner gone, nothing could stop it.
+    pub fn release_owner(&self) {
+        self.owner_released.store(true, Ordering::SeqCst);
+    }
+
+    /// Whether [`release_owner`](Self::release_owner) has been called.
+    pub fn owner_released(&self) -> bool {
+        self.owner_released.load(Ordering::SeqCst)
+    }
+
+    /// The construction half of [`start`](Self::start): the caller holds the
+    /// `shutdown` lock, which is what keeps a concurrent stop out until the
+    /// client is in place.
+    async fn start_locked(
+        &self,
+        config: ClientConfig,
+        shutdown: &Shutdown,
+    ) -> Result<(), PlatformWalletError> {
         {
             let running = self.client.read().await;
             if running.is_some() {
                 return Err(PlatformWalletError::SpvAlreadyRunning);
             }
         }
-        self.ensure_joined(&shutdown)?;
+        self.ensure_joined(shutdown)?;
 
-        let network_manager = PeerNetworkManager::new(&config)
-            .await
-            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+        let network_manager = PeerNetworkManager::new(&config).await;
 
         // PlatformEventManager implements `EventHandler`; the peer tracker
         // rides alongside it so `connected_peers` can answer from the latest
@@ -176,12 +344,21 @@ impl SpvRuntime {
         let mut client = self.client.write().await;
         *client = Some(spv_client);
         *self.last_config.write().await = Some(retained_config);
+        self.run_sessions.fetch_add(1, Ordering::Relaxed);
         // Release the client before waking readiness waiters so they can
         // read it.
         drop(client);
         self.readiness_changed.notify_waiters();
 
         Ok(())
+    }
+
+    /// Identifies the current run of the client: it changes on every
+    /// successful [`start`](Self::start), so two reads that return the same
+    /// value saw no stop and restart between them, however quickly a host
+    /// cycled the client. 0 before the first start.
+    pub fn run_session(&self) -> u64 {
+        self.run_sessions.load(Ordering::Relaxed)
     }
 
     /// Refuse restart until all previous startup and shutdown work is joined.
@@ -229,6 +406,22 @@ impl SpvRuntime {
     /// Check whether the SPV client has been started.
     pub fn is_started(&self) -> bool {
         self.client.try_read().map(|c| c.is_some()).unwrap_or(false)
+    }
+
+    /// Whether sync is running and dash-spv's current progress reports both
+    /// header and masternode-list synchronization complete, with the newest
+    /// masternode list at the header tip or just behind it.
+    ///
+    /// A failed sync keeps its last progress, and masternode sync stays
+    /// `Synced` when later list updates fail, so "synced" alone would vouch
+    /// for a masternode list that no longer follows the chain.
+    pub async fn is_ready(&self) -> bool {
+        if !self.is_running() {
+            return false;
+        }
+        self.sync_progress()
+            .await
+            .is_some_and(|progress| is_synced_to_tip(&progress))
     }
 
     /// Whether SPV sync is running or starting. `false` once background sync
@@ -338,9 +531,11 @@ impl SpvRuntime {
     /// `Skipped`) fails with [`PlatformWalletError::QuorumNotVerified`]; that
     /// is usually transient, for example a freshly mined quorum whose
     /// work-block list has not arrived yet. A quorum dash-spv does not hold,
-    /// or found `Invalid`, fails with [`PlatformWalletError::SpvError`].
-    /// [`PlatformWalletError::quorum_lookup_context_error`] maps either to
-    /// the SDK error class a context provider reports.
+    /// or found `Invalid`, fails with [`PlatformWalletError::SpvError`], and a
+    /// `quorum_type` that names no LLMQ type with
+    /// [`PlatformWalletError::InvalidParameter`].
+    /// [`PlatformWalletError::quorum_lookup_context_error`] maps each to the
+    /// SDK error class a context provider reports.
     ///
     /// A caller that accepts unverified keys uses
     /// [`Self::get_quorum_public_key_with_status`].
@@ -379,19 +574,31 @@ impl SpvRuntime {
     /// other status is a key dash-spv holds but has not verified, which must
     /// not verify Platform proofs; [`Self::get_quorum_public_key`] enforces
     /// that.
+    ///
+    /// A `quorum_type` that names no LLMQ type, any value above 255
+    /// included, fails with [`PlatformWalletError::InvalidParameter`]
+    /// rather than aliasing another quorum type.
     pub async fn get_quorum_public_key_with_status(
         &self,
         quorum_type: u32,
         quorum_hash: [u8; 32],
         height: u32,
     ) -> Result<SpvQuorumPublicKey, PlatformWalletError> {
+        let llmq_type = match u8::try_from(quorum_type).map(LLMQType::from) {
+            Ok(LLMQType::LlmqtypeUnknown(_)) | Err(_) => {
+                return Err(PlatformWalletError::InvalidParameter(format!(
+                    "quorum type {quorum_type} is not an LLMQ type"
+                )));
+            }
+            Ok(llmq_type) => llmq_type,
+        };
+
         let client_guard = self.client.read().await;
         let client = client_guard.as_ref().ok_or(PlatformWalletError::SpvError(
             "SPV Client not started".to_string(),
         ))?;
 
-        let llmq_type = LLMQType::from(quorum_type as u8);
-        let qh = QuorumHash::from_byte_array(quorum_hash).reverse();
+        let qh = quorum_lookup_key(quorum_hash);
 
         let quorum = client
             .get_quorum_at_height(height, llmq_type, qh)
@@ -524,6 +731,12 @@ impl SpvRuntime {
             tracing::warn!(%error, "SPV background sync not spawned: earlier SPV work is unjoined");
             return;
         }
+        self.spawn_run_loop_locked();
+    }
+
+    /// The spawn itself; the caller holds the `shutdown` lock and has checked
+    /// that nothing is left unjoined.
+    fn spawn_run_loop_locked(self: &Arc<Self>) {
         let this = Arc::clone(self);
         let mut task = self.task_slot();
         *task = Some(tokio::spawn(async move {
@@ -636,6 +849,71 @@ impl SpvRuntime {
         Some(MasternodeListSummary::all_from_list(&list))
     }
 
+    /// The current-tip deterministic masternode list's raw entries, for the
+    /// paths that need what [`MasternodeListSummary`] leaves out: a
+    /// version-3 entry's whole extended address map and the entry version.
+    /// `None` when the list isn't available; read the same way as
+    /// [`Self::masternode_list_summaries`].
+    pub(crate) async fn masternode_list_entries(&self) -> Option<Vec<MasternodeListEntry>> {
+        let list = {
+            let client_guard = self.client.read().await;
+            client_guard.as_ref()?.latest_masternode_list().await?
+        };
+        Some(
+            list.masternodes
+                .values()
+                .map(|qualified| qualified.masternode_list_entry.clone())
+                .collect(),
+        )
+    }
+
+    /// [`Self::masternode_list_summaries`], but only while the list follows
+    /// the chain ([`Self::is_ready`]). The plain read also returns a list
+    /// restored from disk while sync is still catching up, and a transaction
+    /// that restates an entry's fields must not copy them from such a list.
+    pub(crate) async fn current_masternode_list_summaries(
+        &self,
+    ) -> Option<Vec<MasternodeListSummary>> {
+        self.while_following_the_chain(self.masternode_list_summaries())
+            .await
+    }
+
+    /// [`Self::masternode_list_entries`], but only while the list follows
+    /// the chain, as [`Self::current_masternode_list_summaries`].
+    pub(crate) async fn current_masternode_list_entries(&self) -> Option<Vec<MasternodeListEntry>> {
+        self.while_following_the_chain(self.masternode_list_entries())
+            .await
+    }
+
+    /// `read`, but only from the client [`Self::is_ready`] vouched for.
+    /// Readiness and `read` take the client separately, so a host that stops
+    /// and restarts SPV between them would hand `read` a new client that is
+    /// still catching up. [`Self::run_session`] changes on every start; a
+    /// value read across a restart is dropped.
+    async fn while_following_the_chain<T>(
+        &self,
+        read: impl Future<Output = Option<T>>,
+    ) -> Option<T> {
+        let session = self.run_session();
+        if !self.is_ready().await {
+            return None;
+        }
+        let value = read.await?;
+        (self.run_session() == session).then_some(value)
+    }
+
+    /// The coinbase payload of the newest block a masternode list diff
+    /// proved it in, as the SPV client keeps it. `None` when the client
+    /// isn't running, masternode sync is off, or no diff has been validated
+    /// yet. It is not checked against the tip: after a restart it is the
+    /// one stored before, until sync proves a newer one — as stale as the
+    /// masternode list read next to it. Read the same way as
+    /// [`Self::masternode_list_summaries`].
+    pub(crate) async fn latest_coinbase(&self) -> Option<CoinbasePayload> {
+        let client_guard = self.client.read().await;
+        client_guard.as_ref()?.latest_coinbase().await
+    }
+
     /// Blocking twin of [`Self::masternode_list_summaries`] for FFI threads
     /// (`blocking_read`; never call from the async runtime).
     pub fn masternode_list_summaries_blocking(&self) -> Option<Vec<MasternodeListSummary>> {
@@ -671,17 +949,13 @@ impl SpvRuntime {
         Some(tip.header().time)
     }
 
-    /// Hash of the stored header at `height`.
+    /// What the SPV header store holds at `height`.
     ///
-    /// Returns `None` if the SPV client isn't running or the header store
-    /// does not hold that height (below the sync start, above the tip, or
-    /// unreadable).
-    pub(crate) async fn header_hash_at(
-        &self,
-        height: u32,
-    ) -> crate::wallet::asset_lock::sync::locate::HeaderLookup {
-        use crate::wallet::asset_lock::sync::locate::HeaderLookup;
-
+    /// Only [`HeaderLookup::Found`] says which block the chain has there.
+    /// [`HeaderLookup::Unreadable`] when the SPV client isn't running or the
+    /// store can't be read, [`HeaderLookup::Absent`] when the store holds no
+    /// header at that height (below the sync start or above the tip).
+    pub async fn header_hash_at(&self, height: u32) -> HeaderLookup {
         let client_guard = self.client.read().await;
         let Some(client) = client_guard.as_ref() else {
             return HeaderLookup::Unreadable("SPV client not running".to_string());
@@ -723,12 +997,9 @@ impl SpvRuntime {
         // dash-spv clears its storage only through a client. This one never
         // runs and has no event handlers, and dropping it releases the
         // storage. Clearing removes the whole storage directory, so the client
-        // needs neither filters nor masternodes; without them it does not
-        // replay the stored masternode state only to delete it.
+        // needs neither filters nor masternodes.
         let config = config.without_filters().without_masternodes();
-        let network_manager = PeerNetworkManager::new(&config)
-            .await
-            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+        let network_manager = PeerNetworkManager::new(&config).await;
         let client: SpvClient = DashSpvClient::new(
             config,
             network_manager,
@@ -797,7 +1068,6 @@ fn masternodes_by_voting_key(list: &MasternodeList, voting_key_id: &PubkeyHash) 
 #[cfg(test)]
 mod masternodes_by_voting_key_tests {
     use dashcore::bls_sig_utils::BLSPublicKey;
-    use dashcore::hashes::Hash;
     use dashcore::sml::masternode_list_entry::{
         EntryMasternodeType, MasternodeListEntry, MasternodeNetInfo,
     };
@@ -905,12 +1175,17 @@ mod tests {
     use key_wallet_manager::WalletManager;
     use tokio::sync::RwLock;
 
-    use super::{classify_spv_send_error, SpvRuntime};
+    use super::{
+        classify_spv_send_error, is_synced_to_tip, quorum_lookup_key, SpvRuntime,
+        MASTERNODE_LIST_TIP_LAG,
+    };
     use crate::broadcaster::BroadcastError;
     use crate::error::PlatformWalletError;
     use crate::events::{EventHandler, PlatformEventHandler, PlatformEventManager};
     use crate::wallet::platform_wallet::PlatformWalletInfo;
-    use dash_spv::ClientConfig;
+    use dash_spv::{
+        BlockHeadersProgress, ClientConfig, MasternodesProgress, SyncProgress, SyncState,
+    };
 
     fn unstarted_runtime() -> SpvRuntime {
         let wallet_manager = Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
@@ -940,7 +1215,7 @@ mod tests {
         });
         *runtime.task.lock().expect("spv task mutex poisoned") = Some(parked);
 
-        let result = runtime.start(ClientConfig::default()).await;
+        let result = runtime.start(ClientConfig::testnet()).await;
 
         assert!(
             is_retryable(&result),
@@ -986,7 +1261,7 @@ mod tests {
         .await
         .expect("the stop should take the run-loop handle promptly");
 
-        let result = runtime.start(ClientConfig::default()).await;
+        let result = runtime.start(ClientConfig::testnet()).await;
 
         assert!(
             matches!(result, Err(PlatformWalletError::SpvError(_))),
@@ -1093,7 +1368,7 @@ mod tests {
         runtime.finish_startup(Ok(())).await.unwrap();
         *runtime.task.lock().unwrap() = Some(tokio::spawn(async {}));
         assert!(matches!(
-            runtime.start(ClientConfig::default()).await,
+            runtime.start(ClientConfig::testnet()).await,
             Err(PlatformWalletError::SpvAlreadyRunning)
         ));
         let retained = runtime.is_started();
@@ -1216,7 +1491,6 @@ mod tests {
 
         use dashcore::bls_sig_utils::{BLSPublicKey, BLSSignature};
         use dashcore::hash_types::QuorumVVecHash;
-        use dashcore::hashes::Hash;
         use dashcore::sml::llmq_type::LLMQType;
         use dashcore::sml::masternode_list::MasternodeList;
         use dashcore::sml::quorum_entry::qualified_quorum_entry::QualifiedQuorumEntry;
@@ -1379,6 +1653,81 @@ mod tests {
         );
     }
 
+    /// A caller-supplied type that names no LLMQ type must fail instead of
+    /// aliasing another quorum family: 262 would otherwise wrap onto the held
+    /// type 6 quorum and hand back its key, and 7 or 255 would search the
+    /// quorums dash-spv files under an unknown type.
+    #[tokio::test]
+    async fn should_reject_a_quorum_type_above_one_byte() {
+        use dashcore::sml::llmq_entry_verification::LLMQEntryVerificationStatus;
+
+        let (runtime, _storage) = offline_runtime().await;
+        hold_quorum(&runtime, LLMQEntryVerificationStatus::Verified).await;
+
+        for quorum_type in [0, 7, 255, 6 + 256, u32::MAX] {
+            let with_status = runtime
+                .get_quorum_public_key_with_status(
+                    quorum_type,
+                    QUORUM_FIXTURE_PLATFORM_HASH,
+                    QUORUM_FIXTURE_HEIGHT,
+                )
+                .await;
+            assert!(
+                matches!(with_status, Err(PlatformWalletError::InvalidParameter(_))),
+                "quorum type {quorum_type} must be rejected, got {with_status:?}"
+            );
+
+            let verified = runtime
+                .get_quorum_public_key(
+                    quorum_type,
+                    QUORUM_FIXTURE_PLATFORM_HASH,
+                    QUORUM_FIXTURE_HEIGHT,
+                )
+                .await;
+            assert!(
+                matches!(verified, Err(PlatformWalletError::InvalidParameter(_))),
+                "quorum type {quorum_type} must be rejected, got {verified:?}"
+            );
+        }
+    }
+
+    /// Progress with headers and masternode lists both `Synced`, the headers
+    /// at `tip` and the newest masternode list at `list_height`.
+    fn synced_progress(tip: u32, list_height: u32) -> SyncProgress {
+        let mut headers = BlockHeadersProgress::default();
+        headers.set_state(SyncState::Synced);
+        headers.update_tip_height(tip);
+        let mut masternodes = MasternodesProgress::default();
+        masternodes.set_state(SyncState::Synced);
+        masternodes.update_block_header_tip_height(tip);
+        masternodes.update_current_height(list_height);
+        let mut progress = SyncProgress::default();
+        progress.update_headers(headers);
+        progress.update_masternodes(masternodes);
+        progress
+    }
+
+    /// dash-spv keeps masternode sync `Synced` when later list updates fail,
+    /// for example a restored list whose every QRInfo attempt timed out. Such
+    /// a list misses every quorum mined since, and a miss on a ready source
+    /// is blamed on the node, so a list that stopped following the header tip
+    /// must not count as ready: lookups then fail as unavailable instead of
+    /// banning honest nodes.
+    #[test]
+    fn should_not_be_ready_while_the_masternode_list_trails_the_header_tip() {
+        let tip = 1_100_000;
+        assert!(is_synced_to_tip(&synced_progress(tip, tip)));
+        assert!(
+            is_synced_to_tip(&synced_progress(tip, tip - MASTERNODE_LIST_TIP_LAG)),
+            "a tip diff in flight must not drop readiness"
+        );
+        assert!(
+            !is_synced_to_tip(&synced_progress(tip, tip - MASTERNODE_LIST_TIP_LAG - 1)),
+            "a list behind the header tip must not be ready"
+        );
+        assert!(!is_synced_to_tip(&synced_progress(tip, 0)));
+    }
+
     /// Drive the production startup path and wait for upstream `run` to return.
     async fn run_offline(runtime: &Arc<SpvRuntime>) {
         runtime.spawn_run_loop();
@@ -1397,6 +1746,166 @@ mod tests {
         ClientConfig::testnet()
             .with_storage_path(storage.path())
             .with_restrict_to_configured_peers(true)
+    }
+
+    /// `start_and_spawn` keeps construction and run-loop publication under
+    /// the shutdown lock: a stop issued between them waits for the published
+    /// run loop, tears it down with the client, and leaves nothing unjoined
+    /// for the next start — the failure mode this guards against is that
+    /// next start reporting `ShutdownIncomplete` for a run loop the stop
+    /// never saw.
+    ///
+    /// The racing stop is established, not timed: `publish` polls the stop
+    /// future once while it holds the lock and asserts it is pending there
+    /// (the stop's first poll is its `shutdown` acquisition), then the same
+    /// future is driven to completion after publication.
+    #[tokio::test]
+    async fn should_publish_the_run_loop_before_a_concurrent_stop_can_run() {
+        type StopFuture = std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<(), PlatformWalletError>> + Send>,
+        >;
+
+        let storage = tempfile::tempdir().unwrap();
+        let runtime = Arc::new(unstarted_runtime());
+        let (stop_tx, stop_rx) = std::sync::mpsc::channel::<StopFuture>();
+        let stopper = Arc::clone(&runtime);
+
+        let published = runtime
+            .start_and_spawn(offline_config(&storage), move || {
+                // The racing stop: the client exists, the run loop does not yet.
+                let mut racing: StopFuture = Box::pin(async move { stopper.stop().await });
+                let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+                assert!(
+                    racing.as_mut().poll(&mut cx).is_pending(),
+                    "the stop must wait for the shutdown lock the start holds"
+                );
+                stop_tx.send(racing).expect("test receives the stop");
+                true
+            })
+            .await
+            .expect("start");
+        assert!(published, "the owner was still there");
+
+        let racing = stop_rx.try_recv().expect("the publish callback ran");
+        racing
+            .await
+            .expect("the racing stop completes once the published run loop is torn down");
+        assert!(!runtime.is_started());
+
+        runtime
+            .start(offline_config(&storage))
+            .await
+            .expect("the stop joined the published run loop, so nothing is left unjoined");
+        runtime.stop().await.unwrap();
+    }
+
+    /// The manager publishes its SPV quorum source for its SDK's network,
+    /// and that source reads this runtime's client. A client started for
+    /// another network would sync that chain, and its Platform quorums would
+    /// vouch for the SDK's proofs. Both starts refuse such a config before
+    /// they open the store or build a client.
+    #[tokio::test]
+    async fn should_refuse_to_start_a_client_for_another_network_than_its_wallets() {
+        let storage = tempfile::tempdir().unwrap();
+        let runtime = Arc::new(unstarted_runtime());
+        let mainnet = ClientConfig::mainnet()
+            .with_storage_path(storage.path())
+            .with_restrict_to_configured_peers(true);
+
+        let refused = runtime.start(mainnet.clone()).await;
+        assert!(
+            matches!(refused, Err(PlatformWalletError::InvalidParameter(_))),
+            "{refused:?}"
+        );
+        let refused = runtime
+            .start_and_spawn(mainnet, || {
+                panic!("publish must not run for a client that was never built")
+            })
+            .await;
+        assert!(
+            matches!(refused, Err(PlatformWalletError::InvalidParameter(_))),
+            "{refused:?}"
+        );
+
+        assert!(!runtime.is_started());
+        assert_eq!(
+            std::fs::read_dir(storage.path()).unwrap().count(),
+            0,
+            "the store must not be opened for another network's client"
+        );
+    }
+
+    /// The network check comes after the running-client check: a start on a
+    /// running client is refused as already running without waiting for the
+    /// wallet manager, which that client's sync may be writing to.
+    #[tokio::test]
+    async fn should_refuse_a_start_on_a_running_client_before_reading_the_wallet_manager() {
+        let (runtime, _storage) = offline_runtime().await;
+        let held = runtime.wallet_manager.write().await;
+
+        let refused = tokio::time::timeout(
+            Duration::from_secs(5),
+            runtime.start(ClientConfig::mainnet()),
+        )
+        .await;
+        drop(held);
+        assert!(
+            matches!(refused, Ok(Err(PlatformWalletError::SpvAlreadyRunning))),
+            "{refused:?}"
+        );
+        runtime.stop().await.expect("stop the offline client");
+    }
+
+    /// `start_and_spawn` whose owner is already gone when it takes the lock
+    /// (its teardown's stop ran ahead of the start) opens no store at all:
+    /// nothing is created in the data directory, `publish` never runs.
+    #[tokio::test]
+    async fn should_not_open_the_store_when_its_owner_is_gone_before_the_lock() {
+        let storage = tempfile::tempdir().unwrap();
+        let runtime = Arc::new(unstarted_runtime());
+        runtime.release_owner();
+
+        let published = runtime
+            .start_and_spawn(offline_config(&storage), || {
+                panic!("publish must not run for a start that never built a client")
+            })
+            .await
+            .expect("bailing out is not an error");
+
+        assert!(!published);
+        assert!(!runtime.is_started());
+        assert_eq!(
+            std::fs::read_dir(storage.path()).unwrap().count(),
+            0,
+            "the store must not be opened for an owner that is gone"
+        );
+    }
+
+    /// `start_and_spawn` with an owner that went away during the start stops
+    /// the client it just built instead of publishing it.
+    #[tokio::test]
+    async fn should_stop_the_built_client_when_its_owner_is_gone_at_publication() {
+        let storage = tempfile::tempdir().unwrap();
+        let runtime = Arc::new(unstarted_runtime());
+        assert!(!runtime.owner_released());
+
+        let owner = Arc::clone(&runtime);
+        let published = runtime
+            .start_and_spawn(offline_config(&storage), move || {
+                // The owner's teardown beginning while the start held the lock.
+                owner.release_owner();
+                !owner.owner_released()
+            })
+            .await
+            .expect("the start itself succeeds");
+
+        assert!(!published);
+        assert!(!runtime.is_started(), "the unowned client must be stopped");
+        runtime
+            .start(offline_config(&storage))
+            .await
+            .expect("the orphan stop left nothing unjoined");
+        runtime.stop().await.unwrap();
     }
 
     /// The production startup path: `spawn_run_loop` drives upstream `run`,
@@ -1514,7 +2023,7 @@ mod tests {
             is_retryable(&result),
             "an incomplete upstream stop must time out as retryable, got {result:?}"
         );
-        assert!(is_retryable(&runtime.start(ClientConfig::default()).await));
+        assert!(is_retryable(&runtime.start(ClientConfig::testnet()).await));
         assert!(
             is_retryable(&runtime.clear_storage().await),
             "storage must not be cleared under a pending upstream stop"
@@ -1560,7 +2069,7 @@ mod tests {
         started.await.unwrap();
         stopping.abort();
         let _ = stopping.await;
-        assert!(runtime.start(ClientConfig::default()).await.is_err());
+        assert!(is_retryable(&runtime.start(ClientConfig::testnet()).await));
         assert!(
             tokio::time::timeout(Duration::from_millis(10), runtime.stop())
                 .await
@@ -1674,7 +2183,7 @@ mod tests {
         started.await.unwrap();
         clearing.abort();
         let _ = clearing.await;
-        assert!(runtime.start(ClientConfig::default()).await.is_err());
+        assert!(is_retryable(&runtime.start(ClientConfig::testnet()).await));
         assert!(
             tokio::time::timeout(Duration::from_millis(10), runtime.clear_storage())
                 .await
@@ -1785,7 +2294,7 @@ mod tests {
             needs_restart(&runtime.stop().await),
             "a join failure cannot be forgotten by a retry"
         );
-        assert!(needs_restart(&runtime.start(ClientConfig::default()).await));
+        assert!(needs_restart(&runtime.start(ClientConfig::testnet()).await));
         assert!(needs_restart(&runtime.clear_storage().await));
         runtime.spawn_run_loop();
         assert!(
@@ -1826,7 +2335,7 @@ mod tests {
             .await;
         assert!(needs_restart(&failed));
         assert!(needs_restart(&runtime.stop().await));
-        assert!(needs_restart(&runtime.start(ClientConfig::default()).await));
+        assert!(needs_restart(&runtime.start(ClientConfig::testnet()).await));
         assert!(needs_restart(&runtime.clear_storage().await));
     }
 
@@ -1878,6 +2387,24 @@ mod tests {
             matches!(result, Err(BroadcastError::Rejected { .. })),
             "unstarted client must classify never-sent on the acceptance path, got {result:?}"
         );
+    }
+
+    /// A runtime that does not follow the chain hands out nothing through
+    /// the gated read, whatever the read itself would return. An unstarted
+    /// client is the simplest such runtime.
+    #[tokio::test]
+    async fn should_drop_a_gated_read_while_the_runtime_does_not_follow_the_chain() {
+        let wallet_manager = Arc::new(RwLock::new(WalletManager::<PlatformWalletInfo>::new(
+            Network::Testnet,
+        )));
+        let runtime = SpvRuntime::new(wallet_manager, Arc::new(PlatformEventManager::new(vec![])));
+
+        let read = runtime
+            .while_following_the_chain(async { Some("a list restored from disk") })
+            .await;
+
+        assert_eq!(read, None);
+        assert_eq!(runtime.current_masternode_list_summaries().await, None);
     }
 
     /// dash-spv raises `NotConnected` from its zero-peer check before the
@@ -1989,12 +2516,11 @@ mod tests {
         runtime
             .peer_tracker
             .on_network_event(&NetworkEvent::PeersUpdated {
-                connected_count: 1,
                 addresses: vec![SocketAddr::new(
                     IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
                     19999,
                 )],
-                best_height: Some(1_100_000),
+                best_height: 1_100_000,
             });
 
         assert!(
@@ -2015,12 +2541,11 @@ mod tests {
         use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
         dash_spv::network::NetworkEvent::PeersUpdated {
-            connected_count: 1,
             addresses: vec![SocketAddr::new(
                 IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
                 19999,
             )],
-            best_height: Some(1_100_000),
+            best_height: 1_100_000,
         }
     }
 
@@ -2143,5 +2668,53 @@ mod tests {
                 "non-NotConnected errors must stay MaybeSent, got {result:?}"
             );
         }
+    }
+
+    /// Regression guard for the quorum-hash byte order used by
+    /// [`SpvRuntime::get_quorum_public_key_with_status`].
+    ///
+    /// This exercises the production transform directly — [`quorum_lookup_key`]
+    /// is the exact function the lookup calls to build its engine key — so
+    /// dropping (or re-introducing a spurious) reversal there fails this test,
+    /// rather than the test asserting standalone `BTreeMap` semantics that
+    /// can't detect a change in the real code.
+    ///
+    /// The masternode engine keys its quorum map — `quorum_entry_of_type_for_quorum_hash`,
+    /// a `BTreeMap<QuorumHash, _>::get` — in internal byte order, but the SDK
+    /// proof verifier supplies the hash in display (reversed) order. Verified
+    /// end-to-end against a synced testnet node: the engine stores the reversed
+    /// form of each requested hash (requested `0000…`, stored `…0000`), so a
+    /// non-reversed lookup misses every real quorum and falls through to
+    /// fail-closed rejection.
+    #[test]
+    fn quorum_hash_reversed_to_internal_order_before_lookup() {
+        use dashcore::QuorumHash;
+        use std::collections::BTreeMap;
+
+        // The hash as the proof verifier supplies it (display order).
+        let display_bytes: [u8; 32] = std::array::from_fn(|i| (i as u8) + 1);
+        // The engine keys the quorum under the internal (reversed) order.
+        let mut internal_bytes = display_bytes;
+        internal_bytes.reverse();
+
+        let pubkey = [0xABu8; 48];
+        let mut quorums: BTreeMap<QuorumHash, [u8; 48]> = BTreeMap::new();
+        quorums.insert(QuorumHash::from_byte_array(internal_bytes), pubkey);
+
+        // The production key builder must land on the internally-keyed quorum.
+        assert_eq!(
+            quorums.get(&quorum_lookup_key(display_bytes)),
+            Some(&pubkey),
+            "quorum_lookup_key must reverse display order to the engine's internal key"
+        );
+
+        // Sanity: the un-reversed display-order key is absent — this is exactly
+        // the miss that `quorum_lookup_key`'s reversal exists to prevent, so if
+        // the reversal is removed the assertion above fails.
+        assert_eq!(
+            quorums.get(&QuorumHash::from_byte_array(display_bytes)),
+            None,
+            "using the hash without reversal must miss — this was the regression"
+        );
     }
 }

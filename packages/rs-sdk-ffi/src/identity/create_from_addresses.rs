@@ -1,7 +1,6 @@
 //! Identity creation from addresses operations
 
 use dash_sdk::dpp::address_funds::PlatformAddress;
-use dash_sdk::dpp::dashcore::secp256k1::SecretKey;
 use dash_sdk::dpp::dashcore::{Network, PrivateKey};
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::identity::Identity;
@@ -169,11 +168,8 @@ unsafe fn dash_sdk_identity_create_from_addresses_inner(
         };
 
         // Parse private key (32 bytes)
-        let pk_bytes = std::slice::from_raw_parts(input.private_key, 32);
-        let secret_key = match <[u8; 32]>::try_from(pk_bytes)
-            .map_err(|_| dash_sdk::dpp::dashcore::secp256k1::Error::InvalidSecretKey)
-            .and_then(SecretKey::from_secret_bytes)
-        {
+        let pk_bytes = &*input.private_key.cast::<[u8; 32]>();
+        let private_key = match PrivateKey::from_byte_array(pk_bytes, Network::Testnet) {
             Ok(sk) => sk,
             Err(e) => {
                 return DashSDKResult::error(DashSDKError::new(
@@ -182,9 +178,6 @@ unsafe fn dash_sdk_identity_create_from_addresses_inner(
                 ))
             }
         };
-
-        // Create PrivateKey (network doesn't matter for signing)
-        let private_key = PrivateKey::new(secret_key, Network::Testnet);
 
         address_signer.add_key(&address, private_key);
         // Use nonce from input, or fetch if 0

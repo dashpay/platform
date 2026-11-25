@@ -14,7 +14,7 @@ use dpp::document::DocumentV0Getters;
 use dpp::fee::Credits;
 use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use dpp::voting::contender_structs::ContenderWithSerializedDocument;
-use dpp::voting::vote_polls::VotePoll;
+use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use drive::config::DEFAULT_QUERY_LIMIT;
 use drive::query::vote_poll_vote_state_query::{
     ContestedDocumentVotePollDriveQuery, ContestedDocumentVotePollDriveQueryResultType,
@@ -56,12 +56,23 @@ impl Sdk {
         // `generatedFrom` property generated from its params as the platform generates it
         let mut document = document.clone();
         document_type.regenerate_generated_properties(document.properties_mut(), self.version())?;
-        let Some(VotePoll::ContestedDocumentResourceVotePoll(vote_poll)) =
+        let Some(vote_poll) =
             document_type.contested_vote_poll_for_document(&document, self.version())?
         else {
             return Ok(None);
         };
 
+        let contest_fund = self.contest_fund_to_join_vote_poll(&vote_poll).await?;
+        Ok(Some((vote_poll.index_name, contest_fund)))
+    }
+
+    /// The fund a create pays to join the contest `vote_poll` now: the contest's fund, doubled
+    /// once the contest holds 250 contenders and again for every 50 more. The contenders are
+    /// counted as [`Self::contest_fund_to_join`] says.
+    pub async fn contest_fund_to_join_vote_poll(
+        &self,
+        vote_poll: &ContestedDocumentResourceVotePoll,
+    ) -> Result<Credits, Error> {
         let mut contenders: u16 = 0;
         let mut start_at = None;
         loop {
@@ -92,9 +103,7 @@ impl Sdk {
             }
         }
 
-        let contest_fund =
-            vote_poll.required_vote_resolution_fund_to_join(contenders, self.version());
-        Ok(Some((vote_poll.index_name, contest_fund)))
+        Ok(vote_poll.required_vote_resolution_fund_to_join(contenders, self.version()))
     }
 }
 
@@ -129,7 +138,6 @@ mod tests {
     use dpp::tests::fixtures::get_dpns_data_contract_fixture;
     use dpp::version::PlatformVersion;
     use dpp::voting::contender_structs::ContenderWithSerializedDocumentV0;
-    use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
     use drive_proof_verifier::types::Contenders;
     use std::collections::BTreeMap;
 

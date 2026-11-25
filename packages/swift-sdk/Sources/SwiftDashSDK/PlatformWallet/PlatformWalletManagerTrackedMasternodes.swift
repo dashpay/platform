@@ -223,8 +223,13 @@ extension PlatformWalletManager {
     /// `trackedMasternodeWithdraw` — also signs wallet inputs through the
     /// mnemonic resolver.
     ///
-    /// - `platformP2PPort`: required for an evonode (the masternode list
-    ///   does not carry it); must be nil for a regular masternode.
+    /// - `platformP2PPort`: pass it for every evonode; must be nil for a
+    ///   regular masternode. Required when the evonode's list entry is
+    ///   pre-v3 (the list does not carry it); for a v3 entry it is optional
+    ///   and must match a Platform P2P port the entry lists. Once V24 is
+    ///   active, a pre-v3 evonode's update writes it into the evonode's new
+    ///   v3 address map, after which this call re-asserts it and cannot
+    ///   change it; on mainnet that update takes only port 26656.
     /// - `operatorPayoutAddress`: must be nil when the masternode's
     ///   registered `operatorReward` is 0, and must be given when it is
     ///   not — the payload REPLACES the operator payout script on-chain.

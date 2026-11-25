@@ -1,6 +1,5 @@
 //! Shared JNI plumbing: JVM caching, panic guards, exception throwing.
 
-use dash_network::ffi::FFINetwork;
 use jni::objects::{JThrowable, JValue};
 use jni::sys::jint;
 use jni::{JNIEnv, JavaVM};
@@ -8,7 +7,7 @@ use platform_wallet_ffi::error::{
     platform_wallet_ffi_result_free, PlatformWalletFFIConsensusErrorKind, PlatformWalletFFIResult,
     PlatformWalletFFIResultCode,
 };
-use rs_sdk_ffi::DashSDKConsensusErrorKind;
+use rs_sdk_ffi::{DashSDKConsensusErrorKind, FFINetwork};
 use std::ffi::CStr;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::OnceLock;
@@ -82,9 +81,8 @@ pub const PWFFI_CODE_OFFSET: i32 = 1000;
 /// Testnet). Must stay in lockstep with Kotlin's `Network.ffiValue`.
 ///
 /// This is the single shared mapping for every JNI module:
-/// `rs_sdk_ffi::FFINetwork` and `platform_wallet_ffi::FFINetwork` are both
-/// re-exports of this same `dash_network::ffi::FFINetwork`, so the one
-/// helper serves callers regardless of which FFI crate they talk to.
+/// `platform_wallet_ffi::FFINetwork` is a re-export of `rs_sdk_ffi::FFINetwork`,
+/// so the one helper serves callers regardless of which FFI crate they talk to.
 pub fn net_from_ord(ord: i32) -> FFINetwork {
     match ord {
         0 => FFINetwork::Mainnet,
@@ -232,7 +230,7 @@ pub fn guard<T>(env: &mut JNIEnv, default: T, f: impl FnOnce(&mut JNIEnv) -> T) 
 #[cfg(test)]
 mod tests {
     use super::net_from_ord;
-    use dash_network::ffi::FFINetwork;
+    use rs_sdk_ffi::FFINetwork;
 
     #[test]
     fn net_from_ord_matches_kotlin_ffi_values() {

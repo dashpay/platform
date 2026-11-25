@@ -1,4 +1,5 @@
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
+use crate::util::estimated_layers::EstimatedLayers;
 use dpp::data_contract::document_type::DocumentPropertyType;
 
 use grovedb::batch::key_info::KeyInfo;
@@ -6,9 +7,8 @@ use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType::SiblingReference;
 
-use grovedb::{Element, EstimatedLayerInformation, TransactionArg, TreeType};
+use grovedb::{Element, TransactionArg, TreeType};
 
-use std::collections::HashMap;
 use std::option::Option::None;
 
 use crate::drive::constants::STORAGE_FLAGS_SIZE;
@@ -185,9 +185,7 @@ impl Drive {
         document_and_contract_info: &DocumentAndContractInfo,
         block_info: &BlockInfo,
         insert_without_check: bool,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -870,7 +868,7 @@ mod keep_history_summable_e2e {
                 true,
                 StorageFlags::optional_default_as_cow(),
                 None,
-                PlatformVersion::latest(),
+                PlatformVersion::get(14).expect("protocol 14"),
             )
             .expect("apply contract");
     }
@@ -896,14 +894,13 @@ mod keep_history_summable_e2e {
                 BlockInfo::default(),
                 true,
                 None,
-                PlatformVersion::latest(),
-                None,
+                PlatformVersion::get(14).expect("protocol 14"),
             )
             .expect("insert doc");
     }
 
     fn read_element_at(drive: &Drive, path: &[Vec<u8>], key: &[u8]) -> Element {
-        let pv = PlatformVersion::latest();
+        let pv = PlatformVersion::get(14).expect("protocol 14");
         let path_refs: Vec<&[u8]> = path.iter().map(|v| v.as_slice()).collect();
         drive
             .grove_get_raw(
@@ -1059,8 +1056,7 @@ mod keep_history_summable_e2e {
                 true,
                 Some(Cow::Owned(StorageFlags::SingleEpoch(0))),
                 None,
-                PlatformVersion::latest(),
-                None,
+                PlatformVersion::get(14).expect("protocol 14"),
             )
             .expect("update doc to v2");
 

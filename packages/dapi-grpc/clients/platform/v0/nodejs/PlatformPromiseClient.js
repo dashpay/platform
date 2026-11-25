@@ -64,6 +64,18 @@ const {
             GetStatusResponse: PBJSGetStatusResponse,
             GetIdentityBalanceRequest: PBJSGetIdentityBalanceRequest,
             GetIdentityBalanceResponse: PBJSGetIdentityBalanceResponse,
+            GetYesNoVotePollStateRequest: PBJSGetYesNoVotePollStateRequest,
+            GetYesNoVotePollStateResponse: PBJSGetYesNoVotePollStateResponse,
+            GetMasternodeYesNoVoteRequest: PBJSGetMasternodeYesNoVoteRequest,
+            GetMasternodeYesNoVoteResponse: PBJSGetMasternodeYesNoVoteResponse,
+            GetPrivateDocumentEntriesRequest: PBJSGetPrivateDocumentEntriesRequest,
+            GetPrivateDocumentEntriesResponse: PBJSGetPrivateDocumentEntriesResponse,
+            GetRecentStateTransitionStatusRequest: PBJSGetRecentStateTransitionStatusRequest,
+            GetRecentStateTransitionStatusResponse: PBJSGetRecentStateTransitionStatusResponse,
+            GetOwnerTransactionsInBlockRequest: PBJSGetOwnerTransactionsInBlockRequest,
+            GetOwnerTransactionsInBlockResponse: PBJSGetOwnerTransactionsInBlockResponse,
+            GetBlocksRequest: PBJSGetBlocksRequest,
+            GetBlocksResponse: PBJSGetBlocksResponse,
           },
         },
       },
@@ -91,6 +103,12 @@ const {
   GetTotalCreditsInPlatformResponse: ProtocGetTotalCreditsInPlatformResponse,
   GetStatusResponse: ProtocGetStatusResponse,
   GetIdentityBalanceResponse: ProtocGetIdentityBalanceResponse,
+  GetYesNoVotePollStateResponse: ProtocGetYesNoVotePollStateResponse,
+  GetMasternodeYesNoVoteResponse: ProtocGetMasternodeYesNoVoteResponse,
+  GetPrivateDocumentEntriesResponse: ProtocGetPrivateDocumentEntriesResponse,
+  GetRecentStateTransitionStatusResponse: ProtocGetRecentStateTransitionStatusResponse,
+  GetOwnerTransactionsInBlockResponse: ProtocGetOwnerTransactionsInBlockResponse,
+  GetBlocksResponse: ProtocGetBlocksResponse,
 } = require('./platform_protoc');
 
 const getPlatformDefinition = require('../../../../lib/getPlatformDefinition');
@@ -191,6 +209,30 @@ class PlatformPromiseClient {
 
     this.client.getIdentityBalance = promisify(
       this.client.getIdentityBalance.bind(this.client),
+    );
+
+    this.client.getYesNoVotePollState = promisify(
+      this.client.getYesNoVotePollState.bind(this.client),
+    );
+
+    this.client.getMasternodeYesNoVote = promisify(
+      this.client.getMasternodeYesNoVote.bind(this.client),
+    );
+
+    this.client.getPrivateDocumentEntries = promisify(
+      this.client.getPrivateDocumentEntries.bind(this.client),
+    );
+
+    this.client.getRecentStateTransitionStatus = promisify(
+      this.client.getRecentStateTransitionStatus.bind(this.client),
+    );
+
+    this.client.getOwnerTransactionsInBlock = promisify(
+      this.client.getOwnerTransactionsInBlock.bind(this.client),
+    );
+
+    this.client.getBlocks = promisify(
+      this.client.getBlocks.bind(this.client),
     );
 
     this.protocolVersion = undefined;
@@ -794,6 +836,240 @@ class PlatformPromiseClient {
           ),
         ],
         ...options,
+      },
+    );
+  }
+
+  /**
+   * @param {!GetYesNoVotePollStateRequest} getYesNoVotePollStateRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @return {Promise<!GetYesNoVotePollStateResponse>}
+   */
+  getYesNoVotePollState(
+    getYesNoVotePollStateRequest,
+    metadata = {},
+    options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getYesNoVotePollState(
+      getYesNoVotePollStateRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetYesNoVotePollStateResponse,
+              PBJSGetYesNoVotePollStateResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetYesNoVotePollStateRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   * @param {!GetMasternodeYesNoVoteRequest} getMasternodeYesNoVoteRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @return {Promise<!GetMasternodeYesNoVoteResponse>}
+   */
+  getMasternodeYesNoVote(
+    getMasternodeYesNoVoteRequest,
+    metadata = {},
+    options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getMasternodeYesNoVote(
+      getMasternodeYesNoVoteRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetMasternodeYesNoVoteResponse,
+              PBJSGetMasternodeYesNoVoteResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetMasternodeYesNoVoteRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   * @param {!GetPrivateDocumentEntriesRequest} getPrivateDocumentEntriesRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @return {Promise<!GetPrivateDocumentEntriesResponse>}
+   */
+  getPrivateDocumentEntries(
+    getPrivateDocumentEntriesRequest,
+    metadata = {},
+    options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    // A caller's interceptors run outside the conversion between protobuf messages and the
+    // plain objects the service sends, so they see the messages and the conversion still runs.
+    const { interceptors: callerInterceptors = [], ...callOptions } = options;
+
+    return this.client.getPrivateDocumentEntries(
+      getPrivateDocumentEntriesRequest,
+      convertObjectToMetadata(metadata),
+      {
+        ...callOptions,
+        interceptors: [
+          ...callerInterceptors,
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetPrivateDocumentEntriesResponse,
+              PBJSGetPrivateDocumentEntriesResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetPrivateDocumentEntriesRequest,
+            ),
+          ),
+        ],
+      },
+    );
+  }
+
+  /**
+   * What the answering node knows of a state transition, by hash, without waiting: committed,
+   * pending in its mempool, or unknown. Unproved and per node: use it to decide whether waiting
+   * longer makes sense, never to decide that a transition cannot execute.
+   *
+   * @param {!GetRecentStateTransitionStatusRequest} getRecentStateTransitionStatusRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @return {Promise<!GetRecentStateTransitionStatusResponse>}
+   */
+  getRecentStateTransitionStatus(
+    getRecentStateTransitionStatusRequest,
+    metadata = {},
+    options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    // A caller's interceptors run outside the conversion between protobuf messages and the
+    // plain objects the service sends, so they see the messages and the conversion still runs.
+    const { interceptors: callerInterceptors = [], ...callOptions } = options;
+
+    return this.client.getRecentStateTransitionStatus(
+      getRecentStateTransitionStatusRequest,
+      convertObjectToMetadata(metadata),
+      {
+        ...callOptions,
+        interceptors: [
+          ...callerInterceptors,
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetRecentStateTransitionStatusResponse,
+              PBJSGetRecentStateTransitionStatusResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetRecentStateTransitionStatusRequest,
+            ),
+          ),
+        ],
+      },
+    );
+  }
+
+  /**
+   * @param {!GetOwnerTransactionsInBlockRequest} getOwnerTransactionsInBlockRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @return {Promise<!GetOwnerTransactionsInBlockResponse>}
+   */
+  getOwnerTransactionsInBlock(
+    getOwnerTransactionsInBlockRequest,
+    metadata = {},
+    options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    // A caller's interceptors run outside the conversion between protobuf messages and the
+    // plain objects the service sends, so they see the messages and the conversion still runs.
+    const { interceptors: callerInterceptors = [], ...callOptions } = options;
+
+    return this.client.getOwnerTransactionsInBlock(
+      getOwnerTransactionsInBlockRequest,
+      convertObjectToMetadata(metadata),
+      {
+        ...callOptions,
+        interceptors: [
+          ...callerInterceptors,
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetOwnerTransactionsInBlockResponse,
+              PBJSGetOwnerTransactionsInBlockResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetOwnerTransactionsInBlockRequest,
+            ),
+          ),
+        ],
+      },
+    );
+  }
+
+  /**
+   * @param {!GetBlocksRequest} getBlocksRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @return {Promise<!GetBlocksResponse>}
+   */
+  getBlocks(
+    getBlocksRequest,
+    metadata = {},
+    options = {},
+  ) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    // A caller's interceptors run outside the conversion between protobuf messages and the
+    // plain objects the service sends, so they see the messages and the conversion still runs.
+    const { interceptors: callerInterceptors = [], ...callOptions } = options;
+
+    return this.client.getBlocks(
+      getBlocksRequest,
+      convertObjectToMetadata(metadata),
+      {
+        ...callOptions,
+        interceptors: [
+          ...callerInterceptors,
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetBlocksResponse,
+              PBJSGetBlocksResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetBlocksRequest,
+            ),
+          ),
+        ],
       },
     );
   }

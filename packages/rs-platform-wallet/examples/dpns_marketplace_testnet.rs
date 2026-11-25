@@ -30,7 +30,7 @@ use std::sync::Arc;
 
 use dash_sdk::sdk::{Address, AddressList};
 use dash_sdk::SdkBuilder;
-use dashcore::hashes::{hash160, Hash};
+use dashcore::hashes::hash160;
 use dashcore::Network;
 use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
@@ -115,10 +115,10 @@ fn dapi_addresses() -> AddressList {
 /// Whether `sk_bytes` is the private key for `key` (33-byte pubkey for
 /// ECDSA_SECP256K1, hash160 for ECDSA_HASH160).
 fn private_key_matches(key: &dpp::identity::IdentityPublicKey, sk_bytes: &[u8; 32]) -> bool {
-    let Ok(sk) = dashcore::secp256k1::SecretKey::from_secret_bytes(*sk_bytes) else {
+    let Ok(sk) = dpp::secp256k1::SecretKey::from_secret_bytes(*sk_bytes) else {
         return false;
     };
-    let pubkey = dashcore::secp256k1::PublicKey::from_secret_key(&sk).serialize();
+    let pubkey = dpp::secp256k1::PublicKey::from_secret_key(&sk).serialize();
     match key.key_type() {
         KeyType::ECDSA_SECP256K1 => key.data().as_slice() == pubkey.as_slice(),
         KeyType::ECDSA_HASH160 => {
@@ -173,7 +173,7 @@ fn parse_private_key(raw: &str) -> Option<[u8; 32]> {
     }
     dashcore::PrivateKey::from_wif(trimmed)
         .ok()
-        .map(|pk| pk.inner.to_secret_bytes())
+        .map(|pk| *pk.inner.to_bytes())
 }
 
 async fn discover(
@@ -585,7 +585,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let idw = wallet.identity();
 
     let mnemonic: key_wallet::Mnemonic = phrase.parse()?;
-    let master = ExtendedPrivKey::new_master(key_wallet::Network::Testnet, &mnemonic.to_seed(""))?;
+    let master = ExtendedPrivKey::new_master(key_wallet::Network::Testnet, &*mnemonic.to_seed(""))?;
 
     match std::env::var("DPNS_PHASE").as_deref() {
         Ok("run") => run_flow(idw, &master).await,

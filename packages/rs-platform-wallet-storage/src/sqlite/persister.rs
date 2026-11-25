@@ -14,6 +14,7 @@ use platform_wallet::changeset::{
 use platform_wallet::wallet::identity::ManagedIdentity;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
+use crate::parent_permissions::warn_on_insecure_ancestors;
 use crate::sqlite::backup::{self, BackupKind};
 use crate::sqlite::buffer::{Buffer, PendingWrites};
 use crate::sqlite::config::{FlushMode, LoadPolicy, SqlitePersisterConfig, Synchronous};
@@ -24,7 +25,9 @@ use crate::sqlite::rehydrate::{
 };
 use crate::sqlite::reports::{CommitReport, DeleteWalletReport};
 use crate::sqlite::schema;
-use crate::sqlite::util::permissions::{apply_secure_permissions, precreate_secure};
+use crate::sqlite::util::permissions::{
+    apply_secure_permissions, create_owner_only_dirs, precreate_secure,
+};
 use crate::sqlite::util::safe_cast;
 
 /// Persisted-but-not-rehydrated areas, surfaced in the structured
@@ -261,8 +264,6 @@ impl SqlitePersister {
     /// - [`WalletStorageError::Io`] (kind `NotFound`) — the parent of
     ///   `config.path` does not exist. The persister refuses to create
     ///   parent directories silently.
-    /// - [`WalletStorageError::InsecureParentDir`] — a database ancestor has
-    ///   unsafe replacement permissions or ownership on Unix.
     /// - [`WalletStorageError::ForeignKeysNotEnforced`] — the linked
     ///   SQLite build silently ignores `PRAGMA foreign_keys = ON`
     ///   (no FK support compiled in).
@@ -313,14 +314,7 @@ impl SqlitePersister {
                 format!("database parent directory not found: {}", parent.display()),
             )));
         }
-        crate::parent_permissions::check_parent_perms(parent).map_err(|error| match error {
-            crate::parent_permissions::ParentPermissionsError::Io(source) => {
-                WalletStorageError::Io(source)
-            }
-            crate::parent_permissions::ParentPermissionsError::Insecure { ancestor, reason } => {
-                WalletStorageError::InsecureParentDir { ancestor, reason }
-            }
-        })?;
+        warn_on_insecure_ancestors("database", parent);
 
         // Claim the path BEFORE anything touches the file. The registry exists
         // to stop two handles diverging, and the most destructive thing an
@@ -394,7 +388,7 @@ impl SqlitePersister {
             )?;
         }
 
-        let _report = crate::sqlite::migrations::run_for_open(&mut conn)?;
+        let _report = crate::sqlite::migrations::run_for_open(&mut conn, config.load_policy)?;
 
         // The open succeeded, so the claim passes to the persister, whose
         // `Drop` releases it.
@@ -444,9 +438,10 @@ impl SqlitePersister {
     /// database restored from a backup and reloaded clean reports clean. A
     /// `load()` that returns `Err` leaves it empty — the error is the
     /// verdict there, not a partial tally.
-    /// [`load_unowned_identities`](Self::load_unowned_identities) *adds*
-    /// into the current snapshot, so its counts read as "since the last
-    /// `load()`". Reading does not clear. The point read
+    /// [`load_unowned_identities`](Self::load_unowned_identities) and
+    /// [`asset_lock_status`](Self::asset_lock_status) *add* into the current
+    /// snapshot, so their counts read as "since the last `load()`". Reading
+    /// does not clear. The point read
     /// [`get_core_tx_record`](PlatformWalletPersistence::get_core_tx_record)
     /// is the exception: its tolerated drift is logged and never tallied,
     /// because one read per transaction folded into a per-load snapshot
@@ -575,14 +570,6 @@ impl SqlitePersister {
             .parent()
             .filter(|path| !path.as_os_str().is_empty())
             .unwrap_or_else(|| Path::new("."));
-        crate::parent_permissions::check_parent_perms(parent).map_err(|error| match error {
-            crate::parent_permissions::ParentPermissionsError::Io(source) => {
-                WalletStorageError::Io(source)
-            }
-            crate::parent_permissions::ParentPermissionsError::Insecure { ancestor, reason } => {
-                WalletStorageError::InsecureParentDir { ancestor, reason }
-            }
-        })?;
 
         // Refuse to overwrite a database a live persister in this process is
         // still holding open: that handle's buffer/connection would silently
@@ -632,6 +619,41 @@ impl SqlitePersister {
     ) -> Result<PruneReport, WalletStorageError> {
         self.ensure_writable("prune_backups")?;
         prune_backups_in(dir, policy)
+    }
+
+    /// One asset lock's persisted status by outpoint, `Consumed` rows
+    /// included, or `None` when `wallet_id` stored none for it.
+    ///
+    /// `load()` does not rehydrate a consumed lock without an operation ID,
+    /// so a lock missing from the live wallet after a reopen may have been
+    /// spent or never stored here;
+    /// this read tells them apart. A wallet delete removes every row, so a
+    /// re-imported wallet reads `None` for locks it held before.
+    ///
+    /// Reads the *committed* table: in [`FlushMode::Manual`] a row still in
+    /// the write buffer is not visible yet.
+    ///
+    /// Status drift between the typed column and the lifecycle blob follows
+    /// the load policy: under [`LoadPolicy::Strict`] it is
+    /// [`WalletStorageError::AssetLockStatusMismatch`]; under
+    /// [`LoadPolicy::Recovery`] the read returns the reconciled status
+    /// (consumption is sticky) and *adds* one `AssetLockStatusDrift` to
+    /// [`last_load_degradation`](Self::last_load_degradation). The tally
+    /// counts reads, not rows: reading the same drifted lock again counts it
+    /// again.
+    pub fn asset_lock_status(
+        &self,
+        wallet_id: &WalletId,
+        outpoint: &dashcore::OutPoint,
+    ) -> Result<
+        Option<platform_wallet::wallet::asset_lock::tracked::AssetLockStatus>,
+        WalletStorageError,
+    > {
+        let conn = self.conn()?;
+        let ctx = LoadCtx::new(self.config.load_policy);
+        let status = schema::asset_locks::status_of(&conn, wallet_id, outpoint, &ctx)?;
+        self.merge_load_degradation(ctx.degradation());
+        Ok(status)
     }
 
     /// Read every identity that belongs to NO wallet, each already
@@ -1306,8 +1328,9 @@ impl PlatformWalletPersistence for SqlitePersister {
     fn persistence_capabilities(&self) -> PersistenceCapabilities {
         // Every `flush_inner` applies the complete changeset in one SQLite
         // transaction. The current schema also has lossless token balances,
-        // invitations, account pools, tracked asset locks, and
-        // deferred-contact-crypto queue rows.
+        // invitations, account pools, tracked asset locks,
+        // deferred-contact-crypto queue rows, and locked outpoints (applied
+        // by `core_state::apply`, handed back by `load_state`).
         // Do NOT attest WALLET_RESTORE (and therefore not provider restore):
         // token balances and the DashPay overlay have no load readers, so a
         // full restore remains lossy. Shielded viewing keys are native when
@@ -1321,9 +1344,11 @@ impl PlatformWalletPersistence for SqlitePersister {
             .union(PersistenceCapabilities::DPNS_NAME_STATES)
             .union(PersistenceCapabilities::TRACKED_ASSET_LOCKS)
             .union(PersistenceCapabilities::ASSET_LOCK_OPERATION_IDS)
+            .union(PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS)
             .union(PersistenceCapabilities::TRACKED_MASTERNODES)
             .union(PersistenceCapabilities::CORE_SWEEP_REMOVAL)
-            .union(PersistenceCapabilities::DASHPAY_PAYMENTS);
+            .union(PersistenceCapabilities::DASHPAY_PAYMENTS)
+            .union(PersistenceCapabilities::OUTPOINT_LOCKS);
         #[cfg(feature = "shielded")]
         {
             capabilities.union(PersistenceCapabilities::SHIELDED_VIEWING_KEYS)
@@ -1682,6 +1707,21 @@ fn populated_field_count(cs: &PendingWrites) -> usize {
 /// Extracted from `load()`'s loop so the loop has somewhere to put a
 /// boundary: every `?` in here ends this wallet, not the file.
 fn load_one_wallet(
+    conn: &Connection,
+    wallet_id: WalletId,
+    ctx: &LoadCtx,
+) -> Result<platform_wallet::changeset::ClientWalletStartState, PersistenceError> {
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Deferred)
+        .map_err(WalletStorageError::from)
+        .map_err(PersistenceError::from)?;
+    let state = load_wallet_snapshot(&tx, wallet_id, ctx)?;
+    tx.commit()
+        .map_err(WalletStorageError::from)
+        .map_err(PersistenceError::from)?;
+    Ok(state)
+}
+
+fn load_wallet_snapshot(
     conn: &Connection,
     wallet_id: WalletId,
     ctx: &LoadCtx,
@@ -2274,58 +2314,9 @@ pub(crate) fn run_auto_backup(
 }
 
 fn ensure_dir(dir: &Path) -> Result<(), WalletStorageError> {
-    #[cfg(unix)]
-    let mut missing_components = Vec::new();
-    if !dir.exists() {
-        #[cfg(unix)]
-        {
-            let mut component = dir;
-            while !component.exists() && !component.as_os_str().is_empty() {
-                missing_components.push(component.to_path_buf());
-                let Some(parent) = component.parent() else {
-                    break;
-                };
-                component = parent;
-            }
-        }
-        #[cfg(unix)]
-        let create_result = {
-            use std::os::unix::fs::DirBuilderExt;
-            let mut builder = std::fs::DirBuilder::new();
-            builder.recursive(true).mode(0o700).create(dir)
-        };
-        #[cfg(not(unix))]
-        let create_result = std::fs::create_dir_all(dir);
-        create_result.map_err(|source| WalletStorageError::AutoBackupDirUnwritable {
-            dir: dir.to_path_buf(),
-            source,
-        })?;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if missing_components.is_empty() {
-            missing_components.push(dir.to_path_buf());
-        }
-        for component in missing_components {
-            std::fs::set_permissions(&component, std::fs::Permissions::from_mode(0o700)).map_err(
-                |source| WalletStorageError::AutoBackupDirUnwritable {
-                    dir: component,
-                    source,
-                },
-            )?;
-        }
-    }
-    crate::parent_permissions::check_parent_perms(dir).map_err(|error| match error {
-        crate::parent_permissions::ParentPermissionsError::Io(source) => {
-            WalletStorageError::AutoBackupDirUnwritable {
-                dir: dir.to_path_buf(),
-                source,
-            }
-        }
-        crate::parent_permissions::ParentPermissionsError::Insecure { ancestor, reason } => {
-            WalletStorageError::InsecureParentDir { ancestor, reason }
-        }
+    create_owner_only_dirs(dir).map_err(|source| WalletStorageError::AutoBackupDirUnwritable {
+        dir: dir.to_path_buf(),
+        source,
     })?;
     // Fast-fail writability probe. TOCTOU by construction (the dir can flip
     // before `run_to`), but the real write has its own error path, so the
@@ -2393,6 +2384,7 @@ mod tests {
             "contacts",
             "core_address_pool",
             "core_instant_locks",
+            "core_locked_outpoints",
             "core_sync_state",
             "core_transactions",
             "core_utxos",
@@ -2408,18 +2400,21 @@ mod tests {
         // Not rehydrated by `load()`, but read on demand by a production
         // entry point, so the state is reachable rather than abandoned.
         const READ_BY_A_DEDICATED_API: &[&str] = &[
-            "dpns_name_states",      // get_dpns_name_state
-            "meta_contact",          // the kv object store
-            "meta_data_versions",    // schema::versions
-            "meta_global",           // the kv object store
-            "meta_identity",         // the kv object store
-            "meta_platform_address", // the kv object store
-            "meta_store_generation", // schema::versions
-            "meta_token",            // the kv object store
-            "meta_wallet",           // the kv object store
-            "tracked_masternodes",   // load_tracked_masternodes
+            "core_transaction_inputs", // core_history::apply
+            "dpns_name_states",        // get_dpns_name_state
+            "meta_contact",            // the kv object store
+            "meta_data_versions",      // schema::versions
+            "meta_global",             // the kv object store
+            "meta_identity",           // the kv object store
+            "meta_platform_address",   // the kv object store
+            "meta_store_generation",   // schema::versions
+            "meta_token",              // the kv object store
+            "meta_wallet",             // the kv object store
+            "tracked_masternodes",     // load_tracked_masternodes
         ];
         const INFRASTRUCTURE: &[&str] = &["refinery_schema_history"];
+        // First pre-repair bytes, retained for recovery.
+        const RETAINED_FOR_RECOVERY: &[&str] = &["core_transaction_record_originals"];
         // `load()` rehydrates these only with the `shielded` feature on, so
         // the classification follows the build rather than claiming one.
         #[cfg(feature = "shielded")]
@@ -2461,6 +2456,7 @@ mod tests {
                     && !READ_BY_A_DEDICATED_API.contains(&table.as_str())
                     && !LOAD_UNIMPLEMENTED_TABLES.contains(&table.as_str())
                     && !INFRASTRUCTURE.contains(&table.as_str())
+                    && !RETAINED_FOR_RECOVERY.contains(&table.as_str())
                     && !FEATURE_GATED.contains(&table.as_str())
                     && !NOT_REHYDRATED_WITHOUT_FEATURE.contains(&table.as_str())
             })

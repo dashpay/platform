@@ -1,16 +1,16 @@
+use secp256k1::SecretKey;
 use std::str::FromStr;
 
 use dashcore::bls_sig_utils::BLSSignature;
 use dashcore::hash_types::CycleHash;
 
 use crate::balances::credits::Duffs;
-use dashcore::secp256k1::rand::rng;
 use dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
 use dashcore::transaction::special_transaction::TransactionPayload;
 use dashcore::{
-    secp256k1::SecretKey, InstantLock, Network, OutPoint, PrivateKey, ScriptBuf, Transaction, TxIn,
-    TxOut, Txid,
+    InstantLock, Network, OutPoint, PrivateKey, ScriptBuf, Transaction, TxIn, TxOut, Txid,
 };
+use secp256k1::rand::rng;
 
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
 
@@ -45,6 +45,16 @@ pub fn instant_asset_lock_proof_transaction_fixture(
     one_time_private_key: Option<PrivateKey>,
     amount: Option<Duffs>,
 ) -> Transaction {
+    instant_asset_lock_proof_transaction_fixture_with_inputs(one_time_private_key, amount, 1)
+}
+
+/// The asset lock transaction of [`instant_asset_lock_proof_transaction_fixture`], spending
+/// `input_count` outputs of the same funding transaction (vout 0, 1, …) instead of one.
+pub fn instant_asset_lock_proof_transaction_fixture_with_inputs(
+    one_time_private_key: Option<PrivateKey>,
+    amount: Option<Duffs>,
+    input_count: u32,
+) -> Transaction {
     let mut rng = rng();
 
     let private_key_hex = "cSBnVM4xvxarwGQuAfQFwqDg9k5tErHUHzgWsEfD4zdwUasvqRVY";
@@ -53,8 +63,10 @@ pub fn instant_asset_lock_proof_transaction_fixture(
     let public_key_hash = public_key.pubkey_hash();
     //let from_address = Address::p2pkh(&public_key, Network::Testnet);
     let secret_key = SecretKey::new(&mut rng);
-    let one_time_private_key =
-        one_time_private_key.unwrap_or_else(|| PrivateKey::new(secret_key, Network::Testnet));
+    let one_time_private_key = one_time_private_key.unwrap_or_else(|| {
+        PrivateKey::from_byte_array(secret_key.as_secret_bytes(), Network::Testnet)
+            .expect("valid test secret key")
+    });
     let one_time_public_key = one_time_private_key.public_key();
 
     // We are going to fund 1 Dash and
@@ -64,14 +76,14 @@ pub fn instant_asset_lock_proof_transaction_fixture(
     let input_txid =
         Txid::from_str("a477af6b2667c29670467e4e0728b685ee07b240235771862318e29ddbe58458").unwrap();
 
-    let input_outpoint = OutPoint::new(input_txid, 0);
-
-    let input = TxIn {
-        previous_output: input_outpoint,
-        script_sig: ScriptBuf::new_p2pkh(&public_key_hash),
-        sequence: 0,
-        witness: Default::default(),
-    };
+    let inputs = (0..input_count)
+        .map(|vout| TxIn {
+            previous_output: OutPoint::new(input_txid, vout),
+            script_sig: ScriptBuf::new_p2pkh(&public_key_hash),
+            sequence: 0,
+            witness: Default::default(),
+        })
+        .collect();
 
     let one_time_key_hash = one_time_public_key.pubkey_hash();
 
@@ -98,7 +110,7 @@ pub fn instant_asset_lock_proof_transaction_fixture(
     Transaction {
         version: 3,
         lock_time: 0,
-        input: vec![input],
+        input: inputs,
         output: vec![burn_output, change_output],
         special_transaction_payload: Some(payload),
     }

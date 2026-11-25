@@ -3,9 +3,6 @@
 use crate::platform::encrypted_for::encrypt_property_for;
 use crate::platform::{DataContract, Document, Fetch, Identity};
 use crate::{Error, Sdk};
-use dpp::dashcore::secp256k1::rand::rngs::StdRng;
-use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
-use dpp::dashcore::secp256k1::SecretKey;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::document::{DocumentV0, DocumentV0Getters, INITIAL_REVISION};
@@ -15,6 +12,9 @@ use dpp::moderation_charter::{
     RESIGNATION_REQUEST_DOCUMENT_TYPE_NAME, SUBMITTED_CHARTER_DOCUMENT_TYPE_NAME,
 };
 use dpp::platform_value::{Bytes32, Identifier, Value};
+use dpp::secp256k1::rand::rngs::StdRng;
+use dpp::secp256k1::rand::{Rng, SeedableRng};
+use dpp::secp256k1::SecretKey;
 use std::collections::BTreeMap;
 
 /// The property of both request types that carries the message, declared `encryptedFor` the
@@ -247,7 +247,6 @@ fn fresh_entropy() -> Bytes32 {
 mod tests {
     use super::*;
     use crate::platform::encrypted_for::{decrypt_property, EncryptedPropertyEnvelope};
-    use dpp::dashcore::secp256k1::PublicKey;
     use dpp::data_contract::document_type::property_constraints::DocumentSystemValues;
     use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
     use dpp::identity::contract_bounds::ContractBounds;
@@ -256,6 +255,7 @@ mod tests {
     use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
     use dpp::moderation_charter::MODERATION_CHARTERS_CONTRACT_ID;
     use dpp::platform_value::BinaryData;
+    use dpp::secp256k1::PublicKey;
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::version::PlatformVersion;
 

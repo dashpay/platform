@@ -166,6 +166,11 @@ impl DapiError {
         }
     }
 
+    /// Whether Tenderdash answered that this node does not hold the requested height.
+    pub fn is_missing_tenderdash_height(&self) -> bool {
+        matches!(self, DapiError::TenderdashClientError(status) if status.is_missing_height())
+    }
+
     /// Construct a `DapiError` from a raw Tenderdash JSON status response.
     pub fn from_tenderdash_error(value: Value) -> Self {
         DapiError::TenderdashClientError(TenderdashStatus::from(value))

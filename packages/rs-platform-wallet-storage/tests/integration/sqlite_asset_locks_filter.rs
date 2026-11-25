@@ -7,10 +7,12 @@
 use crate::common;
 
 use common::{ensure_wallet_meta, fresh_persister, wid};
-use dashcore::hashes::Hash;
 use dashcore::{OutPoint, Transaction, Txid};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
-use platform_wallet::changeset::{AssetLockChangeSet, AssetLockEntry, PlatformWalletPersistence};
+use platform_wallet::changeset::{
+    AssetLockChangeSet, AssetLockEntry, PlatformWalletPersistence, ShieldedRecipientRaw,
+    SHIELDED_RECIPIENT_SIZE,
+};
 use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
 use platform_wallet_storage::sqlite::error::WalletStorageError;
 use platform_wallet_storage::sqlite::schema::asset_locks;
@@ -36,6 +38,7 @@ fn entry(op: OutPoint, status: AssetLockStatus) -> AssetLockEntry {
         funding_type: AssetLockFundingType::IdentityTopUp,
         identity_index: 0,
         operation_id: None,
+        shielded_recipient: None,
         amount_duffs: 1000,
         status,
         proof: None,
@@ -339,4 +342,279 @@ fn should_reject_conflicting_operation_id_before_mutating_any_stored_columns() {
             before
         );
     }
+}
+
+#[test]
+fn should_preserve_shielded_recipient_when_later_snapshot_lacks_it_and_reject_a_change() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xA9);
+    ensure_wallet_meta(&persister, &w);
+    let outpoint = op(0x35);
+    let recipient = recipient_bytes(0x11);
+    let store = |persister: &platform_wallet_storage::SqlitePersister, row: AssetLockEntry| {
+        persister.store(
+            w,
+            platform_wallet::changeset::PlatformWalletChangeSet {
+                asset_locks: Some(AssetLockChangeSet {
+                    asset_locks: [(outpoint, row)].into_iter().collect(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+    };
+    let mut recorded = entry(outpoint, AssetLockStatus::Built);
+    recorded.shielded_recipient = Some(recipient);
+    store(&persister, recorded).unwrap();
+    // A later snapshot without the recipient (a status advance) keeps it.
+    store(&persister, entry(outpoint, AssetLockStatus::Broadcast)).unwrap();
+    // A snapshot naming another recipient is refused before any write.
+    let mut redirected = entry(outpoint, AssetLockStatus::ChainLocked);
+    redirected.shielded_recipient = Some(recipient_bytes(0x12));
+    assert!(store(&persister, redirected).is_err());
+    drop(persister);
+
+    let persister = reopen(&path);
+    let conn = persister.lock_conn_for_test();
+    let locks =
+        asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+            .unwrap();
+    let restored = &locks[&0][&outpoint];
+    assert_eq!(restored.shielded_recipient, Some(recipient));
+    assert_eq!(restored.status, AssetLockStatus::Broadcast);
+    // The column refuses any length but 43 and never changes once set.
+    assert!(conn
+        .execute(
+            "UPDATE asset_locks SET shielded_recipient = ?1",
+            [vec![1_u8; 42]]
+        )
+        .is_err());
+    assert!(conn
+        .execute(
+            "UPDATE asset_locks SET shielded_recipient = ?1",
+            [recipient_bytes(0x13).to_vec()]
+        )
+        .is_err());
+}
+
+#[test]
+fn should_fail_the_load_when_a_stored_shielded_recipient_has_the_wrong_length() {
+    let (persister, _tmp, _) = fresh_persister();
+    let w = wid(0xAB);
+    ensure_wallet_meta(&persister, &w);
+    let outpoint = op(0x36);
+    persister
+        .store(
+            w,
+            platform_wallet::changeset::PlatformWalletChangeSet {
+                asset_locks: Some(AssetLockChangeSet {
+                    asset_locks: [(outpoint, entry(outpoint, AssetLockStatus::Built))]
+                        .into_iter()
+                        .collect(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let conn = persister.lock_conn_for_test();
+    // The CHECK constraint stops this at the SQL layer; bypass it to prove
+    // the reader fails closed on its own rather than yielding a row with
+    // no recipient (which a resume would pay to whatever the caller names).
+    conn.execute_batch("PRAGMA ignore_check_constraints = ON")
+        .unwrap();
+    conn.execute(
+        "UPDATE asset_locks SET shielded_recipient = ?1",
+        [vec![0xff_u8; SHIELDED_RECIPIENT_SIZE - 1]],
+    )
+    .unwrap();
+    conn.execute_batch("PRAGMA ignore_check_constraints = OFF")
+        .unwrap();
+    assert!(
+        asset_locks::load_unconsumed(&conn, &w, &platform_wallet_storage::LoadCtx::strict())
+            .is_err()
+    );
+}
+
+#[test]
+fn sqlite_advertises_asset_lock_shielded_recipients() {
+    let (persister, _tmp, _) = fresh_persister();
+    assert!(persister.persistence_capabilities().contains(
+        platform_wallet::changeset::PersistenceCapabilities::ASSET_LOCK_SHIELDED_RECIPIENTS
+    ));
+}
+
+fn recipient_bytes(seed_byte: u8) -> ShieldedRecipientRaw {
+    [seed_byte; SHIELDED_RECIPIENT_SIZE]
+}
+
+/// The point read sees a `Consumed` row the rehydration feed drops, keeps
+/// it across a reopen, returns a live row's status, and `None` for an
+/// outpoint the wallet never stored or another wallet's row.
+#[test]
+fn should_read_an_asset_locks_status_by_outpoint_including_consumed_after_reopen() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xA6);
+    let other = wid(0xA7);
+    ensure_wallet_meta(&persister, &w);
+    ensure_wallet_meta(&persister, &other);
+    let consumed = op(0x30);
+    let live = op(0x31);
+    let mut cs = AssetLockChangeSet::default();
+    cs.asset_locks
+        .insert(consumed, entry(consumed, AssetLockStatus::Consumed));
+    cs.asset_locks
+        .insert(live, entry(live, AssetLockStatus::InstantSendLocked));
+    persister
+        .store(
+            w,
+            platform_wallet::changeset::PlatformWalletChangeSet {
+                asset_locks: Some(cs),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        persister.asset_lock_status(&w, &consumed).unwrap(),
+        Some(AssetLockStatus::Consumed)
+    );
+    drop(persister);
+
+    let p2 = reopen(&path);
+    assert_eq!(
+        p2.asset_lock_status(&w, &consumed).unwrap(),
+        Some(AssetLockStatus::Consumed),
+        "a consumed row reads back after a reopen"
+    );
+    assert_eq!(
+        p2.asset_lock_status(&w, &live).unwrap(),
+        Some(AssetLockStatus::InstantSendLocked)
+    );
+    assert_eq!(p2.asset_lock_status(&w, &op(0x32)).unwrap(), None);
+    assert_eq!(
+        p2.asset_lock_status(&other, &consumed).unwrap(),
+        None,
+        "another wallet's row is not this wallet's"
+    );
+}
+
+/// Plant a row whose typed status says `consumed` while its lifecycle blob
+/// says `Built`.
+fn plant_consumed_column_over_built_blob(
+    persister: &platform_wallet_storage::SqlitePersister,
+    w: &platform_wallet::wallet::platform_wallet::WalletId,
+    outpoint: OutPoint,
+) {
+    use platform_wallet_storage::sqlite::schema::blob;
+    ensure_wallet_meta(persister, w);
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT INTO asset_locks \
+            (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob) \
+         VALUES (?1, ?2, 'consumed', 0, 0, 1000, ?3)",
+        rusqlite::params![
+            w.as_slice(),
+            blob::encode_outpoint(&outpoint).unwrap(),
+            asset_locks::encode_entry_for_test(&entry(outpoint, AssetLockStatus::Built)).unwrap()
+        ],
+    )
+    .expect("plant asset-lock status drift");
+}
+
+/// Status drift through the point read: Strict refuses it with the named
+/// error; Recovery returns the sticky `Consumed` and adds one drift per
+/// read to the degradation snapshot.
+#[test]
+fn should_follow_the_load_policy_when_a_point_read_meets_status_drift() {
+    use platform_wallet_storage::LoadSite;
+    let w = wid(0xA8);
+    let drifted = op(0x40);
+
+    let (strict, _tmp, _path) = fresh_persister();
+    plant_consumed_column_over_built_blob(&strict, &w, drifted);
+    assert!(matches!(
+        strict.asset_lock_status(&w, &drifted),
+        Err(WalletStorageError::AssetLockStatusMismatch { .. })
+    ));
+    assert!(!strict.last_load_degradation().degraded);
+
+    let (recovery, _tmp, _path) = common::fresh_recovery_persister(|strict| {
+        plant_consumed_column_over_built_blob(strict, &w, drifted);
+    });
+    for reads in 1..=2 {
+        assert_eq!(
+            recovery.asset_lock_status(&w, &drifted).unwrap(),
+            Some(AssetLockStatus::Consumed),
+            "consumption is sticky"
+        );
+        let degradation = recovery.last_load_degradation();
+        assert!(degradation.degraded);
+        assert_eq!(
+            degradation
+                .by_site
+                .get(&LoadSite::AssetLockStatusDrift)
+                .copied(),
+            Some(reads),
+            "{:?}",
+            degradation.by_site
+        );
+        assert_eq!(degradation.total, reads);
+    }
+}
+
+/// A `DrainCompleted` lock reads back as exactly that, though its typed
+/// column projects it to `consumed`.
+#[test]
+fn should_read_a_drain_completed_lock_as_drain_completed() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xA9);
+    ensure_wallet_meta(&persister, &w);
+    let drained = op(0x41);
+    let mut cs = AssetLockChangeSet::default();
+    cs.asset_locks
+        .insert(drained, entry(drained, AssetLockStatus::DrainCompleted));
+    persister
+        .store(
+            w,
+            platform_wallet::changeset::PlatformWalletChangeSet {
+                asset_locks: Some(cs),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        persister.asset_lock_status(&w, &drained).unwrap(),
+        Some(AssetLockStatus::DrainCompleted)
+    );
+    assert!(!persister.last_load_degradation().degraded);
+}
+
+/// Under `FlushMode::Manual` a stored lock is in the write buffer, not the
+/// committed table: the point read sees none until the flush.
+#[test]
+fn should_not_see_a_buffered_lock_until_its_flush() {
+    let (persister, _tmp, _path) = common::fresh_persister_with_mode(common::FlushMode::Manual);
+    let w = wid(0xAA);
+    ensure_wallet_meta(&persister, &w);
+    let buffered = op(0x42);
+    let mut cs = AssetLockChangeSet::default();
+    cs.asset_locks.insert(
+        buffered,
+        entry(buffered, AssetLockStatus::InstantSendLocked),
+    );
+    persister
+        .store(
+            w,
+            platform_wallet::changeset::PlatformWalletChangeSet {
+                asset_locks: Some(cs),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(persister.asset_lock_status(&w, &buffered).unwrap(), None);
+    persister.flush(w).unwrap();
+    assert_eq!(
+        persister.asset_lock_status(&w, &buffered).unwrap(),
+        Some(AssetLockStatus::InstantSendLocked)
+    );
 }
