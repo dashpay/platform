@@ -1240,8 +1240,8 @@ pub enum PlatformWalletError {
     /// anything is broadcast; the caller's generic error path releases the
     /// note reservations, so nothing left the wallet. **Retryable**: the next
     /// shielded sync checkpoints the tree at its size. Only this case: a store
-    /// that cannot produce the path (unreadable, poisoned, or a covered
-    /// position the tree cannot witness) is [`Self::ShieldedStoreError`],
+    /// that cannot produce the path (unreadable, poisoned, a position the tree
+    /// does not hold, or a covered position the tree cannot witness) is [`Self::ShieldedStoreError`],
     /// which no sync repairs. FFI mirror:
     /// `PlatformWalletFFIResultCode::ErrorShieldedMerkleWitnessUnavailable`.
     #[error("Shielded Merkle witness unavailable: {0}")]

@@ -1548,8 +1548,8 @@ impl ShieldedStore for FileBackedShieldedStore {
         position: u64,
         depth: usize,
     ) -> Result<Option<grovedb_commitment_tree::MerklePath>, Self::Error> {
-        // No checkpoint at `depth` covers `position`: `Ok(None)`, as the
-        // trait states. shardtree reports a position past the checkpoint as
+        // No checkpoint at `depth` covers a position the tree holds:
+        // `Ok(None)`, as the trait states. shardtree reports a position past the checkpoint as
         // a `NotContained` query error, which the wrapper flattens into the
         // same string as a storage failure, so the store reads the
         // checkpoint's position first and keeps `Err` for failures. The
@@ -1574,12 +1574,23 @@ impl ShieldedStore for FileBackedShieldedStore {
             })?
             .map(|covered| covered.map(|p| p as u64))
         };
-        match checkpoint {
-            // No checkpoint at this depth, an empty-tree checkpoint, or one
-            // taken before `position` was appended.
-            None | Some(None) => return Ok(None),
-            Some(Some(covered)) if position > covered => return Ok(None),
-            Some(Some(_)) => {}
+        let covered = match checkpoint {
+            Some(Some(covered)) => position <= covered,
+            // No checkpoint at this depth, or an empty-tree checkpoint.
+            None | Some(None) => false,
+        };
+        if !covered {
+            // `Ok(None)` only for a leaf the tree holds, which a later
+            // checkpoint covers. A position the tree does not hold (notes
+            // restored against a shorter tree, or a tree reset whose note
+            // purge failed) is not something a sync adds, so it is `Err`.
+            let size = self.tree_size()?;
+            if position >= size {
+                return Err(FileShieldedStoreError::Storage(format!(
+                    "note position {position} is not in the commitment tree (size {size})"
+                )));
+            }
+            return Ok(None);
         }
 
         let tree = self

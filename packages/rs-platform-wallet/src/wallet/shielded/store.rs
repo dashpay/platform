@@ -829,15 +829,23 @@ pub trait ShieldedStore: Send + Sync + 'static {
 
     /// Generate a Merkle authentication path for `position` as of the
     /// checkpoint at `depth` (0 = current tree state, 1 = the previous
-    /// checkpoint, and so on). Returns `Ok(None)` when no checkpoint at that
-    /// depth covers the position: the requested checkpoint depth doesn't
-    /// exist, or the position was appended after that checkpoint. A later
-    /// checkpoint covers it, so this is the case a sync resolves.
+    /// checkpoint, and so on). Returns `Ok(None)` only when the tree holds
+    /// the position and no checkpoint at that depth covers it: the requested
+    /// checkpoint depth doesn't exist, or the position was appended after
+    /// that checkpoint. A later checkpoint covers it, so this is the case a
+    /// sync resolves, and the spend path reports it as retryable
+    /// (`ShieldedMerkleWitnessUnavailable`).
     ///
-    /// Every other failure is `Err`: the store could not read, or the tree
-    /// cannot produce a path for a position a checkpoint covers (unmarked or
-    /// pruned). Sync marks every position it appends, so the latter means a
-    /// damaged tree or one an older build wrote, which no sync repairs.
+    /// Every other failure is `Err`: the store could not read, the tree does
+    /// not hold the position at all, or the tree cannot produce a path for a
+    /// position a checkpoint covers (unmarked or pruned). Sync marks every
+    /// position it appends, so the last means a damaged tree or one an older
+    /// build wrote. No sync repairs any of these.
+    ///
+    /// Implementor migration: this contract used to allow `Ok(None)` for an
+    /// unmarked or pruned position. A store that still returns `Ok(None)`
+    /// there makes the spend path tell the user to wait for a sync that will
+    /// not help; return `Err` instead.
     ///
     /// Building a spend against an older-but-recorded checkpoint is how the
     /// wallet keeps its anchor consistent with a root Platform actually
@@ -851,8 +859,9 @@ pub trait ShieldedStore: Send + Sync + 'static {
     ) -> Result<Option<grovedb_commitment_tree::MerklePath>, Self::Error>;
 
     /// Generate a Merkle authentication path for `position` against the
-    /// current tree state. Returns `Ok(None)` if no witness is available
-    /// (position not marked, or pruned).
+    /// current tree state. Returns `Ok(None)` only when the tree holds the
+    /// position and no checkpoint covers it yet; see
+    /// [`Self::witness_at_depth`] for the full contract.
     ///
     /// Delegates to [`Self::witness_at_depth`] at depth 0.
     fn witness(
