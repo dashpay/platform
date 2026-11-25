@@ -1312,4 +1312,132 @@ mod tests {
             .expect("third block after the restart");
         assert_eq!(registered_checkpoint_heights(&platform), vec![3]);
     }
+
+    #[cfg(unix)]
+    fn modified_ms(path: &std::path::Path) -> u64 {
+        std::fs::metadata(path)
+            .and_then(|metadata| metadata.modified())
+            .expect("the modification time")
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("a modification time before the unix epoch")
+            .as_millis() as u64
+    }
+
+    #[cfg(unix)]
+    fn set_modified_ms(directory: &std::path::Path, time_ms: u64) {
+        std::fs::File::open(directory)
+            .and_then(|directory| {
+                directory
+                    .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_millis(time_ms))
+            })
+            .expect("set the modification time of the directory");
+    }
+
+    #[cfg(unix)]
+    fn time_of_the_checkpoint_at_height_1(platform: &TempPlatform<MockCoreRPCLike>) -> Option<u64> {
+        let checkpoints = platform.drive.checkpoints.load();
+        checkpoints
+            .get(&1)
+            .map(|checkpoint| checkpoint.timestamp_ms)
+    }
+
+    /// A checkpoint loaded at a start is timed by its block where the state saved with it
+    /// names one, as a checkpoint made in a run is, so the next checkpoint after a restart
+    /// is scheduled as it is without one. Where the state names no block, cannot be read
+    /// or is missing, the checkpoint keeps the time of its directory.
+    #[cfg(unix)]
+    #[test]
+    fn a_checkpoint_loaded_at_a_start_is_timed_by_its_block_where_its_state_names_one() {
+        // An hour ahead: no directory written during this test has that time.
+        let now = now_ms();
+        let block_time = now - now % 1_000 + 3_600_000;
+        // Before anything this test writes.
+        let set_time: u64 = 1_000_000_000_000;
+
+        let platform = checkpointing_platform();
+        let app = FullAbciApplication::new(&platform.platform);
+        finalize_real_block(&platform, &app, 1, block_time, None).expect("first block");
+        assert_eq!(registered_checkpoint_heights(&platform), vec![1]);
+        assert_eq!(
+            time_of_the_checkpoint_at_height_1(&platform),
+            Some(block_time),
+            "a checkpoint made in a run is timed by its block"
+        );
+        let checkpoint_directory = platform.config.db_path.join("checkpoints").join("1");
+        let state_path = checkpoint_directory.join("platform_state.bin");
+        assert!(state_path.is_file());
+        let no_block = PlatformState::default_with_protocol_versions(
+            PlatformVersion::latest().protocol_version,
+            PlatformVersion::latest().protocol_version,
+            &platform.config,
+        )
+        .expect("a state with no block")
+        .serialize_standalone_to_bytes()
+        .expect("serialize the state with no block");
+
+        drop(app);
+        let TempPlatform {
+            platform: closed,
+            tempdir,
+        } = platform;
+        drop(closed);
+        set_modified_ms(&checkpoint_directory, set_time);
+        let mut platform = TempPlatform::open_with_tempdir(tempdir, checkpointing_config());
+
+        assert_eq!(
+            time_of_the_checkpoint_at_height_1(&platform),
+            Some(block_time),
+            "the state names the block"
+        );
+        assert_eq!(
+            platform
+                .checkpoint_platform_states
+                .load()
+                .get(&1)
+                .map(|state| state.last_committed_block_time_ms()),
+            Some(Some(block_time))
+        );
+
+        let cases: [(&str, Option<Vec<u8>>, Option<Option<u64>>); 3] = [
+            ("a state that names no block", Some(no_block), Some(None)),
+            ("a file that is no state", Some(b"no state".to_vec()), None),
+            ("no file", None, None),
+        ];
+        for (what, saved, state_read) in cases {
+            let TempPlatform {
+                platform: closed,
+                tempdir,
+            } = platform;
+            drop(closed);
+            match &saved {
+                Some(bytes) => std::fs::write(&state_path, bytes).expect("write the state file"),
+                None => std::fs::remove_file(&state_path).expect("remove the state file"),
+            }
+            set_modified_ms(&checkpoint_directory, set_time);
+            platform = TempPlatform::open_with_tempdir(tempdir, checkpointing_config());
+
+            // The open of a database may write in its directory, so the time the start
+            // read is the one set here or a later one, up to the directory's time now.
+            let time = time_of_the_checkpoint_at_height_1(&platform)
+                .unwrap_or_else(|| panic!("{what}: the checkpoint is loaded"));
+            let directory_time = modified_ms(&checkpoint_directory);
+            assert!(
+                (set_time..=directory_time).contains(&time),
+                "{what}: {time} is not a time of the directory ({set_time} to {directory_time})"
+            );
+            assert!(
+                directory_time < block_time,
+                "{what}: the directory's time {directory_time} is not before the block's {block_time}"
+            );
+            assert_eq!(
+                platform
+                    .checkpoint_platform_states
+                    .load()
+                    .get(&1)
+                    .map(|state| state.last_committed_block_time_ms()),
+                state_read,
+                "{what}"
+            );
+        }
+    }
 }
