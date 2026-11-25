@@ -13,15 +13,19 @@
 
 use rusqlite::{params, Connection, Transaction};
 
-use platform_wallet::changeset::AccountAddressPoolEntry;
+use platform_wallet::changeset::{AccountAddressPoolEntry, AccountRegistrationEntry};
 use platform_wallet::wallet::platform_wallet::WalletId;
 
+use key_wallet::account::derivation::AccountDerivation;
+use key_wallet::account::{Account, AccountType};
+use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
+use key_wallet::AddressInfo;
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
-use crate::sqlite::schema::accounts;
 use crate::sqlite::schema::blob;
+use crate::sqlite::schema::{accounts, wallets};
 
 /// Stored `pool_type` discriminant. Kept in the primary key so an External
 /// and an Internal pool never collide at the same `address_index`.
@@ -31,6 +35,16 @@ pub(crate) fn pool_type_to_i64(pool_type: AddressPoolType) -> i64 {
         AddressPoolType::Internal => 1,
         AddressPoolType::Absent => 2,
         AddressPoolType::AbsentHardened => 3,
+    }
+}
+
+fn pool_type_from_i64(stored: i64) -> Result<AddressPoolType, WalletStorageError> {
+    match stored {
+        0 => Ok(AddressPoolType::External),
+        1 => Ok(AddressPoolType::Internal),
+        2 => Ok(AddressPoolType::Absent),
+        3 => Ok(AddressPoolType::AbsentHardened),
+        _ => Err(WalletStorageError::blob_decode("pool_type is unknown")),
     }
 }
 
@@ -77,6 +91,226 @@ const TYPED_POOL_CONFLICT_SQL: &str = "SELECT EXISTS( \
           AND (?10 IS NULL OR public_key <> ?9 OR key_type <> ?10) \
     )";
 
+// One row of a generation the account no longer derives from, keyed by that
+// generation's xpub (?7). The script is a function of (xpub, pool, index), so
+// a repeat can only merge its `used` flag.
+const UPSERT_RETIRED_ROW_SQL: &str = "INSERT INTO core_address_pool_retired \
+        (wallet_id, account_type, account_index, key_class, user_identity_id, friend_identity_id, \
+         account_xpub, pool_type, address_index, script, used, public_key, key_type) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) \
+     ON CONFLICT(wallet_id, account_type, account_index, key_class, user_identity_id, \
+                 friend_identity_id, account_xpub, pool_type, address_index) \
+     DO UPDATE SET used = MAX(used, excluded.used)";
+
+// Every live row of the account into its retired generation ?7.
+const RETIRE_POOL_SQL: &str = "INSERT INTO core_address_pool_retired \
+        (wallet_id, account_type, account_index, key_class, user_identity_id, friend_identity_id, \
+         account_xpub, pool_type, address_index, script, used, public_key, key_type) \
+     SELECT wallet_id, account_type, account_index, key_class, user_identity_id, \
+            friend_identity_id, ?7, pool_type, address_index, script, used, public_key, key_type \
+     FROM core_address_pool \
+     WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+       AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \
+     ON CONFLICT(wallet_id, account_type, account_index, key_class, user_identity_id, \
+                 friend_identity_id, account_xpub, pool_type, address_index) \
+     DO UPDATE SET used = MAX(used, excluded.used)";
+
+const DELETE_ACCOUNT_POOL_SQL: &str = "DELETE FROM core_address_pool \
+     WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+       AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6";
+
+// The rows of generation ?7 back into the live pool (an account rotated back
+// to an xpub it had), then out of the history.
+const RESTORE_POOL_SQL: &str = "INSERT INTO core_address_pool \
+        (wallet_id, account_type, account_index, key_class, user_identity_id, friend_identity_id, \
+         pool_type, address_index, script, used, public_key, key_type) \
+     SELECT wallet_id, account_type, account_index, key_class, user_identity_id, \
+            friend_identity_id, pool_type, address_index, script, used, public_key, key_type \
+     FROM core_address_pool_retired \
+     WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+       AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \
+       AND account_xpub = ?7";
+
+const DELETE_RETIRED_GENERATION_SQL: &str = "DELETE FROM core_address_pool_retired \
+     WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+       AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \
+       AND account_xpub = ?7";
+
+const RETIRED_XPUBS_SQL: &str = "SELECT DISTINCT account_xpub FROM core_address_pool_retired \
+     WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+       AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6";
+
+/// The account columns every per-account statement here binds as `?2`..`?6`
+/// (after `wallet_id`).
+struct AccountKey {
+    label: &'static str,
+    index: i64,
+    key_class: i64,
+    user: [u8; 32],
+    friend: [u8; 32],
+}
+
+impl AccountKey {
+    fn of(account_type: &AccountType) -> Self {
+        let (user, friend) = accounts::account_dashpay_ids(account_type);
+        Self {
+            label: accounts::account_type_db_label(account_type),
+            index: i64::from(accounts::account_index(account_type)),
+            key_class: i64::from(accounts::account_key_class(account_type)),
+            user,
+            friend,
+        }
+    }
+}
+
+/// Move a DashPay external account's live pool from generation `from` (the
+/// BIP32 serialization of the xpub it derives from) to `to`, inside the
+/// caller's transaction: every live row goes to `core_address_pool_retired`
+/// under `from`, and the rows `to` left there, if the account had that xpub
+/// before, come back. Called when a contact rotated, so the new xpub's pool
+/// can take the same indices; retired rows stay known for history and
+/// attribution but never feed the reuse guard or a rehydrated, payable pool.
+/// Retiring the same rows twice merges their `used` flags.
+pub(crate) fn rotate_account_pool(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    account_type: &AccountType,
+    from: &[u8],
+    to: &[u8],
+) -> Result<(), WalletStorageError> {
+    let k = AccountKey::of(account_type);
+    let (w, user, friend) = (wallet_id.as_slice(), k.user.as_slice(), k.friend.as_slice());
+    let generation = |sql: &str, xpub: &[u8]| {
+        tx.prepare_cached(sql)?.execute(params![
+            w,
+            k.label,
+            k.index,
+            k.key_class,
+            user,
+            friend,
+            xpub
+        ])
+    };
+    generation(RETIRE_POOL_SQL, from)?;
+    tx.prepare_cached(DELETE_ACCOUNT_POOL_SQL)?
+        .execute(params![w, k.label, k.index, k.key_class, user, friend])?;
+    generation(RESTORE_POOL_SQL, to)?;
+    generation(DELETE_RETIRED_GENERATION_SQL, to)?;
+    Ok(())
+}
+
+/// Which xpub a DashPay external account's pool row derives from: the
+/// account's registered one (the row is live), one it had before or that
+/// this flush registers ahead of it (the row is history, stored under that
+/// generation), or none it ever had.
+///
+/// An earlier xpub is known only by its retired rows or by a registration in
+/// the same flush: every emitter stores a DashPay external registration with
+/// its pool, so a registration stored alone and replaced before any pool row
+/// of it landed would leave that xpub's rows unknown. Rows are derived on the
+/// account's own pool type (key-wallet gives this account one `Absent`
+/// pool).
+struct DashpayGenerations {
+    current: Account,
+    earlier: Vec<(Vec<u8>, Account)>,
+}
+
+enum Generation<'a> {
+    Current,
+    Earlier(&'a [u8]),
+    Unknown,
+}
+
+impl DashpayGenerations {
+    /// `None` while the account has no stored registration: its pool rows
+    /// are written as they come, as before rotations were handled.
+    fn load(
+        tx: &Transaction<'_>,
+        wallet_id: &WalletId,
+        account_type: &AccountType,
+        flush_registrations: &[AccountRegistrationEntry],
+    ) -> Result<Option<Self>, WalletStorageError> {
+        let Some(current) = accounts::stored_registration(tx, wallet_id, account_type)? else {
+            return Ok(None);
+        };
+        let network = wallets::network_of(tx, wallet_id)?;
+        let account = |xpub| {
+            Account::new(None, *account_type, xpub, network)
+                .map_err(|_| WalletStorageError::blob_decode("DashPay external account xpub"))
+        };
+        let k = AccountKey::of(account_type);
+        let mut xpubs: Vec<Vec<u8>> = tx
+            .prepare_cached(RETIRED_XPUBS_SQL)?
+            .query_map(
+                params![
+                    wallet_id.as_slice(),
+                    k.label,
+                    k.index,
+                    k.key_class,
+                    k.user.as_slice(),
+                    k.friend.as_slice(),
+                ],
+                |row| row.get(0),
+            )?
+            .collect::<Result<_, _>>()?;
+        xpubs.extend(
+            (flush_registrations.iter())
+                .filter(|r| r.account_type == *account_type)
+                .map(|r| r.account_xpub.encode().to_vec()),
+        );
+        let current_bytes = current.account_xpub.encode().to_vec();
+        xpubs.retain(|xpub| *xpub != current_bytes);
+        xpubs.sort();
+        xpubs.dedup();
+        let mut earlier = Vec::with_capacity(xpubs.len());
+        for bytes in xpubs {
+            // History must not block live writes: a generation whose xpub no
+            // longer decodes is skipped, so only a stale row of it would
+            // fail, as unknown.
+            let Ok(xpub) = ExtendedPubKey::decode(&bytes) else {
+                tracing::warn!(
+                    account_type = k.label,
+                    "a retired DashPay xpub does not decode; its generation is skipped"
+                );
+                continue;
+            };
+            earlier.push((bytes, account(xpub)?));
+        }
+        Ok(Some(Self {
+            current: account(current.account_xpub)?,
+            earlier,
+        }))
+    }
+
+    fn of(&self, pool_type: AddressPoolType, info: &AddressInfo) -> Generation<'_> {
+        let derives = |account: &Account| {
+            account
+                .derive_address_at(pool_type, info.index, None)
+                .is_ok_and(|address| address.script_pubkey() == info.script_pubkey)
+        };
+        if derives(&self.current) {
+            return Generation::Current;
+        }
+        (self.earlier.iter())
+            .find(|(_, account)| derives(account))
+            .map_or(Generation::Unknown, |(xpub, _)| Generation::Earlier(xpub))
+    }
+}
+
+/// [`apply_pools`] for a flush: a DashPay external account's rows are
+/// classified by derivation (see [`DashpayGenerations`]) so a pool snapshot of
+/// an xpub the account no longer has, emitted before its rotation but flushed
+/// after it, or merged into the same flush, lands in that generation's
+/// history and never in the live pool.
+pub(crate) fn apply_flush_pools(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    pools: &[AccountAddressPoolEntry],
+    registrations: &[AccountRegistrationEntry],
+) -> Result<(), WalletStorageError> {
+    write_pools(tx, wallet_id, pools, Some(registrations))
+}
+
 /// Expand `account_address_pools` snapshots into per-index
 /// `core_address_pool` rows. Idempotent: `script` is derivation-stable and
 /// `used` is monotonic (`MAX`), so re-applying the same snapshot is a no-op
@@ -99,10 +333,24 @@ const TYPED_POOL_CONFLICT_SQL: &str = "SELECT EXISTS( \
 /// took for the sibling `core_utxos.script` column, where it purged only
 /// legacy empty-script *spent* rows and left the surviving balance-bearing
 /// ones alone.
+///
+/// Writes every row as given: V008's legacy conversion replays pools through
+/// here before V024 exists. A flush goes through [`apply_flush_pools`].
 pub fn apply_pools(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
     pools: &[AccountAddressPoolEntry],
+) -> Result<(), WalletStorageError> {
+    write_pools(tx, wallet_id, pools, None)
+}
+
+/// `registrations`: the flush's, to classify DashPay external rows by
+/// derivation; `None` writes every row as given.
+fn write_pools(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    pools: &[AccountAddressPoolEntry],
+    registrations: Option<&[AccountRegistrationEntry]>,
 ) -> Result<(), WalletStorageError> {
     if pools.is_empty() {
         return Ok(());
@@ -126,6 +374,18 @@ pub fn apply_pools(
         let (user_identity_id, friend_identity_id) =
             accounts::account_dashpay_ids(&entry.account_type);
         let pool_type = pool_type_to_i64(entry.pool_type);
+        let generations = match registrations {
+            Some(registrations)
+                if matches!(
+                    entry.account_type,
+                    AccountType::DashpayExternalAccount { .. }
+                ) =>
+            {
+                DashpayGenerations::load(tx, wallet_id, &entry.account_type, registrations)?
+            }
+            _ => None,
+        };
+        let mut to_history = 0usize;
         for info in &entry.addresses {
             if info.script_pubkey.as_bytes().is_empty() {
                 return Err(WalletStorageError::EmptyPoolAddressScript {
@@ -153,6 +413,34 @@ pub fn apply_pools(
                     expected_key_len,
                     "core_address_pool.public_key has the wrong length for key_type",
                 )?;
+            }
+            match generations.as_ref().map(|g| g.of(entry.pool_type, info)) {
+                None | Some(Generation::Current) => {}
+                Some(Generation::Earlier(xpub)) => {
+                    tx.prepare_cached(UPSERT_RETIRED_ROW_SQL)?.execute(params![
+                        wallet_id.as_slice(),
+                        account_type,
+                        account_index,
+                        key_class,
+                        user_identity_id.as_slice(),
+                        friend_identity_id.as_slice(),
+                        xpub,
+                        pool_type,
+                        i64::from(info.index),
+                        info.script_pubkey.as_bytes(),
+                        info.is_used(),
+                        public_key,
+                        key_type,
+                    ])?;
+                    to_history += 1;
+                    continue;
+                }
+                Some(Generation::Unknown) => {
+                    return Err(WalletStorageError::TypedPoolKeyConflict {
+                        account_type,
+                        address_index: info.index,
+                    });
+                }
             }
             let conflicts = conflict_stmt.query_row(
                 params![
@@ -197,6 +485,13 @@ pub fn apply_pools(
                 reserved_at,
             ])?;
         }
+        if to_history > 0 {
+            tracing::warn!(
+                account_type,
+                rows = to_history,
+                "pool rows of a DashPay xpub the account no longer has were stored as history"
+            );
+        }
     }
     Ok(())
 }
@@ -214,7 +509,7 @@ pub type TypedPoolEntry = (u32, Vec<u8>, PublicKeyType, bool);
 pub fn load_typed_pool_entries(
     conn: &Connection,
     wallet_id: &WalletId,
-    account_type: &key_wallet::account::AccountType,
+    account_type: &AccountType,
     pool_type: AddressPoolType,
 ) -> Result<Vec<TypedPoolEntry>, WalletStorageError> {
     let account_type = accounts::account_type_db_label(account_type);
@@ -379,6 +674,35 @@ pub(crate) fn owning_account_for_script(
     }))
 }
 
+/// Whether `core_address_pool_retired` exists yet: V021 replays history
+/// through readers that consult it before V024 creates it.
+pub(crate) fn retired_pool_exists(conn: &Connection) -> Result<bool, WalletStorageError> {
+    Ok(conn
+        .prepare_cached(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master \
+                 WHERE type = 'table' AND name = 'core_address_pool_retired')",
+        )?
+        .query_row([], |r| r.get(0))?)
+}
+
+/// Whether `script` is held only by a DashPay contact generation the contact
+/// rotated away from: a retired row, and no live pool row. Callers check
+/// [`retired_pool_exists`] first.
+pub(crate) fn retired_only_script(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    script: &[u8],
+) -> Result<bool, WalletStorageError> {
+    Ok(conn
+        .prepare_cached(
+            "SELECT NOT EXISTS(SELECT 1 FROM core_address_pool \
+                     WHERE wallet_id = ?1 AND script = ?2) \
+                 AND EXISTS(SELECT 1 FROM core_address_pool_retired \
+                     WHERE wallet_id = ?1 AND script = ?2)",
+        )?
+        .query_row(params![wallet_id.as_slice(), script], |r| r.get(0))?)
+}
+
 /// Used addresses for a wallet, read verbatim from `core_address_pool`
 /// (`used = 1`), each paired with its owning account. This is the
 /// *known-owner* reuse-guard source: the pool row carries the account
@@ -479,6 +803,85 @@ pub fn load_used_addresses_with_ctx(
                 friend_identity_id,
             },
         ));
+    }
+    Ok(out)
+}
+
+/// One row of a pool generation an account no longer derives from
+/// (`core_address_pool_retired`): history only, never payable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RetiredPoolAddress {
+    pub address: dashcore::Address,
+    pub owner: OwningAccount,
+    /// BIP32 serialization of the xpub the row was derived from.
+    pub account_xpub: Vec<u8>,
+    pub pool_type: AddressPoolType,
+    pub address_index: u32,
+    pub used: bool,
+}
+
+/// Every retired pool row of a wallet, ordered by account, generation, pool
+/// and index. A script that no longer decodes for `network` is an error:
+/// this is a history read, so there is no policy to degrade under.
+pub fn load_retired_pool_addresses(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    network: dashcore::Network,
+) -> Result<Vec<RetiredPoolAddress>, WalletStorageError> {
+    blob::check_max_column_len(
+        conn,
+        "SELECT MAX(MAX(length(script)), MAX(length(account_xpub))) \
+         FROM core_address_pool_retired WHERE wallet_id = ?1",
+        wallet_id,
+    )?;
+    let mut stmt = conn.prepare(
+        "SELECT script, account_type, account_index, \
+                length(user_identity_id), user_identity_id, \
+                length(friend_identity_id), friend_identity_id, \
+                account_xpub, pool_type, address_index, used \
+         FROM core_address_pool_retired WHERE wallet_id = ?1 \
+         ORDER BY account_type, account_index, key_class, user_identity_id, \
+                  friend_identity_id, retired_at, account_xpub, pool_type, address_index",
+    )?;
+    let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+    let mut out = Vec::new();
+    while let Some(row) = rows.next()? {
+        let account_type = row.get::<_, String>(1)?;
+        validate_account_type(&account_type)?;
+        blob::check_fixed_width(
+            row.get::<_, i64>(3)?,
+            32,
+            "core_address_pool_retired.user_identity_id",
+        )?;
+        blob::check_fixed_width(
+            row.get::<_, i64>(5)?,
+            32,
+            "core_address_pool_retired.friend_identity_id",
+        )?;
+        let user = row.get::<_, Vec<u8>>(4)?;
+        let friend = row.get::<_, Vec<u8>>(6)?;
+        out.push(RetiredPoolAddress {
+            address: blob::decode_script_to_address(row.get::<_, Vec<u8>>(0)?, network)?,
+            owner: OwningAccount {
+                account_type,
+                account_index: crate::sqlite::util::safe_cast::i64_to_u32(
+                    "core_address_pool_retired.account_index",
+                    row.get(2)?,
+                )?,
+                user_identity_id: super::id32("core_address_pool_retired.user_identity_id", &user)?,
+                friend_identity_id: super::id32(
+                    "core_address_pool_retired.friend_identity_id",
+                    &friend,
+                )?,
+            },
+            account_xpub: row.get(7)?,
+            pool_type: pool_type_from_i64(row.get(8)?)?,
+            address_index: crate::sqlite::util::safe_cast::i64_to_u32(
+                "core_address_pool_retired.address_index",
+                row.get(9)?,
+            )?,
+            used: row.get(10)?,
+        });
     }
     Ok(out)
 }

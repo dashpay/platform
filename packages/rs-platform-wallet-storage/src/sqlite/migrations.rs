@@ -448,7 +448,7 @@ pub fn embedded_migrations_sql() -> Vec<String> {
 pub(crate) fn rewind_v021(conn: &rusqlite::Connection) {
     conn.execute_batch(
         "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
-         DROP TABLE core_locked_outpoints; \
+         DROP TABLE core_locked_outpoints; DROP TABLE core_address_pool_retired; \
          ALTER TABLE core_instant_locks DROP COLUMN verified; \
          DELETE FROM refinery_schema_history WHERE version >= 21;",
     )

@@ -16,7 +16,9 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::blob::impl_persistable_blob;
-use crate::sqlite::schema::core_pool::{owning_account_for_script, OwningAccount};
+use crate::sqlite::schema::core_pool::{
+    owning_account_for_script, retired_only_script, retired_pool_exists, OwningAccount,
+};
 use crate::sqlite::schema::{blob, core_history};
 
 // PUBLIC material only: core-chain state reaching `record_blob` /
@@ -1028,6 +1030,7 @@ pub fn load_state(
              FROM core_utxos WHERE wallet_id = ?1 AND spent = 0",
         )?;
         let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+        let mut retired_pool = None;
         while let Some(row) = rows.next()? {
             // col 0: length(outpoint) — gate before materializing
             blob::check_size(row.get::<_, i64>(0)?)?;
@@ -1040,6 +1043,17 @@ pub fn load_state(
             let value = crate::sqlite::util::safe_cast::i64_to_u64("core_utxos.value", value)?;
             let height = transaction_heights.get(&outpoint.txid).copied().flatten();
             let script = dashcore::ScriptBuf::from_bytes(script_bytes);
+            // A coin at an address only a contact's retired generation
+            // derives is not the wallet's: before the rotation the contact
+            // account held it outside the balance, and no account derives
+            // it now, so it would otherwise fall back to a funds account.
+            let retired = match retired_pool {
+                Some(exists) => exists,
+                None => *retired_pool.insert(retired_pool_exists(conn)?),
+            };
+            if retired && retired_only_script(conn, wallet_id, script.as_bytes())? {
+                continue;
+            }
             if let Some(owner) = owning_account_for_script(conn, wallet_id, script.as_bytes())? {
                 utxo_accounts.insert(outpoint, owner);
             }
@@ -2143,6 +2157,38 @@ mod tests {
         record.net_amount = output.value() as i64;
         output.outpoint.txid = record.txid;
         insert_contact_script(&conn, &wallet_id, &output.txout.script_pubkey);
+        let tx = conn.transaction().unwrap();
+        apply(&tx, &wallet_id, &round(vec![record.clone()], vec![output])).unwrap();
+        let repaired = stored_record(&tx, &wallet_id, &record.txid);
+        assert_eq!(repaired.net_amount, 0);
+        assert_eq!(repaired.output_details[0].role, OutputRole::Sent);
+    }
+
+    #[test]
+    fn should_exclude_outputs_to_a_retired_contact_generation_from_accounting() {
+        use key_wallet::managed_account::transaction_record::{OutputDetail, OutputRole};
+        let wallet_id = [0xBEu8; 32];
+        let mut conn = wallet_db(&wallet_id);
+        let mut record = transaction_record(TransactionContext::Mempool);
+        let mut output = sample_utxo(record.txid, 0, false);
+        record.transaction.output = vec![output.txout.clone()];
+        record.txid = record.transaction.txid();
+        record.output_details = vec![OutputDetail {
+            index: 0,
+            role: OutputRole::Received,
+            address: Some(output.address.clone()),
+            value: output.value(),
+        }];
+        record.net_amount = output.value() as i64;
+        output.outpoint.txid = record.txid;
+        conn.execute(
+            "INSERT INTO core_address_pool_retired \
+             (wallet_id, account_type, account_index, account_xpub, pool_type, address_index, \
+              script) \
+             VALUES (?1, 'dashpay_external', 0, X'01', 2, 0, ?2)",
+            params![&wallet_id[..], output.txout.script_pubkey.as_bytes()],
+        )
+        .unwrap();
         let tx = conn.transaction().unwrap();
         apply(&tx, &wallet_id, &round(vec![record.clone()], vec![output])).unwrap();
         let repaired = stored_record(&tx, &wallet_id, &record.txid);
