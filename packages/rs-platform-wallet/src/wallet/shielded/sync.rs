@@ -1006,10 +1006,6 @@ where
     // is matched too (see [`SavedSpendInput`]).
     let spent_elsewhere =
         spends_spent_elsewhere(&saved_spend_inputs(&*store, subwallets), &scanned_actions);
-    let scanned_nullifiers: Vec<[u8; 32]> = scanned_actions
-        .iter()
-        .map(|action| action.nullifier)
-        .collect();
 
     // Save decrypted notes per subwallet; count new notes per
     // subwallet; build a single consolidated changeset.
@@ -1120,7 +1116,7 @@ where
     let newly_spent_per_subwallet = apply_scanned_nullifier_spends(
         &mut *store,
         &subwallet_ids,
-        &scanned_nullifiers,
+        scanned_actions.iter().map(|action| &action.nullifier),
         &mut changeset,
     )
     .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
@@ -1323,19 +1319,19 @@ fn checkpoint_tree_at<S: ShieldedStore>(
 /// Returns the per-subwallet count of notes newly flipped to spent and
 /// records each match on `changeset` via
 /// [`ShieldedChangeSet::record_nullifier_spent`].
-fn apply_scanned_nullifier_spends<S: ShieldedStore>(
+fn apply_scanned_nullifier_spends<'a, S: ShieldedStore>(
     store: &mut S,
     subwallet_ids: &[SubwalletId],
-    scanned_nullifiers: &[[u8; 32]],
+    scanned_nullifiers: impl Iterator<Item = &'a [u8; 32]> + Clone,
     changeset: &mut ShieldedChangeSet,
 ) -> Result<BTreeMap<SubwalletId, usize>, S::Error> {
     let mut newly_spent_per_subwallet: BTreeMap<SubwalletId, usize> = BTreeMap::new();
-    if scanned_nullifiers.is_empty() {
+    if scanned_nullifiers.clone().next().is_none() {
         return Ok(newly_spent_per_subwallet);
     }
     for id in subwallet_ids {
         let mut spent_count = 0usize;
-        for nf in scanned_nullifiers {
+        for nf in scanned_nullifiers.clone() {
             if store.mark_spent(*id, nf)? {
                 changeset.record_nullifier_spent(*id, *nf);
                 spent_count += 1;
@@ -1758,12 +1754,16 @@ mod tests {
         // A LATER scanned chunk surfaces a batch of action nullifiers.
         // One of them is `owned_nf` (this note's spend); the rest belong
         // to dummy/padding actions or other wallets and must be no-ops.
-        let scanned_nullifiers = vec![[0x01; 32], owned_nf, [0x02; 32]];
+        let scanned_nullifiers = [[0x01; 32], owned_nf, [0x02; 32]];
         let mut changeset = ShieldedChangeSet::default();
 
-        let newly_spent =
-            apply_scanned_nullifier_spends(&mut store, &[id], &scanned_nullifiers, &mut changeset)
-                .expect("scan-based spend detection should not error");
+        let newly_spent = apply_scanned_nullifier_spends(
+            &mut store,
+            &[id],
+            scanned_nullifiers.iter(),
+            &mut changeset,
+        )
+        .expect("scan-based spend detection should not error");
 
         // The note is now spent — detected entirely via the scan path.
         assert_eq!(newly_spent.get(&id).copied(), Some(1));
@@ -1784,9 +1784,13 @@ mod tests {
         // `mark_spent` returns false for the already-spent note, so no new
         // spend is reported.
         let mut changeset2 = ShieldedChangeSet::default();
-        let again =
-            apply_scanned_nullifier_spends(&mut store, &[id], &scanned_nullifiers, &mut changeset2)
-                .unwrap();
+        let again = apply_scanned_nullifier_spends(
+            &mut store,
+            &[id],
+            scanned_nullifiers.iter(),
+            &mut changeset2,
+        )
+        .unwrap();
         assert!(
             again.is_empty(),
             "re-detecting an already-spent note must be a no-op"
@@ -1810,10 +1814,11 @@ mod tests {
         store.save_note(id, &received_note(owned_nf, 0)).unwrap();
 
         // The same pass's scanned actions include this note's spend.
-        let scanned = vec![owned_nf];
+        let scanned = [owned_nf];
         let mut changeset = ShieldedChangeSet::default();
         let newly_spent =
-            apply_scanned_nullifier_spends(&mut store, &[id], &scanned, &mut changeset).unwrap();
+            apply_scanned_nullifier_spends(&mut store, &[id], scanned.iter(), &mut changeset)
+                .unwrap();
 
         assert_eq!(newly_spent.get(&id).copied(), Some(1));
         assert!(store.get_unspent_notes(id).unwrap().is_empty());
@@ -1827,10 +1832,11 @@ mod tests {
         let id = sub(0);
         store.save_note(id, &received_note([0x55; 32], 0)).unwrap();
 
-        let scanned = vec![[0x01; 32], [0x02; 32], [0x03; 32]];
+        let scanned = [[0x01; 32], [0x02; 32], [0x03; 32]];
         let mut changeset = ShieldedChangeSet::default();
         let newly_spent =
-            apply_scanned_nullifier_spends(&mut store, &[id], &scanned, &mut changeset).unwrap();
+            apply_scanned_nullifier_spends(&mut store, &[id], scanned.iter(), &mut changeset)
+                .unwrap();
 
         assert!(newly_spent.is_empty());
         assert_eq!(
@@ -1855,10 +1861,11 @@ mod tests {
         store.save_note(b, &received_note(nf_b, 1)).unwrap();
 
         // Only subwallet A's nullifier is on-chain this scan.
-        let scanned = vec![nf_a];
+        let scanned = [nf_a];
         let mut changeset = ShieldedChangeSet::default();
         let newly_spent =
-            apply_scanned_nullifier_spends(&mut store, &[a, b], &scanned, &mut changeset).unwrap();
+            apply_scanned_nullifier_spends(&mut store, &[a, b], scanned.iter(), &mut changeset)
+                .unwrap();
 
         assert_eq!(newly_spent.get(&a).copied(), Some(1));
         assert!(!newly_spent.contains_key(&b));
