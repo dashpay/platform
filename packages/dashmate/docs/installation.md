@@ -89,7 +89,7 @@ sudo apt install dashmate
 )
 ```
 
-Once dashmate is installed from a package that ships `dashmate.sources`, move to it with the commands below. They read the suite from `dashmate-testing.sources`, delete the three hand-written files, and only then set that suite in `dashmate.sources`: while both sources name the same suite with different keys, `apt update` fails with `Conflicting values set for option Signed-By`.
+Once dashmate is installed from a package that ships `dashmate.sources`, move to it with the commands below. They read the suite from `dashmate-testing.sources`, set it in `dashmate.sources` and check that it is there, and only then delete the hand-written files. Files that are already gone are skipped. This includes a key under `/usr/share/keyrings` from older instructions. `apt update` runs last: while both sources name the same suite with different keys, it fails with `Conflicting values set for option Signed-By`.
 
 ```bash
 (
@@ -99,15 +99,18 @@ case "$suite" in
   testing|dev) echo "Keeping suite $suite" ;;
   *) echo "Unexpected suite '$suite' in dashmate-testing.sources" >&2; exit 1 ;;
 esac
-sudo rm /etc/apt/sources.list.d/dashmate-testing.sources \
-  /etc/apt/keyrings/dashmate-testing-archive-keyring.gpg \
-  /etc/apt/preferences.d/dashmate-testing.pref
 sudo sed -i "s/^Suites: stable\$/Suites: $suite/" /etc/apt/sources.list.d/dashmate.sources
+grep -qx "Suites: $suite" /etc/apt/sources.list.d/dashmate.sources \
+  || { echo "dashmate.sources does not name suite $suite; nothing was deleted" >&2; exit 1; }
+sudo rm -f /etc/apt/sources.list.d/dashmate-testing.sources \
+  /etc/apt/keyrings/dashmate-testing-archive-keyring.gpg \
+  /etc/apt/preferences.d/dashmate-testing.pref \
+  /usr/share/keyrings/dashmate-archive-keyring.gpg
 sudo apt update
 )
 ```
 
-dpkg does not own the hand-written files, so purging dashmate leaves them in place and the source active. To take dashmate off a host that still uses them, delete the three files named in the `rm` command above. To keep the suite choice without an active source, add `Enabled: no` to `dashmate-testing.sources` instead.
+dpkg does not own the hand-written files, so purging dashmate leaves them in place and the source active. To take dashmate off a host that still uses them, delete the files named in the `rm` command above. To keep the suite choice without an active source, add `Enabled: no` to `dashmate-testing.sources` instead.
 
 ### Node package
 
