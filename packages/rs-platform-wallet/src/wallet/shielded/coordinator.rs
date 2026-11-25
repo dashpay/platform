@@ -1208,8 +1208,7 @@ impl NetworkShieldedCoordinator {
         if !stale.is_empty() {
             let mut store = self.store.write().await;
             self.store_epoch.bump_wallet(&mut store, wallet_id);
-            self.store_epoch
-                .bump_purged(&mut store, stale.iter().map(|(id, _)| *id));
+            let mut purged = Vec::with_capacity(stale.len());
             for (id, _) in stale {
                 // The check above ran under a store guard it released. A
                 // spend that holds neither the lifecycle mutex nor the
@@ -1238,6 +1237,7 @@ impl NetworkShieldedCoordinator {
                     );
                     continue;
                 }
+                purged.push(id);
                 if let Err(e) = store.purge_subwallet(id) {
                     tracing::warn!(
                         wallet_id = %hex::encode(id.wallet_id),
@@ -1247,6 +1247,7 @@ impl NetworkShieldedCoordinator {
                     );
                 }
             }
+            self.store_epoch.bump_purged(&mut store, purged);
         }
         Ok(())
     }
@@ -6488,6 +6489,119 @@ mod tests {
             delivered(&after_clear).is_empty(),
             "nothing from before a Clear reaches the re-bound wallet"
         );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A re-bind that drops an account keeps the account's store state when
+    /// a spend saved its record from it after the bind's check (the
+    /// `holds_a_spend` branch), so it does not mark that state purged: a pass that
+    /// committed a receipt for the account before the re-bind and fans out
+    /// after it still hands the host the note and its watermark. Otherwise
+    /// the store's watermark would move past a note the host never got, and
+    /// a later re-bind restoring from the host's rows would never find it.
+    #[tokio::test]
+    async fn should_queue_a_pass_to_a_dropped_account_kept_for_its_spend() {
+        use crate::wallet::shielded::store::PendingRedrive;
+
+        let dir = temp_dir("fan_out_after_kept_drop");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let views = |account| {
+            OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, account)
+                .expect("derive viewing keys")
+                .viewing_keys()
+        };
+        let account = |index| SubwalletId::new(wallet_id, index);
+        let register = |accounts: &'static [u32], recorder: Arc<RecordingPersistence>| {
+            let account_views: BTreeMap<u32, AccountViewingKeys> =
+                accounts.iter().map(|a| (*a, views(*a))).collect();
+            coordinator.register_wallet(
+                wallet_id,
+                account_views,
+                WalletPersister::new(wallet_id, recorder),
+            )
+        };
+        register(&[0, 1], Arc::new(RecordingPersistence::default()))
+            .await
+            .unwrap();
+
+        // A pass over both accounts commits a receipt and the watermarks,
+        // and has not fanned out yet.
+        let epoch = coordinator.store_epoch.watch();
+        let received = test_note([0xB1; 32], 3, false);
+        let mut pass = ShieldedChangeSet::default();
+        {
+            let mut store = coordinator.store().write().await;
+            store.save_note(account(1), &received).unwrap();
+            for index in [0, 1] {
+                store
+                    .set_last_synced_note_index(account(index), 4096)
+                    .unwrap();
+                pass.record_synced_index(account(index), 4096);
+            }
+            pass.record_note(account(1), received.clone());
+        }
+
+        // The re-bind dropping account 1 passes its check for unresolved
+        // spends, then waits for the fan-out lock. A spend from account 1
+        // saves its record meanwhile.
+        let fan_out = coordinator.fan_out.lock().await;
+        let replacement = Arc::new(RecordingPersistence::default());
+        let rebind = register(&[0], replacement.clone());
+        futures::pin_mut!(rebind);
+        assert!(
+            futures::poll!(rebind.as_mut()).is_pending(),
+            "the re-bind passed its check and waits for the fan-out lock"
+        );
+        coordinator
+            .store()
+            .write()
+            .await
+            .arm_redrive(
+                account(1),
+                PendingRedrive {
+                    activity_id: [0xA1; 32],
+                    anchor: [0xA2; 32],
+                    nullifiers: vec![[0xC1; 32]],
+                    st_bytes: vec![0],
+                    attempts: 0,
+                    identity_nonce_finalized: false,
+                    identity_user_abandoned: false,
+                    anchor_height: Some(1),
+                },
+            )
+            .unwrap();
+        drop(fan_out);
+        rebind.await.unwrap();
+        assert_eq!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .last_synced_note_index(account(1))
+                .unwrap(),
+            4096,
+            "the dropped account holding a spend keeps its store state"
+        );
+        coordinator.queue_pass_changeset(&epoch, pass).await;
+
+        let rounds = replacement.0.lock().unwrap();
+        assert!(
+            rounds.iter().any(
+                |round| round.notes_saved.get(&account(1)).is_some_and(|notes| notes
+                    .iter()
+                    .any(|note| note.nullifier == received.nullifier))
+            ),
+            "the kept account's receipt reaches the host: {rounds:?}"
+        );
+        assert!(
+            rounds
+                .iter()
+                .any(|round| round.synced_indices.get(&account(1)) == Some(&4096)),
+            "the kept account's watermark reaches the host: {rounds:?}"
+        );
+        drop(rounds);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
