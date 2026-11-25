@@ -781,7 +781,22 @@ where
         "SDK stream consumed"
     );
 
-    if appended > 0 {
+    // Checkpoint on every pass, not only on one that appended. Each
+    // append is persisted on its own, so a pass that appended and
+    // then failed (a batch error, an append error) or whose process
+    // was killed before this point leaves leaves past the latest
+    // checkpoint. The next pass gate-skips those positions and
+    // appends nothing, so gating the checkpoint on this pass's
+    // appends would leave them uncovered until a new commitment
+    // arrives, and a note saved at one of them cannot be witnessed
+    // at depth 0 (`ShieldedMerkleWitnessUnavailable` at spend time).
+    // When the latest checkpoint already sits at the tree size the
+    // store keeps it as it is: a checkpoint id not above the
+    // current maximum is a no-op.
+    let new_tree_size = store
+        .tree_size()
+        .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+    if new_tree_size > 0 {
         // Checkpoint at the tree's true post-append leaf count. The
         // tree only ever grows, so this id is strictly monotonic
         // and collision-free across consecutive syncs — unlike
@@ -793,9 +808,6 @@ where
         // checkpoint while later appends extend the tree past it,
         // so the depth-0 witness then reflects a state Platform
         // never recorded.
-        let new_tree_size = store
-            .tree_size()
-            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
         // Hard-fail rather than saturate at u32::MAX: a saturated id
         // would reintroduce shardtree's silent-dedup (every checkpoint
         // past the ceiling pins to the same id) — the exact corruption

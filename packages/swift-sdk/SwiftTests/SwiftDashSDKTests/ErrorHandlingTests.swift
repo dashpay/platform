@@ -684,6 +684,23 @@ final class ErrorHandlingTests: XCTestCase {
         XCTAssertEqual(message, detail)
     }
 
+    /// A note the local tree cannot witness yet is refused before the proof
+    /// and the broadcast: it has its own code and typed case, apart from the
+    /// generic wallet failure a host reads as possibly sent.
+    func testShouldReportAnUnavailableMerkleWitnessByItsOwnCode() {
+        let code = PlatformWalletResultCode(
+            ffi: PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_MERKLE_WITNESS_UNAVAILABLE
+        )
+        XCTAssertEqual(code, .errorShieldedMerkleWitnessUnavailable)
+        XCTAssertEqual(code.rawValue, 88)
+        let detail = "shielded withdraw failed: Shielded Merkle witness unavailable: position 7"
+        guard case .shieldedMerkleWitnessUnavailable(let message) =
+            PlatformWalletError(code: code, message: detail) else {
+            return XCTFail("lost typed merkle-witness-unavailable error")
+        }
+        XCTAssertEqual(message, detail)
+    }
+
     /// A failed identity lookup, which sent nothing, has its own code and
     /// typed case, apart from the unmapped SDK errors a host reads as possibly
     /// delivered.
