@@ -1254,8 +1254,33 @@ describe('analyseGatewayCertificateFactory', () => {
       // The dashmate reading the record may be the outdated one itself.
       expect(renewal.getSolution()).to.contain('the dashmate that last updated its configuration');
       expect(renewal.getSolution()).to.contain('resumes by itself');
+      // The gateway serves the pair on disk, so restarting loads nothing new.
+      expect(renewal.getSolution()).to.not.contain('Once the certificate files on disk work');
       expect(renewal.getSolution()).to.not.contain('doctor report');
       expect(renewal.getSolution()).to.not.contain('ssl obtain');
+    });
+
+    // A restart makes the gateway load the pair on disk. When the gateway is
+    // serving a different pair and the one on disk is not a verified
+    // replacement, the same report says not to restart to load it - the helper
+    // advice must not contradict that by restarting unconditionally.
+    it('should make the helper restart conditional when the pair on disk is not a verified replacement', () => {
+      installedValid();
+      renewalFailed({ code: 'HELPER_OUTDATED', detail: null });
+
+      const problems = analyse(served({
+        certificate: { fingerprint256: 'CC:DD', validTo: validTo(30) },
+        matchesOnDisk: false,
+        // Not the pair the checks passed on, so not known to be a safe replacement.
+        onDisk: { fingerprint256: 'EE:FF', validTo: validTo(60) },
+      }));
+
+      const [renewal] = problems.filter((p) => p.getDescription().includes('not being renewed'));
+      const [stale] = problems.filter((p) => p.getDescription().includes('different certificate'));
+
+      expect(stale.getSolution()).to.contain('do not restart');
+      expect(renewal.getSolution()).to.contain('dashmate restart');
+      expect(renewal.getSolution()).to.contain('Once the certificate files on disk work');
     });
 
     it('should obtain and then restart when an outdated helper let the certificate expire', () => {

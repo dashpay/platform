@@ -297,6 +297,43 @@ Already open? Then something else is answering there - find it with
 }
 
 /**
+ * Whether the pair on disk is known to be a better certificate than the one
+ * being served.
+ *
+ * A restart makes the gateway load whatever is on disk, so it may only be
+ * advised once the disk copy is known to be better on every count that
+ * matters. Outliving what is on the wire is necessary and nowhere near
+ * sufficient: the wire sample carries a fingerprint and a date, while
+ * whether the pair matches its key, names this address, or is self-signed
+ * comes from the checks run over the files in the same collection.
+ *
+ * Fails closed. An absent verdict is not a passing one - a report collected
+ * by an older dashmate carries none at all - and neither is one that merely
+ * stopped short of failing. The verdict must also be about the pair the
+ * probe measured: the two samples are taken moments apart, and a renewal
+ * landing between them means the file that was judged is not the file that
+ * would be loaded.
+ *
+ * @param {Object} served - a sample with state 'served'
+ * @param {Object|null} installed
+ * @param {number} now
+ * @return {boolean}
+ */
+function isOnDiskVerifiedReplacement(served, installed, now) {
+  const servedExpiresAt = new Date(served.certificate.validTo).getTime();
+  const onDiskExpiresAt = served.onDisk
+    ? new Date(served.onDisk.validTo).getTime()
+    : null;
+  const isOnDiskNewer = onDiskExpiresAt !== null && onDiskExpiresAt > servedExpiresAt;
+
+  return isOnDiskNewer
+    && onDiskExpiresAt > now
+    && installed?.status === 'CHECKS_PASSED'
+    && Boolean(installed.fingerprint256)
+    && installed.fingerprint256 === served.onDisk?.fingerprint256;
+}
+
+/**
  * The restart that replaces an outdated dashmate helper.
  *
  * Names the dashmate that last updated the configuration rather than this
@@ -331,7 +368,7 @@ next renewal fails the same way until then:
 function renderRemedy(options) {
   const {
     code, remedy, cfg, configName, force, isIssuanceSpent, isIssuanceUncertain,
-    safeAction, issuanceStatus,
+    safeAction, issuanceStatus, isOnDiskPairUnverified = false,
   } = options;
 
   // An earlier attempt left an issuance outstanding, which withholds every
@@ -419,7 +456,11 @@ ${obtain}`;
       ? `Get a working certificate:
 ${obtain}
 ${renderHelperRestart(cfg, 'Then restart')}`
-      : `${renderHelperRestart(cfg, 'Restart')}
+      // A gateway serving a different pair from the one on disk loads the disk
+      // pair on restart, and that one is not known to work.
+      : `${renderHelperRestart(cfg, isOnDiskPairUnverified
+        ? 'Once the certificate files on disk work, restart'
+        : 'Restart')}
 Renewal resumes by itself after the restart.`;
   }
 
@@ -633,6 +674,16 @@ export default function analyseGatewayCertificateFactory() {
      * @param {boolean} isCertificateUsable
      * @return {string}
      */
+    // Mirrors the served-certificate branch below, which tells the operator not
+    // to restart when the gateway serves a different pair from the one on disk
+    // and that one is not a verified replacement. Advice reached before it must
+    // not restart unconditionally.
+    const servedSample = samples.getServiceInfo('gateway', 'servedCertificate');
+    const isOnDiskPairUnverified = servedSample?.state === 'served'
+      && servedSample.identityVerified !== false
+      && servedSample.matchesOnDisk === false
+      && !isOnDiskVerifiedReplacement(servedSample, installed, sampledAt);
+
     const renderRenewalCause = (isCertificateUsable) => {
       const { remedy, sentence } = describeRenewalFailure(failedRenewal.getCode());
       // Only the cause that actually produced this state may claim the
@@ -660,6 +711,7 @@ export default function analyseGatewayCertificateFactory() {
         isCertificateUsable,
         safeAction: guidance.safeAction,
         issuanceStatus: guidance.issuanceStatus,
+        isOnDiskPairUnverified,
       });
 
       if (ending) {
@@ -854,28 +906,7 @@ ${certificateRequest(' --force')}`,
     const isServedExpired = servedExpiresAt <= now;
     const onDiskDiffers = served.matchesOnDisk === false;
 
-    // A restart makes the gateway load whatever is on disk, so it may only be
-    // advised once the disk copy is known to be better on every count that
-    // matters. Outliving what is on the wire is necessary and nowhere near
-    // sufficient: the wire sample carries a fingerprint and a date, while
-    // whether the pair matches its key, names this address, or is self-signed
-    // comes from the checks run over the files in the same collection.
-    const onDiskExpiresAt = served.onDisk
-      ? new Date(served.onDisk.validTo).getTime()
-      : null;
-    const isOnDiskNewer = onDiskExpiresAt !== null && onDiskExpiresAt > servedExpiresAt;
-    //
-    // Fails closed. An absent verdict is not a passing one - a report collected
-    // by an older dashmate carries none at all - and neither is one that merely
-    // stopped short of failing. The verdict must also be about the pair the
-    // probe measured: the two samples are taken moments apart, and a renewal
-    // landing between them means the file that was judged is not the file that
-    // would be loaded.
-    const isOnDiskUsable = isOnDiskNewer
-      && onDiskExpiresAt > now
-      && installed?.status === 'CHECKS_PASSED'
-      && Boolean(installed.fingerprint256)
-      && installed.fingerprint256 === served.onDisk?.fingerprint256;
+    const isOnDiskUsable = isOnDiskVerifiedReplacement(served, installed, now);
 
     if (isServedExpired && onDiskDiffers && isOnDiskUsable) {
       problems.push(new Problem(
