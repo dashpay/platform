@@ -1150,6 +1150,37 @@ describe('ConfigFileJsonRepository', () => {
     });
   });
 
+  // Skipping the seed refresh is for a file a newer build owns. Anything this
+  // build cannot order as newer still gets the refresh it always had.
+  [
+    ['an older stamp', '4.0.0', CURRENT_FORMAT_VERSION],
+    ['a stamp that is not semver', 'not-a-version', CURRENT_FORMAT_VERSION],
+    ['no format version of its own', '9.0.0', undefined],
+  ].forEach(([name, recorded, own]) => {
+    it(`should still refresh obsolete stock seeds for ${name}`, () => {
+      const originalDefaults = structuredClone(tenderdashSeeds.testnet);
+
+      try {
+        const data = JSON.parse(seedConfigFile());
+        data.configFormatVersion = recorded;
+        data.configs.base.network = 'testnet';
+        data.configs.base.platform.drive.tenderdash.p2p.seeds = originalDefaults.seeds;
+        fs.writeFileSync(configFilePath, JSON.stringify(data));
+
+        tenderdashSeeds.testnet.previousSeedSetHashes.push(seedSetHash(originalDefaults.seeds));
+        tenderdashSeeds.testnet.seeds = [{ id: 'f'.repeat(40), host: '8.8.4.4', port: 26656 }];
+
+        const configFile = new ConfigFileJsonRepository(identityMigration, homeDir, createDefaults, own).read();
+
+        expect(configFile.getConfig('base').getStored('platform.drive.tenderdash.p2p.seeds'))
+          .to.deep.equal(tenderdashSeeds.testnet.seeds);
+        expect(configFile.isChanged()).to.be.true();
+      } finally {
+        tenderdashSeeds.testnet = originalDefaults;
+      }
+    });
+  });
+
   describe('format version order', () => {
     /**
      * @param {string} recorded - stamped on disk
