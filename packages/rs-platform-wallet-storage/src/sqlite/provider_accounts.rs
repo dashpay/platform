@@ -24,6 +24,13 @@ pub(super) enum PlatformNodePoolError {
         #[source]
         source: key_wallet::error::Error,
     },
+    /// The hardened-only pool refused the restored entry.
+    #[error("platform-node pool refused the entry at index {index}")]
+    PoolRefused {
+        index: u32,
+        #[source]
+        source: key_wallet::error::Error,
+    },
 }
 
 /// Insert one pre-derived platform-node key and restore its usage state.
@@ -32,7 +39,6 @@ pub(super) fn insert_platform_node_pool_entry(
     network: key_wallet::Network,
     index: u32,
     address: dashcore::Address,
-    script_pubkey: dashcore::ScriptBuf,
     public_key: [u8; 32],
     used: bool,
 ) -> Result<(), PlatformNodePoolError> {
@@ -50,7 +56,7 @@ pub(super) fn insert_platform_node_pool_entry(
         .managed_account_type_mut()
         .address_pools_mut()
         .into_iter()
-        .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
+        .find(|pool| pool.pool_type() == AddressPoolType::AbsentHardened)
         .ok_or(PlatformNodePoolError::MissingHardenedPool)?;
     let child = key_wallet::bip32::ChildNumber::from_hardened_idx(index)
         .map_err(key_wallet::error::Error::Bip32)
@@ -59,7 +65,6 @@ pub(super) fn insert_platform_node_pool_entry(
     children.push(child);
     let info = AddressInfo {
         address,
-        script_pubkey,
         public_key: Some(PublicKeyType::EdDSA(public_key.to_vec())),
         index,
         path: key_wallet::bip32::DerivationPath::from(children),
@@ -68,33 +73,9 @@ pub(super) fn insert_platform_node_pool_entry(
         } else {
             AddressState::Available
         },
-        tx_count: 0,
-        total_received: 0,
-        total_sent: 0,
-        balance: 0,
-        label: None,
-        metadata: Default::default(),
     };
-
-    pool.address_index.insert(info.address.clone(), index);
-    pool.script_pubkey_index
-        .insert(info.script_pubkey.clone(), index);
-    pool.highest_generated = Some(
-        pool.highest_generated
-            .map_or(index, |highest| highest.max(index)),
-    );
-    if used {
-        pool.used_indices.insert(index);
-        pool.highest_used = Some(
-            pool.highest_used
-                .map_or(index, |highest| highest.max(index)),
-        );
-    } else {
-        pool.used_indices.remove(&index);
-        pool.highest_used = pool.used_indices.iter().max().copied();
-    }
-    pool.addresses.insert(index, info);
-    Ok(())
+    pool.insert(info)
+        .map_err(|source| PlatformNodePoolError::PoolRefused { index, source })
 }
 
 #[cfg(test)]
@@ -122,7 +103,6 @@ mod tests {
             dashcore::PubkeyHash::from_byte_array(key.node_id),
         );
         let address = dashcore::Address::new(Network::Testnet, payload);
-        let script_pubkey = address.script_pubkey();
         let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
 
         insert_platform_node_pool_entry(
@@ -130,7 +110,6 @@ mod tests {
             Network::Testnet,
             key.index,
             address,
-            script_pubkey,
             key.public_key,
             true,
         )
@@ -145,13 +124,12 @@ mod tests {
             .managed_account_type()
             .address_pools()
             .into_iter()
-            .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
+            .find(|pool| pool.pool_type() == AddressPoolType::AbsentHardened)
             .cloned()
             .expect("AbsentHardened pool");
-        let restored = pool.addresses.get(&key.index).expect("restored entry");
+        let restored = pool.addresses().get(&key.index).expect("restored entry");
         assert!(restored.is_used());
-        assert!(pool.used_indices.contains(&key.index));
-        assert_eq!(pool.highest_used, Some(key.index));
+        assert_eq!(pool.highest_used(), Some(key.index));
     }
 
     #[test]
@@ -173,7 +151,6 @@ mod tests {
             Network::Testnet,
             0,
             address.clone(),
-            address.script_pubkey(),
             [0x24; 32],
             false,
         )
@@ -203,7 +180,6 @@ mod tests {
                 Network::Testnet,
                 key.index,
                 address.clone(),
-                address.script_pubkey(),
                 key.public_key,
                 true,
             )
@@ -220,7 +196,6 @@ mod tests {
                 Network::Testnet,
                 key.index,
                 address.clone(),
-                address.script_pubkey(),
                 key.public_key,
                 false,
             )
@@ -235,10 +210,10 @@ mod tests {
                 .managed_account_type()
                 .address_pools()
                 .into_iter()
-                .find(|pool| pool.pool_type == AddressPoolType::AbsentHardened)
+                .find(|pool| pool.pool_type() == AddressPoolType::AbsentHardened)
                 .expect("AbsentHardened pool");
-            assert!(!pool.used_indices.contains(&key.index));
-            assert_eq!(pool.highest_used, expected_highest);
+            assert!(!pool.addresses()[&key.index].is_used());
+            assert_eq!(pool.highest_used(), expected_highest);
         }
     }
 
@@ -258,7 +233,12 @@ mod tests {
             .as_mut()
             .expect("managed platform-node account must exist");
         for pool in account.managed_account_type_mut().address_pools_mut() {
-            pool.pool_type = AddressPoolType::Absent;
+            *pool = key_wallet::AddressPool::new_without_generation(
+                pool.base_path().clone(),
+                AddressPoolType::Absent,
+                pool.gap_limit(),
+                pool.network(),
+            );
         }
 
         let key = &keys[0];
@@ -273,7 +253,6 @@ mod tests {
             Network::Testnet,
             key.index,
             address.clone(),
-            address.script_pubkey(),
             key.public_key,
             false,
         );

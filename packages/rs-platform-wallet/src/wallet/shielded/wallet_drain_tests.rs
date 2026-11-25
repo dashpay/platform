@@ -170,6 +170,7 @@ impl PlatformWalletPersistence for RecoveryPersistence {
                 self.wallet.compute_wallet_id(),
                 ClientWalletStartState {
                     dashpay_backfill: Default::default(),
+                    funding_issuance_floors: Default::default(),
                     wallet: self.wallet.clone(),
                     wallet_info: self.info.clone(),
                     identity_manager: Default::default(),

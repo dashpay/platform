@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use dashcore::{OutPoint, Txid};
 use dpp::prelude::CoreBlockHeight;
+use key_wallet::account::AccountType;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 #[cfg(feature = "shielded")]
@@ -378,6 +379,11 @@ pub struct PlatformWalletInfo {
     /// load, so the collateral of a masternode the user stops tracking stays
     /// here until then; see `wallet::outpoint_locks`.
     pub(crate) tracked_collaterals: BTreeSet<OutPoint>,
+    /// Per asset-lock funding account, the index at or below which no key may
+    /// fund a lock, because the load could not restore the pool that far.
+    /// Restored at load from
+    /// [`ClientWalletStartState::funding_issuance_floors`](crate::changeset::ClientWalletStartState::funding_issuance_floors).
+    pub(crate) funding_issuance_floors: BTreeMap<AccountType, u32>,
 }
 
 /// A platform wallet that combines core UTXO functionality with identity management.
@@ -2530,7 +2536,7 @@ impl PlatformWallet {
         let candidate_addresses = merge_platform_payment_candidate_addresses(
             account
                 .addresses
-                .addresses
+                .addresses()
                 .values()
                 .filter_map(|address_info| {
                     PlatformP2PKHAddress::from_address(&address_info.address).ok()

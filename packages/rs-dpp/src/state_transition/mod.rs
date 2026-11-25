@@ -3366,6 +3366,7 @@ mod tests {
     #[cfg(feature = "state-transition-signing")]
     #[test]
     fn should_refuse_a_high_s_ecdsa_signature_at_every_protocol_version() {
+        use crate::dashcore::hashes::hash160;
         use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
 
         let bls = crate::bls::native_bls::NativeBlsModule;
@@ -3400,13 +3401,13 @@ mod tests {
             .negate();
         high_s[33..].copy_from_slice(&negated.to_secret_bytes());
         high_s[0] = 27 + ((high_s[0] - 27) ^ 1);
-        // A real twin: `dashcore` alone verifies it like the signature the key made.
-        crate::dashcore::signer::verify_data_signature(
-            &signed.signable_bytes().expect("signable bytes"),
+        // A real twin: key recovery, which takes any S, recovers the key from it.
+        crate::dashcore::signer::verify_hash_signature(
+            &double_sha(signed.signable_bytes().expect("signable bytes")),
             &high_s,
-            key.data().as_slice(),
+            hash160::Hash::hash(key.data().as_slice()).as_byte_array(),
         )
-        .expect("the high-S twin verifies once S is normalized");
+        .expect("key recovery accepts the high-S twin");
         let mut malleated = signed.clone();
         malleated.set_signature(BinaryData::new(high_s));
 

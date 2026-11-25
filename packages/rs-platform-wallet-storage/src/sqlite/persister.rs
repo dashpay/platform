@@ -1905,6 +1905,9 @@ fn load_wallet_snapshot(
         // FFI hosts' wallet row only. Empty keeps the rescan sweep on its
         // pre-record behaviour here (a rewind per launch, never lossy).
         dashpay_backfill: Default::default(),
+        // This backend restores pools through `apply_persisted_core_state`,
+        // which reports no unreachable funding rows.
+        funding_issuance_floors: Default::default(),
     })
 }
 

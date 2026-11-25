@@ -2,16 +2,45 @@
 //! names belong here only: V008 retains them until V011 has all destination
 //! columns, and the enclosing migration transaction drops them after success.
 
-use dashcore::Address;
+use std::collections::BTreeMap;
+
+use dashcore::{Address, ScriptBuf};
 use key_wallet::account::derivation::AccountDerivation;
 use key_wallet::account::{Account, AccountType};
-use key_wallet::managed_account::address_pool::{AddressPoolType, AddressState};
+use key_wallet::bip32::DerivationPath;
+use key_wallet::managed_account::address_pool::{AddressPoolType, AddressState, PublicKeyType};
 use key_wallet::AddressInfo;
 use platform_wallet::changeset::{AccountAddressPoolEntry, AccountRegistrationEntry};
 use rusqlite::{params, Transaction};
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::{accounts, blob, core_pool, id32, wallets};
+
+/// `AddressInfo` as the published V001-V007 writer serialized it. bincode is
+/// positional, so the fields key-wallet has since dropped must still be read.
+#[derive(serde::Deserialize)]
+struct LegacyAddressInfo {
+    address: Address,
+    script_pubkey: ScriptBuf,
+    public_key: Option<PublicKeyType>,
+    index: u32,
+    path: DerivationPath,
+    state: AddressState,
+    _tx_count: u32,
+    _total_received: u64,
+    _total_sent: u64,
+    _balance: u64,
+    _label: Option<String>,
+    _metadata: BTreeMap<String, String>,
+}
+
+/// `AccountAddressPoolEntry` as the published V001-V007 writer serialized it.
+#[derive(serde::Deserialize)]
+struct LegacyPoolEntry {
+    account_type: AccountType,
+    pool_type: AddressPoolType,
+    addresses: Vec<LegacyAddressInfo>,
+}
 
 fn invalid(reason: &'static str) -> WalletStorageError {
     WalletStorageError::blob_decode(reason)
@@ -78,7 +107,7 @@ pub(super) fn convert_pools(tx: &Transaction<'_>) -> Result<(), WalletStorageErr
             let index: i64 = row.get(1)?;
             let kind = pool_type(&row.get::<_, String>(2)?)?;
             blob::check_size(row.get(3)?)?;
-            let entry: AccountAddressPoolEntry = blob::decode(&row.get::<_, Vec<u8>>(4)?)?;
+            let entry: LegacyPoolEntry = blob::decode(&row.get::<_, Vec<u8>>(4)?)?;
             if !matches_account(&label, index, &entry.account_type) || kind != entry.pool_type {
                 return Err(invalid("legacy pool columns disagree with snapshot"));
             }
@@ -89,7 +118,19 @@ pub(super) fn convert_pools(tx: &Transaction<'_>) -> Result<(), WalletStorageErr
                     return Err(invalid("legacy pool has conflicting address data"));
                 }
             }
-            pools.push(entry);
+            pools.push(AccountAddressPoolEntry {
+                account_type: entry.account_type,
+                pool_type: entry.pool_type,
+                addresses: (entry.addresses.into_iter())
+                    .map(|info| AddressInfo {
+                        address: info.address,
+                        public_key: info.public_key,
+                        index: info.index,
+                        path: info.path,
+                        state: info.state,
+                    })
+                    .collect(),
+            });
         }
 
         let mut registrations = Vec::<AccountRegistrationEntry>::new();

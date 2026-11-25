@@ -499,6 +499,7 @@ mod tests {
             dashpay_backfill: Default::default(),
             rewind_barrier: Default::default(),
             tracked_collaterals: Default::default(),
+            funding_issuance_floors: Default::default(),
         }
     }
 
