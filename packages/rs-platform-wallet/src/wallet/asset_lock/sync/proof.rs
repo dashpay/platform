@@ -2516,14 +2516,19 @@ mod chain_lock_wait_tests {
         type Outcome = Result<(Result<u32, dash_sdk::Error>, AssetLockProof), PlatformWalletError>;
 
         async fn run(script: Vec<Result<u32, dash_sdk::Error>>) -> (Ctx, Outcome, Vec<Call>) {
-            run_within(script, Duration::from_secs(5)).await
+            run_within(script, Duration::from_secs(5), |ctx| {
+                ctx.instant_proof.clone()
+            })
+            .await
         }
 
-        /// [`run`] with `bound` on the (paused) time the call may take: the
-        /// ChainLock height retry sleeps between its attempts.
+        /// [`run`] with `bound` on the (paused) time the call may take (the
+        /// ChainLock height retry sleeps between its attempts), starting from
+        /// the proof `first` gives for the tracked outpoint.
         async fn run_within(
             script: Vec<Result<u32, dash_sdk::Error>>,
             bound: Duration,
+            first: impl FnOnce(&Ctx) -> AssetLockProof,
         ) -> (Ctx, Outcome, Vec<Call>) {
             let locator = ScriptedLocator::new(vec![mined(100)]);
             let store = Arc::new(FakeRecordStore::with_records([]));
@@ -2543,6 +2548,7 @@ mod chain_lock_wait_tests {
             let script = Mutex::new(VecDeque::from(script));
             let calls: Mutex<Vec<Call>> = Mutex::new(Vec::new());
             let out_point = ctx.out_point;
+            let first = first(&ctx);
             let submit = |proof: AssetLockProof, _settings: Option<PutSettings>| {
                 let stored_chain_locked = store
                     .stored
@@ -2562,13 +2568,8 @@ mod chain_lock_wait_tests {
             };
             let result = tokio::time::timeout(
                 bound,
-                ctx.manager.submit_with_chain_lock_fallback(
-                    ctx.instant_proof.clone(),
-                    None,
-                    None,
-                    "test",
-                    submit,
-                ),
+                ctx.manager
+                    .submit_with_chain_lock_fallback(first, None, None, "test", submit),
             )
             .await
             .expect("resolves without waiting");
@@ -2667,17 +2668,26 @@ mod chain_lock_wait_tests {
         /// The rule holds for the ChainLock height retry as for the fallback:
         /// after Platform refused one signed attempt (10506), a re-signed
         /// attempt the signer refuses is that attempt's unconfirmed outcome,
-        /// and no held lock is named.
+        /// and no held lock is named. Platform raises 10506 for a ChainLock
+        /// proof above its committed Core height, so the funding starts from
+        /// one, and the retry resubmits that same proof.
         #[tokio::test(start_paused = true)]
         async fn should_report_a_never_sent_height_retry_as_the_refused_attempts_unconfirmed_outcome(
         ) {
-            let (_ctx, result, calls) = run_within(
+            let (ctx, result, calls) = run_within(
                 vec![Err(cl_height_too_low()), Err(key_unavailable())],
                 Duration::from_secs(600),
+                |ctx| chain_proof_at(ctx, 140),
             )
             .await;
 
             assert_eq!(calls.len(), 2);
+            let chain_proof = chain_proof_at(&ctx, 140);
+            assert_eq!(
+                calls[0].0, chain_proof,
+                "the first attempt carries the ChainLock proof"
+            );
+            assert_eq!(calls[1].0, chain_proof, "the height retry resubmits it");
             let error = result
                 .expect("no local error")
                 .0

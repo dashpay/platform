@@ -529,11 +529,13 @@ mod tests {
     }
 
     /// Run one batch whose first funding fails with `first` and whose next
-    /// one succeeds; the fundings it was called with.
-    async fn seed_batch_calls(first: PlatformWalletError) -> Vec<AssetLockFunding> {
+    /// one succeeds; the batch's result and the fundings it was called with.
+    async fn seed_batch_calls(
+        first: PlatformWalletError,
+    ) -> (Result<(), PlatformWalletError>, Vec<AssetLockFunding>) {
         let mut first = Some(first);
         let mut calls = Vec::new();
-        let _ = fund_seed_batch(
+        let result = fund_seed_batch(
             0,
             AssetLockFunding::FromWalletBalance {
                 amount_duffs: 1,
@@ -546,7 +548,7 @@ mod tests {
             },
         )
         .await;
-        calls
+        (result, calls)
     }
 
     fn timed_out(held_lock: Option<dashcore::OutPoint>) -> PlatformWalletError {
@@ -564,7 +566,8 @@ mod tests {
     /// submission of the batch happened, resumes that lock.
     #[tokio::test(start_paused = true)]
     async fn should_resume_a_batch_whose_timeout_holds_its_lock() {
-        let calls = seed_batch_calls(timed_out(Some(seed_out_point()))).await;
+        let (result, calls) = seed_batch_calls(timed_out(Some(seed_out_point()))).await;
+        result.expect("the resumed batch is submitted");
         assert!(matches!(
             calls.as_slice(),
             [
@@ -575,10 +578,16 @@ mod tests {
     }
 
     /// A timeout that names no held lock may follow a submission of the
-    /// batch, so the run ends with it instead of signing the batch again.
+    /// batch, so the run ends with it instead of signing the batch again: the
+    /// batch fails as possibly sent, keeps the timeout's diagnostic and names
+    /// no lock to resume.
     #[tokio::test(start_paused = true)]
     async fn should_not_retry_a_batch_whose_timeout_names_no_held_lock() {
-        let calls = seed_batch_calls(timed_out(None)).await;
+        let (result, calls) = seed_batch_calls(timed_out(None)).await;
+        let error = result.expect_err("the unresolved batch is not counted as submitted");
+        assert_eq!(error.payment_delivery(), crate::PaymentDelivery::MaybeSent);
+        assert_eq!(error.instant_lock_timeout(), Some(seed_out_point()));
+        assert_eq!(error.held_asset_lock(), None);
         assert!(matches!(
             calls.as_slice(),
             [AssetLockFunding::FromWalletBalance { .. }]
