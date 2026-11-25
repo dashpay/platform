@@ -30,6 +30,8 @@ mod accessors;
 mod apply;
 mod lifecycle;
 
+pub(crate) use lifecycle::NewIdentityKeyOrigin;
+
 use super::managed_identity::ManagedIdentity;
 use crate::changeset::{IdentityManagerStartState, IdentityScanStateEntry};
 use crate::wallet::platform_wallet::WalletId;

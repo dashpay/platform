@@ -528,6 +528,35 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     where
         AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
     {
+        self.resolve_funding_observing_out_point(
+            funding,
+            funding_type,
+            destination_index,
+            recipient,
+            asset_lock_signer,
+            on_built,
+            |_| {},
+        )
+        .await
+    }
+
+    /// Resolve funding, reporting its outpoint once a new lock is admitted for
+    /// dispatch or an existing lock passes its role checks, before either the
+    /// network-acceptance wait or the proof wait.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn resolve_funding_observing_out_point<AS>(
+        &self,
+        funding: AssetLockFunding,
+        funding_type: AssetLockFundingType,
+        destination_index: u32,
+        recipient: Option<AssetLockRecipient>,
+        asset_lock_signer: &AS,
+        on_built: Option<&AssetLockBuiltObserver<'_>>,
+        on_out_point: impl FnOnce(OutPoint) + Send,
+    ) -> Result<FundingResolution, PlatformWalletError>
+    where
+        AS: ::key_wallet::signer::ExtendedPubKeySigner + Send + Sync,
+    {
         match funding {
             AssetLockFunding::FromWalletBalance {
                 amount_duffs,
@@ -542,6 +571,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         recipient,
                         asset_lock_signer,
                         on_built,
+                        on_out_point,
                     )
                     .await
                 {
@@ -582,6 +612,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         asset_lock_signer,
                         &operation,
                         on_built,
+                        on_out_point,
                     )
                     .await
                 {
@@ -613,6 +644,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         recipient,
                         asset_lock_signer,
                         on_built,
+                        on_out_point,
                     )
                     .await
                 {
@@ -671,6 +703,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                         recorded_identity,
                     )?;
                 }
+                on_out_point(out_point);
                 // 300s is a window for the record or a mined-height lookup to
                 // prove the lock, not a finality timeout: on expiry the caller
                 // falls back to an unbounded ChainLock wait, so a resumed

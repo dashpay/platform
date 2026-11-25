@@ -139,10 +139,11 @@ pub(crate) fn validate_token_pool_spend(
 /// An outputs-only token bundle entering the token pool: its dummy nullifiers must not repeat
 /// within the bundle or already be recorded there. Returns the rejection, if any.
 ///
-/// The bundle binds nobody, so its authorized bytes can be put into a second transition of the
-/// same kind with another fee bundle. That copy would land notes with the same commitments and
-/// the same nullifiers as the original's, of which only one of each could ever be spent. The
-/// pool records these nullifiers when the bundle enters; this is what refuses the copy.
+/// Before protocol version 15 the bundle binds no fee bundle, so its authorized bytes can be put
+/// into a second transition of the same kind with another fee bundle; from 15 it binds its own.
+/// A repeat of the same bundle would land notes with the same commitments and the same
+/// nullifiers as the original's, of which only one of each could ever be spent. The pool records
+/// these nullifiers when the bundle enters; this is what refuses the repeat.
 pub(crate) fn validate_token_pool_outputs(
     drive: &Drive,
     token_id: Identifier,

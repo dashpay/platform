@@ -11,9 +11,13 @@
 import { parseArgs } from 'node:util';
 import {
   loadDotEnv, connect, loadOwnerAuth, loadSchema, schemaSha,
-  readConfig, writeConfig,
+  readConfig, writeConfig, addAdmin, findAdmin, requireKnownProtocolVersion,
 } from './sdk.mjs';
 import { resolvePlanCommit } from './parse-test-plan.mjs';
+
+// testRun.ownerRefersTo is a protocol version 14 keyword; an older network
+// refuses the schema.
+const MIN_PROTOCOL_VERSION = 14;
 
 async function main() {
   loadDotEnv();
@@ -47,10 +51,27 @@ async function main() {
       }
       console.log(`Already registered: ${existing.contractId} (still resolves on ${network}).`);
       console.log('Pass --force to register a fresh contract.');
+      // A registration that stopped between saving the id and listing the owner
+      // leaves the owner unable to record runs. Report it; the owner may also
+      // have removed itself on purpose, so do not list it again here.
+      if (existing.schemaSha === currentSchemaSha && existing.ownerId
+        && !await findAdmin(sdk, existing.contractId, existing.ownerId)) {
+        console.error(`\n⚠️  The owner ${existing.ownerId} is not on the admin list, so it cannot record runs.`);
+        console.error(`   To list it: node src/admin.mjs add ${existing.ownerId} --label "contract owner"`);
+      }
       return;
     }
     console.log(`Config has ${existing.contractId} but it no longer resolves on ${network} `
       + '(testnet reset?). Registering a fresh contract.');
+  }
+
+  // A registration is paid for once. Before reading any key, make sure the
+  // network accepts this schema and that no upgrade the SDK does not know can
+  // overtake the registration.
+  const protocolVersion = await requireKnownProtocolVersion(sdk, mod, network, { andUpcoming: true });
+  if (protocolVersion < MIN_PROTOCOL_VERSION) {
+    throw new Error(`${network} runs protocol version ${protocolVersion}, but this schema needs ${MIN_PROTOCOL_VERSION} `
+      + '(testRun.ownerRefersTo). Upgrade the network before registering.');
   }
 
   const { ownerId, identity, signer, identityKey } = await loadOwnerAuth(sdk, mod, network);
@@ -84,6 +105,20 @@ async function main() {
   console.log(`\n✅ Registered QA contract on ${network}`);
   console.log(`   contractId: ${contractId}`);
   console.log(`   wrote: ${path}`);
+
+  // testRun accepts a run only from a listed admin, the owner included, so list
+  // the owner now. The contract is registered either way: a failure here is
+  // repaired with admin.mjs, not by registering again.
+  try {
+    await addAdmin(sdk, mod, {
+      contractId, ownerId, identityId: ownerId, label: 'contract owner', signer, identityKey,
+    });
+    console.log('   listed the owner as the first admin');
+  } catch (e) {
+    console.error(`\n⚠️  Could not list the owner as an admin: ${e?.message || e}`);
+    console.error(`   Run: node src/admin.mjs add ${ownerId} --label "contract owner"`);
+    process.exitCode = 1;
+  }
 }
 
 main().catch((e) => {

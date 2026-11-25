@@ -106,8 +106,8 @@ fn external_infos(seed_byte: u8) -> Vec<AddressInfo> {
             continue;
         }
         for pool in managed.managed_account_type().address_pools() {
-            if pool.pool_type == AddressPoolType::External && !pool.addresses.is_empty() {
-                let mut infos: Vec<AddressInfo> = pool.addresses.values().cloned().collect();
+            if pool.pool_type() == AddressPoolType::External && !pool.addresses().is_empty() {
+                let mut infos: Vec<AddressInfo> = pool.addresses().values().cloned().collect();
                 infos.sort_by_key(|a| a.index);
                 return infos;
             }

@@ -157,7 +157,6 @@ mod tests {
         use dpp::data_contracts::SystemDataContract;
         use dpp::prelude::Identifier;
         use drive::config::DriveConfig;
-        use platform_version::version::mocks::v5_test::TEST_PROTOCOL_VERSION_5;
         use platform_version::version::{PlatformVersion, INITIAL_PROTOCOL_VERSION};
 
         #[test]
@@ -333,8 +332,7 @@ mod tests {
         }
 
         /// The token market contract joins the genesis state at protocol version 16, with the
-        /// token marketplace. That version has no tables yet, so the test version that selects
-        /// the marketplace stands in for it.
+        /// token marketplace.
         #[test]
         pub fn should_register_the_token_market_contract_only_from_protocol_version_16() {
             let token_market_id = SystemDataContract::TokenMarket.id();
@@ -342,11 +340,7 @@ mod tests {
             for (platform_version, expected) in [
                 (PlatformVersion::get(14).expect("protocol 14"), false),
                 (PlatformVersion::get(15).expect("protocol 15"), false),
-                (
-                    PlatformVersion::get(TEST_PROTOCOL_VERSION_5)
-                        .expect("the token marketplace test version"),
-                    true,
-                ),
+                (PlatformVersion::get(16).expect("protocol 16"), true),
             ] {
                 let initial_protocol_version = platform_version.protocol_version;
                 let platform = TestPlatformBuilder::new()

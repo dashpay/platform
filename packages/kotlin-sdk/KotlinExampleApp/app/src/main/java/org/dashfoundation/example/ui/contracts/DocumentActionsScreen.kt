@@ -53,6 +53,7 @@ import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.RecipientPicker
 import org.dashfoundation.example.ui.components.RecipientSelection
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.LenientJson
 import org.dashfoundation.example.util.hexToBytes
@@ -71,8 +72,9 @@ import org.dashfoundation.example.util.truncateMiddle
  * the acting-identity ownership badge and the replace-field prefill reflect
  * on-chain state. Replace reuses [DocumentPropertyField] / [buildPropertiesJson]
  * (the create form's schema-driven field dispatch); all three actions sign
- * through [resolveSigning] / [submitDocumentTransaction] on the current
- * owner's wallet, so cross-wallet ownership is honored.
+ * through [resolveWallet] / [submitDocumentTransaction] on the current
+ * owner's wallet, so cross-wallet ownership is honored; the Rust wallet
+ * picks the signing key.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -95,11 +97,11 @@ fun DocumentActionsScreen(
     val contractFlow = remember(contractIdHex) {
         container.database.dataContractDao().observeById(contractIdBytes)
     }
-    val contract by contractFlow.collectAsStateWithLifecycle(initialValue = null)
+    val contract by contractFlow.collectEachAsStateWithLifecycle(initialValue = null)
 
-    val identities by container.database.identityDao()
-        .observeWalletOwnedByNetwork(network.ffiValue)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val identities by remember(network.ffiValue) {
+        container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
     var actingIdentity by remember { mutableStateOf<IdentityEntity?>(null) }
 
     var documentIdText by rememberSaveable { mutableStateOf(initialDocumentId) }
@@ -448,7 +450,7 @@ fun DocumentActionsScreen(
                         fail = { error = it },
                         scope = scope,
                     ) {
-                        val (wallet, mgr, signingKeyId) = resolveSigning(container, owner)
+                        val (wallet, mgr) = resolveWallet(container, owner)
                         val json = mgr.documentTransactions.replace(
                             walletHandle = wallet,
                             ownerId = owner.identityId,
@@ -456,7 +458,6 @@ fun DocumentActionsScreen(
                             documentType = typeName,
                             documentId = docIdBytes,
                             propertiesJson = propertiesJson,
-                            signingKeyId = signingKeyId,
                             signerHandle = mgr.signerHandle,
                         )
                         replaceSuccess =
@@ -588,7 +589,7 @@ fun DocumentActionsScreen(
                         fail = { error = it },
                         scope = scope,
                     ) {
-                        val (wallet, mgr, signingKeyId) = resolveSigning(container, owner)
+                        val (wallet, mgr) = resolveWallet(container, owner)
                         mgr.documentTransactions.transfer(
                             walletHandle = wallet,
                             ownerId = owner.identityId,
@@ -596,7 +597,6 @@ fun DocumentActionsScreen(
                             documentType = typeName,
                             documentId = docIdBytes,
                             recipientId = recipientBytes,
-                            signingKeyId = signingKeyId,
                             signerHandle = mgr.signerHandle,
                         )
                         transferSuccess = "Transferred to ${recipientSel.label}."
@@ -627,14 +627,13 @@ fun DocumentActionsScreen(
                             fail = { error = it },
                             scope = scope,
                         ) {
-                            val (wallet, mgr, signingKeyId) = resolveSigning(container, owner)
+                            val (wallet, mgr) = resolveWallet(container, owner)
                             mgr.documentTransactions.delete(
                                 walletHandle = wallet,
                                 ownerId = owner.identityId,
                                 contractId = contractIdBytes,
                                 documentType = typeName,
                                 documentId = docIdBytes,
-                                signingKeyId = signingKeyId,
                                 signerHandle = mgr.signerHandle,
                             )
                             deleteSuccess = "Deleted on-chain."

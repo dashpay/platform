@@ -29,7 +29,7 @@ impl DriveDocumentSumQuery<'_> {
     /// with sum N" from "queried but absent" diff their request's
     /// `In` array against the returned entries by `key`.
     ///
-    /// The `Option<i64>` field's `None` variant is reserved for a
+    /// The `Option<i128>` field's `None` variant is reserved for a
     /// future variant that flips
     /// `absence_proofs_for_non_existing_searched_keys`; the current
     /// path query won't produce it.

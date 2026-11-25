@@ -141,8 +141,8 @@ describe('Data Contract Queries', function describeDataContractQueries() {
 
   describe('getDataContractsLatestVersions() on a fresh client', () => {
     // The staleness check is the first thing an app asks after start-up. A local client is
-    // seeded at protocol version 13 and has verified nothing: it asks the network for its
-    // version first, learns protocol 14, and sends.
+    // seeded at protocol version 14 but has verified nothing: it asks the network for its
+    // version first, has protocol 14 verified, and sends.
     it('should learn the network version before sending', async () => {
       const context = await prefetchLocalReady();
       const freshClient = await sdk.WasmSdkBuilder.local()

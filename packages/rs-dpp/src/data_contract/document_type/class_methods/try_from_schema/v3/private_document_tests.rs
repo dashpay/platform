@@ -1068,9 +1068,9 @@ fn should_refuse_an_update_that_does_not_keep_a_private_type_s_property_order() 
 /// The same rule on a type that registers under full validation (top-level positions run on
 /// without a gap) and one level deeper: `meta` holds an unchanged object `side` before the object
 /// `inner` an update changes, so the check must look past an unchanged sibling and into a nested
-/// object. Prepending to `inner`, reordering it or removing one of its members is refused and
-/// names `the object meta.inner`; appending to it, or appending a property to the type at the
-/// next position, is accepted.
+/// object. Prepending to `inner` or reordering it is refused and names `the object meta.inner`,
+/// and removing a member before another is refused as every removal is; appending to it, or
+/// appending a property to the type at the next position, is accepted.
 #[test]
 fn should_keep_the_property_order_of_a_registrable_private_type_at_every_depth() {
     let platform_version = PlatformVersion::latest();
@@ -1114,10 +1114,6 @@ fn should_keep_the_property_order_of_a_registrable_private_type_at_every_depth()
             "inner's members reordered",
             registrable(platform_value!({ "q": boolean(1), "p": boolean(0) }), None),
         ),
-        (
-            "a member removed from inner",
-            registrable(platform_value!({ "p": boolean(0) }), None),
-        ),
     ] {
         let result = update(&new);
         assert!(
@@ -1131,6 +1127,18 @@ fn should_keep_the_property_order_of_a_registrable_private_type_at_every_depth()
             result.errors
         );
     }
+
+    // A member removed before another is refused as every removal is, by schema compatibility
+    let result = update(&registrable(platform_value!({ "q": boolean(1) }), None));
+    assert!(
+        result.errors.iter().any(|error| matches!(
+            error,
+            ConsensusError::BasicError(BasicError::IncompatibleDocumentTypeSchemaError(error))
+                if error.operation() == "remove"
+        )),
+        "a member removed from inner before another: expected the removal refusal, got {:?}",
+        result.errors
+    );
 
     for (case, new) in [
         (

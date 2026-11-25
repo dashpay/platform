@@ -119,7 +119,7 @@ fn contract(
                 "type": "object",
                 "properties": {
                     "campaignId": identifier(0),
-                    "amount": { "type": "integer", "minimum": 0, "maximum": 1000000000, "position": 1 },
+                    "amount": { "type": "integer", "minimum": 0, "maximum": 100000000, "position": 1 },
                     "tier": { "type": "integer", "minimum": 0, "maximum": 9, "position": 2 }
                 },
                 "required": ["campaignId", "amount", "tier"],
@@ -921,7 +921,7 @@ fn should_refuse_to_skip_a_rule_a_system_change_judges_without_its_total() {
                 "documentsCountable": true,
                 "properties": {
                     "category": { "type": "integer", "minimum": 0, "maximum": 100, "position": 0 },
-                    "price": { "type": "integer", "minimum": 0, "maximum": 1000000000, "position": 1 },
+                    "price": { "type": "integer", "minimum": 0, "maximum": 100000000, "position": 1 },
                     "endsAt": { "type": "integer", "minimum": 0, "position": 2 }
                 },
                 "required": ["category", "price", "endsAt", "$updatedAt"],

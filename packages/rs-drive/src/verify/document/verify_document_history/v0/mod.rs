@@ -3,10 +3,8 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::proof::ProofError;
 use crate::error::Error;
-use crate::verify::RootHash;
-use dpp::data_contract::document_type::DocumentPropertyType;
-use dpp::data_contract::document_type::DocumentTypeRef;
-use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+use crate::verify::{with_proved_root_on_budget_exceeded, RootHash};
+use dpp::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
 use dpp::document::Document;
 use dpp::version::PlatformVersion;
 use grovedb::GroveDb;
@@ -77,8 +75,10 @@ impl Drive {
                         .into_item_bytes()
                         .map_err(Error::from)
                         .and_then(|bytes| {
-                            Document::from_bytes(&bytes, document_type, platform_version)
-                                .map_err(Error::from)
+                            Document::from_bytes_bounded(&bytes, document_type, platform_version)
+                                .map_err(|error| {
+                                    with_proved_root_on_budget_exceeded(root_hash, error.into())
+                                })
                         })
                 })
                 .transpose()?;

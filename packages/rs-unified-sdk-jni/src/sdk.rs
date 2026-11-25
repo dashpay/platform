@@ -3,15 +3,17 @@
 //!
 //! Kotlin counterpart: `org.dashfoundation.dashsdk.ffi.SdkNative`.
 
+use crate::decision_proposals::{read_cstring, string_or_null};
 use crate::results::{unwrap_handle, unwrap_void};
 use crate::support::{guard, net_from_ord};
 use jni::objects::{JClass, JString};
 use jni::sys::{jboolean, jint, jlong, jstring, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
 use rs_sdk_ffi::{
-    dash_sdk_create_adaptive, dash_sdk_create_trusted, dash_sdk_destroy, dash_sdk_enable_logging,
-    dash_sdk_get_context_provider_source, dash_sdk_get_network, dash_sdk_init,
-    dash_sdk_set_context_provider_mode, dash_sdk_version, DashSDKConfig, DashSDKResult, SDKHandle,
+    dash_sdk_create_adaptive, dash_sdk_create_trusted, dash_sdk_destroy,
+    dash_sdk_devnet_quorum_base_url, dash_sdk_enable_logging, dash_sdk_get_context_provider_source,
+    dash_sdk_get_network, dash_sdk_init, dash_sdk_set_context_provider_mode, dash_sdk_version,
+    DashSDKConfig, DashSDKResult, SDKHandle,
 };
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -49,6 +51,23 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SdkNative_version(
         env.new_string(version)
             .map(|s| s.into_raw())
             .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// The quorum service base URL of a named devnet
+/// (`dash_sdk_devnet_quorum_base_url`). Throws `DashSDKException` for a name
+/// the trusted context provider refuses.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_SdkNative_devnetQuorumBaseUrl(
+    mut env: JNIEnv,
+    _class: JClass,
+    devnet_name: JString,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(name) = read_cstring(env, &devnet_name, "devnetName") else {
+            return ptr::null_mut();
+        };
+        unsafe { string_or_null(env, dash_sdk_devnet_quorum_base_url(name.as_ptr())) }
     })
 }
 

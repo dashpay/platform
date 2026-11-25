@@ -193,18 +193,20 @@ fn should_restore_an_asset_lock_funding_pool_beyond_its_initial_window() {
         .into_iter()
         .next()
         .expect("one pool");
-    let window = pool.addresses.len() as u32;
-    pool.generate_addresses(3, &KeySource::Public(account_xpub), true)
+    let window = pool.addresses().len() as u32;
+    pool.generate_addresses(3, &KeySource::Public(account_xpub))
         .unwrap();
     let deep = window + 1;
-    assert!(pool.mark_index_used(1));
-    assert!(pool.mark_index_used(deep));
-    let pool_type = pool.pool_type;
-    let deep_info = pool.addresses[&deep].clone();
+    let first = pool.address_at_index(1).expect("index 1");
+    let deep_address = pool.address_at_index(deep).expect("the deep index");
+    assert!(pool.mark_used(&first));
+    assert!(pool.mark_used(&deep_address));
+    let pool_type = pool.pool_type();
+    let deep_info = pool.addresses()[&deep].clone();
     let snapshot = AccountAddressPoolEntry {
         account_type: AccountType::IdentityTopUpNotBoundToIdentity,
         pool_type,
-        addresses: pool.addresses.values().cloned().collect(),
+        addresses: pool.addresses().values().cloned().collect(),
     };
     persister
         .store(
@@ -236,14 +238,14 @@ fn should_restore_an_asset_lock_funding_pool_beyond_its_initial_window() {
         .next()
         .expect("one pool");
     let entry = pool
-        .addresses
+        .addresses()
         .get(&deep)
         .expect("the index beyond the initial window is restored");
     assert_eq!(entry.address, deep_info.address);
     assert_eq!(entry.path, deep_info.path);
     assert!(entry.is_used());
-    assert!(pool.addresses[&1].is_used());
-    assert!(!pool.addresses[&0].is_used());
-    assert_eq!(pool.address_index.get(&deep_info.address), Some(&deep));
-    assert_eq!(pool.highest_used, Some(deep));
+    assert!(pool.addresses()[&1].is_used());
+    assert!(!pool.addresses()[&0].is_used());
+    assert_eq!(pool.address_index(&deep_info.address), Some(deep));
+    assert_eq!(pool.highest_used(), Some(deep));
 }

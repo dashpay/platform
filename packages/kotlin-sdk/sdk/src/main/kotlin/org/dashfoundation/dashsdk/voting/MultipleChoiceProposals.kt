@@ -152,6 +152,45 @@ class MultipleChoiceProposals internal constructor(private val sdk: Sdk) {
             )
         }
     }
+
+    /**
+     * Vote among [proposalId]'s choices for a masternode with [voter], the signer of its
+     * stored voting key, and wait for the response: the vote of the `votingPrivateKey` overload,
+     * for a key the app stores ([org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore]).
+     * Kotlin counterpart of the signer form of `SDK.castMultipleChoiceProposalVote` in Swift's
+     * `SDK+MultipleChoiceProposals.swift`.
+     *
+     * Call it inside `PlatformWalletManager.withStoredMasternodeVotingKey`, which supplies
+     * [voter]. Rust builds the ECDSA_HASH160 voting key from the voter's voting address and
+     * asks the signer to sign with it. The voter's signer and the SDK both stay alive until
+     * the call returns.
+     *
+     * @param proTxHash 32-byte pro_tx_hash in wire order, as for the `votingPrivateKey`
+     *   overload.
+     * @param voter the signer of the masternode's stored voting key.
+     * @throws IllegalStateException when [voter] is used after its call ended.
+     */
+    suspend fun castVote(
+        proposalId: String,
+        choice: MultipleChoiceVoteChoice,
+        proTxHash: ByteArray,
+        voter: MasternodeVotingSigner,
+    ): Unit = voter.withSignerHandle { signerHandle ->
+        sdk.queryGate.op {
+            val vote = choice.toNative()
+            mapNativeErrors {
+                MultipleChoiceProposalsNative.castVoteWithSigner(
+                    sdk.handle,
+                    proposalId,
+                    vote.discriminant,
+                    vote.choiceId,
+                    proTxHash,
+                    voter.votingAddress,
+                    signerHandle,
+                )
+            }
+        }
+    }
 }
 
 /**

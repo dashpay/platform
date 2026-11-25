@@ -22,12 +22,15 @@ dash-sdk = { path = "../rs-sdk", features = ["wallet"] }
 # duplicating the vtable plumbing. See `signer.rs` in rs-sdk-ffi.
 rs-sdk-ffi = { path = "../rs-sdk-ffi" }
 dash-context-provider = { path = "../rs-context-provider" }
+# `PrivateDocumentAuthMode`, which a private document read reports per entry
+# and the FFI hands over as its discriminant.
+platform-encryption = { path = "../rs-platform-encryption" }
 
 # FFI utilities
 once_cell = "1.19"
 parking_lot = { version = "0.13", features = ["send_guard"] }
 lazy_static = "1.4"
-tokio = { version = "1", features = ["rt-multi-thread"] }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
 tokio-metrics = { workspace = true, optional = true }
 
 # Core dependencies (for Network type)

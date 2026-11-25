@@ -11,10 +11,8 @@ import SwiftDashSDK
 //                          understands *why* they can't do this.
 // - `.hidden`             : the row is omitted from the list entirely.
 //                          Used when the action genuinely doesn't exist
-//                          for this token configuration (e.g. claim row
-//                          on a token that doesn't allow choosing
-//                          destination and the identity isn't the
-//                          designated recipient).
+//                          for this token configuration (e.g. direct
+//                          purchase on a token with no pricing rules).
 enum TokenActionPermission: Equatable {
     case allowed
     case denied(reason: String)
@@ -458,13 +456,9 @@ enum TokenActionResolver {
         }
 
         // Claim: perpetual / pre-programmed / once-per-identity
-        // distribution.
-        // Visibility rule from the prompt:
-        //   * If `mintingAllowChoosingDestination == false` AND identity is
-        //     not the designated `newTokensDestinationIdentity` -> hide.
-        //   * Otherwise show, enabled when this identity is the
-        //     designated recipient (we don't have per-slot
-        //     "next-in-line" data yet, so leave that as TODO).
+        // distribution. Always shown; enabled when this identity is a
+        // recipient of at least one of the kinds the token declares (see
+        // `resolveClaim`).
         let claim: TokenActionPermission = resolveClaim(token: token, identity: identity)
         rows.append(ResolvedTokenAction(kind: .claim, permission: claim))
 
@@ -566,14 +560,68 @@ enum TokenActionResolver {
         return permission
     }
 
-    /// Whether `identity` is the recipient the contract pinned for newly
-    /// minted tokens, which is what makes a perpetual payout land on it.
-    static func isPinnedDistributionRecipient(
+    /// Whether `identity` may claim the token's perpetual distribution, or
+    /// nil when the token has none.
+    ///
+    /// Decided by the distribution's own `distributionRecipient`, the same
+    /// field Drive's wrong-claimant check compares: a contract-owner
+    /// recipient pays the contract's owner, an identity recipient pays that
+    /// identity. The minting settings (`newTokensDestinationIdentity`,
+    /// `mintingAllowChoosingDestination`) say where minted tokens go and
+    /// play no part in who may claim.
+    static func perpetualClaim(
         token: PersistentToken,
         identity: PersistentIdentity
-    ) -> Bool {
-        token.newTokensDestinationIdentity == identity.identityId
+    ) -> TokenActionPermission? {
+        guard let recipient = token.perpetualDistribution?.distributionRecipient else {
+            return nil
+        }
+        let notRecipient = TokenActionPermission.denied(
+            reason: "Not the designated distribution recipient"
+        )
+        let identityPrefix = TokenDistributionRecipient.identity("")
+        if recipient.hasPrefix(identityPrefix) {
+            let recipientBase58 = String(recipient.dropFirst(identityPrefix.count))
+            return !recipientBase58.isEmpty && recipientBase58 == identity.identityIdBase58
+                ? .allowed
+                : notRecipient
+        }
+        switch recipient {
+        case TokenDistributionRecipient.contractOwner.rawValue:
+            guard let ownerId = token.dataContract?.ownerId else {
+                return .denied(reason: "Distribution recipient (contract owner) unknown locally")
+            }
+            return ownerId == identity.identityId ? .allowed : notRecipient
+        case TokenDistributionRecipient.evonodesByParticipation.rawValue:
+            // Drive works out an evonode's share from chain state at submit
+            // time, and this app has no proof of which identities are
+            // evonodes, so it does not offer the claim: a wrong claim costs
+            // a fee. The identity type chosen in Load Identity is a label
+            // the user picks, not that proof, so it is deliberately not
+            // consulted here.
+            return .denied(
+                reason: "Distribution pays evonodes by participation; eligibility not evaluated by this app"
+            )
+        case legacyUnrecordedRecipient:
+            // Rows parsed before the parser read the `$type` map kept the
+            // `TokenPerpetualDistribution` init default, which never named
+            // a real recipient. Loading a contract that is already saved
+            // keeps its rows as they are, so only deleting the contract and
+            // loading it again re-parses the token. Deleting it also drops
+            // the documents saved locally under it (they stay on-chain), so
+            // the reason says so.
+            return .denied(
+                reason: "Distribution recipient not recorded; delete the contract and load it again "
+                    + "(this also clears its locally saved documents)"
+            )
+        default:
+            return .denied(reason: "Distribution recipient '\(recipient)' not recognised by this app")
+        }
     }
+
+    /// The `TokenPerpetualDistribution` init default, left on rows parsed
+    /// before the parser read the recipient's `$type` map.
+    private static let legacyUnrecordedRecipient = "AllEqualShare"
 
     /// Whether `identity` is named in any of the token's pre-programmed
     /// payout events.
@@ -609,8 +657,9 @@ enum TokenActionResolver {
     /// claim order (perpetual, then pre-programmed, then once-per-identity).
     ///
     /// A kind the token declares is not a kind this identity can claim: a
-    /// perpetual payout goes to the contract's pinned recipient and a
-    /// pre-programmed one to the identities its schedule names, so offering
+    /// perpetual payout goes to the distribution's own `distributionRecipient`
+    /// (not the minting destination) and a pre-programmed one to the
+    /// identities its schedule names, so offering
     /// either to anyone else buys a rejection at the user's expense. The
     /// list is therefore what the token declares narrowed by who is asking,
     /// and it is empty when the answer is "nothing".
@@ -623,8 +672,7 @@ enum TokenActionResolver {
         claims: OncePerIdentityClaimReading = OncePerIdentityClaimStore.shared
     ) -> [TokenDistributionType] {
         var claimable: [TokenDistributionType] = []
-        if token.perpetualDistribution != nil,
-           isPinnedDistributionRecipient(token: token, identity: identity) {
+        if perpetualClaim(token: token, identity: identity)?.isAllowed == true {
             claimable.append(.perpetual)
         }
         if token.preProgrammedDistribution != nil,
@@ -690,59 +738,40 @@ enum TokenActionResolver {
         token: PersistentToken,
         identity: PersistentIdentity
     ) -> TokenActionPermission {
-        let isDesignated = isPinnedDistributionRecipient(token: token, identity: identity)
-        let allowsChoosing = token.mintingAllowChoosingDestination
-        let hasPerpetual = token.perpetualDistribution != nil
+        let perpetual = perpetualClaim(token: token, identity: identity)
         let hasPreProgrammed = token.preProgrammedDistribution != nil
 
         // Match the rest of the screen's pattern: rows stay visible
-        // and surface a denial reason instead of disappearing —
+        // and surface a denial reason instead of disappearing:
         // freeze / unfreeze / destroy-frozen-funds all do this when
         // "no one is authorized." Hiding Claim outright made it look
         // like the screen was missing an action entirely.
         //
         // Drive's claim mechanic only fires against an actual
         // distribution schedule, so without one the token has
-        // nothing to claim — surface that as the disabled-state
+        // nothing to claim, so surface that as the disabled-state
         // reason rather than offering a tappable action that
         // would round-trip into a "no distribution" error.
-        if !hasPerpetual && !hasPreProgrammed {
+        if perpetual == nil && !hasPreProgrammed {
             return .denied(reason: "Token has no distribution schedule")
         }
 
+        if perpetual?.isAllowed == true {
+            return .allowed
+        }
+
         // Pre-programmed distributions pin their payouts to explicit
-        // recipient identities at each scheduled timestamp rather than
-        // to `newTokensDestinationIdentity` / `mintingAllowChoosingDestination`
-        // (both of which are minting-side concepts). Check recipient
-        // membership BEFORE the designated-recipient guards below, so a
-        // listed pre-programmed recipient isn't denied for not being the
-        // pinned mint destination. If this identity appears as a
-        // recipient in any scheduled event, let the Claim row open.
-        // We deliberately do NOT evaluate maturity or already-claimed
-        // status here — those are enforced on-chain by Drive when the
-        // claim state transition is submitted. Mirrors the Android fix
-        // in `TokenActionResolver.resolveClaim`.
-        if isPreProgrammedRecipient(token: token, identity: identity) {
+        // recipient identities at each scheduled timestamp. If this
+        // identity appears as a recipient in any scheduled event, let the
+        // Claim row open. We deliberately do NOT evaluate maturity or
+        // already-claimed status here; those are enforced on-chain by
+        // Drive when the claim state transition is submitted. Mirrors the
+        // Android fix in `TokenActionResolver.resolveClaim`.
+        if hasPreProgrammed && isPreProgrammedRecipient(token: token, identity: identity) {
             return .allowed
         }
 
-        // The contract doesn't let identities choose where new
-        // mints go AND this identity isn't the pinned recipient,
-        // so they'd never receive anything to claim.
-        if !allowsChoosing && !isDesignated {
-            return .denied(reason: "Not the designated distribution recipient")
-        }
-
-        if isDesignated {
-            return .allowed
-        }
-
-        // Allowed-to-choose-destination but not yet computed who's
-        // next-in-line for a perpetual slot, and not a listed
-        // pre-programmed recipient. Surface the limitation rather than
-        // blocking outright.
-        // TODO: query the next-in-line distribution slot for this identity.
-        return .denied(reason: "Distribution eligibility not yet evaluated")
+        return perpetual ?? .denied(reason: "Not a recipient of any pre-programmed release")
     }
 
     private static func resolveDirectPurchase(

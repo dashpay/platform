@@ -18,6 +18,7 @@ use dash_sdk::dpp::identifier::Identifier;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::dpp::voting::contender_structs::ContenderWithSerializedDocument;
+use dash_sdk::dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
 use dash_sdk::platform::dpns_usernames::ContestRequests;
 use dash_sdk::query_types::Contenders;
 use serde_json::json; // Still used by other functions
@@ -126,6 +127,18 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_contested_usernames_by_identity(
 
 /// Get the vote state for a contested DPNS username
 ///
+/// `label` is a label or a full name in any case ("alice", "Alice.DASH"); the
+/// SDK normalizes it to the contest's index value.
+///
+/// `limit` is the most contenders returned; 0 returns every contender.
+///
+/// # Returns
+/// A JSON object `{"winner"?, "blockInfo"?, "contenders":[{"identifier","votes","voteCount"?}],
+/// "abstainVotes"?, "lockVotes"?}`. `votes` is the contender's debug text, kept
+/// for compatibility; `voteCount` is its tally, only when the tally was read.
+/// `blockInfo` is `{"height","coreHeight","timeMs"}` of the block that finalized
+/// the contest, present with `winner` once the contest ended.
+///
 /// # Safety
 /// This function is unsafe because it operates on raw pointers
 #[no_mangle]
@@ -171,8 +184,15 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_contested_vote_state(
             let mut result_map = serde_json::Map::new();
 
             // Add winner if present
-            if let Some((winner_info, _block_info)) = contenders.winner {
-                use dash_sdk::dpp::voting::vote_info_storage::contested_document_vote_poll_winner_info::ContestedDocumentVotePollWinnerInfo;
+            if let Some((winner_info, block_info)) = contenders.winner {
+                result_map.insert(
+                    "blockInfo".to_string(),
+                    json!({
+                        "height": block_info.height,
+                        "coreHeight": block_info.core_height,
+                        "timeMs": block_info.time_ms,
+                    }),
+                );
                 match winner_info {
                     ContestedDocumentVotePollWinnerInfo::WonByIdentity(id) => {
                         result_map
@@ -197,6 +217,10 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_contested_vote_state(
                 );
                 // Convert votes to a simple format
                 contender_map.insert("votes".to_string(), json!(format!("{:?}", votes)));
+                // The contender's tally, only when it was read
+                if let Some(vote_count) = votes.vote_tally() {
+                    contender_map.insert("voteCount".to_string(), json!(vote_count));
+                }
                 contenders_array.push(json!(contender_map));
             }
             result_map.insert("contenders".to_string(), json!(contenders_array));
@@ -227,6 +251,115 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_contested_vote_state(
             DashSDKErrorCode::InternalError,
             format!("SDK error: {}", e),
         )),
+    }
+}
+
+/// Get the masternodes that voted for a contestant of a contested DPNS username
+///
+/// `name` is a label or a full name in any case ("alice", "Alice.DASH"); the
+/// SDK normalizes it to the contest's index value. `limit` is the most voters
+/// returned; 0 returns every voter (the SDK reads them in pages).
+///
+/// Live contests only: finalization moves the votes into the contest's stored
+/// record and deletes the live ones this reads. A contest that has ended is an
+/// `InvalidParameter` error saying so, never an empty list.
+///
+/// # Returns
+/// A JSON array `[{"voter_id": base58}]` in voter id order, the shape of
+/// `dash_sdk_contested_resource_get_voters_for_identity`; `[]` when no live
+/// voter entries were found. The contest or the contestant may not exist, so
+/// `[]` does not show a live contestant with no votes.
+///
+/// # Safety
+/// - `sdk_handle` must be a valid pointer to an initialized `SDKHandle`.
+/// - `name` and `contestant_id` must be valid NUL-terminated C strings for the
+///   duration of the call.
+/// - On success the result holds a C string the caller frees with the SDK's
+///   free routine.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_dpns_get_contested_voters_for_identity(
+    sdk_handle: *const SDKHandle,
+    name: *const c_char,
+    contestant_id: *const c_char,
+    limit: u32,
+) -> DashSDKResult {
+    if sdk_handle.is_null() {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "SDK handle is null".to_string(),
+        ));
+    }
+
+    if name.is_null() {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "Name is null".to_string(),
+        ));
+    }
+
+    if contestant_id.is_null() {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "Contestant ID is null".to_string(),
+        ));
+    }
+
+    let sdk_wrapper = unsafe { &*(sdk_handle as *const SDKWrapper) };
+    let sdk = &sdk_wrapper.sdk;
+
+    let name_str = match CStr::from_ptr(name).to_str() {
+        Ok(s) => s,
+        Err(e) => {
+            return DashSDKResult::error(FFIError::from(e).into());
+        }
+    };
+
+    let contestant_id_str = match CStr::from_ptr(contestant_id).to_str() {
+        Ok(s) => s,
+        Err(e) => {
+            return DashSDKResult::error(FFIError::from(e).into());
+        }
+    };
+
+    let contestant = match Identifier::from_string(contestant_id_str, Encoding::Base58) {
+        Ok(id) => id,
+        Err(e) => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                format!("Invalid contestant ID: {}", e),
+            ));
+        }
+    };
+
+    let limit_opt = if limit > 0 { Some(limit) } else { None };
+
+    let result = sdk_wrapper.runtime.block_on(async {
+        sdk.get_contested_dpns_voters_for_identity(name_str, contestant, limit_opt)
+            .await
+    });
+
+    match result {
+        Ok(voters) => {
+            let voters_json: Vec<serde_json::Value> = voters
+                .0
+                .iter()
+                .map(|voter| json!({ "voter_id": voter.0.to_string(Encoding::Base58) }))
+                .collect();
+            match serde_json::to_string(&voters_json) {
+                Ok(json_str) => match CString::new(json_str) {
+                    Ok(c_string) => DashSDKResult::success_string(c_string.into_raw()),
+                    Err(_) => DashSDKResult::error(DashSDKError::new(
+                        DashSDKErrorCode::InternalError,
+                        "Failed to create C string".to_string(),
+                    )),
+                },
+                Err(e) => DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::SerializationError,
+                    format!("JSON serialization error: {}", e),
+                )),
+            }
+        }
+        Err(e) => DashSDKResult::error(FFIError::from(e).into()),
     }
 }
 

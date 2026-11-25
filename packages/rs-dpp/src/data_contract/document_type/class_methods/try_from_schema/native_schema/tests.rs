@@ -17,6 +17,7 @@ use crate::data_contract::config::moderation::{ContractModerationConfig, Contrac
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::schema::validation_schema::ValidationSchema;
+use crate::data_contract::document_type::schema::{DefinitionsRoot, MemberPositionOrder};
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::errors::DataContractError;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
@@ -29,7 +30,7 @@ use platform_version::version::PlatformVersion;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use serde_json::{json, Value as JsonValue};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
 // ---- what the comparisons run ----
@@ -1765,6 +1766,99 @@ fn should_admit_private_which_the_meta_schema_refuses() {
             "{declaration}: {refusal}"
         );
     }
+}
+
+/// Every deployed contract and fixture stays updatable under the rule on an object's member order:
+/// unchanged, none of its objects is judged by the positions a new object is held to. Read as a
+/// new registration, only the testnet contracts known to list an object out of position order
+/// would be refused.
+#[test]
+fn should_keep_every_deployed_contract_updatable_under_the_member_order_rule() {
+    let census = BTreeSet::from([
+        "5hr7uQGA8WQpQS1WzgBKg9vKHjsRxuTBzmP7xsPmnuPP".to_string(),
+        "HnNVSS2byYwjH2BmoTLUJG94xtoDNihBBzWVvh8c5TGD".to_string(),
+        "XJMWN5fHC8p2BjHbWJvyBegj575DNhQTGSghpN2ToFk".to_string(),
+    ]);
+    let mut unupdatable = Vec::new();
+    let mut unregistrable = BTreeSet::new();
+    for case in written_cases().into_iter().chain(corpus_cases()) {
+        let defs = case.schema_defs().unwrap();
+        let schema = Value::from(case.schema.clone());
+        let judge =
+            MemberPositionOrder::new(defs.as_ref(), defs.as_ref(), PlatformVersion::latest());
+        if judge
+            .first_error_of_document_type(Some(&schema), &schema)
+            .is_some()
+            || judge.first_error_of_definitions().is_some()
+        {
+            unupdatable.push(case.origin.clone());
+        }
+        if MemberPositionOrder::new(None, defs.as_ref(), PlatformVersion::latest())
+            .first_error_of_registration([&schema])
+            .is_some()
+        {
+            unregistrable.insert(case.contract_id.to_string(Encoding::Base58));
+        }
+    }
+    assert!(unupdatable.is_empty(), "{unupdatable:#?}");
+    assert!(
+        unregistrable.is_subset(&census),
+        "deployed contracts a registration from protocol version 15 would refuse: \
+         {unregistrable:?}"
+    );
+}
+
+/// Every deployed contract and fixture would register under the rule on what a contract gains,
+/// judged as a new registration (each of its document types has `required` lists a document can
+/// meet, and each member is required exactly when a list names it), except the testnet types
+/// whose own `required` names a property they do not declare, beside `additionalProperties:
+/// false`, so that no document of them could ever be stored.
+#[test]
+fn should_register_every_deployed_contract_under_the_rule_on_what_a_contract_gains() {
+    let census = BTreeSet::from([
+        "DNvyDvViBnGLaSvqm66EY7nKu3DjMLC2Eb79GAU7ZGuw inventory".to_string(),
+        "E3AuocXg62ffTmu9g5JcfJ3Y9DF4iKyUWRUq94G44ym4 utxo".to_string(),
+        "EiAokJHgvphQbP4BLjPELcVQXDrvFmU8t42jgiYwrS5Q ECDHxDoc".to_string(),
+        "FSAvxP1uEUYpb6zMd913tNvRkQthzwSeG5gejYH9S7KK pool".to_string(),
+        "GshTVGeRNjh62KpQqHrLJUSgofrjoE9MrxAZ2w3wkcgT longTermMemory".to_string(),
+    ]);
+    let latest = PlatformVersion::latest();
+    let mut refused = Vec::new();
+    for case in written_cases().into_iter().chain(corpus_cases()) {
+        let defs = case.schema_defs().unwrap();
+        let Ok(document_type) = DocumentType::try_from_schema(
+            case.contract_id,
+            1,
+            case.config.version(),
+            &case.name,
+            Value::from(case.schema.clone()),
+            defs.as_ref(),
+            &case.tokens,
+            &case.config,
+            false,
+            &mut vec![],
+            latest,
+        ) else {
+            continue;
+        };
+        if let Some(details) = document_type.as_ref().first_unmeetable_gained_requirement(
+            None,
+            &DefinitionsRoot::new(defs.as_ref()),
+            1,
+            latest,
+        ) {
+            let place = format!(
+                "{} {}",
+                case.contract_id.to_string(Encoding::Base58),
+                case.name
+            );
+            if !(census.contains(&place) && details.contains("which is not one of its properties"))
+            {
+                refused.push(format!("{}: {details}", case.origin));
+            }
+        }
+    }
+    assert!(refused.is_empty(), "{refused:#?}");
 }
 
 #[test]

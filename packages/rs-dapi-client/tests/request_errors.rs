@@ -8,7 +8,7 @@ use common::ScriptedRequest;
 use dapi_grpc::platform::v0::get_data_contracts_request::{self, GetDataContractsRequestV0};
 use dapi_grpc::platform::v0::GetDataContractsRequest;
 use dapi_grpc::tonic::{Code, Status};
-use rs_dapi_client::transport::{TransportError, TransportRequest};
+use rs_dapi_client::transport::{older_query_version_refusal, TransportError, TransportRequest};
 use rs_dapi_client::{
     Address, AddressList, CanRetry, DapiClient, DapiClientError, DapiRequestExecutor,
     RequestSettings,
@@ -60,6 +60,13 @@ async fn assert_refused_by_one_node_without_a_ban(status: Status) {
         !client.address_list().is_banned(&refusing_node),
         "{message}: the refusing node must not be banned"
     );
+    assert!(
+        client
+            .address_list()
+            .get_live_addresses()
+            .contains(&refusing_node),
+        "{message}: the refusing node must stay reachable"
+    );
 }
 
 #[tokio::test]
@@ -90,6 +97,59 @@ async fn should_neither_ban_nor_retry_an_older_node_that_refuses_the_request() {
         ),
     ] {
         assert_refused_by_one_node_without_a_ban(status).await;
+    }
+}
+
+/// A node that has dropped a query version is in step with a network that moved past it,
+/// as a node at protocol 15 is when it refuses history request V0. It must stay reachable,
+/// so the caller can ask it for the network's version and send the newer request.
+#[tokio::test]
+async fn should_neither_ban_nor_retry_a_node_that_refuses_an_older_query_version() {
+    assert_refused_by_one_node_without_a_ban(Status::unknown(
+        "unsupported version for query: document_history, currently supporting versions 1 to \
+         1 on platform protocol 15, given 0",
+    ))
+    .await;
+}
+
+/// A node that does not serve a newer query version yet is behind the network: another
+/// node may serve it.
+#[test]
+fn should_retry_elsewhere_when_a_node_refuses_a_newer_query_version() {
+    assert!(Status::unknown(
+        "unsupported version for query: document_history, currently supporting versions 0 to \
+         0 on platform protocol 14, given 1",
+    )
+    .can_retry());
+}
+
+/// Only the whole message Drive writes is read as that refusal: one that resembles it says
+/// nothing about the network, and the request moves to the next node.
+#[test]
+fn should_retry_elsewhere_for_a_message_that_only_resembles_the_refusal() {
+    let refusal = "unsupported version for query: document_history, currently supporting \
+                   versions 1 to 1 on platform protocol 15, given 0";
+    assert!(older_query_version_refusal(&Status::unknown(refusal)).is_some());
+    for status in [
+        Status::unknown("unsupported version for query: document_history"),
+        Status::unknown(format!("storage: {refusal}")),
+        Status::internal(refusal),
+        Status::unknown(
+            "unsupported version for query: document_history, currently supporting versions 1 \
+             to 1, given 0",
+        ),
+        Status::unknown(
+            "unsupported version for query: document_history, currently supporting versions 2 \
+             to 1 on platform protocol 15, given 0",
+        ),
+        Status::unknown(
+            "unsupported version for query: , currently supporting versions 1 to 1 on platform \
+             protocol 15, given 0",
+        ),
+        Status::unknown(format!("{refusal} or so")),
+    ] {
+        assert!(older_query_version_refusal(&status).is_none(), "{status}");
+        assert!(status.can_retry(), "{status}");
     }
 }
 

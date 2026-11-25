@@ -7,12 +7,15 @@ use crate::execution::validation::state_transition::state_transitions::data_cont
     assert_paid_contract_structure_error_in_block, assert_paid_ref_cycle_error,
     assert_refused_unpaid_as_not_active, assert_unpaid_internal_error, check_and_process,
     contested_unbounded_sum_schema, expiring_unbounded_sum_schema,
-    field_matches_before_an_unknown_index_key_schema, one_pattern_too_many, patterned_schema,
-    regex_format_schema,
-    resign_with_contract, summed_u64_schema, terminal_without_index_only_schema, Outcome,
-    CONTESTED_UNBOUNDED_SUM_MESSAGE, EXPIRING_UNBOUNDED_SUM_MESSAGE, PATTERN_TOO_LARGE_MESSAGE,
-    SMALL_PATTERN, SUMMED_U64_MESSAGE, TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE,
-    TOO_MANY_PATTERNS_MESSAGE,
+    field_matches_before_an_unknown_index_key_schema, folding_every_code_point,
+    one_pattern_too_many, patterned_schema,
+    private_schema, regex_format_schema,
+    resign_with_contract, summed_u64_schema, terminal_without_index_only_schema,
+    transient_summed_schema, unmeetable_required_schema, Outcome,
+    CONTESTED_UNBOUNDED_SUM_MESSAGE, EXPIRING_UNBOUNDED_SUM_MESSAGE, PATTERN_FOLDS_TOO_MUCH_MESSAGE,
+    PATTERN_TOO_LARGE_MESSAGE, PATTERN_TOO_LONG_MESSAGE,
+    PRIVATE_ENTRY_SIZE_OVER_CAP_MESSAGE, SMALL_PATTERN, SUMMED_U64_MESSAGE, TERMINAL_WITHOUT_INDEX_ONLY_MESSAGE,
+    TOO_MANY_PATTERNS_MESSAGE, TRANSIENT_SUMMED_MESSAGE,
 };
 use crate::execution::validation::state_transition::state_transitions::tests::setup_identity;
 use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
@@ -409,6 +412,136 @@ fn dotted_summable_schema() -> Value {
     })
 }
 
+/// A registration rule checked on the parsed contract registration would store, so `check_tx`
+/// refuses the transition with the error the block charges the owner for, bumping its nonce.
+#[tokio::test]
+async fn should_refuse_a_summed_transient_property_with_a_paid_consensus_error() {
+    let outcome = register_contract_with_schema(
+        transient_summed_schema(),
+        PlatformVersion::latest().protocol_version,
+    )
+    .await
+    .outcome;
+
+    assert_eq!(outcome.nonce_before, Some(0));
+    assert_paid_contract_structure_error(&outcome, TRANSIENT_SUMMED_MESSAGE, 1);
+}
+
+#[tokio::test]
+async fn should_keep_registering_a_summed_transient_property_at_protocol_version_14() {
+    let outcome = register_contract_with_schema(transient_summed_schema(), 14)
+        .await
+        .outcome;
+
+    assert_matches!(
+        outcome.check_tx.as_deref(),
+        Ok([]),
+        "check_tx: {:?}",
+        outcome.check_tx
+    );
+    assert_matches!(
+        &outcome.block,
+        StateTransitionExecutionResult::SuccessfulExecution { .. },
+        "block: {:?}",
+        outcome.block
+    );
+}
+
+/// Whether the contract the registration's owner signed with its first nonce is stored.
+fn is_stored(registration: &Registration, platform_version: &PlatformVersion) -> bool {
+    let contract_id = DataContract::generate_data_contract_id_v0(registration.owner.id(), 1);
+    registration
+        .platform
+        .drive
+        .fetch_contract(contract_id.to_buffer(), None, None, None, platform_version)
+        .value
+        .expect("expected to fetch the contract")
+        .is_some()
+}
+
+/// Every object of a contract being registered is one it gains, held as an update holds the
+/// objects it adds: from protocol version 15 a `required` list no document could meet is
+/// refused on the parsed contract registration would store. `check_tx` refuses the transition
+/// with the error the block charges the owner for, bumping its nonce, and the block stores no
+/// contract.
+#[tokio::test]
+async fn should_refuse_a_new_contract_whose_required_list_no_document_could_meet() {
+    let platform_version = PlatformVersion::latest();
+    let registration = register_contract_with_schema(
+        unmeetable_required_schema(),
+        platform_version.protocol_version,
+    )
+    .await;
+    let outcome = &registration.outcome;
+
+    assert_matches!(
+        outcome.check_tx.as_deref(),
+        Ok([ConsensusError::BasicError(
+            BasicError::DataContractInvalidRequiredFieldsUpdateError(error)
+        )]) if error.details().contains("'w'"),
+        "check_tx: {:?}",
+        outcome.check_tx
+    );
+    assert_matches!(
+        &outcome.block,
+        StateTransitionExecutionResult::PaidConsensusError {
+            error: ConsensusError::BasicError(
+                BasicError::DataContractInvalidRequiredFieldsUpdateError(error)
+            ),
+            ..
+        } if error.details().contains("'w'"),
+        "block: {:?}",
+        outcome.block
+    );
+    assert_eq!(
+        outcome
+            .nonce_after
+            .map(|nonce| nonce & IDENTITY_NONCE_VALUE_FILTER),
+        Some(1),
+        "the rejection bumps the nonce"
+    );
+    assert!(
+        outcome.balance_after < outcome.balance_before,
+        "the rejection is charged: {:?} -> {:?}",
+        outcome.balance_before,
+        outcome.balance_after
+    );
+    assert!(
+        !is_stored(&registration, platform_version),
+        "the refused contract is not stored"
+    );
+}
+
+/// Contract create `transform_into_action` 0 and `state` 1, which protocol version 14 selects,
+/// register such a contract as they always have.
+#[tokio::test]
+async fn should_keep_registering_a_required_list_no_document_could_meet_at_protocol_version_14() {
+    let platform_version = PlatformVersion::get(14).expect("expected protocol version 14");
+    let registration = register_contract_with_schema(
+        unmeetable_required_schema(),
+        platform_version.protocol_version,
+    )
+    .await;
+    let outcome = &registration.outcome;
+
+    assert_matches!(
+        outcome.check_tx.as_deref(),
+        Ok([]),
+        "check_tx: {:?}",
+        outcome.check_tx
+    );
+    assert_matches!(
+        &outcome.block,
+        StateTransitionExecutionResult::SuccessfulExecution { .. },
+        "block: {:?}",
+        outcome.block
+    );
+    assert!(
+        is_stored(&registration, platform_version),
+        "the contract is stored"
+    );
+}
+
 /// The document meta-schema refuses the name. `check_tx` parses a contract without full
 /// validation, so the meta-schema does not run there, and the block refuses the transition with
 /// the meta-schema's error, charging the owner and bumping its nonce.
@@ -626,6 +759,79 @@ async fn should_refuse_a_pattern_over_the_compiled_size_limit_with_a_paid_consen
     assert_paid_contract_structure_error(&registration.outcome, PATTERN_TOO_LARGE_MESSAGE, 1);
 }
 
+/// The pattern bound reads a pattern's length before anything compiles it: a pattern this long
+/// is refused in `check_tx`, and the block refuses it, charging for it, without compiling it.
+#[tokio::test]
+async fn should_refuse_a_pattern_longer_than_a_pattern_may_be_with_a_paid_consensus_error() {
+    let registration = register_contract_with_schema(
+        patterned_schema(1, &folding_every_code_point(2852)),
+        PlatformVersion::latest().protocol_version,
+    )
+    .await;
+
+    assert_paid_contract_structure_error(&registration.outcome, PATTERN_TOO_LONG_MESSAGE, 1);
+}
+
+/// An owner who cannot pay is refused in `check_tx` for the pattern's length, before the
+/// balance pre-check, at every protocol version: the pattern is read and never compiled. The
+/// block refuses the owner, unpaid, for the balance.
+#[tokio::test]
+async fn should_refuse_a_pattern_longer_than_a_pattern_may_be_before_the_balance_pre_check() {
+    for protocol_version in [14, PlatformVersion::latest().protocol_version] {
+        let registration = register_contract_with_schema_and_balance(
+            patterned_schema(1, &folding_every_code_point(2852)),
+            protocol_version,
+            dash_to_credits!(0.0001),
+        )
+        .await;
+        let outcome = &registration.outcome;
+
+        assert_matches!(
+            outcome.check_tx.as_deref(),
+            Ok([ConsensusError::BasicError(BasicError::ContractError(
+                DataContractError::InvalidContractStructure(message)
+            ))]) if message.contains(PATTERN_TOO_LONG_MESSAGE),
+            "protocol version {protocol_version}, check_tx: {:?}",
+            outcome.check_tx
+        );
+        assert_matches!(
+            &outcome.block,
+            StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::StateError(
+                StateError::IdentityInsufficientBalanceError(_)
+            )),
+            "protocol version {protocol_version}, block: {:?}",
+            outcome.block
+        );
+    }
+}
+
+/// A short case-insensitive pattern whose classes fold every code point is refused for what it
+/// folds, before it is compiled.
+#[tokio::test]
+async fn should_refuse_a_pattern_folding_more_than_a_pattern_may_with_a_paid_consensus_error() {
+    let registration = register_contract_with_schema(
+        patterned_schema(1, &folding_every_code_point(1)),
+        PlatformVersion::latest().protocol_version,
+    )
+    .await;
+
+    assert_paid_contract_structure_error(&registration.outcome, PATTERN_FOLDS_TOO_MUCH_MESSAGE, 1);
+}
+
+/// Protocol version 14 has no pattern bound in consensus, so a block still registers such a
+/// pattern, while `check_tx` keeps it out of the mempool.
+#[tokio::test]
+async fn should_keep_registering_a_pattern_folding_more_than_a_pattern_may_at_protocol_version_14_outside_the_mempool(
+) {
+    let registration =
+        register_contract_with_schema(patterned_schema(1, &folding_every_code_point(1)), 14).await;
+
+    assert_kept_out_of_the_mempool_and_executed_in_block(
+        &registration.outcome,
+        PATTERN_FOLDS_TOO_MUCH_MESSAGE,
+    );
+}
+
 /// `check_tx` runs the pattern bound before its non-validating parse, which would compile
 /// every field match, each to megabytes, and then refuse the index with an error of its own.
 /// The block refuses the contract for its patterns too, and charges for it.
@@ -734,5 +940,51 @@ async fn should_register_a_contract_holding_as_many_patterns_as_it_may() {
     assert_matches!(
         registration.outcome.block,
         StateTransitionExecutionResult::SuccessfulExecution { .. }
+    );
+}
+
+/// `check_tx` parses a contract without validating it, which skips the cap on a private type's
+/// `entrySize`, and its fee estimate then prices the store the registration creates. GroveDB
+/// refuses an entry of 65,520 bytes or more, and a size near `u32::MAX` overflows the store's
+/// entry size: an internal error, logged with the whole transaction. `check_tx` refuses the
+/// contract instead, for its `entrySize`, with the error the block charges for.
+#[tokio::test]
+async fn should_refuse_a_private_entry_size_over_the_cap_in_check_tx_as_the_block_does() {
+    for entry_size in [4_097, 70_000, u64::from(u32::MAX)] {
+        let registration = register_contract_with_schema(
+            private_schema(entry_size),
+            PlatformVersion::latest().protocol_version,
+        )
+        .await;
+
+        assert_paid_contract_structure_error(
+            &registration.outcome,
+            PRIVATE_ENTRY_SIZE_OVER_CAP_MESSAGE,
+            1,
+        );
+    }
+}
+
+/// A private type declaring the largest entry it may registers through `check_tx` and a block.
+#[tokio::test]
+async fn should_register_a_private_type_declaring_the_largest_entry_size() {
+    let outcome = register_contract_with_schema(
+        private_schema(4_096),
+        PlatformVersion::latest().protocol_version,
+    )
+    .await
+    .outcome;
+
+    assert_matches!(
+        outcome.check_tx.as_deref(),
+        Ok([]),
+        "check_tx: {:?}",
+        outcome.check_tx
+    );
+    assert_matches!(
+        &outcome.block,
+        StateTransitionExecutionResult::SuccessfulExecution { .. },
+        "block: {:?}",
+        outcome.block
     );
 }

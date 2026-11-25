@@ -445,10 +445,18 @@ impl WalletGeneration {
     ///
     /// Acquiring it waits for payment operations that have already entered their
     /// liveness-check/publish section. It does **not** wait for an operation
-    /// still awaiting an external signer: those acquire the gate only *after*
-    /// the signature returns, precisely so an open signing prompt cannot stall
-    /// teardown. Such a late finalizer then observes the removed generation at
-    /// its liveness check and abandons instead of publishing.
+    /// still awaiting an external signer where that operation acquires the gate
+    /// only *after* the signature returns, as the Core payments, contact
+    /// requests and name trades do, precisely so an open signing prompt cannot
+    /// stall teardown. Such a late finalizer then observes the removed
+    /// generation at its liveness check and abandons instead of publishing.
+    ///
+    /// Four operations take the gate *before* they sign and hold it through
+    /// the signature, so teardown does wait for their signer: a DashPay profile
+    /// write, and the shielded spends that sign with a host signer (a shield
+    /// from a platform account, a shield from an identity, an identity created
+    /// from the shielded pool). Their signer must therefore return in bounded
+    /// time; the FFI's signer gives up after its completion timeout.
     ///
     /// Returns an *owned* guard so it can outlive the `Arc<WalletGeneration>`
     /// binding it was taken from — the remover resolves the current generation in

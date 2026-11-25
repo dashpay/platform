@@ -813,7 +813,10 @@ fn fold_fetched_key(
 /// carries it, and a delayed answer cannot take a raise back. A limit only
 /// one copy has is therefore one the other copy lost, so it is taken from
 /// whichever copy has it.
-fn with_raised_limits(key: IdentityPublicKey, other: &IdentityPublicKey) -> IdentityPublicKey {
+pub(crate) fn with_raised_limits(
+    key: IdentityPublicKey,
+    other: &IdentityPublicKey,
+) -> IdentityPublicKey {
     fn higher(own: Option<u64>, other: Option<u64>) -> Option<u64> {
         match (own, other) {
             (Some(own), Some(other)) => Some(own.max(other)),

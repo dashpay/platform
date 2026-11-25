@@ -31,7 +31,7 @@ struct IdentityRow: View {
         // Keychain so the "No Keys" badge reflects what's actually there.
         let km = KeychainManager.shared
         for publicKey in identity.identityPublicKeys {
-            if km.hasPrivateKey(identityId: identity.identityId, keyIndex: Int32(publicKey.id)) {
+            if km.hasPrivateKey(identityId: identity.identityId, keyIndex: Int32(bitPattern: publicKey.id)) {
                 return true
             }
             if km.hasIdentityPrivateKey(publicKeyHex: publicKey.data.toHexString()) {

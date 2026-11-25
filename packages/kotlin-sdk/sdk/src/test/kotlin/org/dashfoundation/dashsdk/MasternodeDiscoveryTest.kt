@@ -1,9 +1,21 @@
 package org.dashfoundation.dashsdk
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.ByteArrayInputStream
+import java.io.IOException
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.URI
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.thread
 
 /**
  * Mirrors the decoding tolerance of `SDK.discoverActiveMasternodes` in
@@ -21,6 +33,168 @@ class MasternodeDiscoveryTest {
                 String::class.java,
             ),
         )
+    }
+
+    @Test
+    fun shouldReadABodyWithinTheSizeAndTimeBounds() {
+        val body = "{\"success\": true, \"data\": []}"
+        assertEquals(
+            body,
+            Sdk.readBounded(ByteArrayInputStream(body.toByteArray()), body.length, Long.MAX_VALUE),
+        )
+    }
+
+    @Test
+    fun shouldRefuseABodyLargerThanTheCap() {
+        val body = ByteArray(20_000) { 'a'.code.toByte() }
+        assertNull(Sdk.readBounded(ByteArrayInputStream(body), 19_999, Long.MAX_VALUE))
+    }
+
+    @Test
+    fun shouldGiveUpOnAServerThatTricklesItsHeadersPastTheDeadline() {
+        // Bind and connect to the same IPv4 loopback address: a server on
+        // ::1 would refuse the client and pass the test without a deadline.
+        ServerSocket(0, 1, InetAddress.getByName("127.0.0.1")).use { server ->
+            val accepted = AtomicBoolean(false)
+            val trickler = thread(isDaemon = true) {
+                try {
+                    server.accept().use { socket ->
+                        accepted.set(true)
+                        val out = socket.getOutputStream()
+                        out.write("HTTP/1.1 200 OK\r\n".toByteArray())
+                        // One header byte every 200 ms: each read finishes
+                        // well inside the read timeout, and the headers do
+                        // not end before the asserted limit. The server
+                        // gives up after 10 s, so a broken deadline fails
+                        // the assertion instead of stalling the test job.
+                        repeat(50) {
+                            out.write('x'.code)
+                            out.flush()
+                            Thread.sleep(200)
+                        }
+                    }
+                } catch (_: Exception) {
+                    // The client disconnected.
+                }
+            }
+            try {
+                val url = URI("http://127.0.0.1:${server.localPort}/masternodes").toURL()
+                val started = System.nanoTime()
+                assertNull(Sdk.fetchBounded(url, deadlineMs = 1_000))
+                val elapsedMs = (System.nanoTime() - started) / 1_000_000
+                assertTrue("took $elapsedMs ms", elapsedMs < 4_000)
+                assertTrue("the client never connected", accepted.get())
+            } finally {
+                trickler.interrupt()
+            }
+        }
+    }
+
+    @Test
+    fun shouldReturnAtTheDeadlineWhenTheRequestCannotBeAborted() {
+        // A host name lookup has no socket to close, and disconnecting can
+        // wait for a read in progress: the caller must stop waiting at the
+        // deadline even though the abort neither works nor returns.
+        val aborted = CountDownLatch(1)
+        val blocked = CountDownLatch(1)
+        val started = System.nanoTime()
+        try {
+            assertThrows(IOException::class.java) {
+                Sdk.withDeadline(
+                    200,
+                    abort = {
+                        aborted.countDown()
+                        blocked.await()
+                    },
+                ) { blocked.await() }
+            }
+            val elapsedMs = (System.nanoTime() - started) / 1_000_000
+            assertTrue("took $elapsedMs ms", elapsedMs < 2_000)
+            assertTrue("the request was not told to stop", aborted.await(2, TimeUnit.SECONDS))
+        } finally {
+            blocked.countDown()
+        }
+    }
+
+    @Test
+    fun shouldRefuseANewRequestWhileTooManyAbandonedOnesAreStillRunning() {
+        val blocked = CountDownLatch(1)
+        try {
+            repeat(Sdk.MAX_OUTSTANDING_REQUESTS) {
+                assertThrows(IOException::class.java) {
+                    Sdk.withDeadline(50, abort = {}) { blocked.await() }
+                }
+            }
+            // Every slot is held by a request its caller gave up on.
+            var ran = false
+            assertThrows(IOException::class.java) {
+                Sdk.withDeadline(5_000, abort = {}) { ran = true }
+            }
+            assertFalse(ran)
+        } finally {
+            blocked.countDown()
+        }
+        // The slots come back once those requests end.
+        assertEquals("body", withDeadlineOnceASlotIsFree { "body" })
+    }
+
+    @Test
+    fun shouldKeepARequestsSlotUntilItsAbortEndsToo() {
+        val abortBlocked = CountDownLatch(1)
+        try {
+            repeat(Sdk.MAX_OUTSTANDING_REQUESTS) {
+                // The abort ends the request, then does not return itself.
+                val requestEnded = CountDownLatch(1)
+                assertThrows(IOException::class.java) {
+                    Sdk.withDeadline(
+                        50,
+                        abort = {
+                            requestEnded.countDown()
+                            abortBlocked.await()
+                        },
+                    ) { requestEnded.await() }
+                }
+            }
+            var ran = false
+            assertThrows(IOException::class.java) {
+                Sdk.withDeadline(5_000, abort = {}) { ran = true }
+            }
+            assertFalse(ran)
+        } finally {
+            abortBlocked.countDown()
+        }
+        assertEquals("body", withDeadlineOnceASlotIsFree { "body" })
+    }
+
+    /** Slots are given back by threads that are still ending: retry briefly. */
+    private fun <T> withDeadlineOnceASlotIsFree(block: () -> T): T {
+        val giveUpAt = System.nanoTime() + 5_000_000_000L
+        while (true) {
+            try {
+                return Sdk.withDeadline(5_000, abort = {}, block = block)
+            } catch (e: IOException) {
+                if (System.nanoTime() > giveUpAt) throw e
+                Thread.sleep(10)
+            }
+        }
+    }
+
+    @Test
+    fun shouldPassOnTheResultOrTheFailureOfARequestThatFinishesInTime() {
+        assertEquals("body", Sdk.withDeadline(5_000, abort = {}) { "body" })
+        val failure = assertThrows(IllegalStateException::class.java) {
+            Sdk.withDeadline<String>(5_000, abort = {}) { error("refused") }
+        }
+        assertEquals("refused", failure.message)
+    }
+
+    @Test
+    fun shouldStopReadingOnceTheDeadlinePasses() {
+        val body = ByteArray(20_000) { 'a'.code.toByte() }
+        var now = 0L
+        // Each clock read advances one second; the deadline is two seconds in.
+        val clock = { now.also { now += 1_000_000_000L } }
+        assertNull(Sdk.readBounded(ByteArrayInputStream(body), Int.MAX_VALUE, 2_000_000_000L, clock))
     }
 
     @Test

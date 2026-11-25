@@ -8,12 +8,12 @@ use crate::data_contract::document_type::accessors::{
 };
 use crate::data_contract::document_type::index::Index;
 use crate::data_contract::document_type::methods::DocumentTypeV0Methods;
-use crate::data_contract::document_type::DocumentTypeRef;
+use crate::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef};
 use crate::document::property_names::OWNER_ID;
 use crate::ProtocolError;
-use platform_value::string_encoding::Encoding;
 use platform_value::{Identifier, Value};
 use platform_version::version::PlatformVersion;
+use std::collections::BTreeSet;
 
 impl AggregateRead {
     /// Whether `counted`, the type the read totals, keeps the total over all
@@ -74,12 +74,104 @@ impl AggregateRead {
     /// value always present and of the key's kind, but the read is built before
     /// the document's schema is validated, which refuses such a document
     /// anyway.
+    ///
+    /// A read matching a key by the elements of an array
+    /// ([`AggregateBinding::Elements`]) has no single set of values, and gets
+    /// `None` here: [`Self::filter_value_sets`] gives one set per element.
     pub fn filter_values(
         &self,
         counted: DocumentTypeRef,
         document_id: Identifier,
         data: &Value,
         owner_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<Option<Vec<(String, Value)>>, ProtocolError> {
+        self.bound_values(counted, document_id, data, owner_id, None, platform_version)
+    }
+
+    /// Every set of values the filter's keys take for the document
+    /// ([`Self::filter_values`]), each of which is one total kept in state, the
+    /// read's total being their sum: the one set of a filter binding every key
+    /// to a single value, none when no document can match it, and for a filter
+    /// matching a key by the elements of an array of the document
+    /// ([`AggregateBinding::Elements`]) one set per distinct element the key
+    /// can hold, so none for a list the document leaves out or empties.
+    /// Elements are told apart as the key's index tells them apart, by their
+    /// serialized key, so a list repeating an element reads its total once.
+    ///
+    /// `declaring` is the type whose rule reads the total, which holds the
+    /// array. A list longer than the array's `maxItems` gives no set: the
+    /// read is built before the document's schema is validated, which refuses
+    /// such a document, and the totals a write reads from state stay within
+    /// what registration counted for the rule, one per element the array may
+    /// hold (`SystemLimits::max_property_constraint_aggregates`).
+    pub fn filter_value_sets(
+        &self,
+        declaring: DocumentTypeRef,
+        counted: DocumentTypeRef,
+        document_id: Identifier,
+        data: &Value,
+        owner_id: Identifier,
+        platform_version: &PlatformVersion,
+    ) -> Result<Vec<Vec<(String, Value)>>, ProtocolError> {
+        let Some((key, path)) = self.filter.iter().find_map(|(key, binding)| match binding {
+            AggregateBinding::Elements { path, .. } => Some((key, path)),
+            _ => None,
+        }) else {
+            return Ok(self
+                .filter_values(counted, document_id, data, owner_id, platform_version)?
+                .into_iter()
+                .collect());
+        };
+        let Ok(Some(Value::Array(elements))) = data.get_optional_value_at_path(path) else {
+            return Ok(Vec::new());
+        };
+        let most_elements = match declaring
+            .flattened_properties()
+            .get(path)
+            .map(|property| &property.property_type)
+        {
+            Some(DocumentPropertyType::TypedArray(array)) => usize::from(array.max_items),
+            // Registration refuses a path naming no typed array
+            _ => 0,
+        };
+        if elements.len() > most_elements {
+            return Ok(Vec::new());
+        }
+        let mut seen = BTreeSet::new();
+        let mut sets = Vec::new();
+        for element in elements {
+            // An element the key cannot hold matches no document
+            let Ok(serialized) = counted.serialize_value_for_key(key, element, platform_version)
+            else {
+                continue;
+            };
+            if !seen.insert(serialized) {
+                continue;
+            }
+            if let Some(values) = self.bound_values(
+                counted,
+                document_id,
+                data,
+                owner_id,
+                Some(element),
+                platform_version,
+            )? {
+                sets.push(values);
+            }
+        }
+        Ok(sets)
+    }
+
+    /// [`Self::filter_values`], with `element` the value a key matched by the
+    /// elements of an array takes; without one such a key matches nothing.
+    fn bound_values(
+        &self,
+        counted: DocumentTypeRef,
+        document_id: Identifier,
+        data: &Value,
+        owner_id: Identifier,
+        element: Option<&Value>,
         platform_version: &PlatformVersion,
     ) -> Result<Option<Vec<(String, Value)>>, ProtocolError> {
         let mut values = Vec::with_capacity(self.filter.len());
@@ -94,6 +186,10 @@ impl AggregateRead {
                         _ => return Ok(None),
                     }
                 }
+                AggregateBinding::Elements { .. } => match element {
+                    Some(element) if !element.is_null() => element.clone(),
+                    _ => return Ok(None),
+                },
                 AggregateBinding::Constant(constant) => {
                     let identifier_key = key == OWNER_ID
                         || counted
@@ -101,9 +197,9 @@ impl AggregateRead {
                             .get(key)
                             .is_some_and(|property| property.property_type.is_identifier());
                     if identifier_key {
-                        match Identifier::from_string(constant, Encoding::Base58) {
-                            Ok(identifier) => Value::Identifier(identifier.to_buffer()),
-                            Err(_) => return Ok(None),
+                        match Identifier::from_base58_text(constant) {
+                            Some(identifier) => Value::Identifier(identifier.to_buffer()),
+                            None => return Ok(None),
                         }
                     } else {
                         Value::Text(constant.clone())
