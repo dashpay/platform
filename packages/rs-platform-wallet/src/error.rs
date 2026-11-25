@@ -530,6 +530,22 @@ pub enum PlatformWalletError {
     #[error("Asset lock {0} cannot be reused; Platform completion is unconfirmed")]
     AssetLockAlreadyConsumed(dashcore::OutPoint),
 
+    /// An unbound identity top-up lock that records no recipient cannot be
+    /// assigned one, because whether Platform already consumed it is unknown
+    /// ([`AssetLockStatus::RecoveredFromChain`](crate::wallet::asset_lock::tracked::AssetLockStatus::RecoveredFromChain)):
+    /// a lock rebuilt from a finalized transaction after a restore, which may
+    /// have topped up an identity long ago. Assigning is permanent, and no
+    /// query tells the wallet whether Platform has used an asset-lock
+    /// outpoint, so binding it could ask the user to pay an identity from a
+    /// lock that is already spent. Nothing was assigned. The FFI reports it
+    /// with the same code as [`Self::AssetLockAlreadyConsumed`]: this lock
+    /// cannot be used here.
+    #[error(
+        "Asset lock {0} may already have been consumed on Platform; it records no identity \
+         and cannot be assigned one"
+    )]
+    AssetLockConsumptionUnknown(dashcore::OutPoint),
+
     /// A tracked outpoint belongs to another funding family or identity
     /// index. Resuming it for the requested destination would spend the
     /// one-shot output on the wrong operation.
@@ -762,6 +778,43 @@ pub enum PlatformWalletError {
     /// class changes. See [`Self::before_dispatch`].
     #[error("{source}")]
     RefusedBeforeDispatch { source: Box<PlatformWalletError> },
+    /// An unbound identity top-up lock is being resumed (or assigned) to a
+    /// different identity than the one its tracked row recorded. The recorded
+    /// identity is the one the user confirmed; nothing was submitted or paid.
+    /// Resume with the recorded identity instead. The FFI reports it with the
+    /// same code as [`Self::AssetLockRecipientMismatch`].
+    #[error(
+        "Asset lock {out_point} was built to top up identity {recorded} and cannot be resumed to {requested}"
+    )]
+    AssetLockIdentityRecipientMismatch {
+        out_point: dashcore::OutPoint,
+        recorded: Identifier,
+        requested: Identifier,
+    },
+
+    /// An unbound identity top-up lock records no recipient (it was rebuilt
+    /// from the chain, for example after a restore from the seed, and its
+    /// credit output names no identity), so no resume pays it: it may have
+    /// been meant for someone else's identity. Nothing was submitted or paid.
+    /// The funds stay recoverable: assign the lock a recipient the user
+    /// chooses, then resume it. That holds while the wallet knows the lock is
+    /// unconsumed; one whose Platform consumption is unknown cannot be
+    /// assigned ([`Self::AssetLockConsumptionUnknown`]).
+    #[error("Asset lock {0} records no identity to top up; assign a recipient before resuming it")]
+    AssetLockRecipientUnknown(dashcore::OutPoint),
+
+    /// A bound identity top-up lock pays the wallet's identity at its
+    /// registration index, but the wallet holds no identity there yet (for
+    /// example, identities are still being discovered after a restore).
+    /// Nothing was submitted or paid; resume after the identity is loaded.
+    #[error(
+        "Asset lock {out_point} tops up the wallet's identity at index {identity_index}, \
+         which this wallet does not hold yet"
+    )]
+    AssetLockIdentityNotLoaded {
+        out_point: dashcore::OutPoint,
+        identity_index: u32,
+    },
 
     #[error("SDK error: {0}")]
     Sdk(#[from] dash_sdk::Error),
@@ -1909,17 +1962,28 @@ impl PlatformWalletError {
             // by funding a new one.
             Self::FinalityTimeout(out_point)
             | Self::AssetLockInputContested { out_point, .. }
-            | Self::AssetLockRecipientMismatch { out_point, .. } => LockHeld(*out_point),
+            | Self::AssetLockRecipientMismatch { out_point, .. }
+            | Self::AssetLockIdentityRecipientMismatch { out_point, .. } => LockHeld(*out_point),
+            // An identity top-up lock a resume cannot pay yet: it records no
+            // identity (the user assigns one), or its bound identity is not
+            // loaded. Nothing was submitted; the lock is held and the payment
+            // goes on by resuming it once that is settled. Emitters name it
+            // only while the lock's status is resumable (`without_held_lock`
+            // otherwise).
+            Self::AssetLockRecipientUnknown(out_point)
+            | Self::AssetLockIdentityNotLoaded { out_point, .. } => LockHeld(*out_point),
             // A fresh build over the input cap was refused before it was
             // tracked or sent.
             Self::AssetLockTooManyInputs { resumed: false, .. } => NotSent,
             // An asset lock exists and may be on the network, but the error
             // names no lock this payment can resume: consumed (Platform's
-            // completion is unconfirmed), a resumed row over the input cap (a
+            // completion is unconfirmed) or possibly consumed (a recipient-less
+            // top-up lock rebuilt from the chain), a resumed row over the input cap (a
             // resume is refused, and an earlier attempt may have sent it), or
             // a proof failure that carries no outpoint.
             Self::AssetLockProofWait(_)
             | Self::AssetLockAlreadyConsumed(_)
+            | Self::AssetLockConsumptionUnknown(_)
             | Self::AssetLockTooManyInputs { resumed: true, .. }
             | Self::AssetLockExpired(_)
             | Self::AssetLockNotChainLocked(_) => MaybeSent,
@@ -2216,8 +2280,12 @@ impl PlatformWalletError {
                 | Self::FinalityTimeout(_)
                 | Self::AssetLockInputContested { .. }
                 | Self::AssetLockRecipientMismatch { .. }
+                | Self::AssetLockIdentityRecipientMismatch { .. }
+                | Self::AssetLockRecipientUnknown(_)
+                | Self::AssetLockIdentityNotLoaded { .. }
                 | Self::AssetLockProofWait(_)
                 | Self::AssetLockAlreadyConsumed(_)
+                | Self::AssetLockConsumptionUnknown(_)
                 | Self::AssetLockExpired(_)
                 | Self::AssetLockNotChainLocked(_)
                 | Self::AddressNonceMismatch { .. }
@@ -3217,7 +3285,7 @@ mod payment_delivery_tests {
     }
 
     /// Variants of [`PlatformWalletError`]: one past the highest ordinal.
-    const VARIANT_COUNT: usize = 130;
+    const VARIANT_COUNT: usize = 134;
 
     /// The ordinal of `error`'s variant. No wildcard arm: a new variant does
     /// not compile until it gets the next ordinal here (and
@@ -3356,6 +3424,10 @@ mod payment_delivery_tests {
             E::ShieldedSpendTooManyNotes { .. } => 127,
             E::ShieldedWithdrawalAmountOutOfRange { .. } => 128,
             E::NetworkProtocolVersionUnsupported { .. } => 129,
+            E::AssetLockIdentityRecipientMismatch { .. } => 130,
+            E::AssetLockRecipientUnknown(_) => 131,
+            E::AssetLockIdentityNotLoaded { .. } => 132,
+            E::AssetLockConsumptionUnknown(_) => 133,
         }
     }
 
@@ -3495,6 +3567,26 @@ mod payment_delivery_tests {
             (E::AssetLockProofWait(s()), MaybeSent),
             (E::AssetLockNotTracked(out_point()), NotSent),
             (E::AssetLockAlreadyConsumed(out_point()), MaybeSent),
+            (E::AssetLockConsumptionUnknown(out_point()), MaybeSent),
+            (
+                E::AssetLockIdentityRecipientMismatch {
+                    out_point: out_point(),
+                    recorded: id(),
+                    requested: id(),
+                },
+                LockHeld(out_point()),
+            ),
+            (
+                E::AssetLockRecipientUnknown(out_point()),
+                LockHeld(out_point()),
+            ),
+            (
+                E::AssetLockIdentityNotLoaded {
+                    out_point: out_point(),
+                    identity_index: 0,
+                },
+                LockHeld(out_point()),
+            ),
             (
                 E::AssetLockFundingMismatch {
                     out_point: out_point(),
@@ -3977,8 +4069,9 @@ mod payment_delivery_tests {
             .collect();
         assert_eq!(
             held.len(),
-            4,
-            "FinalityTimeout, contested, recipient mismatch, a refusal after dispatch"
+            7,
+            "FinalityTimeout, contested, recipient mismatch, identity recipient mismatch, \
+             unknown identity recipient, identity not loaded, a refusal after dispatch"
         );
         for (error, _) in held {
             assert!(!error.is_retryable(), "{error:?}");

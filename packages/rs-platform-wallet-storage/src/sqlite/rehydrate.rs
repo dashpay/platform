@@ -6,8 +6,12 @@
 
 use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::{Account, AccountType};
-use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
+use key_wallet::bip32::ChildNumber;
+use key_wallet::managed_account::address_pool::{
+    AddressInfo, AddressPool, AddressPoolType, AddressState, PublicKeyType,
+};
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+use key_wallet::managed_account::managed_account_type::ManagedAccountType;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
@@ -170,6 +174,152 @@ pub(crate) fn restore_provider_platform_node_pool(
                     WalletStorageError::AccountRecordInvalid { e: source }
                 }
             })?;
+    }
+    Ok(())
+}
+
+/// Restore the address pools of the asset-lock funding key accounts
+/// (identity registration, bound and unbound identity top-up, invitation,
+/// address and shielded-address top-up) from their stored rows.
+///
+/// These accounts fund OP_RETURN-payload credit outputs that never appear as
+/// on-chain UTXOs, so no scan rediscovers their used indices: the stored pool
+/// is the only record of which keys were handed out and how far the pool was
+/// generated. Without it a restart rebuilds each account with its initial
+/// window only, all unused: a lock built on a later index could not be signed
+/// on resume (its key is not in the pool), and an index already handed out
+/// could be handed out again. Rows are merged into the freshly built pools:
+/// an index beyond the window is added from its stored script and public
+/// key, at the pool's base path, and a stored used mark is applied.
+///
+/// The pool is not extended beyond what was stored. The addresses a funding
+/// account derived on seeing its locks on chain are stored as rows of their
+/// own ([`core_pool::insert_derived_funding_address`]), so the window those
+/// locks moved comes back with them. An index marked used by a
+/// lock that never reached the chain is cleared when the wallet hands it back
+/// ([`core_pool::release_unsent_address`]); one that stays marked is left so,
+/// and a pool used up that way refuses the next lock rather than build it past
+/// the addresses a recovery from scratch scans, where it could not be found
+/// again.
+pub(crate) fn restore_asset_lock_funding_pools(
+    wallet_info: &mut ManagedWalletInfo,
+    conn: &rusqlite::Connection,
+    wallet_id: &platform_wallet::wallet::platform_wallet::WalletId,
+    network: Network,
+    ctx: &LoadCtx,
+) -> Result<(), WalletStorageError> {
+    let accounts_collection = &mut wallet_info.accounts;
+    let mut targets: Vec<(AccountType, &mut ManagedAccountType)> = Vec::new();
+    if let Some(account) = accounts_collection.identity_registration.as_mut() {
+        targets.push((
+            AccountType::IdentityRegistration,
+            account.managed_account_type_mut(),
+        ));
+    }
+    for (registration_index, account) in accounts_collection.identity_topup.iter_mut() {
+        targets.push((
+            AccountType::IdentityTopUp {
+                registration_index: *registration_index,
+            },
+            account.managed_account_type_mut(),
+        ));
+    }
+    if let Some(account) = accounts_collection.identity_topup_not_bound.as_mut() {
+        targets.push((
+            AccountType::IdentityTopUpNotBoundToIdentity,
+            account.managed_account_type_mut(),
+        ));
+    }
+    if let Some(account) = accounts_collection.identity_invitation.as_mut() {
+        targets.push((
+            AccountType::IdentityInvitation,
+            account.managed_account_type_mut(),
+        ));
+    }
+    if let Some(account) = accounts_collection.asset_lock_address_topup.as_mut() {
+        targets.push((
+            AccountType::AssetLockAddressTopUp,
+            account.managed_account_type_mut(),
+        ));
+    }
+    if let Some(account) = accounts_collection
+        .asset_lock_shielded_address_topup
+        .as_mut()
+    {
+        targets.push((
+            AccountType::AssetLockShieldedAddressTopUp,
+            account.managed_account_type_mut(),
+        ));
+    }
+    for (account_type, managed) in targets {
+        for pool in managed.address_pools_mut() {
+            let rows = core_pool::load_typed_pool_entries(
+                conn,
+                wallet_id,
+                &account_type,
+                pool.pool_type(),
+            )?;
+            restore_pool_rows(pool, rows, &account_type, wallet_id, network, ctx)?;
+        }
+    }
+    Ok(())
+}
+
+/// Merge stored rows into `pool` (see [`restore_asset_lock_funding_pools`]),
+/// in index order: [`AddressPool::insert`] refuses an index that would leave
+/// a gap, so each stored index beyond the window extends the pool by one.
+fn restore_pool_rows(
+    pool: &mut AddressPool,
+    mut rows: Vec<core_pool::TypedPoolEntry>,
+    account_type: &AccountType,
+    wallet_id: &platform_wallet::wallet::platform_wallet::WalletId,
+    network: Network,
+    ctx: &LoadCtx,
+) -> Result<(), WalletStorageError> {
+    rows.sort_by_key(|(index, ..)| *index);
+    let pool_type = pool.pool_type();
+    for (index, script_bytes, public_key, used) in rows {
+        let address = match pool.addresses().get(&index) {
+            Some(info) => info.address.clone(),
+            None => {
+                let script_pubkey = dashcore::ScriptBuf::from_bytes(script_bytes);
+                let address = match dashcore::Address::from_script(&script_pubkey, network) {
+                    Ok(address) => address,
+                    Err(e) => {
+                        ctx.tolerate_at(
+                            LoadSite::UndecodableAddressScript,
+                            SiteCoords {
+                                wallet_id: Some(*wallet_id),
+                                account_type,
+                                affected: 1,
+                                detail: Some(&pool_type),
+                            },
+                            WalletStorageError::from(e),
+                        )?;
+                        continue;
+                    }
+                };
+                let child = ChildNumber::from_normal_idx(index).map_err(|_| {
+                    WalletStorageError::blob_decode(
+                        "core_address_pool.address_index is not a normal child index",
+                    )
+                })?;
+                let mut path = pool.base_path().clone();
+                path.push(child);
+                pool.insert(AddressInfo {
+                    address: address.clone(),
+                    public_key: Some(public_key),
+                    index,
+                    path,
+                    state: AddressState::Available,
+                })
+                .map_err(|e| WalletStorageError::AccountRecordInvalid { e })?;
+                address
+            }
+        };
+        if used {
+            pool.mark_used(&address);
+        }
     }
     Ok(())
 }

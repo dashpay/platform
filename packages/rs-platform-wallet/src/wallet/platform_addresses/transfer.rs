@@ -1920,6 +1920,7 @@ mod auto_select_tests {
         use crate::events::PlatformEventManager;
         use crate::spv::SpvRuntime;
         use crate::wallet::asset_lock::manager::AssetLockManager;
+        use crate::wallet::core::WalletGeneration;
         use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
         use crate::wallet::platform_addresses::PlatformAddressWallet;
         use std::sync::Arc;
@@ -1940,6 +1941,8 @@ mod auto_select_tests {
             Arc::new(Notify::new()),
             broadcaster,
             persister.clone(),
+            // No wallet is registered under this id; nothing builds here.
+            Arc::new(WalletGeneration::new()),
         ));
         PlatformAddressWallet::new(sdk, wallet_manager, [0u8; 32], asset_locks, persister)
     }

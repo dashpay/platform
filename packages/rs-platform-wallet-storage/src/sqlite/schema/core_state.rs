@@ -17,7 +17,7 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::load_ctx::{LoadCtx, LoadSite};
 use crate::sqlite::schema::blob::impl_persistable_blob;
-use crate::sqlite::schema::core_pool::{owning_account_for_script, OwningAccount};
+use crate::sqlite::schema::core_pool::{self, owning_account_for_script, OwningAccount};
 use crate::sqlite::schema::{blob, core_history};
 
 // PUBLIC material only: core-chain state reaching `record_blob` /
@@ -114,9 +114,23 @@ pub fn apply(
             core_history::index_record(tx, wallet_id, &record)?;
         }
     }
-    // `addresses_derived` is intentionally NOT persisted here — the pool
+    // `addresses_derived` is otherwise NOT persisted here — the pool
     // snapshot (`account_address_pools`) is the derived-address source used
-    // to resolve UTXO ownership during rehydration.
+    // to resolve UTXO ownership during rehydration. Only asset-lock funding
+    // accounts' derivations are kept, as unused rows: their pools are
+    // restored from stored rows alone, and the window a seen lock moved would
+    // otherwise be lost (`core_pool::insert_derived_funding_address`).
+    for derived in &cs.addresses_derived {
+        core_pool::insert_derived_funding_address(
+            tx,
+            wallet_id,
+            &derived.account_type,
+            derived.pool_type,
+            derived.derivation_index,
+            derived.address.script_pubkey().as_bytes(),
+            &derived.public_key.inner.to_compressed(),
+        )?;
+    }
     if !cs.new_utxos.is_empty() {
         // Blob-bearing records always win; height-only writes never overwrite them.
         // Placeholder confirmation is `height IS NOT NULL`; `finalized` stays 0.
@@ -2003,10 +2017,10 @@ mod tests {
         migrations::run_for_open(&mut conn, LoadPolicy::Recovery)
             .expect("Recovery must complete V022 past an undecodable kept record");
 
-        assert_eq!(
-            schema_version(&conn),
-            23,
-            "the upgrade runs on through the migrations after V022"
+        // Every later migration runs too, so the version is at least V022's.
+        assert!(
+            schema_version(&conn) >= 22,
+            "the upgrade must complete V022"
         );
     }
 

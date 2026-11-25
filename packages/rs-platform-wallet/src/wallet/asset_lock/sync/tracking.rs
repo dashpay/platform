@@ -3,11 +3,15 @@
 use crate::broadcaster::TransactionBroadcaster;
 use dashcore::OutPoint;
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use crate::changeset::changeset::AssetLockChangeSet;
 use crate::changeset::changeset::PlatformWalletChangeSet;
 use crate::changeset::PersistenceCapabilities;
 use crate::error::PlatformWalletError;
+use crate::wallet::core::WalletGeneration;
+use dpp::prelude::Identifier;
+use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
 use super::super::manager::AssetLockManager;
 use super::super::tracked::{AssetLockStatus, TrackedAssetLock};
@@ -94,39 +98,30 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     }
 
     /// Whether active or sticky resume state excludes rejected-build cleanup.
-    fn resume_cleanup_excluded(&self, out_point: &OutPoint) -> bool {
+    pub(crate) fn resume_cleanup_excluded(&self, out_point: &OutPoint) -> bool {
         self.resume_dispatch_claims
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .contains_key(out_point)
     }
 
-    /// Snapshot the funding role, bound index, status and recorded shielded
-    /// recipient used to authorize an existing-lock resume. Taking them under
-    /// one read lock avoids a role/status (or recipient/status)
-    /// time-of-check/time-of-use split in the resolver.
-    ///
-    /// [`AssetLockFundingType`]:
-    /// key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType
+    /// Snapshot the funding role, bound index, status and recorded identity
+    /// and shielded recipients used to authorize an existing-lock resume.
+    /// Taking them under one read lock avoids a role/status (or
+    /// recipient/status) time-of-check/time-of-use split in the resolver.
     pub(crate) async fn tracked_resume_metadata(
         &self,
         out_point: &OutPoint,
-    ) -> Option<(
-        key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType,
-        u32,
-        AssetLockStatus,
-        Option<crate::changeset::ShieldedRecipientRaw>,
-    )> {
+    ) -> Option<TrackedResumeMetadata> {
         let wm = self.wallet_manager.read().await;
         wm.get_wallet_info(&self.wallet_id)
             .and_then(|info| info.tracked_asset_locks.get(out_point))
-            .map(|lock| {
-                (
-                    lock.funding_type,
-                    lock.identity_index,
-                    lock.status.clone(),
-                    lock.shielded_recipient,
-                )
+            .map(|lock| TrackedResumeMetadata {
+                funding_type: lock.funding_type,
+                identity_index: lock.identity_index,
+                status: lock.status.clone(),
+                identity_recipient: lock.identity_recipient,
+                shielded_recipient: lock.shielded_recipient,
             })
     }
 
@@ -139,14 +134,137 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .and_then(|lock| lock.operation_id)
     }
 
+    /// Assign the identity an unbound identity top-up lock pays, for a lock
+    /// that records none (see [`TrackedAssetLock::is_unassigned_identity_top_up`]):
+    /// one rebuilt from the chain after a restore, whose credit output names
+    /// no identity. The user chooses the identity; afterwards a resume pays it
+    /// and refuses any other, exactly as for a lock built with a recipient.
+    /// Callers outside the crate go through
+    /// `IdentityWallet::assign_identity_top_up_recipient`, which first checks
+    /// that Platform knows the identity.
+    ///
+    /// Refused on a backend that cannot keep the assignment
+    /// ([`PersistenceCapabilities::ASSET_LOCK_IDENTITY_RECIPIENTS`]). Only an
+    /// unbound top-up lock that is not consumed can be assigned
+    /// ([`PlatformWalletError::AssetLockAlreadyConsumed`] otherwise). One
+    /// rebuilt from the chain ([`RecoveredFromChain`](AssetLockStatus::RecoveredFromChain)),
+    /// which Platform may already have used, is assigned only when the caller
+    /// acknowledges that (`acknowledge_unknown_consumption`), and is
+    /// [`PlatformWalletError::AssetLockConsumptionUnknown`] otherwise. Platform
+    /// uses an outpoint once, so a lock it already used is refused there and
+    /// the resume reports it consumed: the acknowledgement risks no second
+    /// payment, only the user's choice of identity.
+    ///
+    /// The recipient alone is written, by the backend at once
+    /// ([`PlatformWalletPersistence::assign_asset_lock_identity_recipient`](crate::changeset::PlatformWalletPersistence::assign_asset_lock_identity_recipient)),
+    /// never a snapshot of the row: a proof or status sync recorded meanwhile
+    /// stays, and a lock the backend no longer stores (a sweep) is refused
+    /// rather than written back. Only once it is committed is it recorded in
+    /// memory, where a resume reads it, and only on a lock that is still
+    /// tracked and assignable: a lock swept meanwhile is
+    /// [`PlatformWalletError::AssetLockNotTracked`]. A failed assignment left
+    /// nothing behind, in memory or in the backend, so any identity may be
+    /// assigned afterwards.
+    ///
+    /// `generation` is the caller's handle's wallet generation. A wallet
+    /// removed, or re-created under its id, since the handle was taken is
+    /// refused with [`PlatformWalletError::WalletRemovedBeforeSend`] and
+    /// nothing is assigned or stored.
+    pub(crate) async fn assign_identity_top_up_recipient(
+        &self,
+        out_point: &OutPoint,
+        identity: Identifier,
+        acknowledge_unknown_consumption: bool,
+        generation: &Arc<WalletGeneration>,
+    ) -> Result<(), PlatformWalletError> {
+        self.require_identity_recipient_persistence()?;
+        // The caller may have awaited a Platform lookup since it took its
+        // handle, and a replacement generation can track a lock at the same
+        // outpoint (one it restored from the store): assigning there would make
+        // a later resume pay this caller's identity from the replacement's
+        // lock. The generation's lifecycle gate is held from the check through
+        // the publication, taken before the manager lock as teardown takes
+        // them, so a removal cannot land between them.
+        let _lifecycle = generation.payment_guard().await;
+        let _serial = self.recipient_assignment_serial.lock().await;
+        {
+            let wm = self.wallet_manager.read().await;
+            let lock = wm
+                .get_wallet_info(&self.wallet_id)
+                .filter(|info| Arc::ptr_eq(&info.generation, generation))
+                .ok_or_else(|| {
+                    PlatformWalletError::WalletRemovedBeforeSend(hex::encode(self.wallet_id))
+                })?
+                .tracked_asset_locks
+                .get(out_point)
+                .ok_or(PlatformWalletError::AssetLockNotTracked(*out_point))?;
+            check_identity_recipient_assignable(lock, identity, acknowledge_unknown_consumption)?;
+        }
+        self.persister
+            .assign_asset_lock_identity_recipient(*out_point, identity)
+            .map_err(|error| {
+                PlatformWalletError::Persistence(format!(
+                    "asset-lock identity recipient was not assigned, and nothing of it was \
+                     stored: {error}"
+                ))
+            })?;
+        // The backend has committed the recipient, so it is published even if
+        // this call is dropped while it waits for the manager lock: memory
+        // would otherwise show no recipient where the store holds one, and a
+        // resume would refuse the lock until a reload. A spawned task runs to
+        // its end whatever happens to this future. While this call is not
+        // dropped it is still under the lifecycle gate, so the generation
+        // checked above is still the wallet's, and the serial gate keeps any
+        // other assignment out; once dropped, the generation check below
+        // still keeps a replacement wallet from taking the recipient. Nothing
+        // else sets a recipient on a tracked lock. Sync may have moved the
+        // lock meanwhile: it is published only where it still applies.
+        let wallet_manager = Arc::clone(&self.wallet_manager);
+        let wallet_id = self.wallet_id;
+        let generation = Arc::clone(generation);
+        let out_point = *out_point;
+        tokio::spawn(async move {
+            let mut wm = wallet_manager.write().await;
+            let lock = wm
+                .get_wallet_info_mut(&wallet_id)
+                .filter(|info| Arc::ptr_eq(&info.generation, &generation))
+                .and_then(|info| info.tracked_asset_locks.get_mut(&out_point))
+                .ok_or(PlatformWalletError::AssetLockNotTracked(out_point))?;
+            if lock.status.is_consumed() {
+                return Err(PlatformWalletError::AssetLockAlreadyConsumed(out_point));
+            }
+            lock.identity_recipient = Some(identity);
+            Ok(())
+        })
+        .await
+        .map_err(|error| {
+            PlatformWalletError::AssetLockTransaction(format!(
+                "the committed identity recipient of {out_point} was not published: {error}"
+            ))
+        })?
+    }
+
     /// Track a new asset lock in memory, returning a changeset describing
     /// the inserted entry.
     ///
     /// If an entry already exists at `out_point`, it is overwritten.
-    pub(crate) async fn track_asset_lock(&self, lock: TrackedAssetLock) -> AssetLockChangeSet {
+    ///
+    /// Only on `generation`, the one the lock was built on: the build awaits
+    /// between its build and this insert, and a wallet re-created under the
+    /// same id in that window must not be handed a lock it never built — it
+    /// could resume it while the build reports the removal. On any other
+    /// generation nothing is inserted and the changeset is empty.
+    pub(crate) async fn track_asset_lock(
+        &self,
+        lock: TrackedAssetLock,
+        generation: &Arc<WalletGeneration>,
+    ) -> AssetLockChangeSet {
         let mut wm = self.wallet_manager.write().await;
         let mut cs = AssetLockChangeSet::default();
-        if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+        if let Some(info) = wm
+            .get_wallet_info_mut(&self.wallet_id)
+            .filter(|info| Arc::ptr_eq(&info.generation, generation))
+        {
             let out_point = lock.out_point;
             cs.asset_locks.insert(out_point, (&lock).into());
             info.tracked_asset_locks.insert(out_point, lock);
@@ -710,4 +828,80 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             }
         }
     }
+}
+
+/// Whether `lock` may be assigned `identity` as its recipient: an unconsumed
+/// unbound top-up lock recording no identity, or this one already.
+fn check_identity_recipient_assignable(
+    lock: &TrackedAssetLock,
+    identity: Identifier,
+    acknowledge_unknown_consumption: bool,
+) -> Result<(), PlatformWalletError> {
+    if lock.funding_type != AssetLockFundingType::IdentityTopUpNotBound {
+        return Err(not_an_unbound_top_up(
+            lock.out_point,
+            lock.funding_type,
+            lock.identity_index,
+        ));
+    }
+    if lock.status.is_consumed() {
+        return Err(PlatformWalletError::AssetLockAlreadyConsumed(
+            lock.out_point,
+        ));
+    }
+    // A lock that already records this identity may be assigned it again; a
+    // recipient-less one rebuilt from the chain only when the caller
+    // acknowledges that Platform may already have used it.
+    if lock.identity_recipient.is_none()
+        && lock.status == AssetLockStatus::RecoveredFromChain
+        && !acknowledge_unknown_consumption
+    {
+        return Err(PlatformWalletError::AssetLockConsumptionUnknown(
+            lock.out_point,
+        ));
+    }
+    match lock.identity_recipient {
+        Some(recorded) if recorded != identity => {
+            let mismatch = PlatformWalletError::AssetLockIdentityRecipientMismatch {
+                out_point: lock.out_point,
+                recorded,
+                requested: identity,
+            };
+            // Named as held only while a resume can take the lock on.
+            Err(if lock.status.is_resumable() {
+                mismatch
+            } else {
+                mismatch.without_held_lock()
+            })
+        }
+        _ => Ok(()),
+    }
+}
+
+/// The funding-mismatch error for an operation that needs an unbound identity
+/// top-up lock (assigning or resuming to a recorded recipient) and was handed
+/// a lock of another funding type.
+pub(crate) fn not_an_unbound_top_up(
+    out_point: OutPoint,
+    funding_type: AssetLockFundingType,
+    identity_index: u32,
+) -> PlatformWalletError {
+    PlatformWalletError::AssetLockFundingMismatch {
+        out_point,
+        expected_funding_type: AssetLockFundingType::IdentityTopUpNotBound,
+        expected_identity_index: 0,
+        actual_funding_type: funding_type,
+        actual_identity_index: identity_index,
+    }
+}
+
+/// What an existing-lock resume reads off a tracked row (see
+/// [`AssetLockManager::tracked_resume_metadata`]).
+pub(crate) struct TrackedResumeMetadata {
+    pub funding_type: AssetLockFundingType,
+    pub identity_index: u32,
+    pub status: AssetLockStatus,
+    pub identity_recipient: Option<Identifier>,
+    #[cfg_attr(not(feature = "shielded"), allow(dead_code))]
+    pub shielded_recipient: Option<crate::changeset::ShieldedRecipientRaw>,
 }
