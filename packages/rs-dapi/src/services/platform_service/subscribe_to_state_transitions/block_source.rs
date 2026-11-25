@@ -346,6 +346,7 @@ mod tests {
     use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
     use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
     use dpp::state_transition::batch_transition::{BatchTransition, BatchTransitionV1};
+    use tokio::time::Instant;
 
     fn meta(height: u64, num_txs: i64) -> BlockMeta {
         BlockMeta {
@@ -466,6 +467,26 @@ mod tests {
             block.txs[0].hash,
             <[u8; 32]>::from(Sha256::digest(b"second"))
         );
+    }
+
+    /// A read Tenderdash never answers ends at the deadline instead of stalling the stream; an
+    /// answer in time is passed through.
+    #[tokio::test(start_paused = true)]
+    async fn should_give_up_a_block_read_tenderdash_does_not_answer_within_the_deadline() {
+        let started = Instant::now();
+        let unanswered = within_read_timeout(std::future::pending::<DAPIResult<u64>>()).await;
+        assert!(
+            matches!(unanswered, Err(DapiError::Timeout(_))),
+            "{unanswered:?}"
+        );
+        assert_eq!(started.elapsed(), BLOCK_READ_TIMEOUT);
+
+        let answered = within_read_timeout(async {
+            tokio::time::sleep(BLOCK_READ_TIMEOUT - Duration::from_millis(1)).await;
+            Ok(7)
+        })
+        .await;
+        assert!(matches!(answered, Ok(7)), "{answered:?}");
     }
 
     #[tokio::test]
