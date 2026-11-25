@@ -33,8 +33,7 @@ filters, block by block, from a chosen height onward.
   At most 50,000 blocks behind or 1,000 ahead of the node's tip. A node asked for a height
   above the block after its tip scans from that block: a checkpoint says every height up to it
   was scanned, and the node does not say that of a height it has not reached. So a client
-  that resumes on a node a few blocks behind, or with a checkpoint that named a height the
-  chain had not reached, misses nothing; it can see matches again.
+  that resumes on a node a few blocks behind misses nothing; it can see matches again.
 
 **Response Parameters**: a stream of one of
 - `stateTransition`: `blockHeight`, `blockTimeMs`, `protocolVersion`,
@@ -92,7 +91,11 @@ Filters are evaluated against what a transition itself names, so:
 
 The stream is the node's assertion. A client can check that a delivered transition's hash
 matches its bytes, but not that the transition was committed or that nothing was left out, and
-block heights and times are the node's word. Delivery is at least once. Act on a transition by
+block heights and times are the node's word. A checkpoint is too: one that names a height the
+chain had not reached hides the blocks committed between its arrival and the next stream's
+start, up to that height (at most 1,000 blocks), since the next node starts no higher than its
+own tip and scans only what is committed after it opens. No honest node sends such a
+checkpoint; it is one way a node leaves matches out. Delivery is at least once. Act on a transition by
 reading the state it changed with a proved query; catch up after being offline from a proved
 read's `metadata.height + 1`.
 

@@ -900,6 +900,17 @@ impl TenderdashClient {
         self.post(&request).await
     }
 
+    /// [`Self::status`] with no deadline of its own, as the calls that read a block have none.
+    ///
+    /// Tenderdash reads its block store to answer, whoever still waits. A caller that counts
+    /// its calls in flight must not see one end before Tenderdash is done with it, and bounds
+    /// its own wait.
+    pub async fn status_for_block_query(&self) -> DAPIResult<TenderdashStatusResponse> {
+        let request = JsonRpcRequest::new("status", EmptyParams::default());
+
+        self.post_for_block_query(&request).await
+    }
+
     /// Retrieve network peer statistics, falling back to defaults on transport errors.
     pub async fn net_info(&self) -> DAPIResult<NetInfoResponse> {
         match self.net_info_internal().await {

@@ -36,6 +36,10 @@ pub const MAX_OWNER_IDS_PER_ACTION: usize = 64;
 pub const MAX_ACTIONS_PER_DOCUMENT_FILTER: usize = 12;
 /// Most where clauses one action match may carry, per document side.
 pub const MAX_CLAUSES_PER_ACTION: usize = 16;
+/// How far above its tip a node lets a subscription start. It starts such a subscription at
+/// the block after its tip, so a stream opens at most this many blocks below the height it
+/// was asked to start at, and a client refuses one that opens lower.
+pub const MAX_START_ABOVE_TIP: u64 = 1_000;
 
 /// Decode a state transition a block committed, as the block's protocol version
 /// (`platform_version`) decoded it for execution: from the version whose

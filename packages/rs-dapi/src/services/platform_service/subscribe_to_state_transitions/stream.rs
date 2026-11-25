@@ -1,7 +1,7 @@
 //! Admission and the per-subscription scan loop.
 
 use super::CHECKPOINT_INTERVAL;
-use super::block_source::{BlockSource, CommittedBlock, HeightMeta};
+use super::block_source::{BlockSource, CommittedBlock, HeightMeta, within_read_deadline};
 use crate::DapiError;
 use crate::error::DAPIResult;
 use crate::services::platform_service::shielded_proof_failure_budget::SourceKey;
@@ -13,7 +13,7 @@ use dapi_grpc::platform::v0::subscribe_to_state_transitions_response::{
     SubscribeToStateTransitionsResponseV0, Version,
 };
 use dapi_grpc::tonic::Status;
-use dash_platform_queries::subscriptions::{FilterMatch, ResolvedFilters};
+use dash_platform_queries::subscriptions::{FilterMatch, MAX_START_ABOVE_TIP, ResolvedFilters};
 use dpp::version::PlatformVersion;
 use futures::Stream;
 use std::collections::HashMap;
@@ -93,7 +93,7 @@ pub struct SubscriptionLimits {
     pub max_subscriptions_per_source: usize,
     /// How far behind the tip a subscription may start.
     pub max_replay_blocks: u64,
-    /// How far ahead of the tip a subscription may start; it waits for those blocks.
+    /// How far ahead of the tip a subscription may ask to start; it starts at the tip.
     pub max_blocks_ahead: u64,
 }
 
@@ -103,7 +103,7 @@ impl Default for SubscriptionLimits {
             max_subscriptions: 256,
             max_subscriptions_per_source: 16,
             max_replay_blocks: 50_000,
-            max_blocks_ahead: 1_000,
+            max_blocks_ahead: MAX_START_ABOVE_TIP,
         }
     }
 }
@@ -461,12 +461,17 @@ impl Scan {
     /// Send the matches of the block at `height`, then a checkpoint at it. Returns whether
     /// anything matched.
     async fn scan_block(&mut self, height: u64) -> Result<bool, Stop> {
-        // Taken before the block is read, so a scan that waits for its turn holds no block.
-        let matching = Arc::clone(&self.matching).acquire_owned();
-        let turn = unless_closed(&self.sender, matching)
-            .await?
-            .map_err(|_| Stop::Fail(Status::unavailable("the node is shutting down")))?;
-        let block = unless_closed(&self.sender, self.blocks.read(height))
+        // The turn is taken before the block is read, so a scan that waits for its turn
+        // holds no block. One deadline covers both waits: a scan that queued behind others
+        // waiting on a stalled read has waited too.
+        let turn_and_block = within_read_deadline(async {
+            let turn = Arc::clone(&self.matching)
+                .acquire_owned()
+                .await
+                .map_err(|_| DapiError::Unavailable("the node is shutting down".to_string()))?;
+            Ok((turn, self.blocks.read(height).await?))
+        });
+        let (turn, block) = unless_closed(&self.sender, turn_and_block)
             .await?
             .map_err(|error| Stop::Fail(read_failure(height, error)))?;
         let matches = self.match_block(Arc::clone(&block)).await?;

@@ -4,7 +4,9 @@ use crate::clients::tenderdash_client::{
     ResultBlockResults, ResultBlockchainInfo,
 };
 use crate::services::platform_service::subscribe_to_state_transitions::TenderdashBlocks;
-use crate::services::platform_service::subscribe_to_state_transitions::block_source::MAX_CONCURRENT_FETCHES;
+use crate::services::platform_service::subscribe_to_state_transitions::block_source::{
+    BLOCK_READ_TIMEOUT, MAX_CONCURRENT_FETCHES,
+};
 use async_trait::async_trait;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
@@ -613,6 +615,35 @@ async fn should_free_the_slots_of_dropped_streams_whose_reads_are_queued() {
         MAX_CONCURRENT_FETCHES,
         "no read runs for a dropped stream"
     );
+}
+
+/// A scan waits for its turn to match a block, then for the block. Both waits are one wait
+/// to its client: the scans that hold the turns are waiting on the same stalled read, and
+/// the one queued behind them must give up with them, not start waiting again after them.
+#[tokio::test(start_paused = true)]
+async fn should_give_up_a_read_on_time_when_it_queued_for_its_turn_to_match() {
+    let harness = harness(SubscriptionLimits::default());
+    harness.commit(vec![transfer_to(7)]);
+    let stalled = harness.chain.read_gate.lock().await;
+
+    // One more scan than there are turns, all at the one block Tenderdash does not answer for.
+    let mut streams = Vec::new();
+    for _ in 0..=MAX_CONCURRENT_MATCHES {
+        let mut stream = harness.subscribe(7, Some(1)).await;
+        expect_checkpoint(&mut stream, 0).await;
+        streams.push(stream);
+    }
+    let started = Instant::now();
+    for mut stream in streams {
+        let status = stream
+            .next()
+            .await
+            .expect("the stream ends with a status")
+            .expect_err("the block cannot be read");
+        assert_eq!(status.code(), tonic::Code::Unavailable);
+    }
+    assert_eq!(started.elapsed(), BLOCK_READ_TIMEOUT);
+    drop(stalled);
 }
 
 #[tokio::test]

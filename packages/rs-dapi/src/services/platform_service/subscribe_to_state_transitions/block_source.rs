@@ -37,14 +37,15 @@ const META_PAGE_CACHE_PAGES: usize = 256;
 /// Tenderdash RPCs in flight at once, across all subscriptions and the tip tracker. A block
 /// being decoded counts as the two calls that read it.
 pub const MAX_CONCURRENT_FETCHES: usize = 8;
-/// How long a subscription waits for a read, from when it asks: for another subscription
-/// reading the same block, for the fetch budget and for Tenderdash together. The calls that
-/// read a block or its metas have no deadline of their own, because the block queries that
-/// share them wait for as long as Tenderdash works. A stream that waited forever would
+/// How long a subscription waits for a read, from when it asks: for its turn to match a
+/// block, for another subscription reading the same block, for the fetch budget and for
+/// Tenderdash together. None of the calls made here has a deadline of its own: Tenderdash
+/// reads its store to answer whoever still waits, and the block queries that share the
+/// calls wait for as long as it works. A stream that waited forever would
 /// stall without an error, so it stops waiting, ends with `UNAVAILABLE`, and the client
 /// resumes on another node. The read itself goes on, and keeps its share of
 /// [`MAX_CONCURRENT_FETCHES`] until it ends.
-const BLOCK_READ_TIMEOUT: Duration = Duration::from_secs(30);
+pub(super) const BLOCK_READ_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// The Tenderdash RPCs the block source reads.
 #[async_trait]
@@ -64,11 +65,13 @@ pub trait TenderdashBlocks: Send + Sync + 'static {
 #[async_trait]
 impl TenderdashBlocks for TenderdashClient {
     async fn latest_height(&self) -> DAPIResult<u64> {
-        Ok(self.status().await?.sync_info.latest_block_height.max(0) as u64)
+        let status = self.status_for_block_query().await?;
+        Ok(status.sync_info.latest_block_height.max(0) as u64)
     }
 
     async fn earliest_height(&self) -> DAPIResult<u64> {
-        Ok(self.status().await?.sync_info.earliest_block_height.max(0) as u64)
+        let status = self.status_for_block_query().await?;
+        Ok(status.sync_info.earliest_block_height.max(0) as u64)
     }
 
     async fn block(&self, height: u64) -> DAPIResult<ResultBlock> {
@@ -263,7 +266,9 @@ impl BlockSource {
 }
 
 /// `read`, for as long as a subscription waits for one; see [`BLOCK_READ_TIMEOUT`].
-async fn within_read_deadline<T>(read: impl Future<Output = DAPIResult<T>>) -> DAPIResult<T> {
+pub(super) async fn within_read_deadline<T>(
+    read: impl Future<Output = DAPIResult<T>>,
+) -> DAPIResult<T> {
     timeout(BLOCK_READ_TIMEOUT, read).await.unwrap_or_else(|_| {
         Err(DapiError::Timeout(format!(
             "Tenderdash did not answer in {BLOCK_READ_TIMEOUT:?}"

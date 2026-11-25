@@ -22,12 +22,14 @@
 //! the SDK is likely older than the network.
 //!
 //! A checkpoint is the node's word like the rest of the stream, and one that names a height
-//! the chain has not reached is taken as it is. It does not outlast its node: a node starts a
-//! stream no higher than the block after its own tip and opens with the checkpoint there, and
-//! the place to resume from follows it down, so the blocks committed since are scanned. A node
-//! more than 1,000 blocks short of the height refuses the stream, as a node that pruned a
-//! height does: once 8 in a row lack the heights asked for, the subscription ends, and the app
-//! catches up from a proved read.
+//! the chain has not reached is taken as it is. It hides the blocks committed between its
+//! arrival and the next stream's start, up to that height (at most 1,000 blocks): the next
+//! node starts no higher than the block after its own tip, opens with the checkpoint there,
+//! and the place to resume from follows it down, so only blocks committed after it opens are
+//! scanned. No honest node sends such a checkpoint; this is one way a node leaves matches
+//! out, and a proved read is the remedy. A node more than 1,000 blocks short of the height
+//! asked for refuses the stream, as a node that pruned a height does: once 8 in a row lack
+//! the heights asked for, the subscription ends, and the app catches up from a proved read.
 //!
 //! ```no_run
 //! use dash_sdk::dash_platform_queries::subscriptions::{DocumentFilter, StateTransitionFilter};
@@ -65,6 +67,7 @@ use dapi_grpc::platform::v0::{SubscribeToStateTransitionsRequest, SubscribeToSta
 use dapi_grpc::tonic::{Code, Status};
 use dash_platform_queries::subscriptions::{
     decode_committed_state_transition, subscribe_request, StateTransitionFilter,
+    MAX_START_ABOVE_TIP,
 };
 use dpp::dashcore::hashes::sha256;
 use dpp::platform_value::DEFAULT_MAX_VALUE_DECODE_DEPTH;
@@ -161,9 +164,11 @@ struct OpenStream {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FirstMessage {
     /// A checkpoint no higher than this height, the one before the height the stream was
-    /// opened at. A node starts there, or lower when its chain has not reached it, which only
-    /// delivers again. One that starts higher would move the place to resume from past blocks
-    /// nobody scanned.
+    /// opened at, and less than [`MAX_START_ABOVE_TIP`] below it. A node starts there, or
+    /// lower when its chain has not reached it, which only delivers again. One that starts
+    /// higher would move the place to resume from past blocks nobody scanned. No node
+    /// starts lower than that: it refuses a start so far above its tip, and following one
+    /// that did could put the place to resume from behind what any node replays.
     CheckpointUpTo(u64),
     /// A checkpoint at the height the node starts after: a live start names none.
     AnyCheckpoint,
@@ -601,13 +606,15 @@ impl StateTransitionSubscription {
             (FirstMessage::Sent, _) => false,
             (FirstMessage::AnyCheckpoint, Some(Responses::Checkpoint(_))) => true,
             (FirstMessage::CheckpointUpTo(height), Some(Responses::Checkpoint(checkpoint)))
-                if checkpoint.block_height <= height =>
+                if checkpoint.block_height <= height
+                    && checkpoint.block_height.saturating_add(MAX_START_ABOVE_TIP) > height =>
             {
                 true
             }
             _ => {
                 return Err(node_fault(
-                    "the stream did not open with a checkpoint at or before its start",
+                    "the stream did not open with a checkpoint at its start, or within what \
+                     a node may start below it",
                 )
                 .into())
             }
@@ -1316,6 +1323,35 @@ mod tests {
             Ok(SubscriptionEvent::Checkpoint { block_height: 35 })
         ));
         assert_eq!(opens(&opened), vec![Some(36)]);
+    }
+
+    /// A node refuses a start more than 1,000 blocks above its tip, so no node opens a stream
+    /// lower than that below the height asked for. One that does is at fault: following it
+    /// could put the place to resume from behind what any node replays, and end a
+    /// subscription whose place was good. Nothing of it is published.
+    #[tokio::test(start_paused = true)]
+    async fn should_follow_an_opening_checkpoint_only_as_far_down_as_a_node_may_start() {
+        let asked = 100_001;
+        let lowest = asked - MAX_START_ABOVE_TIP;
+
+        let (mut followed, _) = subscription(Some(asked), silent(vec![checkpoint(lowest)]), vec![]);
+        assert!(matches!(
+            followed.next().await,
+            Ok(SubscriptionEvent::Checkpoint { block_height }) if block_height == lowest
+        ));
+        assert_eq!(followed.resume_height(), Some(lowest + 1));
+
+        for below in [lowest - 1, 0] {
+            let first = silent(vec![checkpoint(below), checkpoint(below + 1)]);
+            let second = silent(vec![checkpoint(asked - 1)]);
+            let (mut subscription, opened) = subscription(Some(asked), first, vec![second]);
+            assert!(matches!(
+                subscription.next().await,
+                Ok(SubscriptionEvent::Checkpoint { block_height }) if block_height == asked - 1
+            ));
+            assert_eq!(opens(&opened), vec![Some(asked)], "opening at {below}");
+            assert_eq!(subscription.resume_height(), Some(asked));
+        }
     }
 
     /// A node names a height the chain has not reached in a checkpoint, and the stream then
