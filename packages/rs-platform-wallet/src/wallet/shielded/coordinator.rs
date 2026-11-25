@@ -508,8 +508,7 @@ impl NetworkShieldedCoordinator {
     /// The hook is held in memory only: set it after every open, before the
     /// first spend. It can't be replaced or removed; a second call is refused
     /// with [`PlatformWalletError::InvalidParameter`] and changes nothing. A
-    /// spend already past its record's save when it is set is not shown to
-    /// it.
+    /// spend that started before it was set is not shown to it.
     pub fn set_shielded_dispatch(
         &self,
         hook: Arc<dyn ShieldedDispatch>,

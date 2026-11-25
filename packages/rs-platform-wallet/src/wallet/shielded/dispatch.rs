@@ -13,21 +13,30 @@
 //!    delivery, and the call returns
 //!    [`PlatformWalletError::ShieldedDispatchRefused`].
 //!
-//! # A sync pass during the hook
+//! # Why after the hand-over
 //!
-//! The hook runs after the record is saved, so a sync pass that runs while
-//! it is awaited finds the record and may re-broadcast it before the hook
-//! answers. The library does not stop that. A host that must see every
-//! transition before it leaves the wallet runs no sync pass of the network
-//! while a spend's hook is awaited.
+//! Once the record is saved its notes are handed over with nothing awaited
+//! in between, so a send dropped while the hook is awaited (cancelled, timed
+//! out, shut down) leaves both the notes and the record: it never frees a
+//! note under a transition that may still be sent.
 //!
-//! # Crash window
+//! # What the hook alone does not stop
 //!
-//! The record is durable before the hook runs. A process that stops while
-//! the hook is awaited, or before the host has committed what the hook
-//! registered, leaves a record the host never accepted. A restart restores
-//! it, and the sync pass resolves it as any other saved spend: by its
-//! nullifiers landing, by a re-broadcast, or by its anchor being pruned.
+//! The refusal holds when the hook answers `Err`. A sync pass re-broadcasts
+//! every saved spend, so the hook alone does not stop one that:
+//!
+//! - a sync pass finds while the hook is awaited: the pass may re-broadcast
+//!   it before the hook answers. A refusal after that can't retire its
+//!   record, and the spend settles as unconfirmed;
+//! - is dropped while the hook is awaited, or whose hook panics: its record
+//!   stays, and the next pass re-broadcasts it;
+//! - was saved before a crash while the hook was awaited, or before the host
+//!   committed what the hook registered: a restart restores the record, and
+//!   the pass re-broadcasts it.
+//!
+//! A host that must see every transition before it leaves the wallet runs no
+//! sync pass of the network while a hook is awaited and doesn't drop a send
+//! mid-hook.
 //!
 //! [`NetworkShieldedCoordinator::set_shielded_dispatch`]:
 //!     super::NetworkShieldedCoordinator::set_shielded_dispatch
@@ -52,8 +61,11 @@ use crate::wallet::platform_wallet::WalletId;
 ///
 /// An identity top-up runs with its wallet's shield-class guard held, so a
 /// hook must not start a shield, top-up or other shield-class operation on
-/// the same wallet: it would wait for itself. Nor may it await a spend of the
-/// same coordinator.
+/// the same wallet: it would wait for itself. A private contact request
+/// payment runs with its wallet's payment guard read-held, so a hook must
+/// not remove or tear down that wallet, nor start another such payment while
+/// a teardown may be waiting. Nor may it await a spend of the same
+/// coordinator.
 #[async_trait]
 pub trait ShieldedDispatch: Send + Sync {
     /// See `payload`'s spend before its first broadcast. Its recovery record

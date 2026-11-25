@@ -4951,14 +4951,16 @@ enum SpendResultWait {
 }
 
 /// A failed note-consuming spend: the error it reports, and whether its
-/// transition never left the wallet. Every failure before the broadcast, and
-/// every one after a dispatch that may have reached a node, is built from its
-/// error alone ([`From`]), with `never_delivered` false.
+/// transition never left the wallet. Every failure before the broadcast,
+/// except a refusal by, or a failure to reach, the host's hook, and every one
+/// after a dispatch that may have reached a node, is built from its error
+/// alone ([`From`]), with `never_delivered` false.
 struct SpendFailure {
     error: PlatformWalletError,
-    /// The broadcast proved nothing was delivered
-    /// ([`BroadcastDelivery::NeverDelivered`]): nothing holds the transition's
-    /// bytes but the wallet, so it can never execute.
+    /// Nothing holds the transition's bytes but the wallet, so the spend can
+    /// execute only if the wallet sends it: the broadcast proved nothing was
+    /// delivered ([`BroadcastDelivery::NeverDelivered`]), or the host's hook
+    /// refused the spend before its broadcast ([`await_dispatch`]).
     never_delivered: bool,
 }
 
@@ -7599,6 +7601,196 @@ mod redrive_tests {
         assert!(result.is_ok());
         assert_eq!(*hook.log.lock().unwrap(), ["hook", "broadcast"]);
         assert!(hook.shown.lock().unwrap()[0].1, "saved before the hook");
+    }
+
+    /// A hook that, while it is awaited, runs a sync pass's redrive over the
+    /// spend's store (as a pass overlapping the hook would), then refuses.
+    struct RedriveDuringHook {
+        sdk: Arc<dash_sdk::Sdk>,
+        store: Arc<RwLock<FileBackedShieldedStore>>,
+        id: SubwalletId,
+    }
+
+    #[async_trait::async_trait]
+    impl ShieldedDispatch for RedriveDuringHook {
+        async fn dispatch(&self, _: ShieldedDispatchPayload) -> Result<(), DispatchRefused> {
+            let recorded = [SPEND_ANCHOR].into_iter().collect();
+            redrive_pending_spends(
+                &self.sdk,
+                &self.store,
+                self.id,
+                &recorded,
+                &CancellationToken::new(),
+            )
+            .await;
+            Err(DispatchRefused::new("refused after a pass ran"))
+        }
+    }
+
+    /// A hook that never answers.
+    struct SilentHook;
+
+    #[async_trait::async_trait]
+    impl ShieldedDispatch for SilentHook {
+        async fn dispatch(&self, _: ShieldedDispatchPayload) -> Result<(), DispatchRefused> {
+            std::future::pending().await
+        }
+    }
+
+    /// A sync pass that re-broadcasts the saved record while the hook is
+    /// awaited claims it, so a refusal that follows can no longer retire it:
+    /// the spend may have left the wallet, and it settles as unconfirmed,
+    /// keeping its notes and its record.
+    #[tokio::test]
+    async fn should_keep_a_refused_spend_a_pass_re_broadcast_during_the_hook() {
+        let wallet_id = [0x77; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let activity_id = [0x80; 32];
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("tree.sqlite");
+        let mut spend = ReservedSpend::at(&path, id, activity_id).await;
+        let transition = SpendPath::Shared.transition();
+        let hook = RedriveDuringHook {
+            sdk: Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk")),
+            store: Arc::clone(&spend.store),
+            id,
+        };
+        let result: Result<(), SpendFailure> = save_spend_then_broadcast(
+            &spend.store,
+            Some(&hook),
+            id,
+            &spend.entry,
+            SPEND_ANCHOR,
+            SPEND_ANCHOR_HEIGHT,
+            &spend.notes,
+            &mut spend.reservation,
+            &transition,
+            "transfer",
+            || async { panic!("the spend's own broadcast never runs") },
+        )
+        .await;
+        let failure = result.expect_err("refused");
+        let store = Arc::clone(&spend.store);
+        let settled = SpendPath::Shared
+            .settle(spend, wallet_id, id, failure)
+            .await;
+        assert!(SpendPath::Shared.reads_unconfirmed(&settled), "{settled:?}");
+        let (spendable, status) = spendable_and_status(&store, id, &activity_id).await;
+        let kept = store.read().await.pending_redrives(id).expect("records");
+        assert_eq!(spendable, 0, "the notes stay reserved");
+        assert_eq!(kept.len(), 1, "the record stays");
+        assert_eq!(kept[0].attempts, 1, "the pass claimed its re-broadcast");
+        assert_eq!(status, ShieldedActivityStatus::Pending);
+    }
+
+    /// A refusal whose record cannot be retired (the store's write fails)
+    /// settles as unconfirmed and keeps the notes and the record: nothing
+    /// is freed under a transition the wallet still holds.
+    #[tokio::test]
+    async fn should_keep_a_refused_spend_whose_record_cannot_be_retired() {
+        let wallet_id = [0x78; 32];
+        let id = SubwalletId::new(wallet_id, 0);
+        let activity_id = [0x81; 32];
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("tree.sqlite");
+        let mut spend = ReservedSpend::at(&path, id, activity_id).await;
+        let transition = SpendPath::Shared.transition();
+        let hook = RecordingHook::new(&path, id, true);
+        let result: Result<(), SpendFailure> = save_spend_then_broadcast(
+            &spend.store,
+            Some(&hook),
+            id,
+            &spend.entry,
+            SPEND_ANCHOR,
+            SPEND_ANCHOR_HEIGHT,
+            &spend.notes,
+            &mut spend.reservation,
+            &transition,
+            "transfer",
+            || async { panic!("never broadcast") },
+        )
+        .await;
+        let failure = result.expect_err("refused");
+        rusqlite::Connection::open(&path)
+            .expect("the store's file")
+            .execute_batch(
+                "CREATE TRIGGER reject_redrive_delete BEFORE DELETE ON \
+                 shielded_pending_spends BEGIN SELECT RAISE(FAIL, 'injected'); END;",
+            )
+            .expect("the trigger");
+        let store = Arc::clone(&spend.store);
+        let settled = SpendPath::Shared
+            .settle(spend, wallet_id, id, failure)
+            .await;
+        assert!(SpendPath::Shared.reads_unconfirmed(&settled), "{settled:?}");
+        let (spendable, _) = spendable_and_status(&store, id, &activity_id).await;
+        assert_eq!(spendable, 0, "the notes stay reserved");
+        assert_eq!(
+            store
+                .read()
+                .await
+                .pending_redrives(id)
+                .expect("records")
+                .len(),
+            1,
+            "the record stays"
+        );
+    }
+
+    /// A send dropped while its hook is awaited (cancelled, timed out, shut
+    /// down) leaves its record saved and its notes reserved: nothing frees a
+    /// note under a transition that may still be sent.
+    #[tokio::test]
+    async fn should_keep_the_notes_and_record_of_a_send_dropped_mid_hook() {
+        use std::task::{Context, Waker};
+
+        let id = SubwalletId::new([0x79; 32], 0);
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("tree.sqlite");
+        let ReservedSpend {
+            store,
+            notes,
+            mut reservation,
+            entry,
+        } = ReservedSpend::at(&path, id, [0x82; 32]).await;
+        let transition = SpendPath::Shared.transition();
+        let mut send = Box::pin(save_spend_then_broadcast::<_, _, _, ()>(
+            &store,
+            Some(&SilentHook),
+            id,
+            &entry,
+            SPEND_ANCHOR,
+            SPEND_ANCHOR_HEIGHT,
+            &notes,
+            &mut reservation,
+            &transition,
+            "transfer",
+            || async { panic!("never broadcast") },
+        ));
+        assert!(send
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending());
+        drop(send);
+        drop(reservation);
+        assert!(
+            store
+                .read()
+                .await
+                .get_unspent_notes(id)
+                .expect("notes")
+                .is_empty(),
+            "the notes stay reserved"
+        );
+        assert_eq!(
+            FileBackedShieldedStore::open_path(&path, 100)
+                .expect("a second handle")
+                .pending_redrives(id)
+                .expect("records")
+                .len(),
+            1,
+            "the record is on the file"
+        );
     }
 
     /// A private document payment whose hook refuses it is not broadcast:
