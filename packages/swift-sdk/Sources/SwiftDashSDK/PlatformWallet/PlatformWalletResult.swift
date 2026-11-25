@@ -276,9 +276,11 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// `payment` rather than this code.
     case errorAssetLockTooManyInputs = 60
     /// A shielded fund-from-asset-lock resume named a different Orchard
-    /// recipient than the one its tracked lock recorded. This call submitted
-    /// nothing new, but the lock is held (`.lockHeld`): resume it with the
-    /// recorded recipient.
+    /// recipient than the one its tracked lock recorded, an unbound identity
+    /// top-up lock was resumed or assigned to a different identity than the
+    /// one its row recorded, or an external Platform-address funding lock was
+    /// resumed to other recipients. This call submitted nothing new, but the
+    /// lock is held (`.lockHeld`): resume it with the recorded recipient.
     case errorAssetLockRecipientMismatch = 61
     /// A key of a DashPay invitation claim already belongs to another
     /// identity; the message is a JSON detail naming it.
@@ -407,6 +409,16 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// `errorWalletOperation`. Distinct from
     /// `errorShieldedSpendUnconfirmed`, which must NOT be retried.
     case errorShieldedMerkleWitnessUnavailable = 88
+    /// An unbound identity top-up lock records no identity to pay (it was
+    /// rebuilt from the chain, for example after a restore from the seed),
+    /// so no resume pays it. Nothing was submitted or paid. Not retryable as
+    /// is: assign it a recipient the user chooses, then resume it.
+    case errorAssetLockRecipientUnknown = 89
+    /// A lock rebuilt from the chain may already have been used on Platform,
+    /// which the wallet cannot tell, so it was not assigned a recipient.
+    /// Nothing was stored or paid. Assign it again only after telling the
+    /// user, with `acknowledgeUnknownConsumption`.
+    case errorAssetLockConsumptionUnknown = 90
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -588,6 +600,10 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorShieldedBalanceBusy
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_MERKLE_WITNESS_UNAVAILABLE:
             self = .errorShieldedMerkleWitnessUnavailable
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_RECIPIENT_UNKNOWN:
+            self = .errorAssetLockRecipientUnknown
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ASSET_LOCK_CONSUMPTION_UNKNOWN:
+            self = .errorAssetLockConsumptionUnknown
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -938,8 +954,20 @@ public enum PlatformWalletError: LocalizedError {
     /// `TrackedAssetLock.shieldedRecipientRaw43`). Locks tracked before the
     /// recipient was recorded carry none and accept the caller's.
     ///
+    /// Also an unbound identity top-up lock resumed or assigned to a
+    /// different identity than the one its row recorded. Nothing was
+    /// submitted; resume it with
+    /// `ManagedPlatformWallet.resumeTopUpToRecordedRecipient`, which pays the
+    /// recorded identity (`TrackedAssetLock.identityRecipient`).
+    ///
+    /// Also raised when a lock built by `fundFromAssetLockExternal` (it
+    /// recorded the Platform addresses it pays,
+    /// `TrackedAssetLock.hasPlatformAddressRecipients`) is resumed as an
+    /// owned funding or to other recipients. Nothing was submitted; resume
+    /// it with `ManagedPlatformAddressWallet.resumeFundFromAssetLockToRecordedRecipients`.
+    ///
     /// `payment` is Rust's class: `.lockHeld` with the tracked lock to resume
-    /// with the recorded recipient.
+    /// with the recorded recipient (no lock when the row is not resumable).
     case assetLockRecipientMismatch(String, payment: PlatformPaymentClass? = nil)
     /// The asset lock cannot be used yet: its transaction has not reached the
     /// queried node, or it needs a ChainLock proof and is not chain-locked
@@ -965,6 +993,25 @@ public enum PlatformWalletError: LocalizedError {
     /// The invitation claim could not verify Platform's answers yet (the
     /// quorum is not verified). Nothing was broadcast; retry once synced.
     case invitationNotReady(String, payment: PlatformPaymentClass? = nil)
+    /// Code 89 (81 upstream in #5931): an unbound identity top-up lock records no identity to pay,
+    /// so no resume pays it; it may have been meant for someone else's
+    /// identity. Nothing was submitted or paid. Not retryable as is: a lock
+    /// flagged `identityRecipientUnassigned` on the tracked-lock lists can be
+    /// assigned a recipient the user chooses
+    /// (`ManagedPlatformWallet.assignTopUpRecipient`) and then resumed. A
+    /// lock rebuilt from the chain (`RecoveredFromChain`, for example after a
+    /// restore from the seed) is not flagged: Platform may have consumed it
+    /// already, so assigning it is refused with
+    /// `assetLockConsumptionUnknown` unless the user was told so and the
+    /// assignment passes `acknowledgeUnknownConsumption`.
+    case assetLockRecipientUnknown(String, payment: PlatformPaymentClass? = nil)
+    /// Code 90 (82 upstream in #5931): the lock was rebuilt from the chain, so Platform may already
+    /// have used it, which the wallet cannot tell; it was not assigned a
+    /// recipient and nothing was stored or paid. Tell the user, then assign
+    /// it with `acknowledgeUnknownConsumption`: if Platform already used the
+    /// outpoint, the resume is refused there (`assetLockAlreadyConsumed`) and
+    /// nothing is paid twice.
+    case assetLockConsumptionUnknown(String, payment: PlatformPaymentClass? = nil)
     /// The contact requests with that identity came or went privately
     /// (protocol version 15): a public request to it, in reply or as a
     /// rotation, would publish the relationship, so the public accept and
@@ -1367,6 +1414,8 @@ public enum PlatformWalletError: LocalizedError {
              .assetLockInsufficientFunds(_, let payment),
              .assetLockTooManyInputs(_, let payment),
              .assetLockRecipientMismatch(_, let payment),
+             .assetLockRecipientUnknown(_, let payment),
+             .assetLockConsumptionUnknown(_, let payment),
              .assetLockNotChainLocked(_, let payment),
              .invitationKeysAlreadyRegistered(_, _, let payment),
              .invitationClaimedByThisWallet(_, let payment),
@@ -1461,6 +1510,7 @@ public enum PlatformWalletError: LocalizedError {
              .assetLockNotTracked(let m, _), .assetLockAlreadyConsumed(let m, _),
              .assetLockFundingMismatch(let m, _), .assetLockInsufficientFunds(let m, _),
              .assetLockTooManyInputs(let m, _), .assetLockRecipientMismatch(let m, _),
+             .assetLockRecipientUnknown(let m, _), .assetLockConsumptionUnknown(let m, _),
              .assetLockNotChainLocked(let m, _), .invitationNotReady(let m, _),
              .privateContactRequestNeedsPrivateReply(let m, _),
              .shieldedBuildRequired(let m, _), .protocolVersionNotActive(let m, _),
@@ -1616,6 +1666,10 @@ public enum PlatformWalletError: LocalizedError {
         case .errorAssetLockTooManyInputs: self = .assetLockTooManyInputs(detail, payment: payment)
         case .errorAssetLockRecipientMismatch:
             self = .assetLockRecipientMismatch(detail, payment: payment)
+        case .errorAssetLockRecipientUnknown:
+            self = .assetLockRecipientUnknown(detail, payment: payment)
+        case .errorAssetLockConsumptionUnknown:
+            self = .assetLockConsumptionUnknown(detail, payment: payment)
         case .errorAssetLockNotChainLocked:
             self = .assetLockNotChainLocked(detail, payment: payment)
         case .errorInvitationNotReady: self = .invitationNotReady(detail, payment: payment)

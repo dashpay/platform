@@ -35,10 +35,13 @@ final class AddressFundFromAssetLockController: ObservableObject {
         /// Stage within this phase is read from the matching
         /// `PersistentAssetLock.statusRaw` row.
         case inFlight
-        /// Step 4: the address has been credited. `newBalance` is
-        /// the proof-attested credit balance the caller should
-        /// surface in the terminal banner.
-        case completed(newBalance: UInt64)
+        /// Step 4: the funding is done. `newBalance` is the picked
+        /// address's proof-attested credit balance the caller should
+        /// surface in the terminal banner, or `nil` when the result
+        /// establishes none: an external payment credits its recorded
+        /// payees, not that address, and an owned funding's result can
+        /// carry no update when sync already applied the balance.
+        case completed(newBalance: UInt64?)
         /// Failure terminal state, presented by `PaymentFailure` from
         /// Rust's payment class. Its message is shown inline in
         /// `AddressFundFromAssetLockProgressView`'s step 4, and its action
@@ -106,6 +109,11 @@ final class AddressFundFromAssetLockController: ObservableObject {
     /// mis-tag any future P2SH funding for the lifetime of the row.
     let recipientType: UInt8
 
+    /// The resumed lock's `outPointHex`, or `nil` for a fresh funding.
+    /// Part of the slot: an external payment does not credit the picked
+    /// address, so a later resume of another lock can pick it again.
+    let assetLockOutPoint: String?
+
     /// Timestamp of the most recent `submit` call. Used by the
     /// coordinator's TTL-based retention policy (`.completed` rows
     /// purge ~30s after the success transition).
@@ -133,12 +141,25 @@ final class AddressFundFromAssetLockController: ObservableObject {
         walletId: Data,
         platformAccountIndex: UInt32,
         recipientHash: Data,
-        recipientType: UInt8
+        recipientType: UInt8,
+        assetLockOutPoint: String? = nil
     ) {
         self.walletId = walletId
         self.platformAccountIndex = platformAccountIndex
         self.recipientHash = recipientHash
         self.recipientType = recipientType
+        self.assetLockOutPoint = assetLockOutPoint
+    }
+
+    /// The balance a funding reported for `recipientHash`, or `nil` when
+    /// its result carries no update for that address: reconciliation can
+    /// return an empty changeset when sync already applied the balance.
+    /// `.completed` then shows no balance line instead of a false 0.
+    static func reportedBalance(
+        of recipientHash: Data,
+        in updates: [(hash: Data, balance: UInt64)]
+    ) -> UInt64? {
+        updates.first(where: { $0.hash == recipientHash })?.balance
     }
 
     /// Submit the funding. Defensively rejects any phase that
@@ -158,7 +179,7 @@ final class AddressFundFromAssetLockController: ObservableObject {
     /// to `.completed(balance)` / `.failed(failure)` accordingly.
     func submit(
         resuming: AssetLockBuiltOutPoint? = nil,
-        body: @escaping () async throws -> UInt64
+        body: @escaping () async throws -> UInt64?
     ) {
         guard phase.permitsSubmit(resuming: resuming) else { return }
         phase = .inFlight

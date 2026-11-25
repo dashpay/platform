@@ -236,14 +236,16 @@ struct PendingPlatformFundFromAssetLocksList: View {
 }
 
 private extension AddressFundFromAssetLockController {
-    /// Composite ForEach id: `(walletId hex)-(platformAccountIndex)-(recipientHash hex)`.
+    /// Composite ForEach id: `(walletId hex)-(platformAccountIndex)-(recipientHash hex)`,
+    /// plus `-(outpoint)` for a resume (the outpoint is part of the slot).
     /// The recipient hash is the within-account discriminator: two
     /// concurrent fund calls to different addresses on the same
     /// account otherwise collide on `(walletId, accountIndex)`.
     var platformFundFromAssetLockRowID: String {
         let walletHex = walletId.map { String(format: "%02x", $0) }.joined()
         let recipientHex = recipientHash.map { String(format: "%02x", $0) }.joined()
-        return "\(walletHex)-\(platformAccountIndex)-\(recipientHex)"
+        let base = "\(walletHex)-\(platformAccountIndex)-\(recipientHex)"
+        return assetLockOutPoint.map { "\(base)-\($0)" } ?? base
     }
 }
 
@@ -297,7 +299,8 @@ struct PendingPlatformFundFromAssetLockRow: View {
                     walletManager.addressFundFromAssetLockCoordinator.dismiss(
                         walletId: controller.walletId,
                         platformAccountIndex: controller.platformAccountIndex,
-                        recipientHash: controller.recipientHash
+                        recipientHash: controller.recipientHash,
+                        assetLockOutPoint: controller.assetLockOutPoint
                     )
                 } label: {
                     Image(systemName: "trash")
@@ -329,7 +332,8 @@ struct PendingPlatformFundFromAssetLockRow: View {
                 walletManager.addressFundFromAssetLockCoordinator.release(
                     walletId: controller.walletId,
                     platformAccountIndex: controller.platformAccountIndex,
-                    recipientHash: controller.recipientHash
+                    recipientHash: controller.recipientHash,
+                    assetLockOutPoint: controller.assetLockOutPoint
                 )
             }
         }
