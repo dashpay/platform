@@ -12,8 +12,9 @@ import unittest
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / 'scripts/release/sign_dashmate_checksums.sh'
 TAG = 'v5.1.0'
-# A signer the script accepts, and a key it does not.
+# The signers the script accepts (Ivan Shumkov's and QuantumExplorer's keys), and a key it does not.
 KEY = '19E460D55429A91B40E9E7C5EDBC0AA6BC1AA13C'
+QUANTUM_EXPLORER_KEY = '556CBC89DA31CAD4928F0926D59CAD3E1BEAFEF0'
 STRANGER = 'C0FFEE0123456789ABCDEF0123456789ABCDEF01'
 SUBKEY = '0123456789ABCDEF0123456789ABCDEF01234567'
 RUN_ID = 77
@@ -967,6 +968,12 @@ class SignDashmateChecksumsTests(ReleaseFixture):
         result = self.sign(f'--tag={TAG}', f'--key={STRANGER}', COMMIT, '--upload')
 
         self.assertRefused(result, f'{STRANGER} is not one of the signers this script accepts')
+
+    def test_should_accept_both_maintainers_keys(self):
+        for key in [KEY, QUANTUM_EXPLORER_KEY]:
+            with self.subTest(key=key):
+                result = self.sign(f'--tag={TAG}', f'--key={key}', COMMIT, GPG_SIGNER=key)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_should_accept_a_signature_made_by_a_subkey_of_the_key(self):
         for key in [KEY, SUBKEY]:
