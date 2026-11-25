@@ -303,15 +303,12 @@ impl crate::broadcaster::SpvChannel for InstantSendingSpv {
         transaction: &Transaction,
         _timeout: Option<std::time::Duration>,
     ) -> Result<dash_spv::BroadcastResult, crate::broadcaster::BroadcastError> {
-        // A lock of this transaction: its txid and the inputs it spends.
-        // The quorum fields keep their defaults (no signature is checked).
+        // A lock of this transaction: its txid and the outpoints Dash Core
+        // locks for it. The quorum fields keep their defaults (no signature
+        // is checked).
         let lock = dashcore::ephemerealdata::instant_lock::InstantLock {
             txid: transaction.txid(),
-            inputs: transaction
-                .input
-                .iter()
-                .map(|input| input.previous_output)
-                .collect(),
+            inputs: dashcore::ephemerealdata::instant_lock::InstantLock::lock_inputs(transaction),
             ..Default::default()
         };
         self.persistence
