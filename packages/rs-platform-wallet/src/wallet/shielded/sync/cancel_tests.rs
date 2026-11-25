@@ -634,13 +634,20 @@ async fn should_checkpoint_leaves_a_failed_pass_appended_on_the_next_pass() {
         futures::stream::iter(vec![batch(0, 4, 4)].into_iter().map(Ok)),
     )
     .await;
-    let failed = sync_notes_from_stream(&store, &subwallets, None, &cancel, |_, _| {
-        futures::stream::iter(vec![
-            Ok(batch(0, 4, 12)),
-            Ok(batch(4, 4, 12)),
-            Err(dash_sdk::Error::Generic("transport failed".to_string())),
-        ])
-    })
+    let failed = sync_notes_from_stream(
+        &store,
+        &StoreEpoch::default().watch(),
+        &subwallets,
+        None,
+        &cancel,
+        |_, _| {
+            futures::stream::iter(vec![
+                Ok(batch(0, 4, 12)),
+                Ok(batch(4, 4, 12)),
+                Err(dash_sdk::Error::Generic("transport failed".to_string())),
+            ])
+        },
+    )
     .await;
     assert!(failed.is_err(), "the batch error fails the pass");
     {
@@ -746,9 +753,14 @@ async fn should_add_no_checkpoint_on_an_idle_pass_over_the_in_memory_store() {
     for _ in 0..2 {
         tokio::time::timeout(
             std::time::Duration::from_secs(5),
-            sync_notes_from_stream(&store, &subwallets, None, &cancel, |_, _| {
-                futures::stream::iter(vec![batch(0, 4, 4)].into_iter().map(Ok))
-            }),
+            sync_notes_from_stream(
+                &store,
+                &StoreEpoch::default().watch(),
+                &subwallets,
+                None,
+                &cancel,
+                |_, _| futures::stream::iter(vec![batch(0, 4, 4)].into_iter().map(Ok)),
+            ),
         )
         .await
         .expect("the pass returns")
