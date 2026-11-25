@@ -262,7 +262,8 @@ class AptPublishScriptTests(unittest.TestCase):
                 result = self.run_step(CHECK_STEP, tag)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 self.assertEqual(self.outputs(), ['publish=false'])
-                self.assertIn(f'::notice::The apt repository takes no {label} prereleases', result.stdout)
+                self.assertIn(f'::notice::{tag} is not published to apt: the apt publisher takes finals and dev,'
+                              f' beta and rc prereleases only, and refuses {label} ones.', result.stdout)
         self.assertEqual(self.aws_calls(), [])
 
     def test_should_refuse_anything_else_as_a_tag(self):
@@ -353,6 +354,75 @@ class AptPublishScriptTests(unittest.TestCase):
                 self.assertNotIn('##[', result.stdout)
                 details = json.loads(next(line for line in result.stdout.splitlines() if line.startswith('{')))
                 self.assertEqual(details['cause'], '::error::forged\n##[error]forged too # \\# ##[')
+
+    @staticmethod
+    def build_cause(exit_status, stream='0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0', command='python3 publish.py',
+                    shape='step functions'):
+        """The cause of a failed CodeBuild task: the build, as Step Functions hands it over (keys in
+        PascalCase, under Build) or as BatchGetBuilds describes it (camelCase, bare)."""
+        build = {'id': 'dashmate-apt-publish:' + stream, 'buildStatus': 'FAILED', 'phases': [
+            {'phaseType': 'INSTALL', 'phaseStatus': 'SUCCEEDED'},
+            {'phaseType': 'BUILD', 'phaseStatus': 'FAILED', 'contexts': [
+                {'statusCode': 'COMMAND_EXECUTION_ERROR',
+                 'message': f'Error while executing command: {command}. Reason: exit status {exit_status}'}]}],
+            'logs': {'groupName': '/aws/codebuild/dashmate-apt-publish', 'streamName': stream}}
+        if shape == 'batch get builds':
+            return json.dumps(build)
+
+        def pascal(value):
+            if isinstance(value, dict):
+                return {key[0].upper() + key[1:]: pascal(item) for key, item in value.items()}
+            return [pascal(item) for item in value] if isinstance(value, list) else value
+        return json.dumps({'Build': pascal(build)})
+
+    def test_should_say_where_the_publisher_logged_why_and_what_its_exit_status_means(self):
+        stream = '0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0'
+        cases = {
+            # refused, possibly after writing part of it
+            '2': 'refused v5.1.0, possibly part-way',
+            # went through, then reported a problem that may concern another release
+            '1': 'v5.1.0 may be published',
+        }
+        for shape in ('step functions', 'batch get builds'):
+            for exit_status, meaning in cases.items():
+                with self.subTest(shape=shape, exit_status=exit_status):
+                    (self.tmp / 'aws.log.describes').unlink(missing_ok=True)
+                    result = self.run_step(PUBLISH_STEP, AWS_STATUSES='FAILED',
+                                           AWS_CAUSE=self.build_cause(exit_status, shape=shape))
+
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(f'publisher exited {exit_status}', result.stdout)
+                    self.assertIn(meaning, result.stdout)
+                    self.assertIn(f'/aws/codebuild/dashmate-apt-publish, stream {stream}', result.stdout)
+                    self.assertIn('REFUSED:' if exit_status == '2' else 'NEEDS A PERSON:', result.stdout)
+                    self.assertIn('check the suites before re-running', result.stdout)
+
+    def test_should_read_an_exit_status_only_from_the_publisher_itself(self):
+        # The build runs other commands first; their failure says nothing about what was published.
+        result = self.run_step(PUBLISH_STEP, AWS_STATUSES='FAILED',
+                               AWS_CAUSE=self.build_cause('1', command='python3 --version && gpg --version'))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('publisher exited', result.stdout)
+        self.assertIn('/aws/codebuild/dashmate-apt-publish, stream', result.stdout)
+
+    def test_should_still_name_the_execution_when_the_cause_is_not_a_build(self):
+        result = self.run_step(PUBLISH_STEP, AWS_STATUSES='FAILED', AWS_CAUSE='States.Timeout')
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(f':execution:dashmate-apt-publish:v5-1-0-{RUN_ID}-1', result.stdout.splitlines()[-1])
+        self.assertNotIn('publisher exited', result.stdout)
+
+    def test_should_take_nothing_but_digits_and_a_log_name_from_the_build(self):
+        cause = json.loads(self.build_cause('2', stream='x\n::error::forged', shape='batch get builds'))
+        cause['phases'][1]['contexts'][0]['message'] = 'Reason: exit status 2; ##[error]forged'
+        result = self.run_step(PUBLISH_STEP, AWS_STATUSES='FAILED', AWS_CAUSE=json.dumps(cause))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('##[', result.stdout)
+        self.assertFalse([line for line in result.stdout.splitlines() if line.lstrip().startswith('::')
+                          and 'forged' in line], result.stdout)
+        self.assertNotIn(', stream x', result.stdout)
 
     def test_should_keep_reading_the_execution_through_failed_calls(self):
         result = self.run_step(PUBLISH_STEP, AWS_STATUSES='ERR,RUNNING,ERR,NOT_JSON,SUCCEEDED')
