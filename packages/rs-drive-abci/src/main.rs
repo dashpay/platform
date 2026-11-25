@@ -515,7 +515,12 @@ mod snapshot_bake_main {
                 platform_version,
             )
             .map_err(|e| format!("create_genesis_state: {e}"))?;
-        tx.commit().map_err(|e| format!("commit: {e}"))?;
+        platform
+            .drive
+            .grove
+            .commit_transaction(tx)
+            .value
+            .map_err(|e| format!("commit: {e}"))?;
 
         tracing::info!(
             out = %out_path.display(),
@@ -533,12 +538,12 @@ mod snapshot_bake_main {
             out = %out_path.display(),
             total_count = stats.total_count,
             key_count = stats.key_count,
-            sst_bytes = stats.sst_bytes,
+            body_bytes = stats.body_bytes,
             "snapshot-bake: wrote shielded-pool snapshot",
         );
         println!(
             "wrote {} bytes ({} keys, total_count={}) to {}",
-            stats.sst_bytes,
+            stats.body_bytes,
             stats.key_count,
             stats.total_count,
             out_path.display(),
@@ -692,7 +697,11 @@ mod test {
             .unwrap()
             .expect("should insert data");
 
-        transaction.commit().unwrap();
+        drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .unwrap();
 
         path
     }

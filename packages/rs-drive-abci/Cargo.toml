@@ -84,9 +84,7 @@ console-subscriber = { version = "0.4", optional = true }
 dashcore-crypto = { workspace = true, features = ["bls"], optional = true }
 grovedb-commitment-tree = { workspace = true }
 nonempty = "0.11"
-# Shielded-pool snapshot needs raw RocksDB SstFileWriter + ingest_external_file_cf
-# bindings, and blake3 for the snapshot-file checksum.
-rocksdb = "0.25.0"
+# Shielded-pool snapshot: the snapshot-file checksum.
 blake3 = "1.5"
 
 [dev-dependencies]
@@ -128,11 +126,6 @@ libc = "0.2"
 # For tests of grovedb verify
 rocksdb = "0.25.0"
 integer-encoding = { version = "4.0.0" }
-
-# For dump_only_default_and_aux_cfs_under_shielded_subtree_prefix — same
-# subtree-prefix algorithm grovedb uses internally.
-grovedb-path = { workspace = true }
-grovedb-storage = { workspace = true }
 
 [features]
 default = []
