@@ -418,6 +418,27 @@ async fn should_end_the_stream_on_a_transaction_this_node_cannot_decode() {
     assert_eq!(status.code(), tonic::Code::FailedPrecondition);
 }
 
+/// A node starts a stream at its tip when asked to start above it, so the block that ends
+/// the stream can be below the height its client holds. The status names that block and
+/// tells no height to resume from: a client that followed one would move its place back.
+#[tokio::test]
+async fn should_name_the_block_that_ends_a_stream_and_no_height_to_resume_from() {
+    let harness = harness(SubscriptionLimits::default());
+    harness.commit(vec![]);
+    // The client holds checkpoint 4; this node is at height 1.
+    let mut stream = harness.subscribe(7, Some(5)).await;
+    expect_checkpoint(&mut stream, 1).await;
+    harness.commit(vec![vec![0xff, 0x00, 0x13]]);
+    let status = timeout(Duration::from_secs(5), stream.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap_err();
+    assert_eq!(status.code(), tonic::Code::FailedPrecondition);
+    assert!(status.message().contains("block 2"), "{status}");
+    assert!(!status.message().contains("resume from"), "{status}");
+}
+
 fn buffered(stream: &SubscriptionStream) -> usize {
     stream.buffer.lock().unwrap().messages.len()
 }
@@ -669,6 +690,9 @@ async fn should_give_up_a_read_on_time_when_it_queued_for_its_turn_to_match() {
             .expect("the stream ends with a status")
             .expect_err("the block cannot be read");
         assert_eq!(status.code(), tonic::Code::Unavailable);
+        // The block is named; where to resume is the client's to know.
+        assert!(status.message().contains("block 1"), "{status}");
+        assert!(!status.message().contains("resume from"), "{status}");
     }
     assert_eq!(started.elapsed(), BLOCK_READ_TIMEOUT);
     drop(stalled);

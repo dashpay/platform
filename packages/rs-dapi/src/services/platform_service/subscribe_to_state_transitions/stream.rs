@@ -558,12 +558,14 @@ impl Scan {
 /// The status a failed read of the block at `height` ends a stream with. A block the store
 /// no longer keeps is a height this node lacks, which another node may serve; any other
 /// failure is this node failing to read.
+///
+/// The status names the block and no height to resume from, as the statuses of
+/// [`matches_in`] do: a stream can start below the height its client asked for, so the
+/// client may hold a higher one than the block that ended the stream.
 fn read_failure(height: u64, error: DapiError) -> Status {
     match error {
         DapiError::FailedPrecondition(lacking) => Status::failed_precondition(lacking),
-        error => Status::unavailable(format!(
-            "cannot read block {height}: {error}; resume from {height}"
-        )),
+        error => Status::unavailable(format!("cannot read block {height}: {error}")),
     }
 }
 
@@ -577,7 +579,7 @@ fn matches_in(
     let platform_version = PlatformVersion::get(block.protocol_version).map_err(|_| {
         Stop::Fail(Status::failed_precondition(format!(
             "block {height} executed under protocol version {}, which this node does not \
-                 know; resume from {height} on an upgraded node",
+                 know; resume on an upgraded node",
             block.protocol_version
         )))
     })?;
@@ -588,7 +590,7 @@ fn matches_in(
                 warn!(height, index = tx.index, error = %e, "cannot decode an executed state transition");
                 Stop::Fail(Status::failed_precondition(format!(
                     "block {height} transaction {} cannot be decoded by this node ({e}); resume \
-                     from {height} on an upgraded node",
+                     on an upgraded node",
                     tx.index
                 )))
             })?;
