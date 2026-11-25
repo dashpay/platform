@@ -17,7 +17,7 @@ use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use super::asset_lock::manager::AssetLockManager;
 use super::asset_lock::tracked::TrackedAssetLock;
 use super::core::{CoreWallet, WalletBalance, WalletGeneration};
-use super::identity::network::TopUpScope;
+use super::identity::network::{IdentityCreationKeys, TopUpScope};
 use super::identity::{IdentityManager, IdentityWallet};
 #[cfg(feature = "shielded")]
 use super::persister::PrivatePaymentRestoreRetry;
@@ -48,6 +48,8 @@ use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::prelude::Identifier;
+#[cfg(feature = "shielded")]
+use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 #[cfg(feature = "shielded")]
 use {
     super::identity::network::{
@@ -830,7 +832,7 @@ impl PlatformWallet {
     #[allow(clippy::too_many_arguments)]
     pub async fn register_from_addresses<IS, AS>(
         &self,
-        identity: &Identity,
+        keys: IdentityCreationKeys,
         inputs: BTreeMap<PlatformAddress, Credits>,
         output: Option<(PlatformAddress, Credits)>,
         identity_index: u32,
@@ -850,7 +852,7 @@ impl PlatformWallet {
         let (registered_identity, address_infos, proof_height) = self
             .identity
             .register_from_addresses(
-                identity,
+                keys,
                 inputs,
                 output,
                 identity_index,
@@ -2411,8 +2413,8 @@ impl PlatformWallet {
     /// new identity is created holding `denomination - total_fee`. Any excess re-enters the pool as
     /// a change note to `account`'s default Orchard address.
     ///
-    /// `public_keys` is the new identity's key set (each entry pairs the `IdentityPublicKey` with
-    /// its `IdentityPublicKeyInCreation` form); `identity_signer` produces each key's
+    /// `public_keys` is the new identity's key set, validated by
+    /// [`IdentityWallet::identity_creation_keys`]; `identity_signer` produces each key's
     /// proof-of-possession signature. The Orchard spend authority is re-derived from `seed` for
     /// this call only (the ASK never crosses to the coordinator and is not retained).
     ///
@@ -2430,10 +2432,7 @@ impl PlatformWallet {
         seed: &[u8],
         account: u32,
         identity_index: u32,
-        public_keys: Vec<(
-            dpp::identity::IdentityPublicKey,
-            dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation,
-        )>,
+        public_keys: IdentityCreationKeys,
         denomination: u64,
         send_to_address_on_creation_failure: dpp::address_funds::PlatformAddress,
         identity_signer: &IS,
@@ -2443,13 +2442,23 @@ impl PlatformWallet {
         P: dpp::shielded::builder::OrchardProver,
         IS: dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> + Send + Sync,
     {
+        let (sdk, public_keys) = public_keys.validate_for_operation(&self.sdk)?;
+        let sdk = Arc::new(sdk);
+        let public_keys: Vec<(IdentityPublicKey, IdentityPublicKeyInCreation)> = public_keys
+            .into_keys()
+            .into_values()
+            .map(|key| {
+                let in_creation = IdentityPublicKeyInCreation::from(&key);
+                (key, in_creation)
+            })
+            .collect();
         let (identity_id, identity) = {
             // Scope the transient keyset so its spend authority is dropped before we take the
             // wallet-manager write lock below — it's only needed for the spend, not for the
             // registration step.
             let keyset = self.derive_spend_keyset(seed, account).await?;
             super::shielded::operations::identity_create_from_shielded_pool(
-                &self.sdk,
+                &sdk,
                 coordinator.store(),
                 coordinator.anchor_cache(),
                 Some(&self.persister),
