@@ -45,6 +45,18 @@ sudo apt install "./$(basename "$DASHMATE_DEB")"
 > You can ignore this error message:
 > N: Download is performed unsandboxed as root as file '/home/ubuntu/dashmate_5.1.0-1_amd64.deb' couldn't be accessed by user '_apt'. - pkgAcquire::Run (13: Permission denied)
 
+#### Dash's apt repository
+
+The package configures Dash's apt repository, `https://apt.services.dash.org/dashmate`, so later releases install with `sudo apt update && sudo apt install dashmate`. It ships three files:
+
+- `/etc/apt/sources.list.d/dashmate.sources`, the repository source. It names the `stable` suite, which carries final releases only. To follow prereleases as well, change `Suites: stable` to `Suites: testing` in this file. Upgrades keep the change without asking, since the package's copy of the file stays the same.
+- `/etc/apt/keyrings/dashmate-archive-keyring.gpg`, the key the repository is signed with. An unmodified copy is replaced on upgrade, which is how a renewed key arrives.
+- `/etc/apt/preferences.d/dashmate.pref`, which limits the repository to the dashmate package: apt does not take any other package from it, in any architecture.
+
+`apt remove dashmate` keeps the three files and `apt purge dashmate` deletes them.
+
+Do not create these files yourself, and do not create others with the same names. If one of them already exists with different content when the package is installed, dpkg asks whether to keep it. An install with no terminal to answer that question, such as an `apt-get -y` run from a script, fails at the prompt and leaves dashmate unconfigured. A repository source written by hand belongs in a file of another name, such as `/etc/apt/sources.list.d/dashmate-testing.sources`, with its key under another name as well. Once dashmate is installed from a package that ships `dashmate.sources`, delete both of those hand-written files first, then set `Suites:` in `dashmate.sources`: while both sources name the same suite with different keys, `apt update` fails with `Conflicting values set for option Signed-By`.
+
 ### Node package
 
 > **Warning:** This installation option is not recommended for mainnet masternodes.
