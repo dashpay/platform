@@ -6,6 +6,7 @@ import VerificationServerUnreachableError from './errors/VerificationServerUnrea
 import ProviderUnreachableError from './errors/ProviderUnreachableError.js';
 import CertificateFileMissingError from './errors/CertificateFileMissingError.js';
 import ProviderCredentialsRejectedError from './errors/ProviderCredentialsRejectedError.js';
+import ConfigFileFormatTooNewError from '../config/errors/ConfigFileFormatTooNewError.js';
 
 /**
  * Why a scheduled renewal did not produce a certificate.
@@ -41,6 +42,7 @@ export const RENEWAL_FAILURE_CODES = {
   PROVIDER_UNREACHABLE: 'PROVIDER_UNREACHABLE',
   CERTIFICATE_FILE_MISSING: 'CERTIFICATE_FILE_MISSING',
   RENEWAL_INTERRUPTED: 'RENEWAL_INTERRUPTED',
+  HELPER_OUTDATED: 'HELPER_OUTDATED',
   UNKNOWN: 'UNKNOWN',
 };
 
@@ -66,6 +68,11 @@ export const REMEDY_CLASS = {
   WAIT: 'WAIT',
   /** Nothing actionable was established. */
   SUPPORT: 'SUPPORT',
+  /**
+   * Restart the node so its helper runs the installed dashmate. Renewal resumes
+   * by itself afterwards.
+   */
+  RESTART_NODE: 'RESTART_NODE',
 };
 
 /**
@@ -157,6 +164,13 @@ const DESCRIPTIONS = {
   [RENEWAL_FAILURE_CODES.RENEWAL_INTERRUPTED]: {
     sentence: 'another dashmate command was changing configuration, so renewal stopped part way',
     remedy: REMEDY_CLASS.WAIT,
+  },
+  // Nothing was asked of the authority: the helper refused before starting,
+  // because saving its result would overwrite the newer dashmate's settings.
+  [RENEWAL_FAILURE_CODES.HELPER_OUTDATED]: {
+    sentence: 'the dashmate helper on this node runs an older dashmate than the one that last'
+      + ' saved its configuration, so it stopped rather than overwrite the newer settings',
+    remedy: REMEDY_CLASS.RESTART_NODE,
   },
   [RENEWAL_FAILURE_CODES.UNKNOWN]: {
     sentence: 'dashmate could not work out why',
@@ -432,7 +446,17 @@ function classifyCode(error, message, provider) {
     || candidate instanceof VerificationServerUnreachableError
     || candidate instanceof ProviderUnreachableError
     || candidate instanceof CertificateFileMissingError
-    || candidate instanceof ProviderCredentialsRejectedError);
+    || candidate instanceof ProviderCredentialsRejectedError
+    || candidate instanceof ConfigFileFormatTooNewError);
+
+  // Only a refusal before the renewal started asked the authority for nothing.
+  // Met at a later save it means the lock was taken over mid-renewal, and a
+  // certificate may already have been issued.
+  if (carried instanceof ConfigFileFormatTooNewError) {
+    return carried.isBeforeAnyWork
+      ? RENEWAL_FAILURE_CODES.HELPER_OUTDATED
+      : RENEWAL_FAILURE_CODES.RESULT_UNKNOWN;
+  }
 
   if (carried instanceof ConfigurationLockLostError) {
     return RENEWAL_FAILURE_CODES.RENEWAL_INTERRUPTED;

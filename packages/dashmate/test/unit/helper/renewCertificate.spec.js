@@ -3,6 +3,7 @@ import ConfigFile from '../../../src/config/configFile/ConfigFile.js';
 import ConfigFileJsonRepository from '../../../src/config/configFile/ConfigFileJsonRepository.js';
 import HomeDir from '../../../src/config/HomeDir.js';
 import renewCertificate from '../../../src/helper/renewCertificate.js';
+import classifyRenewalFailure, { RENEWAL_FAILURE_CODES } from '../../../src/ssl/renewal-failure.js';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
 import obtainLetsEncryptCertificateTaskFactory from '../../../src/listr/tasks/ssl/letsencrypt/obtainLetsEncryptCertificateTaskFactory.js';
 import obtainZeroSSLCertificateTaskFactory from '../../../src/listr/tasks/ssl/zerossl/obtainZeroSSLCertificateTaskFactory.js';
@@ -254,14 +255,20 @@ describe('renewCertificate', () => {
     const obtainCertificateTask = this.sinon.stub();
     const writeConfigTemplates = this.sinon.stub();
 
-    await expect(renewCertificate({
+    const refusal = await renewCertificate({
       configName,
       provider: 'zerossl',
       expirationDays: 30,
       obtainCertificateTask,
       configFileRepository: olderHelperRepository,
       writeConfigTemplates,
-    })).to.be.rejectedWith(/updated by a newer dashmate/);
+    }).then(() => null, (e) => e);
+
+    expect(refusal).to.be.an('error').with.property('message').that.matches(/updated by a newer dashmate/);
+    // Recorded as a cause a restart fixes, not as one that may have spent an
+    // issuance: nothing was asked of the authority.
+    expect(classifyRenewalFailure(refusal, { provider: 'zerossl' }).code)
+      .to.equal(RENEWAL_FAILURE_CODES.HELPER_OUTDATED);
 
     expect(obtainCertificateTask).to.not.have.been.called();
     expect(writeConfigTemplates).to.not.have.been.called();

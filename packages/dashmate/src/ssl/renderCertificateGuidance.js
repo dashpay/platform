@@ -3,6 +3,7 @@ import renderConfigFlag from '../util/renderConfigFlag.js';
 import { CERTIFICATE_REASONS, requiresReplacement } from './checkGatewayCertificateFactory.js';
 import deriveRenewalGuidance, { ISSUANCE_STATUS, SAFE_ACTION } from './renewalGuidance.js';
 import renderObtainCommand from './renderObtainCommand.js';
+import { RENEWAL_FAILURE_CODES } from './renewal-failure.js';
 
 /**
  * Faults in the files themselves. The gateway is handed the pair as-is, so any
@@ -380,6 +381,25 @@ ${obtainAttemptFailed
         config.getName(),
         guidance,
       ));
+    }
+
+    // Obtaining by hand repairs this certificate, but the outdated helper would
+    // fail the next renewal the same way. After the repair, not before it: a
+    // restart makes the gateway reload whatever pair is on disk. Said even while
+    // a request is withheld - the helper retries by itself anyway, and only a
+    // current one can record the success that settles it - but then only once
+    // the pair on disk works. A stopped node is already told to start, which
+    // replaces the helper too.
+    if (guidance.code === RENEWAL_FAILURE_CODES.HELPER_OUTDATED && isNodeRunning !== false) {
+      const lead = guidance.safeAction === SAFE_ACTION.DO_NOT_OBTAIN
+        ? 'Once the certificate files on disk work, restart'
+        : 'Then restart';
+
+      blocks.push(`  ${lead} the node with this dashmate, so the dashmate helper
+  runs this version - its next renewal fails the same way until then:
+
+      dashmate restart ${cfg}
+`);
     }
 
     blocks.push(renderPortEightyPermanence());

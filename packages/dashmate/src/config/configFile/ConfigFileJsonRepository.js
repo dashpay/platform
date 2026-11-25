@@ -403,7 +403,7 @@ export default class ConfigFileJsonRepository {
     // setup - and saves at the end. Refusing only at that save would let the
     // work happen first, so a file this build may not write is refused here.
     try {
-      this.#refuseNewerFormatOnDisk();
+      this.#refuseNewerFormatOnDisk({ isBeforeAnyWork: true });
     } catch (e) {
       this.#release(release);
 
@@ -546,8 +546,11 @@ export default class ConfigFileJsonRepository {
    *
    * Caller must hold the lock, so the newer build cannot migrate the file
    * between this check and the write.
+   *
+   * @param {Object} [options={}]
+   * @param {boolean} [options.isBeforeAnyWork=false] - passed on to the error
    */
-  #refuseNewerFormatOnDisk() {
+  #refuseNewerFormatOnDisk({ isBeforeAnyWork = false } = {}) {
     const recordedVersion = this.#readRecordedFormatVersion();
 
     if (this.#isNewerThanOwnFormat(recordedVersion)) {
@@ -555,6 +558,7 @@ export default class ConfigFileJsonRepository {
         this.configFilePath,
         recordedVersion,
         this.configFormatVersion,
+        { isBeforeAnyWork },
       );
     }
   }
