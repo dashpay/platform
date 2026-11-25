@@ -884,6 +884,13 @@ impl TrustedHttpContextProvider {
 }
 
 impl ContextProvider for TrustedHttpContextProvider {
+    /// Quorum keys come only from its own service; the fallback provider
+    /// serves contracts and token configurations, which the revision does not
+    /// cover, so adding or replacing a known contract does not move it.
+    fn policy_revision(&self) -> Option<u64> {
+        Some(0)
+    }
+
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,
@@ -1047,10 +1054,9 @@ impl ContextProvider for TrustedHttpContextProvider {
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 pub(crate) mod tests {
-    /// The token marketplace starts with protocol version 16, which has no tables yet: the test
-    /// version that selects it stands in for it.
+    /// The token marketplace starts with protocol version 16.
     fn token_marketplace_version() -> &'static dpp::version::PlatformVersion {
-        &dpp::version::mocks::v5_test::TEST_PLATFORM_V5
+        &dpp::version::v16::PLATFORM_V16
     }
 
     use super::*;

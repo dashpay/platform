@@ -146,6 +146,7 @@ impl From<TenderdashStatus> for tonic::Response<WaitForStateTransitionResultResp
                 result: Some(wait_for_state_transition_result_response_v0::Result::Error(
                     st_error,
                 )),
+                state_before_block: None,
             })),
         };
 

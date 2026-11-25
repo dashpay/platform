@@ -31,9 +31,13 @@ fn sum_schema() -> Value {
 }
 
 async fn setup_with_schema(schema: Value) -> Setup {
+    setup_with_schema_at(schema, PlatformVersion::latest()).await
+}
+
+async fn setup_with_schema_at(schema: Value, platform_version: &PlatformVersion) -> Setup {
     Setup::new_at_with(
         Some(moderators_without_lists()),
-        PlatformVersion::latest(),
+        platform_version,
         |contract| add_document_type(contract, POST, schema),
     )
     .await
@@ -397,7 +401,26 @@ async fn should_refuse_restore_when_its_cross_type_prerequisite_was_deleted() {
 
 #[tokio::test]
 async fn should_preserve_the_rule_free_restore_fee_and_document() {
-    let setup = setup_with_schema(post_schema(true)).await;
+    // From protocol version 15 the restore reads its contract stored compiled (format version
+    // 2), about 1.8 times its bytes; the decision proposals contract registered at genesis from
+    // 15 and the token market contract registered at genesis from 16 add siblings to the
+    // contracts tree the restore's path crosses.
+    run_rule_free_restore_at(PlatformVersion::latest(), 1_492_880).await;
+}
+
+/// PROTOCOL_VERSION_15: the genesis contracts tree without the token market contract. Pinned
+/// so v15 chain history stays bit-for-bit reproducible.
+#[tokio::test]
+async fn should_preserve_the_rule_free_restore_fee_and_document_protocol_version_15() {
+    run_rule_free_restore_at(
+        PlatformVersion::get(15).expect("expected protocol version 15"),
+        1_442_880,
+    )
+    .await;
+}
+
+async fn run_rule_free_restore_at(platform_version: &PlatformVersion, processing_fee: u64) {
+    let setup = setup_with_schema_at(post_schema(true), platform_version).await;
     let tx = setup.platform.drive.grove.start_transaction();
     let removed = create_post(&setup, &setup.user, "removed", None, &tx).await;
     let bytes = remove_post(&setup, &removed, &tx).await;
@@ -413,10 +436,7 @@ async fn should_preserve_the_rule_free_restore_fee_and_document() {
         fee_result,
         FeeResult {
             storage_fee: 9_612_000,
-            // from protocol version 15 the restore reads its contract stored compiled (format
-            // version 2), about 1.8 times its bytes; the decision proposals contract registered at
-            // genesis from 15 adds a sibling to the contracts tree the restore's path crosses
-            processing_fee: 1_442_880,
+            processing_fee,
             ..Default::default()
         }
     );

@@ -8,7 +8,7 @@ use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::prelude::{AddressNonce, CoreBlockHeight};
-use key_wallet::account::StandardAccountType;
+use key_wallet::account::{AccountType, StandardAccountType};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::Network;
@@ -183,6 +183,15 @@ pub enum PlatformWalletError {
         contact: Identifier,
         network: Network,
         account_index: u32,
+    },
+
+    /// key-wallet could not build the address pools of a DashPay account
+    /// from its xpub.
+    #[error("Failed to build DashPay account {account_type}: {source}")]
+    DashpayAccountBuild {
+        account_type: AccountType,
+        #[source]
+        source: key_wallet::Error,
     },
 
     #[error("Asset lock transaction failed: {0}")]
@@ -1425,6 +1434,7 @@ impl PlatformWalletError {
             Self::DocumentEraseBusy
             | Self::WalletCreation(_)
             | Self::AccountNotFound(_)
+            | Self::DashpayAccountBuild { .. }
             | Self::WalletRemovedBeforeSend(_)
             | Self::PreparedPaymentAddressTaken(_)
             | Self::WalletAlreadyExists(_)
@@ -1728,6 +1738,7 @@ impl PlatformWalletError {
                 | Self::WalletCreation(_)
                 | Self::PersisterRestore(_)
                 | Self::AccountNotFound(_)
+                | Self::DashpayAccountBuild { .. }
                 | Self::WalletRemovedBeforeSend(_)
                 | Self::PreparedPaymentAddressTaken(_)
                 | Self::WalletAlreadyExists(_)
@@ -2736,7 +2747,7 @@ mod payment_delivery_tests {
     }
 
     /// Variants of [`PlatformWalletError`]: one past the highest ordinal.
-    const VARIANT_COUNT: usize = 107;
+    const VARIANT_COUNT: usize = 108;
 
     /// The ordinal of `error`'s variant. No wildcard arm: a new variant does
     /// not compile until it gets the next ordinal here (and
@@ -2852,6 +2863,7 @@ mod payment_delivery_tests {
             E::PaymentAlreadyDispatched { .. } => 104,
             E::IdentityLookupFailed { .. } => 105,
             E::RefusedBeforeDispatch { .. } => 106,
+            E::DashpayAccountBuild { .. } => 107,
         }
     }
 
@@ -2871,6 +2883,13 @@ mod payment_delivery_tests {
             (E::PersisterRestore(Box::new(E::WalletLocked)), NotSent),
             (E::WalletNotFound(s()), MaybeSent),
             (E::AccountNotFound(s()), NotSent),
+            (
+                E::DashpayAccountBuild {
+                    account_type: key_wallet::AccountType::CoinJoin { index: 0 },
+                    source: key_wallet::Error::KeyError(s()),
+                },
+                NotSent,
+            ),
             (E::WalletRemovedBeforeSend(s()), NotSent),
             (E::PreparedPaymentAddressTaken(s()), NotSent),
             (E::WalletAlreadyExists(s()), NotSent),

@@ -236,7 +236,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_wallet_drain
                         },
                         vec![(recipient, None)],
                         &signer,
-                        &CachedOrchardProver::new(),
+                        &CachedOrchardProver,
                         None,
                         0,
                         None,

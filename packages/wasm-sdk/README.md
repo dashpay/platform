@@ -183,6 +183,8 @@ Functional tests (networked; some cases may be skipped if offline):
 yarn workspace @dashevo/wasm-sdk test:functional
 ```
 
+Functional tests need the development build (`yarn workspace @dashevo/wasm-sdk build`), which adds the `mocks` feature for the test-only `generateTestIdentityKeys`. The release build leaves it out.
+
 ---
 
 ## API highlights

@@ -1902,7 +1902,7 @@ unsafe fn platform_wallet_manager_shielded_fund_from_asset_lock_inner(
                 network,
             )
         };
-        let prover = CachedOrchardProver::new();
+        let prover: &'static CachedOrchardProver = &CachedOrchardProver;
         let on_built = built_callback.map(AssetLockBuiltCallback::into_observer);
         wallet
             .shielded_fund_from_asset_lock(
@@ -1913,7 +1913,7 @@ unsafe fn platform_wallet_manager_shielded_fund_from_asset_lock_inner(
                 },
                 vec![(recipient, None)],
                 &asset_lock_signer,
-                &prover,
+                prover,
                 surplus_output,
                 // Single real note, no anonymity-set fillers (the multi-note
                 // pool-seeding path uses its own dedicated FFI entry point).
@@ -2054,7 +2054,7 @@ unsafe fn shielded_fund_from_asset_lock_coinjoin_drain_inner(
                 network,
             )
         };
-        let prover = CachedOrchardProver::new();
+        let prover: &'static CachedOrchardProver = &CachedOrchardProver;
         let on_built = built_callback.map(AssetLockBuiltCallback::into_observer);
         wallet
             .shielded_fund_from_asset_lock(
@@ -2070,7 +2070,7 @@ unsafe fn shielded_fund_from_asset_lock_coinjoin_drain_inner(
                 },
                 vec![(recipient, None)],
                 &asset_lock_signer,
-                &prover,
+                prover,
                 // Single-recipient remainder flow: surplus is structurally
                 // zero, so no surplus output.
                 None,
@@ -2242,7 +2242,7 @@ unsafe fn platform_wallet_manager_shielded_resume_fund_from_asset_lock_inner(
                 network,
             )
         };
-        let prover = CachedOrchardProver::new();
+        let prover: &'static CachedOrchardProver = &CachedOrchardProver;
         wallet
             .shielded_fund_from_asset_lock(
                 &coordinator,
@@ -2252,7 +2252,7 @@ unsafe fn platform_wallet_manager_shielded_resume_fund_from_asset_lock_inner(
                 },
                 vec![(recipient, None)],
                 &asset_lock_signer,
-                &prover,
+                prover,
                 surplus_output,
                 // Resuming a single-note fund (not a seeding batch).
                 0,

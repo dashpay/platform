@@ -3,7 +3,7 @@
 //! the SDK runs. Its SPV route reads the same kind of [`SpvSourceSlot`] as
 //! [`SpvContextProvider`](crate::SpvContextProvider).
 
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use dpp::dashcore::Network;
@@ -51,9 +51,14 @@ pub struct AdaptiveContextProvider {
     trusted: Arc<dyn ContextProvider>,
     spv: Arc<SpvSourceSlot>,
     contracts: Arc<dyn ContractSource>,
-    mode: AtomicU8,
+    /// The mode in the low byte, and above it a count of mode changes.
+    mode_and_revision: AtomicU64,
     network: Network,
 }
+
+/// The largest count of mode changes `mode_and_revision` holds. The count
+/// stops there instead of wrapping, which would lower the policy revision.
+const MAX_MODE_CHANGES: u64 = u64::MAX >> 8;
 
 impl AdaptiveContextProvider {
     /// A provider in [`ContextProviderMode::Auto`] that answers from `trusted`
@@ -80,14 +85,14 @@ impl AdaptiveContextProvider {
             trusted,
             spv: Arc::default(),
             contracts,
-            mode: AtomicU8::new(ContextProviderMode::Auto as u8),
+            mode_and_revision: AtomicU64::new(ContextProviderMode::Auto as u64),
             network,
         })
     }
 
     /// Where lookups go.
     pub fn mode(&self) -> ContextProviderMode {
-        ContextProviderMode::try_from(self.mode.load(Ordering::Acquire))
+        ContextProviderMode::try_from(self.mode_and_revision.load(Ordering::Acquire) as u8)
             .expect("context-provider mode is only written from validated values")
     }
 
@@ -298,8 +303,28 @@ impl ContextProvider for AdaptiveContextProvider {
         })
     }
 
+    /// Its own mode changes plus the trusted provider's revision.
+    /// Publishing, replacing or withdrawing the SPV client, or the client
+    /// becoming ready or not, is not a change: Spv mode accepts only SPV
+    /// keys, and Auto accepts either source. Auto does tighten once SPV is
+    /// ready: it treats SPV's key as final and no longer asks the trusted
+    /// provider for a quorum type other than the network's Platform type.
+    /// `None` once the change count can no longer advance.
+    fn policy_revision(&self) -> Option<u64> {
+        let own = self.mode_and_revision.load(Ordering::Acquire) >> 8;
+        if own == MAX_MODE_CHANGES {
+            return None;
+        }
+        own.checked_add(self.trusted.policy_revision()?)
+    }
+
     fn set_quorum_mode(&self, mode: ContextProviderMode) -> Result<(), ContextProviderError> {
-        self.mode.store(mode as u8, Ordering::Release);
+        let _ = self
+            .mode_and_revision
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |state| {
+                let changes = ((state >> 8) + 1).min(MAX_MODE_CHANGES);
+                (state as u8 != mode as u8).then_some((changes << 8) | mode as u64)
+            });
         Ok(())
     }
 
@@ -318,7 +343,7 @@ mod tests {
     use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
     use dpp::version::PlatformVersion;
 
-    use super::AdaptiveContextProvider;
+    use super::{AdaptiveContextProvider, MAX_MODE_CHANGES};
     use crate::test_support::{
         is_unavailable, network_quorums, platform_quorum_type, publish, quorum_key, quorums,
         slot_of, spv_misconfigured, spv_miss, spv_unverified, spv_wrong_type, SpvAnswer,
@@ -365,6 +390,61 @@ mod tests {
 
     fn fetch(adaptive: &AdaptiveContextProvider) -> Option<QuorumKeyFuture> {
         adaptive.fetch_quorum_public_key(platform_quorum_type(), [2; 32], 3)
+    }
+
+    #[test]
+    fn should_change_the_policy_revision_on_every_mode_change() {
+        let adaptive = adaptive();
+        let start = adaptive.policy_revision().unwrap();
+        adaptive.set_quorum_mode(ContextProviderMode::Spv).unwrap();
+        adaptive
+            .set_quorum_mode(ContextProviderMode::Trusted)
+            .unwrap();
+        adaptive.set_quorum_mode(ContextProviderMode::Spv).unwrap();
+        assert_eq!(adaptive.mode(), ContextProviderMode::Spv);
+        assert_eq!(adaptive.policy_revision(), Some(start + 3));
+        adaptive.set_quorum_mode(ContextProviderMode::Spv).unwrap();
+        assert_eq!(adaptive.policy_revision(), Some(start + 3));
+    }
+
+    #[test]
+    fn should_report_no_policy_revision_once_the_change_count_is_exhausted() {
+        let adaptive = adaptive();
+        adaptive.mode_and_revision.store(
+            ((MAX_MODE_CHANGES - 1) << 8) | ContextProviderMode::Auto as u64,
+            Ordering::Release,
+        );
+        assert_eq!(adaptive.policy_revision(), Some(MAX_MODE_CHANGES - 1));
+
+        adaptive.set_quorum_mode(ContextProviderMode::Spv).unwrap();
+        assert_eq!(adaptive.policy_revision(), None);
+        adaptive
+            .set_quorum_mode(ContextProviderMode::Trusted)
+            .unwrap();
+        assert_eq!(adaptive.mode(), ContextProviderMode::Trusted);
+        assert_eq!(adaptive.policy_revision(), None, "never wraps back");
+    }
+
+    #[test]
+    fn should_advance_the_policy_revision_when_the_trusted_delegate_changes() {
+        let delegate = Arc::new(adaptive());
+        let outer = AdaptiveContextProvider::new(
+            Arc::clone(&delegate) as Arc<dyn ContextProvider>,
+            Arc::new(TestContracts),
+            Network::Testnet,
+        )
+        .unwrap();
+        let start = outer.policy_revision().unwrap();
+        delegate.set_quorum_mode(ContextProviderMode::Spv).unwrap();
+        assert_eq!(outer.policy_revision(), Some(start + 1));
+
+        let unreported = AdaptiveContextProvider::new(
+            Arc::new(std::sync::Mutex::new(adaptive())),
+            Arc::new(TestContracts),
+            Network::Testnet,
+        )
+        .unwrap();
+        assert_eq!(unreported.policy_revision(), None);
     }
 
     #[test]

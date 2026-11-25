@@ -13,6 +13,7 @@ use crate::error::PlatformWalletError;
 mod build;
 #[cfg(test)]
 mod funded_lock_tests;
+pub(crate) mod funding_account;
 mod operation;
 pub use operation::{
     AssetLockOperationContext, AssetLockOperationRegistration, AssetLockOperationSnapshot,

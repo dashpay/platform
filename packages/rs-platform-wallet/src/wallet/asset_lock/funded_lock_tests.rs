@@ -542,7 +542,8 @@ async fn should_offer_no_resume_when_a_resumed_shielded_funding_cannot_cover_its
         path,
         store,
     ));
-    let pool_fee = wallet.shield_from_asset_lock_pool_fee(2).unwrap();
+    let pool_fee =
+        PlatformWallet::shield_from_asset_lock_pool_fee(2, wallet.sdk.version()).unwrap();
     let out_point = track_chain_locked_lock(
         &wallet,
         &signer,
@@ -569,7 +570,7 @@ async fn should_offer_no_resume_when_a_resumed_shielded_funding_cannot_cover_its
             resume(out_point),
             vec![(crate::test_support::orchard_address_fixture(0x58), None)],
             &signer,
-            &CachedOrchardProver::new(),
+            &CachedOrchardProver,
             None,
             0,
             None,
@@ -612,7 +613,8 @@ async fn should_refuse_a_fresh_shielded_funding_below_the_pool_fee_as_not_sent()
         path,
         store,
     ));
-    let pool_fee = wallet.shield_from_asset_lock_pool_fee(2).unwrap();
+    let pool_fee =
+        PlatformWallet::shield_from_asset_lock_pool_fee(2, wallet.sdk.version()).unwrap();
 
     let error = wallet
         .shielded_fund_from_asset_lock(
@@ -623,7 +625,7 @@ async fn should_refuse_a_fresh_shielded_funding_below_the_pool_fee_as_not_sent()
             },
             vec![(crate::test_support::orchard_address_fixture(0x58), None)],
             &signer,
-            &CachedOrchardProver::new(),
+            &CachedOrchardProver,
             None,
             0,
             None,
