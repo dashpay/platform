@@ -755,15 +755,12 @@ fn the_migration_adopts_downstream_block_spend_tables_with_their_rows() {
     };
     {
         let mut conn = rusqlite::Connection::open(&path).unwrap();
-        conn.execute_batch("DROP TABLE core_block_spends; DROP TABLE core_block_spends_migrated;")
-            .unwrap();
-        let unapplied = conn
-            .execute(
-                "DELETE FROM refinery_schema_history WHERE name = 'core_block_spends'",
-                [],
-            )
-            .unwrap();
-        assert_eq!(unapplied, 1, "the block-spend migration is unapplied");
+        conn.execute_batch(
+            "DROP TABLE core_block_spends; DROP TABLE core_block_spends_migrated; \
+             DROP TABLE core_dismissed_txids; \
+             DELETE FROM refinery_schema_history WHERE version >= 25;",
+        )
+        .unwrap();
         conn.execute_batch(DOWNSTREAM_BLOCK_SPENDS_DDL).unwrap();
         conn.execute(
             "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",

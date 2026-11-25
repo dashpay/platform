@@ -13,7 +13,7 @@ use refinery_core::error::WrapMigrationError;
 mod legacy_v008;
 mod v021;
 mod v023;
-mod v024;
+mod v026;
 
 // Generates a `migrations` module with `runner()`; path is relative to
 // the crate root.
@@ -56,7 +56,7 @@ fn run_with_runner(
         pool_sql: hook_sql(11),
         accounting_sql: hook_sql(21),
         verified_locks_sql: hook_sql(23),
-        dismissed_txids_sql: hook_sql(24),
+        dismissed_txids_sql: hook_sql(26),
         policy,
     };
     // Grouped reports never claim that rolled-back migrations were applied.
@@ -93,7 +93,7 @@ impl refinery_core::traits::sync::Transaction for MigrationTransaction<'_> {
                 continue;
             }
             if query == self.dismissed_txids_sql {
-                v024::add_dismissed_txids(&self.tx, query)?;
+                v026::add_dismissed_txids(&self.tx, query)?;
                 count += 1;
                 continue;
             }

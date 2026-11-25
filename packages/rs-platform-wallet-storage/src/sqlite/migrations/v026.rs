@@ -6,7 +6,7 @@ use crate::sqlite::error::WalletStorageError;
 
 const TABLE: &str = "core_dismissed_txids";
 
-/// Run V024's `sql`, which creates the table only if it is missing, then
+/// Run V026's `sql`, which creates the table only if it is missing, then
 /// check the table it leaves. A table already there with this definition is
 /// kept with its rows. One from before the kind, with exactly the earlier
 /// definition, is rebuilt in this one with its rows, their `id`s kept, all
@@ -144,8 +144,8 @@ mod tests {
         conn
     }
 
-    fn at_v023() -> Connection {
-        at(23)
+    fn at_v025() -> Connection {
+        at(25)
     }
 
     fn schema(conn: &Connection) -> Vec<(String, Option<String>)> {
@@ -169,7 +169,7 @@ mod tests {
     /// Opened two versions back, so the refusal must also undo the
     /// migration the same run applied before this one.
     fn refuses(existing: &str) {
-        let mut conn = at(22);
+        let mut conn = at(24);
         conn.execute_batch(existing).unwrap();
         let before = schema(&conn);
 
@@ -193,13 +193,13 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(latest, 22, "the refused run was recorded");
+        assert_eq!(latest, 24, "the refused run was recorded");
     }
 
     /// A fresh database gets the table with the definition the check expects.
     #[test]
     fn should_add_the_table_to_a_fresh_database() {
-        let mut conn = at_v023();
+        let mut conn = at_v025();
         migrations::run(&mut conn).unwrap();
         assert!(table_sql(&conn).is_some());
     }
@@ -224,7 +224,7 @@ mod tests {
                  UNIQUE (WALLET_ID, TXID)
              );",
         ] {
-            let mut conn = at_v023();
+            let mut conn = at_v025();
             conn.execute_batch(ddl).unwrap();
             migrations::run(&mut conn).unwrap();
         }
@@ -271,7 +271,7 @@ mod tests {
     /// A table from before the kind is rebuilt as a fresh file declares it.
     #[test]
     fn should_rebuild_a_table_from_before_the_kind() {
-        let mut conn = at_v023();
+        let mut conn = at_v025();
         conn.execute_batch(
             "CREATE TABLE core_dismissed_txids (
                  id INTEGER PRIMARY KEY,
@@ -322,7 +322,7 @@ mod tests {
     /// a file first, in its foreign-key check; a bare migration run does not).
     #[test]
     fn should_leave_a_row_of_a_deleted_wallet_out_of_the_rebuild() {
-        let mut conn = at_v023();
+        let mut conn = at_v025();
         conn.execute_batch(
             "INSERT INTO wallets (wallet_id, network, birth_height) \
                  VALUES (x'01', 'testnet', 0);
@@ -353,7 +353,7 @@ mod tests {
     /// hold them, and every row of a wallet with fewer.
     #[test]
     fn should_keep_a_wallets_newest_4096_in_the_rebuild() {
-        let mut conn = at_v023();
+        let mut conn = at_v025();
         conn.execute_batch(
             "INSERT INTO wallets (wallet_id, network, birth_height) \
                  VALUES (x'01', 'testnet', 0), (x'03', 'testnet', 0);

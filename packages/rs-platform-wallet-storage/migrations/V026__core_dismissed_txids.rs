@@ -17,7 +17,7 @@
 //! rows. One with the table as it was before `abandoned` has it rebuilt, its
 //! rows (but for those of a deleted wallet and those past a wallet's newest
 //! 4,096) kept and read as abandoned; one with another shape is refused
-//! (`migrations::v024`). Otherwise an upgraded database starts with no
+//! (`migrations::v026`). Otherwise an upgraded database starts with no
 //! dismissals.
 
 pub fn migration() -> String {

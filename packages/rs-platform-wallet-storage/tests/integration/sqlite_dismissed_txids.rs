@@ -25,7 +25,7 @@ use platform_wallet_storage::LoadCtx;
 use rusqlite::params;
 
 /// The migration that adds `core_dismissed_txids`.
-const DISMISSED_TXIDS_VERSION: i64 = 24;
+const DISMISSED_TXIDS_VERSION: i64 = 26;
 
 fn tx(n: u32) -> Transaction {
     Transaction {
