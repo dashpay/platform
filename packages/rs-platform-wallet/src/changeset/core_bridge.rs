@@ -1886,7 +1886,7 @@ async fn build_core_changeset(
                 swept = txids.len(),
                 released = released_outpoints.len(),
                 superseded_by = %superseded_by,
-                winner_mined_height = ?winner_mined_height,
+                winner_block = ?winner_block,
                 "Mirroring swept transactions to the persister"
             );
             CoreChangeSet {
