@@ -68,6 +68,7 @@ import org.dashfoundation.example.navigation.DashPaySendShieldedTip
 import org.dashfoundation.example.navigation.IdentitiesHome
 import org.dashfoundation.example.navigation.WalletsHome
 import org.dashfoundation.example.ui.components.AccessiblePicker
+import org.dashfoundation.example.ui.components.EmissionKey
 import org.dashfoundation.example.ui.components.EntityRow
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
@@ -112,7 +113,7 @@ fun DashPayTabScreen(navController: NavHostController) {
     }.collectEachAsStateWithLifecycle(emptyList())
 
     val managerMatchesNetwork = manager?.network == network
-    val eligible = remember(allWalletOwned, walletsMap, managerMatchesNetwork) {
+    val eligible = remember(EmissionKey(allWalletOwned), walletsMap, managerMatchesNetwork) {
         if (managerMatchesNetwork) {
             eligibleDashPayIdentities(allWalletOwned, walletsMap.keys)
         } else {

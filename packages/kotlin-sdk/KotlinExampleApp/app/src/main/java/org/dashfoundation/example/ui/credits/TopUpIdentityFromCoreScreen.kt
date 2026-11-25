@@ -71,9 +71,9 @@ fun TopUpIdentityFromCoreScreen(identityIdHex: String, navController: NavHostCon
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
-    val identity by container.database.identityDao()
-        .observeByIdentityId(idBytes)
-        .collectEachAsStateWithLifecycle(initialValue = null)
+    val identity by remember(idBytes) {
+        container.database.identityDao().observeByIdentityId(idBytes)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
     val wallet = rememberManagedWalletFor(identity?.walletId)
 
     var amountText by rememberSaveable { mutableStateOf("50000000") } // 0.5 DASH in duffs

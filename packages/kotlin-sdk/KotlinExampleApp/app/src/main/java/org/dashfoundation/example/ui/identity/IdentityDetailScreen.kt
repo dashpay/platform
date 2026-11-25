@@ -103,9 +103,9 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
     // so both encodings resolve (matches KeyDetailScreen's resolution).
     val idBase58 = remember(idBytes) { Base58.encode(idBytes) }
 
-    val identity by container.database.identityDao()
-        .observeByIdentityId(idBytes)
-        .collectEachAsStateWithLifecycle(initialValue = null)
+    val identity by remember(idBytes) {
+        container.database.identityDao().observeByIdentityId(idBytes)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
     val dpnsNames by container.database.dpnsNameDao()
         .observeByIdentity(idBytes)
         .collectAsStateWithLifecycle(initialValue = emptyList())

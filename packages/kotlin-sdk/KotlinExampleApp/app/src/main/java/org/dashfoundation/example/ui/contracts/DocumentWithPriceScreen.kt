@@ -94,9 +94,9 @@ fun DocumentWithPriceScreen(
     val contractIdBytes = remember(contractIdHex) { contractIdHex.hexToBytes() }
     val contractIdBase58 = remember(contractIdHex) { Base58.encode(contractIdBytes) }
 
-    val identities by container.database.identityDao()
-        .observeWalletOwnedByNetwork(network.ffiValue)
-        .collectEachAsStateWithLifecycle(initialValue = emptyList())
+    val identities by remember(network.ffiValue) {
+        container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
     var actingIdentity by remember { mutableStateOf<IdentityEntity?>(null) }
     LaunchedEffect(identities) {
         if (actingIdentity == null) actingIdentity = identities.firstOrNull()

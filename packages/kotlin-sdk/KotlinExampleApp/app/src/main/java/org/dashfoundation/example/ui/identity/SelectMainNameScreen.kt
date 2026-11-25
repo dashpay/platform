@@ -45,9 +45,9 @@ fun SelectMainNameScreen(identityIdHex: String, navController: NavHostController
     val scope = rememberCoroutineScope()
     val idBytes = remember(identityIdHex) { identityIdHex.hexToBytes() }
 
-    val identity by container.database.identityDao()
-        .observeByIdentityId(idBytes)
-        .collectEachAsStateWithLifecycle(initialValue = null)
+    val identity by remember(idBytes) {
+        container.database.identityDao().observeByIdentityId(idBytes)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
     val names by container.database.dpnsNameDao()
         .observeByIdentity(idBytes)
         .collectAsStateWithLifecycle(initialValue = emptyList())

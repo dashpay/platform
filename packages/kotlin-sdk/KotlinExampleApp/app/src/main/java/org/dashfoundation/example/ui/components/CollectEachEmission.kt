@@ -30,3 +30,15 @@ fun <T> Flow<T>.collectEachAsStateWithLifecycle(initialValue: T): State<T> {
         }
     }
 }
+
+/**
+ * A `remember` key for a value collected with
+ * [collectEachAsStateWithLifecycle], compared by identity: it changes with
+ * every emission, even one equal to the last. Keying on the value itself
+ * would compare the rows by id and keep what was derived from the old ones.
+ */
+class EmissionKey(private val value: Any?) {
+    override fun equals(other: Any?): Boolean = other is EmissionKey && other.value === value
+
+    override fun hashCode(): Int = System.identityHashCode(value)
+}

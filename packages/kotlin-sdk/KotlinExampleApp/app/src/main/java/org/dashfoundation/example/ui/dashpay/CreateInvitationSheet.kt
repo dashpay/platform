@@ -40,6 +40,7 @@ import kotlinx.coroutines.launch
 import org.dashfoundation.dashsdk.tokens.Dashpay
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
+import org.dashfoundation.example.ui.components.EmissionKey
 import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.generateQrBitmap
 import org.dashfoundation.example.util.parseDashToDuffs
@@ -93,7 +94,7 @@ fun CreateInvitationSheet(
     val walletOwned by remember(network) {
         container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
     }.collectEachAsStateWithLifecycle(emptyList())
-    val inviterIdentity = remember(walletOwned, walletsMap, preferredIdentityIdHex) {
+    val inviterIdentity = remember(EmissionKey(walletOwned), walletsMap, preferredIdentityIdHex) {
         val loaded = walletOwned.filter {
             it.walletId != null && walletsMap.containsKey(it.walletId!!.toHex())
         }

@@ -397,9 +397,9 @@ fun UpdateContractScreen(
     val context = LocalContext.current
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
-    val identities by container.database.identityDao()
-        .observeWalletOwnedByNetwork(network.ffiValue)
-        .collectEachAsStateWithLifecycle(initialValue = emptyList())
+    val identities by remember(network.ffiValue) {
+        container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     var contractIdText by rememberSaveable(prefillContractIdHex) {
         mutableStateOf(
@@ -412,7 +412,7 @@ fun UpdateContractScreen(
     val storedContractFlow = remember(contractIdBytes?.toHex()) {
         contractIdBytes?.let { container.database.dataContractDao().observeById(it) }
     }
-    val storedContract by (storedContractFlow ?: kotlinx.coroutines.flow.flowOf(null))
+    val storedContract by (storedContractFlow ?: remember { kotlinx.coroutines.flow.flowOf(null) })
         .collectEachAsStateWithLifecycle(initialValue = null)
 
     // The owner: the wallet-owned identity the stored contract names, else the one picked

@@ -95,6 +95,10 @@ mod payments;
 pub(crate) use payments::{record_incoming_dashpay_payments, sent_payment_status_for_record};
 mod prepared_payment;
 pub use prepared_payment::PreparedDashPayPayment;
+pub use tokens::{
+    config_update_applied, TokenConfigUpdateOutcome, CONFIG_UPDATE_REFRESH_ATTEMPTS,
+    CONFIG_UPDATE_REFRESH_DELAY,
+};
 mod private_contact_requests;
 #[cfg(feature = "shielded")]
 pub(crate) use private_contact_requests::{

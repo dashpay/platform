@@ -66,6 +66,7 @@ import org.dashfoundation.dashsdk.wallet.WalletSyncEvent
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.navigation.ShieldedTokenSend
 import org.dashfoundation.example.navigation.ShieldedTokenUnshield
+import org.dashfoundation.example.ui.components.EmissionKey
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
@@ -525,7 +526,7 @@ private fun ShieldedTokenPoolWatchSheet(
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val sortedTokens = remember(tokens) { tokens.sortedBy { it.name } }
+    val sortedTokens = remember(EmissionKey(tokens)) { tokens.sortedBy { it.name } }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,

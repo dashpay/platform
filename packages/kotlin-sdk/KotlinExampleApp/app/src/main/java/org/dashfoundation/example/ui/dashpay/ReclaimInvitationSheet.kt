@@ -30,6 +30,7 @@ import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.services.DashpayKeyProvisioning
 import org.dashfoundation.example.ui.components.AccessiblePicker
+import org.dashfoundation.example.ui.components.EmissionKey
 import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.ui.dashpay.InvitationReclaimLogic.ReclaimOutcome
 import org.dashfoundation.example.util.Base58
@@ -76,7 +77,7 @@ fun ReclaimInvitationSheet(
     val walletOwned by remember(network) {
         container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
     }.collectEachAsStateWithLifecycle(emptyList())
-    val walletIdentities = remember(walletOwned) {
+    val walletIdentities = remember(EmissionKey(walletOwned)) {
         walletOwned.filter { it.walletId?.contentEquals(invitation.walletId) == true }
     }
 

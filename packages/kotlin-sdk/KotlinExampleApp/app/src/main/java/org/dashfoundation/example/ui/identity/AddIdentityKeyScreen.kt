@@ -37,6 +37,7 @@ import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.services.IdentityKeyAdditionFlow
 import org.dashfoundation.example.ui.components.AccessiblePicker
+import org.dashfoundation.example.ui.components.EmissionKey
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
@@ -76,15 +77,15 @@ fun AddIdentityKeyScreen(identityIdHex: String, navController: NavHostController
     val idBytes = remember(identityIdHex) { identityIdHex.hexToBytes() }
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
 
-    val identity by container.database.identityDao()
-        .observeByIdentityId(idBytes)
-        .collectEachAsStateWithLifecycle(initialValue = null)
+    val identity by remember(idBytes) {
+        container.database.identityDao().observeByIdentityId(idBytes)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
     val keys by container.database.publicKeyDao()
         .observeByIdentityId(org.dashfoundation.example.util.Base58.encode(idBytes))
         .collectAsStateWithLifecycle(initialValue = emptyList())
-    val savedContracts by container.database.dataContractDao()
-        .observeByNetwork(network.ffiValue)
-        .collectEachAsStateWithLifecycle(initialValue = emptyList())
+    val savedContracts by remember(network.ffiValue) {
+        container.database.dataContractDao().observeByNetwork(network.ffiValue)
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val wallet = rememberManagedWalletFor(identity?.walletId)
@@ -112,7 +113,7 @@ fun AddIdentityKeyScreen(identityIdHex: String, navController: NavHostController
 
     // Bounds picker entries: DashPay (system, always available) first,
     // then user-saved contracts on this network (duplicates skipped).
-    val pickerEntries = remember(savedContracts) {
+    val pickerEntries = remember(EmissionKey(savedContracts)) {
         val system = listOf(dashPaySystemEntry())
         val systemIds = system.map { it.idHex }.toSet()
         system + savedContracts

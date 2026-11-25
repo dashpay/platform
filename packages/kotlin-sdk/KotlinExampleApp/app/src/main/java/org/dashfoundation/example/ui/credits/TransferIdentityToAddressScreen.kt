@@ -75,9 +75,9 @@ fun TransferIdentityToAddressScreen(identityIdHex: String, navController: NavHos
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
-    val identity by container.database.identityDao()
-        .observeByIdentityId(idBytes)
-        .collectEachAsStateWithLifecycle(initialValue = null)
+    val identity by remember(idBytes) {
+        container.database.identityDao().observeByIdentityId(idBytes)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
     val wallet = rememberManagedWalletFor(identity?.walletId)
 
     val platformAddresses by container.database.platformAddressDao()

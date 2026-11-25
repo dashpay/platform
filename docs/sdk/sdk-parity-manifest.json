@@ -113,6 +113,7 @@
     "platform_wallet_token_purchase": "packages/rs-platform-wallet-ffi/src/tokens/purchase.rs",
     "platform_wallet_token_transfer": "packages/rs-platform-wallet-ffi/src/tokens/transfer.rs",
     "platform_wallet_token_update_config": "packages/rs-platform-wallet-ffi/src/tokens/update_config.rs",
+    "platform_wallet_token_update_config_and_refresh": "packages/rs-platform-wallet-ffi/src/tokens/update_config.rs",
     "platform_wallet_top_up_from_addresses_with_signer": "packages/rs-platform-wallet-ffi/src/identity_top_up.rs",
     "platform_wallet_topup_identity_with_existing_asset_lock_signer": "packages/rs-platform-wallet-ffi/src/identity_registration_funded_with_signer.rs",
     "platform_wallet_tracked_asset_locks_free": "packages/rs-platform-wallet-ffi/src/manager_diagnostics.rs",
@@ -2228,6 +2229,46 @@
           "kind": "manual",
           "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
           "id": "DOC-19",
+          "covers_restart": false
+        }
+      ]
+    },
+    {
+      "id": "tokens.config_update_refreshed_contract",
+      "title": "A confirmed token configuration update hands back the contract it produced",
+      "area": "shared_policy",
+      "shared_apis": [
+        "platform_wallet_token_update_config_and_refresh"
+      ],
+      "required_persistence_capabilities": [],
+      "hosts": {
+        "swift": {
+          "sdk": "unsupported",
+          "example_app": "unsupported",
+          "restart": "not_applicable",
+          "reason": "Swift still calls platform_wallet_token_update_config, which reports only success, and patches PersistentToken.maxSupply after a single-signer update; moving it to the outcome and the refreshed contract is tracked by #6069."
+        },
+        "kotlin": {
+          "sdk": "supported",
+          "example_app": "partial",
+          "restart": "not_applicable",
+          "reason": "Tokens.updateConfig returns Rust's outcome (pending, applied with the proof-verified contract fetched at the version the update produced, or applied but not refreshed) and the Update Max Supply form stores the contract; no device gate has run the applied and not-refreshed paths yet."
+        }
+      },
+      "verification": [
+        {
+          "host": "kotlin",
+          "kind": "unit",
+          "file": "packages/kotlin-sdk/sdk/src/test/kotlin/org/dashfoundation/dashsdk/tokens/TokenConfigUpdateOutcomeTest.kt",
+          "id": "should decode an applied update with the contract it produced",
+          "command": "cd packages/kotlin-sdk && ./gradlew :sdk:testDebugUnitTest",
+          "covers_restart": false
+        },
+        {
+          "host": "kotlin",
+          "kind": "manual",
+          "file": "packages/kotlin-sdk/KotlinExampleApp/TEST_PLAN.md",
+          "id": "TOK-14",
           "covers_restart": false
         }
       ]

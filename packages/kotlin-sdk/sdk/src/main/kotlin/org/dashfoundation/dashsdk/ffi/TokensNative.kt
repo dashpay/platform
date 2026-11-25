@@ -193,6 +193,7 @@ internal object TokensNative {
      * Update token configuration. [changeItemTag] selects the variant
      * (0 = MaxSupply, the only tag wired in this release);
      * [changeItemPayloadJson] is the per-tag JSON payload. Group-gatable.
+     * Returns the outcome JSON (see `TokenConfigUpdateOutcome.fromJson`).
      */
     external fun tokenUpdateConfig(
         walletHandle: Long,
@@ -208,7 +209,7 @@ internal object TokensNative {
         groupInfoActionIsProposer: Boolean,
         signingKeyId: Int,
         signerHandle: Long,
-    )
+    ): String?
 
     // ── Group-action queries ─────────────────────────────────────────
 

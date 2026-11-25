@@ -75,9 +75,9 @@ fun DataContractDetailsScreen(
     // (← `DataContractDetailsView.swift`'s `contractDetails.updateContract`)
     val appState = org.dashfoundation.example.di.LocalAppState.current
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
-    val walletIdentities by container.database.identityDao()
-        .observeWalletOwnedByNetwork(network.ffiValue)
-        .collectEachAsStateWithLifecycle(initialValue = emptyList())
+    val walletIdentities by remember(network.ffiValue) {
+        container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     Scaffold(
         topBar = {

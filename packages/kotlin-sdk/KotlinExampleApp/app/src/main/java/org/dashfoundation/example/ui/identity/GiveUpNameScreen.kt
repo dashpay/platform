@@ -82,8 +82,9 @@ import org.dashfoundation.example.util.hexToBytes
 fun GiveUpNameScreen(identityIdHex: String, name: String, navController: NavHostController) {
     val container = LocalAppContainer.current
     val idBytes = remember(identityIdHex) { identityIdHex.hexToBytes() }
-    val identity by container.database.identityDao().observeByIdentityId(idBytes)
-        .collectEachAsStateWithLifecycle(initialValue = null)
+    val identity by remember(idBytes) {
+        container.database.identityDao().observeByIdentityId(idBytes)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 

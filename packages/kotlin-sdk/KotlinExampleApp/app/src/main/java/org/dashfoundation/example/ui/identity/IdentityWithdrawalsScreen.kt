@@ -89,9 +89,9 @@ private const val AUTO_REFRESH_INTERVAL_MS = 15_000L
 fun IdentityWithdrawalsScreen(identityIdHex: String, navController: NavHostController) {
     val container = LocalAppContainer.current
     val idBytes = remember(identityIdHex) { identityIdHex.hexToBytes() }
-    val identity by container.database.identityDao()
-        .observeByIdentityId(idBytes)
-        .collectEachAsStateWithLifecycle(initialValue = null)
+    val identity by remember(idBytes) {
+        container.database.identityDao().observeByIdentityId(idBytes)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val walletsMap by remember(manager) {
         manager?.wallets ?: MutableStateFlow(emptyMap<String, ManagedPlatformWallet>())

@@ -98,7 +98,9 @@ fun LocalDataContractsScreen(navController: NavHostController) {
                     database = container.database,
                     network = network,
                 )
-                if (result.alreadyExisted) {
+                if (result.updated) {
+                    fetchedSummary = "Updated ${result.contract.name} to version ${result.contract.version}"
+                } else if (result.alreadyExisted) {
                     errorMessage = "This contract is already saved locally"
                 } else {
                     fetchedSummary = "Saved ${result.contract.name}"

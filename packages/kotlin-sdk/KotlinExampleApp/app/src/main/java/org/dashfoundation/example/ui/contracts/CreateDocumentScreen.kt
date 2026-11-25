@@ -121,9 +121,9 @@ fun CreateDocumentScreen(
     }
     val contract by contractFlow.collectEachAsStateWithLifecycle(initialValue = null)
 
-    val identities by container.database.identityDao()
-        .observeWalletOwnedByNetwork(network.ffiValue)
-        .collectEachAsStateWithLifecycle(initialValue = emptyList())
+    val identities by remember(network.ffiValue) {
+        container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
     var owner by remember { mutableStateOf<IdentityEntity?>(null) }
     LaunchedEffect(identities) {
         if (owner == null) owner = identities.firstOrNull()

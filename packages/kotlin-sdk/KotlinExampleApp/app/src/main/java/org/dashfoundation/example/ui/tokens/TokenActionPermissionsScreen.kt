@@ -106,7 +106,7 @@ fun TokenActionPermissionsScreen(
         val dao = container.database.identityDao()
         networkRaw?.let { dao.observeWalletOwnedByNetwork(it) } ?: dao.observeWalletOwned()
     }
-    val identities by identitiesFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val identities by identitiesFlow.collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     var pickedIdentityHex by rememberSaveable { mutableStateOf(pinnedIdentityIdHex) }
     val resolvedIdentity = identities.firstOrNull { it.identityId.toHex() == pickedIdentityHex }

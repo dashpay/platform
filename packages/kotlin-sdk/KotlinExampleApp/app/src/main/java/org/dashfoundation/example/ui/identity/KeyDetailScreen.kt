@@ -69,9 +69,9 @@ fun KeyDetailScreen(identityIdHex: String, keyId: Int, navController: NavHostCon
     val idBytes = remember(identityIdHex) { identityIdHex.hexToBytes() }
     val idBase58 = remember(identityIdHex) { Base58.encode(idBytes) }
 
-    val identity by container.database.identityDao()
-        .observeByIdentityId(idBytes)
-        .collectEachAsStateWithLifecycle(initialValue = null)
+    val identity by remember(idBytes) {
+        container.database.identityDao().observeByIdentityId(idBytes)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
     // The persister keys `public_keys.identityId` by base58; older callers
     // passed the hex nav-arg through — observe base58 and fall back to hex
     // so both encodings resolve.

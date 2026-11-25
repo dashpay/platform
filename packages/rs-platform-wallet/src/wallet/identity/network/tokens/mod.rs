@@ -22,3 +22,8 @@ mod set_price;
 mod transfer;
 mod unfreeze;
 mod update_config;
+
+pub use update_config::{
+    config_update_applied, TokenConfigUpdateOutcome, CONFIG_UPDATE_REFRESH_ATTEMPTS,
+    CONFIG_UPDATE_REFRESH_DELAY,
+};

@@ -99,9 +99,9 @@ fun DocumentActionsScreen(
     }
     val contract by contractFlow.collectEachAsStateWithLifecycle(initialValue = null)
 
-    val identities by container.database.identityDao()
-        .observeWalletOwnedByNetwork(network.ffiValue)
-        .collectEachAsStateWithLifecycle(initialValue = emptyList())
+    val identities by remember(network.ffiValue) {
+        container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
     var actingIdentity by remember { mutableStateOf<IdentityEntity?>(null) }
 
     var documentIdText by rememberSaveable { mutableStateOf(initialDocumentId) }

@@ -106,35 +106,111 @@ class RoomRowCollectionGuardTest {
         assertTrue(sourceRoot.isDirectory)
     }
 
-    @Test
-    fun `should collect every key-equal Room flow so a rewritten row reaches the screen`() {
-        val flows = keyEqualFlows()
-        val call = Regex("""(\w+Dao)\(\)\s*\.\s*(\w+)\(""")
-        val consumer = Regex(
-            """\.first\(\)|collectEachAsStateWithLifecycle\(|collectAsStateWithLifecycle\(|collectAsState\(""",
-        )
-        val violations = mutableListOf<String>()
-        sourceRoot.walkTopDown().filter { it.extension == "kt" }.forEach { file ->
-            val source = file.readText()
-            val relative = file.relativeTo(sourceRoot).invariantSeparatorsPath
-            call.findAll(source).forEach { match ->
-                val (dao, method) = match.destructured
-                if (method !in flows[dao].orEmpty()) return@forEach
-                // The first consumer within the statement (a few lines on).
-                val tail = source.substring(match.range.last).lineSequence().take(15).joinToString("\n")
-                val used = consumer.find(tail)?.value ?: return@forEach
-                val plain = used.startsWith("collectAsState")
-                if (plain && "$relative $dao.$method" !in plainValueCollectors) {
-                    val line = source.substring(0, match.range.first).count { it == '\n' } + 1
-                    violations += "$relative:$line $dao.$method"
+    private val consumer = Regex(
+        """\.first\(\)|collectEachAsStateWithLifecycle\(|collectAsStateWithLifecycle\(|collectAsState\(""",
+    )
+
+    /**
+     * The problems in one source file: a key-equal flow collected plainly, a
+     * collected flow built outside `remember` (a new cold flow, so a new
+     * subscription and a new emission, on every recomposition), and a
+     * `remember` keyed on a collected value itself (compared by id, so what
+     * it derived stays old). `relative` names the file in the messages and in
+     * [plainValueCollectors].
+     */
+    private fun problems(source: String, relative: String, flows: Map<String, Set<String>>): List<String> {
+        val lines = source.lines()
+        val found = mutableListOf<String>()
+        // `val dao = container.database.identityDao()` and then `dao.observeX(`.
+        val aliases = Regex("""val (\w+) = [\w.]*?\b(\w+Dao)\(\)\s*$""", RegexOption.MULTILINE)
+            .findAll(source).associate { it.groupValues[1] to it.groupValues[2] }
+        // Direct `xDao().method(` calls, then calls on an alias of a DAO.
+        val direct = Regex("""\b(\w+Dao)\(\)\s*\.\s*(\w+)\(""").findAll(source)
+            .map { Triple(it, it.groupValues[1], it.groupValues[2]) }
+        val aliased = Regex("""\b(\w+)\s*\.\s*(\w+)\(""").findAll(source)
+            .mapNotNull { m -> aliases[m.groupValues[1]]?.let { Triple(m, it, m.groupValues[2]) } }
+        (direct + aliased).forEach { (match, dao, method) ->
+            if (method !in flows[dao].orEmpty()) return@forEach
+            val line = source.substring(0, match.range.first).count { it == '\n' }
+            val tail = source.substring(match.range.last).lineSequence().take(15).joinToString("\n")
+            val used = consumer.find(tail)?.value ?: return@forEach
+            when {
+                used.startsWith("collectAsState") ->
+                    if ("$relative $dao.$method" !in plainValueCollectors) {
+                        found += "$relative:${line + 1} $dao.$method collected plainly"
+                    }
+                used.startsWith("collectEach") -> {
+                    val start = (line downTo 0).firstOrNull {
+                        Regex("""^\s*val \w+ (by |= remember)""").containsMatchIn(lines[it])
+                    } ?: line
+                    if ((start..line).none { "remember" in lines[it] }) {
+                        found += "$relative:${line + 1} $dao.$method flow not remembered"
+                    }
                 }
             }
         }
+        // Values collected with collectEachAsStateWithLifecycle, then a
+        // remember keyed on one of them as is.
+        val collected = lines.indices.filter { "collectEachAsStateWithLifecycle(" in lines[it] }
+            .mapNotNull { at ->
+                (at downTo maxOf(0, at - 30)).firstNotNullOfOrNull {
+                    Regex("""^\s*val (\w+) by """).find(lines[it])?.groupValues?.get(1)
+                }
+            }
+            .toSet()
+        lines.forEachIndexed { index, text ->
+            Regex("""\bremember\(([^(){}]*)\)""").findAll(text).forEach { key ->
+                val bare = key.groupValues[1].split(',').map { it.trim() }.filter { it in collected }
+                if (bare.isNotEmpty()) {
+                    found += "$relative:${index + 1} remember keyed on $bare (use EmissionKey)"
+                }
+            }
+        }
+        return found.sortedBy { it.substringAfter(':').substringBefore(' ').toInt() }
+    }
+
+    @Test
+    fun `should collect every key-equal Room flow so a rewritten row reaches the screen`() {
+        val flows = keyEqualFlows()
+        val violations = sourceRoot.walkTopDown().filter { it.extension == "kt" }.flatMap { file ->
+            problems(file.readText(), file.relativeTo(sourceRoot).invariantSeparatorsPath, flows)
+        }.toList()
         assertEquals(
-            "Collect these with collectEachAsStateWithLifecycle, or list a collector " +
-                "that maps the rows to plain values in plainValueCollectors",
+            "Collect these with collectEachAsStateWithLifecycle from a remembered flow, key " +
+                "derived values on EmissionKey, or list a collector that maps the rows to " +
+                "plain values in plainValueCollectors",
             emptyList<String>(),
             violations,
+        )
+    }
+
+    @Test
+    fun `should catch an aliased DAO, an inline flow and a remember keyed on the rows`() {
+        val flows = keyEqualFlows()
+        val source = """
+            fun Screen() {
+                val picked = remember(networkRaw) {
+                    val dao = container.database.identityDao()
+                    dao.observeWalletOwned()
+                }.collectAsStateWithLifecycle(initialValue = emptyList())
+                val identity by container.database.identityDao()
+                    .observeByIdentityId(idBytes)
+                    .collectEachAsStateWithLifecycle(initialValue = null)
+                val tokens by remember(network) {
+                    container.database.tokenDao().observeTokensByNetwork(network)
+                }.collectEachAsStateWithLifecycle(initialValue = emptyList())
+                val sorted = remember(tokens) { tokens.sortedBy { it.name } }
+                val fine = remember(EmissionKey(tokens)) { tokens.size }
+            }
+        """.trimIndent()
+
+        assertEquals(
+            listOf(
+                "Screen.kt:4 identityDao.observeWalletOwned collected plainly",
+                "Screen.kt:6 identityDao.observeByIdentityId flow not remembered",
+                "Screen.kt:12 remember keyed on [tokens] (use EmissionKey)",
+            ),
+            problems(source, "Screen.kt", flows),
         )
     }
 }
