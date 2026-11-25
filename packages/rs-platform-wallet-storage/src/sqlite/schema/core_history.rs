@@ -12,7 +12,7 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use super::accounts::DASHPAY_EXTERNAL_LABEL;
-use super::{blob, core_state, wallets};
+use super::{blob, core_pool, core_state, wallets};
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::load_ctx::LoadCtx;
 use crate::sqlite::util::safe_cast::i64_to_u64;
@@ -128,15 +128,7 @@ fn network(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
 ) -> Result<dashcore::Network, WalletStorageError> {
-    let label: String = tx.query_row(
-        "SELECT network FROM wallets WHERE wallet_id = ?1",
-        params![wallet_id.as_slice()],
-        |r| r.get(0),
-    )?;
-    wallets::parse_network(&label).ok_or_else(|| WalletStorageError::UnknownWalletNetwork {
-        wallet_id: *wallet_id,
-        label,
-    })
+    wallets::network_of(tx, wallet_id)
 }
 
 fn owned_output(
@@ -176,19 +168,27 @@ fn owned_output(
     Ok(Some((value, address)))
 }
 
-/// Whether `script` is tracked only by a contact's watch-only (DashPay external) chain.
+/// Whether `script` is tracked only by a contact's watch-only (DashPay external) chain,
+/// including a generation the contact rotated away from (`core_address_pool_retired`
+/// holds only DashPay external rows).
 pub(crate) fn contact_only_script(
     conn: &Connection,
     wallet_id: &WalletId,
     script: &[u8],
 ) -> Result<bool, WalletStorageError> {
-    let mut probe = conn.prepare_cached(
-        "SELECT EXISTS(SELECT 1 FROM core_address_pool WHERE wallet_id = ?1 AND script = ?2) \
-         AND NOT EXISTS(SELECT 1 FROM core_address_pool \
-             WHERE wallet_id = ?1 AND script = ?2 AND account_type != ?3)",
-    )?;
     let key = params![wallet_id.as_slice(), script, DASHPAY_EXTERNAL_LABEL];
-    Ok(probe.query_row(key, |r| r.get(0))?)
+    let (live, other): (bool, bool) = conn
+        .prepare_cached(
+            "SELECT EXISTS(SELECT 1 FROM core_address_pool WHERE wallet_id = ?1 AND script = ?2), \
+                    EXISTS(SELECT 1 FROM core_address_pool \
+                        WHERE wallet_id = ?1 AND script = ?2 AND account_type != ?3)",
+        )?
+        .query_row(key, |r| Ok((r.get(0)?, r.get(1)?)))?;
+    if live || other {
+        return Ok(!other);
+    }
+    Ok(core_pool::retired_pool_exists(conn)?
+        && core_pool::retired_only_script(conn, wallet_id, script)?)
 }
 
 fn repair_record(

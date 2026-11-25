@@ -656,6 +656,19 @@ impl SqlitePersister {
         Ok(status)
     }
 
+    /// The pool rows `wallet_id`'s accounts no longer derive from: DashPay
+    /// external pools a contact's rotation retired (V024), each with the
+    /// xpub it came from. History for attribution; nothing here is payable,
+    /// and `load()` never folds it into a pool.
+    pub fn retired_pool_addresses(
+        &self,
+        wallet_id: &WalletId,
+        network: dashcore::Network,
+    ) -> Result<Vec<schema::core_pool::RetiredPoolAddress>, WalletStorageError> {
+        let conn = self.conn()?;
+        schema::core_pool::load_retired_pool_addresses(&conn, wallet_id, network)
+    }
+
     /// Read every identity that belongs to NO wallet, each already
     /// carrying its own persisted public keys.
     ///
@@ -2231,7 +2244,12 @@ fn apply_changeset_to_tx(
     // to its owning account by matching the outpoint's script against a
     // freshly-written `core_address_pool` row.
     if !cs.account_address_pools.is_empty() {
-        schema::core_pool::apply_pools(tx, wallet_id, &cs.account_address_pools)?;
+        schema::core_pool::apply_flush_pools(
+            tx,
+            wallet_id,
+            &cs.account_address_pools,
+            &cs.account_registrations,
+        )?;
     }
     if !cs.pending_contact_crypto_added.is_empty() || !cs.pending_contact_crypto_cleared.is_empty()
     {
@@ -2403,17 +2421,18 @@ mod tests {
         // Not rehydrated by `load()`, but read on demand by a production
         // entry point, so the state is reachable rather than abandoned.
         const READ_BY_A_DEDICATED_API: &[&str] = &[
-            "core_transaction_inputs", // core_history::apply
-            "dpns_name_states",        // get_dpns_name_state
-            "meta_contact",            // the kv object store
-            "meta_data_versions",      // schema::versions
-            "meta_global",             // the kv object store
-            "meta_identity",           // the kv object store
-            "meta_platform_address",   // the kv object store
-            "meta_store_generation",   // schema::versions
-            "meta_token",              // the kv object store
-            "meta_wallet",             // the kv object store
-            "tracked_masternodes",     // load_tracked_masternodes
+            "core_address_pool_retired", // retired_pool_addresses
+            "core_transaction_inputs",   // core_history::apply
+            "dpns_name_states",          // get_dpns_name_state
+            "meta_contact",              // the kv object store
+            "meta_data_versions",        // schema::versions
+            "meta_global",               // the kv object store
+            "meta_identity",             // the kv object store
+            "meta_platform_address",     // the kv object store
+            "meta_store_generation",     // schema::versions
+            "meta_token",                // the kv object store
+            "meta_wallet",               // the kv object store
+            "tracked_masternodes",       // load_tracked_masternodes
         ];
         const INFRASTRUCTURE: &[&str] = &["refinery_schema_history"];
         // First pre-repair bytes, retained for recovery.
