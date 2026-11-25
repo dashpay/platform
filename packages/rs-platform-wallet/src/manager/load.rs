@@ -2469,6 +2469,27 @@ mod private_payment_hold_tests {
         assert!(!held(&manager, bound).await, "restored by the load");
         assert!(pair_held(&manager, bound).await, "the pair is held");
     }
+
+    /// A second manager configuring the store a live manager holds is refused
+    /// with the store's own error, naming the file, and the live manager keeps
+    /// its store.
+    #[tokio::test]
+    async fn should_refuse_a_second_manager_configuring_a_live_store() {
+        let (first, _, _) = manager();
+        let (second, _, _) = manager();
+        let dir = tempfile::tempdir().expect("a directory");
+        let path = dir.path().join("tree.sqlite");
+        first.configure_shielded(&path).await.expect("configured");
+        match second.configure_shielded(&path).await {
+            Err(crate::error::PlatformWalletError::ShieldedStoreError(message)) => assert!(
+                message.contains("already open") && message.contains(&path.display().to_string()),
+                "{message}"
+            ),
+            other => panic!("expected the store to be refused: {other:?}"),
+        }
+        assert!(second.shielded_coordinator().await.is_none());
+        assert!(first.shielded_coordinator().await.is_some());
+    }
 }
 
 #[cfg(test)]

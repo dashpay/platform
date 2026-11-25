@@ -5582,8 +5582,8 @@ mod redrive_tests {
                 },
                 |_| {
                     broadcast.store(true, Ordering::SeqCst);
-                    let durable =
-                        FileBackedShieldedStore::open_path(&path, 100).expect("a second handle");
+                    let durable = FileBackedShieldedStore::open_file_view(&path, 100)
+                        .expect("a second handle");
                     assert_eq!(
                         durable
                             .private_payment_journal(wallet_id)
@@ -6974,7 +6974,7 @@ mod redrive_tests {
             || {
                 // Nothing is dispatched before the record is on the file.
                 let durable =
-                    FileBackedShieldedStore::open_path(&path, 100).expect("a second handle");
+                    FileBackedShieldedStore::open_file_view(&path, 100).expect("a second handle");
                 let saved = durable.pending_redrives(id).expect("the records");
                 assert_eq!(saved.len(), 1, "saved before the first dispatch");
                 assert_eq!(saved[0].st_bytes, signed);
@@ -7132,7 +7132,6 @@ mod redrive_tests {
             )
             .await;
             let failure = result.expect_err("the spend failed");
-            let store = Arc::clone(&spend.store);
             let settled = SpendPath::Shared
                 .settle(spend, wallet_id, id, failure)
                 .await;

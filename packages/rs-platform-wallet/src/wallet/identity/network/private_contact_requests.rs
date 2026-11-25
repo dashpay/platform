@@ -3795,6 +3795,7 @@ mod tests {
         assert_eq!(fixture.journaled().await, 1, "the record stays");
 
         // The next process.
+        let (_dir, db_path) = fixture.exit();
         let manager = PlatformWalletManager::new(
             Arc::new(
                 dashpay_sdk(
@@ -3813,7 +3814,7 @@ mod tests {
             .await
             .expect("the relaunch loads");
         manager
-            .configure_shielded(&fixture.db_path)
+            .configure_shielded(&db_path)
             .await
             .expect("the shielded store is configured");
         let restarted = manager
@@ -4234,7 +4235,7 @@ mod tests {
         assert_eq!(fixture.journaled().await, 1, "the buffer was lost");
         let wallet_id = fixture.wallet.wallet_id();
         assert_eq!(
-            FileBackedShieldedStore::open_path(&fixture.db_path, 100)
+            FileBackedShieldedStore::open_file_view(&fixture.db_path, 100)
                 .expect("reopened")
                 .private_payment_journal(wallet_id)
                 .expect("the journal")
@@ -11210,6 +11211,12 @@ mod tests {
         /// The anchor the payment's record names.
         const ANCHOR: [u8; 32] = [0x7C; 32];
 
+        /// End this process: everything but the store's directory is dropped,
+        /// so the next process can open the store.
+        fn exit(self) -> (tempfile::TempDir, std::path::PathBuf) {
+            (self._dir, self.db_path)
+        }
+
         async fn new() -> Self {
             let alice = identity(ALICE_PHRASE, ALICE);
             let bob = identity(BOB_PHRASE, BOB);
@@ -11444,7 +11451,7 @@ mod tests {
                 "{case}: the retry pays"
             );
             let reopened =
-                FileBackedShieldedStore::open_path(&self.db_path, 100).expect("reopened");
+                FileBackedShieldedStore::open_file_view(&self.db_path, 100).expect("reopened");
             assert!(
                 reopened
                     .private_payment_journal(self.wallet.wallet_id())
@@ -12180,7 +12187,7 @@ mod tests {
             Arc::clone(&fixture.wallet.identity().sdk),
             Network::Testnet,
             fixture.db_path.clone(),
-            FileBackedShieldedStore::open_path(&fixture.db_path, 100).expect("reopened"),
+            FileBackedShieldedStore::open_file_view(&fixture.db_path, 100).expect("reopened"),
         );
         let records = |coordinator: &NetworkShieldedCoordinator| {
             let store = Arc::clone(coordinator.store());
@@ -12254,11 +12261,13 @@ mod tests {
                 .await;
             assert_eq!(records(&reopened).await.is_empty(), discharged, "{case}");
         }
-        assert!(FileBackedShieldedStore::open_path(&fixture.db_path, 100)
-            .expect("reopened again")
-            .private_payment_journal(wallet_id)
-            .expect("journal")
-            .is_empty());
+        assert!(
+            FileBackedShieldedStore::open_file_view(&fixture.db_path, 100)
+                .expect("reopened again")
+                .private_payment_journal(wallet_id)
+                .expect("journal")
+                .is_empty()
+        );
     }
 
     /// An expiry read that finds a candidate's entry in the store shows its

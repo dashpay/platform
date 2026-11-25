@@ -3471,7 +3471,7 @@ mod tests {
         // Reopen the persisted file with a FRESH handle: this reads the
         // on-disk tables cold (no shared in-memory frontier), so a non-zero
         // size here would mean clear() never wrote the disk.
-        let reopened = FileBackedShieldedStore::open_path(&db_path, 100)
+        let reopened = FileBackedShieldedStore::open_file_view(&db_path, 100)
             .expect("reopen persisted store after clear");
         assert_eq!(
             reopened.tree_size().unwrap(),
@@ -4664,8 +4664,8 @@ mod tests {
             stale(&coordinator).await,
             vec![(nullifier, anchor, Some(activity), Some(20))],
         );
-        let reopened =
-            FileBackedShieldedStore::open_path(dir.join("tree.sqlite"), 100).expect("reopened");
+        let reopened = FileBackedShieldedStore::open_file_view(dir.join("tree.sqlite"), 100)
+            .expect("reopened");
         assert_eq!(
             reopened.pending_redrives(id).expect("records")[0].anchor_height,
             Some(20),
