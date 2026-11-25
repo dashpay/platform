@@ -595,6 +595,31 @@ impl Drive {
                     drive_operations,
                 )?;
             }
+            // The indexed trees of a type that keeps its sums in 128 bits. Such a tree exists
+            // only from protocol version 15, so earlier versions never reach these arms.
+            TreeType::ProvableBigSumIndexedTree => {
+                push_drive_operation_result(
+                    self.grove.delete_from_provable_big_sum_indexed_tree(
+                        SubtreePath::from(parent_path_refs.as_slice()),
+                        node_key,
+                        transaction,
+                        &platform_version.drive.grove_version,
+                    ),
+                    drive_operations,
+                )?;
+            }
+            TreeType::ProvableCountProvableBigSumIndexedTree => {
+                push_drive_operation_result(
+                    self.grove
+                        .delete_from_provable_count_provable_big_sum_indexed_tree(
+                            SubtreePath::from(parent_path_refs.as_slice()),
+                            node_key,
+                            transaction,
+                            &platform_version.drive.grove_version,
+                        ),
+                    drive_operations,
+                )?;
+            }
             _ => {
                 self.grove_drop_flat_subtree(
                     parent_path,

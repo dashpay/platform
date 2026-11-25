@@ -162,23 +162,47 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_set_interval(
 ///
 /// Synchronous from the FFI caller's point of view — blocks the
 /// calling thread until the pass completes. If a pass is already in
-/// flight (e.g. fired by the background loop), returns `Success`
-/// immediately without scheduling extra work; check `is_syncing` if
-/// the caller needs to distinguish.
+/// flight (e.g. fired by the background loop), it first waits for that
+/// pass to finish, since it may have read the watch list before the
+/// caller's latest registration, and then runs a pass that covers it.
+/// Returns `ErrorWalletOperation` when no pass ran: the manager is shutting
+/// down, or other passes held the slot past the wait budget.
+///
+/// The pass runs under the manager registry's read guard, as every other
+/// sync-now export does, so the manager cannot be destroyed (and its store
+/// handed to a replacement) while this pass can still write.
+/// On builds where panics unwind (including Android), a panic inside the
+/// pass is returned as `ErrorWalletOperation`. Abort-on-panic builds
+/// (the iOS profiles) still abort.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_identity_sync_sync_now(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
-    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        // `block_on_worker`, NOT `runtime().block_on`: the pass
-        // verifies GroveDB proofs whose recursion blows the ~512 KB
-        // stack of the host's dispatch/concurrency calling thread
-        // (same SIGBUS as the shielded/dashpay Sync Now buttons).
-        let mgr = manager.identity_sync_arc();
-        block_on_worker(async move { mgr.sync_now().await });
-    });
-    unwrap_option_or_return!(option);
-    PlatformWalletFFIResult::ok()
+    catch_panic_to_code(
+        "platform_wallet_manager_identity_sync_sync_now",
+        PlatformWalletFFIResultCode::ErrorWalletOperation,
+        None,
+        "Balances read before the failure may already be stored; run the sync again.",
+        || {
+            let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+                // `block_on_worker`, NOT `runtime().block_on`: the pass
+                // verifies GroveDB proofs whose recursion blows the ~512 KB
+                // stack of the host's dispatch/concurrency calling thread
+                // (same SIGBUS as the shielded/dashpay Sync Now buttons).
+                let mgr = manager.identity_sync_arc();
+                block_on_worker(async move { mgr.sync_now_after_in_flight().await })
+            });
+            let ran = unwrap_option_or_return!(option);
+            if !ran {
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorWalletOperation,
+                    "no token sync pass ran: the manager is shutting down, or other passes \
+                     held the sync slot past the wait budget; run the sync again",
+                );
+            }
+            PlatformWalletFFIResult::ok()
+        },
+    )
 }
 
 /// Snapshot the identity-token sync state for one identity.
@@ -409,4 +433,38 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_update_watched_to
     });
     unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_fixtures::mock_manager;
+
+    /// A live manager whose token-sync admission is sealed (shut down, handle
+    /// still registered) reaches the result conversion and reports that no
+    /// pass ran, instead of `Success`.
+    #[test]
+    fn should_report_no_pass_on_a_live_handle_after_shutdown() {
+        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(mock_manager());
+        let shut_down = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+            let _report = runtime().block_on(manager.shutdown());
+        });
+        assert!(shut_down.is_some());
+
+        let result = unsafe { platform_wallet_manager_identity_sync_sync_now(handle) };
+        PLATFORM_WALLET_MANAGER_STORAGE.remove(handle);
+
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorWalletOperation
+        );
+        // The no-pass branch, not a caught panic (which shares the code).
+        assert!(!result.message.is_null());
+        // SAFETY: the result owns this non-null C string until it is dropped.
+        let message = unsafe { std::ffi::CStr::from_ptr(result.message) };
+        assert!(
+            message.to_bytes().starts_with(b"no token sync pass ran:"),
+            "unexpected sync error: {message:?}"
+        );
+    }
 }

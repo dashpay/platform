@@ -37,11 +37,13 @@ import androidx.navigation.NavHostController
 import kotlinx.coroutines.launch
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.AddressQueries
+import org.dashfoundation.example.navigation.BlockExplorer
 import org.dashfoundation.example.navigation.DecisionProposalsList
 import org.dashfoundation.example.navigation.Diagnostics
 import org.dashfoundation.example.navigation.GroveDbPathElements
 import org.dashfoundation.example.navigation.MultipleChoiceProposalsList
 import org.dashfoundation.example.navigation.QueryDetail
+import org.dashfoundation.example.navigation.TransitionStatusCheck
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.SubmitButton
 import org.dashfoundation.example.util.prettyPrintJson
@@ -152,6 +154,33 @@ fun QueriesListScreen(navController: NavHostController) {
                     .testTag("votingQueries.multipleChoiceProposalsLink"),
             )
             ListItem(
+                headlineContent = { Text("Block Explorer") },
+                supportingContent = {
+                    Text(
+                        "Read blocks with their state transitions, open one, and find an " +
+                            "identity's transitions in it (protocol version 15)",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                },
+                modifier = Modifier
+                    .clickable { navController.navigate(BlockExplorer) }
+                    .testTag("epochQueries.browseBlocksLink"),
+            )
+            ListItem(
+                headlineContent = { Text("Transition Status Checker") },
+                supportingContent = {
+                    Text(
+                        "Public transitions only: the hash goes to the app's nodes. Paste a " +
+                            "state transition hash to see whether a proved block holds it, " +
+                            "with its result (protocol version 15)",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                },
+                modifier = Modifier
+                    .clickable { navController.navigate(TransitionStatusCheck) }
+                    .testTag("systemQueries.checkTransitionStatusLink"),
+            )
+            ListItem(
                 headlineContent = { Text("Run All Queries") },
                 supportingContent = {
                     Text(
@@ -184,6 +213,18 @@ fun QueryDetailScreen(
     var isLoading by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<String?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    val submissions = remember(queryName) { Submissions() }
+    val resultFollowsInputs = query?.resultFollowsInputs == true
+
+    // An input-bound result, or one still being read, answered the replaced SDK
+    val connection = rememberConnection(sdk) {
+        if (resultFollowsInputs) {
+            submissions.invalidate()
+            result = null
+            errorMessage = null
+            isLoading = false
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -218,12 +259,30 @@ fun QueryDetailScreen(
                 Text(current.description, style = MaterialTheme.typography.bodyMedium)
             }
 
+            current.privacyNote?.let { note ->
+                Text(
+                    note,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = UnprovedOrange,
+                    modifier = Modifier.testTag("queryDetail.privacyNote"),
+                )
+            }
+
             if (current.inputs.isNotEmpty()) {
                 FormSection(title = "Parameters") {
                     current.inputs.forEach { input ->
                         OutlinedTextField(
                             value = inputs[input.name] ?: "",
-                            onValueChange = { inputs[input.name] = it },
+                            onValueChange = {
+                                inputs[input.name] = it
+                                if (current.resultFollowsInputs) {
+                                    // The result shown, and a read running, answer the old inputs
+                                    submissions.invalidate()
+                                    result = null
+                                    errorMessage = null
+                                    isLoading = false
+                                }
+                            },
                             label = {
                                 Text(input.label + if (input.required) " *" else "")
                             },
@@ -253,21 +312,27 @@ fun QueryDetailScreen(
                     errorMessage = "SDK not initialized"
                     return@SubmitButton
                 }
+                // Built from the inputs as they are now, so an edit made before the read
+                // runs cannot change what it sends
+                val submitted = current.inputs.associate { it.name to (inputs[it.name] ?: "").trim() }
+                val submission = submissions.submit()
+                val readConnection = connection.value
                 scope.launch {
                     isLoading = true
                     errorMessage = null
                     result = null
-                    try {
-                        val response = current.execute(
-                            currentSdk,
-                            current.inputs.associate { it.name to (inputs[it.name] ?: "").trim() },
-                        )
-                        result = response?.let { prettyPrintJson(it) } ?: "null"
-                    } catch (e: Exception) {
-                        errorMessage = e.message ?: "Query failed"
-                    } finally {
-                        isLoading = false
+                    val response = runCatching { current.execute(currentSdk, submitted) }
+                    // An input-bound read edited or re-pointed since it started answers nothing
+                    // on screen
+                    if (current.resultFollowsInputs &&
+                        (!submissions.isCurrent(submission) || connection.value != readConnection)
+                    ) {
+                        return@launch
                     }
+                    response
+                        .onSuccess { result = it?.let { json -> prettyPrintJson(json) } ?: "null" }
+                        .onFailure { errorMessage = it.message ?: "Query failed" }
+                    isLoading = false
                 }
             }
 

@@ -11,6 +11,19 @@ enum SendFlow: Equatable {
     case shieldedToShielded      // Private transfer
     case shieldedToPlatform      // Unshield
     case shieldedToCore          // Withdrawal from shielded to L1
+    case identityToShielded      // Shield from an identity's credit balance (Type 21)
+
+    /// Whether the flow spends this wallet's account-0 shielded notes.
+    var spendsShieldedNotes: Bool {
+        switch self {
+        case .shieldedToShielded, .shieldedToPlatform, .shieldedToCore:
+            return true
+        // An identity shield spends identity credits, not notes.
+        case .coreToCore, .coreToShielded, .platformToPlatform, .platformToShielded,
+             .identityToShielded:
+            return false
+        }
+    }
 
     var displayName: String {
         switch self {
@@ -21,6 +34,7 @@ enum SendFlow: Equatable {
         case .shieldedToShielded: return "Shielded Transfer"
         case .shieldedToPlatform: return "Unshield"
         case .shieldedToCore: return "Withdrawal to Core"
+        case .identityToShielded: return "Shield from Identity"
         }
     }
 
@@ -33,6 +47,7 @@ enum SendFlow: Equatable {
         case .shieldedToShielded: return "arrow.left.arrow.right"
         case .shieldedToPlatform: return "lock.open"
         case .shieldedToCore: return "arrow.down.to.line"
+        case .identityToShielded: return "lock.shield"
         }
     }
 
@@ -50,6 +65,9 @@ enum SendFlow: Equatable {
         case .shieldedToShielded: return 300_000
         case .shieldedToPlatform: return 300_000
         case .shieldedToCore: return 500_000
+        // Never shown: this flow has no fee row and no Send until the
+        // resolved floor is known (see `estimateFee(for:)`).
+        case .identityToShielded: return 200_000
         }
     }
 }
@@ -59,6 +77,7 @@ enum FundSource: String, CaseIterable, Identifiable {
     case core = "Core"
     case shielded = "Shielded"
     case platform = "Platform"
+    case identity = "Identity"
 
     var id: String { rawValue }
 
@@ -67,6 +86,7 @@ enum FundSource: String, CaseIterable, Identifiable {
         case .core: return "arrow.right"
         case .shielded: return "lock.shield"
         case .platform: return "square.stack.3d.up"
+        case .identity: return "person.crop.circle"
         }
     }
 
@@ -75,6 +95,7 @@ enum FundSource: String, CaseIterable, Identifiable {
         case .core: return .green
         case .shielded: return .purple
         case .platform: return .blue
+        case .identity: return .orange
         }
     }
 }
@@ -94,6 +115,22 @@ struct CoreRecipient: Identifiable, Equatable {
     var amountString: String = ""
 }
 
+/// Per-source balances of the Send screen, the one input to
+/// `SendViewModel.availableSources(_:)`. `platformAddresses` is the sum of
+/// the wallet's platform-address balances only. The screen's "Platform"
+/// balance row may fall back to identity credits before the first address
+/// sync, but those credits can only be sent through the Identity source.
+struct SendSourceBalances: Equatable {
+    var core: UInt64
+    /// Account 0's spendable credits as the wallet pushes them
+    /// (`spendableShieldedCredits(walletId:account: 0)`); a balance that is
+    /// not known yet is passed as 0, so the source is not offered.
+    var shielded: UInt64
+    var platformAddresses: UInt64
+    /// Largest balance of any one identity: one identity funds a shield.
+    var largestIdentity: UInt64
+}
+
 /// ViewModel for the Send Transaction screen.
 @MainActor
 class SendViewModel: ObservableObject {
@@ -111,7 +148,25 @@ class SendViewModel: ObservableObject {
     /// at 32 UTF-8 bytes and does the 36-byte encoding.
     @Published var memoText = ""
     @Published var detectedAddressType: DashAddressType = .unknown
-    @Published var selectedSource: FundSource = .core
+    /// The source the send is funded from. Changed only through
+    /// [`selectSource(_:)`] (the user's tap) and
+    /// [`reconcileSource(available:)`] (the screen's offered sources).
+    @Published private(set) var selectedSource: FundSource = .core
+    /// The sources the screen currently offers, as last passed to
+    /// [`reconcileSource(available:)`]. A send is allowed only from one
+    /// of these.
+    @Published private(set) var offeredSources: [FundSource] = []
+    /// Whether `selectedSource` is the user's explicit choice rather than
+    /// the automatic default. An explicit choice is never replaced by
+    /// another source: when it stops being offered it stays selected and
+    /// Send is disabled until the user picks again. It ends only when the
+    /// user picks another source or the recipient changes to a different
+    /// known kind (Core, Orchard, Platform). Another address of the same
+    /// kind keeps it, and so does passing through an unparsable or empty
+    /// recipient while the user edits the address.
+    private(set) var sourceChosenByUser = false
+    /// The kind of the last recipient that parsed to a known kind.
+    private var lastRecipientKind: DashAddressType.Kind?
     @Published var detectedFlow: SendFlow?
     @Published var estimatedFee: UInt64?
     @Published var isSending = false
@@ -137,6 +192,16 @@ class SendViewModel: ObservableObject {
         paymentFailure = nil
         return false
     }
+    /// The send was accepted but its effect is not confirmed yet (the
+    /// identity shield: the wallet only verified the identity's balance at
+    /// a block). Shown in its own "Submitted" alert, never as a success.
+    @Published var submittedMessage: String?
+
+    /// Whether the last send was an identity shield call after which the
+    /// wallet may have saved a debit record (it saves one before it
+    /// broadcasts). The screen then tells every open recovery list for the
+    /// wallet to re-read the Rust records.
+    private(set) var identityDebitMayHaveBeenSaved = false
 
     /// Per-output minimum credit amount (`min_output_amount`) the chain
     /// enforces for address-funds transitions, resolved on the Rust side from
@@ -165,6 +230,13 @@ class SendViewModel: ObservableObject {
     /// `platformMinOutputAmount` above. A missing entry falls back to the
     /// static `SendFlow.estimatedFee` placeholder in `estimateFee(for:)`.
     @Published var shieldedFeeEstimates: [PlatformWalletManager.ShieldedFeeKind: UInt64] = [:]
+
+    /// Identity funding an `.identityToShielded` send, and its credit
+    /// balance. The view owns the identity rows, so it pushes both in
+    /// (`SendTransactionView.syncSelectedIdentity()`), the same way it
+    /// pushes `platformMinOutputAmount`.
+    @Published var selectedIdentityId: Data?
+    @Published var selectedIdentityBalance: UInt64 = 0
 
     private let network: Network
 
@@ -357,6 +429,9 @@ class SendViewModel: ObservableObject {
 
     var canSend: Bool {
         guard let flow = detectedFlow, !isSending, !isHeldByPaymentFailure else { return false }
+        // A source the screen no longer offers (its balance went away, or
+        // it was never offered) must not be sent from.
+        guard offeredSources.contains(selectedSource) else { return false }
         // An over-limit memo would be rejected by Rust; block here so
         // the user sees the red counter rather than a backend error.
         // Only the shielded → shielded path carries a memo, so a stale
@@ -397,14 +472,53 @@ class SendViewModel: ObservableObject {
         case .platformToShielded,
              .shieldedToShielded, .shieldedToPlatform, .shieldedToCore:
             return (amountCredits ?? 0) > 0
+        case .identityToShielded:
+            return identityShieldIsAffordable
         }
     }
 
+    /// Send gate for `.identityToShielded`: an identity is selected, the
+    /// amount is > 0, the fee floor is resolved, and amount + floor fits the
+    /// identity's balance (overflow-checked). The wallet arms its retry guard
+    /// for a Type 21 shield before the chain checks the balance, so a request
+    /// the chain refuses would block further shields from that identity until
+    /// the user abandons it. An unresolved floor keeps the gate closed.
+    var identityShieldIsAffordable: Bool {
+        guard selectedIdentityId != nil,
+              !identityShieldAmountTooPrecise,
+              let feeFloor = shieldedFeeEstimates[.shieldFromIdentity],
+              let amount = amountCredits, amount > 0
+        else { return false }
+        let (total, overflow) = amount.addingReportingOverflow(feeFloor)
+        return !overflow && total <= selectedIdentityBalance
+    }
+
+    /// Sources offered for the screen's balances. The Platform source counts
+    /// platform-address funds only: identity credits fund the Identity source.
+    func availableSources(_ balances: SendSourceBalances) -> [FundSource] {
+        availableSources(
+            coreBalance: balances.core,
+            shieldedBalance: balances.shielded,
+            platformBalance: balances.platformAddresses,
+            identityBalance: balances.largestIdentity
+        )
+    }
+
+    /// The typed amount has a nonzero digit beyond one credit, which the
+    /// credits parser would round down. Only the identity shield refuses it;
+    /// the other flows keep their existing parsing.
+    var identityShieldAmountTooPrecise: Bool {
+        hasDigitsBeyondPrecision(amountString, decimals: 11)
+    }
+
     /// Determine which fund sources are available based on destination and balances.
-    func availableSources(
+    /// `identityBalance` is the largest balance of any one identity of the
+    /// wallet, since a single identity funds an identity shield.
+    private func availableSources(
         coreBalance: UInt64,
         shieldedBalance: UInt64,
-        platformBalance: UInt64
+        platformBalance: UInt64,
+        identityBalance: UInt64
     ) -> [FundSource] {
         var sources: [FundSource] = []
         switch detectedAddressType {
@@ -418,6 +532,8 @@ class SendViewModel: ObservableObject {
             // ShieldFromAssetLock. Appended last so the private
             // shielded → shielded path stays the auto-selected default.
             if coreBalance > 0 { sources.append(.core) }
+            // Type 21 ShieldFromIdentity, last for the same reason.
+            if identityBalance > 0 { sources.append(.identity) }
         case .platform:
             if platformBalance > 0 { sources.append(.platform) }
             if shieldedBalance > 0 { sources.append(.shielded) }
@@ -439,11 +555,128 @@ class SendViewModel: ObservableObject {
         }
 
         let parsed = DashAddress.parse(trimmed, network: network)
+        noteRecipientKind(parsed.type.kind)
         detectedAddressType = parsed.type
         updateFlow()
     }
 
+    /// A recipient of a different known kind offers different sources,
+    /// so the next reconcile picks that kind's default again. An unknown
+    /// recipient is an address being edited, not a new kind.
+    private func noteRecipientKind(_ kind: DashAddressType.Kind) {
+        guard kind != .unknown else { return }
+        if let lastRecipientKind, lastRecipientKind != kind {
+            sourceChosenByUser = false
+        }
+        lastRecipientKind = kind
+    }
+
+    // MARK: - Source selection
+
+    /// The user picked `source` from the offered list.
+    func selectSource(_ source: FundSource) {
+        guard offeredSources.contains(source) else { return }
+        selectedSource = source
+        sourceChosenByUser = true
+        updateFlow()
+    }
+
+    /// Apply the screen's currently offered sources (in their default
+    /// order). Call it whenever the offered list changes, for example when
+    /// a balance that gates a source arrives after the recipient was
+    /// typed. Without an explicit choice the first offered source is
+    /// selected. An explicit choice stays selected whether or not it is
+    /// offered: a send never moves to a source the user did not pick (a
+    /// shielded payment silently becoming a transparent one).
+    func reconcileSource(available: [FundSource]) {
+        offeredSources = available
+        if !sourceChosenByUser, let first = available.first {
+            selectedSource = first
+        }
+        updateFlow()
+    }
+
+    /// Whether the user's explicit choice is not offered right now for a
+    /// recipient the screen understands. The screen says so and Send
+    /// stays disabled until the user picks an offered source.
+    var chosenSourceUnavailable: Bool {
+        sourceChosenByUser
+            && detectedAddressType.kind != .unknown
+            && !offeredSources.contains(selectedSource)
+    }
+
+    static let routeChangedMessage =
+        "The payment route or recipient changed after Send was tapped. Review it and tap Send again."
+
+    static let identityChangedMessage =
+        "The source identity changed after Send was tapped. Review it and tap Send again."
+
+    static let amountChangedMessage =
+        "The amount changed after Send was tapped. Review it and tap Send again."
+
+    /// The flow a tap may dispatch, or `nil` after setting the reason.
+    /// A send already running admits nothing and changes no state (a second
+    /// tap before the disabled state renders must not reset the first). The
+    /// route, recipient and amount must still be the ones tapped, so every
+    /// flow sends the tapped amount.
+    func admitSend(
+        tappedFlow: SendFlow?,
+        tappedRecipient: String,
+        tappedAmountText: String,
+        accountZeroShieldedBalance: UInt64?
+    ) -> SendFlow? {
+        guard !isSending else { return nil }
+        guard let flow = flowToSend(tappedFlow: tappedFlow, tappedRecipient: tappedRecipient),
+              Self.mayDispatch(flow, accountZeroShieldedBalance: accountZeroShieldedBalance)
+        else {
+            error = Self.routeChangedMessage
+            return nil
+        }
+        guard amountString == tappedAmountText else {
+            error = Self.amountChangedMessage
+            return nil
+        }
+        return flow
+    }
+
+    /// The identity an identity shield debits: the one selected when Send
+    /// was tapped, and only while it is still the selected one, so a pick
+    /// made after the tap never changes which identity pays.
+    func identityToSend(tappedIdentityId: Data?) -> Data? {
+        guard let tappedIdentityId, tappedIdentityId == selectedIdentityId else { return nil }
+        return tappedIdentityId
+    }
+
+    /// Whether `flow` may be dispatched given the account-0 shielded
+    /// balance read from the published wallet state at dispatch time. A
+    /// shielded spend needs a known, non-zero balance; the offered list
+    /// can lag behind a balance update that landed after the tap. Other
+    /// flows do not spend shielded notes and are not affected.
+    nonisolated static func mayDispatch(_ flow: SendFlow, accountZeroShieldedBalance: UInt64?) -> Bool {
+        guard flow.spendsShieldedNotes else { return true }
+        guard let balance = accountZeroShieldedBalance else { return false }
+        return balance > 0
+    }
+
+    /// The flow to send when Send was tapped while `tappedFlow` was shown
+    /// for `tappedRecipient`: `nil` unless that is still the current flow,
+    /// its source is still offered, and the recipient text is unchanged,
+    /// so an asynchronous send never runs a route or pays a recipient
+    /// other than the one the user confirmed.
+    func flowToSend(tappedFlow: SendFlow?, tappedRecipient: String) -> SendFlow? {
+        guard let tappedFlow, tappedFlow == detectedFlow,
+              recipientAddress == tappedRecipient,
+              offeredSources.contains(selectedSource) else { return nil }
+        return tappedFlow
+    }
+
     func updateFlow() {
+        guard offeredSources.contains(selectedSource) else {
+            // A source that is not offered has no route to show or send.
+            detectedFlow = nil
+            estimatedFee = nil
+            return
+        }
         switch (detectedAddressType, selectedSource) {
         case (.core, .core):
             detectedFlow = .coreToCore
@@ -455,6 +688,8 @@ class SendViewModel: ObservableObject {
             detectedFlow = .platformToShielded
         case (.orchard, .core):
             detectedFlow = .coreToShielded
+        case (.orchard, .identity):
+            detectedFlow = .identityToShielded
         case (.platform, .platform):
             detectedFlow = .platformToPlatform
         case (.platform, .shielded):
@@ -462,7 +697,7 @@ class SendViewModel: ObservableObject {
         default:
             detectedFlow = nil
         }
-        estimatedFee = detectedFlow.map(estimateFee(for:))
+        estimatedFee = detectedFlow.flatMap(estimateFee(for:))
     }
 
     /// Resolve the estimated fee (in the flow's settlement unit) for the
@@ -480,10 +715,13 @@ class SendViewModel: ObservableObject {
     /// minimum, so it shares the transfer kind. When the view hasn't
     /// resolved a fee (or the FFI errored) we fall back to the static enum
     /// placeholder rather than surfacing a fee of nil for a flow we can
-    /// otherwise send.
-    private func estimateFee(for flow: SendFlow) -> UInt64 {
+    /// otherwise send. `.identityToShielded` is the exception: its floor
+    /// gates Send, so it has no placeholder and stays `nil` until resolved.
+    private func estimateFee(for flow: SendFlow) -> UInt64? {
         let kind: PlatformWalletManager.ShieldedFeeKind?
         switch flow {
+        case .identityToShielded:
+            return shieldedFeeEstimates[.shieldFromIdentity]
         case .shieldedToShielded, .platformToShielded, .coreToShielded:
             // Type 18 ShieldFromAssetLock carves the same
             // `compute_minimum_shielded_fee` base as the Shield/transfer
@@ -506,23 +744,35 @@ class SendViewModel: ObservableObject {
     func executeSend(
         sdk: SDK,
         walletManager: PlatformWalletManager,
-        shieldedService: ShieldedService,
         platformState: AppState,
         wallet: PersistentWallet,
         platformWallet: ManagedPlatformWallet?,
         platformAddressWallet: ManagedPlatformAddressWallet?,
         signer: KeychainSigner?,
         senderAccountIndex: UInt32,
-        modelContext: ModelContext
+        modelContext: ModelContext,
+        tappedFlow: SendFlow?,
+        tappedRecipient: String,
+        tappedIdentityId: Data?,
+        tappedAmountText: String
     ) async {
         // A failure that may have left the wallet or holds a lock stays
         // stored: never pay again from this form.
-        guard let flow = detectedFlow, !isHeldByPaymentFailure else { return }
+        guard !isHeldByPaymentFailure else { return }
+        guard let flow = admitSend(
+            tappedFlow: tappedFlow,
+            tappedRecipient: tappedRecipient,
+            tappedAmountText: tappedAmountText,
+            accountZeroShieldedBalance: walletManager.spendableShieldedCredits(
+                walletId: wallet.walletId, account: 0)
+        ) else { return }
 
         isSending = true
         error = nil
         successMessage = nil
         paymentFailure = nil
+        submittedMessage = nil
+        identityDebitMayHaveBeenSaved = false
         defer { isSending = false }
 
         do {
@@ -754,33 +1004,11 @@ class SendViewModel: ObservableObject {
                 }
                 _ = platformState
                 _ = sdk
-                // `shieldedShield` has no recipient parameter — Rust
-                // always shields into this wallet's own default Orchard
-                // address (shieldedAccount 0). If the user typed a
-                // *different* Orchard address we'd report success while
-                // nothing reached that recipient, so constrain this path
-                // to self-shield only.
-                let enteredRecipient = recipientAddress
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                // Resolve THIS wallet's own default Orchard address from
-                // the engine rather than the single-mirror
-                // `shieldedService` (which tracks `firstWallet`). Every
-                // loaded wallet is engine-bound, so `shieldedDefaultAddress`
-                // resolves for the wallet actually being sent from.
-                let ownShieldedAddress = walletManager.shieldedDisplayAddress(
-                    walletId: wallet.walletId,
-                    network: network
-                )
-                if !enteredRecipient.isEmpty,
-                   enteredRecipient != ownShieldedAddress {
-                    // Don't advertise "leave it blank": a blank recipient
-                    // clears `detectedFlow` upstream (detectAddressType →
-                    // updateFlow), so `canSend` disables the button and
-                    // this branch is only reachable with a non-empty
-                    // address. Tell the user to enter their own.
-                    error = "Shield always sends to your own shielded "
-                        + "address; enter your own shielded address as "
-                        + "the recipient"
+                if let message = selfShieldRecipientError(
+                    walletManager: walletManager,
+                    walletId: wallet.walletId
+                ) {
+                    error = message
                     return
                 }
                 let signer = KeychainSigner(modelContainer: modelContext.container)
@@ -850,20 +1078,134 @@ class SendViewModel: ObservableObject {
                 )
                 successMessage = "Shield submitted — the note arrives on "
                     + "the recipient's next shielded sync."
+
+            case .identityToShielded:
+                guard let identityId = identityToSend(tappedIdentityId: tappedIdentityId) else {
+                    error = Self.identityChangedMessage
+                    return
+                }
+                // Re-checked here so a stale enabled tap cannot reach the
+                // wallet with an amount the identity cannot cover.
+                guard identityShieldIsAffordable,
+                      let amountCredits
+                else {
+                    error = "Select an identity whose balance covers the "
+                        + "amount plus the estimated fee"
+                    return
+                }
+                if let message = selfShieldRecipientError(
+                    walletManager: walletManager,
+                    walletId: wallet.walletId
+                ) {
+                    error = message
+                    return
+                }
+                // Signs with the identity's TRANSFER key.
+                let identitySigner = KeychainSigner(modelContainer: modelContext.container)
+                do {
+                    try await walletManager.shieldedShieldFromIdentity(
+                        walletId: wallet.walletId,
+                        shieldedAccount: 0,
+                        identityId: identityId,
+                        amount: amountCredits,
+                        identitySigner: identitySigner
+                    )
+                    identityDebitMayHaveBeenSaved = Self.identityShieldMayHaveSavedDebit(after: nil)
+                } catch {
+                    identityDebitMayHaveBeenSaved = Self.identityShieldMayHaveSavedDebit(after: error)
+                    throw error
+                }
+                applyIdentityShieldSubmitted()
             }
 
         } catch {
-            // Every flow (Core, Platform, shielded) presents its failure by
-            // Rust's class: a retry only for a retryable NotSent, the held
-            // lock's resume for LockHeld, and a wait for a payment that may
-            // have left (never "failed"). An error no payment raised (an
-            // input check before any send) shows as its own message.
-            if let failure = PaymentFailure.ofPayment(error) {
-                paymentFailure = failure
-            } else {
-                self.error = error.localizedDescription
-            }
+            applySendFailure(error, flow: flow)
         }
+    }
+
+    /// Whether the wallet may have saved an identity debit record after a
+    /// `shieldedShieldFromIdentity` call that threw `error` (`nil`: it
+    /// returned normally, so a record was saved). Only the refusals the
+    /// wallet makes before saving anything say no; every other outcome may
+    /// follow a saved record, so the recovery lists must re-read.
+    nonisolated static func identityShieldMayHaveSavedDebit(after error: Error?) -> Bool {
+        guard let error else { return true }
+        guard let walletError = error as? PlatformWalletError else { return true }
+        switch walletError {
+        case .shieldedIdentityDebitPending, .insufficientIdentityCredits,
+             .identityBalanceUnavailable, .protocolVersionNotActive,
+             .sdkPinnedBelowProtocolVersion, .invalidParameter:
+            return false
+        default:
+            return true
+        }
+    }
+
+    /// Outcome of a normal return from `shieldedShieldFromIdentity`. That
+    /// return is not proof the debit executed: the wallet verified the
+    /// identity's balance at a block, and the activity row stays pending
+    /// until the scan sees the note. So it is "submitted", not a success.
+    func applyIdentityShieldSubmitted() {
+        error = nil
+        successMessage = nil
+        paymentFailure = nil
+        submittedMessage = Self.identityShieldSubmittedMessage
+    }
+
+    /// Route a failed send to the right outcome.
+    ///
+    /// Every flow (Core, Platform, shielded, the identity shield) presents
+    /// its failure by Rust's payment class (`PaymentFailure`), never by the
+    /// error's case or code: a retry only for a retryable `.notSent`, the
+    /// held lock's resume for `.lockHeld`, and a wait for a payment that may
+    /// have left (never "failed"). An identity shield refused with nothing
+    /// sent keeps this flow's wording (`identityShieldRefusalMessage`) as the
+    /// failure's text. An error no payment raised (an input check before any
+    /// send) shows as its own message.
+    func applySendFailure(_ failure: Error, flow: SendFlow) {
+        successMessage = nil
+        submittedMessage = nil
+        guard let classified = PaymentFailure.ofPayment(failure) else {
+            error = failure.localizedDescription
+            return
+        }
+        if flow == .identityToShielded,
+           let walletError = failure as? PlatformWalletError,
+           case .notSent? = walletError.delivery,
+           let message = Self.identityShieldRefusalMessage(walletError) {
+            paymentFailure = PaymentFailure(payment: walletError.payment, detail: message)
+            return
+        }
+        paymentFailure = classified
+    }
+
+    /// Wallet refusals of an identity shield that happen before anything is
+    /// saved, built or sent, with wording for this flow. `nil` for any other
+    /// error, whose own description is shown.
+    nonisolated static func identityShieldRefusalMessage(_ error: PlatformWalletError) -> String? {
+        switch error {
+        case .shieldedIdentityDebitPending:
+            return identityDebitPendingMessage
+        case .insufficientIdentityCredits(_, let required, let available):
+            return "The identity's balance on Platform is too low for this shield: "
+                + "it needs \(formatCredits(required)) including the fee and has "
+                + "\(formatCredits(available)). Nothing was sent."
+        case .identityBalanceUnavailable:
+            return "The identity's balance could not be read from Platform, so "
+                + "the shield was not attempted. Nothing was sent."
+        case .protocolVersionNotActive:
+            return "This network has not activated shielding from an identity yet. "
+                + "Nothing was sent."
+        case .sdkPinnedBelowProtocolVersion:
+            return "This app's SDK is pinned below the protocol version that "
+                + "shields from an identity. Nothing was sent."
+        default:
+            return nil
+        }
+    }
+
+    nonisolated static func formatCredits(_ credits: UInt64) -> String {
+        formatCreditsAsDash(credits)
     }
 
     /// Whether a shielded operation's error means it may already be on
@@ -877,6 +1219,62 @@ class SendViewModel: ObservableObject {
         case .notSent, nil: return false
         }
     }
+
+    // MARK: - Self-shield recipient
+
+    /// Error for a self-shield (`.platformToShielded`, `.identityToShielded`)
+    /// whose recipient is not this wallet's own default Orchard address, or
+    /// `nil` when it is. Neither wrapper takes a recipient: Rust always
+    /// shields into shielded account 0's default address, so another typed
+    /// address would report success while nothing reached it.
+    ///
+    /// The own address is resolved per wallet from the engine, not from the
+    /// single-mirror `shieldedService` (which tracks `firstWallet`). A blank
+    /// recipient never gets here (it clears `detectedFlow`), so the message
+    /// asks for the own address instead of suggesting leaving it blank.
+    private func selfShieldRecipientError(
+        walletManager: PlatformWalletManager,
+        walletId: Data
+    ) -> String? {
+        Self.selfShieldRecipientProblem(
+            entered: recipientAddress,
+            ownAddress: walletManager.shieldedDisplayAddress(
+                walletId: walletId,
+                network: network
+            )
+        )
+    }
+
+    nonisolated static let selfShieldRecipientMessage =
+        "Shield always sends to your own shielded address; enter your own "
+        + "shielded address as the recipient"
+
+    /// Why `entered` is not this wallet's own shielded address, or `nil`.
+    /// Bech32m decodes case-insensitively, so case does not matter; an empty
+    /// recipient and an unknown own address are refused.
+    nonisolated static func selfShieldRecipientProblem(entered: String, ownAddress: String?) -> String? {
+        let enteredRecipient = entered.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !enteredRecipient.isEmpty,
+              let ownAddress,
+              enteredRecipient.lowercased() == ownAddress.lowercased()
+        else { return selfShieldRecipientMessage }
+        return nil
+    }
+
+    // MARK: - Identity shield messages
+
+    nonisolated static let identityShieldSubmittedMessage =
+        "Shield from identity submitted. Its Shielded Activity row stays "
+        + "pending until the shielded sync sees the new note."
+
+    /// Wallet-scoped on purpose: an unreadable record blocks shields from
+    /// every identity in the wallet, and the error then names the requested
+    /// identity, not the record's.
+    nonisolated static let identityDebitPendingMessage =
+        "An earlier shield from an identity in this wallet is still unresolved, "
+        + "or its record could not be read, so a new one was not sent. See "
+        + "In-Progress Identity Shields in Shielded Activity: the wallet resolves "
+        + "readable ones on a shielded sync, and you can stop retrying any of them there."
 
     /// Apply the authoritative Core broadcast outcome to the send UI. Kept as
     /// a small pure state transition so rejected/unknown can be regression

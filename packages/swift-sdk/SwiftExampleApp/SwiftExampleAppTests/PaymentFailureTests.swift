@@ -326,10 +326,10 @@ final class PaymentFailureTests: XCTestCase {
             ) {
                 throw Self.failure(payment)
             }
-            guard case .started(let controller) = started else { return XCTFail("funding did not start") }
+            guard case .started(let controller, _) = started else { return XCTFail("funding did not start") }
             try await Self.waitUntil { if case .failed = controller.phase { return true }; return false }
             XCTAssertEqual(
-                coordinator.dismiss(walletId: walletId, recipientRaw43: recipient),
+                coordinator.dismiss(controller),
                 dismissable,
                 "\(String(describing: payment))"
             )
@@ -427,7 +427,7 @@ final class PaymentFailureTests: XCTestCase {
             ) {
                 throw Self.failure(payment)
             }
-            guard case .started(let controller) = started else { return XCTFail("funding did not start") }
+            guard case .started(let controller, _) = started else { return XCTFail("funding did not start") }
             try await Self.waitUntil { if case .failed = controller.phase { return true }; return false }
             XCTAssertEqual(
                 shielded.release(walletId: walletId, recipientRaw43: recipient),
@@ -497,7 +497,8 @@ final class PaymentFailureTests: XCTestCase {
         guard case .failed(let shieldFailure) = shield.phase else { return XCTFail() }
         XCTAssertEqual(shieldFailure.action, .wait)
         let shieldRan = Flag()
-        shield.submit(operationId: "shield:2") { shieldRan.value = true }
+        let scheduled = shield.submit(operationId: "shield:2") { shieldRan.value = true }
+        XCTAssertFalse(scheduled, "the failed phase refused a fresh shield")
         try await Task.sleep(nanoseconds: 50_000_000)
         XCTAssertFalse(shieldRan.value)
 

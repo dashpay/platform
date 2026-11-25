@@ -104,7 +104,7 @@ final class PlatformWalletShutdownTests: XCTestCase {
         let stopEntered = expectation(description: "Early shutdown stop entered")
         let gate = DispatchSemaphore(value: 0)
         let call = Task {
-            try await manager.withWalletDrainNativeOperation("test drain") { handle in
+            try await manager.withAdmittedNativeOperation("test drain") { handle in
                 XCTAssertEqual(handle, 84)
                 entered.fulfill()
                 XCTAssertEqual(gate.wait(timeout: .now() + 5), .success)
@@ -128,13 +128,49 @@ final class PlatformWalletShutdownTests: XCTestCase {
         call.cancel()
         XCTAssertEqual(recorder.count(named: "destroy"), 0)
         do {
-            _ = try await manager.withWalletDrainNativeOperation("late drain") { _ in 0 }
+            _ = try await manager.withAdmittedNativeOperation("late drain") { _ in 0 }
             XCTFail("Shutdown must reject new drain operations")
         } catch {}
         gate.signal()
         _ = try await call.value
         _ = await shutdown.value
         XCTAssertEqual(recorder.count(named: "destroy"), 1)
+    }
+
+    /// `shieldedResumeFundFromAssetLock` runs through this helper, so while
+    /// a resume is in its native call a wallet cannot be deleted under it.
+    func testShouldRefuseDeleteWalletWhileAnAdmittedOperationIsInFlight() async throws {
+        let manager = PlatformWalletManager.makeForTesting(
+            handle: 86, calls: Self.makeCalls(recorder: TeardownRecorder()))
+        let walletId = Data(repeating: 0x86, count: 32)
+        let entered = expectation(description: "Admitted operation entered")
+        let gate = DispatchSemaphore(value: 0)
+        let call = Task {
+            try await manager.withAdmittedNativeOperation("test resume") { _ in
+                entered.fulfill()
+                XCTAssertEqual(gate.wait(timeout: .now() + 5), .success)
+            }
+        }
+        defer { gate.signal() }
+        await fulfillment(of: [entered], timeout: 1)
+
+        XCTAssertThrowsError(try manager.deleteWallet(walletId: walletId)) { error in
+            guard case .invalidHandle(let message) = error as? PlatformWalletError else {
+                return XCTFail("Expected an in-flight rejection, got \(error)")
+            }
+            XCTAssertTrue(message.contains("async native operation is in flight"), message)
+        }
+
+        gate.signal()
+        try await call.value
+        // Admission is released: deleteWallet now passes the in-flight check
+        // and stops at the persistence handler this manager does not have.
+        XCTAssertThrowsError(try manager.deleteWallet(walletId: walletId)) { error in
+            guard case .invalidHandle(let message) = error as? PlatformWalletError else {
+                return XCTFail("Expected the persistence-handler refusal, got \(error)")
+            }
+            XCTAssertTrue(message.contains("persistence handler"), message)
+        }
     }
 
     // MARK: - Take-once handle

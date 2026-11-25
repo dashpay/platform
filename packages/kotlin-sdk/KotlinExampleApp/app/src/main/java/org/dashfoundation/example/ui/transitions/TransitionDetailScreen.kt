@@ -43,6 +43,7 @@ import org.dashfoundation.dashsdk.persistence.entities.DataContractEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.TokenEntity
 import org.dashfoundation.dashsdk.voting.VoteChoice
+import org.dashfoundation.example.BuildConfig
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.ContestDetail
@@ -62,9 +63,12 @@ import org.dashfoundation.example.services.transitions.StateTransitionDefinition
 import org.dashfoundation.example.services.transitions.TransitionInput
 import org.dashfoundation.example.services.transitions.TransitionInputType
 import org.dashfoundation.example.ui.components.AccessiblePicker
+import org.dashfoundation.example.ui.components.EmissionKey
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.ui.contracts.ParsedContract
+import org.dashfoundation.example.ui.contracts.isPrivateDocumentType
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.toHex
 import org.dashfoundation.example.util.truncateMiddle
@@ -88,7 +92,9 @@ import org.dashfoundation.example.util.truncateMiddle
  *   path names the pubkey-returning slot-derive gap, see
  *   [IdentityKeyAdditionFlow.UnbridgedSlotDeriver]).
  * - `masternodeVote` executes inline via
- *   `PlatformWalletManager.voteCasting.castVote`.
+ *   `PlatformWalletManager.voteCasting.castVote` with a typed raw voting
+ *   private key, in debug builds only: a release build neither lists the
+ *   definition ([StateTransitionDefinitions.all]) nor runs this path.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -102,15 +108,15 @@ fun TransitionDetailScreen(transitionKey: String, navController: NavHostControll
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
 
-    val identities by container.database.identityDao()
-        .observeWalletOwnedByNetwork(network.ffiValue)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
-    val tokens by container.database.tokenDao()
-        .observeTokensByNetwork(network.ffiValue)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
-    val contracts by container.database.dataContractDao()
-        .observeByNetwork(network.ffiValue)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val identities by remember(network.ffiValue) {
+        container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
+    val tokens by remember(network.ffiValue) {
+        container.database.tokenDao().observeTokensByNetwork(network.ffiValue)
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
+    val contracts by remember(network.ffiValue) {
+        container.database.dataContractDao().observeByNetwork(network.ffiValue)
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     // Per-field form state (survives config change / picker pops).
     val textInputs = remember { mutableStateMapOf<String, String>() }
@@ -209,8 +215,15 @@ fun TransitionDetailScreen(transitionKey: String, navController: NavHostControll
         }
     }
 
-    /** The `masternodeVote` inline path over `VoteCasting.castVote`. */
+    /**
+     * The `masternodeVote` inline path over `VoteCasting.castVote`, debug builds only: it
+     * takes a raw voting private key (Swift gates its raw-key forms behind `#if DEBUG`).
+     */
     fun executeMasternodeVote() {
+        if (!BuildConfig.DEBUG) {
+            report("The generic masternode vote is available in debug builds only.", true)
+            return
+        }
         val mgr = manager ?: run { report("Wallet manager not active.", true); return }
         val currentSdk = sdk ?: run { report("SDK not initialized.", true); return }
         val contractInput = textInputs["contractId"].orEmpty().trim()
@@ -433,7 +446,7 @@ fun TransitionDetailScreen(transitionKey: String, navController: NavHostControll
                     definition.dedicatedRoute != null ->
                         executeDedicated(definition.dedicatedRoute)
                     definition.key == "identityUpdate" -> executeIdentityUpdate()
-                    definition.key == "masternodeVote" -> executeMasternodeVote()
+                    definition.key == "masternodeVote" && BuildConfig.DEBUG -> executeMasternodeVote()
                     else -> notBridged = true
                 }
             }
@@ -597,9 +610,13 @@ private fun TransitionInputField(
             }
         }
         TransitionInputType.DOCUMENT_TYPE_PICKER -> {
-            val typeNames = remember(contracts, selectedContractIdHex) {
+            val typeNames = remember(EmissionKey(contracts), selectedContractIdHex) {
                 contracts.firstOrNull { it.id.toHex() == selectedContractIdHex }
-                    ?.let { ParsedContract.from(it)?.documentTypes?.keys?.sorted() }
+                    // A private type takes no ordinary document (protocol version 15)
+                    ?.let { contract ->
+                        ParsedContract.from(contract)?.documentTypes
+                            ?.filterValues { !isPrivateDocumentType(it) }?.keys?.sorted()
+                    }
                     .orEmpty()
             }
             if (typeNames.isEmpty()) {

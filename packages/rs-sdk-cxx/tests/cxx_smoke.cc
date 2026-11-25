@@ -200,6 +200,13 @@ int main()
         nullptr);
     check(unproved(client->send_contact_request(request, signer(false), std::move(contact_keys)).status),
           "send_contact_request");
+    request.shielded_address.push_back(1);
+    auto unasked_keys = std::make_unique<ContactKeys>(
+        [](uint32_t, const std::array<uint8_t, 33>&, std::array<uint8_t, 32>&) -> bool { return false; },
+        nullptr);
+    check(client->send_contact_request(request, signer(false), std::move(unasked_keys)).status.kind ==
+              StatusKind::Internal,
+          "a shielded address of the wrong length accepted");
 
     // No network.
     check(is_valid_username("alice") && !is_valid_username("-"), "is_valid_username");

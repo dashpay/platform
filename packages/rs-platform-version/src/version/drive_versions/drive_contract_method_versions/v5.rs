@@ -1,7 +1,8 @@
 use crate::version::drive_versions::drive_contract_method_versions::v4::DRIVE_CONTRACT_METHOD_VERSIONS_V4;
 use crate::version::drive_versions::drive_contract_method_versions::{
-    DriveContractApplyMethodVersions, DriveContractInsertMethodVersions,
-    DriveContractMethodVersions, DriveContractUpdateMethodVersions,
+    DriveContractApplyMethodVersions, DriveContractGetMethodVersions,
+    DriveContractInsertMethodVersions, DriveContractMethodVersions,
+    DriveContractUpdateMethodVersions,
 };
 
 /// Drive contract methods for protocol v15+.
@@ -14,6 +15,8 @@ use crate::version::drive_versions::drive_contract_method_versions::{
 ///   two contracts' format version 1 bytes match, where v0 compared the stored bytes alone and
 ///   would have rewritten an unchanged contract as an update.
 /// * Inserts and updates create the per-type retained-history tree.
+/// * `get.get_contract_with_fetch_info` is bumped to `1`: a cached contract is served only to a
+///   reader at the protocol version that parsed it (v15 note 51).
 pub const DRIVE_CONTRACT_METHOD_VERSIONS_V5: DriveContractMethodVersions =
     DriveContractMethodVersions {
         insert: DriveContractInsertMethodVersions {
@@ -27,6 +30,10 @@ pub const DRIVE_CONTRACT_METHOD_VERSIONS_V5: DriveContractMethodVersions =
         apply: DriveContractApplyMethodVersions {
             apply_contract_with_serialization: 1,
             ..DRIVE_CONTRACT_METHOD_VERSIONS_V4.apply
+        },
+        get: DriveContractGetMethodVersions {
+            get_contract_with_fetch_info: 1,
+            ..DRIVE_CONTRACT_METHOD_VERSIONS_V4.get
         },
         ..DRIVE_CONTRACT_METHOD_VERSIONS_V4
     };

@@ -61,6 +61,24 @@ sealed interface ContactRequestSubmissionOutcome {
             "after the next sync confirms it; do not submit it again."
 
         /**
+         * [MAY_HAVE_GONE_THROUGH_MESSAGE] for a private send or reply: the
+         * background DashPay sync does not read the private store, so the user
+         * is told which read does.
+         */
+        const val PRIVATE_MAY_HAVE_GONE_THROUGH_MESSAGE = "This may have gone through. It shows " +
+            "up once private requests are read: pull to refresh on Requests, or tap Sync " +
+            "private requests on Add Contact. Do not submit it again."
+
+        /**
+         * [MAY_HAVE_GONE_THROUGH_MESSAGE] for an accept that replies in kind:
+         * the wallet may have replied privately, which only the Requests
+         * refresh (both reads) shows.
+         */
+        const val IN_KIND_MAY_HAVE_GONE_THROUGH_MESSAGE = "This may have gone through. It shows " +
+            "up once Requests is refreshed: pull to refresh on Requests, which reads public and " +
+            "private requests. Do not submit it again."
+
+        /**
          * A public request or accept that may have gone through, as the
          * wallet holds it until a sync settles its outcome.
          */
@@ -470,6 +488,102 @@ object PrivatePaymentsRecovery {
             return Refreshed(readReadiness(), failure)
         }
         return Refreshed(read, storeFailure)
+    }
+}
+
+/**
+ * How Add Contact's collision dialog accepts the request the recipient
+ * already sent us. With "Send privately" on, the user chose a private
+ * request, so the accept replies privately
+ * (`PlatformWalletManager.acceptPrivateContactRequest`, paid from the
+ * shielded balance as the private send is) even when their request came
+ * publicly: a public reply would publish this user as its owner and the
+ * contact as its recipient, against that choice. With it off, the wallet
+ * replies the way the request came
+ * (`PlatformWalletManager.acceptContactRequestReplyingInKind`). The toggle is
+ * the user's explicit choice; which reply an in-kind accept takes stays the
+ * wallet's.
+ * ← Swift `CollisionAccept` (`ContactRequestOutcomes.swift`).
+ */
+enum class CollisionAccept {
+    /** Reply privately, paid from the shielded balance. */
+    PrivateReply,
+
+    /** Reply the way the request came. */
+    ReplyInKind,
+    ;
+
+    /** The dialog's accept button. */
+    val buttonTitle: String
+        get() = when (this) {
+            PrivateReply -> "Accept privately"
+            ReplyInKind -> "Accept"
+        }
+
+    /** The dialog's message. */
+    val message: String
+        get() = when (this) {
+            PrivateReply ->
+                "This person already sent you a request. Accept it with a private reply " +
+                    "instead? The reply is paid from this wallet's shielded balance, and no " +
+                    "public request names you as its sender."
+            ReplyInKind -> "This person already sent you a request. Accept it instead?"
+        }
+
+    companion object {
+        fun of(sendPrivately: Boolean): CollisionAccept = if (sendPrivately) PrivateReply else ReplyInKind
+    }
+}
+
+/**
+ * What Add Contact submits, fixed when Send Request is tapped: the
+ * recipient, whether "Send privately" was on, the account label and the DPNS
+ * name the recipient was found by. The local lookup for a request they
+ * already sent runs after the tap, and the collision dialog waits on the
+ * user; both must act on the choice made at the tap, never on the form as it
+ * reads later, or a request submitted privately could go out publicly.
+ */
+class ContactRequestSubmission(
+    val recipient: ByteArray,
+    val sendPrivately: Boolean,
+    val accountLabel: String?,
+    val dpnsLabel: String?,
+) {
+    /** How the collision dialog accepts the request the recipient already sent. */
+    val collisionAccept: CollisionAccept get() = CollisionAccept.of(sendPrivately)
+
+    /** The Submitted notice for a send that may have gone through. */
+    val mayHaveGoneThroughMessage: String
+        get() = if (sendPrivately) {
+            ContactRequestSubmissionOutcome.PRIVATE_MAY_HAVE_GONE_THROUGH_MESSAGE
+        } else {
+            ContactRequestSubmissionOutcome.MAY_HAVE_GONE_THROUGH_MESSAGE
+        }
+
+    /**
+     * The Submitted notice for the collision dialog's accept that may have
+     * gone through. An in-kind accept may reply privately (the wallet decides),
+     * so neither accept points at the public sync alone.
+     */
+    val acceptMayHaveGoneThroughMessage: String
+        get() = when (collisionAccept) {
+            CollisionAccept.PrivateReply -> ContactRequestSubmissionOutcome.PRIVATE_MAY_HAVE_GONE_THROUGH_MESSAGE
+            CollisionAccept.ReplyInKind -> ContactRequestSubmissionOutcome.IN_KIND_MAY_HAVE_GONE_THROUGH_MESSAGE
+        }
+
+    companion object {
+        /** The submission the form describes now; the label is trimmed and dropped when empty. */
+        fun of(
+            recipient: ByteArray,
+            sendPrivately: Boolean,
+            accountLabel: String,
+            dpnsLabel: String?,
+        ): ContactRequestSubmission = ContactRequestSubmission(
+            recipient = recipient.copyOf(),
+            sendPrivately = sendPrivately,
+            accountLabel = accountLabel.trim().ifEmpty { null },
+            dpnsLabel = dpnsLabel,
+        )
     }
 }
 

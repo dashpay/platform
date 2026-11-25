@@ -1,8 +1,12 @@
 package org.dashfoundation.dashsdk.services
 
 import androidx.room.withTransaction
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
 import org.dashfoundation.dashsdk.persistence.DashDatabase
+import org.dashfoundation.dashsdk.security.MasternodeVotingKeyStore
+import org.dashfoundation.dashsdk.security.WalletStorage
 
 /**
  * Bulk data-management operations — port of `Services/DataManager.swift`,
@@ -10,8 +14,24 @@ import org.dashfoundation.dashsdk.persistence.DashDatabase
  *
  * Categories mirror the iOS grouping. Every clear runs in one transaction;
  * child tables clear before parents so FK constraints hold.
+ *
+ * Clearing [Category.IDENTITIES] also deletes every masternode voting key imported
+ * through Load Identity ([MasternodeVotingKeyStore.deleteAll]) from the [WalletStorage]
+ * given, BEFORE the rows: an interrupted or failed clear then leaves rows whose voting keys
+ * are gone (a vote says the key is not stored), the category still counts rows, and clearing
+ * again finishes the job. The reverse order could leave keys no row names and no count
+ * shows. Both steps run under [MasternodeVotingKeyStore.withVotingKeyLock], so an import
+ * cannot store and record a key between them. Each clear runs to the end once started, even if its caller is cancelled.
+ * Identity keys of wallets and mnemonics stay in secure storage.
  */
-class DataManager(private val db: DashDatabase) {
+class DataManager internal constructor(
+    private val db: DashDatabase,
+    private val deleteImportedVotingKeys: suspend () -> Unit,
+) {
+
+    /** @param walletStorage the store the app's imported voting keys live in. */
+    constructor(db: DashDatabase, walletStorage: WalletStorage) :
+        this(db, { MasternodeVotingKeyStore(walletStorage).deleteAll() })
 
     enum class Category(val displayName: String) {
         WALLETS("Wallets & Accounts"),
@@ -43,7 +63,20 @@ class DataManager(private val db: DashDatabase) {
         }
     }
 
-    suspend fun clear(category: Category) = db.withTransaction {
+    suspend fun clear(category: Category) = withContext(NonCancellable) {
+        if (category == Category.IDENTITIES) {
+            // One voting key critical section: no import can store and record a key between
+            // the key sweep and the row delete.
+            MasternodeVotingKeyStore.withVotingKeyLock {
+                deleteImportedVotingKeys()
+                clearRows(category)
+            }
+        } else {
+            clearRows(category)
+        }
+    }
+
+    private suspend fun clearRows(category: Category) = db.withTransaction {
         when (category) {
             Category.WALLETS -> {
                 // Children first; wallets cascade accounts but be explicit.

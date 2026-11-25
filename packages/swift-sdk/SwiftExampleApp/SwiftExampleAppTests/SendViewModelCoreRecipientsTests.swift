@@ -23,16 +23,15 @@ final class SendViewModelCoreRecipientsTests: XCTestCase {
 
     /// Build a view model already routed onto the `coreToCore` flow with
     /// `primaryAddress` as the primary recipient. Mirrors how the app
-    /// drives it: set the recipient (which runs `detectAddressType`) and
-    /// the source, then `updateFlow()`.
+    /// drives it: set the recipient (which runs `detectAddressType`), then
+    /// pass the offered sources, which selects Core and routes the flow.
     private func makeCoreToCoreViewModel(
         primaryAmount: String
     ) -> SendViewModel {
         let vm = SendViewModel(network: network)
         vm.recipientAddress = primaryAddress
         vm.amountString = primaryAmount
-        vm.selectedSource = .core
-        vm.updateFlow()
+        vm.reconcileSource(available: [.core])
         return vm
     }
 

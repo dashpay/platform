@@ -124,6 +124,48 @@ extension PersistentDocumentType {
         DocumentTypeImmutability(documentTypeSchema: schema)
     }
 
+    /// Whether the type is private (protocol version 15): its schema
+    /// declares the `private` keyword. A private type's documents are
+    /// fixed-size encrypted entries, appended by an anonymous transition paid
+    /// from the shielded pool; nobody owns, replaces or deletes one, the type
+    /// takes no ordinary document and refuses document queries, and a reader
+    /// finds its own entries by trying to open each
+    /// (`ManagedPlatformWallet.readPrivateDocumentEntries`).
+    ///
+    /// Derived from the persisted schema rather than stored, for the same
+    /// reason as `immutability`: `DataContractParser` keeps the whole type
+    /// dictionary in `schemaJSON`, the keyword included.
+    public var isPrivate: Bool {
+        Self.declaresPrivate(inDocumentTypeSchema: schema)
+    }
+
+    /// The bytes each entry of a private type takes, the `entrySize` of its
+    /// `"private": { "entrySize": n }` declaration, or `nil` when the type is
+    /// not private (or the declaration holds no integer `entrySize`, which a
+    /// registered contract cannot: DPP refuses it). Read as declared, not
+    /// validated; see `isPrivate`.
+    public var privateEntrySize: Int? {
+        Self.privateEntrySize(inDocumentTypeSchema: schema)
+    }
+
+    /// Whether a document type's schema dictionary declares `private`.
+    public static func declaresPrivate(inDocumentTypeSchema schema: [String: Any]?) -> Bool {
+        schema?["private"] != nil
+    }
+
+    /// The `entrySize` of a document type schema's `private` declaration,
+    /// or `nil` when it declares none or holds no integer `entrySize`.
+    public static func privateEntrySize(inDocumentTypeSchema schema: [String: Any]?) -> Int? {
+        guard let declaration = schema?["private"] as? [String: Any],
+              let number = declaration["entrySize"] as? NSNumber,
+              // A Bool also bridges to NSNumber: not an entry size
+              CFGetTypeID(number) != CFBooleanGetTypeID()
+        else {
+            return nil
+        }
+        return number as? Int
+    }
+
     /// Top-level properties frozen at document creation, sorted. Empty when
     /// the type declares no `immutable` list.
     public var immutableProperties: [String] {

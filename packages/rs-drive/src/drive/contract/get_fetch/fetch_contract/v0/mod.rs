@@ -110,6 +110,9 @@ impl Drive {
                     storage_flags,
                     cost: cost.clone(),
                     fee,
+                    // Recorded at every protocol version; only `get_contract_with_fetch_info`
+                    // 1 (protocol version 15 on) reads it, so earlier versions are unaffected.
+                    parsed_under_protocol_version: platform_version.protocol_version,
                 });
 
                 Ok(Some(Arc::clone(&contract_fetch_info))).wrap_with_cost(cost)
@@ -166,6 +169,8 @@ impl Drive {
                             storage_flags,
                             cost: cost.clone(),
                             fee,
+                            // As above: read only from protocol version 15.
+                            parsed_under_protocol_version: platform_version.protocol_version,
                         });
 
                         Ok(Some(Arc::clone(&contract_fetch_info))).wrap_with_cost(cost)

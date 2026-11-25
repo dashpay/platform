@@ -336,6 +336,38 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     /// lookup failed, which is not Platform's answer that it does not exist,
     /// 7). Nothing was signed, reserved or broadcast: retry as it is.
     case errorIdentityLookupFailed = 80
+    /// The balance history could not read a page of Platform's address
+    /// balance changes at a height consistent with the pages it had already
+    /// read, within Rust's per-page retry bound: every attempt got a
+    /// successfully fetched, proof-verified reply below that height. No
+    /// history was returned; the read can be made again later. SDK errors
+    /// (stale-node rejection, transport or proof failures) are not this code.
+    case errorBalanceHistoryInconsistentHeights = 83
+    /// A shielded Clear was refused because a shielded operation (a bind, an
+    /// account being added, a token pool transfer or unshield, a DashPay
+    /// profile write, a tip address preparation or a shielded tip being
+    /// sent, or another Clear) is in flight. Clear does not wait for it:
+    /// nothing was changed and sync keeps
+    /// running, so the host keeps its rows. Retry once it has finished.
+    case errorShieldedOperationInProgress = 84
+    /// A shielded tip was refused before anything was selected, built or
+    /// sent: another tip from this wallet is being sent, or an earlier
+    /// shielded payment to the same recipient may still execute. This call
+    /// sent nothing. A shielded sync resolves the earlier payment as executed
+    /// or as unable to execute, so the refusal ending is not a reason to send
+    /// again: reconcile the earlier payment first, and send again only once
+    /// it is known to have failed. Not `errorShieldedSpendUnconfirmed` (18).
+    case errorShieldedTipPending = 85
+    /// A shielded tip started from a saved contact was refused because the
+    /// username now belongs to another identity than the contact's. Nothing
+    /// was sent; the user picks the recipient again.
+    case errorShieldedTipRecipientMismatch = 86
+    /// A local shielded balance read did not finish within its wait budget
+    /// (the wallet's state or its shielded store was held, by a scan for
+    /// instance), or a shielded Clear was running. Nothing failed and
+    /// nothing changed: keep the last state shown and read again later. The
+    /// only code of that read that means retry.
+    case errorShieldedBalanceBusy = 87
     /// The named thing does not exist. Besides the handle/lookup failures this
     /// has always covered, BOTH deferred-send paths report the
     /// wallet-was-REMOVED case here.
@@ -489,6 +521,16 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorPublicContactRequestUnconfirmed
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_IDENTITY_LOOKUP_FAILED:
             self = .errorIdentityLookupFailed
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_BALANCE_HISTORY_INCONSISTENT_HEIGHTS:
+            self = .errorBalanceHistoryInconsistentHeights
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_OPERATION_IN_PROGRESS:
+            self = .errorShieldedOperationInProgress
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_TIP_PENDING:
+            self = .errorShieldedTipPending
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_TIP_RECIPIENT_MISMATCH:
+            self = .errorShieldedTipRecipientMismatch
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_SHIELDED_BALANCE_BUSY:
+            self = .errorShieldedBalanceBusy
         case PLATFORM_WALLET_FFI_RESULT_CODE_NOT_FOUND:
             self = .notFound
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UNKNOWN:
@@ -920,6 +962,43 @@ public enum PlatformWalletError: LocalizedError {
     /// broadcast. Not sent, so it may be retried as it is; unlike an unmapped
     /// SDK error it is never a possibly delivered operation.
     case identityLookupFailed(String, payment: PlatformPaymentClass? = nil)
+    /// `ManagedPlatformAddressWallet.balanceHistory(includeCompacted:)` kept
+    /// getting a page of Platform's address balance changes proved below a
+    /// height it had already read, within Rust's per-page retry bound, so it
+    /// returned no history rather than a partial one. Every attempt got a
+    /// successfully fetched, proof-verified reply below that height; errors
+    /// from the SDK itself (its own stale-node rejection, transport or proof
+    /// failures) keep their existing mapping. Nothing changed; load the
+    /// history again later.
+    case balanceHistoryInconsistentHeights(String, payment: PlatformPaymentClass? = nil)
+    /// `PlatformWalletManager.clearShielded()` was refused at once because a
+    /// shielded operation (a bind, an account being added, a token pool
+    /// transfer or unshield, a DashPay profile write or a tip address
+    /// preparation, or another Clear) is in flight. Clear does not wait for
+    /// it. Nothing was changed: sync keeps running and no shielded state was
+    /// reset, so the host must not wipe its own rows. Clear again once the
+    /// operation has finished.
+    case shieldedOperationInProgress(String, payment: PlatformPaymentClass? = nil)
+    /// `sendShieldedTip` refused the tip with nothing sent: another tip from
+    /// this wallet is being sent, or an earlier shielded payment to the
+    /// recipient may still execute. This call sent nothing, unlike
+    /// `shieldedSpendUnconfirmed`. The earlier payment may be the same tip
+    /// and may pay the recipient: a shielded sync resolves it as executed or
+    /// as unable to execute, so do not send again because the refusal
+    /// ended, only once that payment is known to have failed.
+    case shieldedTipPending(String, payment: PlatformPaymentClass? = nil)
+    /// A shielded tip started from a saved contact was refused because the
+    /// username now belongs to another identity than the contact's: the name
+    /// moved since the contact was saved. Nothing was sent. The user picks
+    /// the recipient again; a tip to the name's new owner starts from the
+    /// name, not from the contact.
+    case shieldedTipRecipientMismatch(String, payment: PlatformPaymentClass? = nil)
+    /// `shieldedIdentityBalance` did not finish within its wait budget (the
+    /// wallet's state or its shielded store was held, by a scan for
+    /// instance), or a shielded Clear was running. Nothing failed and
+    /// nothing changed: keep the last state shown and read again later. The
+    /// only error of that read that means retry.
+    case shieldedBalanceBusy(String, payment: PlatformPaymentClass? = nil)
     case walletAlreadyExists(String, payment: PlatformPaymentClass? = nil)
     /// Definitive shielded-broadcast failure: the shielded transition never
     /// left the wallet (refused before anything was sent), so it cannot
@@ -1185,6 +1264,11 @@ public enum PlatformWalletError: LocalizedError {
              .sdkPinnedBelowProtocolVersion(_, let payment),
              .publicContactRequestUnconfirmed(_, let payment),
              .identityLookupFailed(_, let payment),
+             .balanceHistoryInconsistentHeights(_, let payment),
+             .shieldedOperationInProgress(_, let payment),
+             .shieldedTipPending(_, let payment),
+             .shieldedTipRecipientMismatch(_, let payment),
+             .shieldedBalanceBusy(_, let payment),
              .walletAlreadyExists(_, let payment),
              .shieldedBroadcastFailed(_, let payment),
              .shieldedBroadcastUnconfirmed(_, let payment),
@@ -1261,6 +1345,10 @@ public enum PlatformWalletError: LocalizedError {
              .privateContactRecoveryUnsupported(let m, _),
              .privateContactStoreNotRead(let m, _), .sdkPinnedBelowProtocolVersion(let m, _),
              .publicContactRequestUnconfirmed(let m, _), .identityLookupFailed(let m, _),
+             .balanceHistoryInconsistentHeights(let m, _),
+             .shieldedOperationInProgress(let m, _),
+             .shieldedTipPending(let m, _), .shieldedTipRecipientMismatch(let m, _),
+             .shieldedBalanceBusy(let m, _),
              .walletAlreadyExists(let m, _), .shieldedBroadcastFailed(let m, _),
              .shieldedBroadcastUnconfirmed(let m, _), .shieldedSpendUnconfirmed(let m, _),
              .shieldedNoRecordedAnchor(let m, _), .shieldedInsufficientBalance(let m, _),
@@ -1414,6 +1502,16 @@ public enum PlatformWalletError: LocalizedError {
             self = .publicContactRequestUnconfirmed(detail, payment: payment)
         case .errorIdentityLookupFailed:
             self = .identityLookupFailed(detail, payment: payment)
+        case .errorBalanceHistoryInconsistentHeights:
+            self = .balanceHistoryInconsistentHeights(detail, payment: payment)
+        case .errorShieldedOperationInProgress:
+            self = .shieldedOperationInProgress(detail, payment: payment)
+        case .errorShieldedTipPending:
+            self = .shieldedTipPending(detail, payment: payment)
+        case .errorShieldedTipRecipientMismatch:
+            self = .shieldedTipRecipientMismatch(detail, payment: payment)
+        case .errorShieldedBalanceBusy:
+            self = .shieldedBalanceBusy(detail, payment: payment)
         case .errorWalletAlreadyExists: self = .walletAlreadyExists(detail, payment: payment)
         case .errorShieldedBroadcastFailed: self = .shieldedBroadcastFailed(detail, payment: payment)
         case .errorShieldedBroadcastUnconfirmed: self = .shieldedBroadcastUnconfirmed(detail, payment: payment)

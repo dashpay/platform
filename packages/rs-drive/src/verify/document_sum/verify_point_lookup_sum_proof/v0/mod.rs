@@ -53,7 +53,12 @@ impl DriveDocumentSumQuery<'_> {
             // protocol version 14 reads a value tree, which is never wrapped,
             // so it decodes as before
             // (`should_verify_an_average_point_proof_unchanged_at_protocol_version_13`).
-            let sum = elem.map(|e| e.underlying().sum_value_or_default());
+            // At 128 bits, whatever width the type keeps its sums in: for an element holding a
+            // 64-bit sum (every element before protocol version 15) this is that sum widened
+            // (`crate::query::sum_width`). Edited in place in this shipped generation: it returned
+            // the sum at 64 bits and refused a wider one; a verifier runs on the client and decides
+            // nothing in a block, and every sum it verified before is returned as the same number.
+            let sum = elem.map(|e| e.underlying().big_sum_value_or_default());
             out.push(SumEntry {
                 in_key: None,
                 key,

@@ -1,6 +1,28 @@
 import Foundation
 import SwiftDashSDK
 
+/// Outpoint of the asset lock a fresh fixed-amount shield built, so its
+/// progress follows that exact lock rather than any untagged row.
+///
+/// Filled synchronously by the SDK's `onAssetLockBuilt` handler, on the
+/// FFI worker thread, before the lock's row is persisted; read on the main
+/// actor. Hence the lock: a hop to the main actor could let the row arrive
+/// before the outpoint.
+final class BuiltOutPointRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: String?
+
+    func record(_ outPointHex: String) {
+        lock.withLock { recorded = outPointHex }
+    }
+
+    /// `PersistentAssetLock.outPointHex` of the built lock, `nil` until
+    /// the lock is built.
+    var outPointHex: String? {
+        lock.withLock { recorded }
+    }
+}
+
 /// Per-slot state owned by a single shielded fund-from-asset-lock
 /// attempt.
 ///
@@ -104,6 +126,21 @@ final class ShieldedFundFromAssetLockController: ObservableObject {
     /// normally share the wallet's default shielded recipient).
     private(set) var operationId: String?
 
+    /// For a fresh fixed-amount shield (`"shield:..."`), where the SDK
+    /// reports the outpoint of the lock this operation built; the progress
+    /// matches only that row. `nil` for drains and resumes, which name
+    /// their lock in `operationId`. Not published: the recorder is filled
+    /// before the lock's row is inserted, and that insertion re-renders the
+    /// progress section through its `@Query`.
+    var builtOutPoint: BuiltOutPointRecorder?
+
+    /// `true` when the current operation only finishes an asset lock that
+    /// already exists (a generic resume or a Max Resume): nothing is built,
+    /// so the progress must not say so. Cleared by every accepted `submit`;
+    /// the caller sets it after a submit that scheduled a resume body. A
+    /// `"resume:"` id is read as a resume either way.
+    @Published var isResumingExistingLock = false
+
     /// Active funding task. Holds a reference so the coordinator's
     /// stash retains the work until completion; cancellation isn't
     /// wired today (the FFI call doesn't yet support clean abort).
@@ -133,13 +170,20 @@ final class ShieldedFundFromAssetLockController: ObservableObject {
     /// the next sync, not from the broadcast call — so the controller
     /// flips `phase` to `.completed` (no balance payload) / `.failed`
     /// accordingly.
+    ///
+    /// Returns `true` when it started the task, `false` when the phase
+    /// refused it. Callers that count running bodies read this rather
+    /// than inferring acceptance from the controller's state.
+    @discardableResult
     func submit(
         operationId: String,
         resuming: AssetLockBuiltOutPoint? = nil,
         body: @escaping () async throws -> Void
-    ) {
-        guard phase.permitsSubmit(resuming: resuming) else { return }
+    ) -> Bool {
+        guard phase.permitsSubmit(resuming: resuming) else { return false }
         self.operationId = operationId
+        // A reused controller must not carry the previous run's kind.
+        isResumingExistingLock = false
         phase = .inFlight
         lastSubmittedAt = Date()
         task = Task { [weak self] in
@@ -155,5 +199,6 @@ final class ShieldedFundFromAssetLockController: ObservableObject {
                 }
             }
         }
+        return true
     }
 }

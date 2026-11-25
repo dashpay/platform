@@ -21,6 +21,19 @@ use pattern::PatternCell;
 #[cfg(feature = "validation")]
 pub(crate) use v0::{equal_json, is_unique};
 
+/// How much of an `enum`'s allowed values a violation lists, in its parameters and its
+/// message: the longest run of them, from the first the schema writes, of at most
+/// `max_values` values, each `null`, a boolean, a number or a string, whose JSON takes at most
+/// `max_bytes` bytes together. The others are counted, not listed, so the error stays small
+/// whatever the enum holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EnumViolationListing {
+    /// The most allowed values listed.
+    pub max_values: usize,
+    /// The most bytes the listed values' JSON takes together.
+    pub max_bytes: usize,
+}
+
 /// A document type's validation schema ready to check document values: each of its patterns
 /// checked to parse, and compiled the first time a value reaches it, and the generation of
 /// `validation_schema` that built it, which checks them. The schema is shared, so a clone, or
@@ -103,14 +116,17 @@ impl DocumentSchemaValidator {
     /// validator's depth check gives a too-deep value. That check, which runs before the
     /// walk, is what bounds a document's own value depth; this bound guards the walk's
     /// recursion for a caller that reaches it another way. The generation that built the
-    /// validator checks it.
+    /// validator checks it. With `Some(enum_listing)`, an `enum` violation lists the longest
+    /// leading run of the allowed values that stays within its `max_values` and `max_bytes`,
+    /// stopping before an array or an object, and counts the others; `None` lists them all.
     pub fn validate(
         &self,
         instance: &JsonValue,
         max_value_depth: Option<usize>,
+        enum_listing: Option<EnumViolationListing>,
     ) -> Result<Option<ConsensusError>, ProtocolError> {
         match self.generation {
-            0 => self.validate_v0(instance, max_value_depth),
+            0 => self.validate_v0(instance, max_value_depth, enum_listing),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "DocumentSchemaValidator::validate".to_string(),
                 known_versions: vec![0],

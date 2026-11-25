@@ -45,7 +45,7 @@ final class IdentityKeyLimitsPersistenceTests: XCTestCase {
         _ entry: PlatformWalletPersistenceHandler.IdentityKeyEntrySnapshot
     ) {
         handler.beginChangeset(walletId: walletId)
-        handler.persistIdentityKeys(walletId: walletId, upserts: [entry], removed: [])
+        XCTAssertNoThrow(try handler.persistIdentityKeys(walletId: walletId, upserts: [entry], removed: []))
         _ = handler.endChangeset(walletId: walletId, success: true)
     }
 
@@ -101,6 +101,131 @@ final class IdentityKeyLimitsPersistenceTests: XCTestCase {
         let row = try storedKey(container)
         XCTAssertEqual(row.totalBudgetCredits, 350_000)
         XCTAssertEqual(row.expiresAtMillis, 1_900_000_000_000)
+    }
+
+    /// Load Identity can leave a held identity with its key attached under the
+    /// hex identity id and an unlinked Base58-tagged copy of the same key id.
+    /// A raise must update the attached row, the one the key screens and cold
+    /// restore read, not the orphan.
+    func testRaiseUpdatesTheAttachedRowWhateverIdentityStringItCarries() throws {
+        let container = try DashModelContainer.createInMemory()
+        let seed = ModelContext(container)
+        let identity = PersistentIdentity(identityId: identityId, network: .testnet)
+        seed.insert(identity)
+        let attached = PersistentPublicKey(
+            keyId: 3, purpose: .authentication, securityLevel: .high,
+            keyType: .ecdsaSecp256k1, publicKeyData: publicKeyData,
+            totalBudget: 100_000, expiresAt: 1_800_000_000_000,
+            identityId: identityId.toHexString())
+        seed.insert(attached)
+        attached.identity = identity
+        identity.addPublicKey(attached)
+        let orphan = PersistentPublicKey(
+            keyId: 3, purpose: .authentication, securityLevel: .high,
+            keyType: .ecdsaSecp256k1, publicKeyData: publicKeyData,
+            totalBudget: 100_000, expiresAt: 1_800_000_000_000,
+            identityId: identityId.toBase58String())
+        seed.insert(orphan)
+        try seed.save()
+
+        let handler = PlatformWalletPersistenceHandler(
+            modelContainer: container, network: .testnet)
+        persist(handler, snapshot(totalBudget: 350_000, expiresAt: 1_900_000_000_000))
+
+        let context = ModelContext(container)
+        let identityIdData = identityId
+        let stored = try XCTUnwrap(context.fetch(FetchDescriptor<PersistentIdentity>(
+            predicate: #Predicate { $0.identityId == identityIdData })).first)
+        XCTAssertEqual(stored.publicKeys.count, 1)
+        let row = try XCTUnwrap(stored.publicKeys.first)
+        XCTAssertEqual(row.totalBudgetCredits, 350_000)
+        XCTAssertEqual(row.expiresAtMillis, 1_900_000_000_000)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<PersistentPublicKey>()).count, 2,
+                       "no third row, and the orphan is left alone")
+    }
+
+    /// A reload can unlink a key row and leave its identity without one. A later
+    /// upsert of the key updates that row and attaches it to the identity, so
+    /// the key screens and cold restore see it, without adding a second row.
+    func testUpsertAttachesAnUnlinkedRowWhenItsIdentityHasNone() throws {
+        let container = try DashModelContainer.createInMemory()
+        let seed = ModelContext(container)
+        seed.insert(PersistentIdentity(identityId: identityId, network: .testnet))
+        seed.insert(PersistentPublicKey(
+            keyId: 3, purpose: .authentication, securityLevel: .high,
+            keyType: .ecdsaSecp256k1, publicKeyData: publicKeyData,
+            totalBudget: 100_000, identityId: identityId.toBase58String()))
+        try seed.save()
+
+        let handler = PlatformWalletPersistenceHandler(
+            modelContainer: container, network: .testnet)
+        persist(handler, snapshot(totalBudget: 350_000, expiresAt: nil))
+
+        let context = ModelContext(container)
+        let identityIdData = identityId
+        let stored = try XCTUnwrap(context.fetch(FetchDescriptor<PersistentIdentity>(
+            predicate: #Predicate { $0.identityId == identityIdData })).first)
+        XCTAssertEqual(stored.publicKeys.count, 1)
+        XCTAssertEqual(stored.publicKeys.first?.totalBudgetCredits, 350_000)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<PersistentPublicKey>()).count, 1)
+    }
+
+    /// A key lookup that fails rejects the round: the registered C callback
+    /// reports the failure, so Rust ends the round unsuccessfully, and nothing
+    /// it staged, including a sibling key written before the failure, is
+    /// committed.
+    func testKeyLookupFailureRejectsTheWholeRound() throws {
+        final class FailingSecondKeyLookup: ModelFetching, @unchecked Sendable {
+            enum Failure: Error { case read }
+            private let lock = NSLock()
+            private var keyLookups = 0
+            func fetch<T: PersistentModel>(_ descriptor: FetchDescriptor<T>, in context: ModelContext) throws -> [T] {
+                if T.self == PersistentPublicKey.self {
+                    let count = lock.withLock { () -> Int in
+                        keyLookups += 1
+                        return keyLookups
+                    }
+                    if count == 2 { throw Failure.read }
+                }
+                return try context.fetch(descriptor)
+            }
+        }
+        let container = try DashModelContainer.createInMemory()
+        let handler = PlatformWalletPersistenceHandler(
+            modelContainer: container, network: .testnet, modelFetcher: FailingSecondKeyLookup())
+        let callbacks = handler.makeCallbacks()
+        defer { Unmanaged<PlatformWalletPersistenceHandler>.fromOpaque(callbacks.context!).release() }
+        let persistKeys = try XCTUnwrap(callbacks.on_persist_identity_keys_fn)
+
+        var publicKeyBytes = [UInt8](publicKeyData)
+        let rc: Int32 = publicKeyBytes.withUnsafeMutableBufferPointer { publicKeyBuffer in
+            func entry(keyId: UInt32, totalBudget: UInt64) -> IdentityKeyEntryFFI {
+                var row = IdentityKeyEntryFFI()
+                withUnsafeMutableBytes(of: &row.identity_id) { $0.copyBytes(from: identityId) }
+                row.key_id = keyId
+                row.purpose = KeyPurpose.authentication.rawValue
+                row.security_level = SecurityLevel.high.rawValue
+                row.key_type = KeyType.ecdsaSecp256k1.rawValue
+                row.public_key_data_ptr = publicKeyBuffer.baseAddress
+                row.public_key_data_len = UInt(publicKeyBuffer.count)
+                row.total_budget_is_some = true
+                row.total_budget = totalBudget
+                return row
+            }
+            let rows = [entry(keyId: 3, totalBudget: 100_000), entry(keyId: 4, totalBudget: 200_000)]
+            handler.beginChangeset(walletId: walletId)
+            return walletId.withUnsafeBytes { walletIdBytes in
+                rows.withUnsafeBufferPointer { rowsBuffer in
+                    persistKeys(callbacks.context, walletIdBytes.bindMemory(to: UInt8.self).baseAddress,
+                                rowsBuffer.baseAddress, UInt(rowsBuffer.count), nil, 0)
+                }
+            }
+        }
+        XCTAssertNotEqual(rc, 0, "the callback reports the failed lookup")
+        // Rust ends the round by the callback's result.
+        XCTAssertFalse(handler.endChangeset(walletId: walletId, success: rc == 0))
+
+        XCTAssertTrue(try ModelContext(container).fetch(FetchDescriptor<PersistentPublicKey>()).isEmpty)
     }
 
     /// Rust is the source of truth on every round, so a key re-emitted without
