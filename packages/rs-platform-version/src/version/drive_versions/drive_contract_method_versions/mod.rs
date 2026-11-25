@@ -4,6 +4,7 @@ pub mod v1;
 pub mod v2;
 pub mod v3;
 pub mod v4;
+pub mod v5;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveContractMethodVersions {
@@ -115,6 +116,7 @@ pub struct DriveContractGetMethodVersions {
     pub fetch_contract_version: FeatureVersion,
     pub fetch_contracts: FeatureVersion,
     pub fetch_contract_with_history: FeatureVersion,
+    pub fetch_serialized_contract_history: FeatureVersion,
     pub get_cached_contract_with_fetch_info: FeatureVersion,
     pub get_contract_with_fetch_info: FeatureVersion,
     pub get_contracts_with_fetch_info: FeatureVersion,

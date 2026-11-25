@@ -25,6 +25,16 @@ const LEGO_IMAGE = 'goacme/lego:v4.31.0';
 const OUTPUT_DRAIN_TIMEOUT_MS = 10000;
 
 /**
+ * How long to wait for Docker to finish removing the container an earlier run
+ * left behind.
+ *
+ * Removal usually finishes within a second. The bound is for a daemon that
+ * never answers: a renewal runs unattended, and one that hangs here reports
+ * nothing at all.
+ */
+const STALE_CONTAINER_REMOVAL_TIMEOUT_MS = 30000;
+
+/**
  * Start collecting a container's output while it is still running.
  *
  * `AutoRemove` deletes a container the moment it exits, and takes its logs with
@@ -268,6 +278,68 @@ export default function obtainLetsEncryptCertificateTaskFactory(
   legoContainerOptions,
 ) {
   /**
+   * Free the container name for this run, waiting out a removal Docker has
+   * already started.
+   *
+   * Every run auto-removes its container, but Docker does that just after it
+   * reports the exit. So a run that starts right after another one - the retry
+   * below, an operator running the command again, the helper's renewal - can
+   * find the previous container half removed. Docker then refuses to remove it
+   * a second time (409, "removal ... is already in progress") and refuses a new
+   * container under the same name until the first one is gone.
+   *
+   * @param {string} containerName
+   * @return {Promise<void>}
+   */
+  async function clearStaleLegoContainer(containerName) {
+    let existingContainer;
+
+    try {
+      existingContainer = await docker.getContainer(containerName);
+
+      await existingContainer.remove({ force: true });
+    } catch (e) {
+      // Nothing holds the name.
+      if (e.statusCode === 404) {
+        return;
+      }
+
+      // A forced removal conflicts only with a removal already in progress,
+      // which is waited for below like one this call made.
+      if (e.statusCode !== 409) {
+        throw e;
+      }
+    }
+
+    const abortController = new AbortController();
+    let timer;
+
+    try {
+      await Promise.race([
+        existingContainer.wait({ condition: 'removed', abortSignal: abortController.signal }),
+        new Promise((resolve, reject) => {
+          timer = setTimeout(() => {
+            reject(new Error(
+              `Docker did not finish removing the ${containerName} container left by an earlier run`
+              + ` within ${STALE_CONTAINER_REMOVAL_TIMEOUT_MS / 1000} seconds`,
+            ));
+
+            // Drops the request still waiting on the daemon.
+            abortController.abort();
+          }, STALE_CONTAINER_REMOVAL_TIMEOUT_MS);
+        }),
+      ]);
+    } catch (e) {
+      // Already gone: removed by the call above, or by Docker in between.
+      if (e.statusCode !== 404) {
+        throw e;
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
    * Create and start the lego container, reporting a failure to do either as
    * distinct from a failure the certificate authority returned.
    *
@@ -480,22 +552,9 @@ export default function obtainLetsEncryptCertificateTaskFactory(
             // lego exists, so a failure here is as far from a response by the
             // certificate authority as a refused port binding is.
             try {
-              const existingContainer = await docker.getContainer(containerName);
-              await existingContainer.remove({ force: true });
-
-              try {
-                await existingContainer.wait();
-              } catch (waitError) {
-                // Skip error if container is already removed
-                if (waitError.statusCode !== 404) {
-                  throw waitError;
-                }
-              }
+              await clearStaleLegoContainer(containerName);
             } catch (e) {
-              // Container doesn't exist, that's fine
-              if (e.statusCode !== 404) {
-                throw new LegoDidNotStartError(e);
-              }
+              throw new LegoDidNotStartError(e);
             }
 
             const binds = [`${ctx.legoDir}:/data`];

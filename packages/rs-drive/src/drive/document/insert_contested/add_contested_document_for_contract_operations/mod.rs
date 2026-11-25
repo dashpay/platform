@@ -1,19 +1,19 @@
 mod v0;
 mod v1;
+mod v2;
 
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::object_size_info::DocumentAndContractInfo;
 use dpp::block::block_info::BlockInfo;
 
 use crate::drive::votes::resolved::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePollWithContractInfo;
 use dpp::version::PlatformVersion;
 use dpp::voting::vote_info_storage::contested_document_vote_poll_stored_info::ContestedDocumentVotePollStoredInfo;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Gathers the operations to add a contested document to a contract.
@@ -26,9 +26,7 @@ impl Drive {
         block_info: &BlockInfo,
         also_insert_vote_poll_stored_info: Option<ContestedDocumentVotePollStoredInfo>,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
@@ -61,9 +59,20 @@ impl Drive {
                 transaction,
                 platform_version,
             ),
+            2 => self.add_contested_document_for_contract_operations_v2(
+                document_and_contract_info,
+                contested_document_resource_vote_poll,
+                insert_without_check,
+                block_info,
+                also_insert_vote_poll_stored_info,
+                previous_batch_operations,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_contested_document_for_contract_operations".to_string(),
-                known_versions: vec![0, 1],
+                known_versions: vec![0, 1, 2],
                 received: version,
             })),
         }

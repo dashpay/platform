@@ -174,6 +174,11 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.WaitForStateTransitionResultRequest.SerializeToString,
                 response_deserializer=platform__pb2.WaitForStateTransitionResultResponse.FromString,
                 )
+        self.getRecentStateTransitionStatus = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getRecentStateTransitionStatus',
+                request_serializer=platform__pb2.GetRecentStateTransitionStatusRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetRecentStateTransitionStatusResponse.FromString,
+                )
         self.getConsensusParams = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getConsensusParams',
                 request_serializer=platform__pb2.GetConsensusParamsRequest.SerializeToString,
@@ -223,6 +228,16 @@ class PlatformStub(object):
                 '/org.dash.platform.dapi.v0.Platform/getVotePollsByEndDate',
                 request_serializer=platform__pb2.GetVotePollsByEndDateRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetVotePollsByEndDateResponse.FromString,
+                )
+        self.getYesNoVotePollState = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getYesNoVotePollState',
+                request_serializer=platform__pb2.GetYesNoVotePollStateRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetYesNoVotePollStateResponse.FromString,
+                )
+        self.getMasternodeYesNoVote = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getMasternodeYesNoVote',
+                request_serializer=platform__pb2.GetMasternodeYesNoVoteRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetMasternodeYesNoVoteResponse.FromString,
                 )
         self.getPrefundedSpecializedBalance = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getPrefundedSpecializedBalance',
@@ -378,6 +393,21 @@ class PlatformStub(object):
                 '/org.dash.platform.dapi.v0.Platform/getShieldedNullifiers',
                 request_serializer=platform__pb2.GetShieldedNullifiersRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetShieldedNullifiersResponse.FromString,
+                )
+        self.getPrivateDocumentEntries = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getPrivateDocumentEntries',
+                request_serializer=platform__pb2.GetPrivateDocumentEntriesRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetPrivateDocumentEntriesResponse.FromString,
+                )
+        self.getOwnerTransactionsInBlock = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getOwnerTransactionsInBlock',
+                request_serializer=platform__pb2.GetOwnerTransactionsInBlockRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetOwnerTransactionsInBlockResponse.FromString,
+                )
+        self.getBlocks = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getBlocks',
+                request_serializer=platform__pb2.GetBlocksRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetBlocksResponse.FromString,
                 )
 
 
@@ -577,6 +607,15 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getRecentStateTransitionStatus(self, request, context):
+        """What the node answering knows of a state transition, by hash, without
+        waiting: committed, in its mempool, or unknown to it. Unproved and per node
+        (protocol version 15 and later)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def getConsensusParams(self, request, context):
         """@sdk-ignore: Consensus params fetched via Tenderdash RPC
         """
@@ -638,6 +677,22 @@ class PlatformServicer(object):
 
     def getVotePollsByEndDate(self, request, context):
         """What vote polls will end soon?
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getYesNoVotePollState(self, request, context):
+        """Where is a yes/no vote poll: open, or finished with what result, and its
+        tallies (protocol version 15 and later)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getMasternodeYesNoVote(self, request, context):
+        """How did a masternode answer a yes/no vote poll? (protocol version 15 and
+        later)
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -829,6 +884,29 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getPrivateDocumentEntries(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getOwnerTransactionsInBlock(self, request, context):
+        """The state transitions one owner has in the Tenderdash block at a height.
+        DAPI answers it from Tenderdash. Without `prove` the client trusts the node.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getBlocks(self, request, context):
+        """Up to 10 consecutive Tenderdash blocks. DAPI answers it from Tenderdash; without
+        `prove` the client trusts the node. This is for looking blocks up, not for
+        syncing a chain: the gateway allows each IP very few of these requests.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_PlatformServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -992,6 +1070,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     request_deserializer=platform__pb2.WaitForStateTransitionResultRequest.FromString,
                     response_serializer=platform__pb2.WaitForStateTransitionResultResponse.SerializeToString,
             ),
+            'getRecentStateTransitionStatus': grpc.unary_unary_rpc_method_handler(
+                    servicer.getRecentStateTransitionStatus,
+                    request_deserializer=platform__pb2.GetRecentStateTransitionStatusRequest.FromString,
+                    response_serializer=platform__pb2.GetRecentStateTransitionStatusResponse.SerializeToString,
+            ),
             'getConsensusParams': grpc.unary_unary_rpc_method_handler(
                     servicer.getConsensusParams,
                     request_deserializer=platform__pb2.GetConsensusParamsRequest.FromString,
@@ -1041,6 +1124,16 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getVotePollsByEndDate,
                     request_deserializer=platform__pb2.GetVotePollsByEndDateRequest.FromString,
                     response_serializer=platform__pb2.GetVotePollsByEndDateResponse.SerializeToString,
+            ),
+            'getYesNoVotePollState': grpc.unary_unary_rpc_method_handler(
+                    servicer.getYesNoVotePollState,
+                    request_deserializer=platform__pb2.GetYesNoVotePollStateRequest.FromString,
+                    response_serializer=platform__pb2.GetYesNoVotePollStateResponse.SerializeToString,
+            ),
+            'getMasternodeYesNoVote': grpc.unary_unary_rpc_method_handler(
+                    servicer.getMasternodeYesNoVote,
+                    request_deserializer=platform__pb2.GetMasternodeYesNoVoteRequest.FromString,
+                    response_serializer=platform__pb2.GetMasternodeYesNoVoteResponse.SerializeToString,
             ),
             'getPrefundedSpecializedBalance': grpc.unary_unary_rpc_method_handler(
                     servicer.getPrefundedSpecializedBalance,
@@ -1196,6 +1289,21 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getShieldedNullifiers,
                     request_deserializer=platform__pb2.GetShieldedNullifiersRequest.FromString,
                     response_serializer=platform__pb2.GetShieldedNullifiersResponse.SerializeToString,
+            ),
+            'getPrivateDocumentEntries': grpc.unary_unary_rpc_method_handler(
+                    servicer.getPrivateDocumentEntries,
+                    request_deserializer=platform__pb2.GetPrivateDocumentEntriesRequest.FromString,
+                    response_serializer=platform__pb2.GetPrivateDocumentEntriesResponse.SerializeToString,
+            ),
+            'getOwnerTransactionsInBlock': grpc.unary_unary_rpc_method_handler(
+                    servicer.getOwnerTransactionsInBlock,
+                    request_deserializer=platform__pb2.GetOwnerTransactionsInBlockRequest.FromString,
+                    response_serializer=platform__pb2.GetOwnerTransactionsInBlockResponse.SerializeToString,
+            ),
+            'getBlocks': grpc.unary_unary_rpc_method_handler(
+                    servicer.getBlocks,
+                    request_deserializer=platform__pb2.GetBlocksRequest.FromString,
+                    response_serializer=platform__pb2.GetBlocksResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -1752,6 +1860,23 @@ class Platform(object):
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
+    def getRecentStateTransitionStatus(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getRecentStateTransitionStatus',
+            platform__pb2.GetRecentStateTransitionStatusRequest.SerializeToString,
+            platform__pb2.GetRecentStateTransitionStatusResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
     def getConsensusParams(request,
             target,
             options=(),
@@ -1918,6 +2043,40 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getVotePollsByEndDate',
             platform__pb2.GetVotePollsByEndDateRequest.SerializeToString,
             platform__pb2.GetVotePollsByEndDateResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getYesNoVotePollState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getYesNoVotePollState',
+            platform__pb2.GetYesNoVotePollStateRequest.SerializeToString,
+            platform__pb2.GetYesNoVotePollStateResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getMasternodeYesNoVote(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getMasternodeYesNoVote',
+            platform__pb2.GetMasternodeYesNoVoteRequest.SerializeToString,
+            platform__pb2.GetMasternodeYesNoVoteResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
@@ -2445,5 +2604,56 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getShieldedNullifiers',
             platform__pb2.GetShieldedNullifiersRequest.SerializeToString,
             platform__pb2.GetShieldedNullifiersResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getPrivateDocumentEntries(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getPrivateDocumentEntries',
+            platform__pb2.GetPrivateDocumentEntriesRequest.SerializeToString,
+            platform__pb2.GetPrivateDocumentEntriesResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getOwnerTransactionsInBlock(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getOwnerTransactionsInBlock',
+            platform__pb2.GetOwnerTransactionsInBlockRequest.SerializeToString,
+            platform__pb2.GetOwnerTransactionsInBlockResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getBlocks(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getBlocks',
+            platform__pb2.GetBlocksRequest.SerializeToString,
+            platform__pb2.GetBlocksResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

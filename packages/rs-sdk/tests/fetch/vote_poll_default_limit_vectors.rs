@@ -128,10 +128,10 @@ async fn should_verify_recorded_voting_proofs_for_legacy_and_explicit_default_re
                 &provider,
             )
             .expect("legacy request proof and signature");
-            let explicit =
-                <ResourceVote as FetchMany<Identifier, ResourceVotesByIdentity>>::prepare_query(
-                    request.clone(),
-                );
+            let explicit = <ResourceVoteWithCount as FetchMany<
+                Identifier,
+                ResourceVotesByIdentity,
+            >>::prepare_query(request.clone());
             let mut copied = dump.clone();
             copied.serialized_request = explicit.mock_serialize().unwrap();
             assert_eq!(copied.serialized_response, dump.serialized_response);
@@ -143,9 +143,10 @@ async fn should_verify_recorded_voting_proofs_for_legacy_and_explicit_default_re
                 .with_dump_dir(temporary.path())
                 .build()
                 .unwrap();
-            let verified = ResourceVote::fetch_many_with_metadata_and_proof(&sdk, request, None)
-                .await
-                .expect("explicit default proof and signature");
+            let verified =
+                ResourceVoteWithCount::fetch_many_with_metadata_and_proof(&sdk, request, None)
+                    .await
+                    .expect("explicit default proof and signature");
             assert_eq!(verified, (legacy.0.unwrap_or_default(), legacy.1, legacy.2));
             verified_vectors += 1;
             println!(

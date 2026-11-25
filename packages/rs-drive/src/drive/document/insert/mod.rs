@@ -55,8 +55,6 @@ mod tests {
     use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::util::storage_flags::StorageFlags;
     use crate::util::test_helpers::setup_contract;
-    use once_cell::sync::Lazy;
-    use std::collections::BTreeMap;
 
     use crate::config::DriveConfig;
     use crate::error::drive::DriveError;
@@ -64,20 +62,14 @@ mod tests {
     use crate::query::DriveDocumentQuery;
     use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
-    use dpp::block::epoch::Epoch;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
     use dpp::data_contract::DataContract;
     use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
     use dpp::document::{Document, DocumentV0Getters};
-    use dpp::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
-    use dpp::fee::default_costs::{CachedEpochIndexFeeVersions, EpochCosts};
     use dpp::fee::fee_result::FeeResult;
     use dpp::tests::json_document::json_document_to_document;
     use dpp::version::fee::FeeVersion;
     use dpp::version::PlatformVersion;
-
-    static EPOCH_CHANGE_FEE_VERSION_TEST: Lazy<CachedEpochIndexFeeVersions> =
-        Lazy::new(|| BTreeMap::from([(0, FeeVersion::first())]));
 
     #[test]
     fn test_add_dashpay_documents_no_transaction() {
@@ -117,7 +109,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -139,7 +130,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect_err("expected not to be able to insert same document twice");
 
@@ -161,7 +151,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to override a document successfully");
     }
@@ -204,7 +193,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -226,7 +214,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect_err("expected duplicate insert to return an error");
 
@@ -286,7 +273,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -308,7 +294,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect_err("expected not to be able to insert same document twice");
 
@@ -330,7 +315,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                Some(&EPOCH_CHANGE_FEE_VERSION_TEST),
             )
             .expect("expected to override a document successfully");
     }
@@ -387,7 +371,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -395,10 +378,9 @@ mod tests {
             fee_result,
             FeeResult {
                 storage_fee: 3058
-                    * Epoch::new(0).unwrap().cost_for_known_cost_item(
-                        &EPOCH_CHANGE_FEE_VERSION_TEST,
-                        StorageDiskUsageCreditPerByte,
-                    ),
+                    * FeeVersion::first()
+                        .storage
+                        .storage_disk_usage_credit_per_byte,
                 processing_fee: expected_processing_fee,
                 ..Default::default()
             }
@@ -424,10 +406,9 @@ mod tests {
         let platform_version = PlatformVersion::first();
         let expected_fee_result = FeeResult {
             storage_fee: 1305
-                * Epoch::new(0).unwrap().cost_for_known_cost_item(
-                    &EPOCH_CHANGE_FEE_VERSION_TEST,
-                    StorageDiskUsageCreditPerByte,
-                ),
+                * FeeVersion::first()
+                    .storage
+                    .storage_disk_usage_credit_per_byte,
             // the contract stored under the latest protocol version carries its
             // version item, one more node to rehash on the insert
             processing_fee: 901140,
@@ -447,10 +428,9 @@ mod tests {
         let platform_version = PlatformVersion::first();
         let expected_fee_result = FeeResult {
             storage_fee: 1305
-                * Epoch::new(0).unwrap().cost_for_known_cost_item(
-                    &EPOCH_CHANGE_FEE_VERSION_TEST,
-                    StorageDiskUsageCreditPerByte,
-                ),
+                * FeeVersion::first()
+                    .storage
+                    .storage_disk_usage_credit_per_byte,
             processing_fee: 73253660,
             ..Default::default()
         };
@@ -468,10 +448,9 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let expected_fee_result = FeeResult {
             storage_fee: 1305
-                * Epoch::new(0).unwrap().cost_for_known_cost_item(
-                    &EPOCH_CHANGE_FEE_VERSION_TEST,
-                    StorageDiskUsageCreditPerByte,
-                ),
+                * FeeVersion::first()
+                    .storage
+                    .storage_disk_usage_credit_per_byte,
             // the contract stored under the latest protocol version carries its
             // version item, one more node to rehash on the insert
             processing_fee: 901140,
@@ -491,10 +470,9 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let expected_fee_result = FeeResult {
             storage_fee: 1305
-                * Epoch::new(0).unwrap().cost_for_known_cost_item(
-                    &EPOCH_CHANGE_FEE_VERSION_TEST,
-                    StorageDiskUsageCreditPerByte,
-                ),
+                * FeeVersion::first()
+                    .storage
+                    .storage_disk_usage_credit_per_byte,
             // estimated_size v1 adds the contract-version stamp varint to
             // the worst-case document size
             processing_fee: 73323060,
@@ -516,10 +494,9 @@ mod tests {
         let platform_version = PlatformVersion::get(13).expect("expected protocol version 13");
         let expected_fee_result = FeeResult {
             storage_fee: 1305
-                * Epoch::new(0).unwrap().cost_for_known_cost_item(
-                    &EPOCH_CHANGE_FEE_VERSION_TEST,
-                    StorageDiskUsageCreditPerByte,
-                ),
+                * FeeVersion::first()
+                    .storage
+                    .storage_disk_usage_credit_per_byte,
             processing_fee: 900400,
             ..Default::default()
         };
@@ -597,7 +574,6 @@ mod tests {
                 apply,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
         assert_eq!(fee_result, expected_fee_result);
@@ -653,7 +629,6 @@ mod tests {
                 false,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -675,7 +650,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -829,7 +803,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -837,10 +810,9 @@ mod tests {
             fee_result,
             FeeResult {
                 storage_fee: 1840
-                    * Epoch::new(0).unwrap().cost_for_known_cost_item(
-                        &EPOCH_CHANGE_FEE_VERSION_TEST,
-                        StorageDiskUsageCreditPerByte,
-                    ),
+                    * FeeVersion::first()
+                        .storage
+                        .storage_disk_usage_credit_per_byte,
                 processing_fee: expected_processing_fee,
                 ..Default::default()
             }
@@ -921,7 +893,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -943,7 +914,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -965,7 +935,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
     }
@@ -1016,7 +985,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -1038,7 +1006,6 @@ mod tests {
                 true,
                 None,
                 platform_version,
-                None,
             )
             .expect_err(
                 "expected not to be able to insert document with already existing unique index",
@@ -1183,7 +1150,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a history-keeping document successfully");
 
@@ -1215,7 +1181,6 @@ mod tests {
                 true,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to insert a second history-keeping document successfully");
 
@@ -1317,7 +1282,6 @@ mod tests {
                 false,
                 Some(&db_transaction),
                 platform_version,
-                None,
             )
             .expect("expected to estimate insert of a history-keeping document");
 

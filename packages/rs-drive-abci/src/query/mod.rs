@@ -7,14 +7,18 @@ mod document_query;
 mod group_queries;
 mod identity_based_queries;
 mod prefunded_specialized_balances;
+mod private_document_entries;
 mod proofs;
-mod response_metadata;
+pub(crate) mod response_metadata;
 mod service;
 mod shielded;
 mod system;
 mod token_queries;
 mod validator_queries;
 mod voting;
+
+#[cfg(test)]
+mod contract_cache_tests;
 
 use crate::error::query::QueryError;
 
@@ -36,9 +40,13 @@ pub(crate) mod tests {
     use crate::query::QueryValidationResult;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+    use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
     use dapi_grpc::tonic::{Code, Status};
     use dpp::block::block_info::BlockInfo;
-    use dpp::data_contract::DataContract;
+    use dpp::bls::SecretKey;
+    use dpp::data_contract::{DataContract, TokenConfiguration};
+    use drive::config::DEFAULT_QUERY_LIMIT;
+    use drive_proof_verifier::{ContextProvider, ContextProviderError};
 
     use crate::config::PlatformConfig;
     use dpp::dashcore::Network;
@@ -67,6 +75,8 @@ pub(crate) mod tests {
     use std::borrow::Cow;
     use std::collections::BTreeMap;
     use std::sync::Arc;
+    use tenderdash_abci::proto::types::{CanonicalVote, SignedMsgType, StateId};
+    use tenderdash_abci::signatures::{Hashable, Signable};
 
     pub fn setup_platform<'a>(
         with_genesis_state: Option<(TimestampMillis, CoreBlockHeight)>,
@@ -77,30 +87,49 @@ pub(crate) mod tests {
         Arc<PlatformState>,
         &'a PlatformVersion,
     ) {
+        setup_platform_with_config(
+            with_genesis_state,
+            PlatformConfig::default_for_network(network),
+            initial_protocol_version,
+        )
+    }
+
+    /// [`setup_platform`] on testnet for a node whose operator set Drive's default page, the
+    /// limit a request naming none is answered with, to `default_query_limit`
+    pub fn setup_platform_with_default_query_limit<'a>(
+        with_genesis_state: Option<(TimestampMillis, CoreBlockHeight)>,
+        default_query_limit: u16,
+    ) -> (
+        TempPlatform<MockCoreRPCLike>,
+        Arc<PlatformState>,
+        &'a PlatformVersion,
+    ) {
+        let mut config = PlatformConfig::default_for_network(Network::Testnet);
+        config.drive.default_query_limit = default_query_limit;
+        setup_platform_with_config(with_genesis_state, config, None)
+    }
+
+    fn setup_platform_with_config<'a>(
+        with_genesis_state: Option<(TimestampMillis, CoreBlockHeight)>,
+        config: PlatformConfig,
+        initial_protocol_version: Option<ProtocolVersion>,
+    ) -> (
+        TempPlatform<MockCoreRPCLike>,
+        Arc<PlatformState>,
+        &'a PlatformVersion,
+    ) {
+        let mut platform_builder = TestPlatformBuilder::new().with_config(config);
+
+        if let Some(initial_protocol_version) = initial_protocol_version {
+            platform_builder =
+                platform_builder.with_initial_protocol_version(initial_protocol_version);
+        }
+
+        let platform = platform_builder.build_with_mock_rpc();
         let platform = if let Some((timestamp, activation_core_block_height)) = with_genesis_state {
-            let mut platform_builder = TestPlatformBuilder::new()
-                .with_config(PlatformConfig::default_for_network(network));
-
-            if let Some(initial_protocol_version) = initial_protocol_version {
-                platform_builder =
-                    platform_builder.with_initial_protocol_version(initial_protocol_version);
-            }
-
-            platform_builder
-                .build_with_mock_rpc()
-                .set_genesis_state_with_activation_info(timestamp, activation_core_block_height)
+            platform.set_genesis_state_with_activation_info(timestamp, activation_core_block_height)
         } else {
-            let mut platform_builder = TestPlatformBuilder::new()
-                .with_config(PlatformConfig::default_for_network(network));
-
-            if let Some(initial_protocol_version) = initial_protocol_version {
-                platform_builder =
-                    platform_builder.with_initial_protocol_version(initial_protocol_version);
-            }
-
-            platform_builder
-                .build_with_mock_rpc()
-                .set_initial_state_structure()
+            platform.set_initial_state_structure()
         };
 
         // We can't return a reference to Arc (`load` method) so we clone Arc (`load_full`).
@@ -126,14 +155,7 @@ pub(crate) mod tests {
 
         platform
             .drive
-            .apply_drive_operations(
-                vec![operation],
-                true,
-                &block_info,
-                None,
-                platform_version,
-                None,
-            )
+            .apply_drive_operations(vec![operation], true, &block_info, None, platform_version)
             .expect("expected to apply drive operations");
     }
 
@@ -237,7 +259,6 @@ pub(crate) mod tests {
                 &BlockInfo::genesis(),
                 None,
                 platform_version,
-                None,
             )
             .expect("expected to remove the post");
     }
@@ -265,14 +286,7 @@ pub(crate) mod tests {
 
         platform
             .drive
-            .apply_drive_operations(
-                vec![operation],
-                true,
-                &block_info,
-                None,
-                platform_version,
-                None,
-            )
+            .apply_drive_operations(vec![operation], true, &block_info, None, platform_version)
             .expect("expected to apply drive operations");
     }
 
@@ -295,6 +309,131 @@ pub(crate) mod tests {
             validation_result.errors.as_slice(),
             [QueryError::InvalidArgument(msg)] if msg.contains("id must be a valid identifier (32 bytes long)")
         ));
+    }
+
+    /// Serves no contract and no quorum key, so the `FromProof` of a query that needs neither
+    /// checks the Drive part of a proof and then stops at the quorum key the signature check
+    /// asks for
+    pub struct NoQuorumKeysContextProvider;
+
+    impl ContextProvider for NoQuorumKeysContextProvider {
+        fn get_data_contract(
+            &self,
+            _id: &Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &Identifier,
+        ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
+            Ok(None)
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], ContextProviderError> {
+            Err(ContextProviderError::Config(
+                "no quorum keys in this test".to_string(),
+            ))
+        }
+
+        fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
+            Ok(1)
+        }
+    }
+
+    /// The round and quorum type [`signed_proof`] signs a precommit at (LLMQ_50_60)
+    const ROUND: u32 = 0;
+    const QUORUM_TYPE: u32 = 1;
+
+    /// A deterministic, valid BLS scalar — no RNG dependency.
+    pub fn quorum_secret_key() -> SecretKey {
+        let mut bytes = [0u8; 32];
+        bytes[31] = 42;
+        SecretKey::from_be_bytes(&bytes).expect("a small nonzero scalar is a valid secret key")
+    }
+
+    /// Sign a tenderdash precommit whose state id carries `app_hash` —
+    /// the same canonical construction `verify_tenderdash_proof`
+    /// rebuilds on the verify side.
+    pub fn signed_proof(
+        grovedb_proof: Vec<u8>,
+        app_hash: &[u8; 32],
+        mtd: &ResponseMetadata,
+        secret_key: &SecretKey,
+        quorum_hash: [u8; 32],
+    ) -> Proof {
+        let block_id_hash = [7u8; 32].to_vec();
+        let state_id = StateId {
+            app_version: mtd.protocol_version as u64,
+            core_chain_locked_height: mtd.core_chain_locked_height,
+            time: mtd.time_ms,
+            app_hash: app_hash.to_vec(),
+            height: mtd.height,
+        };
+        let state_id_hash = state_id
+            .calculate_msg_hash(&mtd.chain_id, mtd.height as i64, ROUND as i32)
+            .expect("state id hash");
+        let commit = CanonicalVote {
+            r#type: SignedMsgType::Precommit.into(),
+            block_id: block_id_hash.clone(),
+            chain_id: mtd.chain_id.clone(),
+            height: mtd.height as i64,
+            round: ROUND as i64,
+            state_id: state_id_hash,
+        };
+        let sign_digest = commit
+            .calculate_sign_hash(
+                &mtd.chain_id,
+                QUORUM_TYPE.try_into().expect("valid quorum type"),
+                &quorum_hash,
+                mtd.height as i64,
+                ROUND as i32,
+            )
+            .expect("sign digest");
+        let signature = secret_key
+            .sign(&sign_digest)
+            .expect("signing with a valid key succeeds")
+            .to_bytes()
+            .to_vec();
+        Proof {
+            grovedb_proof,
+            quorum_hash: quorum_hash.to_vec(),
+            signature,
+            round: ROUND,
+            block_id_hash,
+            quorum_type: QUORUM_TYPE,
+        }
+    }
+
+    /// The nodes a proved request naming no limit is checked against, as (the node's default
+    /// page, results stored): a node left at the default with one result more than its page,
+    /// and a node whose operator set a larger default with every result inside it
+    pub const NO_LIMIT_PROOF_CASES: [(u16, u16); 2] = [
+        (DEFAULT_QUERY_LIMIT, DEFAULT_QUERY_LIMIT + 1),
+        (
+            2 * DEFAULT_QUERY_LIMIT,
+            DEFAULT_QUERY_LIMIT + DEFAULT_QUERY_LIMIT / 2,
+        ),
+    ];
+
+    /// `FromProof` checks the GroveDB proof before the Tenderdash signature, so with
+    /// [`NoQuorumKeysContextProvider`] `QuorumKeyUnavailable` means the Drive part verified
+    pub fn assert_drive_part_of_proof_verified(error: drive_proof_verifier::Error) {
+        assert!(
+            matches!(
+                error,
+                drive_proof_verifier::Error::QuorumKeyUnavailable { .. }
+            ),
+            "expected the Drive part of the proof to verify and the signature check to stop at \
+             the quorum key, got {error:?}"
+        );
     }
 
     /// Set up a platform with token state for testing token queries.

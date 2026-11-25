@@ -3,6 +3,7 @@ use crate::version::fee::data_contract_validation::v1::FEE_DATA_CONTRACT_VALIDAT
 use crate::version::fee::document_reference::v1::FEE_DOCUMENT_REFERENCE_VERSION1;
 use crate::version::fee::document_ttl::v1::FEE_DOCUMENT_TTL_VERSION1;
 use crate::version::fee::hashing::v1::FEE_HASHING_VERSION1;
+use crate::version::fee::private_document::v1::FEE_PRIVATE_DOCUMENT_VERSION1;
 use crate::version::fee::processing::v1::FEE_PROCESSING_VERSION1;
 use crate::version::fee::signature::v1::FEE_SIGNATURE_VERSION1;
 use crate::version::fee::state_transition_min_fees::v1::STATE_TRANSITION_MIN_FEES_VERSION1;
@@ -25,4 +26,6 @@ pub const FEE_VERSION1: FeeVersion = FeeVersion {
     document_ttl: FEE_DOCUMENT_TTL_VERSION1,
     // Unread before protocol version 14: `chooseFirst` does not parse there.
     document_reference: FEE_DOCUMENT_REFERENCE_VERSION1,
+    // Unread before protocol version 15: no private document entry is admitted there.
+    private_document: FEE_PRIVATE_DOCUMENT_VERSION1,
 };

@@ -1,4 +1,5 @@
 use crate::drive::constants::ESTIMATED_NON_UNIQUE_KEY_DUPLICATES;
+use crate::util::estimated_layers::EstimatedLayers;
 
 use crate::drive::{
     non_unique_key_hashes_sub_tree_path_vec, non_unique_key_hashes_tree_path_vec, Drive,
@@ -10,14 +11,13 @@ use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{EstimatedLayerInformation, TreeType};
-use std::collections::HashMap;
 
 impl Drive {
     /// Adds the estimation costs for the insertion of a non unique
     /// public key hash reference
     pub(super) fn add_estimation_costs_for_insert_non_unique_public_key_hash_reference_v0(
         public_key_hash: [u8; 20],
-        estimated_costs_only_with_layer_info: &mut HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        estimated_costs_only_with_layer_info: &mut EstimatedLayers,
     ) {
         let non_unique_key_hashes_path = non_unique_key_hashes_tree_path_vec();
 

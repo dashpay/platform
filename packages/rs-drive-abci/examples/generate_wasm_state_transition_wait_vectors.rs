@@ -9,7 +9,7 @@ use dapi_grpc::Message;
 use dpp::address_funds::AddressWitness;
 use dpp::block::block_info::BlockInfo;
 use dpp::bls::SecretKey;
-use dpp::dashcore::{secp256k1, signer};
+use dpp::dashcore::signer;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::config::moderation::{ContractModerationConfig, ContractModerators};
 use dpp::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
@@ -19,6 +19,7 @@ use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, IdentityV0, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::{platform_value, BinaryData, Value};
+use dpp::secp256k1;
 use dpp::serialization::{PlatformSerializable, PlatformSerializableWithPlatformVersion};
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
@@ -196,6 +197,7 @@ fn wait_response(
                     wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Proof(proof),
                 ),
                 metadata: Some(metadata),
+                state_before_block: None,
             },
         )),
     }
@@ -217,6 +219,7 @@ fn case(drive: &Drive, transition: &StateTransition) -> serde_json::Value {
                     .to_vec(),
                 prove: true,
                 request_user_balance: false,
+                prove_state_before_block: false,
             },
         )),
     };

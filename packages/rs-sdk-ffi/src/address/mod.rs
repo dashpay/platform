@@ -13,6 +13,7 @@ use crate::types::{FFINetwork, Network};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
 use dash_sdk::dpp::address_funds::PlatformAddress;
 use dash_sdk::dpp::dashcore::blockdata::script::Script;
+use dash_sdk::dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dash_sdk::drive::grovedb::operations::proof::GroveDBProof;
 use std::ffi::CString;
 use std::panic::{self, AssertUnwindSafe};
@@ -170,9 +171,7 @@ pub unsafe extern "C" fn dash_sdk_format_grovedb_proof(
 
         let bytes = std::slice::from_raw_parts(proof_bytes, proof_len as usize);
 
-        let config = bincode::config::standard()
-            .with_big_endian()
-            .with_limit::<{ 256 * 1024 * 1024 }>();
+        let config = PLATFORM_BINCODE_CONFIG.with_limit::<{ 256 * 1024 * 1024 }>();
 
         let grovedb_proof: GroveDBProof = match bincode::decode_from_slice_untrusted(bytes, config)
         {

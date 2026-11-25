@@ -9,7 +9,9 @@
 //! `Sdk::new_mock()`.
 //!
 //! The fields are the minimum surface a wire encoder needs today:
-//! protocol version (to pick V0 vs V1 wire shapes), the `prove` flag
+//! protocol version (to pick V0 vs V1 wire shapes), the highest protocol
+//! version verified from the network (for encoders that send a newer shape
+//! only to a network proven to serve it), the `prove` flag
 //! (proof-mode requests vs unproved queries), and a borrowed
 //! [`RequestSettings`] for any future encoder that needs to consult
 //! transport-layer hints (timeouts, ban policy, …) — none do today, but
@@ -33,6 +35,13 @@ pub struct QuerySettings<'a> {
     /// Platform protocol version, used to pick wire encoding (V0 vs V1, etc).
     pub protocol_version: &'a PlatformVersion,
 
+    /// Highest protocol version seen in a verified, signed response, or 0 before
+    /// the first. An encoder whose newer request version is refused by older
+    /// protocol versions selects it from `min(protocol_version, this)`, so a seeded
+    /// or pinned version alone never sends a request the network may refuse.
+    /// 0 always selects the oldest request version.
+    pub verified_protocol_version: u32,
+
     /// Whether to request and verify cryptographic proofs.
     pub prove: bool,
 }
@@ -44,5 +53,15 @@ impl<'a> QuerySettings<'a> {
             prove: false,
             ..*self
         }
+    }
+
+    /// The protocol version a request may rely on both the network and this SDK serving:
+    /// the lower of [`Self::protocol_version`] and [`Self::verified_protocol_version`], 0
+    /// before any verified answer. A request whose newer shape older nodes refuse or answer
+    /// differently uses it only at or above the version that added the shape.
+    pub fn network_protocol_basis(&self) -> u32 {
+        self.protocol_version
+            .protocol_version
+            .min(self.verified_protocol_version)
     }
 }

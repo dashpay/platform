@@ -742,6 +742,92 @@ describe('obtainLetsEncryptCertificateTaskFactory', () => {
       expect(docker.createContainer).to.not.have.been.called();
     });
 
+    // Docker auto-removes each run's container just after reporting its exit,
+    // so a run that starts right after another can find the previous one half
+    // removed. Docker refuses a second removal with this 409 and refuses a new
+    // container under the same name until the first is gone. The earlier run
+    // is not a reason to fail this one: its removal is waited out.
+    it('should wait for an earlier run\'s container to finish being removed', async function it() {
+      const inProgress = Object.assign(
+        new Error('(HTTP code 409) unexpected - removal of container'
+          + ' dashmate-letsencrypt-lego is already in progress'),
+        { statusCode: 409 },
+      );
+
+      let removed = false;
+      let createdAfterRemoval = false;
+
+      const staleContainer = {
+        remove: this.sinon.stub().rejects(inProgress),
+        wait: this.sinon.stub().callsFake(async () => {
+          // Answered a tick later, as the daemon does once the removal ends.
+          await Promise.resolve();
+          removed = true;
+
+          return { StatusCode: 0 };
+        }),
+      };
+
+      const lego = getFailingDockerMock(this.sinon);
+      const docker = {
+        getContainer: this.sinon.stub().resolves(staleContainer),
+        createContainer: this.sinon.stub().callsFake(async (options) => {
+          createdAfterRemoval = removed;
+
+          return lego.createContainer(options);
+        }),
+      };
+
+      const error = await buildFailingTask(this.sinon, docker)(config)
+        .run({ force: true }).catch((e) => e);
+
+      expect(staleContainer.wait).to.have.been.calledOnceWith(
+        this.sinon.match({ condition: 'removed' }),
+      );
+      expect(createdAfterRemoval, 'lego was created after the old container was gone').to.be.true();
+
+      // lego ran, so the failure is what the authority said, not Docker.
+      expect(error.message).to.contain('Timeout during connect');
+      expect(error.message).to.not.contain('could not start the certificate helper');
+    });
+
+    // A removal that never finishes must not hang an unattended renewal: the
+    // wait is bounded, and running out of time is reported as the helper never
+    // having started, because it never did.
+    it('should give up on a removal that never finishes', async function it() {
+      const clock = this.sinon.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const inProgress = Object.assign(
+        new Error('removal of container dashmate-letsencrypt-lego is already in progress'),
+        { statusCode: 409 },
+      );
+
+      let waitSignal;
+
+      const docker = {
+        getContainer: this.sinon.stub().resolves({
+          remove: this.sinon.stub().rejects(inProgress),
+          wait: ({ abortSignal }) => {
+            waitSignal = abortSignal;
+
+            // Runs once the bound is armed, and runs past it.
+            queueMicrotask(() => clock.tick(60000));
+
+            return new Promise(() => {});
+          },
+        }),
+        createContainer: this.sinon.stub(),
+      };
+
+      const error = await buildFailingTask(this.sinon, docker)(config)
+        .run({ force: true }).catch((e) => e);
+
+      expect(error.cause).to.be.an.instanceOf(LegoDidNotStartError);
+      expect(error.message).to.contain('did not finish removing');
+      expect(error.message).to.contain('never contacted');
+      expect(waitSignal.aborted, 'the abandoned wait was cancelled').to.be.true();
+      expect(docker.createContainer).to.not.have.been.called();
+    });
+
     // The Docker error is shown because only it says what happened; asserting
     // the port is occupied for a daemon, permission or configuration failure
     // would send the operator after the wrong thing.

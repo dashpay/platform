@@ -263,25 +263,24 @@ interface DocumentDao {
      * whose winner's mined height the chainlock finality boundary has
      * reached (`:boundary` = `min(chainlockHeight, syncedHeight)`, read
      * by the caller from the wallet row at the end of the round) —
-     * key-wallet's `prune_finalized_observed_spends` condition verbatim,
-     * no observation-age margin: the stamp IS the winner's height, so at
-     * the boundary the funding transaction (mined at or below it) has been
-     * filter-scanned with no false negatives. A tombstone still
-     * collectible here never drained — its funding TXO never arrived — so
-     * the junk case (a foreign input of a swept incoming payment) is
-     * exactly what this removes; a genuine claim's row was already
-     * deleted by the drain that moved the hold onto the TXO. Selects
-     * tombstones only, served by the
-     * `(walletId, isSweptTombstone, winnerMinedHeight)` index; ordinary
-     * pending rows are never materialised here. Unstamped rows are never
-     * collected — and they are a CURRENT, deliberate shape, not legacy
-     * data: a mempool-context sweep (IS-locked, unmined winner) writes its
-     * tombstone with a null stamp, because such a winner has no mining
-     * deadline and no boundary can prove the held funding
+     * key-wallet's `prune_finalized_observed_spends` condition over applied
+     * chainlocks, no observation-age margin: the stamp IS the winner's
+     * height, so at the boundary the funding transaction (mined at or below
+     * it) has been filter-scanned with no false negatives. A tombstone
+     * still collectible here never drained — its funding TXO never arrived
+     * — so the junk case (a foreign input of a swept incoming payment) is
+     * exactly what this removes; a genuine claim's row was already deleted
+     * by the drain that moved the hold onto the TXO. Selects tombstones
+     * only, served by the `(walletId, isSweptTombstone, winnerMinedHeight)`
+     * index; ordinary pending rows are never materialised here. Unstamped
+     * rows are never collected — and they are a CURRENT, deliberate shape,
+     * not legacy data: a mempool-context sweep (IS-locked, unmined winner)
+     * writes its tombstone with a null stamp, because such a winner has no
+     * mining deadline and no boundary can prove the held funding
      * delivered-or-never. An unstamped hold resolves only through proof —
      * the funding TXO drains it, a later block-context sweep re-stamps it
-     * into this collector's reach, or a release deletes it — and holding
-     * an unresolved one forever is the contract, not a safe fallback.
+     * into this collector's reach, or a release deletes it — and holding an
+     * unresolved one forever is the contract, not a safe fallback.
      */
     @Query(
         "DELETE FROM pending_inputs " +

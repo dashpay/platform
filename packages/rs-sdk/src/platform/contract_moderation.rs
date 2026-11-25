@@ -511,6 +511,7 @@ mod tests {
         QuerySettings {
             request_settings,
             protocol_version: PlatformVersion::latest(),
+            verified_protocol_version: 0,
             prove: true,
         }
     }

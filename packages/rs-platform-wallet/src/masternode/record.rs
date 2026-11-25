@@ -7,11 +7,11 @@
 //! injected [`ListMembership`] lookup. Everything here is pure and
 //! host-agnostic; the FFI crates only marshal the results.
 
-use std::net::IpAddr;
-
 use dashcore::blockdata::transaction::special_transaction::provider_registration::MasternodePayoutShare;
-use dashcore::sml::masternode_list_entry::net_info::{Bip155Network, NetInfoEntry, NetInfoPurpose};
+use dashcore::sml::masternode_list_entry::net_info::NetInfoPurpose;
 use dashcore::sml::masternode_list_entry::MasternodeNetInfo;
+
+use super::list::socket_address;
 
 /// Fixed-size hash copies. `Txid` / `PubkeyHash` are exactly 32 / 20
 /// bytes, so `copy_from_slice` on `as_ref()` is length-exact and cannot
@@ -76,20 +76,9 @@ pub(crate) fn platform_http_port(
         .purposes
         .iter()
         .find(|(purpose, _)| *purpose == NetInfoPurpose::PlatformHttps)?;
-    https.iter().find_map(|entry| match entry {
-        NetInfoEntry::Service {
-            network,
-            addr,
-            port,
-        } => {
-            let ip = match network {
-                Bip155Network::Ipv4 => IpAddr::from(<[u8; 4]>::try_from(addr.as_slice()).ok()?),
-                Bip155Network::Ipv6 => IpAddr::from(<[u8; 16]>::try_from(addr.as_slice()).ok()?),
-                _ => return None,
-            };
-            (ip.to_canonical() == service_ip).then_some(*port)
-        }
-        _ => None,
+    https.iter().find_map(|entry| {
+        let address = socket_address(entry)?;
+        (address.ip().to_canonical() == service_ip).then_some(address.port())
     })
 }
 
@@ -585,7 +574,7 @@ pub(crate) mod core_v24_vectors {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dashcore::sml::masternode_list_entry::MasternodeNetInfo;
+    use dashcore::sml::masternode_list_entry::net_info::{Bip155Network, NetInfoEntry};
 
     /// ProRegTx provider payload is lifted from the DIP-3 special-tx
     /// body for the UI. Fixture is the testnet
@@ -1370,7 +1359,6 @@ mod tests {
     /// that pays an empty script.
     #[test]
     fn should_never_take_an_empty_script_as_the_owner_payout() {
-        use dashcore::hashes::Hash;
         use dashcore::{PubkeyHash, ScriptBuf};
 
         let empty = ScriptBuf::new();

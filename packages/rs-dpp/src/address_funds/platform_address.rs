@@ -5,18 +5,18 @@ use crate::prelude::AddressNonce;
 use crate::serialization::JsonConvertible;
 #[cfg(all(feature = "value-conversion", feature = "serde-conversion"))]
 use crate::serialization::ValueConvertible;
+use crate::util::ecdsa;
 use crate::ProtocolError;
 use bech32::{Bech32m, Hrp};
 use bincode::{Decode, DecodeUntrusted, Encode};
 use dashcore::address::Payload;
 use dashcore::blockdata::script::ScriptBuf;
-use dashcore::hashes::{sha256d, Hash};
-use dashcore::secp256k1::Message;
-use dashcore::sign_message::MessageSignature;
-use dashcore::{Address, Network, PrivateKey, PubkeyHash, PublicKey, ScriptHash};
+use dashcore::hashes::sha256d;
+use dashcore::{sign_message, Address, Network, PrivateKey, PubkeyHash, PublicKey, ScriptHash};
 use platform_serialization_derive::{
     PlatformDeserializeTrusted, PlatformDeserializeUntrusted, PlatformSerialize,
 };
+use platform_version::version::PlatformVersion;
 #[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
@@ -472,14 +472,19 @@ impl PlatformAddress {
     /// # Arguments
     /// * `witness` - The witness containing signature(s) and either a public key (P2PKH) or redeem script (P2SH)
     /// * `signable_bytes` - The data that was signed (will be double-SHA256 hashed internally)
+    /// * `platform_version` - Selects `verify_hash_signature` for a P2PKH witness: from protocol
+    ///   version 15 a high-S signature and a header naming an uncompressed key are refused.
     ///
     /// # Returns
     /// * `Ok(AddressWitnessVerificationOperations)` - Operations performed if verification succeeds
-    /// * `Err(ProtocolError)` if verification fails
+    /// * `Err(ProtocolError::UnknownVersionMismatch)` if this build does not know the selected
+    ///   `verify_hash_signature` version
+    /// * `Err(ProtocolError)` of another kind if verification fails
     pub fn verify_bytes_against_witness(
         &self,
         witness: &AddressWitness,
         signable_bytes: &[u8],
+        platform_version: &PlatformVersion,
     ) -> Result<AddressWitnessVerificationOperations, ProtocolError> {
         match (self, witness) {
             (PlatformAddress::P2pkh(pubkey_hash), AddressWitness::P2pkh { signature }) => {
@@ -491,11 +496,12 @@ impl PlatformAddress {
                 // This saves 33 bytes per witness (no need to include pubkey)
                 // at a ~4% CPU cost increase (recovery vs verify).
                 let data_hash = dashcore::signer::double_sha(signable_bytes);
-                dashcore::signer::verify_hash_signature(
+                ecdsa::verify_hash_signature(
                     &data_hash,
                     signature.as_slice(),
                     pubkey_hash,
-                )
+                    platform_version,
+                )?
                 .map_err(|e| {
                     ProtocolError::AddressWitnessError(format!(
                         "P2PKH signature verification failed: {}",
@@ -551,13 +557,12 @@ impl PlatformAddress {
                 let mut signature_verifications: u16 = 0;
 
                 let signable_bytes_hash = sha256d::Hash::hash(signable_bytes).to_byte_array();
-                let msg = Message::from_digest(signable_bytes_hash);
 
                 while sig_idx < valid_signatures.len() && pubkey_idx < pubkeys.len() {
                     signature_verifications += 1;
 
-                    let sig = MessageSignature::from_slice(valid_signatures[sig_idx].as_slice())
-                        .map(|message_signature| message_signature.signature)
+                    let sig = sign_message::from_slice(valid_signatures[sig_idx].as_slice())
+                        .and_then(|signature| signature.signature().map_err(Into::into))
                         .map_err(|e| {
                             ProtocolError::AddressWitnessError(format!(
                                 "Invalid signature format: {}",
@@ -569,7 +574,7 @@ impl PlatformAddress {
                         ProtocolError::AddressWitnessError(format!("Invalid public key: {}", e))
                     })?;
 
-                    if sig.to_standard().verify(msg, &pub_key.inner).is_ok() {
+                    if ecdsa::verify_digest(&pub_key.inner, &signable_bytes_hash, sig).is_ok() {
                         matched += 1;
                         sig_idx += 1;
                     }
@@ -789,10 +794,9 @@ impl FromStr for PlatformAddress {
 mod tests {
     use super::*;
     use dashcore::blockdata::opcodes::all::*;
-    use dashcore::hashes::Hash;
-    use dashcore::secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
     use dashcore::PublicKey;
     use platform_value::BinaryData;
+    use secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
 
     /// All non-mainnet networks share the `tdash` HRP (DIP-0018), so an address parsed from a
     /// bech32m string can only ever report Mainnet or Testnet — never Devnet/Regtest. Network
@@ -857,7 +861,9 @@ mod tests {
         let (secret_key, public_key) = create_keypair(seed);
 
         // Create PrivateKey from the secret key
-        let private_key = PrivateKey::new(secret_key, Network::Testnet);
+        let private_key =
+            PrivateKey::from_byte_array(secret_key.as_secret_bytes(), Network::Testnet)
+                .expect("valid test secret key");
 
         // Derive address using From<&PrivateKey>
         let address_from_private = PlatformAddress::from(&private_key);
@@ -899,7 +905,11 @@ mod tests {
         };
 
         // Verify should succeed
-        let result = address.verify_bytes_against_witness(&witness, signable_bytes);
+        let result = address.verify_bytes_against_witness(
+            &witness,
+            signable_bytes,
+            PlatformVersion::latest(),
+        );
         assert!(
             result.is_ok(),
             "P2PKH verification should succeed: {:?}",
@@ -928,7 +938,8 @@ mod tests {
         };
 
         // Verify should fail (recovered pubkey won't match because message differs)
-        let result = address.verify_bytes_against_witness(&witness, verify_bytes);
+        let result =
+            address.verify_bytes_against_witness(&witness, verify_bytes, PlatformVersion::latest());
         assert!(
             result.is_err(),
             "P2PKH verification should fail with wrong data"
@@ -957,7 +968,11 @@ mod tests {
         };
 
         // Verify should fail (recovered pubkey hash won't match address)
-        let result = address.verify_bytes_against_witness(&witness, signable_bytes);
+        let result = address.verify_bytes_against_witness(
+            &witness,
+            signable_bytes,
+            PlatformVersion::latest(),
+        );
         assert!(
             result.is_err(),
             "P2PKH verification should fail when signed with wrong key"
@@ -998,7 +1013,11 @@ mod tests {
         };
 
         // Verify should succeed
-        let result = address.verify_bytes_against_witness(&witness, signable_bytes);
+        let result = address.verify_bytes_against_witness(
+            &witness,
+            signable_bytes,
+            PlatformVersion::latest(),
+        );
         assert!(
             result.is_ok(),
             "P2SH 2-of-3 multisig verification should succeed: {:?}",
@@ -1035,7 +1054,11 @@ mod tests {
         };
 
         // Verify should succeed
-        let result = address.verify_bytes_against_witness(&witness, signable_bytes);
+        let result = address.verify_bytes_against_witness(
+            &witness,
+            signable_bytes,
+            PlatformVersion::latest(),
+        );
         assert!(
             result.is_ok(),
             "P2SH 2-of-3 multisig with keys 1 and 2 should succeed: {:?}",
@@ -1071,7 +1094,11 @@ mod tests {
         };
 
         // Verify should fail
-        let result = address.verify_bytes_against_witness(&witness, signable_bytes);
+        let result = address.verify_bytes_against_witness(
+            &witness,
+            signable_bytes,
+            PlatformVersion::latest(),
+        );
         assert!(
             result.is_err(),
             "P2SH should fail with only 1 signature when 2 required"
@@ -1110,7 +1137,11 @@ mod tests {
         };
 
         // Verify should fail (script doesn't hash to address)
-        let result = address.verify_bytes_against_witness(&witness, signable_bytes);
+        let result = address.verify_bytes_against_witness(
+            &witness,
+            signable_bytes,
+            PlatformVersion::latest(),
+        );
         assert!(
             result.is_err(),
             "P2SH should fail when script hash doesn't match address"
@@ -1151,8 +1182,11 @@ mod tests {
         let p2pkh_witness = AddressWitness::P2pkh {
             signature: BinaryData::new(p2pkh_sig),
         };
-        let p2pkh_result =
-            p2pkh_address.verify_bytes_against_witness(&p2pkh_witness, signable_bytes);
+        let p2pkh_result = p2pkh_address.verify_bytes_against_witness(
+            &p2pkh_witness,
+            signable_bytes,
+            PlatformVersion::latest(),
+        );
         assert!(
             p2pkh_result.is_ok(),
             "P2PKH redemption should succeed: {:?}",
@@ -1166,7 +1200,11 @@ mod tests {
             signatures: vec![BinaryData::new(p2sh_sig0), BinaryData::new(p2sh_sig2)],
             redeem_script: BinaryData::new(redeem_script),
         };
-        let p2sh_result = p2sh_address.verify_bytes_against_witness(&p2sh_witness, signable_bytes);
+        let p2sh_result = p2sh_address.verify_bytes_against_witness(
+            &p2sh_witness,
+            signable_bytes,
+            PlatformVersion::latest(),
+        );
         assert!(
             p2sh_result.is_ok(),
             "P2SH redemption should succeed: {:?}",
@@ -1195,7 +1233,11 @@ mod tests {
             signatures: vec![BinaryData::new(vec![0x30, 0x44])],
             redeem_script: BinaryData::new(vec![0x52]),
         };
-        let result = p2pkh_address.verify_bytes_against_witness(&p2sh_witness, signable_bytes);
+        let result = p2pkh_address.verify_bytes_against_witness(
+            &p2sh_witness,
+            signable_bytes,
+            PlatformVersion::latest(),
+        );
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -1206,7 +1248,11 @@ mod tests {
         let p2pkh_witness = AddressWitness::P2pkh {
             signature: BinaryData::new(vec![0x30, 0x44]),
         };
-        let result = p2sh_address.verify_bytes_against_witness(&p2pkh_witness, signable_bytes);
+        let result = p2sh_address.verify_bytes_against_witness(
+            &p2pkh_witness,
+            signable_bytes,
+            PlatformVersion::latest(),
+        );
         assert!(result.is_err());
         assert!(result
             .unwrap_err()

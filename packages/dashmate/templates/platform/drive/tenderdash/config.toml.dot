@@ -541,13 +541,8 @@ unsafe-vote-timeout-delta-override = "{{= it.platform.drive.tenderdash.consensus
 # Options:
 #   1) "null" (default) - no indexer services.
 #   2) "kv" - a simple indexer backed by key-value storage (see DBBackend)
-#   3) "psql" - the indexer services backed by PostgreSQL.
-# When "kv" or "psql" is chosen "tx.height" and "tx.hash" will always be indexed.
+# When "kv" is chosen "tx.height" and "tx.hash" will always be indexed.
 indexer = ["kv"]
-
-# The PostgreSQL connection configuration, the connection format:
-#   postgresql://<user>:<password>@<host>:<port>/<db>?<opts>
-psql-conn = ""
 
 #######################################################
 ###       Instrumentation Configuration Options     ###

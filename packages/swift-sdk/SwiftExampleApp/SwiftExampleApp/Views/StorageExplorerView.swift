@@ -77,6 +77,20 @@ struct StorageExplorerView: View {
                 DashpayIgnoredSenderStorageListView(network: network)
             }
             modelRow(
+                "Private Request Positions",
+                icon: "bookmark",
+                type: PersistentPrivateContactRequestsPosition.self
+            ) {
+                PrivateContactRequestsPositionStorageListView(network: network)
+            }
+            modelRow(
+                "Private Shielded Addresses",
+                icon: "lock.rectangle",
+                type: PersistentPrivateShieldedAddress.self
+            ) {
+                PrivateShieldedAddressStorageListView(network: network)
+            }
+            modelRow(
                 "Sent Invitations",
                 icon: "paperplane",
                 type: PersistentInvitation.self
@@ -147,6 +161,9 @@ struct StorageExplorerView: View {
             }
             modelRow("Asset Locks", icon: "lock.shield", type: PersistentAssetLock.self) {
                 AssetLockStorageListView(network: network)
+            }
+            modelRow("Locked Outpoints", icon: "lock", type: PersistentLockedOutpoint.self) {
+                LockedOutpointStorageListView(network: network)
             }
             modelRow("Masternodes", icon: "server.rack", type: PersistentMasternode.self) {
                 MasternodeStorageListView(network: network)
@@ -291,12 +308,15 @@ struct StorageExplorerView: View {
         directCount(PersistentDashpayContactProfile.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDashpayPayment.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDashpayIgnoredSender.self, predicate: #Predicate { $0.networkRaw == raw })
+        directCount(PersistentPrivateContactRequestsPosition.self, predicate: #Predicate { $0.networkRaw == raw })
+        directCount(PersistentPrivateShieldedAddress.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDocument.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentDataContract.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentTokenBalance.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentPlatformAddressesSyncState.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentWallet.self, predicate: #Predicate { $0.networkRaw == raw })
         directCount(PersistentWalletManagerMetadata.self, predicate: #Predicate { $0.networkRaw == raw })
+        directCount(PersistentLockedOutpoint.self, predicate: #Predicate { $0.networkRaw == raw })
 
         // Models that derive their network through a relationship —
         // SwiftData's predicate compiler can't follow optional

@@ -131,22 +131,8 @@ impl std::fmt::Display for ScanKeyError {
     }
 }
 
-/// Owns a resolved master xpriv and erases it when it drops.
-///
-/// `ExtendedPrivKey` has no erasing `Drop`, so an explicit
-/// `non_secure_erase` at the end of the scan only covers the paths that reach
-/// it. A caller that drops the whole `start_wallet_subsystems` future while
-/// discovery is awaiting Platform reaches none of them, and the scalar stays
-/// in the freed future. Tying the erase to the value's lifetime instead of to
-/// a code path makes cancellation — which this call now invites, since it is
-/// budget-bounded and abandonable by design — a non-event.
+/// Owns a resolved master xpriv whose secret key zeroizes on drop.
 struct ScanKeyGuard(ExtendedPrivKey);
-
-impl Drop for ScanKeyGuard {
-    fn drop(&mut self) {
-        self.0.private_key.non_secure_erase();
-    }
-}
 
 impl std::ops::Deref for ScanKeyGuard {
     type Target = ExtendedPrivKey;
@@ -1045,6 +1031,7 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zeroize::Zeroizing;
 
     fn identity() -> Identifier {
         Identifier::from([7u8; 32])
@@ -1420,7 +1407,7 @@ mod tests {
         }
     }
 
-    fn seed_for(phrase: &str) -> [u8; 64] {
+    fn seed_for(phrase: &str) -> Zeroizing<[u8; 64]> {
         use key_wallet::mnemonic::Mnemonic;
         Mnemonic::from_phrase(phrase)
             .expect("valid test mnemonic")
@@ -1529,8 +1516,10 @@ mod tests {
         assert_eq!(receiving_account_count(&manager, &wallet_id).await, 0);
         assert_eq!(drainable(&manager, &wallet_id).await, 1);
 
-        let foreign =
-            SeedCryptoProvider::from_seed(seed_for(FOREIGN_MNEMONIC), key_wallet::Network::Testnet);
+        let foreign = SeedCryptoProvider::from_seed(
+            *seed_for(FOREIGN_MNEMONIC),
+            key_wallet::Network::Testnet,
+        );
         let outcome = manager
             .start_wallet_subsystems(
                 &wallet_id,
@@ -1569,7 +1558,7 @@ mod tests {
 
         let (manager, wallet_id) = manager_with_queued_contact_crypto().await;
         let owning =
-            SeedCryptoProvider::from_seed(seed_for(OWNING_MNEMONIC), key_wallet::Network::Testnet);
+            SeedCryptoProvider::from_seed(*seed_for(OWNING_MNEMONIC), key_wallet::Network::Testnet);
 
         let outcome = manager
             .start_wallet_subsystems(
@@ -1616,7 +1605,7 @@ mod tests {
         let (manager, wallet_id) = manager_with_queued_contact_crypto().await;
         establish_queued_contact(&manager, wallet_id).await;
         let owning =
-            SeedCryptoProvider::from_seed(seed_for(OWNING_MNEMONIC), key_wallet::Network::Testnet);
+            SeedCryptoProvider::from_seed(*seed_for(OWNING_MNEMONIC), key_wallet::Network::Testnet);
 
         let outcome = manager
             .start_wallet_subsystems(
@@ -1807,7 +1796,7 @@ mod tests {
         let (manager, wallet_id) = manager_with_queued_contact_crypto_on(backend.clone()).await;
         establish_queued_contact(&manager, wallet_id).await;
         let owning =
-            SeedCryptoProvider::from_seed(seed_for(OWNING_MNEMONIC), key_wallet::Network::Testnet);
+            SeedCryptoProvider::from_seed(*seed_for(OWNING_MNEMONIC), key_wallet::Network::Testnet);
 
         let outcome = manager
             .start_wallet_subsystems(
@@ -1845,7 +1834,7 @@ mod tests {
         establish_queued_contact(&manager, wallet_id).await;
         *backend.stall_account_round.lock().unwrap() = Some(budget + Duration::from_millis(500));
         let owning =
-            SeedCryptoProvider::from_seed(seed_for(OWNING_MNEMONIC), key_wallet::Network::Testnet);
+            SeedCryptoProvider::from_seed(*seed_for(OWNING_MNEMONIC), key_wallet::Network::Testnet);
 
         let outcome = manager
             .start_wallet_subsystems(
@@ -1929,8 +1918,10 @@ mod tests {
         }
         assert_eq!(drainable(&manager, &wallet_id).await, 0);
 
-        let foreign =
-            SeedCryptoProvider::from_seed(seed_for(FOREIGN_MNEMONIC), key_wallet::Network::Testnet);
+        let foreign = SeedCryptoProvider::from_seed(
+            *seed_for(FOREIGN_MNEMONIC),
+            key_wallet::Network::Testnet,
+        );
         let outcome = manager
             .start_wallet_subsystems(
                 &wallet_id,
@@ -2010,7 +2001,7 @@ mod tests {
 
         // And the sequence must not record it as a sync that ran.
         let owning =
-            SeedCryptoProvider::from_seed(seed_for(OWNING_MNEMONIC), key_wallet::Network::Testnet);
+            SeedCryptoProvider::from_seed(*seed_for(OWNING_MNEMONIC), key_wallet::Network::Testnet);
         let outcome = manager
             .start_wallet_subsystems(
                 &wallet_id,
@@ -2062,7 +2053,7 @@ mod tests {
 
         let (manager, wallet_id) = manager_with_queued_contact_crypto().await;
         let owning =
-            SeedCryptoProvider::from_seed(seed_for(OWNING_MNEMONIC), key_wallet::Network::Testnet);
+            SeedCryptoProvider::from_seed(*seed_for(OWNING_MNEMONIC), key_wallet::Network::Testnet);
 
         // The wallet arrives with an unanswered index on record — the verdict
         // an abandoned scan leaves behind (index 0 probed, unanswered),

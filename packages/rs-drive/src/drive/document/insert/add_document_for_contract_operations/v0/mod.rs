@@ -3,6 +3,7 @@ use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeTyp
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
 use crate::util::grove_operations::QueryTarget::QueryTargetValue;
 use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods};
@@ -12,9 +13,7 @@ use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, Docume
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 
 use dpp::version::PlatformVersion;
-use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
-use std::collections::HashMap;
+use grovedb::TransactionArg;
 
 impl Drive {
     /// Gathers the operations to add a document to a contract.
@@ -26,9 +25,7 @@ impl Drive {
         override_document: bool,
         block_info: &BlockInfo,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
-        estimated_costs_only_with_layer_info: &mut Option<
-            HashMap<KeyInfoPath, EstimatedLayerInformation>,
-        >,
+        estimated_costs_only_with_layer_info: &mut Option<EstimatedLayers>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {

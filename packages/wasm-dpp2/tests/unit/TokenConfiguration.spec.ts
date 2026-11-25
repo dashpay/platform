@@ -289,6 +289,100 @@ describe('TokenConfiguration', () => {
     return (contract.tokens as Record<number, wasm.TokenConfiguration>)[0];
   }
 
+  describe('document token costs', () => {
+    it('should validate a document type paying with the contract\'s own token', () => {
+      // The document types are validated with the contract's tokens: a cost in token 0 of a
+      // contract that declares token 0 is valid.
+      const contract = new wasm.DataContract({
+        ownerId,
+        identityNonce: BigInt(3),
+        schemas: {
+          note: {
+            type: 'object',
+            tokenCost: {
+              create: { tokenPosition: 0, amount: 5, gasFeesPaidBy: 0 },
+            },
+            properties: {
+              title: { type: 'string', maxLength: 100, position: 0 },
+            },
+            additionalProperties: false,
+          },
+        },
+        definitions: null,
+        fullValidation: true,
+        tokens: { 0: createConfiguration() },
+      });
+
+      expect(Object.keys(contract.tokens as Record<number, unknown>)).to.deep.equal(['0']);
+    });
+
+    it('should refuse tokens on a platform version whose contracts hold none', () => {
+      // Protocol version 8 builds data contracts of structure version 0, which have no tokens.
+      expect(() => new wasm.DataContract({
+        ownerId,
+        identityNonce: BigInt(5),
+        schemas: object.documentSchemas,
+        definitions: null,
+        fullValidation: false,
+        tokens: { 0: createConfiguration() },
+        platformVersion: new wasm.PlatformVersion(8),
+      })).to.throw(/structure version 0/);
+    });
+
+    it('should refuse tokens set on a contract that holds none', () => {
+      // Protocol version 8 builds data contracts of structure version 0, which have no tokens.
+      const contract = new wasm.DataContract({
+        ownerId,
+        identityNonce: BigInt(6),
+        schemas: object.documentSchemas,
+        definitions: null,
+        fullValidation: false,
+        platformVersion: new wasm.PlatformVersion(8),
+      });
+
+      expect(() => {
+        contract.tokens = { 0: createConfiguration() };
+      }).to.throw(/structure version 0/);
+      contract.tokens = {};
+      expect(Object.keys(contract.tokens as Record<number, unknown>)).to.deep.equal([]);
+    });
+
+    it('should set tokens on a contract that holds them', () => {
+      const contract = new wasm.DataContract({
+        ownerId,
+        identityNonce: BigInt(7),
+        schemas: object.documentSchemas,
+        definitions: null,
+        fullValidation: false,
+      });
+
+      contract.tokens = { 0: createConfiguration() };
+      expect(Object.keys(contract.tokens as Record<number, unknown>)).to.deep.equal(['0']);
+    });
+
+    it('should refuse a cost in a token the contract does not declare', () => {
+      expect(() => new wasm.DataContract({
+        ownerId,
+        identityNonce: BigInt(4),
+        schemas: {
+          note: {
+            type: 'object',
+            tokenCost: {
+              create: { tokenPosition: 1, amount: 5, gasFeesPaidBy: 0 },
+            },
+            properties: {
+              title: { type: 'string', maxLength: 100, position: 0 },
+            },
+            additionalProperties: false,
+          },
+        },
+        definitions: null,
+        fullValidation: true,
+        tokens: { 0: createConfiguration() },
+      })).to.throw();
+    });
+  });
+
   describe('minimumPoolNotesForOutgoing', () => {
     it('should keep a threshold asked for at creation', () => {
       const config = createConfiguration({
@@ -418,6 +512,33 @@ describe('TokenConfiguration', () => {
         transferable: false,
         minimumPoolNotesForOutgoing: BigInt(5),
       })).to.throw(/hasShieldedPool/);
+    });
+  });
+
+  describe('tradeMode', () => {
+    it('should name both trade modes', () => {
+      expect(wasm.TokenTradeMode.NotTradeable().value).to.equal('NotTradeable');
+      expect(wasm.TokenTradeMode.Tradeable().value).to.equal('Tradeable');
+    });
+
+    it('should keep a tradeable mode in the marketplace rules', () => {
+      const changeRules = new wasm.ChangeControlRules({
+        authorizedToMakeChange: wasm.AuthorizedActionTakers.ContractOwner(),
+        adminActionTakers: wasm.AuthorizedActionTakers.NoOne(),
+        isChangingAuthorizedActionTakersToNoOneAllowed: false,
+        isChangingAdminActionTakersToNoOneAllowed: false,
+        isSelfChangingAdminActionTakersAllowed: false,
+      });
+      const marketplaceRules = new wasm.TokenMarketplaceRules(
+        wasm.TokenTradeMode.Tradeable(),
+        changeRules,
+      );
+
+      expect(marketplaceRules.tradeMode.value).to.equal('Tradeable');
+
+      marketplaceRules.tradeMode = wasm.TokenTradeMode.NotTradeable();
+
+      expect(marketplaceRules.tradeMode.value).to.equal('NotTradeable');
     });
   });
 });

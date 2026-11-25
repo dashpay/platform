@@ -125,6 +125,148 @@ public struct PathElement: Sendable {
     }
 }
 
+/// Which revisions of a keep-history document to read. Exactly one
+/// filter applies per `documentGetHistory` call.
+public enum DocumentHistoryFilter: Sendable {
+    /// Revisions written at or after the time, oldest first. Zero reads
+    /// the first page of the whole history.
+    case startAtTime(ms: UInt64)
+    /// Revisions after the complete cursor of the last entry received.
+    case startAfter(timeMs: UInt64, revision: UInt64)
+    /// Revisions from the history sequence number onwards.
+    case startAtRevision(UInt64)
+    /// Exactly the revision at the history sequence number; the limit
+    /// must be one.
+    case revision(UInt64)
+
+    var ffiValue: UInt32 {
+        switch self {
+        case .startAtTime: return HistoryStartAtTime.rawValue
+        case .startAfter: return HistoryStartAfter.rawValue
+        case .startAtRevision: return HistoryStartAtRevision.rawValue
+        case .revision: return HistoryRevision.rawValue
+        }
+    }
+
+    var timeMs: UInt64 {
+        switch self {
+        case .startAtTime(let ms): return ms
+        case .startAfter(let timeMs, _): return timeMs
+        case .startAtRevision, .revision: return 0
+        }
+    }
+
+    var revisionValue: UInt64 {
+        switch self {
+        case .startAtTime: return 0
+        case .startAfter(_, let revision): return revision
+        case .startAtRevision(let revision), .revision(let revision): return revision
+        }
+    }
+}
+
+/// Where a keep-history document stands in its lifecycle, as the history
+/// query authenticates it.
+public enum DocumentLifecycleState: String, Sendable {
+    /// Visible to ordinary reads.
+    case active = "ACTIVE"
+    /// Deleted with its revisions retained.
+    case deleted = "DELETED"
+    /// An authorized erasure has begun and revisions are being removed.
+    case erasing = "ERASING"
+    /// Nothing is left.
+    case absent = "ABSENT"
+}
+
+/// The `lifecycle` block of a `documentGetHistory` result.
+public struct DocumentHistoryLifecycle: Sendable {
+    public let state: DocumentLifecycleState
+    /// Exact count of revisions still retained (zero when absent).
+    public let remainingRevisions: UInt64
+    /// Deletion time while deleted or erasing; zero otherwise.
+    public let deletedAtMs: UInt64
+    /// Erase start time while erasing; zero otherwise.
+    public let erasingStartedAtMs: UInt64
+    /// Newest retained revision's time when erasure began; zero unless erasing.
+    public let erasingFromTimeMs: UInt64
+    /// History sequence number of that revision; zero unless erasing.
+    public let erasingFromRevision: UInt64
+
+    /// Parses the `lifecycle` dictionary of a `documentGetHistory`
+    /// result; nil when the block, its state, or any of its numbers is
+    /// missing, unknown, or not a non-negative integer, so a partial block
+    /// is never read as zeros.
+    public init?(json: [String: Any]) {
+        guard let stateRaw = json["state"] as? String,
+              let state = DocumentLifecycleState(rawValue: stateRaw) else {
+            return nil
+        }
+        func value(_ key: String) -> UInt64? {
+            // JSONSerialization preserves Rust's integer JSON in NSNumber.
+            // Reject booleans and parse its decimal representation exactly,
+            // avoiding Double rounding at the upper UInt64 boundary.
+            guard let number = json[key] as? NSNumber,
+                  CFGetTypeID(number) != CFBooleanGetTypeID() else {
+                return nil
+            }
+            return UInt64(number.stringValue)
+        }
+        guard let remainingRevisions = value("remaining_revisions"),
+              let deletedAtMs = value("deleted_at_ms"),
+              let erasingStartedAtMs = value("erasing_started_at_ms"),
+              let erasingFromTimeMs = value("erasing_from_time_ms"),
+              let erasingFromRevision = value("erasing_from_revision") else {
+            return nil
+        }
+        self.state = state
+        self.remainingRevisions = remainingRevisions
+        self.deletedAtMs = deletedAtMs
+        self.erasingStartedAtMs = erasingStartedAtMs
+        self.erasingFromTimeMs = erasingFromTimeMs
+        self.erasingFromRevision = erasingFromRevision
+    }
+
+    init(ffi: DocumentLifecycleObservationFFI) throws {
+        switch ffi.state {
+        case 1: state = .active
+        case 2: state = .absent
+        case 3: state = .deleted
+        case 4: state = .erasing
+        default: throw DocumentEraseResultUnreadable()
+        }
+        remainingRevisions = ffi.remaining_revisions
+        deletedAtMs = ffi.deleted_at_ms
+        erasingStartedAtMs = ffi.erasing_started_at_ms
+        erasingFromTimeMs = ffi.erasing_from_time_ms
+        erasingFromRevision = ffi.erasing_from_revision
+    }
+
+    /// Words for what an erase achieved, from the lifecycle read before it
+    /// was submitted (nil when not read) and the one read after its absence
+    /// was observed. The erase result itself proves only that the document
+    /// is absent from ordinary reads, which it already was, so a document
+    /// still DELETED with the same retained count is reported as not
+    /// established, never as an accepted or completed erase.
+    public static func describeEraseProgress(
+        before: DocumentHistoryLifecycle?,
+        after: DocumentHistoryLifecycle
+    ) -> String {
+        switch after.state {
+        case .absent:
+            return "Erasure complete: no retained revisions remain."
+        case .erasing:
+            return "Erasure in progress: \(after.remainingRevisions) revisions still retained; submit another erase to continue."
+        case .deleted:
+            if let before, before.state == .deleted, before.remainingRevisions == after.remainingRevisions {
+                return "Not established: the document is still DELETED with \(after.remainingRevisions) revisions retained, so the history shows nothing this erase removed."
+            }
+            return "The document is DELETED with \(after.remainingRevisions) revisions retained; no erasure has been recorded."
+        case .active:
+            return "The document is active; an erase applies only after it has been deleted."
+        }
+    }
+}
+
 // MARK: - Platform Query Extensions for SDK
 @MainActor
 extension SDK {
@@ -217,21 +359,15 @@ extension SDK {
     // MARK: - Identity Queries
 
     /// Get an identity by ID
-    @MainActor
-    public func identityGet(identityId: String) async throws -> [String: Any] {
-        print("🔵 SDK.identityGet: Called with ID: \(identityId)")
-
-        guard let sdkHandle = handle else {
-            print("❌ SDK.identityGet: SDK handle is nil")
-            throw SDKError.invalidState("SDK not initialized")
+    ///
+    /// `nonisolated`: the fetch blocks on the network inside Rust, so it runs
+    /// on the shared Platform query queue (see ``performBlockingQuery(_:)``)
+    /// instead of on the caller's actor.
+    public nonisolated func identityGet(identityId: String) async throws -> sending [String: Any] {
+        let json = try await performBlockingQuery { handle in
+            try Self.consumeStringResult(dash_sdk_identity_fetch(handle, identityId))
         }
-
-        print("🔵 SDK.identityGet: SDK handle exists: \(sdkHandle)")
-        print("🔵 SDK.identityGet: About to call dash_sdk_identity_fetch with handle and ID: \(identityId)")
-
-        // Make the FFI call directly and return the parsed JSON
-        let result = dash_sdk_identity_fetch(sdkHandle, identityId)
-        return try processJSONResult(result)
+        return try Self.parseJSONObject(json)
     }
 
     /// Get identity keys
@@ -252,7 +388,23 @@ extension SDK {
         return try processJSONResult(result)
     }
 
-    /// Get identities contract keys
+    /// Get identities contract keys: the key Platform's current-key reference names for each
+    /// identity, the contract (or `documentType` of it) and each purpose, read from a proved
+    /// response. What that reference holds, and which purposes can ever have a key, is described
+    /// on rs-sdk's `IdentitiesContractKeysQuery`; see also
+    /// `dash_sdk_identities_fetch_contract_keys`.
+    ///
+    /// Every requested identity id is a key of the result, and every requested purpose
+    /// (`"authentication"`, `"encryption"`, `"decryption"`, `"transfer"`, `"system"`, `"voting"`,
+    /// `"owner"`) a key under it, `NSNull` when the proof shows no reference. A key's value holds
+    /// `id`, `type`, `data` (hex), `purpose`, `security_level`, `read_only` and `disabled_at`.
+    ///
+    /// `purposes` takes the numbers `"0"` (authentication) to `"6"` (owner); `nil` asks for
+    /// `"0"` to `"3"`, and a number outside `"0"` to `"6"` throws, also when there are no identity
+    /// ids. An empty array asks for no purposes, which throws (invalid parameter) when there are
+    /// identity ids. An empty
+    /// `documentType` is the same as `nil`; any other name is asked for as given. No identity ids
+    /// answer an empty dictionary, without a query.
     public func identityGetContractKeys(
         identityIds: [String],
         contractId: String,
@@ -266,7 +418,7 @@ extension SDK {
         // Join identity IDs with commas
         let identityIdsStr = identityIds.joined(separator: ",")
 
-        // Convert purposes to comma-separated string (default to all purposes if not specified)
+        // Convert purposes to comma-separated string (authentication to transfer if not specified)
         let purposesStr = purposes?.joined(separator: ",") ?? "0,1,2,3"
 
         let result = dash_sdk_identities_fetch_contract_keys(
@@ -426,7 +578,7 @@ extension SDK {
 
     // MARK: - Trusted Context Management
 
-    /// Add a data contract to the trusted context provider cache
+    /// Add a data contract to the SDK's context provider cache
     /// This allows the SDK to use the contract without fetching it from the network
     public func addContractToContext(contractId: String, binaryData: Data) throws {
         guard self.handle != nil else {
@@ -539,6 +691,60 @@ extension SDK {
     }
 
     // MARK: - Document Queries
+
+    /// Read where a keep-history document stands right now: its lifecycle
+    /// state and the exact number of revisions still retained. A current
+    /// observation, not the outcome of any particular transition.
+    public func documentGetLifecycle(
+        dataContractId: String,
+        documentType: String,
+        documentId: String
+    ) async throws -> DocumentHistoryLifecycle {
+        let page = try await documentGetHistory(
+            dataContractId: dataContractId,
+            documentType: documentType,
+            documentId: documentId,
+            filter: .startAtTime(ms: 0),
+            limit: 1
+        )
+        guard let lifecycleJSON = page["lifecycle"] as? [String: Any],
+              let lifecycle = DocumentHistoryLifecycle(json: lifecycleJSON) else {
+            throw SDKError.serializationError("Document history response carried no complete lifecycle block")
+        }
+        return lifecycle
+    }
+
+    /// Get a page of a keep-history document's revision history with its
+    /// lifecycle state.
+    ///
+    /// Returns the FFI's JSON object: `entries` (each with `time_ms`,
+    /// `revision` and the canonical `document`) and `lifecycle` (see
+    /// `DocumentHistoryLifecycle`). Pass the last entry's `time_ms` and
+    /// `revision` back as `.startAfter` for the next page. At most ten
+    /// entries per page; `limit` nil takes the default. Needs the protocol-15
+    /// history layout: a page served from the earlier layout has no lifecycle
+    /// block and the FFI refuses it.
+    public nonisolated func documentGetHistory(
+        dataContractId: String,
+        documentType: String,
+        documentId: String,
+        filter: DocumentHistoryFilter = .startAtTime(ms: 0),
+        limit: UInt32? = nil
+    ) async throws -> sending [String: Any] {
+        let json = try await performBlockingQuery { handle in
+            try Self.consumeStringResult(dash_sdk_document_fetch_history(
+                handle,
+                dataContractId,
+                documentType,
+                documentId,
+                filter.ffiValue,
+                filter.timeMs,
+                filter.revisionValue,
+                limit ?? 0
+            ))
+        }
+        return try Self.parseJSONObject(json)
+    }
 
     /// List documents
     ///
@@ -1108,16 +1314,23 @@ extension SDK {
     // MARK: - DPNS Queries
 
     /// Get DPNS usernames for identity
-    @MainActor
-    public func dpnsGetUsername(identityId: String, limit: UInt32?) async throws -> [[String: Any]] {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
+    ///
+    /// `nonisolated`: the lookup blocks on the network inside Rust, so it runs
+    /// on the shared Platform query queue (see ``performBlockingQuery(_:)``)
+    /// instead of on the caller's actor.
+    public nonisolated func dpnsGetUsername(identityId: String, limit: UInt32?) async throws -> sending [[String: Any]] {
+        let json: String? = try await performBlockingQuery { handle in
+            let result = dash_sdk_dpns_get_usernames(handle, identityId, limit ?? 10)
+            // No data and no error means no usernames.
+            if result.error == nil && result.data == nil {
+                return nil
+            }
+            return try Self.consumeStringResult(result)
         }
-
-        // Call native FFI function with identity ID as string
-        let result = dash_sdk_dpns_get_usernames(handle, identityId, limit ?? 10)
-
-        return try processJSONArrayResult(result)
+        guard let json else {
+            return []
+        }
+        return try Self.parseJSONArray(json)
     }
 
     /// Check DPNS name availability
@@ -1207,13 +1420,19 @@ extension SDK {
                         contenderDict["votes"] = "ResourceVote { vote_choice: TowardsIdentity, strength: \(contender.vote_count) }"
                         // The spelling this contender actually requested
                         // ("pizza"), where the contest key is the normalized
-                        // form ("p1zza"). Absent when the FFI could not decode
+                        // form ("p1zza"). Absent when the SDK could not decode
                         // their document. Prefer the typed
                         // `dpnsActiveContests` / `dpnsContestsForIdentity`,
                         // which also give the tally as an integer.
                         if let labelPtr = contender.label {
                             let label = String(cString: labelPtr)
                             if !label.isEmpty { contenderDict["label"] = label }
+                        }
+                        // When this contender submitted its request, in
+                        // milliseconds since the epoch (as `endTime`), 0
+                        // included. Absent when the document carries no date.
+                        if contender.has_created_at {
+                            contenderDict["createdAt"] = contender.created_at
                         }
 
                         contenders.append(contenderDict)
@@ -1348,13 +1567,19 @@ extension SDK {
                         contenderDict["votes"] = "ResourceVote { vote_choice: TowardsIdentity, strength: \(contender.vote_count) }"
                         // The spelling this contender actually requested
                         // ("pizza"), where the contest key is the normalized
-                        // form ("p1zza"). Absent when the FFI could not decode
+                        // form ("p1zza"). Absent when the SDK could not decode
                         // their document. Prefer the typed
                         // `dpnsActiveContests` / `dpnsContestsForIdentity`,
                         // which also give the tally as an integer.
                         if let labelPtr = contender.label {
                             let label = String(cString: labelPtr)
                             if !label.isEmpty { contenderDict["label"] = label }
+                        }
+                        // When this contender submitted its request, in
+                        // milliseconds since the epoch (as `endTime`), 0
+                        // included. Absent when the document carries no date.
+                        if contender.has_created_at {
+                            contenderDict["createdAt"] = contender.created_at
                         }
 
                         contenders.append(contenderDict)
@@ -1517,7 +1742,9 @@ extension SDK {
         return try processJSONArrayResult(result)
     }
 
-    /// Get contested resource identity votes
+    /// Get contested resource identity votes. Each vote carries `vote_poll_id`,
+    /// `resource_vote_choice` and `vote_count`, the number of times the identity has
+    /// voted on that vote poll.
     public func getContestedResourceIdentityVotes(
         identityId: String,
         limit: UInt32?,
@@ -1706,17 +1933,29 @@ extension SDK {
         return try processJSONArrayResult(result)
     }
 
+    /// Read the cached authenticated network version; this does not make a request.
+    public func protocolVersionInfo() throws -> ProtocolVersionInfo {
+        guard let handle else { throw SDKError.invalidState("SDK not initialized") }
+        let json = try Self.consumeStringResult(dash_sdk_get_protocol_version_info(handle))
+        return try JSONDecoder().decode(ProtocolVersionInfo.self, from: Data(json.utf8))
+    }
+
     // MARK: - Epoch & Block Queries
 
     /// Get epochs info
     public func getEpochsInfo(startEpoch: UInt32?, count: UInt32?, ascending: Bool) async throws -> [[String: Any]] {
-        guard let handle = handle else {
-            throw SDKError.invalidState("SDK not initialized")
-        }
-
         let startEpochString = startEpoch.map { String($0) }
-        let result = dash_sdk_system_get_epochs_info(handle, startEpochString, count ?? 100, ascending)
-        return try processJSONArrayResult(result)
+        let json = try await performBlockingQuery { handle in
+            let result = dash_sdk_system_get_epochs_info(handle, startEpochString, count ?? 100, ascending)
+            if result.error == nil && result.data == nil {
+                return "[]"
+            }
+            return try Self.consumeStringResult(result)
+        }
+        guard let result = try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [[String: Any]] else {
+            throw SDKError.serializationError("Expected epochs array")
+        }
+        return result
     }
 
     /// Get the current (newest started) epoch — same keys as one
@@ -2382,5 +2621,14 @@ extension SDK {
             throw SDKError.serializationError("Failed to parse JSON data")
         }
         return object
+    }
+
+    /// Parse a JSON array payload returned by a query.
+    fileprivate nonisolated static func parseJSONArray(_ json: String) throws -> sending [[String: Any]] {
+        guard let data = json.data(using: .utf8),
+              let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
+            throw SDKError.serializationError("Failed to parse JSON array")
+        }
+        return array
     }
 }

@@ -59,6 +59,10 @@ pub struct ShieldFromAssetLockTransitionV1 {
     /// Halo2 proof bytes
     pub proof: Vec<u8>,
     /// RedPallas binding signature
+    #[cfg_attr(
+        all(feature = "serde-conversion", not(feature = "json-conversion")),
+        serde(with = "crate::serialization::serde_bytes")
+    )]
     pub binding_signature: [u8; 64],
     /// Optional platform-address output that receives the asset-lock surplus; see
     /// [`ShieldFromAssetLockTransitionV0::surplus_output`](super::v0::ShieldFromAssetLockTransitionV0::surplus_output).

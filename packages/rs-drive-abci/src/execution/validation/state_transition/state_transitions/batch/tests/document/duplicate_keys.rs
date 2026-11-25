@@ -726,7 +726,6 @@ async fn should_keep_preexisting_ambiguous_ttl_expiry_failure_visible() {
                 true,
                 None,
                 version,
-                None,
             )
             .unwrap();
         let stored = fixture.stored(None);

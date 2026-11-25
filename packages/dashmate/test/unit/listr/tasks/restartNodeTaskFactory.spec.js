@@ -81,4 +81,14 @@ describe('restartNodeTask', () => {
 
     expect(pullTask.output).to.equal('dashpay/drive:4: Downloading [====>  ] 12MB/45MB');
   });
+
+  it('should title the stop step so listr renders what stopping prints and why it failed', () => {
+    // listr's default renderer leaves out a subtree whose tasks all lack a
+    // title, and with it a DKG wait's progress or a refused stop's reason.
+    const stopTask = restartNodeTask(config).tasks
+      .find((task) => task.title === 'Stop node');
+
+    expect(stopTask).to.exist();
+    expect(stopTask.hasTitle()).to.be.true();
+  });
 });

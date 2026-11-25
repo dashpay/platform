@@ -51,6 +51,11 @@ describe('migrateConfigFileFactory', () => {
         whitelist.splice(whitelist.indexOf(method), 1);
       };
 
+      if (semver.lt(release, '5.1.0-dev.1')) {
+        removeFromWhitelist('protxinfo');
+        options.core.docker.image = 'dashpay/dashd:23';
+      }
+
       if (semver.lt(release, '5.0.0-rc.2')) {
         removeFromWhitelist('getdeploymentinfo');
       }
@@ -638,6 +643,96 @@ describe('migrateConfigFileFactory', () => {
       .to.include.members(['getdeploymentinfo', 'getblockcount']);
     // A user without a whitelist may already call every method.
     expect(migrated.configs.mainnet.core.rpc.users.drive_consensus.whitelist).to.equal(null);
+
+    for (const [name, options] of Object.entries(migrated.configs)) {
+      expect(() => new Config(name, options), `migrated ${name} config does not load`).to.not.throw();
+    }
+  });
+
+  it('should let Drive call protx info on Core from a 5.0.3 config', async () => {
+    // From protocol version 15 Drive reads, with protx info, the operator payout of a
+    // masternode whose operator key changed, and Core answers a method missing from the
+    // consensus user's whitelist with HTTP 403.
+    const fromVersion = '5.0.3';
+    const { version } = JSON.parse(fs.readFileSync(path.join(PACKAGE_ROOT_DIR, 'package.json'), 'utf8'));
+
+    const configFileData = createConfigFile().toObject();
+    configFileData.configFormatVersion = fromVersion;
+    for (const options of Object.values(configFileData.configs)) {
+      const { whitelist } = options.core.rpc.users.drive_consensus;
+      expect(whitelist).to.include('protxinfo');
+      whitelist.splice(whitelist.indexOf('protxinfo'), 1);
+    }
+    configFileData.configs.testnet.core.rpc.users.drive_consensus.whitelist.push('getblockcount');
+    configFileData.configs.mainnet.core.rpc.users.drive_consensus.whitelist = null;
+
+    const migrated = migrateConfigFile(configFileData, fromVersion, version);
+
+    expect(migrated.configs.base.core.rpc.users.drive_consensus.whitelist)
+      .to.include('protxinfo');
+    expect(migrated.configs.local.core.rpc.users.drive_consensus.whitelist)
+      .to.include('protxinfo');
+    // A method the operator allowed stays allowed.
+    expect(migrated.configs.testnet.core.rpc.users.drive_consensus.whitelist)
+      .to.include.members(['protxinfo', 'getblockcount']);
+    // A user without a whitelist may already call every method.
+    expect(migrated.configs.mainnet.core.rpc.users.drive_consensus.whitelist).to.equal(null);
+
+    for (const [name, options] of Object.entries(migrated.configs)) {
+      expect(() => new Config(name, options), `migrated ${name} config does not load`).to.not.throw();
+    }
+  });
+
+  it('should move a node on the stock Core 23 image to Core 24 and keep an operator image', async () => {
+    const fromVersion = '5.0.3';
+
+    const configFileData = getConfigFileDataWrittenBy(fromVersion, null);
+    configFileData.configs.testnet.core.docker.image = 'example/dashd:23';
+    configFileData.configs.local.core.docker.image = 'dashpay/dashd:24.1.0-nightly';
+
+    const migrated = migrateConfigFile(
+      configFileData,
+      fromVersion,
+      container.resolve('configFormatVersion'),
+    );
+
+    expect(migrated.configs.base.core.docker.image).to.equal('dashpay/dashd:24');
+    expect(migrated.configs.mainnet.core.docker.image).to.equal('dashpay/dashd:24');
+    expect(migrated.configs.testnet.core.docker.image).to.equal('example/dashd:23');
+    expect(migrated.configs.local.core.docker.image).to.equal('dashpay/dashd:24.1.0-nightly');
+
+    for (const [name, options] of Object.entries(migrated.configs)) {
+      expect(() => new Config(name, options), `migrated ${name} config does not load`).to.not.throw();
+    }
+  });
+
+  it('should keep a local network or devnet already set up on Core 23', async () => {
+    // Core 24 discards the sporks Core 23 stored. On a network whose nodes all
+    // move to Core 24 at once no peer has them anymore, and dashmate signs a
+    // local network's sporks only while setting it up.
+    const fromVersion = '5.0.3';
+
+    const configFileData = getConfigFileDataWrittenBy(fromVersion, null);
+    for (const name of ['local_seed', 'local_1']) {
+      configFileData.configs[name] = structuredClone(configFileData.configs.local);
+      configFileData.configs[name].group = 'local';
+    }
+    configFileData.configs.devnet_1 = structuredClone(configFileData.configs.testnet);
+    configFileData.configs.devnet_1.network = 'devnet';
+    configFileData.configs.devnet_1.core.devnet.name = 'one';
+
+    const migrated = migrateConfigFile(
+      configFileData,
+      fromVersion,
+      container.resolve('configFormatVersion'),
+    );
+
+    expect(migrated.configs.local_seed.core.docker.image).to.equal('dashpay/dashd:23');
+    expect(migrated.configs.local_1.core.docker.image).to.equal('dashpay/dashd:23');
+    expect(migrated.configs.devnet_1.core.docker.image).to.equal('dashpay/dashd:23');
+    // The preset a new local network is set up from moves, as do public networks.
+    expect(migrated.configs.local.core.docker.image).to.equal('dashpay/dashd:24');
+    expect(migrated.configs.testnet.core.docker.image).to.equal('dashpay/dashd:24');
 
     for (const [name, options] of Object.entries(migrated.configs)) {
       expect(() => new Config(name, options), `migrated ${name} config does not load`).to.not.throw();

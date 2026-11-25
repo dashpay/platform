@@ -36,10 +36,12 @@ use key_wallet::{AddressInfo, Network, PlatformP2PKHAddress, Utxo};
 
 use crate::changeset::dashpay_backfill::DashPayBackfillRecord;
 use crate::changeset::identity_scan_state::IdentityScanStateEntry;
+use crate::changeset::wallet_accounting::apply_wallet_accounting;
 use crate::wallet::platform_wallet::WalletId;
 
 use dpp::balances::credits::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::{Identifier, Revision};
 
@@ -70,6 +72,8 @@ use crate::wallet::identity::{
 /// [`fold_same_txid_records`]), uses monotonic-max for the height
 /// watermarks, `extend` for the utxo vecs and for `sweeps` (in emission
 /// order — see the field), and last-write-wins for the IS-lock map.
+/// [`Self::outpoint_locks`] carries unlocks as well as locks, and merges
+/// last-write-wins per outpoint.
 ///
 /// # Why a projection instead of the upstream type
 ///
@@ -319,6 +323,26 @@ pub struct CoreChangeSet {
     /// [`Self::sweeps`].
     #[cfg_attr(feature = "serde", serde(default))]
     pub utxo_credit_verdicts: BTreeMap<OutPoint, UtxoCreditVerdict>,
+
+    /// Changes to the outpoints the wallet keeps out of coin selection:
+    /// `true` locks the outpoint, `false` unlocks it.
+    ///
+    /// The wallet locks the collateral of the masternode registrations
+    /// (ProRegTx) it processes, a collateral a ProRegTx names once the
+    /// ProRegTx is in a block, since spending the collateral would end the
+    /// registration, and the user can lock or unlock any outpoint by hand.
+    /// The in-memory set is `ManagedWalletInfo::locked_outpoints`; this is
+    /// its persistence delta. A lock does not need a coin behind it (the
+    /// ProRegTx can arrive before its collateral) and outlives the coin's
+    /// spend, so a persister keeps locks apart from its UTXO rows. On load
+    /// it hands every stored lock back through
+    /// `ManagedWalletInfo::lock_outpoint`.
+    ///
+    /// Merge: newest wins per outpoint, so an unlock after a lock in one
+    /// fold persists the unlock. `serde(default)` for the same
+    /// backward-compatible reading as [`Self::sweeps`].
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub outpoint_locks: BTreeMap<OutPoint, bool>,
 }
 
 /// Why the engine did not credit a `Received` / `Change` output of a
@@ -377,16 +401,17 @@ pub struct SweepBatch {
     /// placeholder's lifetime. `Some` stamps the winner's own block height
     /// — the projection of upstream's `observed_spent_outpoints` — and the
     /// placeholder is collectible once `min(chainlock_height,
-    /// synced_height)` reaches it, exactly upstream's
-    /// `prune_finalized_observed_spends` boundary. `None` (IS-locked
-    /// winner, unmined) leaves the placeholder UNSTAMPED and never
-    /// collectible: under DIP-10 the lock alone settles the input —
-    /// upstream retains it in the account's `spent_outpoints`, a hold with
-    /// no height that no record survives to rebuild — and an IS-locked
-    /// winner has no mining deadline, so no watermark can ever prove the
-    /// funding output delivered-or-never. An unstamped placeholder
-    /// resolves only through proof: funding materialisation, a later
-    /// block-context sweep's re-stamp, or a release.
+    /// synced_height)` reaches it, upstream's
+    /// `prune_finalized_observed_spends` boundary counting applied
+    /// chainlocks only. `None` (IS-locked winner, unmined) leaves the
+    /// placeholder UNSTAMPED and never collectible: under DIP-10 the lock
+    /// alone settles the input — upstream retains it in the account's
+    /// `spent_outpoints`, a hold with no height that no record survives to
+    /// rebuild — and an IS-locked winner has no mining deadline, so no
+    /// watermark can ever prove the funding output delivered-or-never. An
+    /// unstamped placeholder resolves only through proof: funding
+    /// materialisation, a later block-context sweep's re-stamp, or a
+    /// release.
     ///
     /// `serde(default)`: a journaled payload written before this field
     /// existed reads back as `None` — the conservative reading (no new
@@ -442,9 +467,6 @@ impl HighestUsedIndexes {
 /// −0.005 stored for a −2.61920199 spend).
 ///
 /// The fold, per txid group of 2+ records:
-/// - `net_amount` — the SUM of the slices: each account's
-///   `received − spent` over disjoint detail sets, so the sum is the
-///   wallet's `Σreceived − Σspent` by construction.
 /// - `input_details` / `output_details` — the union (deduped by input
 ///   index / output index): the slices are disjoint per account, and the
 ///   union is exactly the wallet-relevant view downstream consumers
@@ -452,15 +474,7 @@ impl HighestUsedIndexes {
 /// - `fee` — the first `Some` (only the funding account's record carries
 ///   one, and disjoint accounts cannot disagree); left `None` when no
 ///   record knew it.
-/// - `direction` — recomputed over the MERGED details with the same rule
-///   upstream applies per account (`record_transaction`): `CoinJoin`
-///   transaction type wins outright; otherwise no `Sent` output + our
-///   inputs + our outputs → `Internal` (a cross-account move whose
-///   account-local slices said `Outgoing`/`Incoming` is, wallet-level, a
-///   self-transfer); otherwise our inputs → `Outgoing`, else `Incoming`.
-///   Deriving from the net's sign instead erased `Internal` and
-///   `CoinJoin`: an internal transfer nets −fee and would relabel
-///   `Outgoing`.
+/// - `net_amount` / `direction` — see the wallet-level pass below.
 /// - `context` — the most advanced in the group (`Mempool` <
 ///   `InstantSend` < `InBlock` < `InChainLockedBlock`), so a group mixing
 ///   a stale mempool observation with a confirmed one keeps the
@@ -470,6 +484,22 @@ impl HighestUsedIndexes {
 ///   input details) so the row's account attribution names the spender,
 ///   else the first record.
 ///
+/// Then EVERY record — folded or single — gets its wallet-level
+/// `net_amount` and `direction` from its details via
+/// [`apply_wallet_accounting`], the rule the SQLite repair also applies,
+/// so a row never changes accounting when storage repairs it:
+/// - `net_amount` is `Σ owned outputs − Σ owned inputs`. Over
+///   detail-bearing slices that equals the sum of their nets, but a
+///   keys-account marker's `+credit` (Platform credits, not Core funds)
+///   stays out: an asset lock nets `−(credit + fee)`, not `−fee`.
+/// - `direction` is [`wallet_direction`](super::wallet_direction): account-local slices that said
+///   `Outgoing`/`Incoming` for a cross-account move become `Internal`, and
+///   an asset lock with no change is `Internal` like one with change.
+///   Deriving direction from the net's sign instead would erase
+///   `Internal` and `CoinJoin`.
+/// - A group or record with no details at all (keys markers only) keeps
+///   upstream's net and direction.
+///
 /// Order-preserving for untouched records; a fold lands at the group's
 /// FIRST position (`group[0]`) regardless of which record supplied the
 /// funding metadata, so unrelated records between two slices never move
@@ -477,8 +507,16 @@ impl HighestUsedIndexes {
 /// reach here (filtered at projection — see
 /// `core_bridge::is_contact_watch_only`).
 pub(crate) fn fold_same_txid_records(records: &mut Vec<TransactionRecord>) {
-    use key_wallet::managed_account::transaction_record::{OutputRole, TransactionDirection};
-    use key_wallet::transaction_checking::transaction_router::TransactionType;
+    fold_groups(records);
+    for record in records.iter_mut() {
+        apply_wallet_accounting(record);
+    }
+}
+
+/// The per-txid merge of [`fold_same_txid_records`], before the
+/// wallet-level accounting pass.
+fn fold_groups(records: &mut Vec<TransactionRecord>) {
+    use key_wallet::managed_account::transaction_record::OutputRole;
 
     if records.len() < 2 {
         return;
@@ -566,30 +604,10 @@ pub(crate) fn fold_same_txid_records(records: &mut Vec<TransactionRecord>) {
         drop_idx.insert(base_pos);
         let first_pos = group[0];
         drop_idx.remove(&first_pos);
+        // The slice sum stands only for a detail-less group (keys
+        // markers alone); `apply_wallet_accounting` recomputes net and
+        // direction from the merged details otherwise.
         merged.net_amount = net;
-        // Wallet-level direction over the merged details — same rule
-        // upstream applies per account (see the doc comment). The sign
-        // of the net cannot express `Internal` or `CoinJoin`.
-        merged.direction = if merged.transaction_type == TransactionType::CoinJoin {
-            TransactionDirection::CoinJoin
-        } else {
-            let has_inputs = !merged.input_details.is_empty();
-            let has_sent = merged
-                .output_details
-                .iter()
-                .any(|d| d.role == OutputRole::Sent);
-            let has_our_outputs = merged
-                .output_details
-                .iter()
-                .any(|d| matches!(d.role, OutputRole::Received | OutputRole::Change));
-            if !has_sent && has_inputs && has_our_outputs {
-                TransactionDirection::Internal
-            } else if has_inputs {
-                TransactionDirection::Outgoing
-            } else {
-                TransactionDirection::Incoming
-            }
-        };
         folded.insert(first_pos, merged);
     }
 
@@ -640,6 +658,33 @@ fn coalesce_newest_wins<K: std::hash::Hash + Eq>(
                 slot.insert(existing.len());
                 existing.push(r);
             }
+        }
+    }
+}
+
+/// Keep one record per `(txid, account_type)` before folding account
+/// contributions. The record with the higher [`context_rank`] wins
+/// wholesale; on equal rank the later record wins. Records are never
+/// spliced together: a record's amounts, inputs and outputs are only
+/// coherent with the context they were observed under, so mixing a later
+/// body with an earlier, higher-ranked context would fabricate a record
+/// whose finality no single observation ever reported.
+// TODO(unify-record-coalescing): `coalesce_newest_wins` (the `Merge` path)
+// can regress a confirmed record to an older mempool slice; this helper
+// keeps the higher-ranked record. Unify them once `Merge` semantics are
+// reviewed.
+pub(crate) fn coalesce_account_records(records: &mut Vec<TransactionRecord>) {
+    let mut positions = BTreeMap::new();
+    for record in std::mem::take(records) {
+        let key = (record.txid, record.account_type);
+        if let Some(&position) = positions.get(&key) {
+            let previous: &TransactionRecord = &records[position];
+            if context_rank(&record.context) >= context_rank(&previous.context) {
+                records[position] = record;
+            }
+        } else {
+            positions.insert(key, records.len());
+            records.push(record);
         }
     }
 }
@@ -865,6 +910,9 @@ impl Merge for CoreChangeSet {
         // entries of records the newer changeset re-projected were dropped
         // at the top of this merge.
         self.utxo_credit_verdicts.extend(other.utxo_credit_verdicts);
+
+        // Outpoint locks: newest wins per outpoint.
+        self.outpoint_locks.extend(other.outpoint_locks);
     }
 
     fn is_empty(&self) -> bool {
@@ -881,6 +929,7 @@ impl Merge for CoreChangeSet {
             && self.account_highest_used.is_empty()
             && self.last_applied_chain_lock.is_none()
             && self.utxo_credit_verdicts.is_empty()
+            && self.outpoint_locks.is_empty()
     }
 }
 
@@ -1005,8 +1054,10 @@ pub struct IdentityKeyDerivationIndices {
 
 /// A derivation breadcrumb as the raw `(wallet_id, identity_index,
 /// key_index)` triple passed to `ManagedIdentity::add_key` / `add_keys`.
-/// `Some` lets the client re-derive the private key from the wallet seed;
-/// `None` marks a watch-only key.
+/// `Some` lets the client re-derive the private key from the wallet seed.
+/// `None` gives no coordinates: a key the persister does not hold yet is
+/// watch-only, and one it holds keeps its breadcrumb (see
+/// [`IdentityKeyEntry::derivation_indices`]).
 pub type KeyDerivationBreadcrumb = ([u8; 32], u32, u32);
 
 /// One public key paired with its derivation breadcrumb — the unit
@@ -1016,12 +1067,13 @@ pub type KeyDerivationBreadcrumb = ([u8; 32], u32, u32);
 /// Discovery derives a candidate scalar, validates it against the on-chain
 /// key, and emits a breadcrumb (the DIP-9 coordinates) only when it matches.
 /// The scalar itself is never carried out — the client derives the key on
-/// demand from the Keychain seed at the breadcrumb path. `breadcrumb` is
-/// `None` for a watch-only key.
+/// demand from the Keychain seed at the breadcrumb path. A `None`
+/// `breadcrumb` gives no coordinates (see
+/// [`IdentityKeyEntry::derivation_indices`]).
 pub struct KeyWithBreadcrumb {
     /// The DPP public-key record.
     pub key: dpp::identity::IdentityPublicKey,
-    /// Derivation coordinates for re-derivable keys; `None` for watch-only.
+    /// Derivation coordinates for re-derivable keys; `None` gives none.
     pub breadcrumb: Option<KeyDerivationBreadcrumb>,
 }
 
@@ -1031,8 +1083,9 @@ pub struct KeyWithBreadcrumb {
 /// derivation that produced it. No private material crosses here: the client
 /// derives the key on demand from the Keychain seed at the breadcrumb path
 /// (`m/9'/coin'/5'/0'/ECDSA'/identity_index'/key_index'`). When
-/// `derivation_indices` is `None` the key is watch-only from this wallet's
-/// point of view.
+/// `derivation_indices` is `None`, the entry supplies no new coordinates;
+/// an update preserves any breadcrumb the persister already holds (see the
+/// field).
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IdentityKeyEntry {
@@ -1046,12 +1099,22 @@ pub struct IdentityKeyEntry {
     /// Precomputed on the Rust side so clients don't need
     /// RIPEMD-160 implementations of their own.
     pub public_key_hash: [u8; 20],
-    /// The wallet whose mnemonic derives this key. `None` for
-    /// watched-only identities with no wallet association.
+    /// The wallet whose mnemonic derives this key. It travels with
+    /// [`Self::derivation_indices`]: `None` alongside them gives no wallet
+    /// either, and an update to a held row keeps the `wallet_id` the row
+    /// already holds, as it keeps the breadcrumb.
     pub wallet_id: Option<[u8; 32]>,
     /// DIP-9 `(identity_index, key_index)` pair the client needs to
-    /// re-derive the private key. `None` means "view-only, no
-    /// private key recoverable".
+    /// re-derive the private key.
+    ///
+    /// `None` gives no coordinates: for a row the persister does not hold
+    /// yet it means "view-only, no private key recoverable", but for an
+    /// update to a held row it means "no new coordinates", and the
+    /// persister keeps the breadcrumb (and its `wallet_id`) the row already
+    /// holds. A refresh emits such entries for keys a wallet derived, so a
+    /// persister that replaced the held breadcrumb with `None` would lose
+    /// the key's signing recovery. The SQLite writer, the Swift and the
+    /// Kotlin persisters all keep it, and changeset merges do the same.
     pub derivation_indices: Option<IdentityKeyDerivationIndices>,
 }
 
@@ -1076,8 +1139,29 @@ impl Merge for IdentityKeysChangeSet {
         // Last-write-wins per composite key. Matches the discipline
         // used by other scalar-entry changesets in this module; the
         // "don't emit both upsert + remove for the same key in one
-        // mutation" invariant is enforced on the emitter side.
-        self.upserts.extend(other.upserts);
+        // mutation" invariant is enforced on the emitter side. A later
+        // entry without a derivation breadcrumb (a refresh, a limits
+        // update) keeps the earlier one's, as every persister keeps a
+        // stored one: a buffered write that only knows the key's new state
+        // must not turn a wallet-derived key watch-only. Only for the same
+        // public key in the same wallet scope (or none): the coordinates
+        // derive that key, not another one under the same row id.
+        for (id, mut entry) in other.upserts {
+            if entry.derivation_indices.is_none() {
+                if let Some(earlier) = self.upserts.get(&id) {
+                    let same_key = earlier.public_key_hash == entry.public_key_hash
+                        && earlier.public_key.key_type() == entry.public_key.key_type()
+                        && earlier.public_key.data() == entry.public_key.data();
+                    let same_scope =
+                        entry.wallet_id.is_none() || entry.wallet_id == earlier.wallet_id;
+                    if earlier.derivation_indices.is_some() && same_key && same_scope {
+                        entry.wallet_id = earlier.wallet_id;
+                        entry.derivation_indices = earlier.derivation_indices;
+                    }
+                }
+            }
+            self.upserts.insert(id, entry);
+        }
         self.removed.extend(other.removed);
     }
 
@@ -1261,9 +1345,11 @@ pub struct ReceivedContactRequestKey {
 /// (a `sent_requests` insert clears a prior `removed_sent`, an un-ignore
 /// clears a prior ignore, and vice versa), keeping the two sets
 /// disjoint. This covers `sent_requests` vs `removed_sent`,
-/// `incoming_requests` vs `removed_incoming`, and `ignored` vs
-/// `unignored`. `established` has no opposing tombstone set and rides
-/// plain last-write-wins.
+/// `incoming_requests` vs `removed_incoming`, `ignored` vs
+/// `unignored`, and `private_shielded_addresses` vs
+/// `removed_private_shielded_addresses`. `established` and
+/// `private_contact_requests_positions` have no opposing tombstone set
+/// and ride plain last-write-wins.
 #[derive(Debug, Clone, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ContactChangeSet {
@@ -1293,6 +1379,66 @@ pub struct ContactChangeSet {
     /// sweep. Kept as a separate set (rather than a shrinking `ignored`
     /// snapshot) so the changeset's insert-XOR-tombstone discipline holds.
     pub unignored: BTreeSet<(Identifier, Identifier)>,
+    /// The position of DashPay's private contact request store each owner
+    /// identity reads from next, keyed by owner, with the fingerprint of the
+    /// scanning keys it holds for: every entry before it was read with those
+    /// keys and what it held for the owner stored. Written only for a backend
+    /// attesting
+    /// [`PRIVATE_CONTACT_REQUEST_SCAN_STATE`](crate::changeset::PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE),
+    /// and only after the stores of what the entries before it held, so a
+    /// restored position never covers a request that did not reach disk. A
+    /// rewind (un-ignoring a sender, or the scanning keys changing) writes
+    /// the lower position. Last write wins.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub private_contact_requests_positions: BTreeMap<Identifier, PrivateContactRequestsPosition>,
+    /// The Orchard address each contact's tracked private request to the
+    /// owner carries, keyed by `(owner, contact)`: 43 bytes, an 11-byte
+    /// diversifier and a 32-byte transmission key. Written only for a
+    /// backend attesting
+    /// [`PRIVATE_CONTACT_REQUEST_SCAN_STATE`](crate::changeset::PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE).
+    /// Reconciled last-write-wins against
+    /// [`Self::removed_private_shielded_addresses`] on merge.
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            default,
+            with = "crate::changeset::serde_adapters::private_shielded_addresses"
+        )
+    )]
+    pub private_shielded_addresses: BTreeMap<(Identifier, Identifier), [u8; 43]>,
+    /// `(owner, contact)` pairs whose tracked private request carries no
+    /// shielded address any more: the removal tombstone for
+    /// [`Self::private_shielded_addresses`].
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub removed_private_shielded_addresses: BTreeSet<(Identifier, Identifier)>,
+}
+
+/// Where an identity reads DashPay's private contact request store from
+/// next, and the scanning keys that position holds for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PrivateContactRequestsPosition {
+    /// The store position read from next.
+    pub position: u64,
+    /// SHA-256 over the identity's HD index and each `ECDSA_SECP256K1`
+    /// `ENCRYPTION` or `DECRYPTION` key (id, purpose and data, in key id
+    /// order) the entries before `position` were scanned with
+    /// (`ManagedIdentity::private_scan_key_fingerprint`). A loaded position
+    /// whose fingerprint is not the identity's is read again from 0.
+    pub key_fingerprint: [u8; 32],
+    /// Whether a private contact request this identity paid for may still be
+    /// unresolved: written set before such a payment may reach the network,
+    /// and cleared once the identity holds no private request it is paying
+    /// for or has not read back (each read back, definitively rejected, or
+    /// released before it was broadcast). Loaded set, it holds the identity's
+    /// public contact requests, sent or accepted, in every build, until a
+    /// restoration from the shielded store restores the reservations it
+    /// stands for (`PlatformWallet::restore_private_contact_payments`). A
+    /// build without the `shielded` feature never restores them, so it keeps
+    /// the identity held: its private payment may still execute, and a
+    /// public request would publish the pair the private one kept off chain.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub private_payments_unresolved: bool,
 }
 
 impl Merge for ContactChangeSet {
@@ -1333,6 +1479,20 @@ impl Merge for ContactChangeSet {
         }
         self.ignored.extend(other.ignored);
         self.unignored.extend(other.unignored);
+
+        self.private_contact_requests_positions
+            .extend(other.private_contact_requests_positions);
+
+        for key in other.removed_private_shielded_addresses.iter() {
+            self.private_shielded_addresses.remove(key);
+        }
+        for key in other.private_shielded_addresses.keys() {
+            self.removed_private_shielded_addresses.remove(key);
+        }
+        self.private_shielded_addresses
+            .extend(other.private_shielded_addresses);
+        self.removed_private_shielded_addresses
+            .extend(other.removed_private_shielded_addresses);
     }
 
     fn is_empty(&self) -> bool {
@@ -1343,6 +1503,9 @@ impl Merge for ContactChangeSet {
             && self.established.is_empty()
             && self.ignored.is_empty()
             && self.unignored.is_empty()
+            && self.private_contact_requests_positions.is_empty()
+            && self.private_shielded_addresses.is_empty()
+            && self.removed_private_shielded_addresses.is_empty()
     }
 }
 
@@ -1456,6 +1619,18 @@ pub struct AssetLockChangeSet {
     pub removed: BTreeSet<OutPoint>,
 }
 
+/// Byte length of a raw Orchard payment address (`OrchardAddress::to_raw_bytes`).
+pub const SHIELDED_RECIPIENT_SIZE: usize = 43;
+
+/// The raw bytes of an Orchard payment address, as `OrchardAddress::to_raw_bytes`
+/// gives them and every FFI surface carries them (`recipient_raw_43`).
+///
+/// The changeset, the tracked locks and the persistence backends are built
+/// without the `shielded` feature, where `dpp::address_funds::OrchardAddress`
+/// does not exist, so they carry the recipient raw. Only shielded code
+/// converts it back into an address, and the resume check compares bytes.
+pub type ShieldedRecipientRaw = [u8; SHIELDED_RECIPIENT_SIZE];
+
 /// A single asset lock entry in the changeset.
 ///
 /// Contains all fields needed to fully reconstruct a
@@ -1490,17 +1665,30 @@ pub struct AssetLockEntry {
         serde(with = "crate::changeset::serde_adapters::optional_asset_lock_proof")
     )]
     pub proof: Option<AssetLockProof>,
+    /// The Orchard recipient a shielded funding was built to pay (raw 43-byte
+    /// address); `None` for other funding types and for legacy rows. Like
+    /// `operation_id`, immutable once recorded.
+    #[cfg_attr(
+        feature = "serde",
+        serde(
+            default,
+            with = "crate::changeset::serde_adapters::optional_shielded_recipient"
+        )
+    )]
+    pub shielded_recipient: Option<ShieldedRecipientRaw>,
 }
 
 impl AssetLockEntry {
-    /// Preserve the immutable operation association when folding or replaying
-    /// a possibly stale snapshot. Returns false for a conflicting UUID: the
-    /// caller must discard the whole snapshot so its lifecycle cannot be
-    /// attached to a different operation.
+    /// Preserve the immutable operation association and shielded recipient
+    /// when folding or replaying a possibly stale snapshot. Returns false for
+    /// a conflicting UUID or recipient: the caller must discard the whole
+    /// snapshot so its lifecycle cannot be attached to a different operation
+    /// or redirect a pending shielded funding.
     #[must_use = "a conflicting operation snapshot must not be applied"]
     pub(crate) fn preserve_recovery_metadata(
         &mut self,
         previous_operation_id: Option<[u8; 16]>,
+        previous_shielded_recipient: Option<ShieldedRecipientRaw>,
     ) -> bool {
         if let Some(previous_id) = previous_operation_id {
             if self
@@ -1511,6 +1699,16 @@ impl AssetLockEntry {
                 return false;
             }
             self.operation_id = Some(previous_id);
+        }
+        if let Some(previous_recipient) = previous_shielded_recipient {
+            if self
+                .shielded_recipient
+                .is_some_and(|incoming| incoming != previous_recipient)
+            {
+                tracing::warn!(out_point = %self.out_point, "Ignoring asset-lock snapshot with a conflicting shielded recipient");
+                return false;
+            }
+            self.shielded_recipient = Some(previous_recipient);
         }
         true
     }
@@ -1533,15 +1731,18 @@ impl Merge for AssetLockChangeSet {
         // racing snapshots immaterial.
         for (out_point, mut entry) in other.asset_locks {
             if let Some(existing) = self.asset_locks.get_mut(&out_point) {
-                if !entry.preserve_recovery_metadata(existing.operation_id) {
+                if !entry
+                    .preserve_recovery_metadata(existing.operation_id, existing.shielded_recipient)
+                {
                     continue;
                 }
                 if existing.status == AssetLockStatus::DrainCompleted
                     || (existing.status.is_consumed() && !entry.status.is_consumed())
                 {
                     // Terminality guards lifecycle state, never the operation
-                    // association carried by a delayed snapshot.
+                    // association or recipient carried by a delayed snapshot.
                     existing.operation_id = entry.operation_id;
+                    existing.shielded_recipient = entry.shielded_recipient;
                     continue;
                 }
             }
@@ -2475,8 +2676,6 @@ mod serde_compat_tests {
     /// it.
     #[test]
     fn a_populated_sweep_batch_round_trips() {
-        use dashcore::hashes::Hash;
-
         let loser = Txid::from_byte_array([0x11; 32]);
         let winner = Txid::from_byte_array([0x22; 32]);
         let released = OutPoint::new(Txid::from_byte_array([0x33; 32]), 7);
@@ -2523,6 +2722,100 @@ mod tests {
             dashpay_payments: BTreeMap::new(),
             contact_profiles: BTreeMap::new(),
             ignored_senders: BTreeSet::new(),
+        }
+    }
+
+    /// A later key entry without a derivation breadcrumb keeps the earlier
+    /// one's and takes the rest; one with a breadcrumb replaces it whole.
+    #[test]
+    fn should_keep_an_earlier_breadcrumb_when_a_later_key_entry_has_none() {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        let id = Identifier::from([0x54; 32]);
+        let entry = |disabled_at: Option<u64>, key_index: Option<u32>| IdentityKeyEntry {
+            identity_id: id,
+            key_id: 3,
+            public_key: IdentityPublicKeyV0 {
+                id: 3,
+                disabled_at,
+                ..Default::default()
+            }
+            .into(),
+            public_key_hash: [3; 20],
+            wallet_id: key_index.map(|_| [9; 32]),
+            derivation_indices: key_index.map(|key_index| IdentityKeyDerivationIndices {
+                identity_index: 0,
+                key_index,
+            }),
+        };
+        let changeset = |entry: IdentityKeyEntry| {
+            let mut cs = IdentityKeysChangeSet::default();
+            cs.upserts.insert((id, 3), entry);
+            cs
+        };
+
+        let mut merged = changeset(entry(None, Some(3)));
+        merged.merge(changeset(entry(Some(7), None)));
+        assert_eq!(merged.upserts[&(id, 3)], entry(Some(7), Some(3)));
+
+        merged.merge(changeset(entry(Some(8), Some(4))));
+        assert_eq!(merged.upserts[&(id, 3)], entry(Some(8), Some(4)));
+
+        // Nothing to keep: the later entry stands as it is.
+        let mut merged = changeset(entry(None, None));
+        merged.merge(changeset(entry(Some(9), None)));
+        assert_eq!(merged.upserts[&(id, 3)], entry(Some(9), None));
+    }
+
+    /// A later entry without a breadcrumb takes the earlier one's only for
+    /// the same public key (data and hash) in the same wallet scope or none:
+    /// a replacement key under the same row id, or an entry scoped to
+    /// another wallet, stands as it is.
+    #[test]
+    fn should_lend_a_breadcrumb_only_to_the_same_public_key_in_the_same_scope() {
+        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+        let id = Identifier::from([0x55; 32]);
+        let entry = |byte: u8, hash: u8, wallet_id: Option<[u8; 32]>, key_index: Option<u32>| {
+            IdentityKeyEntry {
+                identity_id: id,
+                key_id: 3,
+                public_key: IdentityPublicKeyV0 {
+                    id: 3,
+                    data: vec![byte; 33].into(),
+                    ..Default::default()
+                }
+                .into(),
+                public_key_hash: [hash; 20],
+                wallet_id,
+                derivation_indices: key_index.map(|key_index| IdentityKeyDerivationIndices {
+                    identity_index: 0,
+                    key_index,
+                }),
+            }
+        };
+        let merged = |later: IdentityKeyEntry| {
+            let mut cs = IdentityKeysChangeSet::default();
+            cs.upserts
+                .insert((id, 3), entry(1, 1, Some([9; 32]), Some(3)));
+            let mut next = IdentityKeysChangeSet::default();
+            next.upserts.insert((id, 3), later);
+            cs.merge(next);
+            cs.upserts[&(id, 3)].clone()
+        };
+
+        for later in [entry(1, 1, None, None), entry(1, 1, Some([9; 32]), None)] {
+            assert_eq!(merged(later), entry(1, 1, Some([9; 32]), Some(3)));
+        }
+        for later in [
+            // A replacement key: other data, other hash.
+            entry(2, 2, None, None),
+            // The same hash over other data.
+            entry(2, 1, None, None),
+            // The same data with another hash.
+            entry(1, 2, None, None),
+            // Another wallet's scope.
+            entry(1, 1, Some([8; 32]), None),
+        ] {
+            assert_eq!(merged(later.clone()), later);
         }
     }
 
@@ -2600,7 +2893,6 @@ mod tests {
     /// Consumed — while Consumed itself must still land over anything.
     #[test]
     fn asset_lock_merge_never_regresses_consumed() {
-        use dashcore::hashes::Hash;
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
         let outpoint = OutPoint {
@@ -2609,6 +2901,7 @@ mod tests {
         };
         let entry_with = |status: AssetLockStatus| AssetLockEntry {
             operation_id: None,
+            shielded_recipient: None,
             out_point: outpoint,
             transaction: Transaction {
                 version: 3,
@@ -2676,6 +2969,34 @@ mod tests {
             folded.asset_locks[&outpoint].status,
             AssetLockStatus::Consumed
         );
+
+        // The recorded shielded recipient survives a later snapshot without
+        // one (reconstruction, a status advance) and vetoes a conflicting one.
+        let recipient = [0x71u8; SHIELDED_RECIPIENT_SIZE];
+        let mut recorded = cs_with(AssetLockStatus::Broadcast);
+        recorded
+            .asset_locks
+            .get_mut(&outpoint)
+            .unwrap()
+            .shielded_recipient = Some(recipient);
+        recorded.merge(cs_with(AssetLockStatus::RecoveredFromChain));
+        assert_eq!(
+            recorded.asset_locks[&outpoint].shielded_recipient,
+            Some(recipient)
+        );
+        assert_eq!(
+            recorded.asset_locks[&outpoint].status,
+            AssetLockStatus::RecoveredFromChain
+        );
+        let mut redirected = cs_with(AssetLockStatus::ChainLocked);
+        redirected
+            .asset_locks
+            .get_mut(&outpoint)
+            .unwrap()
+            .shielded_recipient = Some([0x72; SHIELDED_RECIPIENT_SIZE]);
+        let expected = recorded.clone();
+        recorded.merge(redirected);
+        assert_eq!(recorded.asset_locks, expected.asset_locks);
 
         // Non-terminal transitions stay last-write-wins in both
         // directions (live advances overwrite RecoveredFromChain, and
@@ -3324,6 +3645,7 @@ mod tests {
                         OutPoint::default(),
                         AssetLockEntry {
                             operation_id: None,
+                            shielded_recipient: None,
                             out_point: OutPoint::default(),
                             transaction: Transaction {
                                 version: 3,
@@ -3605,7 +3927,6 @@ mod tests {
 #[cfg(test)]
 mod utxo_credit_verdict_merge_tests {
     use super::*;
-    use dashcore::hashes::Hash;
 
     fn outpoint(byte: u8) -> OutPoint {
         OutPoint {
@@ -3830,5 +4151,142 @@ mod utxo_credit_verdict_merge_tests {
         ));
         older.merge(newer);
         assert!(older.utxo_credit_verdicts.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod coalesce_account_records_tests {
+    use super::*;
+    use dashcore::{Address, BlockHash, Network, PubkeyHash, TxOut};
+    use key_wallet::managed_account::transaction_record::{
+        InputDetail, OutputDetail, OutputRole, TransactionDirection,
+    };
+    use key_wallet::transaction_checking::{BlockInfo, TransactionContext};
+
+    fn record(net_amount: i64, context: TransactionContext) -> TransactionRecord {
+        let addresses = [5, 9].map(|tag| {
+            Address::new(
+                Network::Testnet,
+                dashcore::address::Payload::PubkeyHash(PubkeyHash::from_byte_array([tag; 20])),
+            )
+        });
+        let detail_index = usize::from(net_amount == 900);
+        let address = addresses[detail_index].clone();
+        let mut tx = crate::test_support::core_fixtures::spend_of(
+            &[
+                OutPoint::new(Txid::from_byte_array([5; 32]), 1),
+                OutPoint::new(Txid::from_byte_array([9; 32]), 1),
+            ],
+            addresses
+                .iter()
+                .zip([500, 900])
+                .map(|(address, value)| TxOut {
+                    value,
+                    script_pubkey: address.script_pubkey(),
+                })
+                .collect(),
+        );
+        tx.version = 2;
+        tx.lock_time = 1;
+        let mut record = TransactionRecord::new(
+            tx,
+            key_wallet::account::AccountType::Standard {
+                index: 0,
+                standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
+            },
+            context,
+            key_wallet::transaction_checking::transaction_router::TransactionType::Standard,
+            if net_amount == 500 {
+                TransactionDirection::Incoming
+            } else {
+                TransactionDirection::Internal
+            },
+            vec![InputDetail {
+                index: detail_index as u32,
+                value: net_amount as u64 + 100,
+                address: address.clone(),
+            }],
+            vec![OutputDetail {
+                index: detail_index as u32,
+                role: if net_amount == 500 {
+                    OutputRole::Received
+                } else {
+                    OutputRole::Change
+                },
+                address: Some(address),
+                value: net_amount as u64,
+            }],
+            net_amount,
+        );
+        record.fee = (net_amount == 900).then_some(200);
+        record.label = format!("snapshot {net_amount}");
+        record
+    }
+
+    fn in_block() -> TransactionContext {
+        TransactionContext::InBlock(BlockInfo::new(100, BlockHash::all_zeros(), 0))
+    }
+
+    /// A later record of equal or higher rank replaces an earlier one; a
+    /// stale mempool record never overwrites a confirmed one.
+    #[test]
+    fn should_coalesce_to_the_latest_record_of_the_highest_rank() {
+        let mempool = || TransactionContext::Mempool;
+        // (case, earlier context, later context, (kept net, kept confirmed))
+        for (case, earlier, later, kept) in [
+            (
+                "stale mempool after confirmed",
+                in_block(),
+                mempool(),
+                (500, true),
+            ),
+            ("equal rank", mempool(), mempool(), (900, false)),
+            ("higher rank", mempool(), in_block(), (900, true)),
+        ] {
+            let earlier = record(500, earlier);
+            let later = record(900, later);
+            assert_eq!(earlier.transaction, later.transaction, "{case}: same body");
+            assert_eq!(earlier.txid, earlier.transaction.txid());
+            assert_eq!(later.txid, earlier.txid, "{case}: same computed identity");
+            let expected = if kept.0 == 500 {
+                earlier.clone()
+            } else {
+                later.clone()
+            };
+            let mut records = vec![earlier, later];
+            coalesce_account_records(&mut records);
+            assert_eq!(records.len(), 1, "{case}");
+            let confirmed = matches!(records[0].context, TransactionContext::InBlock(_));
+            assert_eq!((records[0].net_amount, confirmed), kept, "{case}");
+            let actual = &records[0];
+            assert_eq!(
+                actual.transaction, expected.transaction,
+                "{case}: entire body"
+            );
+            assert_eq!(actual.context, expected.context, "{case}");
+            assert_eq!(
+                (actual.fee, &actual.label, actual.direction),
+                (expected.fee, &expected.label, expected.direction),
+                "{case}: metadata"
+            );
+            let inputs = |r: &TransactionRecord| {
+                r.input_details
+                    .iter()
+                    .map(|d| (d.index, d.value, d.address.clone()))
+                    .collect::<Vec<_>>()
+            };
+            let outputs = |r: &TransactionRecord| {
+                r.output_details
+                    .iter()
+                    .map(|d| (d.index, d.role, d.value, d.address.clone()))
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(inputs(actual), inputs(&expected), "{case}: input details");
+            assert_eq!(
+                outputs(actual),
+                outputs(&expected),
+                "{case}: output details"
+            );
+        }
     }
 }

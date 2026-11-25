@@ -1,3 +1,4 @@
+use crate::block_proof::BlockProofError;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dpp::ProtocolError;
 use drive::error::proof::ProofError;
@@ -74,6 +75,16 @@ pub enum Error {
     #[error("result encoding: {error}")]
     ResultEncodingError { error: String },
 
+    /// The proof and its signature verified, but the verified result cannot be returned as
+    /// the requested type: for example several documents for a single-document fetch, or a
+    /// total that does not fit its integer type.
+    ///
+    /// Every honest node proves the same result, so asking another node cannot help; the
+    /// request has to change. Raise it only after the proof and signature verified, never
+    /// for a result computed from parts of the response that are not verified yet.
+    #[error("unusable verified result: {reason}")]
+    UnusableVerifiedResult { reason: String },
+
     /// Cannot generate signature digest for data
     #[error("cannot generate signature digest for data: {error}")]
     SignDigestFailed { error: String },
@@ -97,6 +108,19 @@ pub enum Error {
     /// Callback error
     #[error("unexpected callback error: {error}, reason: {reason}")]
     UnexpectedCallbackError { error: String, reason: String },
+
+    /// A document query answer names a protocol version other than the one
+    /// it is verified with. Document queries are rebuilt with the verifier's
+    /// protocol version, so the answer is not verified.
+    #[error(
+        "response metadata names protocol version {signed}, but this query is verified with protocol version {verifier}"
+    )]
+    ProofProtocolVersionMismatch {
+        /// Protocol version in the response metadata
+        signed: u32,
+        /// Protocol version of the verifier's rules
+        verifier: u32,
+    },
 
     /// Invalid version of object in response
     #[error("invalid version of message")]
@@ -129,6 +153,11 @@ pub enum Error {
         #[source]
         error: dash_context_provider::ContextProviderError,
     },
+
+    /// A Tenderdash block proof does not hold, or the answer it came with says something
+    /// about the block that the proof does not bear out.
+    #[error("invalid block proof: {0}")]
+    InvalidBlockProof(#[from] BlockProofError),
 }
 
 impl From<drive::error::Error> for Error {

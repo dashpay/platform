@@ -40,13 +40,14 @@
 //! - `DASH_PLATFORM_AVG_BENCH_BATCH_SIZE`: inserts per commit;
 //!   defaults to 2 500.
 
-use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0};
 use dpp::identifier::Identifier;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::platform_value::Value;
 use dpp::tests::json_document::json_document_to_contract;
 use dpp::version::PlatformVersion;
@@ -62,6 +63,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
+use std::hint::black_box;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -583,7 +585,6 @@ fn insert_grade_document(
             true,
             transaction,
             platform_version,
-            None,
         )
         .expect("expected to insert average bench grade document");
 }
@@ -1865,9 +1866,7 @@ fn display_proofs(fixture: &AvgBenchFixture, platform_version: &PlatformVersion)
 
         // Decoded proof AST — bincode big-endian, no length limit
         // (mirrors sum bench's config).
-        let bincode_config = bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit();
+        let bincode_config = PLATFORM_BINCODE_CONFIG;
         match bincode::decode_from_slice::<GroveDBProof, _>(&proof_bytes, bincode_config) {
             Ok((decoded, _)) => eprintln!("  proof_ast:\n{decoded}"),
             Err(e) => eprintln!("  proof deserialize error: {e:?}"),

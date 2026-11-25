@@ -9,6 +9,8 @@
 //! formats explicitly retain ordinary decoding for foreign Core types; network
 //! responses go through the proof verification and request conversion paths.
 
+/// Blocks of the Platform chain and the state transitions in them
+pub mod blocks;
 /// Contract groups: a group's information, its members and the groups a contract is in
 pub mod contract_groups;
 /// Contract moderation query results
@@ -25,12 +27,16 @@ pub mod groups;
 pub mod identity_keys_remaining_budgets;
 /// Identity token balance
 pub mod identity_token_balance;
+/// A page of the entries of a private document type's store
+pub mod private_document_entries;
 /// Token contract info
 pub mod token_contract_info;
 /// Token info
 pub mod token_info;
 /// Token status
 pub mod token_status;
+/// The state of a yes/no vote poll and a masternode's answer on one
+pub mod yes_no_vote_polls;
 
 use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
@@ -65,7 +71,6 @@ use drive::grovedb::Element;
 pub use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
 
-use dpp::dashcore::hashes::Hash;
 #[cfg(feature = "mocks")]
 use {
     bincode::{Decode, Encode},
@@ -120,10 +125,30 @@ pub type RetrievedValues<K, I> = IndexMap<K, I>;
 ///
 /// Contains a map of data contract revisions to data contracts.
 pub type DataContractHistory = RetrievedValues<u64, DataContract>;
-/// History of a document.
-///
-/// Contains a map of revision timestamps to documents.
-pub type DocumentHistory = RetrievedValues<u64, Document>;
+pub use drive::query::document_history_drive_query::{
+    DocumentHistoryEntry, DocumentHistoryLifecycle, DocumentHistoryLifecycleTimes,
+    DocumentHistoryState,
+};
+
+/// Ordered document revisions with lifecycle metadata when the storage layout supports it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DocumentHistory {
+    /// Entries retain their complete cursor, including edits sharing a timestamp.
+    pub entries: Vec<DocumentHistoryEntry>,
+    /// Absent for the legacy layout through protocol 14 and authenticated by protocol-15 proofs.
+    pub lifecycle: Option<DocumentHistoryLifecycle>,
+}
+/// Verified history with the complete wire response needed for independent verification.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DocumentHistoryProofInfo {
+    /// Decoded and verified history page.
+    pub history: DocumentHistory,
+    /// Original metadata and the quorum-signed proof whose GroveDB payload
+    /// carries one GroveDB proof of the page and lifecycle.
+    pub response:
+        dapi_grpc::platform::v0::get_document_history_response::GetDocumentHistoryResponseV1,
+}
+
 /// Multiple data contracts.
 ///
 /// Mapping between data contract IDs and data contracts.
@@ -152,7 +177,10 @@ pub type AddressInfos = RetrievedObjects<PlatformAddress, AddressInfo>;
 
 /// Multiple contenders for a vote resolution.
 ///
-/// Mapping between the contenders identity IDs and their info.
+/// Mapping between the ids a contest names its contenders by and their info: identity ids,
+/// or, in a vote among documents (`ContestedIndexResolution::MasternodeVoteOnDocuments`),
+/// document ids, where a contender's owner is its document's `owner_id` and one identity
+/// may own several contenders.
 /// If a contender is not found, it is represented as `None`.
 #[derive(Default, Debug, Clone)]
 #[cfg_attr(
@@ -163,7 +191,8 @@ pub type AddressInfos = RetrievedObjects<PlatformAddress, AddressInfo>;
 pub struct Contenders {
     /// The winner if the contest is finished
     pub winner: Option<(ContestedDocumentVotePollWinnerInfo, BlockInfo)>,
-    /// Contenders indexed by their identity IDs.
+    /// Contenders indexed by the ids the contest names them by: identity ids, or document
+    /// ids in a vote among documents.
     pub contenders: BTreeMap<Identifier, ContenderWithSerializedDocument>,
     /// Tally of abstain votes.
     pub abstain_vote_tally: Option<u32>,
@@ -172,7 +201,8 @@ pub struct Contenders {
 }
 
 impl Contenders {
-    /// Return a map of deserialized [Contender] objects indexed by their identity IDs.
+    /// Return a map of deserialized [Contender] objects indexed by the ids the contest
+    /// names them by: identity ids, or document ids in a vote among documents.
     pub fn to_contenders(
         &self,
         document_type: &DocumentType,
@@ -386,8 +416,28 @@ pub struct ContestedVote(
     pub ResourceVoteChoice,
 );
 
-/// Votes casted by some identity.
-pub type ResourceVotesByIdentity = RetrievedObjects<Identifier, ResourceVote>;
+/// The vote an identity currently has on a vote poll, with the number of times the identity
+/// has voted on that poll.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserializeTrusted),
+    platform_serialize(unversioned)
+)]
+pub struct ResourceVoteWithCount {
+    /// The identity's current vote on the vote poll
+    pub resource_vote: ResourceVote,
+    /// How many times the identity has voted on the vote poll, the current vote included: 1
+    /// after a first vote, one more with each changed vote. Platform refuses a changed vote
+    /// once this reaches the `votes_allowed_per_masternode` of the active protocol version.
+    pub vote_count: u16,
+}
+
+/// Votes casted by some identity, each with the number of times the identity has voted on its
+/// vote poll, by vote poll unique id.
+///
+/// Every entry is `Some`: a vote poll the identity has not voted on has no entry.
+pub type ResourceVotesByIdentity = RetrievedObjects<Identifier, ResourceVoteWithCount>;
 
 /// Represents the current state of quorums in the platform.
 ///

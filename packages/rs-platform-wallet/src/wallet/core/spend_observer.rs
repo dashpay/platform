@@ -198,7 +198,6 @@ mod tests {
     //! which outpoints they yield. That decision IS the fence's release
     //! condition, so it is pinned here rather than only exercised end to end.
 
-    use dashcore::hashes::Hash;
     use dashcore::{
         Address as DashAddress, BlockHash, Network, OutPoint, ScriptBuf, Transaction, TxIn, Txid,
         Witness,
@@ -275,6 +274,7 @@ mod tests {
             balance: WalletCoreBalance::default(),
             account_balances: std::collections::BTreeMap::new(),
             addresses_derived: Vec::new(),
+            locked_outpoints: Vec::new(),
         }
     }
 
@@ -289,6 +289,7 @@ mod tests {
             balance: WalletCoreBalance::default(),
             account_balances: std::collections::BTreeMap::new(),
             addresses_derived: Vec::new(),
+            locked_outpoints: Vec::new(),
         }
     }
 

@@ -1,3 +1,4 @@
+import { Flags } from '@oclif/core';
 import { Listr } from 'listr2';
 import GroupBaseCommand from '../../oclif/command/GroupBaseCommand.js';
 import MuteOneLineError from '../../oclif/errors/MuteOneLineError.js';
@@ -8,11 +9,11 @@ export default class GroupRestartCommand extends GroupBaseCommand {
 
   static flags = {
     ...GroupBaseCommand.flags,
-    safe: {
+    safe: Flags.boolean({
       char: 's',
       description: 'wait for dkg before stop',
       default: false,
-    },
+    }),
   };
 
   /**
@@ -90,6 +91,7 @@ export default class GroupRestartCommand extends GroupBaseCommand {
                 // So we stop the miner first, as there's a chance that MNs will get banned
                 // if the miner is still running when stopping them
                 new Listr(configGroup.reverse().map((config) => ({
+                  title: `Stop ${config.getName()} node`,
                   task: () => stopNodeTask(config),
                 })))
               ),

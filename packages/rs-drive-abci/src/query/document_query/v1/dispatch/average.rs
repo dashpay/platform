@@ -83,12 +83,7 @@ impl<C> Platform<C> {
             ))));
 
         // `AverageMode` mirrors `CountMode` 1:1 — map across.
-        let avg_mode = match mode {
-            CountMode::Aggregate => AverageMode::Aggregate,
-            CountMode::GroupByIn => AverageMode::GroupByIn,
-            CountMode::GroupByRange => AverageMode::GroupByRange,
-            CountMode::GroupByCompound => AverageMode::GroupByCompound,
-        };
+        let avg_mode = AverageMode::from(mode);
 
         let drive_request = DocumentAverageRequest {
             contract: contract_ref,

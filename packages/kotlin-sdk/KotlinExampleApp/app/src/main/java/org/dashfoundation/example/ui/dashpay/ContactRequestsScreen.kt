@@ -38,6 +38,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
@@ -92,6 +94,24 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
     var removedOverlayIds by remember { mutableStateOf(emptySet<String>()) }
     var rowErrors by remember { mutableStateOf(emptyMap<String, String>()) }
     var isRefreshing by remember { mutableStateOf(false) }
+    // Hex ids whose pair the wallet holds for a private request, as a send
+    // decides it, or for a public request awaiting its outcome
+    // (`contactRequestHolds`): the row stays pending or "being checked",
+    // without its buttons, until the wallet's read says the pair is free.
+    // Read from the wallet, not kept by this screen, so leaving and reopening it keeps the
+    // state. Re-read on composition and row changes, after an accept, on
+    // refresh and after each sync pass. A failed read keeps the last snapshot
+    // and leaves every row without its buttons until a read succeeds.
+    var walletPending by remember { mutableStateOf(PrivateRepliesPendingSnapshot()) }
+    // Why the shielded store could not be opened, as last read with the
+    // pending state; null when it is open.
+    var shieldedStoreFailure by remember { mutableStateOf<String?>(null) }
+    var pendingReadVersion by remember { mutableStateOf(0) }
+    // The automatic refreshes made since the wallet's private payments were
+    // last read restored (`PrivatePaymentsRecovery.recheckDelayMs`).
+    var readinessRechecks by remember { mutableStateOf(0) }
+    // What the last private-store refresh has to tell the user, if anything.
+    var privateRefreshNotice by remember { mutableStateOf<String?>(null) }
 
     // Prune the optimistic-removal overlay against the backing query: keep a
     // hex only while its pair is STILL incoming-only, so an entry is dropped
@@ -147,6 +167,53 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
             .sortedByDescending { it.createdAtMillis }
     }
 
+    LaunchedEffect(wallet, rows, pendingReadVersion) {
+        val contactIds = rows.filter { !it.isOutgoing }.map { it.contactIdentityId }
+        // Recovery first: the readiness shown is read after the wallet was
+        // asked to retry a restoration its payments still wait for.
+        val refreshed = PrivatePaymentsRecovery.refresh(
+            lastReadiness = walletPending.readiness,
+            storeFailure = container.shieldedStoreFailure.value,
+            readReadiness = { privateContactReadiness(wallet, idBytes) },
+            configureAgain = { container.configureShieldedStoreAgain() },
+        )
+        shieldedStoreFailure = refreshed.storeFailure
+        val read = contactRequestHolds(
+            wallet = wallet,
+            ourIdentityId = idBytes,
+            contactIds = contactIds,
+        )
+        walletPending = walletPending
+            .withReadiness(refreshed.read?.readiness, refreshed.read?.restoreFailure)
+            .recorded(read, contactIds.map { it.toHex() })
+        // While the payments stay unrestored, refresh again after a pause, for
+        // as long as the screen is shown: a restoration the wallet deferred
+        // behind a busy store completes later and changes no key of this
+        // effect.
+        if (PrivatePaymentsRecovery.waitForRecheck(walletPending.readiness, readinessRechecks)) {
+            readinessRechecks++
+            pendingReadVersion++
+        } else if (walletPending.readiness?.privatePaymentsRestored == true) {
+            readinessRechecks = 0
+        }
+    }
+    // Binding the shielded account restores the wallet's private payments:
+    // read the readiness again then.
+    LaunchedEffect(container.shieldedService) {
+        container.shieldedService.isBound.collect { pendingReadVersion++ }
+    }
+    // A deferred restoration runs once the shielded scan holding the store
+    // ends: refresh then too, ahead of the timer.
+    LaunchedEffect(container.shieldedService) {
+        container.shieldedService.state
+            .map { it.isSyncing }
+            .distinctUntilChanged()
+            .collect { syncing -> if (!syncing) pendingReadVersion++ }
+    }
+    LaunchedEffect(manager) {
+        manager?.dashPaySyncIsSyncing?.collect { syncing -> if (!syncing) pendingReadVersion++ }
+    }
+
     fun accept(contactId: ByteArray) {
         val w = wallet ?: return
         val m = manager ?: return
@@ -155,11 +222,11 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
         inFlightIds = inFlightIds + hex
         scope.launch {
             try {
-                val ok = w.dashpay.acceptIncomingRequest(
+                val ok = acceptIncomingContactRequest(
+                    wallet = w,
+                    manager = m,
                     ourIdentityId = idBytes,
                     senderId = contactId,
-                    signerHandle = m.signerHandle,
-                    coreSignerHandle = m.mnemonicResolverHandle,
                 )
                 if (ok) {
                     removedOverlayIds = removedOverlayIds + hex
@@ -168,9 +235,41 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
                     rowErrors = rowErrors + (hex to "Request not in local state — pull to refresh")
                 }
             } catch (e: Exception) {
-                rowErrors = rowErrors + (hex to "Accept failed: ${e.message ?: "unknown error"}")
+                val outcome = ContactRequestSubmissionOutcome.of(e)
+                walletPending = walletPending.withOutcome(outcome, hex)
+                when (outcome) {
+                    ContactRequestSubmissionOutcome.MayHaveGoneThrough,
+                    ContactRequestSubmissionOutcome.PublicRequestUnconfirmed,
+                    -> {
+                        // As the send screen treats an unconfirmed spend: not
+                        // a failure to retry. The wallet holds the pair (a
+                        // private reply pending, or a public one awaiting its
+                        // outcome, 76 when an earlier one still does), and the
+                        // row reads that; the sync settles it.
+                        kickDashPaySync(scope, m)
+                    }
+                    ContactRequestSubmissionOutcome.PrivateRequestPending -> {
+                        // Nothing was sent: the wallet holds the pair. The
+                        // row stays pending until its per-contact read says
+                        // free.
+                        kickDashPaySync(scope, m)
+                    }
+                    ContactRequestSubmissionOutcome.PrivatePaymentsNotRestored -> {
+                        // The wallet is held until its private payments are
+                        // restored; every row waits for the readiness to say so.
+                    }
+                    ContactRequestSubmissionOutcome.PrivateStoreNotRead -> {
+                        // Nothing was sent and nothing is pending: the user may
+                        // accept again, which continues the read.
+                        rowErrors = rowErrors +
+                            (hex to ContactRequestSubmissionOutcome.PRIVATE_STORE_NOT_READ_MESSAGE)
+                    }
+                    is ContactRequestSubmissionOutcome.Failed ->
+                        rowErrors = rowErrors + (hex to "Accept failed: ${outcome.message}")
+                }
             } finally {
                 inFlightIds = inFlightIds - hex
+                pendingReadVersion++
             }
         }
     }
@@ -209,7 +308,13 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
             onRefresh = {
                 scope.launch {
                     isRefreshing = true
-                    manager?.let { attachOrStartSync(it) }
+                    manager?.let { m ->
+                        // The DashPay sync settles a public request awaiting
+                        // its outcome first, so the reload reads what it decided.
+                        attachOrStartSync(m)
+                        wallet?.let { privateRefreshNotice = syncPrivateContactRequests(it, m) }
+                        pendingReadVersion++
+                    }
                     isRefreshing = false
                 }
             },
@@ -220,6 +325,16 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                privateRefreshNotice?.let { notice ->
+                    item {
+                        Text(
+                            notice,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.testTag("dashpay.requests.privateRefreshNotice"),
+                        )
+                    }
+                }
                 if (incomingPending.isEmpty() && outgoingPending.isEmpty()) {
                     item {
                         DashPayEmptyRow(
@@ -235,8 +350,16 @@ fun ContactRequestsScreen(identityIdHex: String, navController: NavHostControlle
                             val hex = row.contactId.toHex()
                             IncomingRequestRow(
                                 item = row,
-                                isInFlight = inFlightIds.contains(hex),
-                                errorMessage = rowErrors[hex],
+                                isInFlight = inFlightIds.contains(hex) || !walletPending.allowsSubmission(hex),
+                                errorMessage = ContactRequestSubmissionOutcome.rowMessage(
+                                    pending = walletPending.isPending(hex),
+                                    awaitingOutcome = walletPending.isAwaitingOutcome(hex),
+                                    restoring = walletPending.isRestoringPrivatePayments,
+                                    restoreFailure = walletPending.restoreFailure,
+                                    shieldedStoreFailure = shieldedStoreFailure,
+                                    unavailable = walletPending.isUnavailable,
+                                    error = rowErrors[hex],
+                                ),
                                 onAccept = { accept(row.contactId) },
                                 onIgnore = { ignore(row.contactId) },
                             )

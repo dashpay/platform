@@ -1,3 +1,4 @@
+import { Parser } from '@oclif/core';
 import { Listr } from 'listr2';
 import GroupRestartCommand from '../../../../src/commands/group/restart.js';
 import getConfigMock from '../../../../src/test/mock/getConfigMock.js';
@@ -173,5 +174,20 @@ describe('Group restart command', () => {
     await run();
 
     expect(buildServicesTask).to.have.not.been.called();
+  });
+
+  async function parseSafe(argv) {
+    const { flags } = await Parser.parse(argv, { flags: GroupRestartCommand.flags });
+
+    return flags.safe;
+  }
+
+  it('should parse --safe so the restart waits for a safe DKG window', async () => {
+    expect(await parseSafe(['--safe'])).to.equal(true);
+    expect(await parseSafe(['-s'])).to.equal(true);
+  });
+
+  it('should not wait for a DKG window by default', async () => {
+    expect(await parseSafe([])).to.equal(false);
   });
 });

@@ -19,6 +19,7 @@ use dpp::dashcore::{ProTxHash, QuorumHash};
 use dpp::dashcore_rpc::dashcore_rpc_json::{MasternodeListItem, MasternodeType};
 use dpp::fee::default_costs::EpochIndexFeeVersionsForStorage;
 use dpp::platform_serialization::de::Decode;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::platform_value::Bytes32;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::fee::FeeVersion;
@@ -91,7 +92,7 @@ fn corrupted(message: impl Into<String>) -> Error {
 }
 
 fn entry_config() -> config::Configuration<config::BigEndian, config::Varint, config::NoLimit> {
-    config::standard().with_big_endian().with_no_limit()
+    PLATFORM_BINCODE_CONFIG
 }
 
 fn hash_from_entry_key<H: Hash<Bytes = [u8; 32]>>(

@@ -35,7 +35,7 @@ use crate::changeset::{IdentityManagerStartState, IdentityScanStateEntry};
 use crate::wallet::platform_wallet::WalletId;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Plain alias for the BIP-9 HD identity index used as the inner-bucket
 /// key for wallet-owned identities. Keeps the type signatures readable
@@ -107,6 +107,13 @@ pub struct IdentityManager {
     /// [`IdentityManagerStartState::scan_states`] for why that is deliberately
     /// not read as "complete".
     identity_scan_states: BTreeMap<WalletId, IdentityScanStateEntry>,
+
+    /// The identities whose private contact request scan state record a
+    /// persister kept marked, for a wallet removed or registered again, that
+    /// this manager does not hold yet
+    /// (`ClientStartState::retained_private_contact_scan_states`): each is held
+    /// as it is added ([`Self::retain_private_payment_markers`]).
+    retained_private_payment_markers: BTreeSet<Identifier>,
 }
 
 impl From<IdentityManagerStartState> for IdentityManager {
@@ -141,6 +148,7 @@ impl From<IdentityManagerStartState> for IdentityManager {
             wallet_identities,
             location_index,
             identity_scan_states: scan_states,
+            retained_private_payment_markers: BTreeSet::new(),
         }
     }
 }

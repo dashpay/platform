@@ -15,6 +15,14 @@ use assert_matches::assert_matches;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
+use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
+use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::TokenConfigurationConventionV0Getters;
+use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
+use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
+use dpp::data_contract::associated_token::token_marketplace_rules::accessors::v0::TokenMarketplaceRulesV0Setters;
+use dpp::data_contract::associated_token::token_marketplace_rules::v0::TokenTradeMode;
 use dpp::data_contract::errors::DataContractError;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::identity::identity_nonce::IDENTITY_NONCE_VALUE_FILTER;
@@ -149,6 +157,9 @@ pub(in crate::execution) fn add_ref_dag_document_type(
     let schema_defs = match contract {
         DataContractInSerializationFormat::V0(v0) => &mut v0.schema_defs,
         DataContractInSerializationFormat::V1(v1) => &mut v1.schema_defs,
+        DataContractInSerializationFormat::V2(_) => {
+            panic!("a state transition never carries the stored contract format")
+        }
     };
     let defs = schema_defs.get_or_insert_with(BTreeMap::new);
     for i in 0..levels {
@@ -167,7 +178,9 @@ pub(in crate::execution) fn add_ref_dag_document_type(
     }
     // A leaf that parses, so the non-validating parse would not stop at the first one.
     defs.insert(format!("d{levels}"), platform_value!({ "type": "integer" }));
-    let schemas = contract.document_schemas_mut();
+    let schemas = contract
+        .document_schemas_mut()
+        .expect("expected a transport format's schemas");
     schemas.insert(
         "item".to_string(),
         platform_value!({
@@ -178,6 +191,86 @@ pub(in crate::execution) fn add_ref_dag_document_type(
     );
     // Sorts after `item`, so the block's parse meets the graph first.
     schemas.insert("item_summed_u64".to_string(), summed_u64_schema());
+}
+
+/// The fragment of the pattern bound's message for a contract holding too many patterns.
+pub(in crate::execution) const TOO_MANY_PATTERNS_MESSAGE: &str = "patterns (`pattern` and";
+
+/// The fragment of the pattern bound's message for a pattern that compiles to too much.
+pub(in crate::execution) const PATTERN_TOO_LARGE_MESSAGE: &str =
+    "is not a regular expression that compiles within";
+
+/// A pattern any limit admits.
+pub(in crate::execution) const SMALL_PATTERN: &str = "^[a-z]{1,20}$";
+
+/// One pattern more than a contract may hold.
+pub(in crate::execution) fn one_pattern_too_many() -> usize {
+    usize::from(
+        PlatformVersion::latest()
+            .system_limits
+            .max_contract_schema_patterns,
+    ) + 1
+}
+
+/// A document type of `count` string properties, each with `pattern`.
+pub(in crate::execution) fn patterned_schema(count: usize, pattern: &str) -> Value {
+    let properties: Vec<(Value, Value)> = (0..count)
+        .map(|position| {
+            (
+                Value::Text(format!("p{position}")),
+                platform_value!({
+                    "type": "string",
+                    "pattern": pattern,
+                    "maxLength": 63,
+                    "position": position as u64,
+                }),
+            )
+        })
+        .collect();
+    platform_value!({
+        "type": "object",
+        "properties": Value::Map(properties),
+        "additionalProperties": false,
+    })
+}
+
+/// A document type whose one index lists `count` contested field matches of `pattern`, then a
+/// key no index has: the non-validating parse compiles every one of them before it refuses the
+/// key, with an error of its own.
+pub(in crate::execution) fn field_matches_before_an_unknown_index_key_schema(
+    count: usize,
+    pattern: &str,
+) -> Value {
+    let field_matches: Vec<Value> = (0..count)
+        .map(|_| platform_value!({ "field": "label", "regexPattern": pattern }))
+        .collect();
+    platform_value!({
+        "type": "object",
+        "properties": {
+            "label": { "type": "string", "maxLength": 63, "position": 0 },
+        },
+        "indices": [{
+            "contested": { "fieldMatches": field_matches },
+            "notAnIndexKey": 1,
+        }],
+        "additionalProperties": false,
+    })
+}
+
+/// A document type with one `format: regex` string property.
+pub(in crate::execution) fn regex_format_schema() -> Value {
+    platform_value!({
+        "type": "object",
+        "properties": {
+            "expression": {
+                "type": "string",
+                "format": "regex",
+                "maxLength": 63,
+                "position": 0,
+            },
+        },
+        "additionalProperties": false,
+    })
 }
 
 /// What `check_tx` and one block made of a transition.
@@ -374,6 +467,29 @@ pub(in crate::execution) fn assert_paid_contract_structure_error_in_block(
     );
 }
 
+/// A contract mempool policy keeps out and consensus still admits: `check_tx` refuses the
+/// transition with the pattern bound's `InvalidContractStructure`, and a block that holds it
+/// all the same executes it.
+pub(in crate::execution) fn assert_kept_out_of_the_mempool_and_executed_in_block(
+    outcome: &Outcome,
+    needle: &str,
+) {
+    assert_matches!(
+        outcome.check_tx.as_deref(),
+        Ok([ConsensusError::BasicError(BasicError::ContractError(
+            DataContractError::InvalidContractStructure(message)
+        ))]) if message.contains(needle),
+        "check_tx: {:?}",
+        outcome.check_tx
+    );
+    assert_matches!(
+        &outcome.block,
+        StateTransitionExecutionResult::SuccessfulExecution { .. },
+        "block: {:?}",
+        outcome.block
+    );
+}
+
 /// A paid rejection of a `$defs` graph reaching one definition along two paths: `check_tx`
 /// refuses it with the schema depth check's cycle error before its non-validating parse would
 /// expand the graph, and the block charges the owner for the same error and bumps the nonce to
@@ -429,6 +545,56 @@ pub(in crate::execution) fn assert_unpaid_internal_error(outcome: &Outcome, need
     assert_matches!(
         &outcome.block,
         StateTransitionExecutionResult::InternalError(message) if message.contains(needle),
+        "block: {:?}",
+        outcome.block
+    );
+    assert_eq!(outcome.nonce_after, outcome.nonce_before);
+    assert_eq!(outcome.balance_after, outcome.balance_before);
+}
+
+/// Gives the contract a token at position 0, in configuration format version 0: the most
+/// restrictive configuration with an English name and `trade_mode`, the one part of it the frozen
+/// contract basic structure generations of protocol versions 9 to 13 never read.
+pub(in crate::execution) fn add_token_with_trade_mode(
+    contract: &mut DataContractInSerializationFormat,
+    trade_mode: TokenTradeMode,
+) {
+    let DataContractInSerializationFormat::V1(contract) = contract else {
+        panic!("expected a contract serialization format that carries tokens");
+    };
+    let mut configuration = TokenConfigurationV0::default_most_restrictive();
+    configuration.marketplace_rules.set_trade_mode(trade_mode);
+    let mut configuration = TokenConfiguration::V0(configuration);
+    configuration.conventions_mut().localizations_mut().insert(
+        "en".to_string(),
+        TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
+            should_capitalize: true,
+            singular_form: "test".to_string(),
+            plural_form: "tests".to_string(),
+        }),
+    );
+    contract.tokens.insert(0, configuration);
+}
+
+/// An unpaid refusal as not active: `check_tx` and the block refuse the transition with
+/// `StateTransitionNotActiveError` under `state_transition_type`, and the owner's nonce and
+/// balance stay as they were.
+pub(in crate::execution) fn assert_refused_unpaid_as_not_active(
+    outcome: &Outcome,
+    state_transition_type: &str,
+) {
+    assert_matches!(
+        outcome.check_tx.as_deref(),
+        Ok([ConsensusError::BasicError(BasicError::StateTransitionNotActiveError(error))])
+            if error.state_transition_type() == state_transition_type,
+        "check_tx: {:?}",
+        outcome.check_tx
+    );
+    assert_matches!(
+        &outcome.block,
+        StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::BasicError(
+            BasicError::StateTransitionNotActiveError(error)
+        )) if error.state_transition_type() == state_transition_type,
         "block: {:?}",
         outcome.block
     );

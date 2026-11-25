@@ -5,8 +5,7 @@ use std::os::raw::c_char;
 // `FFINetwork` is the `#[repr(C)]` mirror cbindgen emits for callers.
 // Every FFI entry point in this crate takes / returns `FFINetwork`;
 // internal Rust code converts via `Network::from(ffi)` / `ffi.into()`.
-pub use dash_network::ffi::FFINetwork;
-pub use dash_network::Network;
+pub use rs_sdk_ffi::{FFINetwork, Network};
 
 /// Block time structure
 #[repr(C)]

@@ -17,8 +17,8 @@ use crate::platform_types::platform_state::PlatformState;
 use bincode::{Decode, Encode};
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::block::extended_block_info::ExtendedBlockInfo;
-use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::QuorumHash;
+use dpp::platform_serialization::PLATFORM_BINCODE_CONFIG;
 use dpp::platform_value::Bytes32;
 use dpp::ProtocolError;
 
@@ -61,9 +61,7 @@ impl PlatformStateRecent {
         bincode::config::Varint,
         bincode::config::NoLimit,
     > {
-        bincode::config::standard()
-            .with_big_endian()
-            .with_no_limit()
+        PLATFORM_BINCODE_CONFIG
     }
 
     /// Encodes the record for the `saved_state_recent` aux key.
