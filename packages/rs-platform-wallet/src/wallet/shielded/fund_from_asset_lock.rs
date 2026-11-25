@@ -465,6 +465,16 @@ impl PlatformWallet {
         let spawn_proof = |out_point, shield_amount, platform_version: &'static PlatformVersion| {
             let sender_ovk = sender_ovk.clone();
             AbortOnDropHandle::new(tokio::task::spawn_blocking(move || {
+                #[cfg(test)]
+                if FAILING_PROOF_RECIPIENTS
+                    .lock()
+                    .expect("failing proof recipients")
+                    .contains(&recipient.to_raw_bytes())
+                {
+                    return Err(ProtocolError::Generic(
+                        "simulated Orchard proving failure".into(),
+                    ));
+                }
                 ProvedShieldFromAssetLockBundle::prove(
                     &recipient,
                     shield_amount,
@@ -509,6 +519,10 @@ impl PlatformWallet {
                 spawn_proof(out_point, shield_amount, platform_version),
             ))
         };
+        // Only a lock this call builds is known never to have been submitted
+        // to Platform; a resumed one (a drain retried under its operation id
+        // arrives here as a resume too) may have been by an earlier call.
+        let fresh_lock = !matches!(funding, AssetLockFunding::FromExistingAssetLock { .. });
         let resolve = self.asset_locks.resolve_funding_observing_out_point(
             funding,
             AssetLockFundingType::AssetLockShieldedAddressTopUp,
@@ -658,7 +672,7 @@ impl PlatformWallet {
                         spawn_proof(proof_out_point, shield_amount, platform_version)
                     }
                 };
-                let bundle = join_initial_proof(proving).await?;
+                let bundle = join_initial_proof(proving, fresh_lock).await?;
                 let bundle_state = Arc::new(tokio::sync::Mutex::new(ShieldBundleState {
                     bundle,
                     platform_version,
@@ -1130,18 +1144,32 @@ async fn join_proof(
     }
 }
 
-/// Wait for the bundle proof that precedes the first submit. Proving is
-/// local and signs or sends nothing, so its failure is a refusal before
-/// dispatch: the funded-lock seam then names a still-resumable lock as held
-/// instead of answering `MaybeSent`. A re-proof inside the submit closure
-/// does not use this, as an earlier attempt may have been dispatched.
+/// Wait for the bundle proof that precedes this call's first submit.
+/// Proving is local and signs or sends nothing. For a lock this call built
+/// (`fresh_lock`), nothing has ever been submitted for it, so the failure is
+/// a refusal before dispatch: the funded-lock seam then names the lock as
+/// held while it is resumable. A resumed lock may already have been
+/// submitted by an earlier call whose outcome was never confirmed, so its
+/// failure keeps `MaybeSent`. A re-proof inside the submit closure never
+/// uses this, as an earlier attempt of this call may have been dispatched.
 async fn join_initial_proof(
     proving: AbortOnDropHandle<Result<ProvedShieldFromAssetLockBundle, ProtocolError>>,
+    fresh_lock: bool,
 ) -> Result<ProvedShieldFromAssetLockBundle, PlatformWalletError> {
-    join_proof(proving)
-        .await
-        .map_err(PlatformWalletError::before_dispatch)
+    join_proof(proving).await.map_err(|error| {
+        if fresh_lock {
+            error.before_dispatch()
+        } else {
+            error
+        }
+    })
 }
+
+/// Recipients whose bundle proof fails, so a test can fail proving on the
+/// production path (the prover only hands out the proving key).
+#[cfg(test)]
+pub(super) static FAILING_PROOF_RECIPIENTS: std::sync::Mutex<Vec<[u8; ORCHARD_ADDRESS_SIZE]>> =
+    std::sync::Mutex::new(Vec::new());
 
 /// What a landed Type 18 submit returns to the orchestrator.
 struct LandedShield {
@@ -2091,7 +2119,7 @@ mod tests {
         let error = ctx
             .manager
             .with_funded_lock(Some(ctx.out_point), async {
-                join_initial_proof(failing_proof()).await.map(|_| ())
+                join_initial_proof(failing_proof(), true).await.map(|_| ())
             })
             .await
             .expect_err("the proof failed");
@@ -2118,7 +2146,23 @@ mod tests {
         let error = ctx
             .manager
             .with_funded_lock(Some(ctx.out_point), async {
-                join_initial_proof(failing_proof()).await.map(|_| ())
+                join_initial_proof(failing_proof(), true).await.map(|_| ())
+            })
+            .await
+            .expect_err("the proof failed");
+        assert_eq!(error.payment_delivery(), PaymentDelivery::MaybeSent);
+    }
+
+    /// A resumed lock may already have been submitted by an earlier call
+    /// whose outcome was never confirmed: a proof failure on resume keeps
+    /// `MaybeSent` and names no lock, even while the row is resumable.
+    #[tokio::test]
+    async fn should_name_no_lock_when_the_initial_proof_of_a_resumed_lock_fails() {
+        let ctx = consumption_report_context().await;
+        let error = ctx
+            .manager
+            .with_funded_lock(Some(ctx.out_point), async {
+                join_initial_proof(failing_proof(), false).await.map(|_| ())
             })
             .await
             .expect_err("the proof failed");

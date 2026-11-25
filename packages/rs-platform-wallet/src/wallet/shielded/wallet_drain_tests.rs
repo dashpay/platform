@@ -13,6 +13,7 @@ use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProo
 use dpp::prelude::AssetLockProof;
 use dpp::version::PlatformVersion;
 use key_wallet::account::StandardAccountType;
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet::Wallet;
@@ -23,7 +24,7 @@ use crate::changeset::{
     AssetLockEntry, ClientStartState, ClientWalletStartState, PersistenceCapabilities,
     PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
-use crate::error::PlatformWalletError;
+use crate::error::{PaymentDelivery, PlatformWalletError};
 use crate::events::PlatformEventManager;
 use crate::spv::SpvRuntime;
 use crate::test_support::{funded_wallet_manager, WalletSigner};
@@ -250,6 +251,7 @@ async fn signed_wallet_fixture(
     });
     let sdk = Arc::new(
         dash_sdk::SdkBuilder::new_mock()
+            .with_network(Network::Testnet)
             .with_version(PlatformVersion::latest())
             .build()
             .unwrap(),
@@ -828,6 +830,101 @@ async fn status_reads_durable_state_without_network_or_guards() {
             .unwrap()
             .state,
         AssetLockOperationState::Completed
+    );
+}
+
+/// A resume whose bundle proof fails, through the production prove step:
+/// the lock may already have been submitted by the earlier call that left it
+/// `ChainLocked`, so the failure is `MaybeSent`, names no lock to resume, and
+/// leaves the row as it was.
+#[tokio::test]
+async fn should_name_no_held_lock_when_a_resumed_shield_fails_to_prove() {
+    let (fixture_lock, keys) = drain_lock_fixture();
+    let recipient = dpp::address_funds::OrchardAddress::from(keys[&0].default_address);
+    let (wallet, persistence, coordinator, _dir, signer) =
+        signed_wallet_fixture(&fixture_lock, keys).await;
+    // A lock large enough to pay the pool fee, so the call reaches proving,
+    // paying a credit output of the wallet's own shielded funding account, so
+    // the resume can re-derive its key.
+    let lock = {
+        let mut manager = wallet.wallet_manager.write().await;
+        let info = manager.get_wallet_info_mut(&wallet.wallet_id()).unwrap();
+        let credit_address = info
+            .core_wallet
+            .accounts
+            .asset_lock_shielded_address_topup
+            .as_mut()
+            .expect("shielded funding account")
+            .next_address(None)
+            .expect("an unused funding address");
+        let mut lock = fixture_lock.clone();
+        lock.transaction.special_transaction_payload =
+            Some(TransactionPayload::AssetLockPayloadType(AssetLockPayload {
+                version: 1,
+                credit_outputs: vec![TxOut {
+                    value: 50_000_000,
+                    script_pubkey: credit_address.script_pubkey(),
+                }],
+            }));
+        lock.out_point = OutPoint::new(lock.transaction.txid(), 0);
+        lock.proof = Some(AssetLockProof::Chain(ChainAssetLockProof {
+            core_chain_locked_height: 42,
+            out_point: lock.out_point,
+        }));
+        lock.amount = 50_000_000;
+        lock.operation_id = None;
+        lock.status = AssetLockStatus::ChainLocked;
+        lock.shielded_recipient = Some(recipient.to_raw_bytes());
+        info.tracked_asset_locks
+            .insert(lock.out_point, lock.clone());
+        lock
+    };
+    persistence
+        .committed
+        .lock()
+        .unwrap()
+        .insert(lock.out_point, (&lock).into());
+    let coordinator = Arc::new(coordinator);
+    let prover: &'static super::prover::CachedOrchardProver = &super::prover::CachedOrchardProver;
+    super::fund_from_asset_lock::FAILING_PROOF_RECIPIENTS
+        .lock()
+        .unwrap()
+        .push(recipient.to_raw_bytes());
+
+    let result = wallet
+        .shielded_fund_from_asset_lock(
+            &coordinator,
+            AssetLockFunding::FromExistingAssetLock {
+                out_point: lock.out_point,
+                consume_invitation_voucher: false,
+            },
+            vec![(recipient, None)],
+            &signer,
+            prover,
+            None,
+            0,
+            None,
+            None,
+            None,
+        )
+        .await;
+    super::fund_from_asset_lock::FAILING_PROOF_RECIPIENTS
+        .lock()
+        .unwrap()
+        .retain(|raw| *raw != recipient.to_raw_bytes());
+
+    let error = result.expect_err("the proof failed");
+    assert!(
+        error
+            .to_string()
+            .contains("simulated Orchard proving failure"),
+        "the call failed at proving: {error}"
+    );
+    assert_eq!(error.held_asset_lock(), None, "{error}");
+    assert_eq!(error.payment_delivery(), PaymentDelivery::MaybeSent);
+    assert_eq!(
+        persistence.committed_status(&lock.out_point),
+        AssetLockStatus::ChainLocked
     );
 }
 
