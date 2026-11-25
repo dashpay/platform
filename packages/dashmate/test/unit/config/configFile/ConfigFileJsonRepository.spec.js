@@ -1007,12 +1007,15 @@ describe('ConfigFileJsonRepository', () => {
       expect(newer.read().getConfig('base').get('platform.gateway.docker.image')).to.equal(NEWER_IMAGE);
     });
 
-    it('should name both versions and the way out in the refusal', () => {
+    // Diagnostic only. A restart reloads the gateway from the certificate files
+    // on disk, which nothing here has checked, so the refusal must not advise one.
+    it('should name both versions and the newer dashmate in the refusal, without advising a restart', () => {
       expect(() => older.write(older.read())).to.throw(Error)
         .with.property('message')
         .that.includes(newerFormatVersion)
         .and.includes(CURRENT_FORMAT_VERSION)
-        .and.includes('dashmate restart');
+        .and.includes('newer dashmate')
+        .and.not.includes('dashmate restart');
     });
 
     it('should refuse update() without running onSaved and release the lock', function it() {

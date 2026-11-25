@@ -18,10 +18,9 @@ export default class ConfigFileFormatTooNewError extends AbstractError {
     super(`Config file '${configFilePath}' was updated by a newer dashmate (config format`
       + ` ${recordedVersion}; this dashmate writes config format ${ownVersion}). Nothing was saved,`
       + ' so the newer settings were not overwritten with older ones. Run this command with the'
-      + ' newer dashmate; `which -a dashmate` lists every copy on your PATH. If this comes from the'
-      + ' dashmate helper, restart the node with the newer dashmate (`dashmate restart`, adding'
-      + ' `--config <name>` for a node that is not the default) so the helper runs the same'
-      + ' version. Downgrading dashmate is not supported.');
+      + ' newer dashmate; `which -a dashmate` lists every copy on your PATH. The dashmate helper'
+      + ' runs the version that started the node, so it refuses the same way until the node runs'
+      + ' the newer version. Downgrading dashmate is not supported.');
 
     this.configFilePath = configFilePath;
     this.recordedVersion = recordedVersion;

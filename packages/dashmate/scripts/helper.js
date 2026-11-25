@@ -2,7 +2,6 @@ import dotenv from 'dotenv';
 import { asValue } from 'awilix';
 import graceful from 'node-graceful';
 import semver from 'semver';
-import renderConfigFlag from '../src/util/renderConfigFlag.js';
 import createDIContainer from '../src/createDIContainer.js';
 import scheduleRenewCertificate from '../src/helper/scheduleRenewCertificate.js';
 import watchCertificateConfig from '../src/helper/watchCertificateConfig.js';
@@ -122,8 +121,8 @@ async function removeOrphanedSslContainers(docker) {
     // eslint-disable-next-line no-console
     console.warn('Certificate renewal will fail: the config was updated by a newer dashmate'
       + ` (config format ${recordedFormatVersion}; this helper writes config format`
-      + ` ${ownFormatVersion}). Restart the node with the newer dashmate`
-      + ` (\`dashmate restart ${renderConfigFlag(configName)}\`) so the helper runs the same version.`);
+      + ` ${ownFormatVersion}). This helper runs the version of dashmate that started the node,`
+      + ' and refuses to save over a newer config until the node runs the newer version.');
   }
 
   if (isEnabled && (provider === 'zerossl' || provider === 'letsencrypt')) {
