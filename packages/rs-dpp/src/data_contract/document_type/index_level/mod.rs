@@ -161,6 +161,13 @@ pub struct IndexLevelTypeInfo {
     /// member entries. `None` on every other index, which is every index of
     /// every pre-PV14 contract.
     pub summable_off_count_index: Option<String>,
+    /// Whether the trees that hold this index's sums of the [`Self::summable`] property keep
+    /// a 128-bit total (the big sum trees) rather than a 64-bit one. Decided for the whole
+    /// document type from the bounds its summed property declares
+    /// (`SystemLimits::max_summed_value_magnitude_in_64_bit_sums`) and stamped by the
+    /// document type parser, so it is `false` on every level without a `summable` property
+    /// and on every level parsed under a protocol version before 15.
+    pub big_sums: bool,
 }
 
 impl IndexLevelTypeInfo {
@@ -455,6 +462,52 @@ impl IndexLevel {
     /// delete involve `$createdAt` — see the field docs on [`IndexLevel`].
     pub fn created_at_indexed_only_by_outliving(&self) -> bool {
         self.created_at_indexed_only_by_outliving
+    }
+
+    /// The most entries one document adds to a summed index of this level tree, at least 1:
+    /// each window of a bucketed first property and each element of a typed array level on
+    /// the way to the index's last property is one entry carrying the document's summed
+    /// value. With values that are never negative, no sum the type keeps exceeds the total of
+    /// the property over the type's documents times this.
+    pub fn max_summed_entries_per_document(&self) -> u64 {
+        fn below(level: &IndexLevel, entries_above: u64) -> u64 {
+            let entries = entries_above
+                .saturating_mul(
+                    level
+                        .bucketing()
+                        .map_or(1, |bucketing| bucketing.overlap_factor().max(1)),
+                )
+                .saturating_mul(level.indexed_array_max_items().map_or(1, u64::from).max(1));
+            let ended_here = level
+                .has_index_with_type()
+                .filter(|index_type| index_type.summable.is_some())
+                .map_or(1, |_| entries);
+            level
+                .sub_levels()
+                .values()
+                .map(|sub_level| below(sub_level, entries))
+                .fold(ended_here, u64::max)
+        }
+        self.sub_levels()
+            .values()
+            .map(|sub_level| below(sub_level, 1))
+            .fold(1, u64::max)
+    }
+
+    /// Marks every level at or below this one where an index summing a property terminates
+    /// as keeping its sums in 128 bits ([`IndexLevelTypeInfo::big_sums`]). Called by the
+    /// document type parser once it has decided the width from the summed property's bounds;
+    /// every summing index of a type sums the same property, so the mark is the same for all
+    /// of them.
+    pub(in crate::data_contract::document_type) fn mark_big_sums(&mut self) {
+        if let Some(info) = self.has_index_with_type.as_mut() {
+            if info.summable.is_some() {
+                info.big_sums = true;
+            }
+        }
+        for sub_level in self.sub_index_levels.values_mut() {
+            sub_level.mark_big_sums();
+        }
     }
 
     pub fn has_index_with_type(&self) -> Option<&IndexLevelTypeInfo> {
@@ -781,6 +834,9 @@ impl IndexLevel {
             skip_if_absent_properties: index.skip_if_absent_properties.clone(),
             // Same PV14+ gating as `terminal`.
             summable_off_count_index: index.summable_off_count_index.clone(),
+            // Decided from the summed property's schema, which an index does not hold: the
+            // document type parser stamps it afterwards (`IndexLevel::mark_big_sums`).
+            big_sums: false,
         }
     }
 

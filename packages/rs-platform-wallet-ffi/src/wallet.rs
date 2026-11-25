@@ -29,6 +29,33 @@ pub unsafe extern "C" fn platform_wallet_refresh_identity_balance(
     PlatformWalletFFIResult::ok()
 }
 
+/// Fetch a managed identity from Platform with a proof and fold it into the
+/// wallet, as `IdentityWallet::refresh_identity` does: keys added or changed
+/// on another client are taken in, and a node behind the cache cannot roll
+/// back an update the cache already holds. The changed key rows are handed
+/// to the host's persister when it provides an identity-key callback. A
+/// reported store failure is returned (`PlatformWalletError::PersisterStore`)
+/// before the wallet's copy changes, so a retry still includes those keys.
+/// Success means the wallet applied the refresh without a reported store
+/// error; it does not guarantee that the host saved the rows.
+///
+/// # Safety
+/// `identity_id` points to 32 readable bytes. `handle` must refer to a live
+/// platform wallet for the duration of this call.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_refresh_identity(
+    handle: Handle,
+    identity_id: *const u8,
+) -> PlatformWalletFFIResult {
+    let id = unwrap_result_or_return!(unsafe { read_identifier(identity_id) });
+    // Wait outside the registry guard: the fetch and the persister round can be slow.
+    let option = PLATFORM_WALLET_STORAGE.with_item(handle, |wallet| wallet.identity().clone());
+    let identity = unwrap_option_or_return!(option);
+    let result = block_on_worker(async move { identity.refresh_identity(&id).await });
+    unwrap_result_or_return!(result);
+    PlatformWalletFFIResult::ok()
+}
+
 /// Get the wallet ID (32 bytes).
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_get_id(

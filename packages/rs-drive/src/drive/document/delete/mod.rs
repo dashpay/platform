@@ -44,6 +44,10 @@ mod delete_document_for_contract_with_named_type_operations;
 // This module contains functionality to delete a document for contract operations
 mod delete_document_for_contract_operations;
 mod delete_index_only_document_for_contract_operations;
+
+// Module: consumed_document_delete_cost
+// This module prices, by estimation, the delete of a document a create consumes
+mod consumed_document_delete_cost;
 mod erase_document_for_contract_operations;
 
 mod internal;
@@ -1097,7 +1101,7 @@ mod tests {
                 platform_version,
             )
             .expect("expected to estimate the create");
-        assert_eq!(estimated_create.processing_fee, 28915680);
+        assert_eq!(estimated_create.processing_fee, 30747120);
 
         drive
             .apply_drive_operations(
@@ -1122,7 +1126,7 @@ mod tests {
                 platform_version,
             )
             .expect("expected to estimate the delete");
-        assert_eq!(estimated_delete.processing_fee, 28170620);
+        assert_eq!(estimated_delete.processing_fee, 29925640);
     }
 
     #[test]

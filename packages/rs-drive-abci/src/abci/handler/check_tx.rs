@@ -63,11 +63,7 @@ where
                 (0, "".to_string())
             };
 
-            let gas_wanted = check_tx_result
-                .fee_result
-                .as_ref()
-                .map(|fee_result| fee_result.total_base_fee())
-                .unwrap_or_default();
+            let gas_wanted = check_tx_result.gas_wanted;
 
             // Todo: IMPORTANT We need tenderdash to support multiple senders
             let first_unique_identifier = check_tx_result

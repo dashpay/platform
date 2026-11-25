@@ -1,7 +1,10 @@
 #![allow(clippy::result_large_err)] // Errors intentionally carry rich context in verify paths
                                     // TODO: Revisit after shrinking top-level Error by boxing heavy variants
+use crate::error::proof::ProofError;
 use crate::error::Error;
+use dpp::data_contract::errors::DataContractError;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use grovedb::{GroveDb, PathQuery};
 
 /// Chained document query (provable semi-join) verification methods on
@@ -60,6 +63,25 @@ mod bounded_decode;
 
 /// Represents the root hash of the grovedb tree
 pub type RootHash = [u8; 32];
+
+/// Converts a client decoded-value budget exhaustion into
+/// [`ProofError::DecodedValueBudgetExceeded`] carrying the `root_hash` reconstructed by
+/// GroveDB, so callers can authenticate the root against the quorum signature and treat
+/// an honest oversized response as an unusable verified result rather than a node fault.
+pub(crate) fn with_proved_root_on_budget_exceeded(root_hash: RootHash, error: Error) -> Error {
+    match error {
+        Error::Protocol(ref protocol_error) => match protocol_error.as_ref() {
+            ProtocolError::DataContractError(DataContractError::DecodedValueBudgetExceeded(
+                reason,
+            )) => Error::Proof(ProofError::DecodedValueBudgetExceeded {
+                root_hash,
+                reason: reason.clone(),
+            }),
+            _ => error,
+        },
+        other => other,
+    }
+}
 
 /// A range total's verification from protocol version 14 on: `verified`, or,
 /// when grovedb refused the proof, the empty total `empty` makes of the root

@@ -89,6 +89,9 @@ struct WalletsContentView: View {
         .navigationDestination(for: ShieldedActivityRoute.self) { route in
             ShieldedActivityListView(walletId: route.walletId)
         }
+        .navigationDestination(for: ShieldedTokensRoute.self) { route in
+            ShieldedTokenPoolsView(walletId: route.walletId)
+        }
         .navigationTitle("Wallets")
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {

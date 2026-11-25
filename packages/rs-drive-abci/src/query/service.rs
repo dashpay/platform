@@ -1346,8 +1346,18 @@ fn query_error_into_status(error: QueryError) -> Status {
         error @ QueryError::Drive(DriveError::Drive(DriveInternalError::VersionNotActive {
             ..
         })) => Status::invalid_argument(bounded_message(error.to_string())),
-        // A request this node cannot decode, or a request version it does not serve, may be
-        // one a newer node serves, so these stay retryable on another node.
+        // A request version below the ones the current protocol version serves was retired by
+        // a protocol upgrade. The versions served depend only on the protocol version, which
+        // every node at this height shares, so no other node serves it either: the refusal is
+        // the request's to change, and must not get this node banned by a client older than
+        // the network.
+        error @ QueryError::UnsupportedQueryVersion(_, min_version, _, _, given)
+            if given < min_version =>
+        {
+            Status::invalid_argument(bounded_message(error.to_string()))
+        }
+        // A request this node cannot decode, or a request version above the ones it serves,
+        // may be one a newer node serves, so these stay retryable on another node.
         _ => {
             tracing::error!("unexpected query error: {:?}", error);
 
@@ -1655,6 +1665,36 @@ mod query_error_status_tests {
             "could not decode data contracts query".to_string(),
         ));
         assert_eq!(undecodable.code(), Code::Unknown);
+    }
+
+    /// A protocol upgrade can retire a request version, as protocol version 15 retires document
+    /// history version 0. Every node at that height refuses it alike, so the refusal ends the
+    /// request instead of sending a client older than the network to ban one node after another.
+    /// A request version above the ones served stays retryable: a newer node may serve it.
+    #[test]
+    fn should_answer_a_retired_request_version_with_invalid_argument() {
+        let retired = query_error_into_status(QueryError::UnsupportedQueryVersion(
+            "document_history".to_string(),
+            1,
+            1,
+            15,
+            0,
+        ));
+        assert_eq!(retired.code(), Code::InvalidArgument);
+        assert!(retired
+            .message()
+            .contains("unsupported version for query: document_history"));
+        assert!(!retired.can_retry(), "{retired}");
+
+        let not_served_yet = query_error_into_status(QueryError::UnsupportedQueryVersion(
+            "document_history".to_string(),
+            0,
+            0,
+            14,
+            1,
+        ));
+        assert_eq!(not_served_yet.code(), Code::Unknown);
+        assert!(not_served_yet.can_retry(), "{not_served_yet}");
     }
 
     /// Every node at a height runs the same protocol version, so a feature that version does not

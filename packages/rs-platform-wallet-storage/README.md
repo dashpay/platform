@@ -204,6 +204,37 @@ operators can walk `Error::source()` for the full typed chain; the outer
 `Display` carries the variant marker + hex wallet id so production-log greps
 still work.
 
+##### One changeset, one answer (`store_and_commit`)
+
+`store()` followed by `flush()` is two calls, and in `Manual` mode anything
+that drains the wallet's buffer can run between them: a `commit_writes()`,
+another `flush()`. If that drain takes the changeset and fails for good, the
+caller's own `flush()` then succeeds over an empty buffer and reports nothing.
+A caller that acts on a record being on disk uses
+`PlatformWalletPersistence::store_and_commit` instead. It merges the changeset
+and commits the wallet's buffer under the one connection guard every drain
+takes, in either flush mode, so its result is for exactly what it staged:
+
+- `Ok(())`: the changeset is on disk, behind everything that was buffered
+  for the wallet before it.
+- `StoreAndCommitError::NotStaged`: refused before it reached the buffer
+  (recovery mode, an identity-slot conflict). The buffer is as it was and
+  nothing was written.
+- `StoreAndCommitError::NotCommitted`: merged, and the transaction failed.
+  After a transient failure the changeset is back in the buffer for a later
+  `flush()`, `commit_writes()` or `store_and_commit`; **do not issue it
+  again**. After any other failure it was dropped with the rest of the buffer.
+  A poisoned lock is reported this way too (`LockPoisoned`): detection
+  discards every buffered changeset, so the buffer is not as it was.
+
+That holds in `Immediate` mode as well. `store_commits_inline()` is `true`
+there because a `store()` that returns `Ok` is on disk, not because the buffer
+is always empty: a changeset whose commit failed transiently stays in it until
+the next `store()`, `flush()`, `commit_writes()` or `store_and_commit` writes
+it or drops it. A caller that asks whether everything stored is on disk
+flushes in either mode, which is what the wallet does for a backend that
+offers `store_and_commit`.
+
 A `SqlitePersister` configured with [`FlushMode::Manual`] does NOT
 auto-flush from `Drop`; it emits a `tracing::error!` on drop if the buffer
 still holds uncommitted writes (with `dirty_wallets` and `total_fields`
@@ -212,6 +243,13 @@ before drop to make Manual-mode writes durable.
 [`SqlitePersister::commit_writes`] returns a `CommitReport` whose
 `succeeded` / `failed` / `still_pending` vectors classify each dirty wallet
 so one failed wallet does not hide its siblings.
+
+A wallet that makes a record durable before acting on it counts only the
+flushes it makes itself. A commit made here, or a `flush` called on the
+persister directly, is not one of them, so the persister counts every
+changeset it drops without writing, whichever call drained the buffer, and
+reports the count through `PlatformWalletPersistence::buffered_writes_dropped`.
+The wallet then refuses to trust a record such a commit may have taken.
 
 #### load() reconstruction
 

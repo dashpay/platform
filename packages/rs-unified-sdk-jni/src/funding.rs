@@ -42,13 +42,20 @@
 #![allow(clippy::missing_safety_doc)]
 #![cfg(feature = "shielded")]
 
+use crate::decision_proposals::read_fixed_bytes;
 use crate::pubkey_rows::decode_registration_pubkeys_blob;
 use crate::support::{guard, take_pwffi_error, throw_sdk_exception, JVM};
 use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JString, JValue};
-use jni::sys::{jboolean, jint, jlong, jobjectArray, JNI_FALSE, JNI_TRUE};
+use jni::sys::{jboolean, jbyteArray, jint, jlong, jobjectArray, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
 use platform_wallet_ffi::handle::Handle;
 use platform_wallet_ffi::identity_registration_with_signer::IdentityPubkeyFFI;
+use platform_wallet_ffi::shielded_tip::{
+    platform_wallet_manager_review_shielded_tip, platform_wallet_manager_send_shielded_tip,
+    platform_wallet_manager_shielded_identity_balance, platform_wallet_parse_shielded_tip_amount,
+    ShieldedIdentityBalanceFFI, ShieldedIdentityBalanceStateFFI, ShieldedTipRecipientChangeFFI,
+    ShieldedTipReviewFFI,
+};
 use std::os::raw::c_void;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
@@ -91,7 +98,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_proverI
 /// (`0` = ShieldedTransfer/Shield, `1` = Unshield, `2` = ShieldedWithdrawal,
 /// `3` = ShieldFromIdentity: the compute-only floor, no storage component,
 /// `4` = IdentityTopUpFromShieldedPool: base + the flat identity-balance
-/// write cost) and Orchard action `count` (a single-note spend with change is 2
+/// write cost, `5` = TokenPurchaseFromShieldedPool: the fee a purchase paid
+/// from the notes adds on top of the price) and Orchard action `count` (a single-note spend with change is 2
 /// actions), computed at `managerHandle`'s network-tracked platform
 /// version — the same version the shielded builders carve fees with. No
 /// network round-trip. Throws on an unknown kind, an invalid manager
@@ -1409,4 +1417,451 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shielde
         };
         let _ = take_pwffi_error(env, result);
     })
+}
+
+/// Prepare the dedicated shielded account of a wallet-owned identity and
+/// return its default 43-byte raw Orchard address. Bridges
+/// `platform_wallet_manager_prepare_shielded_identity_address`; publishes
+/// nothing and moves no funds. Throws on failure and returns null.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_prepareShieldedIdentityAddress(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    resolver_handle: jlong,
+    identity_id: JByteArray,
+) -> jni::sys::jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return ptr::null_mut();
+        };
+        let Some(id) = read_id32(env, &identity_id, "identityId") else {
+            return ptr::null_mut();
+        };
+        let mut address = [0u8; 43];
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_prepare_shielded_identity_address(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                resolver_handle as *mut MnemonicResolverHandle,
+                id.as_ptr(),
+                address.as_mut_ptr(),
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        env.byte_array_from_slice(&address)
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+// ── Shielded tips to a DashPay username ───────────────────────────────
+//
+// Each export is one call into `platform_wallet_ffi::shielded_tip`. Nothing
+// is decided here: the wallet says what a typed amount is, whom a name pays,
+// whether that changed, whether an earlier payment is unresolved, which
+// account pays and whether an identity's balance is known. A JVM value the
+// C type cannot carry (a negative amount or account, an id of the wrong
+// length, a string that holds a NUL or an unpaired surrogate) throws code 1
+// before the C call; every other argument reaches Rust as given, the empty
+// string included.
+
+/// Bytes of the review BLOB: the fields of [`ShieldedTipReviewFFI`].
+const TIP_REVIEW_BLOB_LEN: usize = 32 + 43 + 1 + 32 + 43 + 1;
+/// Bytes of the balance BLOB: the fields of [`ShieldedIdentityBalanceFFI`].
+const IDENTITY_BALANCE_BLOB_LEN: usize = 1 + 4 + 8;
+
+/// Read a Java `String` exactly as the caller built it, into an owned
+/// `CString`, the empty string included; throws and returns `None` for JVM
+/// null and for a string that cannot cross intact: one that does not read,
+/// holds an unpaired surrogate, or holds a NUL (a C string ends at its
+/// first). A caller for which null is a value checks for it first.
+///
+/// The code units are read as UTF-16 and decoded strictly. The modified
+/// UTF-8 view `get_string` reads is not used here: for a string holding
+/// both a supplementary character and a NUL, ART's encoding of it does not
+/// decode, and the fallback is a lossy one that would replace the NUL
+/// instead of refusing it. Unlike [`read_cstring_required`] an empty string
+/// passes, for Rust to judge.
+fn read_cstring_exact(env: &mut JNIEnv, s: &JString, field: &str) -> Option<std::ffi::CString> {
+    // `GetStringLength` requires a non-null string: checked here, at the raw
+    // call, whatever the caller checked.
+    if s.is_null() {
+        throw_sdk_exception(env, 1, &format!("{field} was null"));
+        return None;
+    }
+    let raw = env.get_raw();
+    // SAFETY: `raw` is this thread's live `JNIEnv`, and `s` a live string
+    // reference, non-null as checked above. `GetStringRegion` writes
+    // exactly `length` code units into a buffer of that length.
+    let units = unsafe {
+        match ((**raw).GetStringLength, (**raw).GetStringRegion) {
+            (Some(string_length), Some(string_region)) => {
+                let length = string_length(raw, s.as_raw());
+                usize::try_from(length).ok().map(|capacity| {
+                    let mut units = vec![0u16; capacity];
+                    string_region(raw, s.as_raw(), 0, length, units.as_mut_ptr());
+                    units
+                })
+            }
+            _ => None,
+        }
+    };
+    // A pending exception (or one that cannot be checked) is a failed read.
+    if !matches!(env.exception_check(), Ok(false)) {
+        let _ = env.exception_clear();
+        throw_sdk_exception(env, 1, &format!("{field} string could not be read"));
+        return None;
+    }
+    let Some(units) = units else {
+        throw_sdk_exception(env, 1, &format!("{field} string could not be read"));
+        return None;
+    };
+    let Ok(text) = String::from_utf16(&units) else {
+        throw_sdk_exception(env, 1, &format!("{field} is not valid UTF-16"));
+        return None;
+    };
+    match std::ffi::CString::new(text) {
+        Ok(c) => Some(c),
+        Err(_) => {
+            throw_sdk_exception(env, 1, &format!("{field} contained a NUL"));
+            None
+        }
+    }
+}
+
+/// The review as one BLOB, its fields in the struct's order:
+/// `u8[32] recipientIdentityId, u8[43] recipientAddress, u8 change
+/// (0 new, 1 unchanged, 2 changed), u8[32] previousIdentityId,
+/// u8[43] previousAddress, u8 unresolved (0 or 1)`. The previous recipient
+/// crosses as the C struct holds it: zero unless the recipient changed.
+fn tip_review_blob(review: &ShieldedTipReviewFFI) -> Vec<u8> {
+    let mut blob = Vec::with_capacity(TIP_REVIEW_BLOB_LEN);
+    blob.extend_from_slice(&review.recipient_identity_id);
+    blob.extend_from_slice(&review.recipient_address);
+    // Matched in full, so a case added to the C enum does not compile until
+    // it is given a tag here and a branch in Kotlin's decoder.
+    blob.push(match review.change {
+        ShieldedTipRecipientChangeFFI::New => 0,
+        ShieldedTipRecipientChangeFFI::Unchanged => 1,
+        ShieldedTipRecipientChangeFFI::Changed => 2,
+    });
+    blob.extend_from_slice(&review.previous_identity_id);
+    blob.extend_from_slice(&review.previous_address);
+    blob.push(u8::from(review.unresolved));
+    blob
+}
+
+/// The balance as one big-endian BLOB, its fields in the struct's order:
+/// `u8 state (0 unverified, 1 unavailable, 2 available), u32 account,
+/// u64 credits`.
+fn identity_balance_blob(balance: &ShieldedIdentityBalanceFFI) -> Vec<u8> {
+    let mut blob = Vec::with_capacity(IDENTITY_BALANCE_BLOB_LEN);
+    // Matched in full, as the review's change is.
+    blob.push(match balance.state {
+        ShieldedIdentityBalanceStateFFI::Unverified => 0,
+        ShieldedIdentityBalanceStateFFI::Unavailable => 1,
+        ShieldedIdentityBalanceStateFFI::Available => 2,
+    });
+    blob.extend_from_slice(&balance.account.to_be_bytes());
+    blob.extend_from_slice(&balance.credits.to_be_bytes());
+    blob
+}
+
+/// Parse a tip amount the user typed in DASH into exact credits. Bridges
+/// `platform_wallet_parse_shielded_tip_amount`; a pure parse with no handle.
+/// Throws the wallet's refusal of the text (`ErrorInvalidParameter`, shifted
+/// by `PWFFI_CODE_OFFSET`), and code 1 for credits a `long` cannot carry;
+/// returns 0 after throwing.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_parseShieldedTipAmount(
+    mut env: JNIEnv,
+    _class: JClass,
+    amount_text: JString,
+) -> jlong {
+    guard(&mut env, 0i64, |env| {
+        let Some(text) = read_cstring_exact(env, &amount_text, "amountText") else {
+            return 0;
+        };
+        let mut credits: u64 = 0;
+        let result =
+            unsafe { platform_wallet_parse_shielded_tip_amount(text.as_ptr(), &mut credits) };
+        if take_pwffi_error(env, result) {
+            return 0;
+        }
+        match jlong::try_from(credits) {
+            Ok(credits) => credits,
+            Err(_) => {
+                throw_sdk_exception(env, 1, &format!("{credits} credits do not fit a long"));
+                0
+            }
+        }
+    })
+}
+
+/// Resolve `username` for the user to confirm a shielded tip. Bridges
+/// `platform_wallet_manager_review_shielded_tip`; changes nothing and moves
+/// no funds. Returns the review as the BLOB [`tip_review_blob`] documents.
+/// Throws on failure and returns null.
+///
+/// `contactIdentityId` is the saved contact's identity id (32 bytes) when the
+/// tip starts from a contact: a name that now resolves to another identity is
+/// refused with the recipient-mismatch code (86). JVM null when the user
+/// typed the name; a non-null array of the wrong length throws code 1.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_reviewShieldedTip(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    username: JString,
+    contact_identity_id: JByteArray,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return ptr::null_mut();
+        };
+        let Some(name) = read_cstring_exact(env, &username, "username") else {
+            return ptr::null_mut();
+        };
+        // JVM null: the user typed the name, no identity is expected.
+        let contact_identity = if contact_identity_id.is_null() {
+            None
+        } else {
+            let Some(id) = read_id32(env, &contact_identity_id, "contactIdentityId") else {
+                return ptr::null_mut();
+            };
+            Some(id)
+        };
+        let contact_identity_ptr = contact_identity
+            .as_ref()
+            .map_or(ptr::null(), |id| id.as_ptr());
+        let mut review = ShieldedTipReviewFFI::default();
+        let result = unsafe {
+            platform_wallet_manager_review_shielded_tip(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                name.as_ptr(),
+                contact_identity_ptr,
+                &mut review,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        env.byte_array_from_slice(&tip_review_blob(&review))
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+/// Send a shielded tip of `amount` credits to `username`. Bridges
+/// `platform_wallet_manager_send_shielded_tip`.
+///
+/// `expectedIdentityId` (32 bytes) and `expectedAddress` (43 bytes) are the
+/// recipient a review returned, passed back unchanged. A non-null
+/// `sourceIdentityId` pays from that wallet identity's own shielded account
+/// and `sourceAccount` is ignored; a null one pays from account
+/// `sourceAccount`. `contactIdentityId` is not the reviewed recipient: it is
+/// the saved contact's identity id (32 bytes) when the tip starts from a
+/// contact, and a reviewed recipient of another identity is refused with the
+/// recipient-mismatch code (86); JVM null when the user typed the name, and a
+/// non-null array of the wrong length throws code 1. `resolverHandle` is passed as
+/// [`Java_..._shieldedTransfer`] passes it. A null `memoText` is no memo; a
+/// supplied one crosses exactly ([`read_cstring_exact`]) or is refused.
+///
+/// Errors are thrown as the other note-spending exports throw them: the
+/// spend-unconfirmed code (18) means the tip may have left the wallet and
+/// must never be sent again, and the tip-pending code (85) and the
+/// recipient-mismatch code (86) mean it was refused and nothing was sent.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_sendShieldedTip(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    resolver_handle: jlong,
+    source_identity_id: JByteArray,
+    source_account: jint,
+    username: JString,
+    expected_identity_id: JByteArray,
+    expected_address: JByteArray,
+    contact_identity_id: JByteArray,
+    amount: jlong,
+    memo_text: JString,
+) {
+    guard(&mut env, (), |env| {
+        // A negative value has no unsigned form: never bit-cast it.
+        if amount < 0 {
+            throw_sdk_exception(env, 1, "amount must not be negative");
+            return;
+        }
+        if source_account < 0 {
+            throw_sdk_exception(env, 1, "sourceAccount must not be negative");
+            return;
+        }
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return;
+        };
+        // JVM null: pay from `sourceAccount`.
+        let source_identity = if source_identity_id.is_null() {
+            None
+        } else {
+            let Some(id) = read_id32(env, &source_identity_id, "sourceIdentityId") else {
+                return;
+            };
+            Some(id)
+        };
+        let source_identity_ptr = source_identity
+            .as_ref()
+            .map_or(ptr::null(), |id| id.as_ptr());
+        let Some(name) = read_cstring_exact(env, &username, "username") else {
+            return;
+        };
+        let Some(expected_id) = read_id32(env, &expected_identity_id, "expectedIdentityId") else {
+            return;
+        };
+        let Some(expected_addr) = read_fixed_bytes::<43>(env, &expected_address, "expectedAddress")
+        else {
+            return;
+        };
+        // JVM null: the user typed the name, no identity is expected.
+        let contact_identity = if contact_identity_id.is_null() {
+            None
+        } else {
+            let Some(id) = read_id32(env, &contact_identity_id, "contactIdentityId") else {
+                return;
+            };
+            Some(id)
+        };
+        let contact_identity_ptr = contact_identity
+            .as_ref()
+            .map_or(ptr::null(), |id| id.as_ptr());
+        // Only JVM null is no memo here. A memo that was supplied crosses
+        // as it is, the empty string included (Rust reads that as no memo),
+        // or is refused: never dropped because it did not read. The CString
+        // owns the bytes through the blocking FFI call below.
+        let memo = if memo_text.is_null() {
+            None
+        } else {
+            let Some(memo) = read_cstring_exact(env, &memo_text, "memoText") else {
+                return;
+            };
+            Some(memo)
+        };
+        let memo_ptr = memo.as_ref().map_or(ptr::null(), |c| c.as_ptr());
+        let result = unsafe {
+            platform_wallet_manager_send_shielded_tip(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                resolver_handle as *mut MnemonicResolverHandle,
+                source_identity_ptr,
+                source_account as u32,
+                name.as_ptr(),
+                expected_id.as_ptr(),
+                expected_addr.as_ptr(),
+                contact_identity_ptr,
+                amount as u64,
+                memo_ptr,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// The shielded balance of a wallet identity's own account. Bridges
+/// `platform_wallet_manager_shielded_identity_balance`; reads local state
+/// only. Returns the balance as the BLOB [`identity_balance_blob`]
+/// documents. Throws on failure and returns null.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_FundingNative_shieldedIdentityBalance(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+    identity_id: JByteArray,
+) -> jbyteArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(wid) = read_id32(env, &wallet_id, "walletId") else {
+            return ptr::null_mut();
+        };
+        let Some(id) = read_id32(env, &identity_id, "identityId") else {
+            return ptr::null_mut();
+        };
+        let mut balance = ShieldedIdentityBalanceFFI::default();
+        let result = unsafe {
+            platform_wallet_manager_shielded_identity_balance(
+                manager_handle as Handle,
+                wid.as_ptr(),
+                id.as_ptr(),
+                &mut balance,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        env.byte_array_from_slice(&identity_balance_blob(&balance))
+            .map(|a| a.into_raw())
+            .unwrap_or(ptr::null_mut())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The layout `decodeShieldedTipReview` reads on the Kotlin side.
+    #[test]
+    fn should_write_the_tip_review_fields_in_the_struct_order() {
+        let blob = tip_review_blob(&ShieldedTipReviewFFI {
+            recipient_identity_id: [1; 32],
+            recipient_address: [2; 43],
+            change: ShieldedTipRecipientChangeFFI::Changed,
+            previous_identity_id: [3; 32],
+            previous_address: [4; 43],
+            unresolved: true,
+        });
+        assert_eq!(blob.len(), TIP_REVIEW_BLOB_LEN);
+        assert_eq!(blob[..32], [1; 32]);
+        assert_eq!(blob[32..75], [2; 43]);
+        assert_eq!(blob[75], 2);
+        assert_eq!(blob[76..108], [3; 32]);
+        assert_eq!(blob[108..151], [4; 43]);
+        assert_eq!(blob[151], 1);
+
+        let new = tip_review_blob(&ShieldedTipReviewFFI::default());
+        assert_eq!(new, vec![0; TIP_REVIEW_BLOB_LEN]);
+        let unchanged = tip_review_blob(&ShieldedTipReviewFFI {
+            change: ShieldedTipRecipientChangeFFI::Unchanged,
+            ..ShieldedTipReviewFFI::default()
+        });
+        assert_eq!(unchanged[75], 1);
+    }
+
+    /// The layout `decodeShieldedIdentityBalance` reads on the Kotlin side.
+    #[test]
+    fn should_write_the_identity_balance_fields_big_endian() {
+        let blob = identity_balance_blob(&ShieldedIdentityBalanceFFI {
+            state: ShieldedIdentityBalanceStateFFI::Available,
+            account: 0x4000_0001,
+            credits: 0x0102_0304_0506_0708,
+        });
+        assert_eq!(blob, vec![2, 0x40, 0, 0, 1, 1, 2, 3, 4, 5, 6, 7, 8],);
+        assert_eq!(blob.len(), IDENTITY_BALANCE_BLOB_LEN);
+
+        let unavailable = identity_balance_blob(&ShieldedIdentityBalanceFFI {
+            state: ShieldedIdentityBalanceStateFFI::Unavailable,
+            account: 7,
+            credits: 0,
+        });
+        assert_eq!(unavailable[0], 1);
+        assert_eq!(
+            identity_balance_blob(&ShieldedIdentityBalanceFFI::default()),
+            vec![0; IDENTITY_BALANCE_BLOB_LEN],
+        );
+    }
 }

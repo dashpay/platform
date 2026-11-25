@@ -39,8 +39,11 @@ pub use dpp::data_contract::config::moderation::{
     ContractWarning,
 };
 pub use dpp::data_contract::document_type::action_fees::{ContractFeePot, ContractFeePotLastClaim};
+use dpp::data_contract::document_type::{DecodedValueBudget, DocumentTypeRef};
 use dpp::identifier::Identifier;
+use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
+use dpp::ProtocolError;
 use drive::drive::Drive;
 pub use drive::drive::contract::fee_pots::types::{ContractFeePotState, ContractFeePots};
 pub use drive::drive::contract::moderation::types::{
@@ -107,6 +110,32 @@ impl ContractDocumentRemovals {
     /// The records read.
     pub fn removals(&self) -> &[ContractDocumentRemovalEntry] {
         &self.0
+    }
+
+    /// Decodes the kept field values of every removal record in this page under
+    /// `document_type`, enforcing a decoded-value budget proportional to each
+    /// removal record's encoded `kept_fields` length.
+    pub fn decode_kept_values(
+        &self,
+        document_type: DocumentTypeRef,
+    ) -> Result<Vec<BTreeMap<String, Value>>, ProtocolError> {
+        self.0
+            .iter()
+            .map(|entry| entry.removal.kept_values_with_default_budget(document_type))
+            .collect()
+    }
+
+    /// Decodes the kept field values of every removal record in this page under
+    /// `document_type`, charging every decoded value against a shared `budget`.
+    pub fn decode_kept_values_with_budget(
+        &self,
+        document_type: DocumentTypeRef,
+        budget: &mut DecodedValueBudget,
+    ) -> Result<Vec<BTreeMap<String, Value>>, ProtocolError> {
+        self.0
+            .iter()
+            .map(|entry| entry.removal.kept_values_with_budget(document_type, budget))
+            .collect()
     }
 
     /// The query for the page after this one, or `None` when this page is the last: it holds
@@ -1662,5 +1691,107 @@ mod tests {
                 "{needle}: {err:?}"
             );
         }
+    }
+
+    #[test]
+    fn should_enforce_a_shared_decoded_value_budget_across_a_removals_page() {
+        use dpp::data_contract::config::moderation::{
+            encode_kept_fields, ContractModerationConfig, ContractModerators,
+        };
+        use dpp::data_contract::config::DataContractConfig;
+        use dpp::data_contract::document_type::DocumentType;
+        use dpp::document::{Document, DocumentV0};
+        use dpp::platform_value::platform_value;
+
+        // Build a protocol-14-compatible schema with a zero-width typed array kept on removal
+        // (loaded with `full_validation = false`, as stored PV14 contracts are read).
+        let pv = PlatformVersion::latest();
+        let config = DataContractConfig::default_for_version(pv)
+            .expect("default config")
+            .with_moderation(Some(ContractModerationConfig {
+                banlist: false,
+                suspensions: false,
+                moderators: ContractModerators::ContractOwner,
+                warnings: false,
+            }));
+        let doc_type = DocumentType::try_from_schema(
+            id(1),
+            1,
+            config.version(),
+            "post",
+            platform_value!({
+                "type": "object",
+                "properties": {
+                    "empties": {
+                        "type": "array",
+                        "maxItems": 64,
+                        "items": {
+                            "type": "array",
+                            "byteArray": true,
+                            "minItems": 0,
+                            "maxItems": 0,
+                        },
+                        "position": 0,
+                    },
+                },
+                "additionalProperties": false,
+                "moderatorAbilities": {
+                    "delete": true,
+                    "deleteKeepsFields": ["empties"],
+                },
+            }),
+            None,
+            &BTreeMap::new(),
+            &config,
+            false,
+            &mut vec![],
+            pv,
+        )
+        .expect("stored PV14 document type parses");
+
+        let document = Document::V0(DocumentV0 {
+            id: id(2),
+            owner_id: id(3),
+            properties: BTreeMap::from([(
+                "empties".to_string(),
+                Value::Array(vec![Value::Bytes(vec![]); 64]),
+            )]),
+            ..Default::default()
+        });
+        let kept_fields =
+            encode_kept_fields(&document, doc_type.as_ref()).expect("kept fields encode");
+        // 1 presence marker + 1-byte varint count (64) = 2 bytes expanding to 65 values
+        assert_eq!(kept_fields.len(), 2);
+
+        let entry = |seed| ContractDocumentRemovalEntry {
+            document_id: id(seed),
+            removal: ContractDocumentRemoval {
+                kept_fields: kept_fields.clone(),
+                ..Default::default()
+            },
+        };
+        let page = ContractDocumentRemovals(vec![entry(10), entry(11)]);
+
+        // One record takes 65 values (1 array + 64 elements); two take 130
+        let mut exact = DecodedValueBudget::new(130);
+        let decoded = page
+            .decode_kept_values_with_budget(doc_type.as_ref(), &mut exact)
+            .expect("two records fit in exact budget");
+        assert_eq!(decoded.len(), 2);
+        assert_eq!(exact.remaining(), 0);
+
+        let mut tight = DecodedValueBudget::new(129);
+        let error = page
+            .decode_kept_values_with_budget(doc_type.as_ref(), &mut tight)
+            .expect_err("page exceeding shared budget must be refused");
+        assert!(
+            matches!(
+                error,
+                ProtocolError::DataContractError(
+                    dpp::data_contract::errors::DataContractError::DecodedValueBudgetExceeded(_)
+                )
+            ),
+            "unexpected error: {error}"
+        );
     }
 }

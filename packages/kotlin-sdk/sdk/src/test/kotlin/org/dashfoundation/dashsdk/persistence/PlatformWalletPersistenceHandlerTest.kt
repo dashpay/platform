@@ -12,6 +12,7 @@ import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.errors.DashSdkError
@@ -25,7 +26,9 @@ import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
 import org.dashfoundation.dashsdk.persistence.entities.PendingInputEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.PublicKeyEntity
+import org.dashfoundation.dashsdk.persistence.entities.TokenBalanceEntity
 import org.dashfoundation.dashsdk.persistence.entities.WalletEntity
+import org.dashfoundation.dashsdk.security.PendingIdentityKeyDelete
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -220,13 +223,13 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals(0L, noOpBridge.persistenceCapabilitiesBits())
 
         assertEquals(1, handler.persistenceCapabilitiesVersion())
-        // The private contact request scan state is bit 15 (0x8000).
-        assertEquals(0x8bbfL, handler.persistenceCapabilitiesBits())
+        // The private contact request scan state is bit 15 (0x8000), the
+        // asset-lock shielded recipients bit 14 (0x4000), the asset-lock
+        // operation ids bit 13 (0x2000).
+        assertEquals(0xebbfL, handler.persistenceCapabilitiesBits())
         // Android has no pending-contact-crypto callback, so it must not
         // attest that semantic contract.
         assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x40L)
-        // Nor does it keep the shielded recipient of an asset lock (bit 14).
-        assertEquals(0L, handler.persistenceCapabilitiesBits() and 0x4000L)
 
         val diagnostic = PlatformWalletPersistenceCapabilities(
             handler.persistenceCapabilitiesVersion(),
@@ -239,6 +242,9 @@ class PlatformWalletPersistenceHandlerTest {
         assertTrue(diagnostic.contains(PlatformWalletPersistenceCapabilities.CORE_SWEEP_REMOVAL))
         assertTrue(
             diagnostic.contains(PlatformWalletPersistenceCapabilities.PRIVATE_CONTACT_REQUEST_SCAN_STATE),
+        )
+        assertTrue(
+            diagnostic.contains(PlatformWalletPersistenceCapabilities.ASSET_LOCK_SHIELDED_RECIPIENTS),
         )
     }
 
@@ -336,6 +342,132 @@ class PlatformWalletPersistenceHandlerTest {
 
         val stored = db.tokenDao().getBalance(tokenId.toBase58String(), identityId)
         assertEquals(1uL shl 63, stored!!.balance.value)
+    }
+
+    // ── Identity-token sync rows (all-zero wallet id, canonical token id) ──
+
+    /** The identity-token sync's identity-scoped sentinel wallet id. */
+    private val identitySyncSentinel = ByteArray(32)
+    private val devnetContractId = ByteArray(32) { 0x61 }
+    private val canonicalTokenId = ByteArray(32) { 0x62 }
+
+    /** A Devnet handler whose canonical-id lookup knows one token: devnetContractId / position 0. */
+    private fun devnetSyncHandler() = PlatformWalletPersistenceHandler(
+        database = db,
+        dispatcher = Dispatchers.Unconfined,
+        network = Network.DEVNET,
+        canonicalTokenIds = { contractId, position ->
+            if (contractId.contentEquals(devnetContractId) && position == 0) {
+                canonicalTokenId.toBase58String()
+            } else {
+                null
+            }
+        },
+    )
+
+    /** Saves a Devnet contract with one token, keyed `contractId || position` as the app does. */
+    private suspend fun saveDevnetToken(): ByteArray {
+        db.dataContractDao().upsert(
+            org.dashfoundation.dashsdk.persistence.entities.DataContractEntity(
+                id = devnetContractId,
+                name = "qa-tok-basic",
+                serializedContract = ByteArray(0),
+                networkRaw = Network.DEVNET.ffiValue,
+            ),
+        )
+        val localKey = devnetContractId + byteArrayOf(0, 0, 0, 0)
+        db.tokenDao().upsertToken(
+            org.dashfoundation.dashsdk.persistence.entities.TokenEntity(
+                id = localKey,
+                contractId = devnetContractId,
+                position = 0,
+                name = "qabasic",
+                baseSupply = "1000000",
+            ),
+        )
+        return localKey
+    }
+
+    @Test
+    fun shouldLinkASyncedBalanceToTheSavedTokenByItsCanonicalId() = runTest {
+        val localKey = saveDevnetToken()
+        val identityId = ByteArray(32) { 0x63 }
+        db.identityDao().upsert(
+            IdentityEntity(identityId = identityId, networkRaw = Network.DEVNET.ffiValue),
+        )
+
+        assertEquals(
+            0,
+            devnetSyncHandler().onPersistTokenBalanceUpsert(
+                identitySyncSentinel, identityId, canonicalTokenId, 1_000_000L,
+            ),
+        )
+
+        val stored = db.tokenDao().getBalance(canonicalTokenId.toBase58String(), identityId)!!
+        assertTrue("the row links to the saved token", localKey.contentEquals(stored.tokenRef))
+        assertTrue(identityId.contentEquals(stored.identityRef))
+        assertEquals(1_000_000uL, stored.balance.value)
+        // What the Transfer form reads: the identity's balance matched on the token key.
+        val held = db.tokenDao().observeBalancesByIdentity(identityId).first()
+            .single { it.tokenRef?.contentEquals(localKey) == true }
+        assertEquals(1_000_000uL, held.balance.value)
+    }
+
+    @Test
+    fun shouldLabelAnIdentityScopedRowWithTheManagersNetwork() = runTest {
+        val identityId = ByteArray(32) { 0x64 }
+
+        devnetSyncHandler().onPersistTokenBalanceUpsert(
+            identitySyncSentinel, identityId, canonicalTokenId, 7L,
+        )
+
+        val stored = db.tokenDao().getBalance(canonicalTokenId.toBase58String(), identityId)!!
+        assertEquals(Network.DEVNET.ffiValue, stored.networkRaw)
+    }
+
+    @Test
+    fun shouldKeepAnotherNetworksRowForTheSameIdentityAndToken() = runTest {
+        val identityId = ByteArray(32) { 0x67 }
+        val tokenBase58 = canonicalTokenId.toBase58String()
+        // The same identity and token ids synced on Testnet into a shared database.
+        db.tokenDao().insertBalance(
+            TokenBalanceEntity(
+                tokenId = tokenBase58,
+                identityId = identityId,
+                balance = org.dashfoundation.dashsdk.persistence.UInt64Value(5uL),
+                networkRaw = testnet,
+            ),
+        )
+        val handler = devnetSyncHandler()
+
+        handler.onPersistTokenBalanceUpsert(identitySyncSentinel, identityId, canonicalTokenId, 7L)
+
+        assertEquals(5uL, db.tokenDao().getBalanceOnNetwork(tokenBase58, identityId, testnet)!!.balance.value)
+        assertEquals(
+            7uL,
+            db.tokenDao().getBalanceOnNetwork(tokenBase58, identityId, Network.DEVNET.ffiValue)!!.balance.value,
+        )
+
+        handler.onPersistTokenBalanceRemoval(identitySyncSentinel, identityId, canonicalTokenId)
+
+        assertNull(db.tokenDao().getBalanceOnNetwork(tokenBase58, identityId, Network.DEVNET.ffiValue))
+        assertNotNull("the Testnet row is untouched", db.tokenDao().getBalanceOnNetwork(tokenBase58, identityId, testnet))
+    }
+
+    @Test
+    fun shouldStoreASyncedBalanceForAnIdentityNotSavedLocally() = runTest {
+        val identityId = ByteArray(32) { 0x66 }
+
+        assertEquals(
+            0,
+            devnetSyncHandler().onPersistTokenBalanceUpsert(
+                identitySyncSentinel, identityId, canonicalTokenId, 42L,
+            ),
+        )
+
+        val stored = db.tokenDao().getBalance(canonicalTokenId.toBase58String(), identityId)!!
+        assertEquals(42uL, stored.balance.value)
+        assertNull("no identity row to reference", stored.identityRef)
     }
 
     @Test
@@ -932,6 +1064,92 @@ class PlatformWalletPersistenceHandlerTest {
         assertEquals("hi", profile.publicMessage)
         assertNotNull(profile.avatarHash)
         assertNull(profile.avatarFingerprint)
+    }
+
+    /** Upsert [identityId] with a present own profile carrying the given addresses. */
+    private suspend fun persistOwnProfile(
+        identityId: ByteArray,
+        core: ByteArray?,
+        platform: ByteArray?,
+        shielded: ByteArray?,
+        success: Boolean = true,
+    ) {
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityUpsert(
+            walletId = walletId,
+            identityId = identityId,
+            balance = 1,
+            revision = 0,
+            identityIndexIsSome = true,
+            identityIndex = 0,
+            status = 2,
+            walletIdIsSome = true,
+            identityWalletId = walletId,
+            dpnsNames = emptyArray(),
+            dpnsNamesAcquiredAt = longArrayOf(),
+            dashpayProfilePresent = true,
+            dashpayDisplayName = "Alice",
+            dashpayBio = null,
+            dashpayAvatarUrl = null,
+            dashpayAvatarHash = ByteArray(32),
+            dashpayAvatarHashPresent = false,
+            dashpayAvatarFingerprint = ByteArray(8),
+            dashpayAvatarFingerprintPresent = false,
+            dashpayPublicMessage = null,
+            dashpayCorePaymentAddress = core,
+            dashpayPlatformPaymentAddress = platform,
+            dashpayShieldedAddress = shielded,
+        )
+        handler.onChangesetEnd(walletId, success = success)
+    }
+
+    @Test
+    fun shouldPersistTheOwnProfilePaymentAddressesWithTheProfile() = runTest {
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val identityId = ByteArray(32) { 13 }
+        val core = byteArrayOf(0x00) + ByteArray(20) { 1 }
+        val shielded = ByteArray(43) { 3 }
+
+        persistOwnProfile(identityId, core, null, shielded)
+
+        val profile = db.dashpayDao().getProfile(testnet, identityId)!!
+        assertTrue(core.contentEquals(profile.corePaymentAddress!!))
+        assertNull(profile.platformPaymentAddress)
+        assertTrue(shielded.contentEquals(profile.shieldedAddress!!))
+    }
+
+    @Test
+    fun shouldClearAStoredOwnAddressTheNextProfileNoLongerPublishes() = runTest {
+        // The identity entry carries the whole profile document, so an
+        // address it no longer carries was removed on chain (Swift
+        // `PersistentDashpayPaymentAddresses.replace`).
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val identityId = ByteArray(32) { 14 }
+        val core = byteArrayOf(0x00) + ByteArray(20) { 1 }
+        val platform = byteArrayOf(0x01) + ByteArray(20) { 2 }
+        persistOwnProfile(identityId, core, platform, null)
+
+        persistOwnProfile(identityId, null, platform, null)
+
+        val profile = db.dashpayDao().getProfile(testnet, identityId)!!
+        assertNull(profile.corePaymentAddress)
+        assertTrue(platform.contentEquals(profile.platformPaymentAddress!!))
+    }
+
+    @Test
+    fun shouldKeepTheStoredOwnAddressesWhenTheProfileRoundRollsBack() = runTest {
+        // The addresses ride the profile row, so a round that fails leaves
+        // the profile and its addresses as they were, never half applied.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        val identityId = ByteArray(32) { 15 }
+        val core = byteArrayOf(0x00) + ByteArray(20) { 1 }
+        persistOwnProfile(identityId, core, null, null)
+
+        persistOwnProfile(identityId, null, byteArrayOf(0x01) + ByteArray(20) { 2 }, null, success = false)
+
+        val profile = db.dashpayDao().getProfile(testnet, identityId)!!
+        assertTrue(core.contentEquals(profile.corePaymentAddress!!))
+        assertNull(profile.platformPaymentAddress)
     }
 
     @Test
@@ -1868,6 +2086,118 @@ class PlatformWalletPersistenceHandlerTest {
             fun fakePubkeyFor(identityIndex: Int, keyIndex: Int): ByteArray =
                 ByteArray(33).also { it[0] = identityIndex.toByte(); it[1] = keyIndex.toByte() }
         }
+    }
+
+    /**
+     * A key upsert's alias counts as in flight from its callback until its
+     * round ends (committed or rolled back), so a pending identity-key delete
+     * for it is not settled in between.
+     */
+    @Test
+    fun keyUpsertAliasIsInFlightUntilItsRoundEnds() = runTest {
+        val identityId = ByteArray(32) { 33 }
+        seedIdentity(identityId)
+        val pubkey = ByteArray(33) { 34 }
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityKeyUpsert(
+            walletId, identityId, 0, 0, 0, 0, false, false, 0,
+            pubkey, ByteArray(20), true, walletId,
+            true, 3, 5, 0, ByteArray(32), null,
+        )
+        assertTrue(pubkey.toHex() in handler.withCallbackExclusion { handler.aliasesStagedInOpenRounds() })
+
+        handler.onChangesetEnd(walletId, success = true)
+        assertTrue(handler.withCallbackExclusion { handler.aliasesStagedInOpenRounds() }.isEmpty())
+    }
+
+    /**
+     * A removal Rust persists records the identity's key aliases (with its
+     * wallet) before its round commits, and deletes the dependent rows the
+     * identity cascade does not reach, in the same round.
+     */
+    @Test
+    fun persistedIdentityRemovalRecordsItsKeysAndDeletesItsWholeFootprint() = runTest {
+        val recorded = mutableListOf<PendingIdentityKeyDelete>()
+        handler = PlatformWalletPersistenceHandler(
+            db,
+            Dispatchers.Unconfined,
+            storedTransactionInputs = storedInputs,
+            recordRemovedIdentityKeys = { recorded += it },
+        )
+        val identityId = ByteArray(32) { 32 }
+        seedIdentity(identityId)
+        val pubkey = VerifyingRepairDeriver.fakePubkeyFor(1, 1)
+        upsertIdentityKey(pubkey, identityId)
+        db.tokenDao().insertBalance(
+            TokenBalanceEntity(
+                tokenId = "token-x",
+                identityId = identityId,
+                balance = UInt64Value(1u),
+                networkRaw = testnet,
+            ),
+        )
+
+        handler.onChangesetBegin(walletId)
+        handler.onPersistIdentityRemoval(walletId, identityId)
+        handler.onChangesetEnd(walletId, success = true)
+
+        assertNull(db.identityDao().getByIdentityId(identityId))
+        assertTrue(db.tokenDao().getBalancesOrderedByAmount().isEmpty())
+        assertEquals(listOf(pubkey.toHex()), recorded.map { it.aliasHex })
+        assertEquals(walletId.toHex(), recorded.single().walletId!!.toHex())
+    }
+
+    /**
+     * An identity removal that runs while a repair derives (after the repair
+     * read its slot) must not be undone by the repair's store: the repair sees
+     * no row naming the key any more, deletes what it stored and fails.
+     */
+    @Test
+    fun repairFinishingAfterItsIdentityWasRemovedDeletesTheKeyAndFails() = runTest {
+        val identityId = ByteArray(32) { 31 }
+        val pubkey = VerifyingRepairDeriver.fakePubkeyFor(4, 6)
+        val deleted = mutableListOf<String>()
+        val deriver = object : PrivateKeyDeriver {
+            override fun deriveAndStore(
+                walletId: ByteArray,
+                publicKeyData: ByteArray,
+                identityIndex: Int,
+                keyIndex: Int,
+                keyType: Int,
+                force: Boolean,
+            ): DerivedKeyStoreResult? {
+                if (!force) return null
+                // The removal lands between the slot read and the store.
+                runBlocking { db.identityDao().deleteByIdentityId(identityId) }
+                return DerivedKeyStoreResult("privkey." + publicKeyData.toHex(), wasNewlyCreated = true)
+            }
+
+            override fun deleteUnownedStored(
+                pubkeyHexes: Collection<String>,
+                excludingWalletId: ByteArray,
+            ): Set<String> {
+                deleted += pubkeyHexes
+                return pubkeyHexes.toSet()
+            }
+        }
+        handler = newHandler(deriver)
+        seedIdentity(identityId)
+        upsertIdentityKey(pubkey, identityId)
+
+        val error = runCatching {
+            handler.repairIdentityKeyDurably(
+                walletId = walletId,
+                publicKeyData = pubkey,
+                verifyRecoverable = { true },
+            )
+        }.exceptionOrNull()
+
+        assertTrue(
+            "the repair fails, got $error",
+            error is DashSdkError.PlatformWallet.SigningKeyUnavailable,
+        )
+        assertEquals(listOf(pubkey.toHex()), deleted)
     }
 
     @Test
@@ -5020,7 +5350,13 @@ class PlatformWalletPersistenceHandlerTest {
     // ── DashPay contact profiles: delta upsert / tombstone, restore ───
 
     /** Persist one present contact-profile delta for [contactId] owned by [ownerId]. */
-    private suspend fun persistContactProfile(ownerId: ByteArray, contactId: ByteArray) {
+    private suspend fun persistContactProfile(
+        ownerId: ByteArray,
+        contactId: ByteArray,
+        corePaymentAddress: ByteArray? = null,
+        platformPaymentAddress: ByteArray? = null,
+        shieldedAddress: ByteArray? = null,
+    ) {
         handler.onChangesetBegin(walletId)
         handler.onPersistContactProfileDelta(
             walletId = walletId,
@@ -5036,8 +5372,38 @@ class PlatformWalletPersistenceHandlerTest {
             avatarFingerprintPresent = false,
             publicMessage = "yo",
             checkedAtMs = 1_700_000_111_000,
+            corePaymentAddress = corePaymentAddress,
+            platformPaymentAddress = platformPaymentAddress,
+            shieldedAddress = shieldedAddress,
         )
         handler.onChangesetEnd(walletId, success = true)
+    }
+
+    @Test
+    fun shouldPersistAndRestoreAContactsPublishedPaymentAddresses() = runTest {
+        // A contact's addresses ride its cached profile row and come back on
+        // the restore row, so the contact screen shows them after a relaunch
+        // without waiting for the next profile sweep.
+        handler.onPersistWalletMetadata(walletId, testnet, groupId, 0)
+        handler.onPersistAccountRegistration(
+            walletId, 0, 0, 0, 0, 0, ByteArray(0), ByteArray(0), ByteArray(78) { 30 },
+        )
+        val ownerId = ByteArray(32) { 34 }
+        val contactId = ByteArray(32) { 35 }
+        val platform = byteArrayOf(0x01) + ByteArray(20) { 7 }
+        val shielded = ByteArray(43) { 8 }
+        seedIdentity(ownerId)
+        persistContactProfile(ownerId, contactId, platformPaymentAddress = platform, shieldedAddress = shielded)
+
+        val row = db.dashpayDao().getContactProfilesByOwner(ownerId).single()
+        assertNull(row.corePaymentAddress)
+        assertTrue(platform.contentEquals(row.platformPaymentAddress!!))
+        assertTrue(shielded.contentEquals(row.shieldedAddress!!))
+
+        val restored = handler.onLoadWalletList().single().identities.single().contactProfiles.single()
+        assertNull(restored.corePaymentAddress)
+        assertTrue(platform.contentEquals(restored.platformPaymentAddress!!))
+        assertTrue(shielded.contentEquals(restored.shieldedAddress!!))
     }
 
     @Test

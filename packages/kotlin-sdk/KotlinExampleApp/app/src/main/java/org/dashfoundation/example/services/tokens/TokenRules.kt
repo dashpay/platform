@@ -1,8 +1,10 @@
 package org.dashfoundation.example.services.tokens
 
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import org.dashfoundation.example.util.LenientJson
@@ -34,7 +36,19 @@ data class ChangeControlRules(
      * as "not available").
      */
     val hasAuthorizedTakers: Boolean
-        get() = authorizedToMakeChange != AuthorizedActionTakers.NO_ONE
+        get() = authorizedToMakeChange != AuthorizedActionTakers.NO_ONE && !isUnknown
+
+    /** `true` when this build could not read who is authorized. */
+    val isUnknown: Boolean
+        get() = authorizedToMakeChange.startsWith(AuthorizedActionTakers.UNKNOWN_PREFIX)
+
+    /** "Yes" / "No" / "Unknown" for the Token Details capability rows. */
+    val capabilityLabel: String
+        get() = when {
+            isUnknown -> "Unknown"
+            hasAuthorizedTakers -> "Yes"
+            else -> "No"
+        }
 
     /** Canonical camelCase JSON for the Room rules columns. */
     fun toJson(): String = buildJsonObject {
@@ -58,22 +72,22 @@ data class ChangeControlRules(
         }
 
         /**
-         * Decode a rule object from contract JSON — handles the `V0`
-         * wrapper, snake_case and camelCase keys, and both the string
-         * (`"MainGroup"`) and tagged-object (`{"Group": 3}` /
-         * `{"Identity": "<base58>"}`) renderings of
-         * `AuthorizedActionTakers`, normalized into the `Group:<n>` /
-         * `Identity:<base58>` string grammar the Swift evaluator uses.
+         * Decode a rule object from contract JSON or from a rules column.
+         * Handles the `V0` wrapper and snake_case and camelCase keys. Each
+         * action-taker field goes through [AuthorizedActionTakers.parse],
+         * so a value it does not recognise is kept as an
+         * [AuthorizedActionTakers.UNKNOWN_PREFIX] string instead of being
+         * read as "no one".
          */
         fun parse(ruleContainer: JsonObject): ChangeControlRules {
             val rule = (ruleContainer["V0"] as? JsonObject) ?: ruleContainer
             return ChangeControlRules(
-                authorizedToMakeChange = rule.takerString(
+                authorizedToMakeChange = rule.taker(
                     "authorized_to_make_change", "authorizedToMakeChange",
-                ) ?: AuthorizedActionTakers.NO_ONE,
-                adminActionTakers = rule.takerString(
+                ),
+                adminActionTakers = rule.taker(
                     "admin_action_takers", "adminActionTakers",
-                ) ?: AuthorizedActionTakers.NO_ONE,
+                ),
                 changingAuthorizedActionTakersToNoOneAllowed = rule.boolValue(
                     "changing_authorized_action_takers_to_no_one_allowed",
                     "changingAuthorizedActionTakersToNoOneAllowed",
@@ -89,21 +103,17 @@ data class ChangeControlRules(
             )
         }
 
-        private fun JsonObject.takerString(vararg keys: String): String? {
+        /**
+         * The first present key's taker. A rule object that carries
+         * neither key is not something rs-dpp writes, so it reads as
+         * unknown rather than as "no one".
+         */
+        private fun JsonObject.taker(vararg keys: String): String {
             for (key in keys) {
-                when (val v = this[key]) {
-                    is JsonPrimitive -> if (v.isString || v.content.isNotEmpty()) return v.content
-                    is JsonObject -> {
-                        // rs-dpp tagged-enum rendering: {"Group": 3} / {"Identity": "..."}.
-                        (v["Group"] as? JsonPrimitive)?.content?.toIntOrNull()
-                            ?.let { return AuthorizedActionTakers.group(it) }
-                        (v["Identity"] as? JsonPrimitive)?.content
-                            ?.let { return AuthorizedActionTakers.identity(it) }
-                    }
-                    else -> {}
-                }
+                val value = this[key] ?: continue
+                return AuthorizedActionTakers.parse(value)
             }
-            return null
+            return AuthorizedActionTakers.unknown("missing")
         }
 
         private fun JsonObject.boolValue(vararg keys: String): Boolean? {
@@ -177,7 +187,8 @@ data class TokenDistributionChangeRules(
 /**
  * The `AuthorizedActionTakers` string grammar — port of the enum in
  * `TokenTypes.swift` (`NoOne` / `ContractOwner` / `MainGroup` /
- * `Identity:<base58>` / `Group:<position>`).
+ * `Identity:<base58>` / `Group:<position>`), plus `Unknown:<what>` for a
+ * value this build cannot read.
  */
 object AuthorizedActionTakers {
     const val NO_ONE = "NoOne"
@@ -186,8 +197,118 @@ object AuthorizedActionTakers {
     const val GROUP_PREFIX = "Group:"
     const val IDENTITY_PREFIX = "Identity:"
 
+    /**
+     * A taker this build could not read: a `$type` added by a newer
+     * protocol version, a tagged variant missing its payload, or a shape
+     * rs-dpp does not write. Kept visible so the action row explains the
+     * gap instead of reporting "no one is authorized".
+     */
+    const val UNKNOWN_PREFIX = "Unknown:"
+
     fun group(position: Int): String = "$GROUP_PREFIX$position"
     fun identity(base58: String): String = "$IDENTITY_PREFIX$base58"
+    fun unknown(what: String): String = "$UNKNOWN_PREFIX$what"
+
+    /**
+     * Read one action-taker value into the string grammar. Accepts:
+     * - the flat `$type` map rs-dpp has written since 4.0.0-beta.4
+     *   (`AuthorizedActionTakers`'s `Serialize` impl in
+     *   `packages/rs-dpp/src/data_contract/change_control_rules/authorized_action_takers.rs`):
+     *   `{"$type":"noOne"}`, `{"$type":"contractOwner"}`,
+     *   `{"$type":"identity","identity":"<base58>"}`, `{"$type":"mainGroup"}`,
+     *   `{"$type":"group","position":<n>}`;
+     * - the string grammar above, which is how the rules columns store it;
+     * - the older externally tagged `{"Group": n}` / `{"Identity": "<base58>"}`.
+     *
+     * Anything else comes back as [unknown], never as [NO_ONE].
+     */
+    fun parse(value: JsonElement): String {
+        if (value is JsonPrimitive) {
+            val text = value.contentOrNull?.takeIf { value.isString }
+                ?: return unknown(value.toString())
+            return if (isGrammar(text)) text else unknown(text)
+        }
+        val map = value as? JsonObject ?: return unknown(value.toString())
+        val wireType = (map["\$type"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+        if (wireType != null) {
+            return when (wireType) {
+                "noOne" -> NO_ONE
+                "contractOwner" -> CONTRACT_OWNER
+                "mainGroup" -> MAIN_GROUP
+                "identity" -> (map["identity"] as? JsonPrimitive)
+                    ?.takeIf { it.isString }?.content?.let(::identity)
+                    ?: unknown(wireType)
+                "group" -> (map["position"] as? JsonPrimitive)
+                    ?.content?.toIntOrNull()?.let(::group)
+                    ?: unknown(wireType)
+                else -> unknown(wireType)
+            }
+        }
+        (map["Group"] as? JsonPrimitive)?.content?.toIntOrNull()?.let { return group(it) }
+        (map["Identity"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+            ?.let { return identity(it) }
+        return unknown(map.toString())
+    }
+
+    private fun isGrammar(text: String): Boolean = when {
+        text == NO_ONE || text == CONTRACT_OWNER || text == MAIN_GROUP -> true
+        text.startsWith(GROUP_PREFIX) -> text.removePrefix(GROUP_PREFIX).toIntOrNull() != null
+        text.startsWith(IDENTITY_PREFIX) -> text.length > IDENTITY_PREFIX.length
+        text.startsWith(UNKNOWN_PREFIX) -> true
+        else -> false
+    }
+}
+
+/**
+ * Who a perpetual distribution pays: rs-dpp's `TokenDistributionRecipient`
+ * (`packages/rs-dpp/src/data_contract/associated_token/token_perpetual_distribution/distribution_recipient.rs`).
+ * Drive lets only that recipient claim it (the wrong-claimant check in
+ * `token_claim_transition_action/v0/transformer.rs`); the minting
+ * destination (`newTokensDestinationIdentity`) plays no part.
+ */
+sealed interface TokenDistributionRecipient {
+    data object ContractOwner : TokenDistributionRecipient
+    data class Identity(val base58: String) : TokenDistributionRecipient
+    data object EvonodesByParticipation : TokenDistributionRecipient
+
+    /** A recipient this build cannot read; [what] names it for the UI. */
+    data class Unknown(val what: String) : TokenDistributionRecipient
+
+    companion object {
+
+        /**
+         * Read the `distributionRecipient` of a stored perpetual
+         * distribution block (`{"$formatVersion":"0","distributionType":…,
+         * "distributionRecipient":{"$type":…}}`, optionally `V0`-wrapped).
+         */
+        fun fromPerpetualDistribution(json: String?): TokenDistributionRecipient {
+            if (json.isNullOrBlank()) return Unknown("no perpetual distribution")
+            val root = try {
+                LenientJson.parseToJsonElement(json) as? JsonObject
+            } catch (_: Exception) {
+                null
+            } ?: return Unknown("unreadable perpetual distribution")
+            val body = (root["V0"] as? JsonObject) ?: root
+            val recipient = body["distributionRecipient"]
+                ?: return Unknown("missing distributionRecipient")
+            return parse(recipient)
+        }
+
+        /** The flat `$type` map rs-dpp writes; anything else is [Unknown]. */
+        fun parse(value: JsonElement): TokenDistributionRecipient {
+            val map = value as? JsonObject ?: return Unknown(value.toString())
+            val wireType = (map["\$type"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+                ?: return Unknown(map.toString())
+            return when (wireType) {
+                "contractOwner" -> ContractOwner
+                "identity" -> (map["identity"] as? JsonPrimitive)
+                    ?.takeIf { it.isString }?.content?.let(::Identity)
+                    ?: Unknown(wireType)
+                "evonodesByParticipation" -> EvonodesByParticipation
+                else -> Unknown(wireType)
+            }
+        }
+    }
 }
 
 /**

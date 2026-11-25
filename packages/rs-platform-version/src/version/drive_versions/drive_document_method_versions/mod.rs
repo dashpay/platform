@@ -66,6 +66,9 @@ pub struct DriveDocumentExpirationMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentQueryMethodVersions {
     pub fetch_document_lifecycle: OptionalFeatureVersion,
+    /// Reads the total a document type keeps of its summed property, which document create
+    /// and replace state validation hold in range from protocol version 15.
+    pub fetch_document_type_sum: OptionalFeatureVersion,
 
     pub query_documents: FeatureVersion,
     /// Chained document queries (provable semi-join): the version slot
@@ -210,6 +213,11 @@ pub struct DriveDocumentUpdateMethodVersions {
 pub struct DriveDocumentDeleteMethodVersions {
     /// Prices the third-party balance updates caused by an erase; inactive before protocol 15.
     pub erase_refund_recipient_cost: OptionalFeatureVersion,
+    /// Prices, by estimation, the delete of a document a create consumes, which check tx
+    /// reserves for a create whose state it does not validate: 0 the by-id delete of the create
+    /// conversion 0, 1 (protocol version 15) the delete from what the lookup read of the create
+    /// conversion 1.
+    pub consumed_document_delete_cost: FeatureVersion,
     pub erase_document_for_contract_operations: OptionalFeatureVersion,
     pub add_estimation_costs_for_erase_document: OptionalFeatureVersion,
     pub add_estimation_costs_for_lifecycle_record: OptionalFeatureVersion,

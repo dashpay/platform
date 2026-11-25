@@ -26,6 +26,15 @@ internal object SdkNative {
     external fun version(): String
 
     /**
+     * The quorum service base URL of the devnet named [devnetName]
+     * (`dash_sdk_devnet_quorum_base_url`).
+     *
+     * @throws DashSDKException for a name the trusted context provider
+     *   refuses, such as a reserved network name
+     */
+    external fun devnetQuorumBaseUrl(devnetName: String): String
+
+    /**
      * Create a trusted-context SDK instance.
      *
      * @param network FFINetwork ordinal (0=Mainnet, 1=Testnet, 2=Devnet, 3=Regtest)

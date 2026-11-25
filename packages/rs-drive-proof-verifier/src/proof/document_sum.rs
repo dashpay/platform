@@ -2,7 +2,7 @@
 //! sum-tree surface.
 //!
 //! Sum-side analog of [`super::document_count`]. Holds the
-//! aggregated `i64` recovered from a sum-tree proof — `Aggregate`
+//! aggregated `i128` recovered from a sum-tree proof — `Aggregate`
 //! mode returns one [`DocumentSum`]; `Entries` mode returns
 //! [`super::document_split_sum::DocumentSplitSums`] instead.
 //!
@@ -26,10 +26,11 @@ use drive::query::drive_document_sum_query::{DriveDocumentSumQuery, SumEntry};
 /// The aggregated sum of an integer property across documents matching
 /// a query, verified from proof.
 ///
-/// Signed because grovedb's `SumTree` value type is `i64` — sums can
-/// in principle be negative (typically signaling i64 overflow into
-/// negative space, which the verifier surfaces explicitly). For
-/// tip-jar-style non-negative aggregations this stays ≥ 0.
+/// Signed, because a summed property may be negative, and 128 bits
+/// wide: from protocol version 15 a document type whose summed property
+/// is not declared within ±2^27 keeps its sums in trees with a 128-bit
+/// total, which can pass what an `i64` holds. A sum from a tree with a
+/// 64-bit total is the same number widened.
 ///
 /// No generic `FromProof<Q>` impl is provided here — the real
 /// proof dispatch needs the `DocumentQuery` request shape to pick
@@ -39,10 +40,10 @@ use drive::query::drive_document_sum_query::{DriveDocumentSumQuery, SumEntry};
 /// `rs-sdk/src/platform/documents/document_sum.rs`, which routes to
 /// the per-shape verifier free functions below.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DocumentSum(pub i64);
+pub struct DocumentSum(pub i128);
 
 /// Verify a grovedb `AggregateSumOnRange` proof and the surrounding
-/// tenderdash commit, returning the verified `i64` sum from one
+/// tenderdash commit, returning the verified `i128` sum from one
 /// range traversal. Used by the prove path's
 /// `select=SUM, group_by=[]` with a range clause on a
 /// `rangeSummable: true` index.
@@ -63,7 +64,7 @@ pub fn verify_aggregate_sum_proof(
     mtd: &ResponseMetadata,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
-) -> Result<i64, Error> {
+) -> Result<i128, Error> {
     let (root_hash, sum) = query
         .verify_aggregate_sum_proof(
             document_query_proof_bytes(proof, mtd, platform_version)?,
@@ -97,7 +98,7 @@ pub fn verify_primary_key_sum_tree_proof(
     mtd: &ResponseMetadata,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
-) -> Result<i64, Error> {
+) -> Result<i128, Error> {
     let (root_hash, sum) = DriveDocumentSumQuery::verify_primary_key_sum_tree_proof(
         document_query_proof_bytes(proof, mtd, platform_version)?,
         contract_id,
@@ -195,13 +196,21 @@ pub fn verify_distinct_sum_proof(
 /// range(other_field), prove=true` — drive's `detect_sum_mode`
 /// routes that shape to
 /// `DocumentSumMode::RangeAggregateCarrierProof`, which collapses
-/// each In branch's range into a single committed `i64`.
+/// each In branch's range into a single committed sum.
 ///
 /// Result: one [`SumEntry`] per **present** In branch with
-/// `in_key = <serialized In value>`, `key = []`, `sum = Some(n)`.
+/// `in_key = None`, `key = <serialized In value>`, `sum = Some(n)`.
 /// Absent In branches are omitted; callers that need to surface
 /// "queried but absent" diff their In array against the returned
-/// `in_key`s.
+/// `key`s.
+///
+/// Each total is keyed by the `In` value it belongs to (`in_key =
+/// None`, `key = <serialized In value>`): the request groups by the `In`
+/// field, so that value is its group, and this is the shape a point
+/// lookup grouped by the `In` field gives.
+/// A terminator `key` can itself be empty (a document missing an
+/// optional range property is indexed under the empty key), so the
+/// group is never inferred from an empty `key`.
 ///
 /// `platform_version` must be the protocol version `mtd` names, or the latest known
 /// version when `mtd` names a newer one; otherwise the answer is refused with
@@ -226,13 +235,13 @@ pub fn verify_carrier_aggregate_sum_proof(
 
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-    // Map drive's `Vec<(Vec<u8>, i64)>` carrier shape onto the
+    // Map drive's `Vec<(Vec<u8>, i128)>` carrier shape onto the
     // SDK's `Vec<SumEntry>` so the call sites stay uniform.
     let entries = per_key_sums
         .into_iter()
-        .map(|(in_key, sum)| SumEntry {
-            in_key: Some(in_key),
-            key: Vec::new(),
+        .map(|(in_value, sum)| SumEntry {
+            in_key: None,
+            key: in_value,
             sum: Some(sum),
         })
         .collect();

@@ -36,7 +36,7 @@ The DPNS `domain` type of contracts v1 and v2, trimmed to two properties:
 }
 ```
 
-Registering a name took two steps. A `preorder` document first committed to a hash of the salt and the name, and the `domain` document then revealed both. Every domain create carried its 32-byte `preorderSalt`, which the type's create data trigger checked against the preorder. Once the domain was created the salt had done its job, and the stored domain does not hold it. DPNS v3 (protocol version 15) finds the preorder by its creator and the hash of the name instead, choosing the first valid preorder of the name ([Choosing the first commitment](refers-to-lookup.md#choosing-the-first-commitment-choosefirst)), and keeps `preorderSalt` declared, transient and unused, so domains stored under v1 and v2 decode.
+Registering a name took two steps. A `preorder` document first committed to a hash of the salt and the name, and the `domain` document then revealed both. Every domain create carried its 32-byte `preorderSalt`, which the type's create data trigger checked against the preorder. Once the domain was created the salt had done its job, and the stored domain does not hold it. DPNS v3 (protocol version 15) finds the preorder by its creator and the hash of the name instead, choosing the first valid preorder of a name outside a contest ([Choosing the first commitment](refers-to-lookup.md#choosing-the-first-commitment-choosefirst)), and keeps `preorderSalt` declared, transient and unused, so domains stored under v1 and v2 decode.
 
 ## How it works
 
@@ -59,6 +59,8 @@ From protocol version 14, a document type is refused (`InvalidContractStructure`
 - `immutable` lists one. A transient property is always absent from the stored document, so every replace that carries it would count as changing it;
 - a `propertyConstraints` rule reads one;
 - the type is `indexOnly` and declares any transient property.
+
+From protocol version 15 a contract registration or update is also refused when a type sums a transient property: one named by `documentsSummable`, `documentsAverageable`, or an index's `summable` or `averageable` (see [Counts, Sums and Averages](aggregates.md#rules-at-registration)). The type's sums read the stored value of each document, which a transient property never has. A contract registered earlier may hold such a type: it still loads, and a document create on the type is refused with the same error.
 
 Before protocol version 14 none of these was checked.
 

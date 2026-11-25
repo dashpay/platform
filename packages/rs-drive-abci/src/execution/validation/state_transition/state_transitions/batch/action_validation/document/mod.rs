@@ -10,4 +10,5 @@ pub(crate) mod document_reference_validation;
 pub(crate) mod document_replace_transition_action;
 pub(crate) mod document_shielded_token_payment;
 pub(crate) mod document_transfer_transition_action;
+pub(crate) mod document_type_sum_validation;
 pub(crate) mod document_update_price_transition_action;

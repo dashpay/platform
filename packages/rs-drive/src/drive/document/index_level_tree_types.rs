@@ -98,6 +98,42 @@ use grovedb_merk::tree_type::TreeType;
 #[cfg(feature = "server")]
 use itertools::Either;
 
+/// The tree that keeps a 128-bit sum in place of `tree_type`'s 64-bit one, with the same
+/// count and the same provable aggregates. A tree holding no sum is its own counterpart.
+/// `ProvableCountSumTree` has no 128-bit form that leaves the sum out of its node hashes, so
+/// the tree committing both, `ProvableCountProvableBigSumTree`, stands in for it.
+pub(crate) fn big_sum_tree_type(tree_type: TreeType) -> TreeType {
+    match tree_type {
+        TreeType::SumTree => TreeType::BigSumTree,
+        TreeType::CountSumTree => TreeType::CountBigSumTree,
+        TreeType::ProvableSumTree => TreeType::ProvableBigSumTree,
+        TreeType::ProvableCountSumTree | TreeType::ProvableCountProvableSumTree => {
+            TreeType::ProvableCountProvableBigSumTree
+        }
+        TreeType::ProvableSumIndexedTree => TreeType::ProvableBigSumIndexedTree,
+        TreeType::ProvableCountProvableSumIndexedTree => {
+            TreeType::ProvableCountProvableBigSumIndexedTree
+        }
+        other => other,
+    }
+}
+
+/// `tree_type` as a document type lays it out: its 128-bit counterpart
+/// ([`big_sum_tree_type`]) when the type keeps big sums
+/// (`DocumentTypeV2Getters::uses_big_sums`, `IndexLevelTypeInfo::big_sums`), else itself.
+///
+/// Shipped generations reach the callers of this function. It leaves them as they were:
+/// rs-dpp marks a type or an index level as keeping big sums only when
+/// `SystemLimits::max_summed_value_magnitude_in_64_bit_sums` is set, which no limits table of
+/// protocol versions 1-14 does, so `big_sums` is false wherever those versions call it.
+pub(crate) fn tree_type_for_sum_width(tree_type: TreeType, big_sums: bool) -> TreeType {
+    if big_sums {
+        big_sum_tree_type(tree_type)
+    } else {
+        tree_type
+    }
+}
+
 /// The two tree types an index sub-level materializes: the
 /// property-name tree (keys = the property's distinct values) and the
 /// per-value trees underneath it (hosting the `[0]` ref-bucket plus
@@ -152,12 +188,17 @@ pub(crate) fn index_level_tree_types_with_continuation_demotion(
             chain_value_tree_type
         } else {
             let info = sub_level.has_index_with_type();
-            derive_value_tree_type(
-                info.map(|i| i.countable.is_countable()).unwrap_or(false),
-                info.map(|i| i.range_countable).unwrap_or(false),
-                info.map(|i| i.summable.is_some()).unwrap_or(false),
-                info.map(|i| i.range_summable).unwrap_or(false),
-                !sub_level.sub_levels().is_empty(),
+            // The demotion is decided first, among the 64-bit trees, so a value tree with
+            // continuations is the tree that takes suppressed children at either width
+            tree_type_for_sum_width(
+                derive_value_tree_type(
+                    info.map(|i| i.countable.is_countable()).unwrap_or(false),
+                    info.map(|i| i.range_countable).unwrap_or(false),
+                    info.map(|i| i.summable.is_some()).unwrap_or(false),
+                    info.map(|i| i.range_summable).unwrap_or(false),
+                    !sub_level.sub_levels().is_empty(),
+                ),
+                info.is_some_and(|i| i.big_sums),
             )
         };
     Ok(IndexLevelTreeTypes {
@@ -327,12 +368,30 @@ pub(crate) fn terminal_member_tree_type(index_type: &IndexLevelTypeInfo) -> Tree
         index_type.countable,
         index_type.summable.is_some(),
         index_type.range_summable,
+        index_type.big_sums,
     )
 }
 
 /// The same derivation over an index's own aggregate flags, for callers
-/// that hold the contract's `Index` rather than a resolved level.
+/// that hold the contract's `Index` rather than a resolved level. `big_sums`
+/// is whether the document type keeps its sums in 128 bits, which an `Index`
+/// does not hold (`DocumentTypeV2Getters::uses_big_sums`).
 pub(crate) fn terminal_member_tree_type_for_aggregates(
+    countable: IndexCountability,
+    summable: bool,
+    range_summable: bool,
+    big_sums: bool,
+) -> TreeType {
+    tree_type_for_sum_width(
+        terminal_member_tree_type_for_64_bit_sums(countable, summable, range_summable),
+        big_sums,
+    )
+}
+
+/// The member bucket's tree among the trees with a 64-bit sum: the table every protocol
+/// version shares, which [`terminal_member_tree_type_for_aggregates`] takes to the width the
+/// document type keeps.
+fn terminal_member_tree_type_for_64_bit_sums(
     countable: IndexCountability,
     summable: bool,
     range_summable: bool,
@@ -363,12 +422,15 @@ pub(crate) fn terminal_member_tree_type_for_aggregates(
 /// Continuations only demote provable variants, whose stateless costs
 /// match their demoted forms at this call site, so `false` is passed.
 pub(crate) fn terminal_value_tree_type(index_type: &IndexLevelTypeInfo) -> TreeType {
-    derive_value_tree_type(
-        index_type.countable.is_countable(),
-        index_type.range_countable,
-        index_type.summable.is_some(),
-        index_type.range_summable,
-        false,
+    tree_type_for_sum_width(
+        derive_value_tree_type(
+            index_type.countable.is_countable(),
+            index_type.range_countable,
+            index_type.summable.is_some(),
+            index_type.range_summable,
+            false,
+        ),
+        index_type.big_sums,
     )
 }
 
@@ -643,13 +705,15 @@ pub(crate) fn level_removes_entry(
 /// an `aggregating_parent_tree_type` parent, or `None` when it contributes
 /// zero unwrapped (a non-sum tree under a sum-only parent):
 /// - a `CountTree` parent: `NonCounted`, whatever the inner;
-/// - a `CountSumTree` parent: `NotCountedOrSummed` for a sum-bearing inner,
-///   else `NonCounted`;
-/// - a `SumTree`, `BigSumTree` or `ProvableSumTree` parent: `NotSummed` for a
-///   sum-bearing inner, else no wrapper.
+/// - a `CountSumTree` or `CountBigSumTree` parent: `NotCountedOrSummed` for a
+///   sum-bearing inner, else `NonCounted`;
+/// - a `SumTree`, `BigSumTree`, `ProvableSumTree` or `ProvableBigSumTree`
+///   parent: `NotSummed` for a sum-bearing inner, else no wrapper.
 ///
 /// An indexed inner, an indexed or provable count-bearing parent, and a
-/// parent that does not aggregate are refused.
+/// parent that does not aggregate are refused. The trees with a 128-bit sum
+/// answer as their 64-bit counterparts do; no document type has one before
+/// protocol version 15 ([`tree_type_for_sum_width`]).
 pub(crate) fn zero_contribution_wrapper(
     aggregating_parent_tree_type: TreeType,
     inner_tree_type: TreeType,
@@ -659,6 +723,8 @@ pub(crate) fn zero_contribution_wrapper(
         TreeType::ProvableSumIndexedTree
             | TreeType::ProvableCountIndexedTree
             | TreeType::ProvableCountProvableSumIndexedTree
+            | TreeType::ProvableBigSumIndexedTree
+            | TreeType::ProvableCountProvableBigSumIndexedTree
     ) {
         return Err(ZeroContributionRefusal::IndexedInner);
     }
@@ -670,25 +736,34 @@ pub(crate) fn zero_contribution_wrapper(
             | TreeType::CountSumTree
             | TreeType::ProvableCountSumTree
             | TreeType::ProvableCountProvableSumTree
+            | TreeType::CountBigSumTree
+            | TreeType::ProvableBigSumTree
+            | TreeType::ProvableCountProvableBigSumTree
     );
     match aggregating_parent_tree_type {
         TreeType::CountTree => Ok(Some(ZeroContributionWrapper::NonCounted)),
-        TreeType::CountSumTree => Ok(Some(if inner_is_sum_bearing {
+        TreeType::CountSumTree | TreeType::CountBigSumTree => Ok(Some(if inner_is_sum_bearing {
             ZeroContributionWrapper::NotCountedOrSummed
         } else {
             ZeroContributionWrapper::NonCounted
         })),
-        TreeType::SumTree | TreeType::BigSumTree | TreeType::ProvableSumTree => {
+        TreeType::SumTree
+        | TreeType::BigSumTree
+        | TreeType::ProvableSumTree
+        | TreeType::ProvableBigSumTree => {
             Ok(inner_is_sum_bearing.then_some(ZeroContributionWrapper::NotSummed))
         }
         TreeType::ProvableCountIndexedTree
         | TreeType::ProvableSumIndexedTree
-        | TreeType::ProvableCountProvableSumIndexedTree => {
+        | TreeType::ProvableCountProvableSumIndexedTree
+        | TreeType::ProvableBigSumIndexedTree
+        | TreeType::ProvableCountProvableBigSumIndexedTree => {
             Err(ZeroContributionRefusal::IndexedParent)
         }
         TreeType::ProvableCountTree
         | TreeType::ProvableCountSumTree
-        | TreeType::ProvableCountProvableSumTree => {
+        | TreeType::ProvableCountProvableSumTree
+        | TreeType::ProvableCountProvableBigSumTree => {
             Err(ZeroContributionRefusal::ProvableCountParent)
         }
         _ => Err(ZeroContributionRefusal::NonAggregatingParent),
@@ -734,6 +809,7 @@ mod tests {
             flat: false,
             skip_if_absent_properties: Vec::new(),
             summable_off_count_index: None,
+            big_sums: false,
         }
     }
 

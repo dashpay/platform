@@ -177,14 +177,14 @@ pub(crate) fn confirmed_document_to_json(
 
 /// Replace + broadcast `document_id`'s properties on `contract_id`'s
 /// `document_type_name`, owned by `owner_identity_id`, signed via the
-/// external `signer_handle` with key `signing_key_id`.
+/// external `signer_handle`.
 ///
 /// Goes through `IdentityWallet::replace_document_with_signer`, which
 /// fetches the current document, applies `properties_json` (schema-
-/// sanitized), bumps the revision, validates `signing_key_id` is an
-/// AUTHENTICATION + ECDSA key on the owner, broadcasts on the
-/// platform-wallet 8 MB worker stack, and waits for the confirmed
-/// document.
+/// sanitized), bumps the revision, selects the owner's AUTHENTICATION
+/// key that the document type's security level allows and the signer
+/// can sign with, broadcasts on the platform-wallet 8 MB worker stack,
+/// and waits for the confirmed document.
 ///
 /// On success the confirmed document's 32-byte id is written to
 /// `out_document_id`, and a NUL-terminated, owned canonical-document
@@ -201,7 +201,6 @@ pub unsafe extern "C" fn platform_wallet_document_replace(
     document_type_name: *const c_char,
     document_id: *const u8,
     properties_json: *const c_char,
-    signing_key_id: u32,
     signer_handle: *mut SignerHandle,
     out_document_id: *mut u8,
     out_document_json: *mut *mut c_char,
@@ -235,7 +234,6 @@ pub unsafe extern "C" fn platform_wallet_document_replace(
                         &document_type_str,
                         &document_id_value,
                         properties_str,
-                        signing_key_id,
                         signer,
                     )
                     .await?;
@@ -257,21 +255,20 @@ pub unsafe extern "C" fn platform_wallet_document_replace(
 
 /// Delete + broadcast `document_id` on `contract_id`'s
 /// `document_type_name`, owned by `owner_identity_id`, signed via the
-/// external `signer_handle` with key `signing_key_id`.
+/// external `signer_handle` with the owner's AUTHENTICATION key that the
+/// document type's security level allows and the signer can sign with.
 ///
 /// Goes through `IdentityWallet::delete_document_with_signer`. On
 /// success the deleted document's 32-byte id is written to
 /// `out_document_id`. Delete returns no document body, so there is no
 /// JSON out-param — Swift removes the local row by id.
 #[no_mangle]
-#[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn platform_wallet_document_delete(
     wallet_handle: Handle,
     owner_identity_id: *const u8,
     contract_id: *const u8,
     document_type_name: *const c_char,
     document_id: *const u8,
-    signing_key_id: u32,
     signer_handle: *mut SignerHandle,
     out_document_id: *mut u8,
 ) -> PlatformWalletFFIResult {
@@ -298,7 +295,6 @@ pub unsafe extern "C" fn platform_wallet_document_delete(
                     &contract_id_value,
                     &document_type_str,
                     &document_id_value,
-                    signing_key_id,
                     signer,
                 )
                 .await?;
@@ -327,8 +323,9 @@ pub unsafe extern "C" fn platform_wallet_document_delete(
 /// `"$createdAt"` number of milliseconds for a type whose entries commit to
 /// it. A type that is not `indexOnly`, a property the type does not
 /// declare and any other `$` field are refused before anything is signed.
-/// On success the deleted document's 32-byte id is written to
-/// `out_document_id`.
+/// The signing key is the owner's AUTHENTICATION key that the document
+/// type's security level allows and the signer can sign with. On success
+/// the deleted document's 32-byte id is written to `out_document_id`.
 ///
 /// # Safety
 /// `owner_identity_id`, `contract_id` and `document_id` must each point to
@@ -344,7 +341,6 @@ pub unsafe extern "C" fn platform_wallet_document_delete_by_values(
     document_type_name: *const c_char,
     document_id: *const u8,
     properties_json: *const c_char,
-    signing_key_id: u32,
     signer_handle: *mut SignerHandle,
     out_document_id: *mut u8,
 ) -> PlatformWalletFFIResult {
@@ -375,7 +371,6 @@ pub unsafe extern "C" fn platform_wallet_document_delete_by_values(
                     &document_type_str,
                     &document_id_value,
                     &properties_str,
-                    signing_key_id,
                     signer,
                 )
                 .await?;
@@ -561,7 +556,9 @@ pub unsafe extern "C" fn platform_wallet_document_erase_and_observe(
 
 /// Transfer + broadcast `document_id` on `contract_id`'s
 /// `document_type_name`, from `owner_identity_id` to `recipient_id`,
-/// signed via the external `signer_handle` with key `signing_key_id`.
+/// signed via the external `signer_handle` with the owner's
+/// AUTHENTICATION key that the document type's security level allows and
+/// the signer can sign with.
 ///
 /// Goes through `IdentityWallet::transfer_document_with_signer`. On
 /// success the confirmed document's 32-byte id is written to
@@ -578,7 +575,6 @@ pub unsafe extern "C" fn platform_wallet_document_transfer(
     document_type_name: *const c_char,
     document_id: *const u8,
     recipient_id: *const u8,
-    signing_key_id: u32,
     signer_handle: *mut SignerHandle,
     out_document_id: *mut u8,
     out_document_json: *mut *mut c_char,
@@ -611,7 +607,6 @@ pub unsafe extern "C" fn platform_wallet_document_transfer(
                         &document_type_str,
                         &document_id_value,
                         &recipient_id_value,
-                        signing_key_id,
                         signer,
                     )
                     .await?;
@@ -633,8 +628,9 @@ pub unsafe extern "C" fn platform_wallet_document_transfer(
 
 /// Set (update) the trade price of `document_id` on `contract_id`'s
 /// `document_type_name`, owned by `owner_identity_id`, to `price`
-/// credits — signed via the external `signer_handle` with key
-/// `signing_key_id`.
+/// credits — signed via the external `signer_handle` with the owner's
+/// AUTHENTICATION key that the document type's security level allows and
+/// the signer can sign with.
 ///
 /// Goes through `IdentityWallet::set_document_price_with_signer`. On
 /// success the confirmed document's 32-byte id is written to
@@ -650,7 +646,6 @@ pub unsafe extern "C" fn platform_wallet_document_set_price(
     document_type_name: *const c_char,
     document_id: *const u8,
     price: u64,
-    signing_key_id: u32,
     signer_handle: *mut SignerHandle,
     out_document_id: *mut u8,
     out_document_json: *mut *mut c_char,
@@ -682,7 +677,6 @@ pub unsafe extern "C" fn platform_wallet_document_set_price(
                         &document_type_str,
                         &document_id_value,
                         price,
-                        signing_key_id,
                         signer,
                     )
                     .await?;
@@ -705,7 +699,8 @@ pub unsafe extern "C" fn platform_wallet_document_set_price(
 /// Purchase + broadcast for-sale `document_id` on `contract_id`'s
 /// `document_type_name` for `price` credits, with `purchaser_id` as
 /// the buyer (and new owner) — signed via the external `signer_handle`
-/// with key `signing_key_id` (resolved on the purchaser).
+/// with the purchaser's AUTHENTICATION key that the document type's
+/// security level allows and the signer can sign with.
 ///
 /// Goes through `IdentityWallet::purchase_document_with_signer`. On
 /// success the confirmed document's 32-byte id is written to
@@ -723,7 +718,6 @@ pub unsafe extern "C" fn platform_wallet_document_purchase(
     document_type_name: *const c_char,
     document_id: *const u8,
     price: u64,
-    signing_key_id: u32,
     signer_handle: *mut SignerHandle,
     out_document_id: *mut u8,
     out_document_json: *mut *mut c_char,
@@ -755,7 +749,6 @@ pub unsafe extern "C" fn platform_wallet_document_purchase(
                         &document_type_str,
                         &document_id_value,
                         price,
-                        signing_key_id,
                         signer,
                     )
                     .await?;
@@ -860,7 +853,6 @@ mod tests {
                 type_name,
                 id.as_ptr(),
                 properties_json,
-                0,
                 signer_handle,
                 out_document_id,
             )

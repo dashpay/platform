@@ -574,7 +574,10 @@ export type DocumentReferenceConstraints = {
  * does not count. The commitments are ordered by `by`, each entry one property
  * and its direction, a last `$id` breaking ties in the direction of the entry
  * before it (ascending alone). A create is refused when a
- * valid commitment before the found one is not past its `ttl` (code 40149);
+ * valid commitment before the found one is not past its `ttl` (code 40149),
+ * unless, from protocol version 15, it opens or joins a contest and the
+ * commitments are to the contest's values alone, ranked by `$createdAtBlockHeight`
+ * ascending alone and at least `minimumAgeBlocks` old;
  * two equal on every `by` property precede neither other. A found commitment
  * past its own `ttl`, or not valid itself, reveals nothing (code 40120).
  */

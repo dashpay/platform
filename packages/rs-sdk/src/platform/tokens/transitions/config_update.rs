@@ -6,6 +6,7 @@
 use crate::platform::tokens::builders::config_update::TokenConfigUpdateTransitionBuilder;
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::{Error, Sdk};
+use dapi_grpc::platform::v0::ResponseMetadata;
 use dpp::data_contract::group::GroupSumPower;
 use dpp::document::Document;
 use dpp::identity::signer::Signer;
@@ -57,6 +58,27 @@ impl Sdk {
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<ConfigUpdateResult, Error> {
+        self.token_update_contract_token_configuration_with_metadata(
+            config_update_transition_builder,
+            signing_key,
+            signer,
+        )
+        .await
+        .map(|(result, _)| result)
+    }
+
+    /// Like [`token_update_contract_token_configuration`](Self::token_update_contract_token_configuration),
+    /// but also returns the quorum-authenticated metadata of the response that proved the
+    /// result. Its `height` is the block that confirmed the update, so a later read of the
+    /// contract answered at that height or after it includes the change.
+    pub async fn token_update_contract_token_configuration_with_metadata<
+        S: Signer<IdentityPublicKey>,
+    >(
+        &self,
+        config_update_transition_builder: TokenConfigUpdateTransitionBuilder,
+        signing_key: &IdentityPublicKey,
+        signer: &S,
+    ) -> Result<(ConfigUpdateResult, ResponseMetadata), Error> {
         let platform_version = self.version();
 
         let put_settings = config_update_transition_builder.settings;
@@ -65,11 +87,11 @@ impl Sdk {
             .sign(self, signing_key, signer, platform_version)
             .await?;
 
-        let proof_result = state_transition
-            .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
+        let (proof_result, metadata) = state_transition
+            .broadcast_and_wait_with_metadata::<StateTransitionProofResult>(self, put_settings)
             .await?;
 
-        ConfigUpdateResult::try_from(proof_result)
+        Ok((ConfigUpdateResult::try_from(proof_result)?, metadata))
     }
 }
 
