@@ -209,9 +209,14 @@ mod tests {
         ) {
             let drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
-            let dpns_contract =
-                get_dpns_data_contract_fixture(None, 0, platform_version.protocol_version)
-                    .data_contract_owned();
+            // A named owner: the contract then has the same id, and the state the same root
+            // hash, at every run.
+            let dpns_contract = get_dpns_data_contract_fixture(
+                Some(Identifier::from([0x33; 32])),
+                0,
+                platform_version.protocol_version,
+            )
+            .data_contract_owned();
             drive
                 .apply_contract(
                     &dpns_contract,
@@ -395,6 +400,44 @@ mod tests {
             assert!(
                 matches!(err, Error::Drive(DriveError::CorruptedContractIndexes(_))),
                 "unexpected error: {err:?}"
+            );
+        }
+
+        /// From protocol version 14 the second contest is made on both storage engines,
+        /// with the same root hash and the same storage fee, and each engine has its own
+        /// processing fee for it. v1 asks the storage engine whether the vote tree is
+        /// there. Only RocksDB still shows the one the first contest left, so only there
+        /// the record that is found and the look for what is reachable are paid for.
+        #[test]
+        fn a_second_contest_at_protocol_version_14_has_one_root_hash_and_each_engines_processing_fee(
+        ) {
+            let platform_version = PlatformVersion::get(14).expect("expected platform version 14");
+
+            let (drive, _, result) =
+                restart_contest_after_cleanup_without_abstain_or_lock_votes(platform_version);
+            let fee = result.expect("expected the new contest to be created on either engine");
+            let root_hash = drive
+                .grove
+                .root_hash(None, &platform_version.drive.grove_version)
+                .unwrap()
+                .expect("expected the root hash");
+
+            assert_eq!(
+                hex::encode(root_hash),
+                "853c9640a219edf646c9adcf1fc10d7d1c5acfa3b4319da9dd4b5969d19898b7",
+                "on {}",
+                drive.storage_engine()
+            );
+            assert_eq!(fee.storage_fee, 40_176_000, "on {}", drive.storage_engine());
+            let processing_fee = match drive.storage_engine() {
+                crate::config::StorageEngine::RocksDb => 1_208_660,
+                crate::config::StorageEngine::LigninDb => 1_198_620,
+            };
+            assert_eq!(
+                fee.processing_fee,
+                processing_fee,
+                "on {}",
+                drive.storage_engine()
             );
         }
     }
