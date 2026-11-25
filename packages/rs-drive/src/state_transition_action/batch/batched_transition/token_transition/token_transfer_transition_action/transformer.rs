@@ -60,6 +60,19 @@ impl TokenTransferTransitionAction {
                 )?;
                 Ok((v0.into(), fee))
             }
+            TokenTransferTransition::V1(v1) => {
+                let (v0, fee) = TokenTransferTransitionActionV0::try_from_token_transfer_transition_v1_with_contract_lookup(
+                    drive,
+                    owner_id,
+                    v1,
+                    approximate_without_state_for_costs,
+                    transaction,
+                    block_info,
+                    get_data_contract,
+                    platform_version,
+                )?;
+                Ok((v0.into(), fee))
+            }
         }
     }
 
@@ -101,6 +114,19 @@ impl TokenTransferTransitionAction {
                     drive,
                     owner_id,
                     v0,
+                    approximate_without_state_for_costs,
+                    transaction,
+                    block_info,
+                    get_data_contract,
+                    platform_version,
+                )?;
+                Ok((v0.into(), fee))
+            }
+            TokenTransferTransition::V1(v1) => {
+                let (v0, fee) = TokenTransferTransitionActionV0::try_from_borrowed_token_transfer_transition_v1_with_contract_lookup(
+                    drive,
+                    owner_id,
+                    v1,
                     approximate_without_state_for_costs,
                     transaction,
                     block_info,

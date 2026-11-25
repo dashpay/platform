@@ -538,6 +538,14 @@ fn summarize_token_transition(
     let mut lines = Vec::new();
     let (amount, recipient_id, token_count, public_note) = match transition {
         TokenTransition::Transfer(t) => {
+            // `amount` is then the most the transfer moves, which the sender must hold
+            if let Some(minimum) = t.random_minimum_amount() {
+                lines.push(budget.write(format_args!(
+                    "random amount: from {} to {}",
+                    minimum,
+                    t.amount()
+                ))?);
+            }
             if t.shared_encrypted_note().is_some() {
                 lines.push(budget.write(format_args!("shared encrypted note: present"))?);
             }
@@ -552,6 +560,14 @@ fn summarize_token_transition(
             )
         }
         TokenTransition::Mint(t) => {
+            // `amount` is then the most the mint issues
+            if let Some(minimum) = t.random_minimum_amount() {
+                lines.push(budget.write(format_args!(
+                    "random amount: from {} to {}",
+                    minimum,
+                    t.amount()
+                ))?);
+            }
             if t.issued_to_identity_id().is_none() {
                 lines.push(
                     budget.write(format_args!("issued to: the token's default destination"))?,
@@ -674,6 +690,7 @@ mod tests {
     use dpp::state_transition::batch_transition::token_emergency_action_transition::v0::TokenEmergencyActionTransitionV0;
     use dpp::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::v0::TokenSetPriceForDirectPurchaseTransitionV0;
     use dpp::state_transition::batch_transition::token_transfer_transition::v0::TokenTransferTransitionV0;
+    use dpp::state_transition::batch_transition::token_transfer_transition::TokenTransferTransitionV1;
     use dpp::state_transition::batch_transition::{
         BatchTransitionV1, DocumentCreateTransition, TokenClaimTransition,
         TokenConfigUpdateTransition, TokenDirectPurchaseTransition,
@@ -1555,6 +1572,32 @@ mod tests {
                 "{name:?}"
             );
         }
+    }
+
+    /// A transfer of a random amount shows the range the signer agrees to: the amount it
+    /// names is only the most it can move.
+    #[test]
+    fn should_show_the_range_of_a_random_transfer() {
+        let summary = summarize_bytes(&batch(vec![BatchedTransition::Token(
+            TokenTransition::Transfer(TokenTransferTransition::V1(TokenTransferTransitionV1 {
+                base: token_base(),
+                amount: 250,
+                recipient_id: Identifier::from(RECIPIENT),
+                public_note: None,
+                shared_encrypted_note: None,
+                private_encrypted_note: None,
+                random_minimum_amount: Some(40),
+            })),
+        )]));
+        let StateTransitionSummaryKind::Batch { transitions, .. } = summary.kind else {
+            panic!("expected a batch");
+        };
+        assert_eq!(transitions[0].amount, Some(250));
+        let details = transitions[0].details.as_deref().expect("range rendered");
+        assert!(
+            details.contains("random amount: from 40 to 250"),
+            "{details}"
+        );
     }
 
     /// A public note is quoted, so a newline cannot forge another line and a

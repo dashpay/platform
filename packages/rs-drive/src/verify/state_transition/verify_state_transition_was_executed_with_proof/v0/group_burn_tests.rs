@@ -218,6 +218,7 @@ impl Fixture {
                     signer,
                     1,
                     TokenEvent::Burn(burn_amount, PROPOSER.into(), None),
+                    None,
                     &BlockInfo::default(),
                     &mut None,
                     None,

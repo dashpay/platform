@@ -63,6 +63,19 @@ impl TokenMintTransitionAction {
                     platform_version,
                 )
             }
+            TokenMintTransition::V1(v1) => {
+                TokenMintTransitionActionV0::try_from_token_mint_transition_v1_with_contract_lookup(
+                    drive,
+                    owner_id,
+                    v1,
+                    approximate_without_state_for_costs,
+                    transaction,
+                    block_info,
+                    user_fee_increase,
+                    get_data_contract,
+                    platform_version,
+                )
+            }
         }
     }
 
@@ -106,6 +119,19 @@ impl TokenMintTransitionAction {
                     drive,
                     owner_id,
                     v0,
+                    approximate_without_state_for_costs,
+                    transaction,
+                    block_info,
+                    user_fee_increase,
+                    get_data_contract,
+                    platform_version,
+                )
+            }
+            TokenMintTransition::V1(v1) => {
+                TokenMintTransitionActionV0::try_from_borrowed_token_mint_transition_v1_with_contract_lookup(
+                    drive,
+                    owner_id,
+                    v1,
                     approximate_without_state_for_costs,
                     transaction,
                     block_info,

@@ -81,8 +81,10 @@ impl Drive {
     /// rule inside it, so a producer's version cannot lower them. `query_platform_version`
     /// selects only the layout the producer proved. Its `prove_state_transition` generation
     /// decides whether an owned, fee-paying transition carries the owner's credit balance;
-    /// `document_history_storage_layout` selects the document history layout. The caller
-    /// must authenticate the producer version together with the resulting root.
+    /// `document_history_storage_layout` selects the document history layout. It also tells
+    /// whether the producer executes a token transfer or mint of format version 1 at all
+    /// (`random_token_amount`): one is refused unless both versions do. The caller must
+    /// authenticate the producer version together with the resulting root.
     ///
     /// # Parameters
     ///
@@ -128,6 +130,11 @@ impl Drive {
                 known_contracts_provider_fn,
                 Self::proof_carries_owner_balance(query_platform_version)?,
                 Self::proof_document_history_layout(query_platform_version)?,
+                query_platform_version
+                    .dpp
+                    .state_transition_serialization_versions
+                    .random_token_amount
+                    .is_some(),
                 platform_version,
             ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {

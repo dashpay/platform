@@ -228,12 +228,13 @@ impl Drive {
     /// document type, which dropping storage flags leaves as it is), so an update gathers the
     /// same operations as before at every protocol version, `references_follow_the_owner`
     /// being the generation's. `draw_random_document_properties` calls it to fill the
-    /// `sys.random` properties of a document of any type, which keeps its owner, with
-    /// `index_trees_as_inserted`: the index trees it creates then carry storage flags only
-    /// where an insert's do (`index_trees_carry_storage_flags`). The primary storage and the
-    /// references keep the document's flags either way, as an insert's do.
+    /// `sys.random` properties of a document of any type, and `settle_random_token_amounts`
+    /// to fill the drawn amount into a token history document, both keeping its owner and
+    /// with `index_trees_as_inserted`: the index trees it creates then carry storage flags
+    /// only where an insert's do (`index_trees_carry_storage_flags`). The primary storage and
+    /// the references keep the document's flags either way, as an insert's do.
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::drive::document) fn update_stored_document_operations_v1(
+    pub(crate) fn update_stored_document_operations_v1(
         &self,
         document_and_contract_info: DocumentAndContractInfo,
         index_trees_as_inserted: bool,

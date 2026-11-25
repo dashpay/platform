@@ -3,6 +3,7 @@ use crate::drive::document::expiration::pricing::{
     document_remaining_lifetime_ms, document_ttl_pricing,
 };
 use crate::drive::document::paths::contract_documents_primary_key_path;
+use crate::drive::random_beacon::{draw_from_beacon_v0, push_with_length, DOCUMENT_PROPERTY_DRAW};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
@@ -25,16 +26,9 @@ use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapInsertionPathHelper;
 use dpp::prelude::Identifier;
-use dpp::util::hash::hash_single;
 use dpp::version::PlatformVersion;
 use grovedb::{Element, TransactionArg};
 use std::borrow::Cow;
-
-/// The domain of a draw's seed, so a beacon never seeds anything else the same way.
-const DRAW_DOMAIN: &[u8] = b"dash-platform-random-v1";
-
-/// What a seed draws for: a document property (the only kind in this version).
-const DOCUMENT_PROPERTY_DRAW: u8 = 0;
 
 impl Drive {
     #[inline(always)]
@@ -61,15 +55,10 @@ impl Drive {
         Ok(drawn)
     }
 
-    /// Generation 0 of [`Self::prepay_random_document_index_entries`]: the indexes of
-    /// `document_type` holding a `sys.random` property, alone in a copy of the type
-    /// (`with_only_indexes`), and the document's entries in them gathered as the insert gathers
-    /// a document's index entries in a dry run, with the layers above the type estimated as for
-    /// any document insert and the storage flags the create writes them with, then priced as
-    /// the dry run's operations are. As the insert, the dry run first completes the document
-    /// with the values of the derived index properties (`with_derived_index_values`), which a
-    /// create's document does not carry yet, estimated: nothing is read, and the reads are
-    /// priced by their worst case.
+    /// Generation 0 of [`Self::prepay_random_document_index_entries`]: the entries of the
+    /// document in the indexes of `document_type` holding a `sys.random` property
+    /// ([`Self::prepay_drawn_index_entries_v0`]), carrying the storage flags the create writes
+    /// them with.
     #[allow(clippy::too_many_arguments)]
     #[inline(always)]
     pub(super) fn prepay_random_document_index_entries_v0(
@@ -82,18 +71,61 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<FeeResult, Error> {
-        let drawn_into = |index: &Index| indexes_a_random_property(document_type, index);
-        if !document_type.indexes().values().any(drawn_into) {
+        // The flags the create writes the document's elements with
+        let storage_flags =
+            StorageFlags::new_single_epoch(block_info.epoch.index, Some(owner_id.to_buffer()));
+        self.prepay_drawn_index_entries_v0(
+            document,
+            owner_id,
+            Some(storage_flags),
+            contract,
+            document_type,
+            |index| indexes_a_random_property(document_type, index),
+            block_info,
+            transaction,
+            platform_version,
+        )
+    }
+
+    /// What Drive's fee estimation gives, without reading state, for inserting the entries
+    /// `document`, of `document_type` in `contract`, written by `owner_id` with
+    /// `storage_flags`, takes in the indexes of its type that `drawn_into` selects: the indexes
+    /// holding a value a block's random beacon draws once the block is accepted, whose rewrite
+    /// moves the document's entries and may create the branches they move into, unbilled. The
+    /// selected indexes stand alone in a copy of the type (`with_only_indexes`), the entries
+    /// are gathered as the insert gathers a document's index entries in a dry run, with the
+    /// layers above the type estimated as for any document insert (the average layer
+    /// information, as if the branches had to be created), and priced as the dry run's
+    /// operations are. As the insert, the dry run first completes the document with the values
+    /// of the derived index properties (`with_derived_index_values`), which a create's document
+    /// does not carry yet, estimated: nothing is read, and the reads are priced by their worst
+    /// case. Zero when `drawn_into` selects no index of the type.
+    ///
+    /// Shared by the prepayments of generation 0 of both draws: a `sys.random` document
+    /// property's ([`Self::prepay_random_document_index_entries`]) and the amount a random
+    /// token transfer or mint writes into its history document
+    /// (`Drive::prepay_random_token_history_entries`).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn prepay_drawn_index_entries_v0(
+        &self,
+        document: &Document,
+        owner_id: Identifier,
+        storage_flags: Option<StorageFlags>,
+        contract: &DataContract,
+        document_type: DocumentTypeRef,
+        drawn_into: impl Fn(&Index) -> bool,
+        block_info: &BlockInfo,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<FeeResult, Error> {
+        if !document_type.indexes().values().any(&drawn_into) {
             return Ok(FeeResult::default());
         }
-        let indexes_drawn_into = document_type.with_only_indexes(drawn_into, platform_version)?;
-        let owner = owner_id.to_buffer();
-        // The flags the create writes the document's elements with
-        let storage_flags = StorageFlags::new_single_epoch(block_info.epoch.index, Some(owner));
+        let indexes_drawn_into = document_type.with_only_indexes(&drawn_into, platform_version)?;
         let document_and_contract_info = DocumentAndContractInfo {
             owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefInfo((document, Some(Cow::Owned(storage_flags)))),
-                owner_id: Some(owner),
+                document_info: DocumentRefInfo((document, storage_flags.map(Cow::Owned))),
+                owner_id: Some(owner_id.to_buffer()),
             },
             contract,
             document_type: indexes_drawn_into.as_ref(),
@@ -290,49 +322,25 @@ impl Drive {
     }
 }
 
-/// The value the property at `path` of the document `request` names draws from `beacon`:
-/// SHA-256 of the domain, the beacon and what the draw is for (a document property, its
-/// contract, type, document and path, each variable part prefixed by its length), whose first
-/// 16 bytes, big-endian, reduced modulo the range's size, offset the range's minimum. A range
-/// holds at most 2^64 values, so the reduction favours no value by more than 2^-64. `None`
-/// only for a part longer than a length prefix holds, which registration rules out.
+/// The value the property at `path` of the document `request` names draws from `beacon`
+/// (`draw_from_beacon_v0`), under the request key of a document property: what the draw is
+/// for, the contract, the type, the document and the path, each variable part prefixed by its
+/// length. `None` only for a part longer than a length prefix holds, which registration rules
+/// out.
 fn draw_v0(
     beacon: &[u8],
     request: &RandomDocumentRequest,
     path: &str,
     range: RandomRange,
 ) -> Option<i128> {
-    let mut preimage = Vec::with_capacity(
-        DRAW_DOMAIN.len()
-            + 2
-            + beacon.len()
-            + 1
-            + 32
-            + 2
-            + request.document_type_name.len()
-            + 32
-            + 2
-            + path.len(),
-    );
-    preimage.extend_from_slice(DRAW_DOMAIN);
-    push_with_length(&mut preimage, beacon)?;
-    preimage.push(DOCUMENT_PROPERTY_DRAW);
-    preimage.extend_from_slice(request.contract_id.as_slice());
-    push_with_length(&mut preimage, request.document_type_name.as_bytes())?;
-    preimage.extend_from_slice(request.document_id.as_slice());
-    push_with_length(&mut preimage, path.as_bytes())?;
-    let seed = hash_single(&preimage);
-    let mut bits = [0u8; 16];
-    bits.copy_from_slice(&seed[..16]);
-    range.value_at(u128::from_be_bytes(bits) % range.size())
-}
-
-/// Appends `part` after its length as a big-endian `u16`.
-fn push_with_length(preimage: &mut Vec<u8>, part: &[u8]) -> Option<()> {
-    let length = u16::try_from(part.len()).ok()?;
-    preimage.extend_from_slice(&length.to_be_bytes());
-    preimage.extend_from_slice(part);
-    Some(())
+    let mut request_key =
+        Vec::with_capacity(1 + 32 + 2 + request.document_type_name.len() + 32 + 2 + path.len());
+    request_key.push(DOCUMENT_PROPERTY_DRAW);
+    request_key.extend_from_slice(request.contract_id.as_slice());
+    push_with_length(&mut request_key, request.document_type_name.as_bytes())?;
+    request_key.extend_from_slice(request.document_id.as_slice());
+    push_with_length(&mut request_key, path.as_bytes())?;
+    draw_from_beacon_v0(beacon, &request_key, range)
 }
 
 #[cfg(test)]

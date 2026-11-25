@@ -211,4 +211,5 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V2: DPPStateTransitionSerializ
             max_version: 0,
             default_current_version: 0,
         },
+        random_token_amount: None,
     };

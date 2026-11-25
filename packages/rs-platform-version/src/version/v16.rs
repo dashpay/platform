@@ -62,9 +62,33 @@ pub const PROTOCOL_VERSION_16: ProtocolVersion = 16;
 ///    call sites this extended in place (the document create and replace transformers, the
 ///    parser's read checks, the reference validation's referenced side, the create's
 ///    prepay) are inert at every version, where no type declares such a function.
+///
+/// 3. **Token amounts drawn at random, inactive**: format version 1 of the token transfer and
+///    the token mint (`TokenTransferTransitionV1`, `TokenMintTransitionV1`) carries
+///    `random_minimum_amount`: the amount that reaches the recipient is drawn from it to
+///    `amount`, both included, out of the block's random beacon once the block's transitions
+///    are accepted. Structure validation holds `1 <= minimum < amount`
+///    (`InvalidTokenAmountError`) and refuses a random mint that is a group action or names
+///    no recipient (`RandomTokenMintNotAllowedError`). Executing one reserves `amount` in the
+///    token marketplace escrow of the token (note 1; a transfer takes it off the sender, a
+///    mint adds it to the supply), writes the recipient's balance as it stands, and writes
+///    the history document holding the minimum under an id that also hashes the minimum and
+///    the maximum (`token_history_document_id`), so a proof binds the range; the transition
+///    prepays, at Drive's estimate without reading state, the history index entries the
+///    settlement rewrites. The settlement (`settle_random_token_amounts` 0, in
+///    `DRIVE_TOKEN_METHOD_VERSIONS_V3` with the escrow) removes the reservation, pays out the
+///    drawn amount, releases the rest and rewrites the history's amount, unbilled. The
+///    formats stay inactive: `random_token_amount` is `None` in every serialization table,
+///    including `STATE_TRANSITION_SERIALIZATION_VERSIONS_V4`, which this version takes from
+///    protocol version 15, so a batch carrying one is refused at decode
+///    (`StateTransition::active_version_range`) until block execution settles them from the
+///    beacon Tenderdash delivers. Activating them sets it in a serialization table this
+///    version alone selects: a test holds every table of protocol version 15 and earlier to
+///    `None`, and every table admitting them to a Drive version with the escrow and the
+///    settlement.
 pub const PLATFORM_V16: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_16,
-    drive: DRIVE_VERSION_V11, // changed: create_initial_state_structure 5 creates the token order escrow trees; the token methods of the marketplace and the deeper escrow layer estimates (note 1); draw_random_document_properties Some(0) draws the sys.random properties of a block's documents and prices what their create prepays, which nothing calls while the function is inactive (note 2)
+    drive: DRIVE_VERSION_V11, // changed: create_initial_state_structure 5 creates the token order escrow trees; the token methods of the marketplace and the deeper escrow layer estimates (note 1); draw_random_document_properties Some(0) draws the sys.random properties of a block's documents and prices what their create prepays, which nothing calls while the function is inactive (note 2); settle_random_token_amounts Some(0) in DRIVE_TOKEN_METHOD_VERSIONS_V3 settles random token amounts, which nothing decodes while the format is inactive (note 3)
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V5, // changed: the token market contract v1 (note 1)
     ..PLATFORM_V15
 };
