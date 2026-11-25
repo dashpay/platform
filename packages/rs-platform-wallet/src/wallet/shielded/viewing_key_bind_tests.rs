@@ -36,7 +36,7 @@ use crate::wallet::shielded::{
 ///   counted so the test can assert the seedless path actually read
 ///   persistence rather than short-circuiting.
 #[derive(Default)]
-struct CapturingPersistence {
+pub(super) struct CapturingPersistence {
     stored: Mutex<Vec<PlatformWalletChangeSet>>,
     serve: Mutex<BTreeMap<SubwalletId, Vec<u8>>>,
     serve_subwallets: Mutex<BTreeMap<SubwalletId, ShieldedSubwalletStartState>>,
@@ -85,7 +85,7 @@ impl CapturingPersistence {
 
     /// Number of changesets queued so far — lets a test assert that a
     /// refused bind wrote nothing to durable storage.
-    fn stored_count(&self) -> usize {
+    pub(super) fn stored_count(&self) -> usize {
         self.stored.lock().expect("stored lock").len()
     }
 
@@ -154,7 +154,7 @@ fn temp_dir(tag: &str) -> PathBuf {
     std::env::temp_dir().join(format!("viewing_key_bind_test_{tag}_{nanos}"))
 }
 
-fn coordinator_at(dir: &std::path::Path) -> Arc<NetworkShieldedCoordinator> {
+pub(super) fn coordinator_at(dir: &std::path::Path) -> Arc<NetworkShieldedCoordinator> {
     std::fs::create_dir_all(dir).expect("create temp dir");
     let db_path = dir.join("tree.sqlite");
     let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store");
@@ -173,9 +173,19 @@ async fn platform_wallet_with<P>(persister: Arc<P>) -> PlatformWallet
 where
     P: PlatformWalletPersistence + 'static,
 {
+    platform_wallet_on(persister, Arc::new(dash_sdk::Sdk::new_mock())).await
+}
+
+/// [`platform_wallet_with`] over the caller's `sdk`.
+pub(super) async fn platform_wallet_on<P>(
+    persister: Arc<P>,
+    sdk: Arc<dash_sdk::Sdk>,
+) -> PlatformWallet
+where
+    P: PlatformWalletPersistence + 'static,
+{
     let (wallet_manager, wallet_id, balance, _signer) =
         funded_wallet_manager(StandardAccountType::BIP44Account).await;
-    let sdk = Arc::new(dash_sdk::Sdk::new_mock());
     let spv = Arc::new(crate::spv::SpvRuntime::new(
         Arc::clone(&wallet_manager),
         Arc::new(crate::events::PlatformEventManager::new(Vec::new())),

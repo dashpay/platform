@@ -48,6 +48,8 @@ pub mod file_store;
 mod fresh_address_scan_tests;
 pub mod fund_from_asset_lock;
 pub mod keys;
+#[cfg(test)]
+mod keyset_spend_tests;
 pub mod note_selection;
 pub mod operations;
 pub mod prover;

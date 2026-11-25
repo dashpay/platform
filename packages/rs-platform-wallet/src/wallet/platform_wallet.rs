@@ -1743,18 +1743,7 @@ impl PlatformWallet {
         account: u32,
     ) -> Result<super::shielded::OrchardKeySet, PlatformWalletError> {
         use super::shielded::OrchardKeySet;
-        let bound_fvk = {
-            let guard = self.shielded_keys.read().await;
-            let keys = guard
-                .as_ref()
-                .ok_or(PlatformWalletError::ShieldedNotBound)?;
-            let views = keys.get(&account).ok_or_else(|| {
-                PlatformWalletError::ShieldedKeyDerivation(format!(
-                    "shielded account {account} not bound"
-                ))
-            })?;
-            views.full_viewing_key.to_bytes()
-        };
+        let bound_fvk = self.bound_full_viewing_key(account).await?;
         let keyset = OrchardKeySet::from_seed(seed, self.sdk.network, account)?;
         if keyset.full_viewing_key.to_bytes() != bound_fvk {
             return Err(PlatformWalletError::ShieldedKeyDerivation(format!(
@@ -1762,6 +1751,54 @@ impl PlatformWallet {
             )));
         }
         Ok(keyset)
+    }
+
+    /// The raw full viewing key bound for `account`: `ShieldedNotBound`
+    /// with no shielded sub-wallet, "account not bound" without `account`.
+    #[cfg(feature = "shielded")]
+    async fn bound_full_viewing_key(&self, account: u32) -> Result<[u8; 96], PlatformWalletError> {
+        let guard = self.shielded_keys.read().await;
+        let keys = guard
+            .as_ref()
+            .ok_or(PlatformWalletError::ShieldedNotBound)?;
+        let views = keys.get(&account).ok_or_else(|| {
+            PlatformWalletError::ShieldedKeyDerivation(format!(
+                "shielded account {account} not bound"
+            ))
+        })?;
+        Ok(views.full_viewing_key.to_bytes())
+    }
+
+    /// Refuse a caller-held `keyset` that isn't `account`'s spend authority.
+    /// `account` must be bound (the errors of
+    /// [`derive_spend_keyset`](Self::derive_spend_keyset)), and the keyset's
+    /// full viewing key must equal the bound one. Every other field the
+    /// spend reads must be the one that FVK determines, as
+    /// [`OrchardKeySet::from_seed`](super::shielded::OrchardKeySet::from_seed)
+    /// derives it: the spend-authorizing key's validating key is the FVK's,
+    /// and the incoming and outgoing viewing keys and the default (change)
+    /// address are the FVK's external-scope ones at index 0. Any mismatch is
+    /// [`PlatformWalletError::ShieldedKeysetMismatch`].
+    #[cfg(feature = "shielded")]
+    async fn check_spend_keyset(
+        &self,
+        keyset: &super::shielded::OrchardKeySet,
+        account: u32,
+    ) -> Result<(), PlatformWalletError> {
+        use grovedb_commitment_tree::{Scope, SpendValidatingKey};
+        let bound_fvk = self.bound_full_viewing_key(account).await?;
+        let fvk = &keyset.full_viewing_key;
+        let consistent = fvk.to_bytes() == bound_fvk
+            && SpendValidatingKey::from(&keyset.spend_auth_key)
+                == SpendValidatingKey::from(fvk.clone())
+            && keyset.incoming_viewing_key.to_bytes() == fvk.to_ivk(Scope::External).to_bytes()
+            && keyset.outgoing_viewing_key.as_ref() == fvk.to_ovk(Scope::External).as_ref()
+            && keyset.default_address.to_raw_address_bytes()
+                == fvk.address_at(0u32, Scope::External).to_raw_address_bytes();
+        if !consistent {
+            return Err(PlatformWalletError::ShieldedKeysetMismatch { account });
+        }
+        Ok(())
     }
 
     /// Send a private shielded → shielded transfer from `account`'s
@@ -1795,6 +1832,47 @@ impl PlatformWallet {
         prover: P,
     ) -> Result<(), PlatformWalletError> {
         let keyset = self.derive_spend_keyset(seed, account).await?;
+        self.shielded_transfer_to_with_keyset(
+            coordinator,
+            &keyset,
+            account,
+            recipient_raw_43,
+            amount,
+            memo,
+            prover,
+        )
+        .await
+    }
+
+    /// [`shielded_transfer_to`](Self::shielded_transfer_to) with the spend
+    /// authority supplied as `account`'s full `OrchardKeySet` instead of the
+    /// wallet seed, for a caller that holds the keyset but not the seed (a
+    /// keyset is made with
+    /// [`OrchardKeySet::from_seed`](super::shielded::OrchardKeySet::from_seed)).
+    ///
+    /// The wallet borrows the keyset for this call and keeps no copy, and
+    /// the ASK never crosses to the coordinator. Before anything is parsed,
+    /// built, proven or stored, `account` must be bound (`ShieldedNotBound`
+    /// / "account not bound" otherwise), the keyset's full viewing key must
+    /// equal the bound one, and its spend-authorizing key, incoming and
+    /// outgoing viewing keys and default (change) address must be the ones
+    /// that FVK determines; any other keyset is refused with
+    /// [`PlatformWalletError::ShieldedKeysetMismatch`]. The spend then runs
+    /// exactly as the seed path's does, through the coordinator's dispatch
+    /// hook when one is set.
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn shielded_transfer_to_with_keyset<P: dpp::shielded::builder::OrchardProver>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        keyset: &super::shielded::OrchardKeySet,
+        account: u32,
+        recipient_raw_43: &[u8; 43],
+        amount: u64,
+        memo: [u8; 36],
+        prover: P,
+    ) -> Result<(), PlatformWalletError> {
+        self.check_spend_keyset(keyset, account).await?;
         let recipient = Option::<grovedb_commitment_tree::PaymentAddress>::from(
             grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(recipient_raw_43),
         )
@@ -1809,7 +1887,7 @@ impl PlatformWallet {
             coordinator.anchor_cache(),
             Some(&self.persister),
             self.wallet_id,
-            &keyset,
+            keyset,
             account,
             &recipient,
             amount,
@@ -1838,6 +1916,32 @@ impl PlatformWallet {
         prover: P,
     ) -> Result<(), PlatformWalletError> {
         let keyset = self.derive_spend_keyset(seed, account).await?;
+        self.shielded_unshield_to_with_keyset(
+            coordinator,
+            &keyset,
+            account,
+            to_platform_addr_bech32m,
+            amount,
+            prover,
+        )
+        .await
+    }
+
+    /// [`shielded_unshield_to`](Self::shielded_unshield_to)
+    /// with the spend authority supplied as `account`'s full `OrchardKeySet`
+    /// instead of the wallet seed, checked before anything else as in
+    /// [`shielded_transfer_to_with_keyset`](Self::shielded_transfer_to_with_keyset).
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_unshield_to_with_keyset<P: dpp::shielded::builder::OrchardProver>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        keyset: &super::shielded::OrchardKeySet,
+        account: u32,
+        to_platform_addr_bech32m: &str,
+        amount: u64,
+        prover: P,
+    ) -> Result<(), PlatformWalletError> {
+        self.check_spend_keyset(keyset, account).await?;
         // The decoder is network-agnostic, so guard the recipient's HRP class
         // against the wallet's network before decoding.
         check_recipient_hrp(to_platform_addr_bech32m, self.sdk.network)?;
@@ -1851,7 +1955,7 @@ impl PlatformWallet {
             coordinator.anchor_cache(),
             Some(&self.persister),
             self.wallet_id,
-            &keyset,
+            keyset,
             account,
             &to,
             amount,
@@ -1889,6 +1993,72 @@ impl PlatformWallet {
         let _shield_guard = self.shield_guard.lock().await;
 
         let keyset = self.derive_spend_keyset(seed, account).await?;
+        self.identity_top_up_from_pool_guarded(
+            coordinator,
+            &keyset,
+            account,
+            identity_id,
+            amount,
+            prover,
+        )
+        .await
+    }
+
+    /// [`shielded_identity_top_up_from_pool`](Self::shielded_identity_top_up_from_pool)
+    /// with the spend authority supplied as `account`'s full `OrchardKeySet`
+    /// instead of the wallet seed. The keyset is checked as in
+    /// [`shielded_transfer_to_with_keyset`](Self::shielded_transfer_to_with_keyset),
+    /// before the shield lock is taken and again once it is held.
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_identity_top_up_from_pool_with_keyset<
+        P: dpp::shielded::builder::OrchardProver,
+    >(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        keyset: &super::shielded::OrchardKeySet,
+        account: u32,
+        identity_id: &Identifier,
+        amount: u64,
+        prover: P,
+    ) -> Result<Option<Credits>, PlatformWalletError> {
+        // A zero amount must not queue behind a long-running shielded operation.
+        ensure_positive_amount(amount)?;
+        self.check_spend_keyset(keyset, account).await?;
+
+        // Single-flight with the other shield-class operations. The proof
+        // result carries the identity's absolute post-execution balance, so
+        // two top-ups (or a top-up and a shield-from-identity debit) whose
+        // waits completed out of execution order would let the older balance
+        // overwrite the newer one. Held across build -> broadcast -> wait ->
+        // reconcile. A bind takes it too and may re-bind the account while
+        // this call waits, so the keyset is checked again once it is held.
+        let _shield_guard = self.shield_guard.lock().await;
+        self.check_spend_keyset(keyset, account).await?;
+
+        self.identity_top_up_from_pool_guarded(
+            coordinator,
+            keyset,
+            account,
+            identity_id,
+            amount,
+            prover,
+        )
+        .await
+    }
+
+    /// The top-up of `account`'s notes with `keyset`, already checked, while
+    /// the caller holds the shield lock: the build, broadcast and wait, then
+    /// the proven balance applied to the identity if this wallet manages it.
+    #[cfg(feature = "shielded")]
+    async fn identity_top_up_from_pool_guarded<P: dpp::shielded::builder::OrchardProver>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        keyset: &super::shielded::OrchardKeySet,
+        account: u32,
+        identity_id: &Identifier,
+        amount: u64,
+        prover: P,
+    ) -> Result<Option<Credits>, PlatformWalletError> {
         let (mut proven_balance, metadata) =
             super::shielded::operations::identity_top_up_from_pool_with_metadata(
                 &self.sdk,
@@ -1896,7 +2066,7 @@ impl PlatformWallet {
                 coordinator.anchor_cache(),
                 Some(&self.persister),
                 self.wallet_id,
-                &keyset,
+                keyset,
                 account,
                 *identity_id,
                 amount,
@@ -2386,6 +2556,35 @@ impl PlatformWallet {
         prover: P,
     ) -> Result<(), PlatformWalletError> {
         let keyset = self.derive_spend_keyset(seed, account).await?;
+        self.shielded_withdraw_to_with_keyset(
+            coordinator,
+            &keyset,
+            account,
+            to_core_address,
+            amount,
+            core_fee_per_byte,
+            prover,
+        )
+        .await
+    }
+
+    /// [`shielded_withdraw_to`](Self::shielded_withdraw_to)
+    /// with the spend authority supplied as `account`'s full `OrchardKeySet`
+    /// instead of the wallet seed, checked before anything else as in
+    /// [`shielded_transfer_to_with_keyset`](Self::shielded_transfer_to_with_keyset).
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn shielded_withdraw_to_with_keyset<P: dpp::shielded::builder::OrchardProver>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        keyset: &super::shielded::OrchardKeySet,
+        account: u32,
+        to_core_address: &str,
+        amount: u64,
+        core_fee_per_byte: u32,
+        prover: P,
+    ) -> Result<(), PlatformWalletError> {
+        self.check_spend_keyset(keyset, account).await?;
         let network = self.sdk.network;
         let parsed = to_core_address
             .parse::<dashcore::Address<dashcore::address::NetworkUnchecked>>()
@@ -2404,7 +2603,7 @@ impl PlatformWallet {
             coordinator.anchor_cache(),
             Some(&self.persister),
             self.wallet_id,
-            &keyset,
+            keyset,
             account,
             &parsed,
             amount,
@@ -2425,7 +2624,10 @@ impl PlatformWallet {
     /// `public_keys` is the new identity's key set (each entry pairs the `IdentityPublicKey` with
     /// its `IdentityPublicKeyInCreation` form); `identity_signer` produces each key's
     /// proof-of-possession signature. The Orchard spend authority is re-derived from `seed` for
-    /// this call only (the ASK never crosses to the coordinator and is not retained).
+    /// this call only (the ASK never crosses to the coordinator and is not retained); the spend
+    /// and registration are those of
+    /// [`shielded_identity_create_from_pool_with_keyset`](Self::shielded_identity_create_from_pool_with_keyset),
+    /// and the derived keyset is dropped before the identity is registered locally.
     ///
     /// `identity_index` is the DIP-9 identity-registration slot the new identity occupies in the
     /// local `IdentityManager`; on a successful broadcast the proof-verified identity is registered
@@ -2454,29 +2656,119 @@ impl PlatformWallet {
         P: dpp::shielded::builder::OrchardProver,
         IS: dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> + Send + Sync,
     {
-        let (identity_id, identity) = {
-            // Scope the transient keyset so its spend authority is dropped before we take the
-            // wallet-manager write lock below — it's only needed for the spend, not for the
-            // registration step.
+        let created = {
+            // Scope the transient keyset so its spend authority is dropped before the
+            // wallet-manager write lock is taken to register the identity.
             let keyset = self.derive_spend_keyset(seed, account).await?;
-            super::shielded::operations::identity_create_from_shielded_pool_dispatched(
-                &self.sdk,
-                coordinator.store(),
-                coordinator.anchor_cache(),
-                Some(&self.persister),
-                self.wallet_id,
+            self.shielded_identity_create_from_pool_spend(
+                coordinator,
                 &keyset,
                 account,
                 public_keys,
                 denomination,
                 send_to_address_on_creation_failure,
                 identity_signer,
-                coordinator.shielded_dispatch(),
-                &prover,
+                prover,
             )
             .await?
         };
+        Ok(self
+            .register_pool_created_identity(created, identity_index)
+            .await)
+    }
 
+    /// [`shielded_identity_create_from_pool`](Self::shielded_identity_create_from_pool) with the
+    /// Orchard spend authority supplied as `account`'s full `OrchardKeySet` instead of the wallet
+    /// seed, checked before anything else as in
+    /// [`shielded_transfer_to_with_keyset`](Self::shielded_transfer_to_with_keyset).
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn shielded_identity_create_from_pool_with_keyset<P, IS>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        keyset: &super::shielded::OrchardKeySet,
+        account: u32,
+        identity_index: u32,
+        public_keys: Vec<(
+            dpp::identity::IdentityPublicKey,
+            dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation,
+        )>,
+        denomination: u64,
+        send_to_address_on_creation_failure: dpp::address_funds::PlatformAddress,
+        identity_signer: &IS,
+        prover: P,
+    ) -> Result<dpp::prelude::Identifier, PlatformWalletError>
+    where
+        P: dpp::shielded::builder::OrchardProver,
+        IS: dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> + Send + Sync,
+    {
+        let created = self
+            .shielded_identity_create_from_pool_spend(
+                coordinator,
+                keyset,
+                account,
+                public_keys,
+                denomination,
+                send_to_address_on_creation_failure,
+                identity_signer,
+                prover,
+            )
+            .await?;
+        Ok(self
+            .register_pool_created_identity(created, identity_index)
+            .await)
+    }
+
+    /// The spend of an identity create from the pool: the keyset check, then
+    /// the build and broadcast. Returns the created identity, not yet
+    /// registered locally.
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    async fn shielded_identity_create_from_pool_spend<P, IS>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        keyset: &super::shielded::OrchardKeySet,
+        account: u32,
+        public_keys: Vec<(
+            dpp::identity::IdentityPublicKey,
+            dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation,
+        )>,
+        denomination: u64,
+        send_to_address_on_creation_failure: dpp::address_funds::PlatformAddress,
+        identity_signer: &IS,
+        prover: P,
+    ) -> Result<(dpp::prelude::Identifier, dpp::identity::Identity), PlatformWalletError>
+    where
+        P: dpp::shielded::builder::OrchardProver,
+        IS: dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> + Send + Sync,
+    {
+        self.check_spend_keyset(keyset, account).await?;
+        super::shielded::operations::identity_create_from_shielded_pool_dispatched(
+            &self.sdk,
+            coordinator.store(),
+            coordinator.anchor_cache(),
+            Some(&self.persister),
+            self.wallet_id,
+            keyset,
+            account,
+            public_keys,
+            denomination,
+            send_to_address_on_creation_failure,
+            identity_signer,
+            coordinator.shielded_dispatch(),
+            &prover,
+        )
+        .await
+    }
+
+    /// Register an identity created from the pool in the local manager at
+    /// `identity_index`, and return its id.
+    #[cfg(feature = "shielded")]
+    async fn register_pool_created_identity(
+        &self,
+        (identity_id, identity): (dpp::prelude::Identifier, dpp::identity::Identity),
+        identity_index: u32,
+    ) -> dpp::prelude::Identifier {
         // Register the proof-verified identity in the local manager at its HD slot, exactly like
         // `register_from_addresses`' Step 3 — this drives the host persister's
         // `IdentityChangeSet` / `IdentityKeysChangeSet` emit so the app's identity row is created.
@@ -2512,7 +2804,7 @@ impl PlatformWallet {
             }
         }
 
-        Ok(identity_id)
+        identity_id
     }
 
     #[cfg(feature = "shielded")]
