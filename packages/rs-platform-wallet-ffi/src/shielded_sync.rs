@@ -1998,8 +1998,12 @@ mod identity_account_tests {
     use crate::persistence::{
         FFIPersister, PersistenceCallbacks, PersistenceExtensionCallbacks, WipeShieldedStateFn,
     };
+    use crate::shielded_tip::{
+        platform_wallet_manager_shielded_identity_balance, ShieldedIdentityBalanceFFI,
+        ShieldedIdentityBalanceStateFFI,
+    };
     use crate::test_fixtures::{
-        mock_manager_with, noop_free_viewing_keys, noop_load_viewing_keys,
+        mock_manager, mock_manager_with, noop_free_viewing_keys, noop_load_viewing_keys,
         noop_persist_viewing_keys,
     };
     use crate::types::FFINetwork;
@@ -2270,6 +2274,65 @@ mod identity_account_tests {
                 .expect("add the identity");
         });
         wallet
+    }
+
+    /// Before the shielded store is configured the wallet still answers the
+    /// identity balance read: `Unverified` for an identity it holds, and
+    /// `ErrorIdentityNotFound` for one it does not. The export resolves the
+    /// wallet alone and leaves both answers to it.
+    #[test]
+    fn should_let_the_wallet_answer_an_identity_balance_before_shielded_is_configured() {
+        let manager = mock_manager();
+        let wallet_id = runtime().block_on(async {
+            manager
+                .create_wallet_from_mnemonic(
+                    TEST_MNEMONIC,
+                    dashcore::Network::Testnet,
+                    WalletAccountCreationOptions::Default,
+                    Some(0),
+                )
+                .await
+                .expect("create wallet")
+                .wallet_id()
+        });
+        let handle = PLATFORM_WALLET_MANAGER_STORAGE.insert(manager);
+        let held = Identifier::from([0x31; 32]);
+        add_identity_at_slot(handle, wallet_id, held, 3);
+
+        let read = |id: Identifier| {
+            let mut balance = ShieldedIdentityBalanceFFI {
+                state: ShieldedIdentityBalanceStateFFI::Available,
+                account: 9,
+                credits: 9,
+            };
+            let mut r = unsafe {
+                platform_wallet_manager_shielded_identity_balance(
+                    handle,
+                    wallet_id.as_ptr(),
+                    id.as_bytes().as_ptr(),
+                    &mut balance,
+                )
+            };
+            let code = r.code;
+            unsafe { platform_wallet_ffi_result_free(&mut r) };
+            (code, balance)
+        };
+
+        assert_eq!(
+            read(held),
+            (
+                PlatformWalletFFIResultCode::Success,
+                ShieldedIdentityBalanceFFI::default()
+            ),
+            "an identity the wallet holds is unverified, not an error"
+        );
+        let (unknown, balance) = read(Identifier::from([0x32; 32]));
+        assert_eq!(unknown, PlatformWalletFFIResultCode::ErrorIdentityNotFound);
+        assert_eq!(balance, ShieldedIdentityBalanceFFI::default());
+
+        let mut destroyed = unsafe { platform_wallet_manager_destroy(handle) };
+        assert_eq!(destroyed.code, PlatformWalletFFIResultCode::Success);
+        unsafe { platform_wallet_ffi_result_free(&mut destroyed) };
     }
 
     /// Calls the export for `id` with a pre-filled buffer and returns the

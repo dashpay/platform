@@ -25,7 +25,7 @@ use crate::handle::*;
 use crate::identity_keys_from_mnemonic::resolve_seed_from_resolver;
 use crate::runtime::{block_on_worker, ensure_not_on_runtime, runtime};
 use crate::shielded_send::{
-    catch_spend_panic, encode_memo_text, map_spend_result, resolve_shielded_wallet,
+    catch_spend_panic, encode_memo_text, map_spend_result, resolve_shielded_wallet, resolve_wallet,
 };
 use crate::shielded_sync::{catch_query_panic, map_shielded_error};
 use crate::types::read_identifier;
@@ -579,7 +579,8 @@ fn map_tip_send_result(result: Result<(), PlatformWalletError>) -> PlatformWalle
 /// written only on success, where it holds:
 /// - `Unverified`: the seed has not proved in this session which account is
 ///   the identity's; `platform_wallet_manager_prepare_shielded_identity_address`
-///   proves it.
+///   proves it. Every identity the wallet holds reads so before the shielded
+///   store is configured.
 /// - `Unavailable` with `account`: the account's ledger is not established
 ///   (not bound, or neither restored nor scanned); the balance is not known.
 /// - `Available` with `account` and `credits`.
@@ -592,9 +593,10 @@ fn map_tip_send_result(result: Result<(), PlatformWalletError>) -> PlatformWalle
 ///   (by a scan, for instance), or a shielded Clear was running. Nothing
 ///   failed: keep the last state shown and read again later. The only code
 ///   of this call that means that.
-/// - `ErrorIdentityNotFound`: the wallet holds no identity with that id.
-/// - `ErrorWalletOperation`: the wallet is unknown, no shielded coordinator
-///   is configured, the call was made from a callback this library invokes
+/// - `ErrorIdentityNotFound`: the wallet holds no identity with that id,
+///   whether or not the shielded store is configured.
+/// - `ErrorWalletOperation`: the wallet is unknown, the call was made from a
+///   callback this library invokes
 ///   (the shielded balance callback among them: read the balance from
 ///   another thread), or another failure, with the reason in the message.
 /// - `ErrorShieldedRecoveryCorrupted` / `ErrorShieldedRecoveryKeysRequired`:
@@ -631,9 +633,11 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_balance(
     }
     let mut balance = ShieldedIdentityBalanceFFI::default();
     let result = catch_query_panic("shielded identity balance", || {
-        // Only the owned Arcs cross the wait: the registry guard is released
-        // once resolution returns, as in the local balance snapshot.
-        let wallet = match resolve_shielded_wallet(handle, &wallet_id) {
+        // Only the owned Arc crosses the wait: the registry guard is released
+        // once resolution returns, as in the local balance snapshot. The
+        // wallet alone is resolved: before the shielded store is configured
+        // the wallet answers `Unverified`, which is its answer to give.
+        let wallet = match resolve_wallet(handle, &wallet_id) {
             Ok(value) => value,
             Err(result) => return result,
         };

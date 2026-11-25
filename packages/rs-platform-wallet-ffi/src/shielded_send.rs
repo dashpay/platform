@@ -3064,8 +3064,10 @@ pub unsafe extern "C" fn platform_wallet_manager_abandon_shielded_identity_debit
 ///
 /// Cached capacity preflight needs only the wallet's Platform Payment account;
 /// requiring a bound/configured shielded coordinator here would turn an
-/// otherwise valid balance query into a structural setup error.
-fn resolve_wallet(
+/// otherwise valid balance query into a structural setup error. The identity
+/// balance read uses it too: the wallet answers that one before the
+/// shielded store is configured.
+pub(crate) fn resolve_wallet(
     handle: Handle,
     wallet_id: &[u8; 32],
 ) -> Result<std::sync::Arc<platform_wallet::PlatformWallet>, PlatformWalletFFIResult> {
