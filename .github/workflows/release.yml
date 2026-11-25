@@ -724,11 +724,17 @@ jobs:
   publish-dashmate-apt:
     name: Publish Dashmate debs to apt
     needs: release-dashmate-checksums
-    # A dispatch attaches no debs and no SHA256SUMS.
+    # A dispatch attaches no debs and no SHA256SUMS. The repository variable
+    # DASHMATE_APT_PUBLISH turns the job on when it is `true` (the comparison
+    # ignores case); unset or anything else leaves it off. It stays off until
+    # the publisher refuses a SHA256SUMS whose sha256 is not the
+    # sha256sums_sha256 this job sends. publish-dashmate-apt-off says so while
+    # it is off.
     if: >-
       !cancelled()
       && github.event_name == 'release'
       && needs.release-dashmate-checksums.result == 'success'
+      && vars.DASHMATE_APT_PUBLISH == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     # The role trusts this environment only, and the environment admits v* tags only.
@@ -874,3 +880,22 @@ jobs:
             echo "If that log cannot be read, give infra the execution: ${execution}"
             exit 1
           fi
+
+  # A job skipped by its condition shows no reason, so this one says why the
+  # release run published nothing to apt. It runs exactly when
+  # publish-dashmate-apt would have, had DASHMATE_APT_PUBLISH been `true`.
+  publish-dashmate-apt-off:
+    name: Dashmate apt publish is off
+    needs: release-dashmate-checksums
+    if: >-
+      !cancelled()
+      && github.event_name == 'release'
+      && needs.release-dashmate-checksums.result == 'success'
+      && vars.DASHMATE_APT_PUBLISH != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Say the apt publish is off
+        run: |
+          echo "::notice::The debs were not sent to the apt publisher: the repository variable DASHMATE_APT_PUBLISH is not 'true'. The release skill says when to turn it on."

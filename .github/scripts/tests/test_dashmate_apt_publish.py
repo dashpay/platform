@@ -12,6 +12,13 @@ import unittest
 ROOT = Path(__file__).resolve().parents[3]
 RELEASE = ROOT / '.github/workflows/release.yml'
 JOB = 'publish-dashmate-apt'
+# Says why there is no apt publish while the repository variable leaves it off.
+OFF_JOB = 'publish-dashmate-apt-off'
+# What lets a published release run the apt publish job; unset means off.
+GATE = "vars.DASHMATE_APT_PUBLISH == 'true'"
+# When the publish job could run at all: after SHA256SUMS is attached for a published release.
+RELEASE_CONDITION = ("!cancelled() && github.event_name == 'release'"
+                     " && needs.release-dashmate-checksums.result == 'success'")
 ROLE = 'arn:aws:iam::854439639386:role/dashmate-apt-release'
 STATE_MACHINE = 'arn:aws:states:us-west-2:854439639386:stateMachine:dashmate-apt-publish'
 CHECK_STEP = 'Check the release tag'
@@ -133,10 +140,32 @@ class AptPublishJobTests(unittest.TestCase):
         text = job(JOB)
         self.assertIn('\n    needs: release-dashmate-checksums\n', text)
         condition = re.search(r'\n    if: >-\n((?:      .*\n)+)', text).group(1).split()
-        self.assertEqual(' '.join(condition), "!cancelled() && github.event_name == 'release'"
-                         " && needs.release-dashmate-checksums.result == 'success'")
+        self.assertEqual(' '.join(condition), f'{RELEASE_CONDITION} && {GATE}')
         checksums = re.search(r'\n    if: >-\n((?:      .*\n)+)', job('release-dashmate-checksums')).group(1)
         self.assertIn("github.event_name == 'release'", checksums)
+
+    def test_should_stay_off_until_the_repository_variable_turns_it_on(self):
+        # Off until the publisher refuses a SHA256SUMS other than the one this run checked: only
+        # `true` runs it, so an unset variable, which reads as empty, keeps it off.
+        condition = ' '.join(re.search(r'\n    if: >-\n((?:      .*\n)+)', job(JOB)).group(1).split())
+        self.assertTrue(condition.endswith(f' && {GATE}'), condition)
+        self.assertEqual(RELEASE.read_text().count('vars.DASHMATE_APT_PUBLISH'), 2)
+
+    def test_should_say_why_there_is_no_apt_publish_while_it_is_off(self):
+        # A job skipped by its condition shows no reason, so another one says it, exactly when the
+        # publish job would otherwise have run.
+        text = job(OFF_JOB)
+        self.assertIn('\n    needs: release-dashmate-checksums\n', text)
+        condition = ' '.join(re.search(r'\n    if: >-\n((?:      .*\n)+)', text).group(1).split())
+        self.assertEqual(condition, f"{RELEASE_CONDITION} && vars.DASHMATE_APT_PUBLISH != 'true'")
+        # It touches nothing: no permissions, no environment, no action.
+        self.assertIn('\n    permissions: {}\n', text)
+        self.assertNotIn('environment:', text)
+        self.assertNotIn('uses:', text)
+        script = textwrap.dedent(re.search(r'\n        run: \|\n((?:          .*\n|\n)+)', text).group(1))
+        result = subprocess.run(['/bin/bash', '-c', script], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertRegex(result.stdout, r'^::notice::.*DASHMATE_APT_PUBLISH')
 
     def test_should_take_the_tag_from_the_published_release(self):
         self.assertEqual(mapping(job_lines(), '    env:', 6)['TAG'], '${{ github.event.release.tag_name }}')
@@ -188,16 +217,18 @@ class AptPublishJobTests(unittest.TestCase):
 
     def test_should_be_needed_by_no_other_job(self):
         # A failed publish fails this job only: every release asset stays as the other jobs made it.
-        others = RELEASE.read_text().replace(job(JOB), '')
-        self.assertNotRegex(others, rf'needs:[^\n]*\b{JOB}\b|\n      - {JOB}\n')
+        for name in (JOB, OFF_JOB):
+            with self.subTest(name):
+                others = RELEASE.read_text().replace(job(name), '')
+                self.assertNotRegex(others, rf'needs:[^\n]*\b{name}\b|\n      - {name}\n')
 
     def test_should_not_be_a_dashmate_writer_for_the_signing_script(self):
         # It changes no asset, so signing may go on while it waits on the publisher's queue.
-        name = re.search(r'\n    name: (.+)', job(JOB)).group(1)
+        names = [re.search(r'\n    name: (.+)', job(name)).group(1) for name in (JOB, OFF_JOB)]
         script = (ROOT / 'scripts/release/sign_dashmate_checksums.sh').read_text()
         selector = re.search(r'dashmate_jobs\(\) \{.*?--jq \'(.*?)\' < /dev/null', script, re.S).group(1)
         result = subprocess.run(['jq', '-r', selector], input=json.dumps({'jobs': [
-            {'name': name, 'id': 1, 'status': 'in_progress', 'conclusion': None}]}),
+            {'name': name, 'id': 1, 'status': 'in_progress', 'conclusion': None} for name in names]}),
             capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, '')
