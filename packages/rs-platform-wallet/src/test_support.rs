@@ -226,6 +226,9 @@ pub fn wallet_manager_with_core_wallet(
 ) {
     let info = PlatformWalletInfo {
         observed_input_conflicts: Default::default(),
+        spent_claim_mirror: Default::default(),
+        pending_block_spends: Default::default(),
+        block_capture_inputs: None,
         finalized_spends: Default::default(),
         core_wallet,
         generation: Arc::new(WalletGeneration::new()),
@@ -538,27 +541,6 @@ pub async fn funded_wallet_manager_with_outputs(
     let wallet_id = wm.insert_wallet(ctx.wallet, info).expect("insert wallet");
 
     (Arc::new(RwLock::new(wm)), wallet_id, generation, signer)
-}
-
-/// A testnet wallet manager holding `wallet` with fresh managed state
-/// (birth height 0), and the receiver of the manager's lossless persistence
-/// channel, which the event adapter drains in production.
-pub fn wallet_manager_with_persistence(
-    wallet: Wallet,
-) -> (
-    Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
-    WalletId,
-    tokio::sync::mpsc::UnboundedReceiver<key_wallet_manager::WalletEvent>,
-) {
-    use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-
-    let info = PlatformWalletInfo::from_wallet(&wallet, 0);
-    let mut wm = WalletManager::<PlatformWalletInfo>::new(Network::Testnet);
-    let wallet_id = wm.insert_wallet(wallet, info).expect("insert wallet");
-    let receiver = wm
-        .take_persistence_receiver()
-        .expect("a new manager's persistence receiver is untaken");
-    (Arc::new(RwLock::new(wm)), wallet_id, receiver)
 }
 
 /// 1,000 DASH in duffs: the collateral of a regular masternode.
