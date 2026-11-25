@@ -638,6 +638,36 @@ describe('renderCertificateGuidance', () => {
       expect(output).to.contain('may already have been issued');
     });
 
+    // The helper refused before it asked for anything, so neither "it would not
+    // succeed" nor "one may already have been issued" is true of it.
+    it('should explain an outdated helper refusal without claiming a request was made or would fail', () => {
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+      const output = render({
+        verdict: verdict({ provider: 'letsencrypt' }),
+        renewal: guidanceFor({ code: 'HELPER_OUTDATED' }),
+      });
+
+      expect(output).to.contain('so none was requested');
+      expect(output).to.contain('dashmate doctor report');
+      expect(output).to.not.contain('would not succeed');
+      expect(output).to.not.contain('may already have been issued');
+      expect(output).to.not.contain('ssl obtain');
+      expect(output).to.not.contain('dashmate restart');
+    });
+
+    it('should keep the uncertain-issuance message when an outdated helper refusal carries one', () => {
+      config.set('platform.gateway.ssl.provider', 'letsencrypt');
+
+      const output = render({
+        verdict: verdict({ provider: 'letsencrypt' }),
+        renewal: guidanceFor({ code: 'HELPER_OUTDATED', issuance: 'uncertain' }),
+      });
+
+      expect(output).to.contain('may already have been issued');
+      expect(output).to.not.contain('so none was requested');
+    });
+
     it('should withhold the obtain command for a cause that established nothing', () => {
       config.set('platform.gateway.ssl.provider', 'letsencrypt');
 

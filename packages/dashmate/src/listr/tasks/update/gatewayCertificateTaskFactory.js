@@ -2,7 +2,8 @@ import { SSL_PROVIDERS } from '../../../constants.js';
 import ServiceIsNotRunningError from '../../../docker/errors/ServiceIsNotRunningError.js';
 import CertificateUnresolvedError from '../../../ssl/errors/CertificateUnresolvedError.js';
 import ConfigurationLockLostError from '../../../ssl/errors/ConfigurationLockLostError.js';
-import deriveRenewalGuidance, { SAFE_ACTION } from '../../../ssl/renewalGuidance.js';
+import deriveRenewalGuidance, { ISSUANCE_STATUS, SAFE_ACTION } from '../../../ssl/renewalGuidance.js';
+import { RENEWAL_FAILURE_CODES } from '../../../ssl/renewal-failure.js';
 import renderObtainCommand from '../../../ssl/renderObtainCommand.js';
 import { RENEWAL_RECORD_STATES } from '../../../ssl/renewalRecord/RenewalRecordRepository.js';
 import {
@@ -346,7 +347,16 @@ export default function gatewayCertificateTaskFactory(
         const guidance = renewalGuidanceFor(config, verdict);
         const mayAsk = guidance.safeAction !== SAFE_ACTION.DO_NOT_OBTAIN;
 
-        const withheld = `\n\n    Do not obtain one yet - a certificate may already have been issued.
+        // An outdated helper refuses before it creates an issuance, so unless an
+        // earlier attempt left one outstanding, nothing may have been issued.
+        const isHelperRefusalOnly = guidance.code === RENEWAL_FAILURE_CODES.HELPER_OUTDATED
+          && guidance.issuanceStatus === ISSUANCE_STATUS.NONE;
+        const withheld = isHelperRefusalOnly
+          ? `\n\n    Do not obtain one yet - the dashmate helper on this node is older than the
+    dashmate that last saved its configuration, and it refused to save over it
+    before it asked for a certificate, so none was requested.
+    Send a report instead: dashmate doctor report ${cfg}`
+          : `\n\n    Do not obtain one yet - a certificate may already have been issued.
     Send a report instead: dashmate doctor report ${cfg}`;
 
         const warn = () => {
