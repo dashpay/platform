@@ -19,20 +19,38 @@
 //! [`release_reservation_after_rejected_broadcast`] for the order they must run
 //! in.
 //!
-//! Every build-then-broadcast path must go through
-//! [`broadcast_releasing_on_rejection`] so the cleanup exists once instead of
-//! per call site — except paths with rejection-specific cleanup of their own
-//! that must run *before* the release (the asset-lock flow untracks its
-//! `Built` row first); those call the broadcaster directly and then
-//! [`release_reservation_after_rejected_broadcast`].
+//! Two functions release a rejected transaction's inputs, and each caller is
+//! protected against freeing a reservation that is no longer its own — after
+//! key-wallet's TTL swept it and a newer build re-took the inputs, or after the
+//! wallet was removed and re-created under the same id — by one of three
+//! things:
+//!
+//! * **The build's owner token.** `ReservationToken`s are unique within the
+//!   process, so `release_reservation_if_owner` frees only what that build
+//!   still owns, on any wallet generation. The asset-lock flow calls
+//!   [`release_reservation_after_rejected_broadcast`] with its token, after
+//!   its own rejection cleanup (it untracks its `Built` row first).
+//! * **The generation's lifecycle gate.** The DashPay contact send has no
+//!   token and releases by outpoint through
+//!   [`release_reservation_after_rejected_broadcast`]. It holds
+//!   `WalletGeneration::payment_guard` from before the build until after the
+//!   release, so the wallet cannot be removed or re-created in between, and it
+//!   releases under its in-broadcast fence (see the ordering contract on the
+//!   function).
+//! * **A generation check.** A finalized transaction and a deferred payment
+//!   outlive the locks their build held, so
+//!   `CoreWallet::release_transaction_reservation` compares the registered
+//!   generation with the handle's own before releasing, and is owner-guarded
+//!   by the token as well.
+//!
+//! [`release_reservation_after_rejected_broadcast`] does not check the
+//! generation itself: a new caller must bring a token or hold the gate.
 
-use dashcore::{Transaction, Txid};
-use key_wallet::account::account_type::StandardAccountType;
+use dashcore::Transaction;
 use key_wallet::account::AccountType;
 use key_wallet_manager::WalletManager;
 use tokio::sync::RwLock;
 
-use crate::broadcaster::{BroadcastError, TransactionBroadcaster};
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 
 /// Maximum age, in `last_processed_height` blocks, of a held funding
@@ -126,57 +144,9 @@ pub(crate) fn reservation_expired(registered_height: u32, current_height: Option
     }
 }
 
-/// Broadcast `tx` and reconcile the funding account's UTXO reservation on
-/// failure.
-///
-/// On [`BroadcastError::Rejected`] — Core definitively did not accept the
-/// transaction — the inputs reserved by the preceding `build_signed` are
-/// released so an immediate retry can reselect them instead of failing with
-/// spurious insufficient funds until the reservation-TTL backstop. On
-/// [`BroadcastError::MaybeSent`] the reservation is intentionally kept:
-/// releasing inputs of a transaction that may already be propagating invites
-/// a double-spend on retry.
-///
-/// `account_type`/`account_index` identify the funding account whose
-/// `ReservationSet` holds the inputs — the same account handed to
-/// `set_funding` when the transaction was built.
-///
-/// Returns the still-typed [`BroadcastError`]; `?` converts it into
-/// [`PlatformWalletError`](crate::PlatformWalletError) at the call sites.
-pub(crate) async fn broadcast_releasing_on_rejection<B: TransactionBroadcaster + ?Sized>(
-    broadcaster: &B,
-    wallet_manager: &RwLock<WalletManager<PlatformWalletInfo>>,
-    wallet_id: &WalletId,
-    account_type: StandardAccountType,
-    account_index: u32,
-    tx: &Transaction,
-) -> Result<Txid, BroadcastError> {
-    match broadcaster.broadcast(tx).await {
-        Ok(txid) => Ok(txid),
-        Err(e) => {
-            if matches!(e, BroadcastError::Rejected { .. }) {
-                release_reservation_after_rejected_broadcast(
-                    wallet_manager,
-                    wallet_id,
-                    &[AccountType::Standard {
-                        index: account_index,
-                        standard_account_type: account_type,
-                    }],
-                    tx,
-                    // The generic send path doesn't thread the build's
-                    // reservation token yet; keep its historical
-                    // unconditional release.
-                    None,
-                )
-                .await;
-            }
-            Err(e)
-        }
-    }
-}
-
 /// Release the funding accounts' UTXO reservations for `tx` after its
-/// broadcast came back [`BroadcastError::Rejected`].
+/// broadcast came back
+/// [`BroadcastError::Rejected`](crate::broadcaster::BroadcastError::Rejected).
 ///
 /// `funding_accounts` are the accounts that contributed inputs to `tx` — the
 /// accounts handed to `add_funding` when it was built. A build funded from
