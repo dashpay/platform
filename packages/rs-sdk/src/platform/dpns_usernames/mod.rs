@@ -377,9 +377,9 @@ impl Sdk {
     /// The preorder commits to the hash that contract declares, so neither a contract the
     /// context provider holds for the SDK's protocol version nor one cached before an upgrade
     /// changed it will do: either can be older than the network's, and its hash one the
-    /// domain cannot reveal. The SDK first learns the network's protocol version (a proven
-    /// refresh), then takes a response proved at the version it parsed it under
-    /// ([`dpns_contract_proved_at_parsed_version`]).
+    /// domain cannot reveal. The SDK first refreshes its protocol version (best effort: a
+    /// failed refresh keeps the version it had), then takes a response proved at the version
+    /// it parsed it under ([`dpns_contract_proved_at_parsed_version`]).
     async fn fetch_current_dpns_contract(&self) -> Result<DataContract, Error> {
         let dpns_contract_id = self.get_dpns_contract_id()?;
         self.refresh_protocol_version().await?;
@@ -578,11 +578,17 @@ impl Sdk {
         .await
     }
 
-    /// Prepare the registration of `label` for `identity_id`: learn the network's protocol
-    /// version, fetch the DPNS contract the network stores now, and build the preorder and
-    /// domain documents against it. Nothing is signed or submitted. The returned
-    /// [`DpnsNameRegistration`] tells what that contract requires of the signing key; submit
-    /// it with [`Sdk::submit_dpns_name_registration`].
+    /// Prepare the registration of `label` for `identity_id`: refresh the SDK's protocol
+    /// version, fetch the DPNS contract, and build the preorder and domain documents against
+    /// it. Nothing is signed or submitted. The returned [`DpnsNameRegistration`] tells what
+    /// that contract requires of the signing key; submit it with
+    /// [`Sdk::submit_dpns_name_registration`].
+    ///
+    /// The refresh is best effort ([`Sdk::refresh_protocol_version`]): its failure is not
+    /// returned. The contract is guaranteed only to come from a response proved at the
+    /// protocol version the SDK parsed it under, not to be the network's newest: if the
+    /// refresh fails while the SDK is behind the network, a node still at the SDK's version
+    /// can serve the contract an upgrade replaced.
     pub async fn prepare_dpns_name_registration(
         &self,
         label: &str,

@@ -35,6 +35,11 @@ impl Sdk {
     /// the SDK's protocol version, fetched and proved otherwise. `None` when the network has no
     /// such contract. A fetched contract is registered with the context provider, so the proof
     /// confirming a transition built against it can be verified.
+    ///
+    /// Limitation: registration goes to the provider installed when the fetch returns, not
+    /// necessarily the one that verified the proof. A provider swapped in with
+    /// [`Sdk::set_context_provider`] while the fetch is in flight receives a contract it did
+    /// not authenticate itself; avoid swapping providers while a fetch is pending.
     pub async fn fetch_system_data_contract(
         &self,
         contract_id: Identifier,
