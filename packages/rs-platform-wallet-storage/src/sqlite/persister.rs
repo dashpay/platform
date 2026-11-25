@@ -657,7 +657,7 @@ impl SqlitePersister {
     }
 
     /// The pool rows `wallet_id`'s accounts no longer derive from: DashPay
-    /// external pools a contact's rotation retired (V023), each with the
+    /// external pools a contact's rotation retired (V024), each with the
     /// xpub it came from. History for attribution; nothing here is payable,
     /// and `load()` never folds it into a pool.
     pub fn retired_pool_addresses(
