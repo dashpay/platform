@@ -327,52 +327,6 @@ impl IdentityWallet {
         Ok(Some(identity))
     }
 
-    /// Refresh an identity that is already in the local manager by
-    /// re-fetching it from Platform.
-    ///
-    /// The identity must already exist in the [`IdentityManager`]. Its
-    /// on-chain state (keys, revision) is replaced with the latest version
-    /// from Platform and the status is set to `Active`, key states included
-    /// (Core re-enables a masternode identity's keys at revision 0); a key
-    /// limit the cache holds higher stays. The
-    /// balance, at any revision, is taken only when the fetch's proof is at a
-    /// block above the cache's balance watermark. A fetch at a lower revision
-    /// than the cache's was answered before an update the cache already
-    /// holds (a node behind the block it landed in): the cache keeps its
-    /// revision, key set and every disable, and takes only a disable the
-    /// fetch shows on a key it holds enabled, or a raised limit
-    /// (`ManagedIdentity::take_fetched_identity`). The row of every key the
-    /// fold adds or changes is stored with the scalar snapshot, without a
-    /// derivation breadcrumb (the persisters keep the one they hold); a
-    /// failed store is returned and leaves the cache unchanged so a retry
-    /// still includes those keys.
-    ///
-    /// Returns the identity the cache holds afterwards.
-    ///
-    /// # Errors
-    ///
-    /// * [`PlatformWalletError::IdentityNotFound`] if the identity is not in
-    ///   the manager.
-    /// * An error if Platform does not return the identity (e.g. it was
-    ///   deleted).
-    /// * [`PlatformWalletError::PersisterStore`] if the refreshed state cannot
-    ///   be stored.
-    pub async fn refresh_identity(
-        &self,
-        identity_id: &Identifier,
-    ) -> Result<Identity, PlatformWalletError> {
-        self.fetch_and_fold_identity(identity_id, FoldStoreFailure::Return)
-            .await
-            .map(|(identity, _)| identity)
-            .map_err(|error| match error {
-                PlatformWalletError::Sdk(e) => PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to fetch identity {} from Platform: {}",
-                    identity_id, e
-                )),
-                other => other,
-            })
-    }
-
     /// Refresh an identity using an externally-provided identity ID.
     ///
     /// Unlike [`refresh_identity`](Self::refresh_identity), this method does
@@ -504,6 +458,52 @@ impl IdentityWallet {
 }
 
 impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
+    /// Refresh an identity that is already in the local manager by
+    /// re-fetching it from Platform.
+    ///
+    /// The identity must already exist in the [`IdentityManager`]. Its
+    /// on-chain state (keys, revision) is replaced with the latest version
+    /// from Platform and the status is set to `Active`, key states included
+    /// (Core re-enables a masternode identity's keys at revision 0); a key
+    /// limit the cache holds higher stays. The
+    /// balance, at any revision, is taken only when the fetch's proof is at a
+    /// block above the cache's balance watermark. A fetch at a lower revision
+    /// than the cache's was answered before an update the cache already
+    /// holds (a node behind the block it landed in): the cache keeps its
+    /// revision, key set and every disable, and takes only a disable the
+    /// fetch shows on a key it holds enabled, or a raised limit
+    /// (`ManagedIdentity::take_fetched_identity`). The row of every key the
+    /// fold adds or changes is stored with the scalar snapshot, without a
+    /// derivation breadcrumb (the persisters keep the one they hold); a
+    /// failed store is returned and leaves the cache unchanged so a retry
+    /// still includes those keys.
+    ///
+    /// Returns the identity the cache holds afterwards.
+    ///
+    /// # Errors
+    ///
+    /// * [`PlatformWalletError::IdentityNotFound`] if the identity is not in
+    ///   the manager.
+    /// * An error if Platform does not return the identity (e.g. it was
+    ///   deleted).
+    /// * [`PlatformWalletError::PersisterStore`] if the refreshed state cannot
+    ///   be stored.
+    pub async fn refresh_identity(
+        &self,
+        identity_id: &Identifier,
+    ) -> Result<Identity, PlatformWalletError> {
+        self.fetch_and_fold_identity(identity_id, FoldStoreFailure::Return)
+            .await
+            .map(|(identity, _)| identity)
+            .map_err(|error| match error {
+                PlatformWalletError::Sdk(e) => PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to fetch identity {} from Platform: {}",
+                    identity_id, e
+                )),
+                other => other,
+            })
+    }
+
     /// [`IdentityWallet::refresh_identity`]'s fetch and fold, generic over the
     /// broadcaster, with a fetch that fails coming back as the SDK reported it
     /// ([`PlatformWalletError::Sdk`]): the fetch is proved, a stale node

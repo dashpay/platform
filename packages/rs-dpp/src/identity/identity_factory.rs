@@ -26,6 +26,8 @@ use crate::identity::accessors::IdentityGettersV0;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::identity::core_script::CoreScript;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
+use crate::identity::key_disable_rule::check_keys_can_be_disabled;
+#[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::prelude::IdentityNonce;
 #[cfg(all(feature = "identity-serialization", feature = "client"))]
 use crate::serialization::PlatformDeserializableUntrusted;
@@ -260,6 +262,16 @@ impl IdentityFactory {
         add_public_keys: Option<Vec<IdentityPublicKeyInCreation>>,
         public_key_ids_to_disable: Option<Vec<KeyID>>,
     ) -> Result<IdentityUpdateTransition, ProtocolError> {
+        // DIP-11 signing-side policy, as in `try_from_identity_with_signer`; not consensus.
+        let added_keys: Vec<IdentityPublicKey> =
+            add_public_keys.iter().flatten().map(Into::into).collect();
+        check_keys_can_be_disabled(
+            &identity,
+            &added_keys,
+            public_key_ids_to_disable.as_deref().unwrap_or_default(),
+            None,
+        )?;
+
         let mut identity_update_transition = IdentityUpdateTransitionV0::default();
         identity_update_transition.set_identity_id(identity.id().to_owned());
         identity_update_transition.set_revision(identity.revision() + 1);
@@ -725,6 +737,66 @@ mod tests {
             assert_eq!(update.nonce(), 1);
             assert!(update.public_keys_to_add().is_empty());
             assert_eq!(update.public_key_ids_to_disable(), &[2u32, 3, 5][..]);
+        }
+
+        fn key_at_level(id: u32, security_level: SecurityLevel) -> IdentityPublicKey {
+            IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id,
+                purpose: Purpose::AUTHENTICATION,
+                security_level,
+                contract_bounds: None,
+                key_type: KeyType::ECDSA_SECP256K1,
+                read_only: false,
+                data: vec![id as u8; 33].into(),
+                disabled_at: None,
+            })
+        }
+
+        /// MASTER 0 and CRITICAL 1.
+        fn identity_with_one_critical_key(factory: &IdentityFactory) -> Identity {
+            let keys = BTreeMap::from([
+                (0, key_at_level(0, SecurityLevel::MASTER)),
+                (1, key_at_level(1, SecurityLevel::CRITICAL)),
+            ]);
+            factory.create(Identifier::from([9u8; 32]), keys).unwrap()
+        }
+
+        #[test]
+        fn should_refuse_an_update_disabling_the_last_critical_key() {
+            let factory = IdentityFactory::new(1);
+            let identity = identity_with_one_critical_key(&factory);
+
+            let result =
+                factory.create_identity_update_transition(identity, 1, None, Some(vec![1]));
+
+            assert!(
+                matches!(
+                    result,
+                    Err(ProtocolError::LastAuthenticationKey(ref refusal))
+                        if refusal.key_id == 1 && refusal.security_level == SecurityLevel::CRITICAL
+                ),
+                "{result:?}"
+            );
+        }
+
+        #[test]
+        fn should_count_a_critical_key_added_in_the_same_update() {
+            let factory = IdentityFactory::new(1);
+            let identity = identity_with_one_critical_key(&factory);
+            let replacement: IdentityPublicKeyInCreation =
+                key_at_level(2, SecurityLevel::CRITICAL).into();
+
+            let update = factory
+                .create_identity_update_transition(
+                    identity,
+                    1,
+                    Some(vec![replacement]),
+                    Some(vec![1]),
+                )
+                .unwrap();
+
+            assert_eq!(update.public_keys_to_add().len(), 1);
+            assert_eq!(update.public_key_ids_to_disable(), &[1u32][..]);
         }
 
         #[test]

@@ -403,6 +403,12 @@ impl ManagedIdentity {
             .contains(&Self::auto_accept_verify_failed_key(sender_id, proof))
     }
 
+    /// Record that the sweep queued `contact_id`'s broken payment channel for
+    /// the drain to check again, so it is not queued again this launch.
+    pub(crate) fn note_broken_channel_requeued(&mut self, contact_id: Identifier) {
+        self.dashpay.broken_channels_requeued.insert(contact_id);
+    }
+
     /// Whether an inbound `request` from `sender_id` should be queued for the
     /// next signer-present auto-accept drain. The signerless sweep can only do
     /// cheap local checks here — the cryptographic verify runs in the drain:

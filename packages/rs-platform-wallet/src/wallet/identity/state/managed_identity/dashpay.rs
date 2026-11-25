@@ -113,6 +113,14 @@ pub struct DashPayState {
     /// malformed proofs can't grow it unboundedly for the process lifetime.
     pub(super) auto_accept_verify_failed: BTreeSet<[u8; 32]>,
 
+    /// Contacts whose broken payment channel the sweep queued again this
+    /// launch, for the signer-backed drain to rebuild from the stored incoming
+    /// request: a channel broken under an earlier rule (a key disabled since
+    /// the request was sent) recovers without a new request, and the drain
+    /// clears the flag only once the account registers. In memory only, so a
+    /// channel that stays broken costs one drain attempt per launch.
+    pub(super) broken_channels_requeued: BTreeSet<Identifier>,
+
     /// Incremental-sync high-water marks (`$createdAt` ms of the newest
     /// `contactRequest` fetched) per direction. `None` ⇒ never synced; the
     /// next sweep does a full fetch. Held in memory: it survives across sweeps
@@ -354,6 +362,12 @@ impl DashPayState {
     /// Senders this identity has chosen to ignore (per-sender mute).
     pub fn ignored_senders(&self) -> &BTreeSet<Identifier> {
         &self.ignored_senders
+    }
+
+    /// Whether the sweep already queued `contact_id`'s broken payment channel
+    /// for the drain to check again this launch.
+    pub(crate) fn broken_channel_requeued(&self, contact_id: &Identifier) -> bool {
+        self.broken_channels_requeued.contains(contact_id)
     }
 
     /// Received-direction incremental-sync cursor (`$createdAt` ms of the

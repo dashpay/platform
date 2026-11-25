@@ -269,6 +269,12 @@ impl From<FFIError> for DashSDKError {
                     // The caller's request has to change: no node answers it as the
                     // requested result type, whatever words its message holds.
                     (DashSDKErrorCode::InvalidParameter, reason.clone())
+                } else if matches!(sdk_err, dash_sdk::Error::ContactRequestIdentityNotFound(_)) {
+                    (DashSDKErrorCode::NotFound, error_str)
+                } else if matches!(sdk_err, dash_sdk::Error::ContactRequestKeyNotValid { .. }) {
+                    // The request names a key Platform holds absent or disabled: the caller
+                    // has to name another key.
+                    (DashSDKErrorCode::InvalidParameter, error_str)
                 } else if matches!(sdk_err, dash_sdk::Error::ProtocolVersionNotActive { .. }) {
                     // The SDK refused a request the network cannot serve yet, without
                     // sending it, and retrying sooner does not help. Unless the query for
@@ -579,6 +585,27 @@ mod tests {
 
     /// The quorum service that vouches for quorum keys gave no answer: a
     /// network problem the app can retry, not an internal error.
+    #[test]
+    fn should_map_contact_request_refusals_to_not_found_and_invalid_parameter() {
+        use dash_sdk::dpp::prelude::Identifier;
+        assert_eq!(
+            classify(dash_sdk::Error::ContactRequestIdentityNotFound(
+                Identifier::from([1; 32])
+            )),
+            DashSDKErrorCode::NotFound
+        );
+        for disabled_at in [Some(1), None] {
+            assert_eq!(
+                classify(dash_sdk::Error::ContactRequestKeyNotValid {
+                    identity_id: Identifier::from([1; 32]),
+                    key_id: 1,
+                    disabled_at,
+                }),
+                DashSDKErrorCode::InvalidParameter
+            );
+        }
+    }
+
     #[test]
     fn quorum_source_unavailable_maps_to_network_error() {
         let err = dash_sdk::Error::ContextProviderError(

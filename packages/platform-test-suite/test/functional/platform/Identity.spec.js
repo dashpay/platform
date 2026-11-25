@@ -598,7 +598,8 @@ describe('Platform', () => {
 
         const newPublicKey = new IdentityPublicKeyWithWitness(1);
         newPublicKey.setId(nextKeyId);
-        newPublicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);
+        // HIGH, so the disable test below keeps a HIGH key when it disables key 1 (DIP-11)
+        newPublicKey.setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.HIGH);
         newPublicKey.setData(identityPublicKey);
 
         const update = {
@@ -635,7 +636,8 @@ describe('Platform', () => {
 
         const identityBeforeUpdate = identity.toObject();
 
-        const publicKeyToDisable = identity.getPublicKeyById(2);
+        // HIGH key 1: the HIGH key 4 added above remains (DIP-11)
+        const publicKeyToDisable = identity.getPublicKeyById(1);
         const update = {
           disable: [publicKeyToDisable],
         };
@@ -652,8 +654,8 @@ describe('Platform', () => {
         );
 
         expect(identity.getRevision()).to.equal(BigInt(identityBeforeUpdate.revision) + BigInt(1));
-        expect(identity.getPublicKeyById(2)).to.exist();
-        expect(identity.getPublicKeyById(2).getDisabledAt()).to.be.at.least(now);
+        expect(identity.getPublicKeyById(1)).to.exist();
+        expect(identity.getPublicKeyById(1).getDisabledAt()).to.be.at.least(now);
 
         expect(identity.getPublicKeyById(0)).to.exist();
         expect(identity.getPublicKeyById(0).getDisabledAt()).to.be.undefined();

@@ -9,6 +9,7 @@ use crate::sdk::WasmSdk;
 use crate::settings::PutSettingsInput;
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dash_sdk::dpp::identity::key_disable_rule::check_keys_can_be_disabled;
 use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dash_sdk::dpp::platform_value::Identifier;
@@ -18,6 +19,7 @@ use dash_sdk::dpp::voting::vote_polls::VotePoll;
 use dash_sdk::dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use dash_sdk::dpp::voting::votes::resource_vote::ResourceVote;
 use dash_sdk::dpp::voting::votes::Vote;
+use dash_sdk::dpp::ProtocolError;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::put_settings::PutSettings;
@@ -539,7 +541,12 @@ export interface IdentityUpdateOptions {
 
   /**
    * Array of key IDs to disable.
-   * Cannot disable master, critical auth, or transfer keys.
+   * The update is refused before signing if it would disable the last valid authentication
+   * key of a security level (DIP-11). A valid key is enabled, has no expiry and no budget, and
+   * has a key type that can sign (not BIP13_SCRIPT_HASH or EDDSA_25519_HASH160). It stands in
+   * only at its own security level, and only if it has no contract bounds or the same bounds as
+   * the key being disabled. Keys added in the same update count. Keys of other purposes are not
+   * restricted.
    */
   disablePublicKeys?: number[];
 
@@ -587,9 +594,10 @@ impl WasmSdk {
     ///
     /// This method handles the complete update flow:
     /// 1. Validates the master key for signing
-    /// 2. Validates keys to add/disable
-    /// 3. Builds and signs the identity update transition
-    /// 4. Broadcasts and waits for confirmation
+    /// 2. Builds and signs the identity update transition; the builder refuses, before
+    ///    signing, to disable the last valid authentication key of a security level
+    ///    (DIP-11), counting keys added in the same update
+    /// 3. Broadcasts and waits for confirmation
     ///
     /// @param options - Update options including identity, keys to add/disable, and signer
     /// @returns Promise that resolves when the update is complete
@@ -675,6 +683,17 @@ impl WasmSdk {
 
         // Get keys to disable
         let keys_to_disable = parsed.disable_public_keys.unwrap_or_default();
+
+        // DIP-11 refusal before the nonce is reserved: a refused update is never
+        // broadcast, so it must not advance the SDK's nonce cache.
+        check_keys_can_be_disabled(&identity, &keys_to_add, &keys_to_disable, None).map_err(
+            |refusal| {
+                WasmSdkError::with_context(
+                    "Failed to create update transition",
+                    ProtocolError::from(refusal),
+                )
+            },
+        )?;
 
         // Get identity nonce
         let identity_nonce = self
