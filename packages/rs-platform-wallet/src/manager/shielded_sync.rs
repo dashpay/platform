@@ -25,7 +25,7 @@
 //!
 //! [`configure_shielded`]: crate::manager::PlatformWalletManager::configure_shielded
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
     Arc,
@@ -44,7 +44,7 @@ use crate::manager::{
 };
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::shielded::coordinator::{HeightlessAnchorEvidence, PrunedAnchorEvidence};
-use crate::wallet::shielded::{NetworkShieldedCoordinator, ShieldedSyncSummary};
+use crate::wallet::shielded::{NetworkShieldedCoordinator, ShieldedSyncSummary, SubwalletId};
 
 /// Default cadence — 60s. Shielded sync is heavier than address sync
 /// (chunked at 2048 entries with trial decryption per entry), so this
@@ -162,11 +162,28 @@ impl ShieldedPassNullifiers {
     }
 }
 
+/// A spend the host holds whose anchor's height it does not know, fed to the
+/// next passes ([`NetworkShieldedCoordinator::set_host_heightless_spends`]):
+/// the subwallet whose notes it spends, its anchor and its nullifiers. The
+/// pass bounds the anchor's tree from the store's own notes and tree, never
+/// from anything else the host has. Only a spend saved before this build
+/// first opened the store qualifies.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HostHeightlessSpend {
+    pub subwallet: SubwalletId,
+    pub anchor: [u8; 32],
+    pub nullifiers: Vec<[u8; 32]>,
+}
+
+/// The heightless spends a pass was fed: per anchor, the nullifiers of every
+/// host spend whose notes the store held, each of them, in the named
+/// subwallet before the scan.
+pub(crate) type FedHeightlessSpends = BTreeMap<[u8; 32], BTreeSet<[u8; 32]>>;
+
 /// The evidence one sync pass judged anchors by: Platform's recorded anchor
-/// set read before its note scan and the heights the set and the scan were
-/// proved at. It also keeps the pass's bounds on the trees of anchors the
-/// store names without their heights, which judge nothing here: a host
-/// gives every anchor a known height.
+/// set read before its note scan, the heights the set and the scan were
+/// proved at, the pass's bounds on the trees of anchors named without their
+/// heights, and the host's heightless spends it fed into those bounds.
 ///
 /// Built only by a pass, from the same values its own release judged by (a
 /// stop that lands after the scan skips that release but keeps the evidence,
@@ -185,6 +202,7 @@ pub struct ShieldedPassEvidence {
     anchor_set_height: u64,
     scan_covered_height: u64,
     heightless: Option<HeightlessAnchorEvidence>,
+    fed: Arc<FedHeightlessSpends>,
 }
 
 impl ShieldedPassEvidence {
@@ -194,6 +212,7 @@ impl ShieldedPassEvidence {
         anchor_set_height: u64,
         scan_covered_height: u64,
         heightless: Option<HeightlessAnchorEvidence>,
+        fed: Arc<FedHeightlessSpends>,
     ) -> Self {
         Self {
             pass_id,
@@ -201,6 +220,7 @@ impl ShieldedPassEvidence {
             anchor_set_height,
             scan_covered_height,
             heightless,
+            fed,
         }
     }
 
@@ -231,6 +251,12 @@ impl ShieldedPassEvidence {
         )
     }
 
+    /// The host's heightless spends this pass was fed.
+    #[cfg(test)]
+    pub(crate) fn fed(&self) -> &FedHeightlessSpends {
+        &self.fed
+    }
+
     /// The pass, the height its anchor set was proved at (Ha) and the height
     /// its note scan covers (Hn), both from response metadata.
     pub fn heights(&self) -> (ShieldedPassId, u64, u64) {
@@ -258,7 +284,8 @@ impl ShieldedPassEvidence {
     /// `anchor_height` is a height Platform's set is known to have held
     /// `anchor` at: the height of the set the spend took it from, or
     /// [`Self::anchor_recorded_at`] of an earlier pass. An anchor with no
-    /// known height is never proven here.
+    /// known height is judged only by
+    /// [`Self::proves_heightless_spend_cannot_execute`].
     ///
     /// The spend's nullifiers must still read unspent in store state no
     /// older than this pass ([`Self::proves_spend_cannot_execute`]).
@@ -291,6 +318,29 @@ impl ShieldedPassEvidence {
                 .iter()
                 .all(|nullifier| reading.state(nullifier) == HeldNullifierState::Unspent)
             && self.proves_pruned(anchor, anchor_height)
+    }
+
+    /// [`Self::proves_spend_cannot_execute`] for a spend whose anchor's
+    /// height is not known: the pool was proved to have reached the anchor's
+    /// tree at or below the set's height, and no note spent on the anchor lies
+    /// past the store's tree bound. Only a spend fed to this
+    /// pass ([`NetworkShieldedCoordinator::set_host_heightless_spends`]) with
+    /// `anchor` and every one of `nullifiers` is judged; any other is held.
+    /// `nullifiers` is the spend's full list, as fed.
+    pub fn proves_heightless_spend_cannot_execute(
+        &self,
+        reading: &ShieldedPassNullifiers,
+        anchor: &[u8; 32],
+        nullifiers: &[[u8; 32]],
+    ) -> bool {
+        let fed = self.fed.get(anchor);
+        reading.pass_id == Some(self.pass_id)
+            && !nullifiers.is_empty()
+            && nullifiers.iter().all(|nullifier| {
+                fed.is_some_and(|fed| fed.contains(nullifier))
+                    && reading.state(nullifier) == HeldNullifierState::Unspent
+            })
+            && self.rule().proves_pruned(anchor, None)
     }
 }
 
