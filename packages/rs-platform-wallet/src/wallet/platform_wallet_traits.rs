@@ -22,7 +22,7 @@ use key_wallet::wallet::managed_wallet_info::managed_account_operations::Managed
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::{
     ApplyChainLockOutcome, Truncation, WalletInfoInterface,
 };
-use key_wallet::wallet::managed_wallet_info::TransactionRecord;
+use key_wallet::wallet::managed_wallet_info::{DismissalChange, TransactionRecord};
 use key_wallet::{Network, Utxo, Wallet, WalletCoreBalance};
 
 use super::platform_wallet::PlatformWalletInfo;
@@ -205,6 +205,18 @@ impl WalletInfoInterface for PlatformWalletInfo {
         context: &TransactionContext,
     ) -> WalletConflictSweep {
         self.core_wallet.sweep_conflicts_only(tx, context)
+    }
+
+    fn take_dismissal_changes(&mut self) -> Vec<DismissalChange> {
+        self.core_wallet.take_dismissal_changes()
+    }
+
+    fn dismissal_pending(&self) -> bool {
+        self.core_wallet.dismissal_pending()
+    }
+
+    fn drop_unreported_dismissals(&mut self) {
+        self.core_wallet.drop_unreported_dismissals()
     }
 
     fn synced_height(&self) -> CoreBlockHeight {
@@ -601,6 +613,10 @@ mod tests {
             info.sweep_conflicts_only(&winner, &TransactionContext::InChainLockedBlock(block));
         assert_eq!(sweep.txids, vec![payment.txid()]);
         assert!(info.unconfirmed_spent_outpoints().is_empty());
+        assert!(info.dismissal_pending());
+        info.drop_unreported_dismissals();
+        assert!(!info.dismissal_pending());
+        assert!(info.take_dismissal_changes().is_empty());
         assert!(info.is_dismissed(&payment.txid()));
         assert!(WalletInterface::is_dismissed(&wm, &payment.txid()));
         assert!(WalletInterface::refetch_on_lock(&wm, &payment.txid()));
@@ -611,6 +627,10 @@ mod tests {
         assert!(info.is_dismissed(&child.txid()));
         info.undismiss(&payment.txid());
         assert!(!info.is_dismissed(&payment.txid()));
+        assert_eq!(
+            info.take_dismissal_changes(),
+            vec![DismissalChange::Forgotten(payment.txid())]
+        );
         assert!(!info.is_dismissed(&child.txid()));
         assert!(info.refetch_on_lock(&child.txid()));
         assert!(WalletInterface::refetch_on_lock(&wm, &child.txid()));
