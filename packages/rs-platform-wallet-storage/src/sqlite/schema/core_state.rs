@@ -131,6 +131,21 @@ pub fn apply(
             &derived.public_key.inner.to_compressed(),
         )?;
     }
+    // After the derived rows, so a mark lands on the row its derivation added.
+    // The other accounts' marks reach `core_address_pool` through the pool
+    // snapshots and their UTXOs; a funding address has no UTXO, and sync can
+    // mark it used with no snapshot following before the wallet closes.
+    for marked in &cs.addresses_marked_used {
+        core_pool::mark_funding_address_used(
+            tx,
+            wallet_id,
+            &marked.account_type,
+            marked.pool_type,
+            marked.info.index,
+            marked.info.address.script_pubkey().as_bytes(),
+            marked.info.public_key.as_ref(),
+        )?;
+    }
     if !cs.new_utxos.is_empty() {
         // Blob-bearing records always win; height-only writes never overwrite them.
         // Placeholder confirmation is `height IS NOT NULL`; `finalized` stays 0.

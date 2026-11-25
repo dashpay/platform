@@ -611,3 +611,295 @@ fn should_restore_the_window_a_funding_account_derived_on_chain() {
         "only the funding account's derivation is stored, not the BIP44 one"
     );
 }
+
+/// A test wallet, its managed info, and the manifest that registers it.
+fn funding_test_wallet(seed: u8) -> (Wallet, ManagedWalletInfo, Vec<AccountRegistrationEntry>) {
+    let wallet = Wallet::from_seed_bytes(
+        [seed; 64],
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .unwrap();
+    let info = ManagedWalletInfo::from_wallet(&wallet, 7);
+    let manifest = wallet
+        .accounts
+        .all_accounts()
+        .into_iter()
+        .map(|a| AccountRegistrationEntry {
+            account_type: a.account_type,
+            account_xpub: a.account_xpub,
+        })
+        .collect();
+    (wallet, info, manifest)
+}
+
+/// The unbound top-up account's only pool.
+fn unbound_top_up_pool(
+    info: &mut ManagedWalletInfo,
+) -> &mut key_wallet::managed_account::address_pool::AddressPool {
+    info.accounts
+        .identity_topup_not_bound
+        .as_mut()
+        .expect("managed unbound top-up account")
+        .managed_account_type_mut()
+        .address_pools_mut()
+        .into_iter()
+        .next()
+        .expect("one pool")
+}
+
+fn register_wallet(
+    persister: &SqlitePersister,
+    w: platform_wallet::wallet::platform_wallet::WalletId,
+    manifest: Vec<AccountRegistrationEntry>,
+    account_address_pools: Vec<platform_wallet::changeset::AccountAddressPoolEntry>,
+) {
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                wallet_metadata: Some(WalletMetadataEntry {
+                    network: key_wallet::Network::Testnet,
+                    wallet_group_id: [0u8; 32],
+                    birth_height: 7,
+                }),
+                account_registrations: manifest,
+                account_address_pools,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+}
+
+/// Sync marks a funding address used on finding a lock that pays it, and the
+/// wallet can close before any build stores a pool snapshot. The mark is
+/// stored with the sync changeset, so after a restart the key is not handed
+/// out again for the next lock.
+#[test]
+fn should_keep_a_funding_address_sync_marked_used_after_reopen() {
+    use key_wallet::account::AccountType;
+    use key_wallet::transaction_checking::DerivedAddressInfo;
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xE2);
+    let (_wallet, mut info, manifest) = funding_test_wallet(0x47);
+    register_wallet(&persister, w, manifest, Vec::new());
+    let pool = unbound_top_up_pool(&mut info);
+    let pool_type = pool.pool_type();
+    let mut seen = pool.addresses()[&0].clone();
+    assert!(pool.mark_used(&seen.address));
+    seen.state = key_wallet::managed_account::address_pool::AddressState::Used;
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    addresses_marked_used: vec![DerivedAddressInfo {
+                        account_type: AccountType::IdentityTopUpNotBoundToIdentity,
+                        pool_type,
+                        info: seen.clone(),
+                    }],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let state = reopen(&path).load().expect("load");
+    let mut restored = state.wallets[&w].wallet_info.clone();
+    let pool = unbound_top_up_pool(&mut restored);
+    assert!(
+        pool.addresses()[&0].is_used(),
+        "the address sync saw used stays used"
+    );
+    assert_ne!(
+        pool.unused_addresses().first(),
+        Some(&seen.address),
+        "the next lock does not reuse its key"
+    );
+}
+
+/// Older writers stored the addresses sync derived with no public key. Such
+/// rows, within the initial window and past it, load: an in-window used mark
+/// is applied, and a row past the window is restored at its derivation path,
+/// so a lock built on it can still be signed, and the stored row after it is
+/// not refused as leaving a gap.
+#[test]
+fn should_restore_funding_rows_stored_without_a_public_key() {
+    use key_wallet::managed_account::address_pool::KeySource;
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xE3);
+    let (wallet, mut info, manifest) = funding_test_wallet(0x48);
+    let xpub = wallet
+        .accounts
+        .identity_topup_not_bound
+        .as_ref()
+        .expect("unbound top-up account")
+        .account_xpub;
+    register_wallet(&persister, w, manifest, Vec::new());
+    let pool = unbound_top_up_pool(&mut info);
+    let window = pool.addresses().len() as u32;
+    pool.generate_addresses(2, &KeySource::Public(xpub))
+        .unwrap();
+    let expected: Vec<_> = pool.addresses().values().cloned().collect();
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    // Legacy rows: no key material. Index 1 and the first index past the
+    // window are used, the next one is not.
+    for (index, used) in [(1, true), (window, true), (window + 1, false)] {
+        conn.execute(
+            "INSERT INTO core_address_pool \
+                (wallet_id, account_type, account_index, key_class, user_identity_id, \
+                 friend_identity_id, pool_type, address_index, script, used) \
+             VALUES (?1, 'identity_topup_unbound', 0, 0, zeroblob(32), zeroblob(32), \
+                     ?2, ?3, ?4, ?5)",
+            rusqlite::params![
+                w.as_slice(),
+                2i64,
+                i64::from(index),
+                expected[index as usize].address.script_pubkey().as_bytes(),
+                used,
+            ],
+        )
+        .unwrap();
+    }
+    drop(conn);
+    drop(persister);
+
+    let state = reopen(&path).load().expect("legacy rows load");
+    let mut restored = state.wallets[&w].wallet_info.clone();
+    let pool = unbound_top_up_pool(&mut restored);
+    assert!(pool.addresses()[&1].is_used());
+    assert!(!pool.addresses()[&0].is_used());
+    let past = &pool.addresses()[&window];
+    assert_eq!(past.address, expected[window as usize].address);
+    assert_eq!(past.path, expected[window as usize].path);
+    assert!(past.is_used());
+    let next = &pool.addresses()[&(window + 1)];
+    assert_eq!(next.address, expected[window as usize + 1].address);
+    assert!(!next.is_used());
+}
+
+/// A store written before the funding accounts' derived addresses were kept
+/// holds a pool whose every stored address is used, the last by a lock that
+/// confirmed. Sync moved the window past that lock, and the load moves it the
+/// same way from the stored transaction, so the next lock has an address.
+#[test]
+fn should_extend_an_upgraded_funding_pool_past_a_lock_stored_on_chain() {
+    use dashcore::blockdata::transaction::special_transaction::asset_lock::AssetLockPayload;
+    use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
+    use dashcore::{BlockHash, ScriptBuf, Transaction, TxOut};
+    use key_wallet::account::AccountType;
+    use key_wallet::managed_account::transaction_record::{
+        TransactionDirection, TransactionRecord,
+    };
+    use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
+    use platform_wallet::changeset::AccountAddressPoolEntry;
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xE4);
+    let (wallet, mut info, manifest) = funding_test_wallet(0x49);
+    let pool = unbound_top_up_pool(&mut info);
+    for address in pool.all_addresses() {
+        assert!(pool.mark_used(&address));
+    }
+    let highest = pool.highest_generated().expect("an initial window");
+    let gap_limit = pool.gap_limit();
+    let paid = pool.addresses()[&highest].address.clone();
+    let snapshot = AccountAddressPoolEntry {
+        account_type: AccountType::IdentityTopUpNotBoundToIdentity,
+        pool_type: pool.pool_type(),
+        addresses: pool.addresses().values().cloned().collect(),
+    };
+    register_wallet(&persister, w, manifest, vec![snapshot]);
+    let lock = |credit: &dashcore::Address, context: TransactionContext| {
+        TransactionRecord::new(
+            Transaction {
+                version: 3,
+                lock_time: 0,
+                input: Vec::new(),
+                output: vec![TxOut {
+                    value: 100_000,
+                    script_pubkey: ScriptBuf::new_op_return(&[]),
+                }],
+                special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(
+                    AssetLockPayload {
+                        version: 1,
+                        credit_outputs: vec![TxOut {
+                            value: 100_000,
+                            script_pubkey: credit.script_pubkey(),
+                        }],
+                    },
+                )),
+            },
+            AccountType::IdentityTopUpNotBoundToIdentity,
+            context,
+            TransactionType::AssetLock,
+            TransactionDirection::Outgoing,
+            Vec::new(),
+            Vec::new(),
+            0,
+        )
+    };
+    let xpub = wallet
+        .accounts
+        .identity_topup_not_bound
+        .as_ref()
+        .expect("unbound top-up account")
+        .account_xpub;
+    // A mempool-only lock paying an address past the window moves nothing: it
+    // may never have been accepted.
+    let mut probe = unbound_top_up_pool(&mut info).clone();
+    probe
+        .generate_addresses(
+            gap_limit * 3,
+            &key_wallet::managed_account::address_pool::KeySource::Public(xpub),
+        )
+        .unwrap();
+    let far = probe.addresses()[&(highest + gap_limit * 2)]
+        .address
+        .clone();
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    records: vec![
+                        lock(
+                            &paid,
+                            TransactionContext::InBlock(BlockInfo::new(
+                                100,
+                                BlockHash::all_zeros(),
+                                1_700_000_000,
+                            )),
+                        ),
+                        lock(&far, TransactionContext::Mempool),
+                    ],
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let state = reopen(&path).load().expect("load");
+    let mut restored = state.wallets[&w].wallet_info.clone();
+    let pool = unbound_top_up_pool(&mut restored);
+    assert!(
+        (0..=highest).all(|index| pool.addresses()[&index].is_used()),
+        "every stored used mark is kept"
+    );
+    assert_eq!(
+        pool.highest_generated(),
+        Some(highest + gap_limit),
+        "the window moves past the confirmed lock as sync moved it, not past the mempool one"
+    );
+    assert_eq!(
+        pool.unused_addresses().first(),
+        Some(&probe.addresses()[&(highest + 1)].address),
+        "the next lock takes the address after the confirmed one"
+    );
+}

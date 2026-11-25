@@ -2089,14 +2089,21 @@ fn load_wallet_snapshot(
             hex::encode(wallet_id)
         ))
     })?;
-    restore_asset_lock_funding_pools(&mut wallet_info, conn, &wallet_id, network, ctx).map_err(
-        |e| {
-            PersistenceError::backend(format!(
-                "asset-lock funding pool rehydration failed for {}: {e}",
-                hex::encode(wallet_id)
-            ))
-        },
-    )?;
+    let funding_issuance_floors = restore_asset_lock_funding_pools(
+        &wallet,
+        &mut wallet_info,
+        &core_state.records,
+        conn,
+        &wallet_id,
+        network,
+        ctx,
+    )
+    .map_err(|e| {
+        PersistenceError::backend(format!(
+            "asset-lock funding pool rehydration failed for {}: {e}",
+            hex::encode(wallet_id)
+        ))
+    })?;
     if account_manifest
         .provider
         .iter()
@@ -2124,9 +2131,7 @@ fn load_wallet_snapshot(
         // FFI hosts' wallet row only. Empty keeps the rescan sweep on its
         // pre-record behaviour here (a rewind per launch, never lossy).
         dashpay_backfill: Default::default(),
-        // This backend restores pools through `apply_persisted_core_state`,
-        // which reports no unreachable funding rows.
-        funding_issuance_floors: Default::default(),
+        funding_issuance_floors,
     })
 }
 
