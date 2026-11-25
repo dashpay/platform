@@ -1237,6 +1237,83 @@ mod tests {
         }
     }
 
+    /// The storage settings of GroveDB are read from the environment, where every value is
+    /// text, and a value that is none of a setting's is refused whichever engine is named.
+    #[test]
+    fn should_read_the_storage_settings_of_grovedb_from_the_environment() {
+        use drive::config::{LigninDbSync, StorageEngine};
+
+        let envfile = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env.local");
+        let vars: Vec<(String, String)> = dotenvy::from_path_iter(envfile.as_path())
+            .expect("cannot open .env file")
+            .collect::<Result<_, _>>()
+            .expect("cannot parse .env file");
+        let with_var = |name: &str, setting: &str| -> Vec<(String, String)> {
+            assert!(vars.iter().any(|(key, _)| key == name), "{name} is not set");
+            vars.iter()
+                .map(|(key, value)| {
+                    if key == name {
+                        (key.clone(), setting.to_string())
+                    } else {
+                        (key.clone(), value.clone())
+                    }
+                })
+                .collect()
+        };
+        let read = |name: &str, setting: &str| {
+            envy::from_iter::<_, PlatformConfig>(with_var(name, setting))
+                .unwrap_or_else(|e| panic!("{name}={setting} should be accepted: {e}"))
+                .drive
+        };
+
+        let drive = envy::from_iter::<_, PlatformConfig>(vars.clone())
+            .expect("the file as it is")
+            .drive;
+        assert_eq!(drive.grovedb_storage_engine, StorageEngine::RocksDb);
+        assert_eq!(drive.grovedb_lignindb_memory_budget_mb, 320);
+        assert_eq!(drive.grovedb_lignindb_checkpoint_cache_mb, 16);
+        assert_eq!(drive.grovedb_lignindb_sync, LigninDbSync::Never);
+        assert_eq!(drive.grovedb_lignindb_reserve_bytes, 1 << 20);
+
+        assert_eq!(
+            read("GROVEDB_STORAGE_ENGINE", "lignindb").grovedb_storage_engine,
+            StorageEngine::LigninDb
+        );
+        assert_eq!(
+            read("GROVEDB_LIGNINDB_MEMORY_BUDGET_MB", "512").grovedb_lignindb_memory_budget_mb,
+            512
+        );
+        assert_eq!(
+            read("GROVEDB_LIGNINDB_CHECKPOINT_CACHE_MB", "32").grovedb_lignindb_checkpoint_cache_mb,
+            32
+        );
+        assert_eq!(
+            read("GROVEDB_LIGNINDB_SYNC", "every-commit").grovedb_lignindb_sync,
+            LigninDbSync::EveryCommit
+        );
+        assert_eq!(
+            read("GROVEDB_LIGNINDB_SYNC", "250").grovedb_lignindb_sync,
+            LigninDbSync::IntervalMs(250)
+        );
+        assert_eq!(
+            read("GROVEDB_LIGNINDB_RESERVE_BYTES", "0").grovedb_lignindb_reserve_bytes,
+            0
+        );
+
+        for (name, wrong) in [
+            ("GROVEDB_STORAGE_ENGINE", "leveldb"),
+            ("GROVEDB_LIGNINDB_MEMORY_BUDGET_MB", "much"),
+            ("GROVEDB_LIGNINDB_CHECKPOINT_CACHE_MB", "-1"),
+            ("GROVEDB_LIGNINDB_SYNC", "sometimes"),
+            ("GROVEDB_LIGNINDB_RESERVE_BYTES", "1.5"),
+        ] {
+            assert!(
+                envy::from_iter::<_, PlatformConfig>(with_var(name, wrong)).is_err(),
+                "{name}={wrong} was accepted"
+            );
+        }
+    }
+
     // --- Core RPC URL composition and defaults ---
 
     /// Exercises `ConsensusCoreRpcConfig::url` formatting.

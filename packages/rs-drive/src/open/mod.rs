@@ -1,4 +1,5 @@
 mod load_current_checkpoints;
+pub(crate) mod storage_engine;
 
 use crate::cache::SystemDataContracts;
 use crate::cache::{DataContractCache, DriveCache, ProtocolVersionsCache};
@@ -6,17 +7,18 @@ use crate::config::DriveConfig;
 use crate::drive::Drive;
 use crate::error::Error;
 use dpp::errors::ProtocolError;
-use grovedb::GroveDb;
 use load_current_checkpoints::load_current_checkpoints;
 use platform_version::version::PlatformVersion;
 use std::path::Path;
 use std::sync::Arc;
+use storage_engine::{open_grove, Role};
 
 impl Drive {
     /// Opens GroveDB database
     ///
     /// This is a non-versioned method which opens a specified path as a GroveDB instance and returns a `Drive`
-    /// instance with this GroveDB, cache and other configurations.
+    /// instance with this GroveDB, cache and other configurations. The database is opened on the
+    /// storage engine the configuration names, and so is every checkpoint below it.
     ///
     /// # Arguments
     ///
@@ -34,7 +36,7 @@ impl Drive {
         let config = config.unwrap_or_default();
         let db_path = path.as_ref();
 
-        let grove = Arc::new(GroveDb::open(db_path)?);
+        let grove = Arc::new(open_grove(db_path, &config, Role::Live)?);
 
         #[cfg(feature = "grovedbg")]
         if config.grovedb_visualizer_enabled {
@@ -53,7 +55,7 @@ impl Drive {
             .transpose()?;
 
         // Load existing checkpoints from the checkpoints directory
-        let checkpoints = load_current_checkpoints(db_path)?;
+        let checkpoints = load_current_checkpoints(db_path, &config)?;
 
         let drive = Drive {
             grove,

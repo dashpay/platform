@@ -16,7 +16,7 @@ use dpp::prelude::BlockHeight;
 use dpp::serialization::PlatformDeserializableFromVersionedStructureTrusted;
 use dpp::version::ProtocolVersion;
 use dpp::version::INITIAL_PROTOCOL_VERSION;
-use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
+use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion, PLATFORM_VERSIONS};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::atomic::AtomicU64;
@@ -158,6 +158,15 @@ impl<C> Platform<C> {
         // time to live lives by it, so it gets the same value rather than a setting of its own.
         let mut drive_config = config.drive.clone();
         drive_config.epoch_time_length_s = config.execution.epoch_time_length_s;
+        // On LigninDB every open database has a cache of its own, and Drive sizes them inside
+        // one memory budget: for the checkpoints a node keeps, and for the one that is open
+        // beside them while the oldest is replaced.
+        drive_config.open_checkpoints = PLATFORM_VERSIONS
+            .iter()
+            .map(|version| version.drive_abci.checkpoints.num_checkpoints)
+            .max()
+            .unwrap_or_default()
+            .saturating_add(1);
         let (drive, current_platform_version) =
             Drive::open(&config.db_path, Some(drive_config)).map_err(Error::Drive)?;
 

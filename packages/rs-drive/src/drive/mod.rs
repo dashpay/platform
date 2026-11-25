@@ -8,6 +8,10 @@ use std::path::{Path, PathBuf};
 #[cfg(any(feature = "server", feature = "verify"))]
 use crate::config::DriveConfig;
 #[cfg(feature = "server")]
+use crate::config::StorageEngine;
+#[cfg(feature = "server")]
+use crate::open::storage_engine::{delete_closed_checkpoint, storage_engine_of};
+#[cfg(feature = "server")]
 use arc_swap::ArcSwap;
 #[cfg(feature = "server")]
 use dpp::prelude::{BlockHeight, TimestampMillis};
@@ -110,6 +114,8 @@ pub struct Checkpoint {
 struct CheckpointDirectory {
     /// The path to the checkpoint directory
     path: PathBuf,
+    /// The storage engine the checkpoint is on, which deletes it
+    engine: StorageEngine,
     /// Whether to delete the checkpoint directory on drop
     marked_for_deletion: std::sync::atomic::AtomicBool,
 }
@@ -122,10 +128,12 @@ impl Checkpoint {
     /// `path` must be the directory `grove_db` was opened at: once the checkpoint is marked,
     /// dropping it deletes the database at that path.
     pub fn new(grove_db: GroveDb, path: PathBuf) -> Self {
+        let engine = storage_engine_of(&grove_db);
         Self {
             grove_db,
             directory: CheckpointDirectory {
                 path,
+                engine,
                 marked_for_deletion: std::sync::atomic::AtomicBool::new(false),
             },
         }
@@ -136,6 +144,11 @@ impl Checkpoint {
         &self.grove_db
     }
 
+    /// The directory the checkpoint was opened at.
+    pub fn path(&self) -> &Path {
+        &self.directory.path
+    }
+
     /// Marks this checkpoint for deletion when it is dropped.
     pub fn mark_for_deletion(&self) {
         self.directory
@@ -143,43 +156,31 @@ impl Checkpoint {
             .store(true, std::sync::atomic::Ordering::Release);
     }
 
-    /// Deletes the directory of a checkpoint of this node on which no database is open.
+    /// Deletes the directory of a checkpoint of this node on which no database is open,
+    /// as the storage engine `engine`, which made it, deletes one.
     ///
-    /// A directory that is not there is left so: a storage engine that is asked to open a
-    /// missing path can make the directory, and an empty directory named after a height
-    /// would be loaded as a checkpoint at the next start. A symbolic link is unlinked, and
-    /// what it names is neither opened nor changed. Where the path cannot be looked at,
-    /// for another reason than that nothing is there, that error is returned and no storage
-    /// engine is asked. GroveDB deletes the checkpoint
-    /// where it can open it as a database of its storage engine. Where it cannot, because
-    /// the checkpoint is damaged or was left half made, the directory is removed all the
-    /// same: it is this node's own, and what is left in it would only stand in the way of
-    /// the next checkpoint at that height.
-    pub fn delete_closed(path: &Path) -> std::io::Result<()> {
-        let gone = |error: &std::io::Error| error.kind() == std::io::ErrorKind::NotFound;
-        match std::fs::symlink_metadata(path) {
-            Err(error) if gone(&error) => return Ok(()),
-            Ok(metadata) if metadata.file_type().is_symlink() => {
-                return match std::fs::remove_file(path) {
-                    Err(error) if !gone(&error) => Err(error),
-                    _ => Ok(()),
-                };
-            }
-            Err(error) => return Err(error),
-            Ok(_) => {}
-        }
-        let Err(refused) = GroveDb::delete_checkpoint(path) else {
-            return Ok(());
-        };
-        tracing::warn!(
-            error = ?refused,
-            ?path,
-            "grovedb did not delete a checkpoint; removing its directory"
-        );
-        match std::fs::remove_dir_all(path) {
-            Err(error) if !gone(&error) => Err(error),
-            _ => Ok(()),
-        }
+    /// A directory that is not there is left so. A symbolic link is unlinked, and what it
+    /// names is neither opened nor changed. Where the path cannot be looked at, for
+    /// another reason than that nothing is there, that error is returned and no storage
+    /// engine is asked.
+    ///
+    /// On RocksDB the directory is listed first. Where its entries say RocksDB and not
+    /// LigninDB, GroveDB's removal for RocksDB is asked, and where that refuses the
+    /// directory is removed all the same. Where no entry says an engine, as in a
+    /// checkpoint that was left half made, the directory is removed with no engine asked:
+    /// it is this node's own, and what is left in it would only stand in the way of the
+    /// next checkpoint at that height. A directory whose entries say LigninDB, alone or
+    /// beside RocksDB's, is refused.
+    ///
+    /// The directory is the node's own. The steps of a deletion go by its path, and a
+    /// directory that another writer puts in its place between them is not told from it.
+    ///
+    /// On LigninDB the removal is the engine's alone, and its error is the error of the
+    /// call: a directory that the engine refuses stays, and the engine can fail after the
+    /// directory is gone. It also removes the directory beside `path` in which a creation
+    /// of a checkpoint at `path` was cut short.
+    pub fn delete_closed(path: &Path, engine: StorageEngine) -> std::io::Result<()> {
+        delete_closed_checkpoint(path, engine)
     }
 }
 
@@ -193,7 +194,7 @@ impl Drop for CheckpointDirectory {
         {
             return;
         }
-        if let Err(error) = Checkpoint::delete_closed(&self.path) {
+        if let Err(error) = Checkpoint::delete_closed(&self.path, self.engine) {
             tracing::error!(
                 ?error,
                 path = ?self.path,
@@ -501,30 +502,34 @@ fn contract_documents_path(contract_id: &[u8]) -> [&[u8]; 3] {
 
 #[cfg(all(test, feature = "server"))]
 mod checkpoint_tests {
-    use super::Checkpoint;
-    use grovedb::GroveDb;
+    use super::{Checkpoint, Drive};
+    use crate::config::StorageEngine;
     use std::path::{Path, PathBuf};
 
-    /// A database with a checkpoint of it at `<directory>/checkpoints/7`, opened.
-    fn checkpoint_in(directory: &Path) -> (GroveDb, Checkpoint, PathBuf) {
-        let live = GroveDb::open(directory.join("db")).expect("a database");
+    /// A database with a checkpoint of it at `<directory>/checkpoints/7`, opened, on the
+    /// storage engine of a default configuration.
+    fn checkpoint_in(directory: &Path) -> (Drive, Checkpoint, PathBuf) {
+        let (live, _) = Drive::open(directory.join("db"), None).expect("a database");
         let path = directory.join("checkpoints").join("7");
         std::fs::create_dir_all(path.parent().expect("a parent")).expect("the parent");
-        live.create_checkpoint(&path).expect("a checkpoint");
-        let checkpoint =
-            Checkpoint::new(GroveDb::open(&path).expect("the checkpoint"), path.clone());
+        live.grove.create_checkpoint(&path).expect("a checkpoint");
+        let checkpoint = reopened(&live, &path);
         (live, checkpoint, path)
+    }
+
+    fn reopened(live: &Drive, path: &Path) -> Checkpoint {
+        let grove_db = live.open_checkpoint(path).expect("the checkpoint");
+        Checkpoint::new(grove_db, path.to_path_buf())
     }
 
     #[test]
     fn a_checkpoint_keeps_its_directory_unless_it_is_marked() {
         let directory = tempfile::tempdir().expect("a directory");
-        let (_live, checkpoint, path) = checkpoint_in(directory.path());
+        let (live, checkpoint, path) = checkpoint_in(directory.path());
         drop(checkpoint);
         assert!(path.is_dir(), "an unmarked checkpoint stays on disk");
 
-        let checkpoint =
-            Checkpoint::new(GroveDb::open(&path).expect("the checkpoint"), path.clone());
+        let checkpoint = reopened(&live, &path);
         checkpoint.mark_for_deletion();
         assert!(path.is_dir(), "a marked checkpoint stays while it is held");
         drop(checkpoint);
@@ -534,39 +539,68 @@ mod checkpoint_tests {
         );
     }
 
-    /// A marked checkpoint whose directory somebody removed is not made again by its drop:
-    /// a directory named after a height would be loaded as a checkpoint at the next start.
+    /// A marked checkpoint whose directory somebody removed is not made again by its drop.
     #[test]
     fn a_marked_checkpoint_whose_directory_is_gone_leaves_none() {
         let directory = tempfile::tempdir().expect("a directory");
-        let (_live, checkpoint, path) = checkpoint_in(directory.path());
+        let (live, checkpoint, path) = checkpoint_in(directory.path());
         checkpoint.mark_for_deletion();
         std::fs::remove_dir_all(&path).expect("the directory removed");
         drop(checkpoint);
         assert!(!path.exists(), "the drop made the directory again");
 
-        Checkpoint::delete_closed(&path).expect("nothing to delete");
+        Checkpoint::delete_closed(&path, live.storage_engine()).expect("nothing to delete");
         assert!(!path.exists(), "the deletion made the directory");
     }
 
-    /// A directory that holds a file of the node and no database, as a checkpoint whose
-    /// creation was cut short can be, cannot be opened as a checkpoint, and goes all the
-    /// same.
+    /// A directory that holds the node's state file and no database cannot be opened as a
+    /// checkpoint. RocksDB's deletion removes it all the same. LigninDB's refuses it, and
+    /// it stays. An empty directory goes on both.
     #[test]
-    fn a_closed_checkpoint_that_cannot_be_opened_is_deleted_all_the_same() {
+    fn a_directory_that_holds_only_the_nodes_state_file_is_deleted_only_on_rocksdb() {
         let directory = tempfile::tempdir().expect("a directory");
-        let (_live, checkpoint, path) = checkpoint_in(directory.path());
+        let (live, checkpoint, path) = checkpoint_in(directory.path());
         drop(checkpoint);
         std::fs::remove_dir_all(&path).expect("the checkpoint removed");
         std::fs::create_dir(&path).expect("a directory in its place");
         std::fs::write(path.join("platform_state.bin"), b"state").expect("a file of the node");
         assert!(
-            GroveDb::open_checkpoint(&path).is_err(),
+            live.open_checkpoint(&path).is_err(),
             "a directory with no database was opened as a checkpoint"
         );
 
-        Checkpoint::delete_closed(&path).expect("the directory removed");
+        let deleted = Checkpoint::delete_closed(&path, live.storage_engine());
+        match live.storage_engine() {
+            StorageEngine::RocksDb => {
+                deleted.expect("the directory removed");
+                assert!(!path.exists());
+            }
+            StorageEngine::LigninDb => {
+                deleted.expect_err("the engine removed a directory that holds a file alone");
+                assert!(path.join("platform_state.bin").is_file());
+            }
+        }
+
+        let empty = directory.path().join("checkpoints").join("8");
+        std::fs::create_dir(&empty).expect("an empty directory");
+        Checkpoint::delete_closed(&empty, live.storage_engine()).expect("the directory removed");
+        assert!(!empty.exists());
+    }
+
+    /// A checkpoint that holds a file of the node beside its database is deleted whole.
+    #[test]
+    fn a_closed_checkpoint_goes_with_the_file_the_node_put_in_it() {
+        let directory = tempfile::tempdir().expect("a directory");
+        let (live, checkpoint, path) = checkpoint_in(directory.path());
+        drop(checkpoint);
+        std::fs::write(path.join("platform_state.bin"), b"state").expect("a file of the node");
+
+        Checkpoint::delete_closed(&path, live.storage_engine()).expect("the checkpoint deleted");
         assert!(!path.exists());
+        assert!(
+            live.grove.create_checkpoint(&path).is_ok(),
+            "the height takes a checkpoint again"
+        );
     }
 
     /// A symbolic link at a checkpoint's path is unlinked. What it names is not opened as
@@ -574,25 +608,27 @@ mod checkpoint_tests {
     #[cfg(unix)]
     #[test]
     fn a_symbolic_link_is_unlinked_and_what_it_names_is_left_as_it_was() {
-        let directory = tempfile::tempdir().expect("a directory");
-        let named = directory.path().join("named");
-        std::fs::create_dir(&named).expect("the directory the link names");
-        let path = directory.path().join("8");
-        std::os::unix::fs::symlink(&named, &path).expect("a link");
+        for engine in [StorageEngine::RocksDb, StorageEngine::LigninDb] {
+            let directory = tempfile::tempdir().expect("a directory");
+            let named = directory.path().join("named");
+            std::fs::create_dir(&named).expect("the directory the link names");
+            let path = directory.path().join("8");
+            std::os::unix::fs::symlink(&named, &path).expect("a link");
 
-        Checkpoint::delete_closed(&path).expect("the link removed");
-        assert_eq!(
-            std::fs::symlink_metadata(&path)
-                .expect_err("the link is still there")
-                .kind(),
-            std::io::ErrorKind::NotFound
-        );
-        assert_eq!(
-            std::fs::read_dir(&named)
-                .expect("the named directory")
-                .count(),
-            0,
-            "the directory the link names was written to"
-        );
+            Checkpoint::delete_closed(&path, engine).expect("the link removed");
+            assert_eq!(
+                std::fs::symlink_metadata(&path)
+                    .expect_err("the link is still there")
+                    .kind(),
+                std::io::ErrorKind::NotFound
+            );
+            assert_eq!(
+                std::fs::read_dir(&named)
+                    .expect("the named directory")
+                    .count(),
+                0,
+                "the directory the link names was written to"
+            );
+        }
     }
 }

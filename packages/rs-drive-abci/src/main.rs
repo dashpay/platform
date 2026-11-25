@@ -139,7 +139,7 @@ impl Cli {
                 );
 
                 if config.drive.grovedb_verify_on_startup {
-                    verify_grovedb(&config.db_path, false)?;
+                    verify_grovedb(&config.db_path, &config.drive, false)?;
                 }
                 let core_rpc = DefaultCoreRPC::open(
                     config.core.consensus_rpc.url().as_str(),
@@ -664,6 +664,15 @@ mod test {
     use drive_abci::logging::LogLevel;
     use rocksdb::{IteratorMode, Options};
 
+    /// The tests corrupt a record through RocksDB's own files, so their database is on
+    /// RocksDB whatever engine the rest of the suite runs on.
+    fn on_rocksdb() -> drive::config::DriveConfig {
+        drive::config::DriveConfig {
+            grovedb_storage_engine: drive::config::StorageEngine::RocksDb,
+            ..Default::default()
+        }
+    }
+
     /// Setup drive database by creating initial state structure and inserting some data.
     ///
     /// Returns path to the database.
@@ -673,7 +682,7 @@ mod test {
 
         let platform_version = PlatformVersion::latest();
 
-        let (drive, _) = Drive::open(&path, None).expect("open drive");
+        let (drive, _) = Drive::open(&path, Some(on_rocksdb())).expect("open drive");
 
         drive
             .create_initial_state_structure(None, platform_version)
@@ -745,7 +754,8 @@ mod test {
 
         corrupt_rocksdb_item(&db_path, "roots", 0);
 
-        let result_error = super::verify_grovedb(&db_path, true).expect_err("expected an error");
+        let result_error =
+            super::verify_grovedb(&db_path, &on_rocksdb(), true).expect_err("expected an error");
         assert_eq!(
             result_error,
             "data corruption error: expected merk to contain value at key 0x08 for tree"

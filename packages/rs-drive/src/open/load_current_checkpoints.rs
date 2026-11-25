@@ -4,23 +4,29 @@ use std::sync::Arc;
 
 use arc_swap::ArcSwap;
 use dpp::prelude::{BlockHeight, TimestampMillis};
-use grovedb::GroveDb;
 
+use super::storage_engine::{open_grove, Role};
+use crate::config::DriveConfig;
 use crate::drive::{Checkpoint, CheckpointInfo, CheckpointsMap};
 use crate::error::Error;
 
 /// Loads existing checkpoints from the checkpoints directory.
 ///
 /// This function scans the `<db_path>/checkpoints/` directory for existing checkpoint
-/// subdirectories (named by block height), opens each one as a GroveDb, and returns
-/// an ArcSwap containing the loaded checkpoints.
+/// subdirectories (named by block height), opens each one as a checkpoint on the storage
+/// engine of `config`, and returns an ArcSwap containing the loaded checkpoints. A directory
+/// that holds no database of that engine is skipped, and none is made in it.
 ///
 /// # Arguments
 /// * `db_path` - The path to the database directory (parent of the checkpoints directory)
+/// * `config` - The configuration the database was opened with
 ///
 /// # Returns
 /// * An `ArcSwap` containing a `BTreeMap` of checkpoints keyed by block height
-pub fn load_current_checkpoints<P: AsRef<Path>>(db_path: P) -> Result<CheckpointsMap, Error> {
+pub fn load_current_checkpoints<P: AsRef<Path>>(
+    db_path: P,
+    config: &DriveConfig,
+) -> Result<CheckpointsMap, Error> {
     let checkpoints_dir = db_path.as_ref().join("checkpoints");
 
     let mut checkpoints = BTreeMap::new();
@@ -56,13 +62,14 @@ pub fn load_current_checkpoints<P: AsRef<Path>>(db_path: P) -> Result<Checkpoint
         };
 
         // Try to open the checkpoint as a GroveDb
-        let grove_db = match GroveDb::open(&path) {
+        let grove_db = match open_grove(&path, config, Role::Checkpoint) {
             Ok(db) => db,
             Err(_) => continue, // Skip corrupted or invalid checkpoints
         };
 
         // Get the modification time as the checkpoint timestamp
-        // If we can't get the metadata, use 0 as a fallback
+        // If we can't get the metadata, use 0 as a fallback. The node replaces it with the
+        // time of the checkpoint's block where it has the state saved with the checkpoint.
         let timestamp_ms: TimestampMillis = std::fs::metadata(&path)
             .and_then(|m| m.modified())
             .ok()

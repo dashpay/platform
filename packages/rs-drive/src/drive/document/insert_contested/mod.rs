@@ -371,14 +371,23 @@ mod tests {
             }
         }
 
-        /// PROTOCOL_VERSION_13 keeps v0, which trips over the orphaned tree.
-        /// Pinned so the replay boundary stays explicit.
+        /// PROTOCOL_VERSION_13 keeps v0, which trips over the orphaned tree where the
+        /// storage engine still shows one: on RocksDB the second contest fails, and on
+        /// LigninDB it is made. Pinned so the replay boundary stays explicit.
         #[test]
-        fn a_resource_can_not_be_contested_again_at_protocol_version_13() {
+        fn a_second_contest_at_protocol_version_13_fails_on_rocksdb_and_is_made_on_lignindb() {
             let platform_version = PlatformVersion::get(13).expect("expected platform version 13");
 
-            let (_, _, result) =
+            let (drive, _, result) =
                 restart_contest_after_cleanup_without_abstain_or_lock_votes(platform_version);
+            // The orphaned vote tree is a state that only RocksDB keeps: it still shows a
+            // tree below one that was deleted, and LigninDB removes a tree with everything
+            // below it. So on LigninDB v0 has nothing to trip over and makes the new
+            // contest, and the error this test pins is RocksDB's.
+            if drive.storage_engine() != crate::config::StorageEngine::RocksDb {
+                result.expect("no orphaned vote tree stands in the way on LigninDB");
+                return;
+            }
 
             let err =
                 result.expect_err("expected the new contest to fail on the orphaned vote tree");
