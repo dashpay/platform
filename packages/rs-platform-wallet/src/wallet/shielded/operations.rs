@@ -7486,7 +7486,7 @@ mod redrive_tests {
     impl ShieldedDispatch for RecordingHook {
         async fn dispatch(&self, payload: ShieldedDispatchPayload) -> Result<(), DispatchRefused> {
             self.log.lock().unwrap().push("hook");
-            let durable = FileBackedShieldedStore::open_path(&self.path, 100)
+            let durable = FileBackedShieldedStore::open_file_view(&self.path, 100)
                 .expect("a second handle")
                 .pending_redrives(self.id)
                 .expect("the records")
@@ -8004,7 +8004,7 @@ mod redrive_tests {
             "the notes stay reserved"
         );
         assert_eq!(
-            FileBackedShieldedStore::open_path(&path, 100)
+            FileBackedShieldedStore::open_file_view(&path, 100)
                 .expect("a second handle")
                 .pending_redrives(id)
                 .expect("records")
