@@ -192,7 +192,10 @@ pub(crate) fn restore_provider_platform_node_pool(
 /// an index beyond the window is added from its stored script and public
 /// key, at the pool's base path, and a stored used mark is applied.
 ///
-/// The pool is not extended beyond what was stored. An index marked used by a
+/// The pool is not extended beyond what was stored. The addresses a funding
+/// account derived on seeing its locks on chain are stored as rows of their
+/// own ([`core_pool::insert_derived_funding_address`]), so the window those
+/// locks moved comes back with them. An index marked used by a
 /// lock that never reached the chain is cleared when the wallet hands it back
 /// ([`core_pool::release_unsent_address`]); one that stays marked is left so,
 /// and a pool used up that way refuses the next lock rather than build it past

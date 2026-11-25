@@ -203,6 +203,73 @@ pub fn apply_pools(
     Ok(())
 }
 
+const INSERT_DERIVED_ADDRESS_SQL: &str = "INSERT INTO core_address_pool \
+        (wallet_id, account_type, account_index, key_class, user_identity_id, friend_identity_id, \
+         pool_type, address_index, script, used, public_key, key_type, reserved_at) \
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, ?10, ?11, NULL) \
+     ON CONFLICT(wallet_id, account_type, account_index, key_class, user_identity_id, \
+                 friend_identity_id, pool_type, address_index) DO NOTHING";
+
+/// Whether `account_type` funds asset-lock credit outputs: the accounts whose
+/// pools [`restore_asset_lock_funding_pools`](crate::sqlite::rehydrate) brings
+/// back from their stored rows.
+fn is_asset_lock_funding_account(account_type: &AccountType) -> bool {
+    matches!(
+        account_type,
+        AccountType::IdentityRegistration
+            | AccountType::IdentityTopUp { .. }
+            | AccountType::IdentityTopUpNotBoundToIdentity
+            | AccountType::IdentityInvitation
+            | AccountType::AssetLockAddressTopUp
+            | AccountType::AssetLockShieldedAddressTopUp
+    )
+}
+
+/// Store an address a funding account derived on seeing a transaction, as an
+/// unused row; a row already stored at its index is kept as it is.
+///
+/// A funding pool's window moves only when a lock is seen on chain, and its
+/// addresses are restored from these rows alone: no scan finds them again.
+/// Without the derived addresses a restored pool holds only the indices
+/// builds stored, all used once their locks went out, and the next lock has
+/// no address to sign with. Only these accounts' addresses are stored: other
+/// pools are rebuilt otherwise.
+pub fn insert_derived_funding_address(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    account_type: &AccountType,
+    pool_type: AddressPoolType,
+    address_index: u32,
+    script: &[u8],
+    public_key: &[u8; ECDSA_PUBLIC_KEY_LEN],
+) -> Result<(), WalletStorageError> {
+    if !is_asset_lock_funding_account(account_type) {
+        return Ok(());
+    }
+    if script.is_empty() {
+        return Err(WalletStorageError::EmptyPoolAddressScript {
+            account_type: accounts::account_type_db_label(account_type),
+            address_index,
+        });
+    }
+    let (user_identity_id, friend_identity_id) = accounts::account_dashpay_ids(account_type);
+    tx.prepare_cached(INSERT_DERIVED_ADDRESS_SQL)?
+        .execute(params![
+            wallet_id.as_slice(),
+            accounts::account_type_db_label(account_type),
+            i64::from(accounts::account_index(account_type)),
+            i64::from(accounts::account_key_class(account_type)),
+            user_identity_id.as_slice(),
+            friend_identity_id.as_slice(),
+            pool_type_to_i64(pool_type),
+            i64::from(address_index),
+            script,
+            public_key.as_slice(),
+            KEY_TYPE_ECDSA,
+        ])?;
+    Ok(())
+}
+
 const RELEASE_UNSENT_ADDRESS_SQL: &str = "UPDATE core_address_pool \
         SET used = 0, reserved_at = NULL \
      WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \

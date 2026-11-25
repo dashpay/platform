@@ -456,3 +456,158 @@ fn should_clear_the_stored_used_mark_of_a_released_unsent_funding_address() {
         "the next lock takes the released index again"
     );
 }
+
+/// The addresses a funding account derives on seeing its locks on chain are
+/// stored, so a restored pool keeps the window those locks moved. Builds
+/// store only the indices they used, all marked used once their locks went
+/// out; without the derived ones a restored pool would offer no address to
+/// the next lock although every earlier lock confirmed. A derivation of an
+/// account that is not a funding account is not stored here.
+#[test]
+fn should_restore_the_window_a_funding_account_derived_on_chain() {
+    use key_wallet::account::account_type::StandardAccountType;
+    use key_wallet::account::AccountType;
+    use key_wallet::managed_account::address_pool::{KeySource, PublicKeyType};
+    use platform_wallet::changeset::AccountAddressPoolEntry;
+    use platform_wallet::DerivedAddress;
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xE1);
+    let wallet = Wallet::from_seed_bytes(
+        [0x46; 64],
+        key_wallet::Network::Testnet,
+        WalletAccountCreationOptions::Default,
+    )
+    .unwrap();
+    let mut info = ManagedWalletInfo::from_wallet(&wallet, 7);
+    let manifest: Vec<AccountRegistrationEntry> = wallet
+        .accounts
+        .all_accounts()
+        .into_iter()
+        .map(|a| AccountRegistrationEntry {
+            account_type: a.account_type,
+            account_xpub: a.account_xpub,
+        })
+        .collect();
+    let xpub = wallet
+        .accounts
+        .identity_topup_not_bound
+        .as_ref()
+        .expect("unbound top-up account")
+        .account_xpub;
+    let pool = info
+        .accounts
+        .identity_topup_not_bound
+        .as_mut()
+        .expect("managed unbound top-up account")
+        .managed_account_type_mut()
+        .address_pools_mut()
+        .into_iter()
+        .next()
+        .expect("one pool");
+    for address in pool.all_addresses() {
+        assert!(pool.mark_used(&address));
+    }
+    let highest = pool.highest_generated().expect("an initial window");
+    let pool_type = pool.pool_type();
+    let snapshot = AccountAddressPoolEntry {
+        account_type: AccountType::IdentityTopUpNotBoundToIdentity,
+        pool_type,
+        addresses: pool.addresses().values().cloned().collect(),
+    };
+    // What seeing those locks on chain derives.
+    let derived = pool
+        .maintain_gap_limit(&KeySource::Public(xpub))
+        .expect("derive past the used addresses");
+    assert!(!derived.is_empty());
+    let to_event =
+        |account_type: AccountType,
+         info: &key_wallet::managed_account::address_pool::AddressInfo| {
+            let Some(PublicKeyType::ECDSA(bytes)) = info.public_key.as_ref() else {
+                panic!("an ECDSA funding key");
+            };
+            DerivedAddress {
+                account_type,
+                pool_type,
+                derivation_index: info.index,
+                address: info.address.clone(),
+                public_key: dashcore::PublicKey::from_slice(bytes).unwrap(),
+            }
+        };
+    let mut addresses_derived: Vec<DerivedAddress> = derived
+        .iter()
+        .map(|info| to_event(AccountType::IdentityTopUpNotBoundToIdentity, info))
+        .collect();
+    // The same index under a BIP44 account: not a funding account.
+    addresses_derived.push(to_event(
+        AccountType::Standard {
+            index: 0,
+            standard_account_type: StandardAccountType::BIP44Account,
+        },
+        &derived[0],
+    ));
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                wallet_metadata: Some(WalletMetadataEntry {
+                    network: key_wallet::Network::Testnet,
+                    wallet_group_id: [0u8; 32],
+                    birth_height: 7,
+                }),
+                account_registrations: manifest,
+                account_address_pools: vec![snapshot],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    addresses_derived,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let state = reopen(&path).load().expect("load");
+    let mut restored = state.wallets[&w].wallet_info.clone();
+    let pool = restored
+        .accounts
+        .identity_topup_not_bound
+        .as_mut()
+        .expect("restored unbound top-up account")
+        .managed_account_type_mut()
+        .address_pools_mut()
+        .into_iter()
+        .next()
+        .expect("one pool");
+    assert!(
+        (0..=highest).all(|index| pool.addresses()[&index].is_used()),
+        "every stored used mark is kept"
+    );
+    let next = &derived[0];
+    assert_eq!(
+        pool.unused_addresses().first(),
+        Some(&next.address),
+        "the next lock takes the first address derived on chain"
+    );
+    assert_eq!(pool.addresses()[&next.index].path, next.path);
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    let rows: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM core_address_pool WHERE wallet_id = ?1 AND script = ?2",
+            rusqlite::params![w.as_slice(), next.address.script_pubkey().as_bytes()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        rows, 1,
+        "only the funding account's derivation is stored, not the BIP44 one"
+    );
+}
