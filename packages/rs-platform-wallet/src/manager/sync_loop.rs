@@ -45,6 +45,7 @@ pub(crate) struct SyncLoop {
 }
 
 /// Outcome of asking to run a pass.
+#[must_use = "check admission and hold the permit until the pass and its callbacks finish"]
 pub(crate) enum Admission<'a> {
     /// The pass may run; it holds the slot until the permit drops.
     Admitted(PassPermit<'a>),
