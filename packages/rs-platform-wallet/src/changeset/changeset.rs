@@ -145,6 +145,24 @@ pub struct CoreChangeSet {
     /// `OutputRole::Change` per the upstream `TransactionRecord`).
     pub new_utxos: Vec<Utxo>,
 
+    /// Coins the wallet holds that a block credited to a transaction it
+    /// already knew: a filter rescan re-delivered the block for addresses a
+    /// later block derived, or a mempool transaction confirmed after its
+    /// pools grew. The `BlockProcessed` projection reads them from the
+    /// wallet's UTXO set, because the event's records derive none.
+    ///
+    /// A persister writes each one only when it holds no row for the
+    /// outpoint, and never changes an existing row's spent flag. A re-scan
+    /// can re-deliver a coin the store has already recorded as spent while
+    /// the wallet still holds it, and re-sending must not offer that coin
+    /// again. The price is that a row left spent by a change the store did
+    /// not mirror stays spent: a coin can be missing, never offered twice.
+    ///
+    /// Merge: appended, like `new_utxos`. `serde(default)` for the same
+    /// backward-compatible reading as [`Self::sweeps`].
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub rescan_utxos: Vec<Utxo>,
+
     /// InstantSend locks observed for records that are NOT yet in a
     /// chain-locked block (i.e. records still in `Mempool`,
     /// `InstantSend`, or `InBlock` context — anything `InChainLockedBlock`
@@ -318,7 +336,8 @@ pub struct CoreChangeSet {
     /// newer map (only uncredited outputs are recorded). The fold therefore
     /// first drops the older verdicts for every outpoint of a record the
     /// newer changeset carries, and for every outpoint the newer changeset
-    /// credits (`new_utxos`), and only then extends with the newer map.
+    /// credits (`new_utxos`, `rescan_utxos`), and only then extends with the
+    /// newer map.
     /// `serde(default)` for the same backward-compatible reading as
     /// [`Self::sweeps`].
     #[cfg_attr(feature = "serde", serde(default))]
@@ -755,8 +774,12 @@ impl Merge for CoreChangeSet {
                         })
                 })
                 .collect();
-            let credited: std::collections::HashSet<OutPoint> =
-                other.new_utxos.iter().map(|utxo| utxo.outpoint).collect();
+            let credited: std::collections::HashSet<OutPoint> = other
+                .new_utxos
+                .iter()
+                .chain(&other.rescan_utxos)
+                .map(|utxo| utxo.outpoint)
+                .collect();
             self.utxo_credit_verdicts.retain(|outpoint, _| {
                 !reprojected.contains(outpoint) && !credited.contains(outpoint)
             });
@@ -793,6 +816,7 @@ impl Merge for CoreChangeSet {
         });
         self.spent_utxos.extend(other.spent_utxos);
         self.new_utxos.extend(other.new_utxos);
+        self.rescan_utxos.extend(other.rescan_utxos);
 
         // IS-lock map: last-write-wins per txid. A second IS-lock for
         // the same txid (e.g. a follow-up event re-confirming the lock)
@@ -921,6 +945,7 @@ impl Merge for CoreChangeSet {
             && self.sweeps.is_empty()
             && self.spent_utxos.is_empty()
             && self.new_utxos.is_empty()
+            && self.rescan_utxos.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()
             && self.last_processed_height.is_none()
             && self.synced_height.is_none()
