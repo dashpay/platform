@@ -45,6 +45,7 @@ import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.formatCredits
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.toHex
@@ -76,7 +77,7 @@ fun TransferIdentityToAddressScreen(identityIdHex: String, navController: NavHos
 
     val identity by container.database.identityDao()
         .observeByIdentityId(idBytes)
-        .collectAsStateWithLifecycle(initialValue = null)
+        .collectEachAsStateWithLifecycle(initialValue = null)
     val wallet = rememberManagedWalletFor(identity?.walletId)
 
     val platformAddresses by container.database.platformAddressDao()

@@ -57,6 +57,7 @@ import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.LenientJson
 import org.dashfoundation.example.util.hexToBytes
@@ -118,11 +119,11 @@ fun CreateDocumentScreen(
     val contractFlow = remember(contractIdHex) {
         container.database.dataContractDao().observeById(contractIdBytes)
     }
-    val contract by contractFlow.collectAsStateWithLifecycle(initialValue = null)
+    val contract by contractFlow.collectEachAsStateWithLifecycle(initialValue = null)
 
     val identities by container.database.identityDao()
         .observeWalletOwnedByNetwork(network.ffiValue)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+        .collectEachAsStateWithLifecycle(initialValue = emptyList())
     var owner by remember { mutableStateOf<IdentityEntity?>(null) }
     LaunchedEffect(identities) {
         if (owner == null) owner = identities.firstOrNull()

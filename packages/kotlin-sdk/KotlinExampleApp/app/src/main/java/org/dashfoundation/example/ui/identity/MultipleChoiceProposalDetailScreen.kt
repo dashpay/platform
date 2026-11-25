@@ -56,6 +56,7 @@ import org.dashfoundation.example.ui.components.AccessiblePicker
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.ui.tokens.displayLabel
 import org.dashfoundation.example.ui.voting.answerTargetOf
 import org.dashfoundation.example.ui.voting.MasternodeVoteCall
@@ -95,7 +96,7 @@ fun MultipleChoiceProposalDetailScreen(
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
     val walletIdentities by container.database.identityDao()
         .observeWalletOwnedByNetwork(network.ffiValue)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+        .collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     var proposal by remember { mutableStateOf<MultipleChoiceProposal?>(null) }
     var vote by remember { mutableStateOf<MultipleChoiceProposalVote?>(null) }

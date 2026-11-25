@@ -29,6 +29,7 @@ import androidx.navigation.NavHostController
 import kotlinx.coroutines.launch
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.ui.components.FormSection
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.hexToBytes
 
 /**
@@ -46,7 +47,7 @@ fun SelectMainNameScreen(identityIdHex: String, navController: NavHostController
 
     val identity by container.database.identityDao()
         .observeByIdentityId(idBytes)
-        .collectAsStateWithLifecycle(initialValue = null)
+        .collectEachAsStateWithLifecycle(initialValue = null)
     val names by container.database.dpnsNameDao()
         .observeByIdentity(idBytes)
         .collectAsStateWithLifecycle(initialValue = emptyList())

@@ -48,6 +48,7 @@ import org.dashfoundation.example.services.tokens.IdentityTokenSync
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.toHex
 import org.dashfoundation.example.util.truncateMiddle
@@ -72,7 +73,7 @@ fun LocalDataContractsScreen(navController: NavHostController) {
     val contractsFlow = remember(network) {
         container.database.dataContractDao().observeByNetwork(network.ffiValue)
     }
-    val contracts by contractsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val contracts by contractsFlow.collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     var inputId by rememberSaveable { mutableStateOf("") }
     var contractName by rememberSaveable { mutableStateOf("") }

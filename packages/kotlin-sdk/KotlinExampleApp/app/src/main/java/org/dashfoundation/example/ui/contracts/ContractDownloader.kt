@@ -88,6 +88,20 @@ object ContractDownloader {
 
         val dao = database.dataContractDao()
         val preExisting = dao.getById(contractIdBytes)
+        val fetchedVersion = (root["version"] as? JsonPrimitive)?.content?.toLongOrNull()
+        if (preExisting != null && binarySerialization != null &&
+            fetchedVersion != null && fetchedVersion > (preExisting.version ?: 0)
+        ) {
+            // Platform holds a newer version than the stored row (a contract
+            // update, or a token configuration change, since it was stored):
+            // replace the row and its token rows, as the post-update refresh
+            // does. Keeping the old row would leave stale rules, caps and
+            // distribution recipients on this device.
+            val replaced = replaceStored(
+                root, json, binarySerialization, contractIdBytes, preExisting, sdk, database, network,
+            )
+            return Result(contract = replaced, alreadyExisted = true)
+        }
         if (preExisting != null) {
             // Backfill the binary serialization for rows persisted before the
             // with-serialization fetch, so the startup preload can pick them
@@ -156,20 +170,42 @@ object ContractDownloader {
         }
         val binary = fetched.binarySerialization
             ?: throw Exception("The node returned no binary serialization for the contract")
-        sdk.contracts.loadKnownContracts(listOf(requestedId to binary))
+        replaceStored(root, fetched.json, binary, contractId, stored, sdk, database, network)
+    }
+
+    /**
+     * Store a fetched contract over [stored] (or as a new row): register its
+     * serialization with the SDK's trusted context, so proof verification
+     * reads this version, keep the stored name and creation date, and
+     * materialize its token rows again. Returns the stored row.
+     */
+    private suspend fun replaceStored(
+        root: JsonObject,
+        json: String,
+        binary: ByteArray,
+        contractId: ByteArray,
+        stored: DataContractEntity?,
+        sdk: Sdk,
+        database: DashDatabase,
+        network: Network,
+    ): DataContractEntity {
+        val contractIdBase58 = Base58.encode(contractId)
+        sdk.contracts.loadKnownContracts(listOf(contractIdBase58 to binary))
         val entity = entityFrom(
             root = root,
-            json = fetched.json,
+            json = json,
             binarySerialization = binary,
             contractId = contractId,
-            name = stored?.name ?: resolveName(null, requestedId, documentsOf(root), tokensOf(root)),
+            name = stored?.name
+                ?: resolveName(null, contractIdBase58, documentsOf(root), tokensOf(root)),
             network = network,
         ).let { fresh ->
             stored?.let { fresh.copy(createdAt = it.createdAt) } ?: fresh
         }
-        dao.upsert(entity)
+        database.dataContractDao().upsert(entity)
         org.dashfoundation.example.services.tokens.TokenMaterializer
             .materialize(entity, database)
+        return entity
     }
 
     /** The stored row for a fetched contract's JSON [root] (the shape [downloadAndPersistContract] stores). */

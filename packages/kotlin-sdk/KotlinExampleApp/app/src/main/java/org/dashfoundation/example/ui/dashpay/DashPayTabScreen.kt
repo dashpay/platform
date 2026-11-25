@@ -72,6 +72,7 @@ import org.dashfoundation.example.ui.components.EntityRow
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.formatDuffs
 import org.dashfoundation.example.util.toHex
@@ -108,7 +109,7 @@ fun DashPayTabScreen(navController: NavHostController) {
 
     val allWalletOwned by remember(network) {
         container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
-    }.collectAsStateWithLifecycle(emptyList())
+    }.collectEachAsStateWithLifecycle(emptyList())
 
     val managerMatchesNetwork = manager?.network == network
     val eligible = remember(allWalletOwned, walletsMap, managerMatchesNetwork) {

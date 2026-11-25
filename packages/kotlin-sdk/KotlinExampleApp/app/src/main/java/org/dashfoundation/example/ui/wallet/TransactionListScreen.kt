@@ -47,6 +47,7 @@ import kotlinx.coroutines.flow.map
 import org.dashfoundation.dashsdk.persistence.entities.TransactionEntity
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.navigation.WalletTransactionDetail
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.ui.theme.appStatusColors
 import org.dashfoundation.example.util.formatRelative
 import java.util.Date
@@ -84,7 +85,7 @@ fun TransactionListScreen(
                         .observeByTxids(txids.map { it.toByteArray() })
                 }
             }
-    }.collectAsStateWithLifecycle(initialValue = emptyList())
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     // Display-order txid hex → total locked duffs, from this wallet's
     // asset-lock rows (← TransactionListView.assetLockAmountByTxid).

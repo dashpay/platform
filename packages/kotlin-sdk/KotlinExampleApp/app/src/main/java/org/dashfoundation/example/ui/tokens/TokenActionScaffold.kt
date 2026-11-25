@@ -178,7 +178,7 @@ fun rememberTokenActionContext(
     val identityFlow = remember(identityIdHex) {
         container.database.identityDao().observeByIdentityId(identityId)
     }
-    val identity by identityFlow.collectAsStateWithLifecycle(initialValue = null)
+    val identity by identityFlow.collectEachAsStateWithLifecycle(initialValue = null)
 
     val contractIdHex = token?.contractId?.toHex()
     val contractFlow = remember(contractIdHex) {

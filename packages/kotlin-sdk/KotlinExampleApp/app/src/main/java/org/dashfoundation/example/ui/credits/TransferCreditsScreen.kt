@@ -40,6 +40,7 @@ import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.hexToBytes
 
 /**
@@ -59,7 +60,7 @@ fun TransferCreditsScreen(identityIdHex: String, navController: NavHostControlle
 
     val identity by container.database.identityDao()
         .observeByIdentityId(idBytes)
-        .collectAsStateWithLifecycle(initialValue = null)
+        .collectEachAsStateWithLifecycle(initialValue = null)
 
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val wallet = rememberManagedWalletFor(identity?.walletId)

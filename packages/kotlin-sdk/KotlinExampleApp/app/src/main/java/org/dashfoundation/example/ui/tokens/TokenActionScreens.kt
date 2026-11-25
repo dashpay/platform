@@ -38,6 +38,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.flowOf
+import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.funding.ShieldedProver
 import org.dashfoundation.dashsdk.tokens.GroupAction
@@ -53,8 +54,10 @@ import org.dashfoundation.example.services.tokens.OncePerIdentityClaimStore
 import org.dashfoundation.example.services.tokens.TokenActionKind
 import org.dashfoundation.example.services.tokens.TokenActionResolver
 import org.dashfoundation.example.services.tokens.TokenAmounts
+import org.dashfoundation.example.services.tokens.TokenConfigRefresh
 import org.dashfoundation.example.services.tokens.TokenDirectPurchasePricing
 import org.dashfoundation.example.services.tokens.TokenDistributionChangeRules
+import org.dashfoundation.example.ui.contracts.ContractDownloader
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.RecipientPicker
@@ -1129,6 +1132,8 @@ private fun UpdateMaxSupplyForm(
     navController: NavHostController,
 ) {
     val token = context.token
+    val container = LocalAppContainer.current
+    val sdk by LocalAppState.current.sdk.collectAsStateWithLifecycle()
     var removeCap by rememberSaveable { mutableStateOf(false) }
     var amountText by rememberSaveable { mutableStateOf("") }
     var note by rememberSaveable { mutableStateOf("") }
@@ -1164,6 +1169,7 @@ private fun UpdateMaxSupplyForm(
             }
             val groupAction = banner.toGroupAction()
             val noteOrNull = note.toPublicNoteOrNull()
+            val storedVersion = context.contract?.version
             viewModel.submit {
                 wallet.tokens.updateConfig(
                     identityId = context.identity.identityId,
@@ -1174,6 +1180,27 @@ private fun UpdateMaxSupplyForm(
                     groupAction = groupAction,
                     signingKeyId = TokenActionContext.SIGNING_KEY_ID,
                     signerHandle = signer,
+                )
+                // A single-signer update took effect: fetch the contract it
+                // produced, so the stored contract and its token rows show
+                // the new cap. A group proposal only takes effect once
+                // co-signed, so the stored contract is left as it is.
+                if (groupAction != GroupAction.None) return@submit
+                val failure = TokenConfigRefresh.afterConfirmedUpdate(storedVersion) { floor ->
+                    val activeSdk = sdk ?: throw IllegalStateException("the SDK is not connected")
+                    ContractDownloader.refreshPersistedContract(
+                        token.contractId, activeSdk, container.database,
+                        Network.fromFfiValue(context.identity.networkRaw), floor,
+                    )
+                } ?: return@submit
+                viewModel.showNoticeUntilDismissed(
+                    TokenActionNotice(
+                        "Max supply updated",
+                        "The update was confirmed, but the stored contract could not be " +
+                            "fetched again (${failure.message}). This device keeps showing " +
+                            "the old max supply until the contract is refreshed.",
+                        "tokenAction.configRefreshNotice",
+                    ),
                 )
             }
         },

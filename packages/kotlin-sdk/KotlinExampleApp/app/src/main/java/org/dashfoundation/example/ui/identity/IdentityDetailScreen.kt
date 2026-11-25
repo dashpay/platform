@@ -58,6 +58,7 @@ import org.dashfoundation.example.navigation.WithdrawCredits
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
@@ -104,7 +105,7 @@ fun IdentityDetailScreen(identityIdHex: String, navController: NavHostController
 
     val identity by container.database.identityDao()
         .observeByIdentityId(idBytes)
-        .collectAsStateWithLifecycle(initialValue = null)
+        .collectEachAsStateWithLifecycle(initialValue = null)
     val dpnsNames by container.database.dpnsNameDao()
         .observeByIdentity(idBytes)
         .collectAsStateWithLifecycle(initialValue = emptyList())

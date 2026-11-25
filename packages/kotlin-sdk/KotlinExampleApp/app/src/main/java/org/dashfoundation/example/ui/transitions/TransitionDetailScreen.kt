@@ -65,6 +65,7 @@ import org.dashfoundation.example.services.transitions.TransitionInputType
 import org.dashfoundation.example.ui.components.AccessiblePicker
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.ui.contracts.ParsedContract
 import org.dashfoundation.example.ui.contracts.isPrivateDocumentType
 import org.dashfoundation.example.util.Base58
@@ -108,13 +109,13 @@ fun TransitionDetailScreen(transitionKey: String, navController: NavHostControll
 
     val identities by container.database.identityDao()
         .observeWalletOwnedByNetwork(network.ffiValue)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+        .collectEachAsStateWithLifecycle(initialValue = emptyList())
     val tokens by container.database.tokenDao()
         .observeTokensByNetwork(network.ffiValue)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+        .collectEachAsStateWithLifecycle(initialValue = emptyList())
     val contracts by container.database.dataContractDao()
         .observeByNetwork(network.ffiValue)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+        .collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     // Per-field form state (survives config change / picker pops).
     val textInputs = remember { mutableStateMapOf<String, String>() }

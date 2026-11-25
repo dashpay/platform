@@ -64,6 +64,7 @@ import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.ui.tokens.displayLabel
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.formatCredits
@@ -99,7 +100,7 @@ fun MultipleChoiceProposalsScreen(navController: NavHostController) {
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
     val identities by container.database.identityDao()
         .observeByNetwork(network.ffiValue)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+        .collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     var listing by remember { mutableStateOf(MultipleChoiceListing.NEWEST) }
     var owner by remember { mutableStateOf<IdentityEntity?>(null) }
@@ -415,7 +416,7 @@ fun CreateMultipleChoiceProposalScreen(
     // manager's signer can sign for them.
     val identities by container.database.identityDao()
         .observeWalletOwnedByNetwork(network.ffiValue)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+        .collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     var owner by remember { mutableStateOf<IdentityEntity?>(null) }
     LaunchedEffect(identities) {

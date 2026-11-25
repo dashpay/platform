@@ -38,6 +38,7 @@ import kotlinx.coroutines.withContext
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.services.IdentityKeys
 import org.dashfoundation.example.ui.components.FormSection
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 
 /**
@@ -69,7 +70,7 @@ fun WalletKeyHealthSheet(
 
     val identities by remember {
         container.database.identityDao().observeByWallet(walletId)
-    }.collectAsStateWithLifecycle(initialValue = null)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
 
     // Bumping this re-runs the key check after a repair writes new material.
     var refreshTick by remember { mutableStateOf(0) }

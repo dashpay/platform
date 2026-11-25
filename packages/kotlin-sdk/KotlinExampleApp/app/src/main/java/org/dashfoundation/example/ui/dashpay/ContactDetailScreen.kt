@@ -53,6 +53,7 @@ import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.DashPaySendShieldedTip
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.ui.theme.appStatusColors
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.formatDuffs
@@ -92,7 +93,7 @@ fun ContactDetailScreen(
 
     val identity by remember(idBytes) {
         container.database.identityDao().observeByIdentityId(idBytes)
-    }.collectAsStateWithLifecycle(initialValue = null)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
     val walletId = identity?.walletId
 
     val allRows by remember(idBytes) {
@@ -113,7 +114,7 @@ fun ContactDetailScreen(
     }.collectAsStateWithLifecycle(initialValue = null)
     val contactIdentity by remember(contactBytes) {
         container.database.identityDao().observeByIdentityId(contactBytes)
-    }.collectAsStateWithLifecycle(initialValue = null)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
     val contactIsSameWallet = walletId != null &&
         contactIdentity?.walletId?.contentEquals(walletId) == true
     val payments by remember(idBytes, contactBytes) {

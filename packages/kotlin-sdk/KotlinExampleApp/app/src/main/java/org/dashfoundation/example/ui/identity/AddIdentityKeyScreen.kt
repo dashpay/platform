@@ -41,6 +41,7 @@ import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.ui.contracts.ParsedContract
 import org.dashfoundation.example.ui.credits.rememberManagedWalletFor
 import org.dashfoundation.example.util.hexToBytes
@@ -77,13 +78,13 @@ fun AddIdentityKeyScreen(identityIdHex: String, navController: NavHostController
 
     val identity by container.database.identityDao()
         .observeByIdentityId(idBytes)
-        .collectAsStateWithLifecycle(initialValue = null)
+        .collectEachAsStateWithLifecycle(initialValue = null)
     val keys by container.database.publicKeyDao()
         .observeByIdentityId(org.dashfoundation.example.util.Base58.encode(idBytes))
         .collectAsStateWithLifecycle(initialValue = emptyList())
     val savedContracts by container.database.dataContractDao()
         .observeByNetwork(network.ffiValue)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+        .collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val wallet = rememberManagedWalletFor(identity?.walletId)

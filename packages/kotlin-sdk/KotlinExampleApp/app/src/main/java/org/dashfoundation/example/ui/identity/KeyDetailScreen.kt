@@ -42,6 +42,7 @@ import org.dashfoundation.example.services.KeyDisableGate
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.ui.credits.rememberManagedWalletFor
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.hexToBytes
@@ -70,7 +71,7 @@ fun KeyDetailScreen(identityIdHex: String, keyId: Int, navController: NavHostCon
 
     val identity by container.database.identityDao()
         .observeByIdentityId(idBytes)
-        .collectAsStateWithLifecycle(initialValue = null)
+        .collectEachAsStateWithLifecycle(initialValue = null)
     // The persister keys `public_keys.identityId` by base58; older callers
     // passed the hex nav-arg through — observe base58 and fall back to hex
     // so both encodings resolve.

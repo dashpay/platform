@@ -45,6 +45,7 @@ import org.dashfoundation.dashsdk.persistence.entities.DpnsNameEntity
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.hexToBytes
 import java.text.DateFormat
@@ -68,7 +69,7 @@ fun DpnsMarketplaceScreen(identityIdHex: String, navController: NavHostControlle
     val container = LocalAppContainer.current
     val identityId = remember(identityIdHex) { identityIdHex.hexToBytes() }
     val identity by container.database.identityDao().observeByIdentityId(identityId)
-        .collectAsStateWithLifecycle(initialValue = null)
+        .collectEachAsStateWithLifecycle(initialValue = null)
     val durableNames by container.database.dpnsNameDao().observeMarketplaceByIdentity(identityId)
         .collectAsStateWithLifecycle(initialValue = emptyList())
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
