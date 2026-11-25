@@ -87,10 +87,17 @@ npm install -g dashmate
 
 ### Example update process:
 
+Run the steps one at a time in the same shell, and stop at the first one that fails:
+
+* With the Debian package, run `dashmate stop` only after the download printed `Downloaded ...`.
+* Before `dashmate update`, check that `dashmate --version` shows the new version.
+* If a step after `dashmate stop` fails, run `dashmate start` to bring the node back on the version it has, then fix the problem and start over.
+
 ```bash
 # Debian package only: download the new package first (see above)
 $ dashmate stop
 # Install the new dashmate version (Debian package or NPM, see above)
+$ dashmate --version
 $ dashmate update
 ╔══════════════════╤══════════════════════════════╤════════════╗
 ║ Service          │ Image                        │ Updated    ║
@@ -160,12 +167,13 @@ In some cases, you must also additionally reset platform data:
 * When the `dashmate setup` command exited with errors or was interrupted
 * When the platform layer was wiped on the network
 
-The reset and update process for major updates:
+The reset and update process for major updates follows the same rules: one step at a time, stop at the first one that fails, and check `dashmate --version` before you reset platform data:
 
 ```bash
 # Debian package only: download the new package first (see above)
 $ dashmate stop
 # Install the new dashmate version (Debian package or NPM, see above)
+$ dashmate --version
 $ dashmate reset --platform --hard
 $ dashmate update
 $ dashmate setup
