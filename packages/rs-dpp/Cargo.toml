@@ -101,7 +101,7 @@ tracing = { version = "0.1.41" }
 grovedb-commitment-tree = { workspace = true, optional = true }
 
 [dev-dependencies]
-tokio = { version = "1.40", features = ["full"] }
+tokio = { workspace = true, features = ["full"] }
 pretty_assertions = { version = "1.4.1" }
 dpp = { path = ".", default-features = false, features = [
   "all_features_without_client",

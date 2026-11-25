@@ -34,7 +34,7 @@ arc-swap = "1"
 bimap = "0.6"
 
 # Async runtime
-tokio = { version = "1", features = ["sync", "rt", "time", "macros"] }
+tokio = { workspace = true, features = ["sync", "rt", "time", "macros"] }
 tokio-util = { version = "0.7.12", features = ["rt"] }
 dash-async = { path = "../rs-dash-async" }
 
@@ -121,7 +121,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # so time-driven manager, startup and SPV runtime logic can be tested
 # deterministically without sleeping wall-clock seconds. `net` gives the
 # broadcast tests a loopback port they hold bound and unlistened.
-tokio = { version = "1", features = ["sync", "rt", "time", "macros", "test-util", "net"] }
+tokio = { workspace = true, features = ["sync", "rt", "time", "macros", "test-util", "net"] }
 # Re-enable the SDK with mocks feature for test-only mock builders;
 # the non-test build keeps the leaner default-feature SDK above.
 dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-contract", "dpns-contract", "wallet", "mocks"] }

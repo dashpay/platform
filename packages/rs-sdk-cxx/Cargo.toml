@@ -19,7 +19,7 @@ dash-sdk = { path = "../rs-sdk", default-features = false, features = [
   "core_key_wallet",
 ] }
 platform-encryption = { path = "../rs-platform-encryption" }
-tokio = { version = "1.40", features = ["rt-multi-thread"] }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
 async-trait = "0.1"
 zeroize = "1.8"
 
