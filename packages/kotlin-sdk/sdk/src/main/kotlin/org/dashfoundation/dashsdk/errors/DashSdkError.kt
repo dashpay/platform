@@ -2,7 +2,9 @@ package org.dashfoundation.dashsdk.errors
 
 import org.dashfoundation.dashsdk.ffi.DashSDKException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -261,6 +263,57 @@ sealed class DashSdkError(
          */
         class AssetLockRecipientMismatch(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause)
+
+        /**
+         * Code 63: a key of the DashPay invitation claim is already
+         * registered to another identity ([identityId], base58; `null` when
+         * Platform refused the broadcast without naming it). Definitive for
+         * these keys.
+         */
+        class InvitationKeysAlreadyRegistered(
+            val identityId: String?,
+            cause: Throwable? = null,
+        ) : PlatformWallet(
+            if (identityId == null) {
+                "A key of this invitation claim is already registered to another identity."
+            } else {
+                "A key of this invitation claim is already registered to identity $identityId."
+            },
+            cause,
+        )
+
+        /**
+         * Code 64: the invitation's identity ([identityId], base58) is this
+         * wallet's: the wallet already records it in one of its registration
+         * slots (no key the identity holds decides this). Nothing was recorded, and nothing
+         * was broadcast unless a node that lagged behind let the claim
+         * through; load the identity like any of the wallet's own.
+         */
+        class InvitationClaimedByThisWallet(
+            val identityId: String,
+            cause: Throwable? = null,
+        ) : PlatformWallet(
+            "This invitation was already claimed by this wallet as identity $identityId.",
+            cause,
+        )
+
+        /**
+         * Code 65: the invitation claim could not verify Platform's answers
+         * yet. Nothing was broadcast; retry once synced.
+         */
+        class InvitationNotReady(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
+         * Code 66: the asset lock is not usable yet (not propagated, or not
+         * chain-locked for a ChainLock proof). Retry later.
+         */
+        class AssetLockNotChainLocked(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
 
         /**
          * `ErrorShieldedNoRecordedAnchor` (native code 19). A shielded spend
@@ -655,6 +708,21 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorIdentityBalanceUnavailable` (native code 58). Platform
+         * returned no balance for a managed identity (not yet visible, or a
+         * lagging node), or the balance could not be read with a proof, so
+         * the operation that needed it (a shield from the identity's
+         * balance, Type 21, for one) was refused before anything was saved,
+         * signed or broadcast. The read may be retried as it is. Mirrors
+         * Swift's `PlatformWalletError.identityBalanceUnavailable` in
+         * `PlatformWalletResult.swift`.
+         */
+        class IdentityBalanceUnavailable(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
          * `ErrorShutdownIncomplete` (native code 27). A sync pass or an SPV
          * teardown was still running; nothing was wiped. Retry the stop or
          * clear. An SPV start refused with this needs an SPV stop first.
@@ -824,13 +892,18 @@ sealed class DashSdkError(
         }
 
         /**
-         * `ErrorIdentityBalanceUnavailable` (native code 58). Platform
-         * returned no balance for a managed identity (not yet visible, or a
-         * lagging node). Nothing was signed or broadcast, so the read may be
-         * retried as it is.
-         * ← Swift `PlatformWalletError.identityBalanceUnavailable`.
+         * `ErrorBalanceHistoryInconsistentHeights` (native code 83). The
+         * Platform address balance history kept getting one page of
+         * Platform's address balance changes proved below a height it had
+         * already read, within Rust's per-page retry bound, so it returned
+         * no history rather than a partial one. Every attempt got a
+         * successfully fetched, proof-verified reply below that height;
+         * errors from the SDK itself (its own stale-node rejection,
+         * transport or proof failures) keep their own mapping. Nothing
+         * changed: load the history again.
+         * ← Swift `PlatformWalletError.balanceHistoryInconsistentHeights`.
          */
-        class IdentityBalanceUnavailable(message: String, cause: Throwable? = null) :
+        class BalanceHistoryInconsistentHeights(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
             override val isRetryable: Boolean get() = true
         }
@@ -839,7 +912,8 @@ sealed class DashSdkError(
          * `ErrorShieldedOperationInProgress` (native code 84). A shielded
          * Clear was refused because a shielded operation is in flight on the
          * wallet manager: a bind, an account being added, a spend from the
-         * pool, a shield, a tip address preparation, or another Clear. Rust
+         * pool, a shield, a token pool transfer or unshield, a DashPay
+         * profile write, a tip address preparation, or another Clear. Rust
          * does not make Clear wait for it. Clear returned at once and changed
          * nothing (the sync loop keeps running, no registration, note or
          * tree leaf was touched, no Room row was deleted), so the host
@@ -847,6 +921,47 @@ sealed class DashSdkError(
          * ← Swift `PlatformWalletError.shieldedOperationInProgress`.
          */
         class ShieldedOperationInProgress(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause) {
+            override val isRetryable: Boolean get() = true
+        }
+
+        /**
+         * `ErrorShieldedTipPending` (native code 85). A shielded tip was
+         * refused before anything was built or sent: another tip from this
+         * wallet is being sent, or an earlier shielded payment to the same
+         * recipient may still execute. This call sent nothing. Not
+         * retryable: the earlier payment may be the same tip and may pay
+         * the recipient. A shielded sync resolves it as executed or as
+         * unable to execute, and the refusal ends either way, so send again
+         * only once that payment is known to have failed. Distinct from
+         * [ShieldedSpendUnconfirmed] (18), which says this payment itself
+         * may have left the wallet.
+         * ← Swift `PlatformWalletError.shieldedTipPending`.
+         */
+        class ShieldedTipPending(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorShieldedTipRecipientMismatch` (native code 86). A shielded
+         * tip was started from a saved contact, and the contact's username
+         * now belongs to another identity. Nothing was sent. Not retryable:
+         * the user picks the recipient again, and a tip to the name's new
+         * owner is started from the name, not from the contact.
+         * ← Swift `PlatformWalletError.shieldedTipRecipientMismatch`.
+         */
+        class ShieldedTipRecipientMismatch(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorShieldedBalanceBusy` (native code 87). A local shielded
+         * balance read did not finish within its wait budget (the wallet's
+         * state or its shielded store was held, by a scan for instance), or
+         * a shielded Clear was running. Nothing failed and nothing changed:
+         * keep the last state shown and read again later.
+         * The only error of `shieldedIdentityBalance` that means retry.
+         * ← Swift `PlatformWalletError.shieldedBalanceBusy`.
+         */
+        class ShieldedBalanceBusy(message: String, cause: Throwable? = null) :
             PlatformWallet(message, cause) {
             override val isRetryable: Boolean get() = true
         }
@@ -978,6 +1093,24 @@ sealed class DashSdkError(
             29 -> PlatformWallet.AssetLockInsufficientFunds(message, cause) // ErrorAssetLockInsufficientFunds
             60 -> PlatformWallet.AssetLockTooManyInputs(message, cause) // ErrorAssetLockTooManyInputs
             61 -> PlatformWallet.AssetLockRecipientMismatch(message, cause) // ErrorAssetLockRecipientMismatch
+            63 -> parseErrorDetail(message)?.let { detail ->
+                runCatching {
+                    PlatformWallet.InvitationKeysAlreadyRegistered(
+                        identityId = detail.optionalString("identityId"),
+                        cause = cause,
+                    )
+                }.getOrNull()
+            } ?: PlatformWallet.Generic(code, message, cause)
+            64 -> parseErrorDetail(message)?.let { detail ->
+                runCatching {
+                    PlatformWallet.InvitationClaimedByThisWallet(
+                        identityId = requireNotNull(detail.optionalString("identityId")),
+                        cause = cause,
+                    )
+                }.getOrNull()
+            } ?: PlatformWallet.Generic(code, message, cause)
+            65 -> PlatformWallet.InvitationNotReady(message, cause) // ErrorInvitationNotReady
+            66 -> PlatformWallet.AssetLockNotChainLocked(message, cause) // ErrorAssetLockNotChainLocked
             // The deferred-token trio sits at the contiguous block 34-36 because
             // 27-33 are claimed elsewhere: 27 ErrorShutdownIncomplete
             // (dashpay/platform#4268, merged), 29 ErrorAssetLockInsufficientFunds
@@ -988,7 +1121,7 @@ sealed class DashSdkError(
             35 -> PlatformWallet.ReservationTokenConsumed(message, cause) // ErrorReservationTokenConsumed
             36 -> PlatformWallet.ReservationWalletMismatch(message, cause) // ErrorReservationWalletMismatch
             37 -> PlatformWallet.DocumentNotForSale(message, cause)
-            38 -> parseMarketplaceDetail(message)?.let { detail ->
+            38 -> parseErrorDetail(message)?.let { detail ->
                 runCatching {
                     PlatformWallet.DocumentPriceChanged(
                         documentId = detail.requiredString("documentId"),
@@ -998,7 +1131,7 @@ sealed class DashSdkError(
                     )
                 }.getOrNull()
             } ?: PlatformWallet.Generic(code, message, cause)
-            39 -> parseMarketplaceDetail(message)?.let { detail ->
+            39 -> parseErrorDetail(message)?.let { detail ->
                 runCatching {
                     PlatformWallet.InsufficientIdentityCredits(
                         identityId = detail.requiredString("identityId"),
@@ -1008,7 +1141,7 @@ sealed class DashSdkError(
                     )
                 }.getOrNull()
             } ?: PlatformWallet.Generic(code, message, cause)
-            40 -> parseMarketplaceDetail(message)?.let { detail ->
+            40 -> parseErrorDetail(message)?.let { detail ->
                 runCatching {
                     PlatformWallet.ContestedNameNotTradable(
                         label = detail.requiredString("label"),
@@ -1062,7 +1195,11 @@ sealed class DashSdkError(
             75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
             76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
             80 -> PlatformWallet.IdentityLookupFailed(message, cause) // ErrorIdentityLookupFailed
+            83 -> PlatformWallet.BalanceHistoryInconsistentHeights(message, cause) // ErrorBalanceHistoryInconsistentHeights
             84 -> PlatformWallet.ShieldedOperationInProgress(message, cause) // ErrorShieldedOperationInProgress
+            85 -> PlatformWallet.ShieldedTipPending(message, cause) // ErrorShieldedTipPending
+            86 -> PlatformWallet.ShieldedTipRecipientMismatch(message, cause) // ErrorShieldedTipRecipientMismatch
+            87 -> PlatformWallet.ShieldedBalanceBusy(message, cause) // ErrorShieldedBalanceBusy
             else ->
                 // @Deprecated fallback — see the code-6 arm; code 31 is the
                 // real discriminator.
@@ -1080,7 +1217,7 @@ sealed class DashSdkError(
         // above Long.MAX_VALUE still decodes exactly. Android's org.json
         // turned such a token into a Double, whose text ("9.2E18") no longer
         // parsed as ULong, and the typed error degraded to Generic.
-        private fun parseMarketplaceDetail(message: String): JsonObject? =
+        private fun parseErrorDetail(message: String): JsonObject? =
             runCatching { Json.parseToJsonElement(message).jsonObject }.getOrNull()
 
         private fun JsonObject.requiredString(name: String): String {
@@ -1094,6 +1231,14 @@ sealed class DashSdkError(
 
         private fun JsonObject.requiredLong(name: String): Long =
             getValue(name).jsonPrimitive.content.toLong()
+
+        /** A string, or `null` when the key is JSON `null` or absent. */
+        private fun JsonObject.optionalString(name: String): String? {
+            val value = get(name)
+            if (value == null || value is JsonNull) return null
+            require(value is JsonPrimitive && value.isString) { "$name is not a string" }
+            return value.content
+        }
     }
 }
 

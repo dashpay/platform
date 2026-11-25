@@ -1,4 +1,4 @@
-use super::{verifier_version, Sdk, SdkBuilder, SdkInstance};
+use super::{may_be_an_unreadable_format, verifier_version, Sdk, SdkBuilder, SdkInstance};
 use crate::error::StaleNodeError;
 use crate::mock::{MockDashPlatformSdk, MockResponse};
 use crate::platform::trunk_branch_sync::{
@@ -652,6 +652,219 @@ async fn should_not_warn_about_unauthenticated_protocol_versions() {
         "{warning}"
     );
     assert_eq!(sdk.protocol_version_number(), 13);
+}
+
+/// What a build reports when a proof holds a form it does not know.
+const UNREADABLE: &str = "UnexpectedVariant { allowed: 0..=1, found: 2 }";
+
+/// A verifier double that fails as a build fails on a form it cannot read, without
+/// interpreting proof bytes.
+#[derive(Debug)]
+struct UnreadableFormat;
+
+impl MockResponse for UnreadableFormat {
+    fn mock_serialize(&self, _: &MockDashPlatformSdk) -> Vec<u8> {
+        vec![]
+    }
+
+    fn mock_deserialize(_: &MockDashPlatformSdk, _: &[u8]) -> Self {
+        Self
+    }
+}
+
+impl FromProof<GetEpochsInfoRequest> for UnreadableFormat {
+    type Request = GetEpochsInfoRequest;
+    type Response = GetEpochsInfoResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        _: I,
+        _: O,
+        _: Network,
+        _: &PlatformVersion,
+        _: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), ProofError>
+    where
+        Self: Sized + 'a,
+    {
+        Err(ProofError::ProtocolError {
+            error: UNREADABLE.to_string(),
+        })
+    }
+}
+
+/// The error of an epoch answer that names protocol version `signed` and that `O` refuses,
+/// on an SDK whose verified answers have shown the network running `network`.
+/// [`UnreadableFormat`] cannot read it. [`ExtendedEpochInfo`] rejects its signature, which
+/// does not cover the changed version.
+async fn refused_answer_error<O>(sdk: &Sdk, network: Option<u32>, signed: u32) -> Error
+where
+    O: FromProof<
+            GetEpochsInfoRequest,
+            Request = GetEpochsInfoRequest,
+            Response = GetEpochsInfoResponse,
+        > + MockResponse
+        + std::fmt::Debug,
+{
+    if let Some(network) = network {
+        sdk.record_verified_protocol_version(network);
+    }
+    let (request, response) = recorded_response(signed);
+    sdk.parse_proof_with_metadata_and_proof::<GetEpochsInfoRequest, O>(
+        request,
+        response,
+        "get_epochs_info",
+    )
+    .await
+    .expect_err("the answer is refused")
+}
+
+fn epoch_vector_sdk(height_tolerance: Option<u64>, trusted_height: u64) -> Sdk {
+    SdkBuilder::new_mock()
+        .with_dump_dir(
+            &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/test_epoch_fetch"),
+        )
+        .with_initial_version(PlatformVersion::latest())
+        .with_time_tolerance(None)
+        .with_height_tolerance(height_tolerance)
+        .with_trusted_initial_height(trusted_height)
+        .build()
+        .expect("sdk")
+}
+
+/// A protocol upgrade can store and prove state in forms a build from before it cannot read,
+/// and then every node's answer fails alike. Once a verified answer has shown the network
+/// running a protocol version this build does not know, an answer naming such a version that
+/// the build could not read moves the request to another node without banning this one, and
+/// a request that runs out of attempts on such answers fails as a configuration error naming
+/// the update. The error names the version verified answers have shown, not the one the
+/// unread answer claims, and holds none of the verifier's own text.
+#[tokio::test]
+async fn should_spare_nodes_whose_answers_cannot_be_read_on_a_network_newer_than_the_sdk_knows() {
+    let latest = PlatformVersion::latest().protocol_version;
+    let sdk = epoch_vector_sdk(None, 1);
+    let error = refused_answer_error::<UnreadableFormat>(&sdk, Some(latest + 1), latest + 2).await;
+    assert!(
+        matches!(
+            &error,
+            Error::StaleNode(StaleNodeError::NewerProtocolVersion {
+                supported_protocol_version,
+                network_protocol_version,
+                error,
+            }) if *supported_protocol_version == latest
+                && *network_protocol_version == latest + 1
+                && matches!(&**error, ProofError::ProtocolError { error } if error == UNREADABLE)
+        ),
+        "{error:?}"
+    );
+    assert!(error.can_retry());
+    assert!(error.spares_responder());
+    let exhausted = error.into_exhausted_error();
+    assert!(
+        matches!(
+            &exhausted,
+            Error::Config(reason) if reason.contains("update the SDK")
+                && reason.contains(&format!("runs protocol version {}", latest + 1))
+                && reason.contains(&format!("versions up to {latest}"))
+                && !reason.contains(&(latest + 2).to_string())
+                && !reason.contains(UNREADABLE)
+        ),
+        "{exhausted:?}"
+    );
+    assert_eq!(
+        sdk.protocol_version_number(),
+        latest,
+        "nothing is learned from the answer"
+    );
+}
+
+/// The protocol version an unread answer names is not verified, so it does not spare its
+/// node alone: a node naming a version this build does not know is banned as for any
+/// unusable proof until a verified answer has shown the network running such a version.
+#[tokio::test]
+async fn should_ban_nodes_naming_a_newer_version_the_network_has_not_shown() {
+    let latest = PlatformVersion::latest().protocol_version;
+    for network in [None, Some(latest)] {
+        let sdk = epoch_vector_sdk(None, 1);
+        let error = refused_answer_error::<UnreadableFormat>(&sdk, network, latest + 1).await;
+        assert!(
+            matches!(error, Error::Proof(ProofError::ProtocolError { .. })),
+            "{network:?}: {error:?}"
+        );
+        assert!(error.can_retry(), "{network:?}");
+        assert!(!error.spares_responder(), "{network:?}");
+    }
+}
+
+/// What the network runs does not explain an answer without a proof, or one whose signature
+/// is refused: only a failure to read what a proof holds can come from a newer form. The
+/// node of any other failed answer is banned, also on a network proven newer than this
+/// build knows.
+#[tokio::test]
+async fn should_ban_nodes_whose_proof_is_missing_or_rejected_on_a_network_newer_than_the_sdk_knows()
+{
+    let latest = PlatformVersion::latest().protocol_version;
+    let sdk = epoch_vector_sdk(None, 1);
+    let error = refused_answer_error::<ExtendedEpochInfo>(&sdk, Some(latest + 1), latest + 1).await;
+    assert!(
+        matches!(error, Error::Proof(ProofError::InvalidSignature { .. })),
+        "{error:?}"
+    );
+    assert!(error.can_retry());
+    assert!(!error.spares_responder());
+
+    let text = || "text".to_string();
+    for unreadable in [
+        ProofError::DriveError { error: text() },
+        ProofError::ProtocolError { error: text() },
+        ProofError::GroveDBError {
+            proof_bytes: vec![],
+            path_query: None,
+            height: 1,
+            time_ms: 1,
+            error: text(),
+        },
+    ] {
+        assert!(may_be_an_unreadable_format(&unreadable), "{unreadable:?}");
+    }
+    for node_fault in [
+        ProofError::NoProofInResult,
+        ProofError::EmptyResponseMetadata,
+        ProofError::EmptyVersion,
+        ProofError::InvalidSignature { error: text() },
+        ProofError::InvalidSignatureFormat { error: text() },
+        // The response around the proof, such as a quorum hash of the wrong length.
+        ProofError::ResponseDecodeError { error: text() },
+    ] {
+        assert!(!may_be_an_unreadable_format(&node_fault), "{node_fault:?}");
+    }
+}
+
+/// On a network proven to run a protocol version this build does not know, a node whose
+/// unread answer names a version the build knows is behind that network, or its answer is
+/// unusable for another reason, and one whose answer is outside the height tolerance has
+/// stopped following it: both are banned.
+#[tokio::test]
+async fn should_ban_nodes_behind_a_network_newer_than_the_sdk_knows() {
+    let latest = PlatformVersion::latest().protocol_version;
+
+    let sdk = epoch_vector_sdk(None, 1);
+    let error = refused_answer_error::<UnreadableFormat>(&sdk, Some(latest + 1), latest).await;
+    assert!(
+        matches!(error, Error::Proof(ProofError::ProtocolError { .. })),
+        "{error:?}"
+    );
+    assert!(!error.spares_responder());
+
+    let (_, recorded) = recorded_epoch_response();
+    let recorded_height = recorded.metadata().expect("recorded metadata").height;
+    let sdk = epoch_vector_sdk(Some(1), recorded_height + 100);
+    let error = refused_answer_error::<UnreadableFormat>(&sdk, Some(latest + 1), latest + 1).await;
+    assert!(
+        matches!(error, Error::StaleNode(StaleNodeError::Height { .. })),
+        "{error:?}"
+    );
+    assert!(error.can_retry());
+    assert!(!error.spares_responder());
 }
 
 fn document_outcome_vector(name: &str) -> Vec<u8> {

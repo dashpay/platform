@@ -9,10 +9,10 @@ use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::dpp::serialization::ValueConvertible;
+use dash_sdk::platform::document_history::fetch_document_history_with_lifecycle;
 use dash_sdk::platform::documents::document_history_query::{
     DocumentHistoryFilter, DocumentHistoryQuery,
 };
-use dash_sdk::platform::Fetch;
 use drive_proof_verifier::types::{DocumentHistory, DocumentHistoryState};
 use serde::Serialize;
 use std::ffi::{CStr, CString};
@@ -201,7 +201,7 @@ pub unsafe extern "C" fn dash_sdk_document_fetch_history(
             .map_err(|e| FFIError::InvalidParameter(format!("Invalid document ID: {e}")))?;
 
         // Check the document type in a pre-flight lookup through the SDK's
-        // current context provider. Fetch also uses it to verify the history.
+        // current context provider. The fetch also uses it to verify the history.
         let data_contract = wrapper.data_contract(&contract_id)?;
 
         data_contract
@@ -216,7 +216,9 @@ pub unsafe extern "C" fn dash_sdk_document_fetch_history(
             limit: if limit == 0 { None } else { Some(limit) },
         };
 
-        let history = DocumentHistory::fetch(&wrapper.sdk, query)
+        // The JSON always carries `lifecycle`, so never the protocol 14 fallback: below
+        // protocol 15 the read is refused with the SDK's typed protocol error.
+        let history = fetch_document_history_with_lifecycle(&wrapper.sdk, query, None)
             .await
             .map_err(FFIError::from)?
             .ok_or_else(|| {

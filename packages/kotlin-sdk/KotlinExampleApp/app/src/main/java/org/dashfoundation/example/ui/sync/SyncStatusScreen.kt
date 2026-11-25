@@ -32,6 +32,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.Sdk
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.services.PlatformBalanceSyncService.PlatformSyncState
@@ -116,6 +117,9 @@ fun SyncStatusScreen() {
                 // Liveness poll — `spvProgress` alone can't distinguish
                 // "synced and running" from "stopped".
                 var isRunning by remember { mutableStateOf(false) }
+                // One Start, Pause or Clear at a time: a second Start waiting on
+                // its peer lookup would otherwise restart a client paused meanwhile.
+                var spvActionInFlight by remember { mutableStateOf(false) }
                 var rescanHeightText by remember { mutableStateOf("0") }
                 var rescanInFlight by remember { mutableStateOf(false) }
                 var rescanResult by remember { mutableStateOf<CompactFilterRescanResult?>(null) }
@@ -152,43 +156,92 @@ fun SyncStatusScreen() {
                 ) {
                     Button(
                         onClick = {
+                            if (spvActionInFlight) return@Button
+                            spvActionInFlight = true
                             scope.launch {
                                 try {
                                     if (isRunning) {
                                         currentManager.stopSpv()
                                     } else {
+                                        // The manager is built for one SDK and
+                                        // is replaced only after a new SDK is
+                                        // published (a network switch, or a
+                                        // devnet Apply): never start the old
+                                        // one with the new SDK's settings.
+                                        val switching = "The wallet manager is still switching " +
+                                            "to ${network.displayName}. Try again in a moment."
+                                        if (currentManager.sdk !== appState.sdk.value) {
+                                            error = switching
+                                            return@launch
+                                        }
+                                        val spvNetwork = currentManager.network
                                         // ← CoreContentView.startSync():
                                         // Documents/SPV/<network> + peer override.
                                         val dataDir = File(
                                             context.filesDir,
-                                            "spv/${network.networkName}",
+                                            "spv/${spvNetwork.networkName}",
                                         ).apply { mkdirs() }
-                                        val peers = appState.spvPeerOverride()
+                                        // ← CoreSpvLauncher.start: devnet needs
+                                        // its name (SPV user agent) and takes
+                                        // its peers from the quorum service,
+                                        // both from the settings the current
+                                        // SDK was built with, not the fields
+                                        // being edited.
+                                        val devnetName = appState.spvDevnetName(spvNetwork)
+                                        if (spvNetwork == Network.DEVNET && devnetName == null) {
+                                            error = "Set the devnet name in Settings and press " +
+                                                "Apply Devnet Settings to start SPV on devnet."
+                                            return@launch
+                                        }
+                                        val peers = appState.spvPeerOverride(spvNetwork)
+                                        // The peer lookup suspends: an SDK
+                                        // published meanwhile makes this
+                                        // manager, name and peers stale.
+                                        if (currentManager.sdk !== appState.sdk.value) {
+                                            error = switching
+                                            return@launch
+                                        }
                                         currentManager.startSpv(
                                             dataDir = dataDir.absolutePath,
                                             peers = peers,
                                             restrictToConfiguredPeers = peers.isNotEmpty(),
+                                            devnetName = devnetName,
                                         )
                                     }
                                 } catch (e: Exception) {
                                     error = e.message ?: "SPV operation failed"
+                                } finally {
+                                    // Before the buttons come back: the
+                                    // poll may still show the old state,
+                                    // and Clear is offered on "stopped".
+                                    isRunning = runCatching { currentManager.isSpvRunning() }
+                                        .getOrDefault(false)
+                                    spvActionInFlight = false
                                 }
                             }
                         },
+                        enabled = !spvActionInFlight,
                         modifier = Modifier.testTag("sync.spvStartStop"),
                     ) { Text(if (isRunning) "Pause" else "Start") }
 
                     OutlinedButton(
                         onClick = {
+                            // Shares the Start/Pause guard: a Start still
+                            // looking up its peers would otherwise open
+                            // the store this clears.
+                            if (spvActionInFlight) return@OutlinedButton
+                            spvActionInFlight = true
                             scope.launch {
                                 try {
                                     currentManager.clearSpvStorage()
                                 } catch (e: Exception) {
                                     error = e.message ?: "Failed to clear SPV storage"
+                                } finally {
+                                    spvActionInFlight = false
                                 }
                             }
                         },
-                        enabled = !isRunning,
+                        enabled = !isRunning && !spvActionInFlight,
                         modifier = Modifier.testTag("sync.spvClear"),
                     ) { Text("Clear") }
                 }
@@ -333,7 +386,7 @@ fun SyncStatusScreen() {
                 val balanceFlow by container.shieldedService.shieldedBalance
                     .collectAsStateWithLifecycle()
                 val balance by remember(balanceFlow) { balanceFlow }
-                    .collectAsStateWithLifecycle(initialValue = 0L)
+                    .collectAsStateWithLifecycle(initialValue = null)
 
                 LabeledContent(
                     "State",
@@ -344,7 +397,7 @@ fun SyncStatusScreen() {
                         else -> "Idle"
                     },
                 )
-                LabeledContent("Shielded Balance", formatCredits(balance))
+                LabeledContent("Shielded Balance", balance?.let { formatCredits(it) } ?: "—")
                 LabeledContent("Notes Scanned", shielded.totalScanned.toString())
                 LabeledContent("New Notes", shielded.totalNewNotes.toString())
                 LabeledContent("Syncs Since Launch", shielded.syncCountSinceLaunch.toString())

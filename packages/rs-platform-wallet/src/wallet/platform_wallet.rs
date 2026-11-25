@@ -19,6 +19,8 @@ use super::asset_lock::manager::AssetLockManager;
 use super::asset_lock::tracked::TrackedAssetLock;
 use super::core::{CoreWallet, WalletBalance, WalletGeneration};
 use super::identity::network::TopUpScope;
+#[cfg(feature = "shielded")]
+use super::identity::state::manager::NewIdentityKeyOrigin;
 use super::identity::{IdentityManager, IdentityWallet};
 #[cfg(feature = "shielded")]
 use super::persister::PrivatePaymentRestoreRetry;
@@ -41,6 +43,9 @@ use crate::changeset::{
     ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use crate::error::PlatformWalletError;
+#[cfg(feature = "shielded")]
+use crate::validated_shielded_address;
+use crate::{DashPayProfile, PaymentAddressUpdate, ProfileUpdate};
 use dash_sdk::dapi_grpc::platform::v0::ResponseMetadata;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::query_types::AddressInfos;
@@ -57,21 +62,27 @@ use {
     super::shielded::coordinator::ShieldedAdmission,
     super::shielded::operations::{
         discharge_read_back_private_payments, private_document_create_from_pool_with_metadata,
+        token_purchase_from_pool, token_shielded_transfer, token_unshield, PrivateDocumentPurpose,
+        ShieldedTokenPurchaseOutcome, ShieldedTokenSpendOutcome,
     },
     super::shielded::store::{
         PendingRedrive, PrivateContactPayment, PrivatePaymentEntry, PrivatePaymentRecord,
     },
     super::shielded::tips::PreparedTipAccount,
     super::shielded::{
-        FileBackedShieldedStore, NetworkShieldedCoordinator, OrchardKeySet,
-        ShieldedCoordinatorSlot, ShieldedStore,
+        is_shielded_identity_account, FileBackedShieldedStore, NetworkShieldedCoordinator,
+        OrchardKeySet, ShieldedCoordinatorSlot, ShieldedStore,
     },
     crate::{
         AutoAcceptProofSource, ContactCryptoProvider, ContactRequest, EstablishedContact,
-        PaymentStarted,
+        NewPrivateDocumentEntry, PaymentStarted, PrivateDocumentEntryCreated,
     },
     dash_sdk::platform::dashpay::PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
+    dpp::address_funds::OrchardAddress,
+    dpp::balances::credits::TokenAmount,
     dpp::data_contract::accessors::v0::DataContractV0Getters,
+    dpp::data_contract::TokenContractPosition,
+    dpp::data_contracts::SystemDataContract,
     dpp::platform_value::BinaryData,
     dpp::serialization::PlatformDeserializableTrusted,
     dpp::shielded::builder::OrchardProver,
@@ -472,6 +483,12 @@ pub struct PlatformWallet {
     #[cfg(feature = "shielded")]
     pub(crate) prepared_tip_accounts:
         Arc<std::sync::Mutex<BTreeMap<Identifier, PreparedTipAccount>>>,
+    /// Held by a shielded tip from its admission until it returns, and only
+    /// ever tried, never waited for: a second tip requested meanwhile is
+    /// refused instead of paying again after the first. `Arc` so cloned
+    /// wallet handles share it.
+    #[cfg(feature = "shielded")]
+    pub(crate) tip_send_in_progress: Arc<tokio::sync::Mutex<()>>,
     /// Set once this wallet has been removed from the manager, to stop
     /// a handle that outlives the removal from binding shielded state
     /// back onto the coordinator. Callers resolve an
@@ -526,8 +543,8 @@ fn ensure_ordinary_shielded_accounts(accounts: &[u32]) -> Result<(), PlatformWal
 /// operation, `shield_guard`. Fields drop in declaration order, the reverse
 /// of the lock order.
 #[cfg(feature = "shielded")]
-struct ShieldedOperationLocks<'a> {
-    coordinator: Arc<NetworkShieldedCoordinator>,
+pub(crate) struct ShieldedOperationLocks<'a> {
+    pub(crate) coordinator: Arc<NetworkShieldedCoordinator>,
     _shield_guard: Option<tokio::sync::MutexGuard<'a, ()>>,
     _lifecycle: tokio::sync::RwLockReadGuard<'a, ()>,
 }
@@ -560,7 +577,7 @@ impl ShieldedOperationLocks<'_> {
     /// bind followed, which a payment that waited for that Clear finds here.
     /// The handle keeps its keys across a Clear, so a shield would otherwise
     /// still build and broadcast, into an account no sync pass scans.
-    async fn admit_spend(
+    pub(crate) async fn admit_spend(
         &self,
         wallet: &PlatformWallet,
     ) -> Result<ShieldedAdmission<'_>, PlatformWalletError> {
@@ -1104,6 +1121,13 @@ impl PlatformWallet {
             .with_mined_height_locator(mined_height_locator),
         );
 
+        // Shared with the identity wallet, which derives the shielded address a
+        // contact request carries from them.
+        #[cfg(feature = "shielded")]
+        let shielded_keys = Arc::new(RwLock::new(None));
+        #[cfg(feature = "shielded")]
+        let prepared_tip_accounts = Arc::new(std::sync::Mutex::new(BTreeMap::new()));
+
         let identity: IdentityWallet<SpvBroadcaster> = IdentityWallet {
             sdk: Arc::clone(&sdk),
             wallet_manager: Arc::clone(&wallet_manager),
@@ -1120,8 +1144,12 @@ impl PlatformWallet {
                 crate::wallet::identity::network::sdk_writer::SdkWriter::new(Arc::clone(&sdk)),
             ),
             document_erase_gate: Default::default(),
-            dpns_operation_gate: Arc::new(tokio::sync::Mutex::new(())),
+            dpns_operation_gate: Default::default(),
             dpns_sync_progress: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
+            #[cfg(feature = "shielded")]
+            contact_shielded_addresses: super::shielded::ContactShieldedAddresses::new(Arc::clone(
+                &shielded_keys,
+            )),
         };
 
         let platform = PlatformAddressWallet::new(
@@ -1143,13 +1171,15 @@ impl PlatformWallet {
             persister: wallet_persister,
             generation,
             #[cfg(feature = "shielded")]
-            shielded_keys: Arc::new(RwLock::new(None)),
+            shielded_keys,
             #[cfg(feature = "shielded")]
             shield_guard: Arc::new(tokio::sync::Mutex::new(())),
             #[cfg(feature = "shielded")]
             shielded_config_lock: Arc::new(tokio::sync::Mutex::new(())),
             #[cfg(feature = "shielded")]
-            prepared_tip_accounts: Arc::new(std::sync::Mutex::new(BTreeMap::new())),
+            prepared_tip_accounts,
+            #[cfg(feature = "shielded")]
+            tip_send_in_progress: Arc::new(tokio::sync::Mutex::new(())),
             #[cfg(feature = "shielded")]
             shielded_detached: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             #[cfg(feature = "shielded")]
@@ -1163,7 +1193,13 @@ impl PlatformWallet {
     ///
     /// Derives ZIP-32 Orchard keys for every entry of `accounts`
     /// from `seed` (a 32-252 byte BIP-39 seed; see
-    /// [`SpendingKey::from_zip32_seed`]) and installs the
+    /// [`SpendingKey::from_zip32_seed`]), which must be the seed this
+    /// wallet was created from: one whose root public key gives this
+    /// wallet's id. Another seed is refused with
+    /// `ShieldedKeyDerivation("The supplied seed does not belong to this
+    /// wallet")` before anything is stored, as its keys would give out
+    /// addresses a restore from the wallet's own seed never finds. It
+    /// installs the
     /// viewing-grade half (FVK / IVK / OVK / default address) on
     /// this handle and the coordinator's registry. The caller is
     /// responsible for sourcing the seed (e.g. via the host
@@ -1251,7 +1287,7 @@ impl PlatformWallet {
     /// refuses no Clear. Resolves the manager's coordinator first, so an
     /// unconfigured manager refuses without waiting.
     #[cfg(feature = "shielded")]
-    async fn lock_for_shielded_operation(
+    pub(crate) async fn lock_for_shielded_operation(
         &self,
         shield_class: bool,
     ) -> Result<ShieldedOperationLocks<'_>, PlatformWalletError> {
@@ -1301,6 +1337,9 @@ impl PlatformWallet {
         // wallet the manager has dropped must not persist viewing keys the
         // host can no longer delete (see `ensure_shielded_attached`).
         self.ensure_shielded_attached()?;
+        // The keys bound here are the ones every shielded address of the
+        // wallet is derived from, so the seed must be the wallet's own.
+        self.ensure_seed_of_this_wallet(seed)?;
         let network = self.sdk.network;
         let mut accounts: std::collections::BTreeSet<u32> = accounts.iter().copied().collect();
         accounts.extend(self.discovered_tip_accounts().await?);
@@ -1671,7 +1710,9 @@ impl PlatformWallet {
 
     /// Add another ZIP-32 account to the already-bound shielded
     /// sub-wallet. Returns `ShieldedNotBound` if `bind_shielded`
-    /// hasn't run yet.
+    /// hasn't run yet. `seed` must be the wallet's own, as for
+    /// [`bind_shielded`](Self::bind_shielded), and is refused with the
+    /// same error otherwise.
     ///
     /// **Caveat**: notes belonging to `account` that already
     /// landed on-chain before the bind call only become spendable
@@ -1682,7 +1723,9 @@ impl PlatformWallet {
     ///
     /// Holds the same locks as [`bind_shielded`](Self::bind_shielded), so a
     /// removal waits for an add in flight and a Clear is refused meanwhile:
-    /// a caller must hold none of them.
+    /// a caller must hold none of them. Once a Clear has run since the bind
+    /// this returns `ShieldedNotBound` and stores nothing: the Clear dropped
+    /// the wallet's registration, so the wallet is bound again first.
     ///
     /// An account number of the range reserved for identity accounts is
     /// refused, as in a bind.
@@ -1694,6 +1737,9 @@ impl PlatformWallet {
     ) -> Result<(), PlatformWalletError> {
         use super::shielded::{OrchardKeySet, SubwalletId};
         ensure_ordinary_shielded_accounts(&[account])?;
+        // The added account's keys are derived from `seed`, as a bind's are, so
+        // it must be the wallet's own (`ensure_seed_of_this_wallet`).
+        self.ensure_seed_of_this_wallet(seed)?;
         let required = crate::changeset::PersistenceCapabilities::SHIELDED_FVK_RESTART;
         let capabilities = self.persister.persistence_capabilities();
         if !capabilities.contains(required) {
@@ -1714,6 +1760,14 @@ impl PlatformWallet {
         let locks = self.lock_for_shielded_operation(true).await?;
         let _admission = locks.admit(self).await?;
         let _config = self.shielded_config_lock.lock().await;
+        // The keys this handle holds outlive a Clear, which drops the
+        // registration: an account added then would write a viewing key for
+        // a wallet the coordinator no longer knows.
+        if self.is_shielded_bound().await
+            && !locks.coordinator.is_wallet_registered(self.wallet_id).await
+        {
+            return Err(PlatformWalletError::ShieldedNotBound);
+        }
         // Everything that calls into the host — the snapshot read below
         // and the viewing-key write further down — stays OUTSIDE the key
         // slot's lock. A host callback invoked while this write guard is
@@ -1812,6 +1866,10 @@ impl PlatformWallet {
     /// hold them through their host write; the removal sets the flag under
     /// the gate's exclusive side and the other two, so it cannot complete in
     /// between.
+    ///
+    /// A tip review asks too, after it read the wallet's confirmed
+    /// recipients under the store guard: the removal sets the flag before
+    /// it purges them, so a review that read purged rows sees it.
     #[cfg(feature = "shielded")]
     pub(crate) fn ensure_shielded_attached(&self) -> Result<(), PlatformWalletError> {
         if self
@@ -1827,13 +1885,14 @@ impl PlatformWallet {
     }
 
     /// [`ensure_shielded_attached`](Self::ensure_shielded_attached) for a
-    /// payment, refused as [`PlatformWalletError::WalletRemovedBeforeSend`].
+    /// payment, refused as [`PlatformWalletError::WalletRemovedBeforeSend`]
+    /// carrying the wallet id, as every other payment refuses it.
     #[cfg(feature = "shielded")]
     fn ensure_shielded_attached_for_spend(&self) -> Result<(), PlatformWalletError> {
         self.ensure_shielded_attached()
             .map_err(|error| match error {
-                PlatformWalletError::WalletNotFound(wallet) => {
-                    PlatformWalletError::WalletRemovedBeforeSend(wallet)
+                PlatformWalletError::WalletNotFound(_) => {
+                    PlatformWalletError::WalletRemovedBeforeSend(hex::encode(self.wallet_id))
                 }
                 other => other,
             })
@@ -1904,6 +1963,24 @@ impl PlatformWallet {
             .as_ref()
             .map(|keys| keys.keys().copied().collect())
             .unwrap_or_default()
+    }
+
+    /// The ordinary (non-identity) ZIP-32 account indices bound on the
+    /// shielded sub-wallet, in ascending order: the accounts a host passes
+    /// to bind this wallet again. Identity accounts are left out because a
+    /// bind adds them itself and refuses them from a host.
+    ///
+    /// They survive a Clear, which drops the coordinator's registration but
+    /// not the keys this handle holds, so a host reads them here after a
+    /// Clear instead of falling back to the default accounts. Empty for a
+    /// wallet never bound on this handle.
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_ordinary_account_indices(&self) -> Vec<u32> {
+        self.shielded_account_indices()
+            .await
+            .into_iter()
+            .filter(|account| !is_shielded_identity_account(*account))
+            .collect()
     }
 
     /// The default Orchard payment address for `account` on this
@@ -2019,7 +2096,7 @@ impl PlatformWallet {
     ///   loudly here instead of burning a ~30 s Halo 2 proof on a
     ///   spend the chain would reject.
     #[cfg(feature = "shielded")]
-    async fn derive_spend_keyset(
+    pub(crate) async fn derive_spend_keyset(
         &self,
         seed: &[u8],
         account: u32,
@@ -2066,6 +2143,16 @@ impl PlatformWallet {
     /// bare struct. Callers pass `&CachedOrchardProver::new()`
     /// and we forward it down to the spend free function's
     /// `&P` parameter.
+    ///
+    /// Admitted for its whole run: a handle to a wallet removed, or
+    /// re-created under the same id, since it was taken is refused with
+    /// [`PlatformWalletError::WalletRemovedBeforeSend`], and one that is not
+    /// bound, or was bound before the last Clear, with
+    /// [`PlatformWalletError::ShieldedNotBound`], before anything is read,
+    /// signed or sent. The call takes the wallet generation's lifecycle gate
+    /// and the coordinator's admission itself and holds them until it
+    /// returns, so a caller must hold neither: a removal or a Clear queued
+    /// in between would deadlock it.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_transfer_to<P: dpp::shielded::builder::OrchardProver>(
@@ -2081,6 +2168,46 @@ impl PlatformWallet {
         let coordinator = &locks.coordinator;
         let _admission = locks.admit_spend(self).await?;
         let keyset = self.derive_spend_keyset(seed, account).await?;
+        self.shielded_transfer_once_claimed(
+            coordinator,
+            &keyset,
+            account,
+            recipient_raw_43,
+            amount,
+            memo,
+            prover,
+            || async { Ok(()) },
+        )
+        .await
+    }
+
+    /// The transfer behind [`Self::shielded_transfer_to`], for a caller that
+    /// is admitted already (a tip holds the lifecycle gate, the
+    /// coordinator's operation admission and the account-set lock through
+    /// its spend, and none of them is reentrant). `keyset` is `account`'s,
+    /// from [`Self::derive_spend_keyset`]: the caller derives it once, a tip
+    /// before it records anything. `once_claimed` runs right after the
+    /// transfer's notes are reserved and before anything is built or sent
+    /// (`operations::transfer_once_claimed`): an `Err` from it releases the
+    /// notes and is returned, with nothing sent.
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn shielded_transfer_once_claimed<P, C, CFut>(
+        &self,
+        coordinator: &Arc<NetworkShieldedCoordinator>,
+        keyset: &OrchardKeySet,
+        account: u32,
+        recipient_raw_43: &[u8; 43],
+        amount: u64,
+        memo: [u8; 36],
+        prover: P,
+        once_claimed: C,
+    ) -> Result<(), PlatformWalletError>
+    where
+        P: OrchardProver,
+        C: FnOnce() -> CFut,
+        CFut: Future<Output = Result<(), PlatformWalletError>>,
+    {
         let recipient = Option::<grovedb_commitment_tree::PaymentAddress>::from(
             grovedb_commitment_tree::PaymentAddress::from_raw_address_bytes(recipient_raw_43),
         )
@@ -2089,18 +2216,19 @@ impl PlatformWallet {
                 "invalid Orchard payment address bytes".to_string(),
             )
         })?;
-        super::shielded::operations::transfer(
+        super::shielded::operations::transfer_once_claimed(
             &self.sdk,
             coordinator.store(),
             coordinator.anchor_cache(),
             Some(&self.persister),
             self.wallet_id,
-            &keyset,
+            keyset,
             account,
             &recipient,
             amount,
             memo,
             &prover,
+            once_claimed,
         )
         .await
     }
@@ -2112,6 +2240,16 @@ impl PlatformWallet {
     /// network-agnostic decoder does not enforce it. `seed` supplies
     /// the transient spend authority (see
     /// [`shielded_transfer_to`](Self::shielded_transfer_to)).
+    ///
+    /// Admitted for its whole run: a handle to a wallet removed, or
+    /// re-created under the same id, since it was taken is refused with
+    /// [`PlatformWalletError::WalletRemovedBeforeSend`], and one that is not
+    /// bound, or was bound before the last Clear, with
+    /// [`PlatformWalletError::ShieldedNotBound`], before anything is read,
+    /// signed or sent. The call takes the wallet generation's lifecycle gate
+    /// and the coordinator's admission itself and holds them until it
+    /// returns, so a caller must hold neither: a removal or a Clear queued
+    /// in between would deadlock it.
     #[cfg(feature = "shielded")]
     pub async fn shielded_unshield_to<P: dpp::shielded::builder::OrchardProver>(
         &self,
@@ -2153,6 +2291,16 @@ impl PlatformWallet {
     /// identity receives `amount`; the flat pool-paid fee comes out of the
     /// spent notes on top. `seed` supplies the transient spend authority (see
     /// [`shielded_transfer_to`](Self::shielded_transfer_to)).
+    ///
+    /// Admitted for its whole run: a handle to a wallet removed, or
+    /// re-created under the same id, since it was taken is refused with
+    /// [`PlatformWalletError::WalletRemovedBeforeSend`], and one that is not
+    /// bound, or was bound before the last Clear, with
+    /// [`PlatformWalletError::ShieldedNotBound`], before anything is read,
+    /// signed or sent. The call takes the wallet generation's lifecycle gate
+    /// and the coordinator's admission itself and holds them until it
+    /// returns, so a caller must hold neither: a removal or a Clear queued
+    /// in between would deadlock it.
     #[cfg(feature = "shielded")]
     pub async fn shielded_identity_top_up_from_pool<P: dpp::shielded::builder::OrchardProver>(
         &self,
@@ -2165,6 +2313,9 @@ impl PlatformWallet {
         // A zero amount must not queue behind a long-running shielded operation.
         ensure_positive_amount(amount)?;
 
+        // The admission is held until the top-up has settled, the local
+        // balance included, as the transfer holds it.
+        //
         // Single-flight with the other shield-class operations. The proof
         // result carries the identity's absolute post-execution balance, so
         // two top-ups (or a top-up and a shield-from-identity debit) whose
@@ -2212,11 +2363,167 @@ impl PlatformWallet {
         Ok(proven_balance)
     }
 
+    /// Buy `token_count` tokens of the token at `token_contract_position` of
+    /// `data_contract_id` at its direct purchase price from `account`'s
+    /// shielded notes (`TokenPurchaseFromShieldedPool`, type 28): the notes pay
+    /// `total_agreed_price` plus the pool-paid fee, and the tokens are minted as
+    /// a note to the account's own default address in the token's shielded
+    /// pool. The manager's purchaser then watches that pool, so a shielded
+    /// sync finds the note ([`super::shielded::token_pool`]). `seed` supplies the transient spend authority (see
+    /// [`shielded_transfer_to`](Self::shielded_transfer_to)).
+    ///
+    /// An accepted purchase stays pending until a shielded sync confirms it
+    /// ([`ShieldedTokenPurchaseOutcome::Submitted`]); the manager's
+    /// [`shielded_token_purchase_from_pool`](crate::PlatformWalletManager::shielded_token_purchase_from_pool)
+    /// requests that sync.
+    ///
+    /// Admitted for its whole run, through its settlement
+    /// ([`ShieldedOperationLocks::admit_spend`]): a removal of the wallet
+    /// waits for a purchase in flight and a Clear is refused meanwhile. A
+    /// handle to a wallet removed, or re-created under the same id, since it
+    /// was taken is refused with
+    /// [`PlatformWalletError::WalletRemovedBeforeSend`], and one that is not
+    /// bound, or was bound before the last Clear, with
+    /// [`PlatformWalletError::ShieldedNotBound`], with nothing reserved,
+    /// recorded or sent. The call takes the wallet generation's lifecycle
+    /// gate and the coordinator's admission itself and holds them until it
+    /// returns, so a caller must hold neither.
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn shielded_token_purchase_from_pool<P: OrchardProver>(
+        &self,
+        seed: &[u8],
+        account: u32,
+        data_contract_id: &Identifier,
+        token_contract_position: TokenContractPosition,
+        token_count: TokenAmount,
+        total_agreed_price: Credits,
+        prover: P,
+    ) -> Result<ShieldedTokenPurchaseOutcome, PlatformWalletError> {
+        // Held until the purchase is settled, as a credit pool transfer holds
+        // it: a removal cannot complete in between, so a removed wallet's
+        // purchase never reserves notes, records activity or reaches the
+        // network, and a Clear does not purge the notes it reserved or the
+        // transition it saved while it proves and broadcasts.
+        let locks = self.lock_for_shielded_operation(false).await?;
+        let coordinator = &locks.coordinator;
+        let _admission = locks.admit_spend(self).await?;
+        let keyset = self.derive_spend_keyset(seed, account).await?;
+        token_purchase_from_pool(
+            &self.sdk,
+            coordinator.store(),
+            Some(&self.persister),
+            self.wallet_id,
+            &keyset,
+            account,
+            *data_contract_id,
+            token_contract_position,
+            token_count,
+            total_agreed_price,
+            &prover,
+        )
+        .await
+    }
+
+    /// Send `amount` of the token at `token_contract_position` of
+    /// `data_contract_id` from `account`'s notes in the token's shielded pool
+    /// to `recipient`, an Orchard address in that pool
+    /// (`TokenShieldedTransferWithShieldedFee`, type 26), paying the fee from
+    /// the account's credit pool notes. `seed` supplies the transient spend
+    /// authority (see [`shielded_transfer_to`](Self::shielded_transfer_to)).
+    ///
+    /// An accepted transfer stays pending until a shielded sync sees it
+    /// ([`ShieldedTokenSpendOutcome::Submitted`]). The lifecycle gate is held
+    /// as the purchase holds it, through settlement, and so is the
+    /// coordinator's admission, so a Clear is refused until the transfer has
+    /// returned.
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn shielded_token_transfer<P: OrchardProver>(
+        &self,
+        seed: &[u8],
+        account: u32,
+        data_contract_id: &Identifier,
+        token_contract_position: TokenContractPosition,
+        recipient: &OrchardAddress,
+        amount: TokenAmount,
+        prover: P,
+    ) -> Result<ShieldedTokenSpendOutcome, PlatformWalletError> {
+        // Held through settlement, so a removal waits for the transfer and a
+        // Clear is refused meanwhile instead of purging the store the
+        // transfer reserves in and settles against. Refused for a wallet
+        // removed, or not bound since the last Clear: the keys this handle
+        // holds outlive a Clear.
+        let locks = self.lock_for_shielded_operation(false).await?;
+        let coordinator = &locks.coordinator;
+        let _admission = locks.admit_spend(self).await?;
+        // The config lock is held through settlement too: a bind or an added
+        // account writes under it, and a bind that dropped this account
+        // would purge the notes the transfer reserves and settles.
+        let _config = self.shielded_config_lock.lock().await;
+        let keyset = self.derive_spend_keyset(seed, account).await?;
+        token_shielded_transfer(
+            &self.sdk,
+            coordinator.store(),
+            Some(&self.persister),
+            self.wallet_id,
+            &keyset,
+            account,
+            *data_contract_id,
+            token_contract_position,
+            recipient,
+            amount,
+            &prover,
+        )
+        .await
+    }
+
+    /// Move `amount` of the token at `token_contract_position` of
+    /// `data_contract_id` from `account`'s notes in the token's shielded pool
+    /// into `recipient_id`'s token balance (`TokenUnshieldWithShieldedFee`,
+    /// type 27), paying the fee from the account's credit pool notes. `seed`
+    /// supplies the transient spend authority, and the lifecycle gate is held
+    /// as [`Self::shielded_token_transfer`] holds it.
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn shielded_token_unshield<P: OrchardProver>(
+        &self,
+        seed: &[u8],
+        account: u32,
+        data_contract_id: &Identifier,
+        token_contract_position: TokenContractPosition,
+        recipient_id: &Identifier,
+        amount: TokenAmount,
+        prover: P,
+    ) -> Result<ShieldedTokenSpendOutcome, PlatformWalletError> {
+        // Admitted through settlement, with the config lock held too, as the
+        // transfer does.
+        let locks = self.lock_for_shielded_operation(false).await?;
+        let coordinator = &locks.coordinator;
+        let _admission = locks.admit_spend(self).await?;
+        let _config = self.shielded_config_lock.lock().await;
+        let keyset = self.derive_spend_keyset(seed, account).await?;
+        token_unshield(
+            &self.sdk,
+            coordinator.store(),
+            Some(&self.persister),
+            self.wallet_id,
+            &keyset,
+            account,
+            *data_contract_id,
+            token_contract_position,
+            *recipient_id,
+            amount,
+            &prover,
+        )
+        .await
+    }
+
     /// Send a DashPay private contact request (protocol version 15) from
     /// `sender_identity_id` to `recipient_identity_id`, paying for it from
     /// `account`'s shielded notes: nothing on chain names either identity. The
-    /// request carries `account_label`, `auto_accept_proof` and our
-    /// `shielded_address` for the contact, is signed by `signer` as the
+    /// request carries `account_label`, `auto_accept_proof` and the shielded
+    /// address the wallet derives for the contact, is signed by `signer` as the
     /// sender's transitions are, and is sealed by `crypto`, which keeps the
     /// encryption key. `seed` supplies the transient spend authority (see
     /// [`shielded_transfer_to`](Self::shielded_transfer_to)). See
@@ -2231,7 +2538,6 @@ impl PlatformWallet {
         recipient_identity_id: &Identifier,
         account_label: Option<String>,
         auto_accept_proof: AutoAcceptProofSource,
-        shielded_address: Option<[u8; 43]>,
         signer: &S,
         crypto: &C,
         prover: P,
@@ -2249,7 +2555,6 @@ impl PlatformWallet {
                 recipient_identity_id,
                 account_label,
                 auto_accept_proof,
-                shielded_address,
                 signer,
                 crypto,
                 |entry, started| {
@@ -2270,8 +2575,8 @@ impl PlatformWallet {
     /// Accept a DashPay contact request that came privately, replying
     /// privately and paying for the reply from `account`'s shielded notes, as
     /// [`send_private_contact_request`](Self::send_private_contact_request)
-    /// pays and signing it with `signer`. `shielded_address` is the address
-    /// the contact may pay us at privately. See
+    /// pays and signing it with `signer`. The reply carries the shielded
+    /// address the wallet derives for the contact. See
     /// [`DashPayView::accept_private_contact_request`](crate::DashPayView::accept_private_contact_request).
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
@@ -2280,7 +2585,6 @@ impl PlatformWallet {
         seed: &[u8],
         account: u32,
         request: &ContactRequest,
-        shielded_address: Option<[u8; 43]>,
         signer: &S,
         crypto: &C,
         prover: P,
@@ -2293,23 +2597,17 @@ impl PlatformWallet {
         let keyset = self.derive_spend_keyset(seed, account).await?;
         self.identity
             .dashpay()
-            .accept_private_contact_request(
-                request,
-                shielded_address,
-                signer,
-                crypto,
-                |entry, started| {
-                    self.pay_private_contact_request(
-                        keyset,
-                        account,
-                        &request.recipient_id,
-                        &request.sender_id,
-                        entry,
-                        started,
-                        prover,
-                    )
-                },
-            )
+            .accept_private_contact_request(request, signer, crypto, |entry, started| {
+                self.pay_private_contact_request(
+                    keyset,
+                    account,
+                    &request.recipient_id,
+                    &request.sender_id,
+                    entry,
+                    started,
+                    prover,
+                )
+            })
             .await
     }
 
@@ -2325,7 +2623,6 @@ impl PlatformWallet {
     pub async fn accept_contact_request_replying_in_kind<S, C, P, Seed, R, RFut>(
         &self,
         request: &ContactRequest,
-        shielded_address: Option<[u8; 43]>,
         signer: &S,
         crypto: &C,
         payment: R,
@@ -2343,7 +2640,6 @@ impl PlatformWallet {
             .dashpay()
             .accept_contact_request_replying_in_kind(
                 request,
-                shielded_address,
                 signer,
                 crypto,
                 |entry, started| async move {
@@ -2574,15 +2870,47 @@ impl PlatformWallet {
     /// recipient stays reserved for that request
     /// ([`PlatformWalletError::PrivateContactRequestPending`]).
     ///
-    /// Holds the wallet generation's lifecycle gate from the liveness check
-    /// until the spend returns, so a removal waits for it. A wallet removed or
+    /// Admitted from the liveness check until the spend returns, so a
+    /// removal waits for it and a Clear is refused meanwhile: the journal
+    /// record, the reserved notes and the saved transition are not purged
+    /// under a payment that goes on to broadcast. A wallet removed or
     /// re-created since this handle was taken is refused with
-    /// [`PlatformWalletError::WalletRemovedBeforeSend`], with nothing
-    /// restored, recorded or paid. A caller must not hold the gate.
+    /// [`PlatformWalletError::WalletRemovedBeforeSend`], and one that is not
+    /// bound, or was bound before the last Clear, with
+    /// [`PlatformWalletError::ShieldedNotBound`], with nothing restored,
+    /// recorded or paid.
+    ///
+    /// # Lock ordering
+    ///
+    /// This runs as the `pay` callback of the DashPay send
+    /// (`DashPayView::send_private_contact_request` and the two accepts),
+    /// after the host's signature and seal have returned. It takes, in a
+    /// bind's order, the lifecycle gate, then the coordinator's operation
+    /// admission, and only then the shielded store and the wallet manager
+    /// lock. Neither `shielded_config_lock` nor `shield_guard` is taken, so
+    /// it waits for no bind, and for no asset-lock funding a bind may be
+    /// queued behind.
+    ///
+    /// That order holds only because the send calls `pay` holding none of
+    /// them: its own sections under the gate (the settling of an unconfirmed
+    /// public request) and under the wallet manager lock (the reservation,
+    /// the commitment note, the marker store) have all ended by then, and it
+    /// never takes the admission. A send changed to hold the gate across
+    /// `pay` would take it here a second time, which a removal queued in
+    /// between deadlocks (the gate is write-preferring and not reentrant);
+    /// one changed to hold the wallet manager lock or the store across `pay`
+    /// would reverse a bind's order.
+    ///
+    /// A Clear never waits for an operation (it is refused at once while one
+    /// is admitted), so this payment cannot be held up by a Clear waiting
+    /// for another operation. A payment that arrives while a Clear runs
+    /// waits here for that Clear, holding the gate only, which a Clear does
+    /// not take.
     ///
     /// `started` is marked right before the transition may reach the
     /// network, after the restore check and the proof: until then a send
-    /// dropped releases its reservation.
+    /// dropped releases its reservation. Both admission refusals come before
+    /// it is marked.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     async fn pay_private_contact_request<P>(
@@ -2612,6 +2940,11 @@ impl PlatformWallet {
             return Err(PlatformWalletError::WalletRemovedBeforeSend(hex::encode(
                 self.wallet_id,
             )));
+        }
+        // A Clear dropped the registration and no bind followed: the store
+        // this would pay from and record in was reset.
+        if !coordinator.is_wallet_registered(self.wallet_id).await {
+            return Err(PlatformWalletError::ShieldedNotBound);
         }
         // An earlier payment of the pair the journal keeps may still execute,
         // whether or not its redrive record reads: then nothing is paid. The
@@ -2645,16 +2978,13 @@ impl PlatformWallet {
             ));
         }
         let dashpay_id = dashpay_contract()?.id();
-        // Saved with the payment's record, so a restart restores the pair's
-        // reservation without opening the entry.
-        let private_contact =
-            started
-                .account_reference()
-                .map(|account_reference| PrivateContactPayment {
-                    sender: sender_identity_id.to_buffer(),
-                    recipient: recipient_identity_id.to_buffer(),
-                    account_reference,
-                });
+        // The account reference is saved with the payment's record, so a
+        // restart restores the pair's reservation without opening the entry.
+        let purpose = PrivateDocumentPurpose::ContactRequest {
+            sender: *sender_identity_id,
+            recipient: *recipient_identity_id,
+            account_reference: started.account_reference(),
+        };
         private_document_create_from_pool_with_metadata(
             &self.sdk,
             coordinator.store(),
@@ -2665,11 +2995,92 @@ impl PlatformWallet {
             dashpay_id,
             PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
             vec![entry],
-            private_contact,
+            purpose,
             &started,
             &prover,
         )
         .await
+    }
+
+    /// Create `new`, an entry of any private document type, from one of this
+    /// wallet's identities, paying for it from `account`'s shielded notes
+    /// (`PrivateDocumentCreateFromShieldedPool`, type 29): nothing on chain
+    /// names the sender or the recipient. The entry is sealed by `crypto`,
+    /// which keeps the sender's encryption key
+    /// ([`IdentityWallet::seal_private_document_entry`], which says what is
+    /// refused before anything is paid), then appended as a DashPay private
+    /// contact request is paid for: notes reserved, the transition saved for
+    /// a redrive before it is broadcast, and the spend settled by its proved
+    /// result. `seed` supplies the transient spend authority (see
+    /// [`shielded_transfer_to`](Self::shielded_transfer_to)).
+    ///
+    /// Admitted from the liveness check until the spend returns
+    /// ([`ShieldedOperationLocks::admit_spend`]), so a removal waits for it
+    /// and a Clear is refused meanwhile. A wallet removed or re-created
+    /// since this handle was taken is refused with
+    /// [`PlatformWalletError::WalletRemovedBeforeSend`], and one that is not
+    /// bound, or was bound before the last Clear, with
+    /// [`PlatformWalletError::ShieldedNotBound`], with nothing recorded or
+    /// paid. The entry is sealed first, with nothing held, so `crypto` (the
+    /// host's key resolution) holds back neither a removal nor a Clear. The
+    /// call takes the wallet generation's lifecycle gate and the
+    /// coordinator's admission itself, so a caller must hold neither.
+    ///
+    /// Errors follow the other note spends: once the transition may have
+    /// reached a node and its result is not proved, the error says the
+    /// spend is unconfirmed, and the entry may already be in the store: do
+    /// not create it again.
+    #[cfg(feature = "shielded")]
+    pub async fn create_private_document_entry<C, P>(
+        &self,
+        seed: &[u8],
+        account: u32,
+        new: &NewPrivateDocumentEntry,
+        crypto: &C,
+        prover: P,
+    ) -> Result<PrivateDocumentEntryCreated, PlatformWalletError>
+    where
+        C: ContactCryptoProvider + Sync,
+        P: OrchardProver,
+    {
+        let removed = || PlatformWalletError::WalletRemovedBeforeSend(hex::encode(self.wallet_id));
+        // A stale handle is refused before the seal, which would read its
+        // wallet as not found, or a re-created one's identities; the check
+        // under the gate below is the one that holds for the spend.
+        if !self.core().is_current_generation().await {
+            return Err(removed());
+        }
+        let sealed = self
+            .identity
+            .seal_private_document_entry(crypto, new)
+            .await?;
+        // Taken once the seal has returned, and held until the spend returns:
+        // the liveness check is made again under the gate, and a Clear is
+        // refused while the notes are reserved and the transition is saved,
+        // proved and broadcast.
+        let locks = self.lock_for_shielded_operation(false).await?;
+        let coordinator = &locks.coordinator;
+        let _admission = locks.admit_spend(self).await?;
+        let keyset = self.derive_spend_keyset(seed, account).await?;
+        private_document_create_from_pool_with_metadata(
+            &self.sdk,
+            coordinator.store(),
+            Some(&self.persister),
+            self.wallet_id,
+            &keyset,
+            account,
+            new.data_contract_id,
+            &new.document_type_name,
+            vec![sealed.entry],
+            PrivateDocumentPurpose::Entry,
+            &PaymentStarted::default(),
+            &prover,
+        )
+        .await?;
+        Ok(PrivateDocumentEntryCreated {
+            commitment: sealed.commitment,
+            sender_key_id: sealed.sender_key_id,
+        })
     }
 
     /// Withdraw from `account`'s notes to a Core L1 address
@@ -2677,6 +3088,16 @@ impl PlatformWallet {
     /// rate (duffs/byte). `seed` supplies the transient spend
     /// authority (see
     /// [`shielded_transfer_to`](Self::shielded_transfer_to)).
+    ///
+    /// Admitted for its whole run: a handle to a wallet removed, or
+    /// re-created under the same id, since it was taken is refused with
+    /// [`PlatformWalletError::WalletRemovedBeforeSend`], and one that is not
+    /// bound, or was bound before the last Clear, with
+    /// [`PlatformWalletError::ShieldedNotBound`], before anything is read,
+    /// signed or sent. The call takes the wallet generation's lifecycle gate
+    /// and the coordinator's admission itself and holds them until it
+    /// returns, so a caller must hold neither: a removal or a Clear queued
+    /// in between would deadlock it.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_withdraw_to<P: dpp::shielded::builder::OrchardProver>(
@@ -2737,7 +3158,20 @@ impl PlatformWallet {
     /// there (mirroring `register_from_addresses`) so the host persister emits the
     /// `IdentityChangeSet` / `IdentityKeysChangeSet` that creates the app's identity row. A failed
     /// registration after a successful broadcast is logged and swallowed — the identity already
-    /// exists on chain, so the next sync heals the local row. Returns the new identity's id.
+    /// exists on chain, and an identity discovery scan finds it again (a routine sync does not;
+    /// see `IdentityManager::record_new_identity`). Returns the new identity's id.
+    ///
+    /// Admitted for its whole run: a handle to a wallet removed, or
+    /// re-created under the same id, since it was taken is refused with
+    /// [`PlatformWalletError::WalletRemovedBeforeSend`], and one that is not
+    /// bound, or was bound before the last Clear, with
+    /// [`PlatformWalletError::ShieldedNotBound`], before anything is read,
+    /// signed or sent. The call takes the wallet generation's lifecycle gate
+    /// and the coordinator's admission itself, gives both back while
+    /// `identity_signer` signs (it may wait on a prompt) and takes them again
+    /// for the broadcast and the registration, refusing a removal or a Clear
+    /// that completed in between. A caller must hold neither: a removal or a
+    /// Clear queued in between would deadlock it.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_identity_create_from_pool<P, IS>(
@@ -2766,6 +3200,10 @@ impl PlatformWallet {
         let coordinator = Arc::clone(&locks.coordinator);
         let admission = coordinator.admit_operation().await?;
         self.ensure_shielded_attached_for_spend()?;
+        // Not bound since the last Clear: refused before the signer is asked.
+        if !coordinator.is_wallet_registered(self.wallet_id).await {
+            return Err(PlatformWalletError::ShieldedNotBound);
+        }
         let epoch = admission.epoch();
         let reacquire = || async {
             let locks = self.lock_for_shielded_operation(false).await?;
@@ -2809,33 +3247,27 @@ impl PlatformWallet {
         // Register the proof-verified identity in the local manager at its HD slot, exactly like
         // `register_from_addresses`' Step 3 — this drives the host persister's
         // `IdentityChangeSet` / `IdentityKeysChangeSet` emit so the app's identity row is created.
-        // The broadcast already succeeded; a registration failure here (e.g. the slot is already
-        // occupied locally) is logged and swallowed rather than surfaced as an error, since the
-        // identity exists on chain and the next sync heals the local view.
+        // The broadcast already succeeded; a registration failure here (the id is already held
+        // locally, or the store fails; an occupied slot is not detected) is logged and swallowed
+        // rather than surfaced as an error, since the identity exists on chain. A routine sync
+        // does not restore a missed one; see `IdentityManager::record_new_identity`.
         {
             let mut wm = self.wallet_manager.write().await;
             match wm.get_wallet_info_mut(&self.wallet_id) {
-                Some(info) => {
-                    if let Err(e) = info.identity_manager.add_identity(
-                        identity,
-                        identity_index,
-                        self.wallet_id,
-                        &self.persister,
-                    ) {
-                        tracing::warn!(
-                            identity_index,
-                            error = %e,
-                            "IdentityCreateFromShieldedPool broadcast succeeded but registering the \
-                             identity in the local manager failed; the on-chain identity exists and \
-                             the next sync will heal the local row"
-                        );
-                    }
-                }
+                Some(info) => info.identity_manager.record_new_identity(
+                    identity,
+                    identity_index,
+                    self.wallet_id,
+                    NewIdentityKeyOrigin::Unrecorded,
+                    "shielded_identity_create_from_pool",
+                    &self.persister,
+                ),
                 None => {
                     tracing::warn!(
                         identity_index,
                         "IdentityCreateFromShieldedPool broadcast succeeded but the wallet info was \
-                         not found in the manager; skipping local registration (heals on next sync)"
+                         not found in the manager; skipping local registration (an identity \
+                         discovery scan adds it)"
                     );
                 }
             }
@@ -2951,6 +3383,16 @@ impl PlatformWallet {
     /// at or past the nonce the shield signed. The activity row stays pending
     /// until the shielded scan observes the note on-chain: the result proves
     /// the input addresses, not this shield or its note.
+    ///
+    /// Admitted for its whole run: a handle to a wallet removed, or
+    /// re-created under the same id, since it was taken is refused with
+    /// [`PlatformWalletError::WalletRemovedBeforeSend`], and one that is not
+    /// bound, or was bound before the last Clear, with
+    /// [`PlatformWalletError::ShieldedNotBound`], before anything is read,
+    /// signed or sent. The call takes the wallet generation's lifecycle gate
+    /// and the coordinator's admission itself and holds them until it
+    /// returns, so a caller must hold neither: a removal or a Clear queued
+    /// in between would deadlock it.
     #[cfg(feature = "shielded")]
     pub async fn shielded_shield_from_account<S, P>(
         &self,
@@ -2997,6 +3439,16 @@ impl PlatformWallet {
     ///
     /// `memo` is the 36-byte on-chain `DashMemo` encoding attached to
     /// the recipient's note (all-zero = no memo).
+    ///
+    /// Admitted for its whole run: a handle to a wallet removed, or
+    /// re-created under the same id, since it was taken is refused with
+    /// [`PlatformWalletError::WalletRemovedBeforeSend`], and one that is not
+    /// bound, or was bound before the last Clear, with
+    /// [`PlatformWalletError::ShieldedNotBound`], before anything is read,
+    /// signed or sent. The call takes the wallet generation's lifecycle gate
+    /// and the coordinator's admission itself and holds them until it
+    /// returns, so a caller must hold neither: a removal or a Clear queued
+    /// in between would deadlock it.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_shield_from_account_to_recipient<S, P>(
@@ -3059,6 +3511,9 @@ impl PlatformWallet {
             ));
         }
 
+        // The admission is held until the shield has settled, as a shielded
+        // transfer holds it.
+        //
         // Single-flight: serialize shield-class ops on this wallet so
         // two concurrent calls can't fetch + build with the same
         // address nonce (the second would be rejected as a replay after
@@ -3157,6 +3612,16 @@ impl PlatformWallet {
     /// verdict the proven identity nonce cannot rule out (do not rebuild on it).
     /// The activity row stays pending until the shielded scan observes the note
     /// on-chain; the balance proof alone does not confirm it.
+    ///
+    /// Admitted for its whole run: a handle to a wallet removed, or
+    /// re-created under the same id, since it was taken is refused with
+    /// [`PlatformWalletError::WalletRemovedBeforeSend`], and one that is not
+    /// bound, or was bound before the last Clear, with
+    /// [`PlatformWalletError::ShieldedNotBound`], before anything is read,
+    /// signed or sent. The call takes the wallet generation's lifecycle gate
+    /// and the coordinator's admission itself and holds them until it
+    /// returns, so a caller must hold neither: a removal or a Clear queued
+    /// in between would deadlock it.
     #[cfg(feature = "shielded")]
     pub async fn shielded_shield_from_identity<S, P>(
         &self,
@@ -3187,6 +3652,16 @@ impl PlatformWallet {
     /// as [`shielded_transfer_to`](Self::shielded_transfer_to)) and an optional memo.
     /// An address this account's own IVK recognizes is rejected; self-shields use the
     /// entry point without a recipient.
+    ///
+    /// Admitted for its whole run: a handle to a wallet removed, or
+    /// re-created under the same id, since it was taken is refused with
+    /// [`PlatformWalletError::WalletRemovedBeforeSend`], and one that is not
+    /// bound, or was bound before the last Clear, with
+    /// [`PlatformWalletError::ShieldedNotBound`], before anything is read,
+    /// signed or sent. The call takes the wallet generation's lifecycle gate
+    /// and the coordinator's admission itself and holds them until it
+    /// returns, so a caller must hold neither: a removal or a Clear queued
+    /// in between would deadlock it.
     #[cfg(feature = "shielded")]
     #[allow(clippy::too_many_arguments)]
     pub async fn shielded_shield_from_identity_to_recipient<S, P>(
@@ -3245,6 +3720,10 @@ impl PlatformWallet {
             ));
         }
 
+        // The admission is held until the shield has settled, the local
+        // balance included, as a shielded transfer holds it: the identity read
+        // below, the debit and its activity and recovery rows are one wallet's.
+        //
         // Single-flight with the address-funded shields: the identity nonce is
         // fetched inside the operation, and two concurrent builds would race it.
         // Taken before admission (the lock order).
@@ -3455,11 +3934,106 @@ impl Clone for PlatformWallet {
             #[cfg(feature = "shielded")]
             prepared_tip_accounts: self.prepared_tip_accounts.clone(),
             #[cfg(feature = "shielded")]
+            tip_send_in_progress: self.tip_send_in_progress.clone(),
+            #[cfg(feature = "shielded")]
             shielded_detached: self.shielded_detached.clone(),
             #[cfg(feature = "shielded")]
             private_payment_restores: self.private_payment_restores.clone(),
             #[cfg(feature = "shielded")]
             shielded_coordinator: self.shielded_coordinator.clone(),
+        }
+    }
+}
+
+impl PlatformWallet {
+    /// Create (`create`) or update `identity_id`'s DashPay profile, and
+    /// return the profile as published.
+    ///
+    /// This is the one way a profile is written, because a profile can
+    /// publish payment addresses and the wallet decides which it may:
+    ///
+    /// - every address set must be a well-formed address of its kind, and
+    ///   the DashPay contract the connected network runs must already have
+    ///   the field. Removing an address needs neither;
+    /// - a shielded address that is one of this wallet's own must be the
+    ///   default address of the identity's dedicated account, prepared in
+    ///   this session with [`Self::prepare_shielded_identity_address`]. Without
+    ///   the `shielded` feature, or before the wallet's shielded accounts
+    ///   are bound, no shielded address can be set at all, since the wallet
+    ///   could not tell whether it is its own.
+    ///
+    /// A removed or replaced wallet publishes nothing, and wallet removal
+    /// waits for a write in flight. A Clear is refused while a write that
+    /// sets a shielded address is in flight. A caller must hold neither the
+    /// wallet generation's lifecycle gate nor the coordinator's admission.
+    pub async fn write_dashpay_profile<S>(
+        &self,
+        identity_id: &Identifier,
+        input: ProfileUpdate,
+        signer: &S,
+        create: bool,
+    ) -> Result<DashPayProfile, PlatformWalletError>
+    where
+        S: Signer<IdentityPublicKey> + Send + Sync,
+    {
+        let _lifecycle = self.core().generation_payment_guard().await;
+        if !self.core().is_current_generation().await {
+            return Err(PlatformWalletError::WalletNotFound(hex::encode(
+                self.wallet_id(),
+            )));
+        }
+        #[cfg(not(feature = "shielded"))]
+        if matches!(input.shielded_address, PaymentAddressUpdate::Set(_)) {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "Shielded address publication requires shielded support".to_string(),
+            ));
+        }
+        // A preparation stands only until the coordinator is cleared. An
+        // operation admission is taken before the check that reads the
+        // preparation and held until the profile is written, so a Clear is
+        // refused meanwhile instead of landing between the two.
+        #[cfg(feature = "shielded")]
+        let coordinator = match &input.shielded_address {
+            PaymentAddressUpdate::Set(_) => self.shielded_coordinator().await.ok(),
+            PaymentAddressUpdate::Keep | PaymentAddressUpdate::Remove => None,
+        };
+        #[cfg(feature = "shielded")]
+        let _admission = match coordinator.as_ref() {
+            Some(coordinator) => Some(coordinator.admit_operation().await?),
+            None => None,
+        };
+        #[cfg(all(test, feature = "shielded"))]
+        super::shielded::tips::test_hooks::before_publication_check(self).await;
+        #[cfg(feature = "shielded")]
+        if let PaymentAddressUpdate::Set(bytes) = &input.shielded_address {
+            // Bytes that are not an address are refused by the write below.
+            if let Some(address) = validated_shielded_address(bytes) {
+                self.check_shielded_address_publication(identity_id, &address)
+                    .await?;
+            }
+            // The check accepts the preparation recorded as it runs. With
+            // no coordinator when this write started, it holds no admission,
+            // so a Clear of one configured since would not be refused:
+            // refuse, and the next write holds the admission.
+            if coordinator.is_none() && self.shielded_coordinator().await.is_ok() {
+                return Err(PlatformWalletError::InvalidIdentityData(
+                    "The shielded store was configured while this profile write was \
+                     starting; write the profile again"
+                        .to_string(),
+                ));
+            }
+        }
+        #[cfg(all(test, feature = "shielded"))]
+        super::shielded::tips::test_hooks::after_publication_check(self).await;
+        let dashpay = self.identity.dashpay();
+        if create {
+            dashpay
+                .create_profile_with_external_signer(identity_id, input, signer)
+                .await
+        } else {
+            dashpay
+                .update_profile_with_external_signer(identity_id, input, signer)
+                .await
         }
     }
 }
@@ -3747,10 +4321,11 @@ impl PrivatePaymentRestore {
 
     /// Whether the requests the wallet tracks are durable now
     /// (`WalletPersister::flush_durably`): at once for a backend that commits
-    /// inline, as each was stored before it was tracked; after a flush that
-    /// succeeds otherwise, with no other flush in progress and none that
-    /// failed for good in this process. A flush that succeeds right after
-    /// one that failed for good wrote nothing of what that one dropped.
+    /// inline and keeps no buffer, as each was stored before it was tracked;
+    /// after a flush that succeeds otherwise, with no other flush in progress
+    /// and none that failed for good in this process. A flush that succeeds
+    /// right after one that failed for good wrote nothing of what that one
+    /// dropped.
     fn settled_requests_durable(&self) -> bool {
         match self.persister.flush_durably() {
             Ok(()) => true,
@@ -3850,7 +4425,10 @@ impl PrivatePaymentRestore {
                 self.wallet_id,
             )));
         }
-        let dashpay_id = dashpay_contract()?.id();
+        // DashPay's published id, without loading the contract: the journal
+        // only compares ids, and the first load of the contract parses its
+        // schema, which takes about 1 MiB of stack in an unoptimized build.
+        let dashpay_id = SystemDataContract::Dashpay.id();
         // Read-backs whose flush failed transiently are noted once a flush
         // succeeds now, so the journal read below discharges their records.
         self.persister
@@ -4129,6 +4707,125 @@ fn check_recipient_hrp(
     Ok(())
 }
 
+#[cfg(test)]
+mod profile_write_tests {
+    use super::*;
+    use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::wallet::persister::NoPlatformPersistence;
+    use crate::PlatformWalletManager;
+    use dashcore::Network;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use simple_signer::signer::SimpleSigner;
+
+    struct NoopEvents;
+    impl EventHandler for NoopEvents {}
+    impl PlatformEventHandler for NoopEvents {}
+
+    async fn testnet_wallet(
+        manager: &PlatformWalletManager<NoPlatformPersistence>,
+    ) -> Arc<PlatformWallet> {
+        manager
+            .create_wallet_from_seed_bytes(
+                Network::Testnet,
+                &[42; 64],
+                WalletAccountCreationOptions::None,
+                Some(0),
+            )
+            .await
+            .unwrap()
+    }
+
+    fn manager() -> PlatformWalletManager<NoPlatformPersistence> {
+        PlatformWalletManager::new(
+            Arc::new(dash_sdk::Sdk::new_mock()),
+            Arc::new(NoPlatformPersistence),
+            Arc::new(NoopEvents),
+        )
+    }
+
+    #[cfg(not(feature = "shielded"))]
+    #[tokio::test]
+    async fn should_reject_shielded_profile_addresses_without_shielded_support() {
+        let manager = manager();
+        let wallet = testnet_wallet(&manager).await;
+        let result = wallet
+            .write_dashpay_profile(
+                &Identifier::from([7; 32]),
+                ProfileUpdate {
+                    shielded_address: PaymentAddressUpdate::Set(vec![0; 43]),
+                    ..Default::default()
+                },
+                &SimpleSigner::default(),
+                false,
+            )
+            .await;
+        assert!(matches!(
+            result,
+            Err(PlatformWalletError::InvalidIdentityData(message))
+                if message.contains("requires shielded support")
+        ));
+    }
+
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_refuse_a_shielded_profile_address_before_shielded_is_bound() {
+        let manager = manager();
+        let wallet = testnet_wallet(&manager).await;
+        // An address of this very wallet's ordinary account: unbound, the
+        // wallet holds no viewing key to recognise it by.
+        let own = OrchardKeySet::from_seed(&[42; 64], Network::Testnet, 0)
+            .unwrap()
+            .default_address
+            .to_raw_address_bytes();
+        for create in [true, false] {
+            let result = wallet
+                .write_dashpay_profile(
+                    &Identifier::from([7; 32]),
+                    ProfileUpdate {
+                        shielded_address: PaymentAddressUpdate::Set(own.to_vec()),
+                        ..Default::default()
+                    },
+                    &SimpleSigner::default(),
+                    create,
+                )
+                .await;
+            assert!(
+                matches!(result, Err(PlatformWalletError::ShieldedNotBound)),
+                "{result:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_profile_write_from_a_removed_or_replaced_wallet() {
+        async fn assert_profile_write_refused(wallet: &PlatformWallet) {
+            for create in [true, false] {
+                assert!(matches!(
+                    wallet
+                        .write_dashpay_profile(
+                            &Identifier::default(),
+                            ProfileUpdate::default(),
+                            &SimpleSigner::default(),
+                            create,
+                        )
+                        .await,
+                    Err(PlatformWalletError::WalletNotFound(_))
+                ));
+            }
+        }
+
+        let manager = manager();
+        let old = testnet_wallet(&manager).await;
+        let id = old.wallet_id();
+        manager.remove_wallet(&id).await.unwrap();
+        assert_profile_write_refused(&old).await;
+
+        let current = testnet_wallet(&manager).await;
+        assert_eq!(current.wallet_id(), id);
+        assert_profile_write_refused(&old).await;
+    }
+}
+
 #[cfg(all(test, feature = "shielded"))]
 mod private_contact_request_redrive_tests {
     use super::*;
@@ -4181,6 +4878,17 @@ mod private_contact_request_redrive_tests {
         }
     }
 
+    /// A restoration compares its journal against DashPay's published id
+    /// without loading the contract (`PrivatePaymentRestore::restore`), so
+    /// that id must be the one the bundled contract loads under.
+    #[test]
+    fn should_load_the_bundled_dashpay_contract_under_its_published_id() {
+        assert_eq!(
+            dashpay_contract().expect("bundled DashPay").id(),
+            SystemDataContract::Dashpay.id()
+        );
+    }
+
     /// Only the entries of type 29 transitions to DashPay's private contact
     /// request store are read: not another contract's, not another document
     /// type's, and not a record that does not decode.
@@ -4231,14 +4939,21 @@ mod private_contact_request_redrive_tests {
 mod private_contact_request_payment_tests {
     use super::*;
     use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::test_support::WipeCountingPersistence;
     use crate::wallet::persister::NoPlatformPersistence;
-    use crate::wallet::shielded::FileBackedShieldedStore;
+    use crate::wallet::shielded::viewing_key_bind_tests::CapturingPersistence;
+    use crate::wallet::shielded::{
+        FileBackedShieldedStore, ShieldedNote, ShieldedStore, SubwalletId,
+    };
     use crate::PlatformWalletManager;
     use grovedb_commitment_tree::ProvingKey;
     use key_wallet::wallet::initialization::WalletAccountCreationOptions;
     use std::time::Duration;
 
     const SEED: [u8; 64] = [0x42; 64];
+
+    /// How long a spawned payment gets to reach the point a test holds it at.
+    const REACHED: Duration = Duration::from_secs(5);
 
     struct NoopEventHandler;
     impl EventHandler for NoopEventHandler {}
@@ -4306,6 +5021,87 @@ mod private_contact_request_payment_tests {
         manager.shielded_coordinator().await.expect("configured")
     }
 
+    /// A manager whose persister a bind accepts, with its shielded store
+    /// configured under `dir`, one of its wallets with shielded account 0 bound
+    /// on the manager's coordinator, and that coordinator: a payment from the
+    /// pool is admitted only for a bound wallet, and a removal of the wallet
+    /// unregisters it from the coordinator the payment runs on.
+    async fn manager_with_bound_wallet(
+        dir: &std::path::Path,
+    ) -> (
+        Arc<PlatformWalletManager<CapturingPersistence>>,
+        Arc<PlatformWallet>,
+        Arc<NetworkShieldedCoordinator>,
+    ) {
+        let sdk = dash_sdk::SdkBuilder::new_mock()
+            .with_network(dashcore::Network::Testnet)
+            .build()
+            .expect("mock sdk");
+        let manager = Arc::new(PlatformWalletManager::new(
+            Arc::new(sdk),
+            Arc::new(CapturingPersistence::default()),
+            Arc::new(NoopEventHandler),
+        ));
+        manager
+            .configure_shielded(dir.join("tree.sqlite"))
+            .await
+            .expect("configured");
+        let coordinator = manager.shielded_coordinator().await.expect("coordinator");
+        let wallet = manager
+            .create_wallet_from_seed_bytes(
+                dashcore::Network::Testnet,
+                &SEED,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("wallet");
+        wallet.bind_shielded(&SEED, &[0]).await.expect("bound");
+        (manager, wallet, coordinator)
+    }
+
+    /// The payments from the shielded pool this module holds: the two the
+    /// wallet makes without a DashPay send around them.
+    #[derive(Clone, Copy, Debug)]
+    enum PoolPayment {
+        PrivateContactRequest,
+        TokenPurchase,
+    }
+
+    async fn pay_from_pool(
+        payment: PoolPayment,
+        wallet: &PlatformWallet,
+    ) -> Result<(), PlatformWalletError> {
+        match payment {
+            PoolPayment::PrivateContactRequest => pay(wallet).await.map(|_| ()),
+            PoolPayment::TokenPurchase => buy_token(wallet).await.map(|_| ()),
+        }
+    }
+
+    /// Wait until an operation holds `coordinator`'s admission: the spawned
+    /// payment has passed its liveness check and been admitted.
+    async fn admitted(coordinator: &NetworkShieldedCoordinator, what: impl std::fmt::Debug) {
+        let deadline = tokio::time::Instant::now() + REACHED;
+        while !coordinator.has_admitted_operation() {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "{what:?}: never admitted"
+            );
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    }
+
+    /// `true` while a removal of `wallet` would wait: its generation's
+    /// teardown side cannot be taken.
+    async fn removal_waits(wallet: &PlatformWallet) -> bool {
+        tokio::time::timeout(
+            Duration::from_millis(100),
+            wallet.generation.teardown_guard(),
+        )
+        .await
+        .is_err()
+    }
+
     /// Pay for a private contact request from `wallet`'s account 0.
     async fn pay(wallet: &PlatformWallet) -> Result<ResponseMetadata, PlatformWalletError> {
         let keyset =
@@ -4330,7 +5126,7 @@ mod private_contact_request_payment_tests {
     async fn should_refuse_a_private_payment_from_a_wallet_no_longer_current() {
         let dir = tempfile::tempdir().expect("temporary shielded store");
         let (manager, removed) = manager_with_wallet().await;
-        configure(&manager, dir.path()).await;
+        let coordinator = configure(&manager, dir.path()).await;
         let wallet_id = removed.wallet_id();
         manager.remove_wallet(&wallet_id).await.expect("removed");
         let refused = pay(&removed).await;
@@ -4350,13 +5146,15 @@ mod private_contact_request_payment_tests {
             ),
             "{refused:?}"
         );
+        // The re-created wallet is current, and not bound yet.
         let current = pay(&recreated).await;
         assert!(
-            !matches!(
-                current,
-                Err(PlatformWalletError::WalletRemovedBeforeSend(_))
-            ),
-            "the current wallet's payment goes on to the spend: {current:?}"
+            matches!(current, Err(PlatformWalletError::ShieldedNotBound)),
+            "the current wallet's payment passes the liveness check: {current:?}"
+        );
+        assert!(
+            !coordinator.has_admitted_operation(),
+            "a refused payment holds no admission"
         );
     }
 
@@ -4365,8 +5163,7 @@ mod private_contact_request_payment_tests {
     #[tokio::test]
     async fn should_hold_a_wallets_removal_until_its_private_payment_returns() {
         let dir = tempfile::tempdir().expect("temporary shielded store");
-        let (manager, wallet) = manager_with_wallet().await;
-        let coordinator = configure(&manager, dir.path()).await;
+        let (manager, wallet, coordinator) = manager_with_bound_wallet(dir.path()).await;
         let wallet_id = wallet.wallet_id();
 
         let store = coordinator.store().write().await;
@@ -4390,8 +5187,12 @@ mod private_contact_request_payment_tests {
         drop(store);
         let paid = payment.await.expect("payment task");
         assert!(
-            !matches!(paid, Err(PlatformWalletError::WalletRemovedBeforeSend(_))),
-            "the wallet was current when it was checked: {paid:?}"
+            !matches!(
+                paid,
+                Err(PlatformWalletError::WalletRemovedBeforeSend(_)
+                    | PlatformWalletError::ShieldedNotBound)
+            ),
+            "the wallet was current and bound when it was checked: {paid:?}"
         );
         removal
             .await
@@ -4562,6 +5363,436 @@ mod private_contact_request_payment_tests {
         );
         assert_eq!(queued(), 1, "and queues nothing");
         drop(store);
+    }
+
+    /// Buy a token from `wallet`'s account 0 shielded notes.
+    async fn buy_token(
+        wallet: &PlatformWallet,
+    ) -> Result<ShieldedTokenPurchaseOutcome, PlatformWalletError> {
+        wallet
+            .shielded_token_purchase_from_pool(
+                &SEED,
+                0,
+                &Identifier::from([0x44; 32]),
+                0,
+                10,
+                1_000,
+                UnreachableProver,
+            )
+            .await
+    }
+
+    /// A handle to a wallet removed, or re-created under the same id, since
+    /// it was taken buys nothing from the shielded pool: it is refused at the
+    /// liveness check, before anything is checked, reserved or sent.
+    #[tokio::test]
+    async fn should_refuse_a_shielded_token_purchase_from_a_wallet_no_longer_current() {
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let (manager, removed) = manager_with_wallet().await;
+        let coordinator = configure(&manager, dir.path()).await;
+        let wallet_id = removed.wallet_id();
+        manager.remove_wallet(&wallet_id).await.expect("removed");
+        let refused = buy_token(&removed).await;
+        assert!(
+            matches!(&refused, Err(PlatformWalletError::WalletRemovedBeforeSend(id))
+                if *id == hex::encode(wallet_id)),
+            "{refused:?}"
+        );
+
+        let recreated = add_wallet(&manager).await;
+        assert_eq!(recreated.wallet_id(), wallet_id);
+        let refused = buy_token(&removed).await;
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::WalletRemovedBeforeSend(_))
+            ),
+            "{refused:?}"
+        );
+        // The re-created wallet is current, and not bound yet.
+        let current = buy_token(&recreated).await;
+        assert!(
+            matches!(current, Err(PlatformWalletError::ShieldedNotBound)),
+            "the current wallet's purchase passes the liveness check: {current:?}"
+        );
+        assert!(
+            !coordinator.has_admitted_operation(),
+            "a refused purchase holds no admission"
+        );
+    }
+
+    /// A removal waits for a shielded token purchase that entered its fenced
+    /// section, here held at the wallet's shielded keys, and completes once
+    /// it returns.
+    #[tokio::test]
+    async fn should_hold_a_wallets_removal_until_its_shielded_token_purchase_returns() {
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let (manager, wallet, _coordinator) = manager_with_bound_wallet(dir.path()).await;
+        let wallet_id = wallet.wallet_id();
+
+        let keys = wallet.shielded_keys.write().await;
+        let purchase = {
+            let wallet = Arc::clone(&wallet);
+            tokio::spawn(async move { buy_token(&wallet).await })
+        };
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let removal = {
+            let manager = Arc::clone(&manager);
+            tokio::spawn(async move { manager.remove_wallet(&wallet_id).await.map(|_| ()) })
+        };
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(!purchase.is_finished(), "the purchase waits at the keys");
+        assert!(
+            !removal.is_finished(),
+            "the removal waits for the purchase in flight"
+        );
+        assert!(wallet.core().is_current_generation().await);
+
+        drop(keys);
+        let bought = purchase.await.expect("purchase task");
+        assert!(
+            !matches!(
+                bought,
+                Err(PlatformWalletError::WalletRemovedBeforeSend(_)
+                    | PlatformWalletError::ShieldedNotBound)
+            ),
+            "the wallet was current and bound when it was checked: {bought:?}"
+        );
+        removal
+            .await
+            .expect("removal task")
+            .expect("the removal completes");
+        assert!(!wallet.core().is_current_generation().await);
+    }
+
+    /// A payment from the pool that was admitted holds the wallet
+    /// generation's lifecycle gate and the coordinator's operation admission
+    /// until it returns, as a credit pool spend does: a removal of the wallet
+    /// waits for it, and a Clear issued meanwhile is refused at once and
+    /// changes nothing. Each payment is held here at the first lock it takes
+    /// after its admission: the shielded store, whose journal a private
+    /// contact request payment reads, and the key slot a token purchase
+    /// derives its spend key from.
+    async fn holds_removal_and_refuses_a_clear_until_it_returns(payment: PoolPayment) {
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let (_manager, wallet, coordinator) = manager_with_bound_wallet(dir.path()).await;
+
+        let (store, keys) = match payment {
+            PoolPayment::PrivateContactRequest => (Some(coordinator.store().write().await), None),
+            PoolPayment::TokenPurchase => (None, Some(wallet.shielded_keys.write().await)),
+        };
+        let running = {
+            let wallet = Arc::clone(&wallet);
+            tokio::spawn(async move { pay_from_pool(payment, &wallet).await })
+        };
+        admitted(&coordinator, payment).await;
+        assert!(
+            removal_waits(&wallet).await,
+            "{payment:?}: a removal waits for the payment in flight"
+        );
+        // The Clear's own refusal, not only the condition it reads: it
+        // returns at once, with the store this test holds untouched.
+        let refused = tokio::time::timeout(
+            REACHED,
+            coordinator.clear(&WipeCountingPersistence::default()),
+        )
+        .await
+        .expect("a Clear does not wait for the payment");
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::ShieldedOperationInProgress)
+            ),
+            "{payment:?}: {refused:?}"
+        );
+        assert!(!running.is_finished(), "{payment:?}: held after admission");
+        // The configuration lock is not taken: a bind of this wallet does
+        // not wait for the proof and the result of the payment.
+        assert!(
+            wallet.shielded_config_lock.try_lock().is_ok(),
+            "{payment:?}: the configuration lock is free while the payment runs"
+        );
+
+        drop((store, keys));
+        let returned = tokio::time::timeout(REACHED, running)
+            .await
+            .expect("the refused Clear does not hold the payment up")
+            .expect("payment task");
+        assert!(
+            !matches!(
+                returned,
+                Err(PlatformWalletError::WalletRemovedBeforeSend(_)
+                    | PlatformWalletError::ShieldedNotBound)
+            ),
+            "{payment:?}: the wallet was current and bound when it was checked, and the \
+             refused Clear changed nothing: {returned:?}"
+        );
+        assert!(
+            !coordinator.has_admitted_operation(),
+            "{payment:?}: the admission is released with the payment"
+        );
+        assert!(
+            !removal_waits(&wallet).await,
+            "{payment:?}: the removal goes on once the payment returned"
+        );
+        coordinator
+            .clear(&WipeCountingPersistence::default())
+            .await
+            .expect("a Clear goes through once the payment has returned");
+    }
+
+    #[tokio::test]
+    async fn should_hold_removal_and_refuse_a_clear_until_a_private_contact_request_payment_returns(
+    ) {
+        holds_removal_and_refuses_a_clear_until_it_returns(PoolPayment::PrivateContactRequest)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn should_hold_removal_and_refuse_a_clear_until_a_token_purchase_from_the_pool_returns() {
+        holds_removal_and_refuses_a_clear_until_it_returns(PoolPayment::TokenPurchase).await;
+    }
+
+    /// The admission outlives the payment's first locks, through the interval
+    /// a Clear would damage: a private contact request payment that has
+    /// reserved a funded note still refuses a Clear and holds a removal, and
+    /// the note it reserved is still there for its rollback to release.
+    ///
+    /// The payment is handed the shielded store one acquisition at a time,
+    /// this task taking it back in between, until the note is seen reserved.
+    /// The mock then refuses the payment's network read, so it waits for the
+    /// store again to roll its reservation back.
+    #[tokio::test]
+    async fn should_refuse_a_clear_while_a_private_contact_request_payment_holds_a_reserved_note() {
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let (_manager, wallet, coordinator) = manager_with_bound_wallet(dir.path()).await;
+        let id = SubwalletId::new(wallet.wallet_id(), 0);
+        let note = ShieldedNote {
+            position: 0,
+            cmx: [1; 32],
+            nullifier: [0x5E; 32],
+            block_height: 1,
+            is_spent: false,
+            value: 1_000_000_000_000,
+            note_data: vec![],
+        };
+        coordinator
+            .store()
+            .write()
+            .await
+            .save_note(id, &note)
+            .expect("a funded note");
+
+        let mut held = coordinator.store().write().await;
+        let mut payment = Box::pin(pay(&wallet));
+        assert!(
+            futures::poll!(&mut payment).is_pending(),
+            "admitted, and waiting for the store"
+        );
+        let mut steps = 0;
+        while !held.get_unspent_notes(id).expect("notes").is_empty() {
+            steps += 1;
+            assert!(steps <= 16, "the payment never reserved its note");
+            // Queued behind the payment, so the store comes back to this
+            // task right after the payment's next step.
+            let mut next = Box::pin(coordinator.store().write());
+            assert!(futures::poll!(&mut next).is_pending());
+            drop(held);
+            if let std::task::Poll::Ready(paid) = futures::poll!(&mut payment) {
+                panic!("the payment returned before its note was seen reserved: {paid:?}");
+            }
+            held = tokio::time::timeout(REACHED, next)
+                .await
+                .expect("the store passes on after the payment's step");
+        }
+
+        assert!(
+            coordinator.has_admitted_operation(),
+            "still admitted with its note reserved"
+        );
+        let refused = tokio::time::timeout(
+            REACHED,
+            coordinator.clear(&WipeCountingPersistence::default()),
+        )
+        .await
+        .expect("a Clear does not wait for the payment");
+        assert!(
+            matches!(
+                refused,
+                Err(PlatformWalletError::ShieldedOperationInProgress)
+            ),
+            "{refused:?}"
+        );
+        assert!(
+            removal_waits(&wallet).await,
+            "a removal waits for the payment in flight"
+        );
+        assert!(
+            held.get_unspent_notes(id).expect("notes").is_empty(),
+            "the refused Clear left the reservation alone"
+        );
+
+        drop(held);
+        let paid = tokio::time::timeout(REACHED, payment)
+            .await
+            .expect("the payment returns");
+        assert!(paid.is_err(), "the mock serves no network read: {paid:?}");
+        assert_eq!(
+            coordinator
+                .store()
+                .read()
+                .await
+                .get_unspent_notes(id)
+                .expect("notes")
+                .iter()
+                .map(|note| note.nullifier)
+                .collect::<Vec<_>>(),
+            vec![note.nullifier],
+            "the payment released the note it reserved, in the store it reserved it in"
+        );
+        assert!(!coordinator.has_admitted_operation());
+        coordinator
+            .clear(&WipeCountingPersistence::default())
+            .await
+            .expect("a Clear goes through once the payment has returned");
+    }
+
+    /// A Clear drops the wallet's registration but not the keys its handle
+    /// holds. A payment from the pool admitted after a Clear is refused
+    /// before it reads the journal, a key or a note, until the wallet is
+    /// bound again: the store it would pay from and record in was reset.
+    async fn is_refused_after_a_clear_until_the_wallet_is_bound_again(payment: PoolPayment) {
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let (_manager, wallet, coordinator) = manager_with_bound_wallet(dir.path()).await;
+
+        coordinator
+            .clear(&WipeCountingPersistence::default())
+            .await
+            .expect("cleared");
+        assert!(
+            wallet.is_shielded_bound().await,
+            "the handle keeps its keys across a Clear"
+        );
+        let refused = pay_from_pool(payment, &wallet).await;
+        assert!(
+            matches!(refused, Err(PlatformWalletError::ShieldedNotBound)),
+            "{payment:?}: {refused:?}"
+        );
+        assert!(
+            !coordinator.has_admitted_operation(),
+            "{payment:?}: a refused payment holds no admission"
+        );
+
+        wallet
+            .bind_shielded(&SEED, &[0])
+            .await
+            .expect("bound again");
+        let admitted = pay_from_pool(payment, &wallet).await;
+        assert!(
+            !matches!(
+                admitted,
+                Err(PlatformWalletError::ShieldedNotBound
+                    | PlatformWalletError::WalletRemovedBeforeSend(_))
+            ),
+            "{payment:?}: a wallet bound again is admitted: {admitted:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_private_contact_request_payment_after_a_clear_until_bound_again() {
+        is_refused_after_a_clear_until_the_wallet_is_bound_again(
+            PoolPayment::PrivateContactRequest,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn should_refuse_a_token_purchase_from_the_pool_after_a_clear_until_bound_again() {
+        is_refused_after_a_clear_until_the_wallet_is_bound_again(PoolPayment::TokenPurchase).await;
+    }
+
+    /// A payment from the pool does not wait for a bind of its wallet, nor
+    /// for what that bind waits for. An asset-lock funding holds
+    /// `shield_guard` across a ChainLock wait with no deadline, and a bind
+    /// that arrives then waits for the guard with only the gate in hand: it
+    /// takes the guard before its admission and the configuration lock. A
+    /// payment from notes the wallet already has returns all the same, with
+    /// the guard still held: it takes neither the configuration lock nor the
+    /// guard.
+    ///
+    /// A removal polled then queues on the gate behind the waiting bind, and
+    /// both return once the funding's guard is released: the payment took the
+    /// gate once and gave it back.
+    async fn does_not_wait_for_a_bind_queued_behind_a_funding(payment: PoolPayment) {
+        let dir = tempfile::tempdir().expect("temporary shielded store");
+        let (manager, wallet, coordinator) = manager_with_bound_wallet(dir.path()).await;
+        let wallet_id = wallet.wallet_id();
+
+        // As an asset-lock funding waiting for its ChainLock.
+        let funding = wallet.shield_guard.lock().await;
+        let bind = {
+            let wallet = Arc::clone(&wallet);
+            tokio::spawn(async move { wallet.bind_shielded(&SEED, &[0]).await })
+        };
+        // The bind has the gate, and waits for the guard.
+        let deadline = tokio::time::Instant::now() + REACHED;
+        while !removal_waits(&wallet).await {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "{payment:?}: the bind never took the lifecycle gate"
+            );
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert!(
+            !coordinator.has_admitted_operation(),
+            "{payment:?}: a bind queued behind a funding holds no admission, so it refuses \
+             no Clear"
+        );
+
+        let returned = tokio::time::timeout(REACHED, pay_from_pool(payment, &wallet))
+            .await
+            .expect("the payment does not wait for the bind, nor for the funding it waits for");
+        assert!(
+            !matches!(
+                returned,
+                Err(PlatformWalletError::WalletRemovedBeforeSend(_)
+                    | PlatformWalletError::ShieldedNotBound)
+            ),
+            "{payment:?}: the wallet was current and bound: {returned:?}"
+        );
+        assert!(!bind.is_finished(), "{payment:?}: the bind still waits");
+
+        // Polled to its wait: on the gate, which the bind holds.
+        let mut removal = Box::pin(manager.remove_wallet(&wallet_id));
+        assert!(
+            futures::poll!(&mut removal).is_pending(),
+            "{payment:?}: the removal waits for the bind"
+        );
+        drop(funding);
+        tokio::time::timeout(REACHED, bind)
+            .await
+            .expect("the bind returns")
+            .expect("bind task")
+            .expect("the wallet was current when the bind was admitted");
+        tokio::time::timeout(REACHED, removal)
+            .await
+            .expect("the removal returns")
+            .expect("the removal completes");
+        assert!(
+            !coordinator.registered_wallets().await.contains(&wallet_id),
+            "{payment:?}: the removal unregistered the wallet"
+        );
+        assert!(!coordinator.has_admitted_operation());
+    }
+
+    #[tokio::test]
+    async fn should_not_hold_a_private_contact_request_payment_behind_a_bind_queued_on_a_funding() {
+        does_not_wait_for_a_bind_queued_behind_a_funding(PoolPayment::PrivateContactRequest).await;
+    }
+
+    #[tokio::test]
+    async fn should_not_hold_a_token_purchase_from_the_pool_behind_a_bind_queued_on_a_funding() {
+        does_not_wait_for_a_bind_queued_behind_a_funding(PoolPayment::TokenPurchase).await;
     }
 }
 

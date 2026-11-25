@@ -399,13 +399,100 @@ async fn should_refuse_restore_when_its_cross_type_prerequisite_was_deleted() {
     assert_eq!(setup.post_removal(removed.id(), Some(&tx)), Some(removal));
 }
 
+/// A rule counting by the elements of an array (`{ "in": "tags" }`, protocol version 15) is
+/// judged on a restore with the tags of the restored document: a post removed before one of
+/// its tags was banned is not restored while the tag is banned, and is once it no longer is.
+#[tokio::test]
+async fn should_refuse_restore_while_an_element_of_the_restored_array_is_banned() {
+    let tag = platform_value!({"type": "string", "pattern": "^[a-z0-9_]{1,61}$", "maxLength": 61});
+    let setup = Setup::new_at_with(Some(moderators_without_lists()), PlatformVersion::latest(), |contract| {
+        add_document_type(contract, "bannedTag", platform_value!({
+            "type": "object",
+            "properties": {"tag": {"type": "string", "pattern": "^[a-z0-9_]{1,61}$", "maxLength": 61, "position": 0}},
+            "required": ["tag"], "additionalProperties": false,
+            "indices": [{"name": "byTag", "properties": [{"tag": "asc"}], "countable": "countable"}]
+        }));
+        add_document_type(contract, POST, post_schema_with(platform_value!({
+            "properties": {
+                "text": {"type": "string", "maxLength": 50, "position": 0},
+                "tags": {"type": "array", "items": tag, "maxItems": 4, "position": 1}
+            },
+            "required": ["text"],
+            "propertyConstraints": {"noBannedTags": {"equal": [
+                {"countOf": ["bannedTag", {"tag": {"in": "tags"}}]}, 0
+            ]}}
+        })));
+    }).await;
+    let tx = setup.platform.drive.grove.start_transaction();
+    let (post, create) = setup
+        .create_document_of_type_with(&setup.user, POST, |document| {
+            document.properties_mut().clear();
+            document.set("text", Value::Text("removed".to_string()));
+            document.set(
+                "tags",
+                Value::Array(vec![
+                    Value::Text("dash".to_string()),
+                    Value::Text("news".to_string()),
+                ]),
+            );
+        })
+        .await;
+    assert_success(&setup.process(&create, &tx));
+    let removed = setup
+        .stored_document(POST, post.id(), Some(&tx))
+        .expect("expected the created post");
+    let bytes = remove_post(&setup, &removed, &tx).await;
+    let removal = setup.post_removal(removed.id(), Some(&tx)).unwrap();
+
+    let (banned, ban) = setup
+        .create_document_of_type_with(&setup.user, "bannedTag", |document| {
+            document.properties_mut().clear();
+            document.set("tag", Value::Text("news".to_string()));
+        })
+        .await;
+    assert_success(&setup.process(&ban, &tx));
+    let restore = setup
+        .moderate(&setup.moderator, restore_action(POST, bytes.clone()))
+        .await;
+    constraint_refusal(&setup.process(&restore, &tx), "noBannedTags");
+    assert!(setup
+        .stored_document(POST, removed.id(), Some(&tx))
+        .is_none());
+    assert_eq!(setup.post_removal(removed.id(), Some(&tx)), Some(removal));
+
+    let banned = setup
+        .stored_document("bannedTag", banned.id(), Some(&tx))
+        .expect("expected the banned tag");
+    let unban = BatchTransition::new_document_deletion_transition_from_document(
+        banned,
+        setup.contract.document_type_for_name("bannedTag").unwrap(),
+        &setup.user.key,
+        setup.user.contract_nonce(),
+        0,
+        None,
+        &setup.user.signer,
+        PlatformVersion::latest(),
+        None,
+    )
+    .await
+    .unwrap();
+    assert_success(&setup.process(&unban, &tx));
+    let restore = setup
+        .moderate(&setup.moderator, restore_action(POST, bytes))
+        .await;
+    assert_success(&setup.process(&restore, &tx));
+    assert!(setup
+        .stored_document(POST, removed.id(), Some(&tx))
+        .is_some());
+}
+
 #[tokio::test]
 async fn should_preserve_the_rule_free_restore_fee_and_document() {
     // From protocol version 15 the restore reads its contract stored compiled (format version
     // 2), about 1.8 times its bytes; the decision proposals contract registered at genesis from
     // 15 and the token market contract registered at genesis from 16 add siblings to the
     // contracts tree the restore's path crosses.
-    run_rule_free_restore_at(PlatformVersion::latest(), 1_492_880).await;
+    run_rule_free_restore_at(PlatformVersion::latest(), 1_493_040).await;
 }
 
 /// PROTOCOL_VERSION_15: the genesis contracts tree without the token market contract. Pinned
@@ -414,7 +501,7 @@ async fn should_preserve_the_rule_free_restore_fee_and_document() {
 async fn should_preserve_the_rule_free_restore_fee_and_document_protocol_version_15() {
     run_rule_free_restore_at(
         PlatformVersion::get(15).expect("expected protocol version 15"),
-        1_442_880,
+        1_443_040,
     )
     .await;
 }

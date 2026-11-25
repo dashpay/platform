@@ -2,6 +2,7 @@
 //!
 //! Mirrors the structure of `platform_wallet::wallet::platform_addresses`.
 
+mod balance_history;
 mod fund_from_asset_lock;
 mod funding_fee;
 mod sync;
@@ -10,6 +11,7 @@ mod wallet;
 mod withdrawal;
 
 // Re-export all FFI types and functions.
+pub use balance_history::*;
 pub use fund_from_asset_lock::*;
 pub use funding_fee::*;
 pub use sync::*;

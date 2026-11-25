@@ -190,6 +190,10 @@ struct IdentityStorageDetailView: View {
                 FieldRow(label: "Owner Key", value: record.ownerPrivateKeyIdentifier != nil ? "Present" : "Not set")
                 FieldRow(label: "Voting Key", value: record.votingPrivateKeyIdentifier != nil ? "Present" : "Not set")
                 FieldRow(label: "Payout Key", value: record.payoutPrivateKeyIdentifier != nil ? "Present" : "Not set")
+                FieldRow(
+                    label: "Masternode proTxHash (wire)",
+                    value: record.masternodeProTxHash.map(hexString) ?? "Not recorded"
+                )
             }
             Section("Relationships") {
                 // Owning wallet via the `@Relationship`. Prefer
@@ -410,6 +414,29 @@ struct DashpayContactProfileStorageDetailView: View {
             }
         }
         .navigationTitle("Contact Profile")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - PersistentDashpayPaymentAddresses
+
+struct DashpayPaymentAddressesStorageDetailView: View {
+    let record: PersistentDashpayPaymentAddresses
+
+    var body: some View {
+        Form {
+            Section("Profile") {
+                FieldRow(label: "Network", value: Network(rawValue: record.networkRaw)?.displayName ?? String(record.networkRaw))
+                FieldRow(label: "Owner ID (Hex)", value: hexString(record.ownerIdentityId))
+                FieldRow(label: "Profile ID (Hex)", value: hexString(record.profileIdentityId))
+            }
+            Section("Payment Addresses (Hex)") {
+                FieldRow(label: "Core (21 B)", value: record.corePaymentAddress.map(hexString) ?? "—")
+                FieldRow(label: "Platform (21 B)", value: record.platformPaymentAddress.map(hexString) ?? "—")
+                FieldRow(label: "Shielded (43 B)", value: record.shieldedAddress.map(hexString) ?? "—")
+            }
+        }
+        .navigationTitle("Payment Addresses")
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -1831,12 +1858,20 @@ struct CoreAddressDetailView: View {
     let record: PersistentCoreAddress
 
     @EnvironmentObject private var walletManager: PlatformWalletManager
+    @Environment(\.scenePhase) private var scenePhase
 
-    /// The revealed key material, held only after the user confirms.
-    /// `nil` keeps the section in its "View Private Key" gated state.
+    /// The revealed key material, held only after the device owner
+    /// authenticates, and cleared when the screen closes or the app goes
+    /// to the background. `nil` keeps the section in its "View Private
+    /// Key" gated state.
     @State private var privateKey: ManagedPlatformWallet.CoreAddressPrivateKey?
-    @State private var showRevealConfirm = false
+    /// True from the tap through authentication and derivation, so the
+    /// button cannot fire twice.
     @State private var isRevealing = false
+    /// Token of the reveal in flight. `clearReveal()` resets it, so a
+    /// prompt or derive that finishes after the screen closed or the app
+    /// went to the background publishes nothing.
+    @State private var revealRequest: UUID?
     @State private var revealError: String?
     /// Label of the row whose value was just copied, for a transient
     /// "Copied" confirmation.
@@ -1882,25 +1917,51 @@ struct CoreAddressDetailView: View {
         }
         .navigationTitle("Address")
         .navigationBarTitleDisplayMode(.inline)
+        .onDisappear { clearReveal() }
+        .onChange(of: scenePhase) { _, phase in
+            // Only `.background` clears: the authentication prompt itself
+            // makes the scene `.inactive`, and must not cancel its own
+            // reveal.
+            if phase == .background { clearReveal() }
+        }
+    }
+
+    /// Drop the revealed key, reset the busy flag, and invalidate any
+    /// reveal still in flight.
+    private func clearReveal() {
+        privateKey = nil
+        copiedLabel = nil
+        isRevealing = false
+        revealRequest = nil
     }
 
     /// Reveal-gated private-key section. Before reveal it shows a single
-    /// "View Private Key" button that pops a confirmation dialog (this is
-    /// a developer example app, so a plain confirm — no biometrics — is
-    /// enough). After the user confirms, the derived hex + WIF are shown
-    /// monospaced with tap-to-copy.
+    /// "View Private Key" button with the warning under it; tapping it
+    /// asks the device owner to authenticate (Face ID / Touch ID /
+    /// passcode, see `DeviceOwnerAuthentication`) and only then derives
+    /// the key. After that the hex + WIF are shown monospaced with
+    /// tap-to-copy, except while the app is not active (app switcher),
+    /// when a placeholder replaces them.
     @ViewBuilder
     private var privateKeySection: some View {
         Section("Private Key") {
             if let key = privateKey {
-                copyableKeyRow(label: "Hex", value: key.hex)
-                copyableKeyRow(label: "WIF", value: key.wif)
+                if scenePhase == .active {
+                    copyableKeyRow(label: "Hex", value: key.hex)
+                        .accessibilityIdentifier("coreAddress.privateKey.hex")
+                    copyableKeyRow(label: "WIF", value: key.wif)
+                        .accessibilityIdentifier("coreAddress.privateKey.wif")
+                } else {
+                    Text("Hidden while the app is not active")
+                        .foregroundColor(.secondary)
+                        .accessibilityIdentifier("coreAddress.privateKey.hidden")
+                }
                 Text("Anyone with this key controls this address's funds. Never share it.")
                     .font(.caption2)
                     .foregroundColor(.secondary)
             } else {
                 Button {
-                    showRevealConfirm = true
+                    authorizeAndReveal()
                 } label: {
                     HStack {
                         Image(systemName: "key.fill")
@@ -1908,23 +1969,19 @@ struct CoreAddressDetailView: View {
                     }
                 }
                 .disabled(isRevealing)
+                .accessibilityIdentifier("coreAddress.revealPrivateKeyButton")
+
+                Text("The private key grants full control of this address's funds. Only reveal it somewhere private.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
 
                 if let revealError {
                     Text(revealError)
                         .font(.caption)
                         .foregroundColor(.red)
+                        .accessibilityIdentifier("coreAddress.revealError")
                 }
             }
-        }
-        .confirmationDialog(
-            "Reveal Private Key?",
-            isPresented: $showRevealConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("Reveal Private Key", role: .destructive) { reveal() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The private key grants full control of this address's funds. Only reveal it somewhere private.")
         }
     }
 
@@ -1950,21 +2007,55 @@ struct CoreAddressDetailView: View {
                 .font(.system(.footnote, design: .monospaced))
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .privacySensitive()
         }
         .contentShape(Rectangle())
         .onTapGesture { copy(value, label: label) }
     }
 
+    /// Authenticate the device owner, then derive the key. A cancelled
+    /// prompt shows nothing; an unavailable or failed one shows its
+    /// message. `isRevealing` stays true from the tap until the derive
+    /// finishes. A result that arrives after `clearReveal()` is dropped.
+    private func authorizeAndReveal() {
+        guard !isRevealing else { return }
+        let request = UUID()
+        revealRequest = request
+        isRevealing = true
+        revealError = nil
+        Task { @MainActor in
+            let outcome = await DeviceOwnerAuthentication.authorize(
+                reason: "Reveal the private key of this address."
+            )
+            guard revealRequest == request else { return }
+            switch outcome {
+            case .authorized:
+                reveal(request: request)
+            case .cancelled:
+                isRevealing = false
+            case .unavailable(let detail):
+                revealError = "Authentication is unavailable on this device: \(detail)"
+                isRevealing = false
+            case .failed(let detail):
+                revealError = "Authorization failed: \(detail)"
+                isRevealing = false
+            }
+        }
+    }
+
     /// Look up the owning wallet and ask Rust to derive this address's
     /// private key. All derivation happens on the Rust side; the mnemonic
-    /// is pulled on demand via the resolver and never enters Swift.
-    private func reveal() {
+    /// is pulled on demand via the resolver and never enters Swift. The
+    /// key is published only while `request` is still the current reveal.
+    private func reveal(request: UUID) {
         guard let walletId = record.account?.wallet.walletId else {
             revealError = "This address is not linked to a wallet."
+            isRevealing = false
             return
         }
         guard let wallet = walletManager.wallet(for: walletId) else {
             revealError = "The owning wallet is not loaded."
+            isRevealing = false
             return
         }
         isRevealing = true
@@ -1976,11 +2067,13 @@ struct CoreAddressDetailView: View {
             do {
                 let key = try wallet.coreAddressPrivateKey(address: record.address)
                 await MainActor.run {
+                    guard revealRequest == request else { return }
                     privateKey = key
                     isRevealing = false
                 }
             } catch {
                 await MainActor.run {
+                    guard revealRequest == request else { return }
                     revealError = error.localizedDescription
                     isRevealing = false
                 }
@@ -1990,14 +2083,18 @@ struct CoreAddressDetailView: View {
 
     private func copy(_ value: String, label: String) {
         // This copies a raw private key / WIF to the system-wide
-        // pasteboard, which other apps and clipboard managers can read and
-        // Universal Clipboard syncs across devices. Set a short expiry so
-        // the secret doesn't linger there indefinitely. Fine for this demo
-        // app; a production wallet should avoid clipboard export of secrets
-        // (or gate it far more tightly).
+        // pasteboard, which other apps and clipboard managers can read.
+        // Keep it local-only (no Universal Clipboard sync to other
+        // devices) and set a short expiry so the secret doesn't linger
+        // there indefinitely. Fine for this demo app; a production wallet
+        // should avoid clipboard export of secrets (or gate it far more
+        // tightly).
         UIPasteboard.general.setItems(
             [["public.utf8-plain-text": value]],
-            options: [.expirationDate: Date().addingTimeInterval(60)]
+            options: [
+                .localOnly: true,
+                .expirationDate: Date().addingTimeInterval(60),
+            ]
         )
         copiedLabel = label
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
@@ -2511,7 +2608,15 @@ struct ShieldedActivityStorageDetailView: View {
                 FieldRow(label: "Status", value: statusDisplay(record.status))
             }
             Section("Amounts") {
-                FieldRow(label: "Amount", value: "\(record.amount) credits")
+                // Token kinds record the tokens moved, in the token's smallest
+                // unit; every other kind records credits.
+                FieldRow(
+                    label: "Amount",
+                    value: ShieldedActivityKindDisplay.rawAmountText(
+                        record.amount,
+                        tag: record.kindTag
+                    )
+                )
                 FieldRow(
                     label: "Fee",
                     value: record.hasFee ? "\(record.fee) credits" : "(unknown)"
@@ -2565,6 +2670,11 @@ struct ShieldedActivityStorageDetailView: View {
         case 7: name = "ShieldedSpend"
         case 8: name = "ShieldFromIdentity"
         case 9: name = "IdentityTopUpFromPool"
+        case 10: name = "TokenPurchase"
+        case 11: name = "TokenShieldedTransfer"
+        case 12: name = "TokenUnshield"
+        case 13: name = "PrivateDocumentCreate"
+        case 14: name = "PrivateContactRequest"
         default: return "Unknown(\(tag))"
         }
         return "\(name) (\(tag))"

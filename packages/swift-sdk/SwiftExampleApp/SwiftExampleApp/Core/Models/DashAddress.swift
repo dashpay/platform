@@ -6,6 +6,23 @@ enum DashAddressType: Equatable {
     case platform(Data)  // 21-byte platform address (type byte + 20-byte hash)
     case orchard(Data)   // 43-byte raw Orchard address
     case unknown
+
+    /// The kind of recipient, without its address bytes.
+    enum Kind: Equatable {
+        case core
+        case platform
+        case orchard
+        case unknown
+    }
+
+    var kind: Kind {
+        switch self {
+        case .core: return .core
+        case .platform: return .platform
+        case .orchard: return .orchard
+        case .unknown: return .unknown
+        }
+    }
 }
 
 struct DashAddress {

@@ -201,9 +201,14 @@ shielded pool that pays the fee, both authorized only by Orchard spend keys.
 Every transition names the contract, the token position and the token id (which must derive
 from the two), the two bundles and `credit_amount`, the fee bundle's value balance. The token
 bundle's sighash binds the state transition type byte, the token id and the transparent fields
-(recipient and amount, or count and price); the fee bundle's sighash binds the type byte, the
-token id and a digest of the token bundle's actions (`token_pool_fee_bundle_extra_sighash_data`),
-so a fee bundle can only ever pay for that exact token bundle.
+(recipient and amount, or count and price), and from protocol version 15 the fee bundle's Orchard
+commitment after them (`token_pool_paid_fee_binding_extra_sighash_data`); the fee bundle's sighash
+binds the type byte, the token id and a digest of the token bundle's actions
+(`token_pool_fee_bundle_extra_sighash_data`). A fee bundle can only ever pay for that exact token
+bundle, and from protocol version 15 a token bundle lands only with its own fee bundle. The
+commitment covers the fee bundle's effecting data, not its proof or signatures, so the builder
+takes it before proving the fee bundle, signs the token bundle over it, and then signs the fee
+bundle over the token bundle's signed actions.
 
 The processor treats them like the credit pool's own pool-paid transitions: structure
 validation checks both bundles, the minimum fee validation pins `credit_amount` to exactly the

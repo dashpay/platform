@@ -579,6 +579,13 @@ pub fn vote_contested_resource_contract_documents_indexes_path_vec(
     ]
 }
 
+/// The end date a contest is listed under once its end left it open (protocol version 15): the
+/// winner's document could not be decoded or written, so nothing was awarded, recorded or
+/// cleaned up. No block time reaches it, so the contest is not ended again, and a later
+/// protocol version finds every such contest under it. `encode_u64` flips the sign bit, which
+/// makes `i64::MAX` the end date that sorts after every other one.
+pub const VOTE_POLLS_LEFT_OPEN_END_DATE: TimestampMillis = i64::MAX as u64;
+
 /// the specific end date path query of a contested resources as a vec
 /// there is no need to ever add a key to this
 pub fn vote_contested_resource_end_date_queries_at_time_tree_path_vec(

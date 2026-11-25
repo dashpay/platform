@@ -1,5 +1,8 @@
 //! Error handling for FFI layer
 
+use dash_sdk::dapi_client::transport::TransportError;
+use dash_sdk::dapi_client::DapiClientError;
+use dash_sdk::dapi_grpc::tonic::Code;
 use dash_sdk::dpp::consensus::codes::ErrorWithCode;
 use dash_sdk::dpp::ProtocolError;
 use std::ffi::{CString, NulError};
@@ -265,6 +268,12 @@ impl From<FFIError> for DashSDKError {
                     // emit only the inner Drive message so downstream FFI consumers
                     // don't double-render the "Drive internal error: " prefix.
                     (DashSDKErrorCode::DriveInternalError, inner.clone())
+                } else if matches!(sdk_err, dash_sdk::Error::MissingDependency(..)) {
+                    // A proved absence of something the request needs. Its message names
+                    // the missing object by its id, a base58 string that can hold
+                    // "dapi", "timeout" or "connection", so it is classified by its
+                    // variant before the substring fallbacks below.
+                    (DashSDKErrorCode::NotFound, error_str)
                 } else if let dash_sdk::Error::InvalidRequest(reason) = sdk_err {
                     // The caller's request has to change: no node answers it as the
                     // requested result type, whatever words its message holds.
@@ -284,6 +293,10 @@ impl From<FFIError> for DashSDKError {
                         Some(cause) => (code, format!("{error_str}: {cause}")),
                         None => (code, error_str),
                     }
+                } else if let Some(code) = node_refusal_code(sdk_err) {
+                    // The request itself was refused as invalid: the caller has to change
+                    // it. Not a network failure, and never an empty result.
+                    (code, error_str)
                 } else if matches!(
                     sdk_err,
                     dash_sdk::Error::DapiClientError(_)
@@ -405,6 +418,22 @@ macro_rules! ffi_result {
     };
 }
 
+/// The error code of a refusal of the request itself, read from a gRPC `InvalidArgument`
+/// status (for example a moderation list the contract does not keep): the caller has to change
+/// the request. `None` for every other status and every transport failure, which stay network
+/// failures. A gRPC `NotFound` among them: a node's word that something is absent is not
+/// proved, and `NotFound` is kept for an absence a proof showed (`Error::MissingDependency`).
+fn node_refusal_code(error: &dash_sdk::Error) -> Option<DashSDKErrorCode> {
+    let dash_sdk::Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(status))) =
+        error
+    else {
+        return None;
+    };
+    match status.code() {
+        Code::InvalidArgument => Some(DashSDKErrorCode::InvalidParameter),
+        _ => None,
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -791,10 +820,38 @@ mod tests {
     /// What the SDK's retry loop ends a document request with when its node answered at an
     /// older protocol version than the SDK's and then no node was left to ask.
     async fn every_node_answered_at_an_older_protocol_version() -> dash_sdk::Error {
+        every_node_answered_with(|| {
+            dash_sdk::Error::StaleNode(dash_sdk::error::StaleNodeError::ProtocolVersion {
+                expected_protocol_version: 14,
+                received_protocol_version: 13,
+            })
+        })
+        .await
+    }
+
+    /// What the SDK's retry loop ends a request with when its node gave an answer this build
+    /// could not read, on a network proven to run a protocol version newer than the build
+    /// knows, and then no node was left to ask. The verifier's own text holds words the
+    /// fallbacks below read as a timeout, a connection failure and a DAPI error.
+    async fn every_node_answered_in_a_form_of_a_newer_protocol_version() -> dash_sdk::Error {
+        every_node_answered_with(|| {
+            dash_sdk::Error::StaleNode(dash_sdk::error::StaleNodeError::NewerProtocolVersion {
+                supported_protocol_version: 15,
+                network_protocol_version: 16,
+                error: Box::new(drive_proof_verifier::Error::ProtocolError {
+                    error: "timeout on a DAPI connection".to_string(),
+                }),
+            })
+        })
+        .await
+    }
+
+    /// What the SDK's retry loop ends a request with when its node answered with `spared`,
+    /// an answer that does not get the node banned, and then no node was left to ask.
+    async fn every_node_answered_with(spared: fn() -> dash_sdk::Error) -> dash_sdk::Error {
         use dash_sdk::dapi_client::{
             Address, AddressList, DapiClientError, ExecutionError, ExecutionResponse,
         };
-        use dash_sdk::error::StaleNodeError;
         use std::sync::atomic::{AtomicBool, Ordering};
 
         let node: Address = "http://127.0.0.1:1".parse().expect("address");
@@ -812,10 +869,7 @@ mod tests {
                 Err::<ExecutionResponse<()>, _>(if first {
                     ExecutionError {
                         possibly_accepted: false,
-                        inner: dash_sdk::Error::StaleNode(StaleNodeError::ProtocolVersion {
-                            expected_protocol_version: 14,
-                            received_protocol_version: 13,
-                        }),
+                        inner: spared(),
                         retries: 0,
                         address: Some(node),
                     }
@@ -843,6 +897,20 @@ mod tests {
     ) {
         let error = every_node_answered_at_an_older_protocol_version().await;
 
+        assert_eq!(classify(error), DashSDKErrorCode::ProtocolError);
+    }
+
+    /// No node can help an SDK older than its network: the app has to update it. The host
+    /// gets a protocol error whatever the verifier said about the answer it could not read.
+    #[tokio::test]
+    async fn should_report_a_request_no_node_could_answer_readably_on_a_newer_network_as_protocol_error(
+    ) {
+        let error = every_node_answered_in_a_form_of_a_newer_protocol_version().await;
+
+        assert!(
+            matches!(&error, dash_sdk::Error::Config(reason) if reason.contains("update the SDK")),
+            "{error:?}"
+        );
         assert_eq!(classify(error), DashSDKErrorCode::ProtocolError);
     }
 
@@ -874,6 +942,61 @@ mod tests {
         };
         assert_eq!(dash_sdk_error.code, DashSDKErrorCode::DriveInternalError);
         assert_eq!(message, "storage layer constraint");
+    }
+
+    fn grpc_error(status: dash_sdk::dapi_grpc::tonic::Status) -> dash_sdk::Error {
+        dash_sdk::Error::DapiClientError(DapiClientError::Transport(TransportError::Grpc(status)))
+    }
+
+    #[test]
+    fn should_map_a_refused_request_to_the_callers_error_and_not_to_a_network_failure() {
+        use dash_sdk::dapi_grpc::tonic::Status;
+
+        // A list the contract does not keep: the request has to change
+        assert_eq!(
+            classify(grpc_error(Status::invalid_argument(
+                "contract does not keep a suspension list"
+            ))),
+            DashSDKErrorCode::InvalidParameter
+        );
+    }
+
+    #[test]
+    fn should_keep_transport_failures_and_unproved_absences_as_network_errors() {
+        use dash_sdk::dapi_grpc::tonic::Status;
+
+        // A node's NotFound is its word, not a proof: NotFound is kept for a proved absence
+        // (MissingDependency), so the node's status stays a network failure.
+        for status in [
+            Status::unavailable("node is down"),
+            Status::deadline_exceeded("too slow"),
+            Status::internal("boom"),
+            Status::not_found("data contract not found"),
+        ] {
+            let code = status.code();
+            assert_eq!(
+                classify(grpc_error(status)),
+                DashSDKErrorCode::NetworkError,
+                "{code:?}"
+            );
+        }
+        assert_eq!(
+            classify(dash_sdk::Error::DapiClientError(
+                DapiClientError::NoAvailableAddresses
+            )),
+            DashSDKErrorCode::NetworkError
+        );
+    }
+
+    #[test]
+    fn missing_dependency_maps_to_not_found_whatever_its_id_spells() {
+        // A base58 id can spell words the substring fallbacks look for; a proved absence
+        // stays NotFound rather than surfacing as a timeout or a network failure.
+        for id in ["3dapiXk9", "7timeoutQ2", "connection8Zz", "DAPItimeout"] {
+            let err =
+                dash_sdk::Error::MissingDependency("DataContract".to_string(), id.to_string());
+            assert_eq!(classify(err), DashSDKErrorCode::NotFound, "{id}");
+        }
     }
 
     #[test]

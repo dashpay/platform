@@ -44,6 +44,7 @@ import org.dashfoundation.dashsdk.persistence.entities.DashpayIgnoredSenderEntit
 import org.dashfoundation.dashsdk.persistence.entities.DashpayProfileEntity
 import org.dashfoundation.dashsdk.persistence.entities.DpnsNameEntity
 import org.dashfoundation.dashsdk.persistence.entities.IdentityEntity
+import org.dashfoundation.dashsdk.security.PendingIdentityKeyDelete
 import org.dashfoundation.dashsdk.persistence.entities.InvitationEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressEntity
 import org.dashfoundation.dashsdk.persistence.entities.PlatformAddressesSyncStateEntity
@@ -142,6 +143,34 @@ class PlatformWalletPersistenceHandler(
      */
     private val storedTransactionInputs: StoredTransactionInputs =
         NativeStoredTransactionInputs(network),
+    /**
+     * Durably records the key aliases of an identity whose rows a persisted
+     * identity removal deletes, before the round commits, so their stored
+     * private keys are deleted once nothing needs them (see
+     * `org.dashfoundation.dashsdk.wallet.settlePendingIdentityKeyDeletes`).
+     * The manager wires `WalletStorage`; null (tests) records nothing.
+     */
+    private val recordRemovedIdentityKeys: (suspend (List<PendingIdentityKeyDelete>) -> Unit)? = null,
+    /**
+     * Settles pending identity-key deletes, leaving alone the aliases passed
+     * in (still staged by another open round). Called when a round that
+     * staged identity-key rows ends, committed or rolled back, so a delete a
+     * settle deferred while that round was open is retried then rather than
+     * at the next removal. The manager wires
+     * `org.dashfoundation.dashsdk.wallet.settlePendingIdentityKeyDeletes`;
+     * null (tests) retries nothing. A failure is logged and left for a later
+     * settle; it never fails the round.
+     */
+    private val settlePendingKeyDeletesAfterRound: (suspend (inFlight: Set<String>) -> Unit)? = null,
+    /**
+     * Where a token balance callback gets the canonical token id of a saved
+     * token, to link the balance row to its `tokens` row (keyed by
+     * `contractId || position`, while the callback carries the canonical
+     * id). The production default calls the native `calculateTokenId`;
+     * tests inject a fake, since the native library is not loadable under
+     * Robolectric.
+     */
+    private val canonicalTokenIds: CanonicalTokenIds = NativeCanonicalTokenIds,
 ) : NativePersistenceBridge(), AutoCloseable {
 
     override fun persistenceCapabilitiesVersion(): Int = PERSISTENCE_CAPABILITIES_VERSION
@@ -157,6 +186,8 @@ class PlatformWalletPersistenceHandler(
             CAPABILITY_DPNS_NAME_STATES or
             CAPABILITY_TRACKED_ASSET_LOCKS or
             CAPABILITY_CORE_SWEEP_REMOVAL or
+            CAPABILITY_ASSET_LOCK_OPERATION_IDS or
+            CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS or
             CAPABILITY_PRIVATE_CONTACT_REQUEST_SCAN_STATE or
             CAPABILITY_SHIELDED_STATE_WIPE
 
@@ -234,7 +265,25 @@ class PlatformWalletPersistenceHandler(
          * [collectFinalizedSweptTombstones] once, last.
          */
         var finalityAdvanced: Boolean = false
+
+        /**
+         * Hex of every identity-key alias this round upserts. Its row is only
+         * buffered until [onChangesetEnd], so a pending identity-key delete
+         * for it must not be settled meanwhile ([aliasesStagedInOpenRounds]).
+         */
+        val stagedKeyAliases: MutableSet<String> = mutableSetOf()
     }
+
+    /**
+     * Identity-key aliases an open round has staged a row for but not yet
+     * committed. Settling a pending identity-key delete leaves these alone:
+     * their wallet's claim and stored key belong to a row about to commit
+     * (or to a round about to roll back). The caller holds
+     * [callbackExclusion] (via [withCallbackExclusion]), which guards
+     * [buffers].
+     */
+    internal fun aliasesStagedInOpenRounds(): Set<String> =
+        buffers.values.flatMapTo(mutableSetOf()) { it.stagedKeyAliases }
 
     /** Open rounds keyed by walletId hex (a round is per-walletId). */
     private val buffers = HashMap<String, ChangesetBuffer>()
@@ -438,6 +487,9 @@ class PlatformWalletPersistenceHandler(
         // replaced buffer). Then retry any earlier failed cleanup.
         scrubPendingAliases(key)
         retryOrphanedAliases(key)
+        // The abandoned round's staged identity-key rows never commit either:
+        // settle the pending deletes a settle deferred for them.
+        buffers.remove(key)?.let(::retryDeferredKeyDeletes)
         buffers[key] = ChangesetBuffer()
         0
     }
@@ -445,6 +497,16 @@ class PlatformWalletPersistenceHandler(
     override fun onChangesetEnd(walletId: ByteArray, success: Boolean): Int = guarded {
         val key = walletId.toHex()
         val buffer = buffers.remove(key) ?: return@guarded 0
+        try {
+            endRound(walletId, key, buffer, success)
+        } finally {
+            retryDeferredKeyDeletes(buffer)
+        }
+        0
+    }
+
+    /** [onChangesetEnd] body for [buffer], already detached from [buffers]. */
+    private fun endRound(walletId: ByteArray, key: String, buffer: ChangesetBuffer, success: Boolean) {
         if (!success) {
             // Rollback: discard every staged write, mirroring
             // `backgroundContext.rollback()` — and delete the aliases the
@@ -454,7 +516,7 @@ class PlatformWalletPersistenceHandler(
             // staged pending-key deltas are discarded with the buffer, so
             // the pre-round [pendingIdentityKeys] map survives untouched.
             scrubPendingAliases(key)
-            return@guarded 0
+            return
         }
         try {
             runBlockingCatching {
@@ -486,7 +548,32 @@ class PlatformWalletPersistenceHandler(
             scrubPendingAliases(key)
             throw t
         }
-        0
+    }
+
+    /**
+     * After a round that staged identity-key rows ends, settle the pending
+     * identity-key deletes a settle may have deferred for those aliases
+     * meanwhile. Caller holds [callbackExclusion] (every callback does).
+     */
+    private fun retryDeferredKeyDeletes(buffer: ChangesetBuffer) {
+        val settle = settlePendingKeyDeletesAfterRound ?: return
+        if (buffer.stagedKeyAliases.isEmpty()) return
+        try {
+            runBlockingCatching { settle(aliasesStagedInOpenRounds()) }
+        } catch (t: Throwable) {
+            Log.w(TAG, "pending identity-key deletes left for a later settle", t)
+        }
+    }
+
+    /**
+     * Settle every pending identity-key delete once, as on a fresh launch
+     * where no round is open: the recovery for a round-end settle that failed
+     * or a process that died before one. Runs under [callbackExclusion].
+     * Throws what the settle throws; the caller decides whether that is fatal.
+     */
+    internal suspend fun settlePendingIdentityKeyDeletesNow() {
+        val settle = settlePendingKeyDeletesAfterRound ?: return
+        withCallbackExclusion { settle(aliasesStagedInOpenRounds()) }
     }
 
 
@@ -1728,6 +1815,9 @@ class PlatformWalletPersistenceHandler(
         dashpayAvatarFingerprint: ByteArray,
         dashpayAvatarFingerprintPresent: Boolean,
         dashpayPublicMessage: String?,
+        dashpayCorePaymentAddress: ByteArray?,
+        dashpayPlatformPaymentAddress: ByteArray?,
+        dashpayShieldedAddress: ByteArray?,
     ): Int = guarded {
         stage(walletId) { db ->
             val ownerWallet = if (walletIdIsSome) identityWalletId else walletId
@@ -1829,7 +1919,11 @@ class PlatformWalletPersistenceHandler(
             }
 
             // DashPay profile: present == "update the whole document";
-            // absent == "no update" (never a delete).
+            // absent == "no update" (never a delete). The payment addresses
+            // are part of the document: a null one is not published, so it
+            // overwrites a previously stored one (Swift
+            // `PersistentDashpayPaymentAddresses.replace`). They ride the
+            // same row, so the profile and its addresses commit together.
             if (dashpayProfilePresent) {
                 db.dashpayDao().upsertProfile(
                     DashpayProfileEntity(
@@ -1842,6 +1936,9 @@ class PlatformWalletPersistenceHandler(
                         avatarHash = if (dashpayAvatarHashPresent) dashpayAvatarHash else null,
                         avatarFingerprint = if (dashpayAvatarFingerprintPresent)
                             dashpayAvatarFingerprint else null,
+                        corePaymentAddress = dashpayCorePaymentAddress,
+                        platformPaymentAddress = dashpayPlatformPaymentAddress,
+                        shieldedAddress = dashpayShieldedAddress,
                         lastUpdated = now(),
                     ),
                 )
@@ -1852,7 +1949,18 @@ class PlatformWalletPersistenceHandler(
 
     override fun onPersistIdentityRemoval(walletId: ByteArray, identityId: ByteArray): Int = guarded {
         val identityBase58 = identityId.toBase58String()
-        stage(walletId) { db -> db.identityDao().deleteByIdentityId(identityId) }
+        stage(walletId) { db ->
+            // Record the aliases the rows hold right now, inside the round,
+            // before the delete below cascades them away.
+            recordRemovedIdentityKeys?.let { record ->
+                val owner = db.identityDao().getByIdentityId(identityId)?.walletId
+                record(
+                    db.publicKeyDao().getByIdentityId(identityBase58)
+                        .map { PendingIdentityKeyDelete(it.publicKeyData.toHex(), owner) },
+                )
+            }
+            deleteIdentityFootprint(db, identityId)
+        }
         // The identity delete cascades away all of its public-key rows, so
         // every pending-repair entry for this identity is now a phantom —
         // the key can never be re-derived/repaired into an identity that no
@@ -1961,6 +2069,7 @@ class PlatformWalletPersistenceHandler(
         expiresAtIsSome: Boolean,
         expiresAt: Long,
     ): Int = guarded {
+        openRound(walletId)?.stagedKeyAliases?.add(publicKeyData.toHex())
         // Item 1 — private-key persistence (the CLAUDE.md "one allowed
         // exception" shape). The `IdentityKeyEntryFFI` payload carries only
         // a derivation breadcrumb (`wallet_id` + `identity_index` +
@@ -2154,18 +2263,28 @@ class PlatformWalletPersistenceHandler(
         balance: Long,
     ): Int = guarded {
         stage(walletId) { db ->
-            val networkRaw = db.walletDao().getByWalletId(walletId)?.networkRaw ?: NETWORK_TESTNET
             val tokenBase58 = tokenId.toBase58String()
-            val existing = db.tokenDao().getBalance(tokenBase58, identityId)
+            val knownNetwork = balanceNetwork(db, walletId)
+            // Scoped to the network when it is known, so the same identity
+            // and token ids on another network keep their own row.
+            val existing = if (knownNetwork != null) {
+                db.tokenDao().getBalanceOnNetwork(tokenBase58, identityId, knownNetwork)
+            } else {
+                db.tokenDao().getBalance(tokenBase58, identityId)
+            }
+            val networkRaw = knownNetwork ?: existing?.networkRaw ?: NETWORK_TESTNET
             val row = TokenBalanceEntity(
                 id = existing?.id ?: 0,
                 tokenId = tokenBase58,
                 identityId = identityId,
                 balance = UInt64Value.fromRawLongBits(balance),
                 frozen = existing?.frozen ?: false,
-                networkRaw = existing?.networkRaw ?: networkRaw,
-                identityRef = identityId,
-                tokenRef = if (db.tokenDao().getTokenById(tokenId) != null) tokenId else existing?.tokenRef,
+                networkRaw = networkRaw,
+                // `identityRef` is a foreign key: set it only when the
+                // identity is stored here (an identity watched before it is
+                // saved still gets its balance, keyed by `identityId`).
+                identityRef = identityId.takeIf { db.identityDao().getByIdentityId(it) != null },
+                tokenRef = linkedTokenKey(db, tokenId, tokenBase58, networkRaw, existing?.tokenRef),
                 createdAt = existing?.createdAt ?: java.util.Date(),
                 lastUpdated = now(),
                 lastSyncedAt = now(),
@@ -2175,13 +2294,55 @@ class PlatformWalletPersistenceHandler(
         0
     }
 
+    /**
+     * Network a token balance callback writes to: the wallet's, else this
+     * handler's manager network. The identity-token sync sends its rows under
+     * the all-zero wallet id, which names no wallet. Null only for an
+     * unscoped handler (tests) on an unknown wallet.
+     */
+    private suspend fun balanceNetwork(db: DashDatabase, walletId: ByteArray): Int? =
+        db.walletDao().getByWalletId(walletId)?.networkRaw ?: network?.ffiValue
+
+    /** Canonical base58 token id per saved token key; a pure function, so cached. */
+    private val canonicalTokenIdCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /**
+     * The `tokens` row key a balance for [tokenId] links to: the row keyed by
+     * [tokenId] itself, else the link the balance row already has, else the
+     * saved token on [networkRaw] whose canonical id is [tokenBase58]. Null
+     * when no saved token matches; a later upsert links it once the
+     * contract is saved.
+     */
+    private suspend fun linkedTokenKey(
+        db: DashDatabase,
+        tokenId: ByteArray,
+        tokenBase58: String,
+        networkRaw: Int,
+        existingRef: ByteArray?,
+    ): ByteArray? {
+        db.tokenDao().getTokenById(tokenId)?.let { return it.id }
+        if (existingRef != null) return existingRef
+        return db.tokenDao().getTokensByNetwork(networkRaw).firstOrNull { token ->
+            val canonical = canonicalTokenIdCache[token.id.toHex()]
+                ?: runCatching { canonicalTokenIds.canonicalTokenId(token.contractId, token.position) }
+                    .getOrNull()
+                    ?.also { canonicalTokenIdCache[token.id.toHex()] = it }
+            canonical == tokenBase58
+        }?.id
+    }
+
     override fun onPersistTokenBalanceRemoval(
         walletId: ByteArray,
         identityId: ByteArray,
         tokenId: ByteArray,
     ): Int = guarded {
         stage(walletId) { db ->
-            db.tokenDao().deleteBalance(tokenId.toBase58String(), identityId)
+            val knownNetwork = balanceNetwork(db, walletId)
+            if (knownNetwork != null) {
+                db.tokenDao().deleteBalanceOnNetwork(tokenId.toBase58String(), identityId, knownNetwork)
+            } else {
+                db.tokenDao().deleteBalance(tokenId.toBase58String(), identityId)
+            }
         }
         0
     }
@@ -2340,6 +2501,9 @@ class PlatformWalletPersistenceHandler(
         avatarFingerprintPresent: Boolean,
         publicMessage: String?,
         checkedAtMs: Long,
+        corePaymentAddress: ByteArray?,
+        platformPaymentAddress: ByteArray?,
+        shieldedAddress: ByteArray?,
     ): Int = guarded {
         stage(walletId) { db ->
             // Owner identity must exist (networkRaw is read off it). In the
@@ -2362,6 +2526,9 @@ class PlatformWalletPersistenceHandler(
                         avatarUrl = avatarUrl,
                         avatarHash = avatarHash.takeIf { avatarHashPresent },
                         avatarFingerprint = avatarFingerprint.takeIf { avatarFingerprintPresent },
+                        corePaymentAddress = corePaymentAddress,
+                        platformPaymentAddress = platformPaymentAddress,
+                        shieldedAddress = shieldedAddress,
                         checkedAtMs = checkedAtMs,
                         lastUpdated = now(),
                     ),
@@ -2418,10 +2585,14 @@ class PlatformWalletPersistenceHandler(
             // (PlatformWalletPersistenceHandler.swift:270). All other
             // transitions stay last-write-wins because non-terminal
             // statuses legitimately move both ways.
+            //
+            // DrainCompleted (6) is terminal too, and outranks Consumed: it
+            // is the receipt that reports a wallet drain as finished, so a
+            // Consumed row may still become DrainCompleted, and nothing
+            // replaces a DrainCompleted one.
             val incomingStatus = status.toInt() and 0xFF
             if (existing != null &&
-                existing.statusRaw == ASSET_LOCK_STATUS_CONSUMED &&
-                incomingStatus != ASSET_LOCK_STATUS_CONSUMED
+                assetLockUpsertRegressesTerminal(existing.statusRaw, incomingStatus)
             ) {
                 return@stage
             }
@@ -2436,6 +2607,11 @@ class PlatformWalletPersistenceHandler(
                     amountDuffs = amountDuffs,
                     statusRaw = incomingStatus,
                     proofBytes = proofBytes,
+                    // The id and the shielded recipient arrive through their
+                    // own callbacks, after this one; a later status upsert
+                    // must not erase them.
+                    operationId = existing?.operationId,
+                    shieldedRecipientRaw43 = existing?.shieldedRecipientRaw43,
                     createdAt = existing?.createdAt ?: java.util.Date(),
                     updatedAt = now(),
                 ),
@@ -2459,11 +2635,143 @@ class PlatformWalletPersistenceHandler(
         0
     }
 
+    /**
+     * Port of `persistAssetLockOperationId` in
+     * `packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PlatformWalletPersistenceHandler.swift`.
+     * Staged into the round, behind the lock's own upsert, and checked when
+     * the round commits: the row must be there, must not carry a different
+     * id, and no other lock of the wallet may carry this one. Any of those
+     * fails the commit, so the row and its id land together or not at all.
+     * Refused outside a round, where there would be no upsert to ride with.
+     */
+    override fun onPersistAssetLockOperationId(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        operationId: ByteArray,
+    ): Int = guarded {
+        require(outPoint.size == RAW_OUT_POINT_SIZE) {
+            "asset-lock outpoint must be $RAW_OUT_POINT_SIZE bytes, got ${outPoint.size}"
+        }
+        require(operationId.size == NativePersistenceBridge.ASSET_LOCK_OPERATION_ID_SIZE) {
+            "asset-lock operation id must be " +
+                "${NativePersistenceBridge.ASSET_LOCK_OPERATION_ID_SIZE} bytes, got ${operationId.size}"
+        }
+        val round = checkNotNull(openRound(walletId)) {
+            "an asset-lock operation id is stored only inside a changeset round"
+        }
+        val outPointHex = encodeOutPointHex(outPoint)
+        val id = operationId.copyOf()
+        round.ops.add { db ->
+            val dao = db.assetLockDao()
+            val row = dao.getByOutPointHex(outPointHex)
+                ?.takeIf { it.walletId.contentEquals(walletId) }
+                ?: error("asset lock $outPointHex is not stored; its operation id has no row")
+            val previous = row.operationId
+            check(previous == null || previous.contentEquals(id)) {
+                "asset lock $outPointHex already carries a different operation id"
+            }
+            check(dao.countOtherLocksWithOperationId(walletId, id, outPointHex) == 0) {
+                "another asset lock of this wallet already carries this operation id"
+            }
+            if (previous == null) {
+                check(dao.setOperationId(outPointHex, id) == 1) {
+                    "asset lock $outPointHex vanished before its operation id was stored"
+                }
+            }
+        }
+        0
+    }
+
+    /**
+     * Port of `loadAssetLockOperationId` in the same Swift file. A lock that
+     * is not stored and an id of the wrong size both throw, failing the
+     * native load: neither is evidence that the lock has no operation id.
+     */
+    override fun onLoadAssetLockOperationId(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+        loadOrThrow {
+            require(outPoint.size == RAW_OUT_POINT_SIZE) {
+                "asset-lock outpoint must be $RAW_OUT_POINT_SIZE bytes, got ${outPoint.size}"
+            }
+            val outPointHex = encodeOutPointHex(outPoint)
+            val row = runBlockingResult { database.assetLockDao().getByOutPointHex(outPointHex) }
+                ?.takeIf { it.walletId.contentEquals(walletId) }
+                ?: error("asset lock $outPointHex is not stored; cannot read its operation id")
+            row.operationId?.also { id ->
+                check(id.size == NativePersistenceBridge.ASSET_LOCK_OPERATION_ID_SIZE) {
+                    "asset lock $outPointHex stores an operation id of ${id.size} bytes"
+                }
+            }
+        }
+
+    /**
+     * Port of `persistAssetLockShieldedRecipient` in
+     * `packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/PlatformWalletPersistenceHandler.swift`.
+     * Staged into the round, behind the lock's own upsert, and checked when
+     * the round commits: the row must be there and must not carry a
+     * different recipient. Either failure fails the commit, so the row and
+     * its recipient land together or not at all. Refused outside a round,
+     * where there would be no upsert to ride with.
+     */
+    override fun onPersistAssetLockShieldedRecipient(
+        walletId: ByteArray,
+        outPoint: ByteArray,
+        recipientRaw43: ByteArray,
+    ): Int = guarded {
+        require(outPoint.size == RAW_OUT_POINT_SIZE) {
+            "asset-lock outpoint must be $RAW_OUT_POINT_SIZE bytes, got ${outPoint.size}"
+        }
+        require(recipientRaw43.size == NativePersistenceBridge.ASSET_LOCK_SHIELDED_RECIPIENT_SIZE) {
+            "asset-lock shielded recipient must be " +
+                "${NativePersistenceBridge.ASSET_LOCK_SHIELDED_RECIPIENT_SIZE} bytes, " +
+                "got ${recipientRaw43.size}"
+        }
+        val round = checkNotNull(openRound(walletId)) {
+            "an asset-lock shielded recipient is stored only inside a changeset round"
+        }
+        val outPointHex = encodeOutPointHex(outPoint)
+        val recipient = recipientRaw43.copyOf()
+        round.ops.add { db ->
+            val dao = db.assetLockDao()
+            val row = dao.getByOutPointHex(outPointHex)
+                ?.takeIf { it.walletId.contentEquals(walletId) }
+                ?: error("asset lock $outPointHex is not stored; its shielded recipient has no row")
+            val previous = row.shieldedRecipientRaw43
+            check(previous == null || previous.contentEquals(recipient)) {
+                "asset lock $outPointHex already carries a different shielded recipient"
+            }
+            if (previous == null) {
+                check(dao.setShieldedRecipient(outPointHex, recipient) == 1) {
+                    "asset lock $outPointHex vanished before its shielded recipient was stored"
+                }
+            }
+        }
+        0
+    }
+
+    /**
+     * Port of `loadAssetLockShieldedRecipient` in the same Swift file. A lock
+     * that is not stored and a recipient of the wrong size both throw,
+     * failing the native load: a missing row is a failed read, not a lock
+     * without a recipient, and a stored value of the wrong size is
+     * corruption, not absence.
+     */
+    override fun onLoadAssetLockShieldedRecipient(walletId: ByteArray, outPoint: ByteArray): ByteArray? =
+        loadOrThrow {
+            require(outPoint.size == RAW_OUT_POINT_SIZE) {
+                "asset-lock outpoint must be $RAW_OUT_POINT_SIZE bytes, got ${outPoint.size}"
+            }
+            val outPointHex = encodeOutPointHex(outPoint)
+            val row = runBlockingResult { database.assetLockDao().getByOutPointHex(outPointHex) }
+                ?.takeIf { it.walletId.contentEquals(walletId) }
+                ?: error("asset lock $outPointHex is not stored; cannot read its shielded recipient")
+            row.shieldedRecipientRaw43?.also { checkShieldedRecipientSize(row.outPointHex, it) }
+        }
+
     override fun onPersistAssetLockRemoval(walletId: ByteArray, outPoint: ByteArray): Int = guarded {
         stage(walletId) { db ->
-            // The terminal rule — a Consumed row is retained for historical
-            // lookup, so a removal reaching one is a stale write — lives in
-            // the DAO's `statusRaw != 4` clause (see
+            // The terminal rule (a Consumed or DrainCompleted row is
+            // retained, so a removal reaching one is a stale write) lives in
+            // the DAO's `statusRaw NOT IN (4, 6)` clause (see
             // `AssetLockDao.deleteByOutPointHex`), the same predicate the
             // SQLite store's DELETE carries; mirrors Swift `persistAssetLocks`
             // (PlatformWalletPersistenceHandler.swift).
@@ -3183,6 +3491,9 @@ class PlatformWalletPersistenceHandler(
                         avatarFingerprint = cp.avatarFingerprint,
                         publicMessage = cp.publicMessage,
                         checkedAtMs = cp.checkedAtMs,
+                        corePaymentAddress = cp.corePaymentAddress,
+                        platformPaymentAddress = cp.platformPaymentAddress,
+                        shieldedAddress = cp.shieldedAddress,
                     )
                 }.toTypedArray()
             IdentityRestoreData(
@@ -3512,12 +3823,14 @@ class PlatformWalletPersistenceHandler(
      *
      * The persisted primary key `outPointHex` is display-order; [decodeOutPointHex]
      * flips it back to the 36-byte wire form the Rust trampoline reads via a
-     * fixed-length field, so a malformed key drops the row rather than
-     * aborting the whole load. A row with empty `transactionBytes` is broken
-     * (the Rust loader rejects it) and is dropped here. `fundingTypeRaw` /
-     * `statusRaw` outside `0..255` are dropped-and-logged — the same
-     * altered-state hazard the Swift `UInt8(exactly:)` guard rejects (a
-     * clamping cast would silently rewrite the lock's effective enum value).
+     * fixed-length field. A row that cannot be handed to Rust as it was
+     * stored (a malformed key, empty `transactionBytes`, a `fundingTypeRaw` /
+     * `statusRaw` outside `0..255`) FAILS the load, as Swift's
+     * `loadCachedAssetLocksOnQueue` throws `malformedRecord`. Dropping it
+     * instead would hand Rust a wallet without that lock, and a wallet drain
+     * reads "no lock carries this operation id" as "not sent": the dropped
+     * row could be the very lock a drain dispatched. This is what the
+     * `ASSET_LOCK_OPERATION_IDS` capability attests.
      *
      * Without this, an interrupted identity registration re-derives a fresh
      * asset lock on relaunch instead of resuming the persisted one. Mirror
@@ -3530,23 +3843,22 @@ class PlatformWalletPersistenceHandler(
         if (rows.isEmpty()) return emptyArray()
         val out = ArrayList<TrackedAssetLockRestoreData>(rows.size)
         for (row in rows) {
-            val outPoint = decodeOutPointHex(row.outPointHex)
-            if (outPoint == null) {
-                Log.w(TAG, "load: dropping asset-lock row with malformed outPointHex=${row.outPointHex}")
-                continue
+            val outPoint = checkNotNull(decodeOutPointHex(row.outPointHex)) {
+                "asset-lock row has a malformed outPointHex: ${row.outPointHex}"
             }
-            if (row.transactionBytes.isEmpty()) {
-                Log.w(TAG, "load: dropping asset-lock row with empty transactionBytes: ${row.outPointHex}")
-                continue
+            check(row.transactionBytes.isNotEmpty()) {
+                "asset-lock row ${row.outPointHex} has empty transactionBytes"
             }
-            if (row.fundingTypeRaw !in 0..255) {
-                Log.w(TAG, "load: dropping asset-lock row ${row.outPointHex} — fundingTypeRaw out of u8 range: ${row.fundingTypeRaw}")
-                continue
+            check(row.fundingTypeRaw in 0..255) {
+                "asset-lock row ${row.outPointHex} has fundingTypeRaw out of u8 range: ${row.fundingTypeRaw}"
             }
-            if (row.statusRaw !in 0..255) {
-                Log.w(TAG, "load: dropping asset-lock row ${row.outPointHex} — statusRaw out of u8 range: ${row.statusRaw}")
-                continue
+            check(row.statusRaw in 0..255) {
+                "asset-lock row ${row.outPointHex} has statusRaw out of u8 range: ${row.statusRaw}"
             }
+            // The recipient itself reaches Rust through
+            // `onLoadAssetLockShieldedRecipient`; a corrupt one fails the
+            // load here too, as Swift's `loadCachedAssetLocksOnQueue` does.
+            row.shieldedRecipientRaw43?.let { checkShieldedRecipientSize(row.outPointHex, it) }
             out.add(
                 TrackedAssetLockRestoreData(
                     outPoint = outPoint,
@@ -3752,6 +4064,10 @@ class PlatformWalletPersistenceHandler(
             database.txoDao().deleteByWallet(walletId)
             database.documentDao().deletePendingInputsByWallet(walletId)
             database.assetLockDao().deleteByWallet(walletId)
+            // A re-imported wallet with the same id must not inherit the ids
+            // of Max transfers the user chose to forget with the wallet
+            // (← Swift `WalletDrainCoordinator.forgetWallet`).
+            database.walletDrainOperationDao().deleteByWallet(walletId)
             database.invitationDao().deleteByWallet(walletId)
             database.platformAddressDao().deleteByWallet(walletId)
             database.shieldedDao().deleteNotesByWallet(walletId)
@@ -3794,6 +4110,44 @@ class PlatformWalletPersistenceHandler(
         // that rolls the delete back skips this line and preserves the valid
         // signals (Room's cascade cannot mutate this process-local StateFlow).
         _pendingIdentityKeys.update(clearPendingKeyByWalletDelta(walletId.toHex()))
+    }
+
+    /**
+     * Delete one identity's Room footprint for
+     * `org.dashfoundation.dashsdk.wallet.deleteIdentityFromDevice`, in one
+     * transaction: its token balances (SET_NULL children), its private
+     * contact scan state (a position marked unresolved is kept but rewound to
+     * the start, since the history its position covered goes), then the
+     * identity row, whose delete cascades its public keys, DPNS names,
+     * documents and DashPay rows. SQLite cascades in the same transaction,
+     * so there is no SwiftData-style partial delete to order around. After
+     * the commit, the identity's pending-repair entries are dropped. A failed
+     * transaction deletes nothing and propagates.
+     *
+     * The caller must hold [callbackExclusion] (via [withCallbackExclusion]).
+     * Idempotent: it also runs after the live wallet already removed the
+     * identity through [onPersistIdentityRemoval]. An open changeset round is
+     * not discarded: it belongs to the whole wallet.
+     */
+    internal suspend fun deleteIdentityDataLocked(identityId: ByteArray) = runBlockingCatching {
+        database.withTransaction { deleteIdentityFootprint(database, identityId) }
+        _pendingIdentityKeys.update(clearPendingKeyByIdentityDelta(identityId.toBase58String()))
+    }
+
+    /**
+     * An identity's Room footprint, in the caller's transaction: its token
+     * balances (SET_NULL children), its private contact scan state (a position
+     * marked unresolved kept but rewound to the start), then the identity row,
+     * whose delete cascades its public keys, DPNS names, documents and DashPay
+     * rows. Shared by [deleteIdentityDataLocked] and [onPersistIdentityRemoval],
+     * so a removal Rust persisted leaves no dependent row behind either.
+     */
+    private suspend fun deleteIdentityFootprint(db: DashDatabase, identityId: ByteArray) {
+        db.tokenDao().deleteBalancesByIdentity(identityId)
+        db.privateContactScanStateDao().deleteUnmarkedPositionsOfIdentity(identityId)
+        db.privateContactScanStateDao().rewindMarkedPositionsOfIdentity(identityId)
+        db.privateContactScanStateDao().deleteAddressesOwnedBy(identityId)
+        db.identityDao().deleteByIdentityId(identityId)
     }
 
     // ── Pending identity-key bookkeeping (#4053) ──────────────────────
@@ -3977,6 +4331,9 @@ class PlatformWalletPersistenceHandler(
         walletId: ByteArray,
         publicKeyData: ByteArray,
         verifyRecoverable: suspend (pubkeyHex: String) -> Boolean,
+        abandonStoredKey: suspend (pubkeyHex: String) -> Unit = { pubkeyHex ->
+            privateKeyDeriver?.deleteUnownedStored(listOf(pubkeyHex), walletId)
+        },
         persistDurableIdentifier: suspend (storageIdentifier: String) -> Unit = { storageIdentifier ->
             database.publicKeyDao().getByPublicKeyData(publicKeyData).forEach { row ->
                 if (row.privateKeyKeychainIdentifier != storageIdentifier) {
@@ -4029,6 +4386,21 @@ class PlatformWalletPersistenceHandler(
             keyType = keyType,
             force = true,
         )?.identifier ?: return null
+
+        // Fence against an identity removal that ran while the key was being
+        // derived: the slot was read from a row of this wallet that removal
+        // has since deleted, so this store, and the claim it wrote for this
+        // wallet, must not outlive it. Checked AFTER the store; a removal
+        // still to come records and settles the key itself, as it does so
+        // only after the rows are gone. [abandonStoredKey] records the key for
+        // cleanup before deleting anything, so a failure there is retried.
+        if (database.publicKeyDao().countReferencesForWallet(publicKeyData, walletId) == 0) {
+            abandonStoredKey(pubkeyHex)
+            throw DashSdkError.PlatformWallet.SigningKeyUnavailable(
+                "identity-key repair for $pubkeyHex finished after its identity was " +
+                    "removed from the device; the repaired key was deleted again",
+            )
+        }
 
         // Independent confirmation the stored blob actually decrypts.
         if (!verifyRecoverable(pubkeyHex)) {
@@ -4256,6 +4628,22 @@ class PlatformWalletPersistenceHandler(
         internal const val CAPABILITY_SHIELDED_STATE_WIPE: Long =
             NativePersistenceBridge.CAPABILITY_SHIELDED_STATE_WIPE
 
+        internal const val CAPABILITY_ASSET_LOCK_OPERATION_IDS: Long =
+            NativePersistenceBridge.CAPABILITY_ASSET_LOCK_OPERATION_IDS
+
+        internal const val CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS: Long =
+            NativePersistenceBridge.CAPABILITY_ASSET_LOCK_SHIELDED_RECIPIENTS
+
+        /** A stored shielded recipient of any size but 43 bytes is corruption. */
+        private fun checkShieldedRecipientSize(outPointHex: String, recipient: ByteArray) {
+            check(recipient.size == NativePersistenceBridge.ASSET_LOCK_SHIELDED_RECIPIENT_SIZE) {
+                "asset lock $outPointHex stores a shielded recipient of ${recipient.size} bytes"
+            }
+        }
+
+        /** Bytes of a raw outpoint: the txid in wire order, then the vout. */
+        private const val RAW_OUT_POINT_SIZE = 36
+
         private const val TAG = "DashPersistence"
 
         /**
@@ -4295,6 +4683,29 @@ class PlatformWalletPersistenceHandler(
 
         /** `AssetLockStatus::Consumed` — the terminal lifecycle state. */
         private const val ASSET_LOCK_STATUS_CONSUMED = 4
+
+        /**
+         * `AssetLockStatus::DrainCompleted`: the receipt of a finished
+         * wallet drain. Terminal, and the only status a Consumed row may
+         * still move to.
+         */
+        private const val ASSET_LOCK_STATUS_DRAIN_COMPLETED = 6
+
+        /**
+         * Whether upserting [incoming] over a stored [existing] status would
+         * regress a terminal row, in which case the upsert is skipped. The
+         * rule of Swift `persistAssetLocks` and `AssetLockChangeSet::merge`:
+         * nothing replaces DrainCompleted, and only Consumed or
+         * DrainCompleted replaces Consumed.
+         */
+        internal fun assetLockUpsertRegressesTerminal(existing: Int, incoming: Int): Boolean =
+            when (existing) {
+                ASSET_LOCK_STATUS_DRAIN_COMPLETED -> incoming != ASSET_LOCK_STATUS_DRAIN_COMPLETED
+                ASSET_LOCK_STATUS_CONSUMED ->
+                    incoming != ASSET_LOCK_STATUS_CONSUMED &&
+                        incoming != ASSET_LOCK_STATUS_DRAIN_COMPLETED
+                else -> false
+            }
 
         private val HEX = "0123456789abcdef".toCharArray()
     }
@@ -4394,6 +4805,28 @@ data class DerivedKeyStoreResult(val identifier: String, val wasNewlyCreated: Bo
  * back (fail closed, as the SQLite store's `apply_sweep` does on a bad
  * blob) rather than sweeping a loser whose inputs are unknown.
  */
+/**
+ * Canonical base58 token id of a saved token (its contract id and
+ * position), or null when it cannot be computed. See
+ * [PlatformWalletPersistenceHandler]'s `canonicalTokenIds`.
+ */
+fun interface CanonicalTokenIds {
+    fun canonicalTokenId(contractId: ByteArray, position: Int): String?
+}
+
+/**
+ * Production [CanonicalTokenIds]: the native `calculateTokenId`, a pure
+ * computation that takes no wallet-manager lock, so calling it from inside a
+ * persistence callback cannot deadlock (as for [NativeStoredTransactionInputs]).
+ */
+object NativeCanonicalTokenIds : CanonicalTokenIds {
+    override fun canonicalTokenId(contractId: ByteArray, position: Int): String? =
+        org.dashfoundation.dashsdk.ffi.QueriesNative.calculateTokenId(
+            contractId.toBase58String(),
+            position,
+        )
+}
+
 fun interface StoredTransactionInputs {
     /** 36-byte outpoints ([makeOutpoint] layout) of every input of [txid], in vin order. */
     fun inputOutpoints(txid: ByteArray, txData: ByteArray): List<ByteArray>

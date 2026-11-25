@@ -174,6 +174,77 @@ final class DpnsMarketplaceDecodingTests: XCTestCase {
         XCTAssertEqual(decoded.pricesChanged, 4)
         XCTAssertEqual(decoded.errorMessage, "native callback error")
     }
+
+    func testGiveUpMethodsRoundTripThroughTheirFFIBytes() {
+        for method in DpnsNameGiveUpMethod.allCases {
+            XCTAssertEqual(DpnsNameGiveUpMethod(ffiValue: method.ffiValue), method)
+        }
+        XCTAssertEqual(
+            DpnsNameGiveUpMethod.delete.ffiValue,
+            UInt8(DPNS_NAME_GIVE_UP_METHOD_DELETE)
+        )
+        XCTAssertEqual(
+            DpnsNameGiveUpMethod.tombstone.ffiValue,
+            UInt8(DPNS_NAME_GIVE_UP_METHOD_TOMBSTONE)
+        )
+        XCTAssertNil(DpnsNameGiveUpMethod(ffiValue: 2))
+        XCTAssertNil(DpnsNameGiveUpMethod(ffiValue: .max))
+    }
+
+    func testGiveUpChoicesCopyBothFlagsAsReported() {
+        let documentId = Data(repeating: 0x22, count: 32)
+        var ffi = DpnsNameGiveUpChoicesFFI()
+        _ = withUnsafeMutableBytes(of: &ffi.document_id) { destination in
+            documentId.copyBytes(to: destination)
+        }
+        ffi.can_delete = false
+        ffi.can_tombstone = true
+
+        let choices = DpnsNameGiveUpChoices(ffi: ffi)
+        XCTAssertEqual(choices.documentId, documentId)
+        XCTAssertFalse(choices.canDelete)
+        XCTAssertTrue(choices.canTombstone)
+    }
+
+    func testGivenUpNameCarriesTheTombstoneOnlyForATombstone() throws {
+        let documentId = Data(repeating: 0x22, count: 32)
+        let tombstoneId = Data(repeating: 0x99, count: 32)
+
+        var deleted = DpnsNameGivenUpFFI()
+        _ = withUnsafeMutableBytes(of: &deleted.document_id) { destination in
+            documentId.copyBytes(to: destination)
+        }
+        deleted.method = UInt8(DPNS_NAME_GIVE_UP_METHOD_DELETE)
+        let decodedDelete = try XCTUnwrap(DpnsNameGivenUp(ffi: deleted))
+        XCTAssertEqual(decodedDelete.documentId, documentId)
+        XCTAssertEqual(decodedDelete.method, .delete)
+        XCTAssertNil(decodedDelete.tombstoneId)
+
+        var tombstoned = deleted
+        tombstoned.method = UInt8(DPNS_NAME_GIVE_UP_METHOD_TOMBSTONE)
+        tombstoned.has_tombstone = true
+        _ = withUnsafeMutableBytes(of: &tombstoned.tombstone_id) { destination in
+            tombstoneId.copyBytes(to: destination)
+        }
+        let decodedTombstone = try XCTUnwrap(DpnsNameGivenUp(ffi: tombstoned))
+        XCTAssertEqual(decodedTombstone.method, .tombstone)
+        XCTAssertEqual(decodedTombstone.tombstoneId, tombstoneId)
+    }
+
+    func testUnknownOrInconsistentGivenUpResultsFailClosed() {
+        var unknown = DpnsNameGivenUpFFI()
+        unknown.method = 2
+        XCTAssertNil(DpnsNameGivenUp(ffi: unknown))
+
+        var tombstoneWithoutId = DpnsNameGivenUpFFI()
+        tombstoneWithoutId.method = UInt8(DPNS_NAME_GIVE_UP_METHOD_TOMBSTONE)
+        XCTAssertNil(DpnsNameGivenUp(ffi: tombstoneWithoutId))
+
+        var deleteWithTombstone = DpnsNameGivenUpFFI()
+        deleteWithTombstone.method = UInt8(DPNS_NAME_GIVE_UP_METHOD_DELETE)
+        deleteWithTombstone.has_tombstone = true
+        XCTAssertNil(DpnsNameGivenUp(ffi: deleteWithTombstone))
+    }
 }
 
 @MainActor

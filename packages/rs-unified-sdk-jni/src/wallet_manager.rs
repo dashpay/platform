@@ -46,6 +46,7 @@
 #![allow(clippy::missing_safety_doc)]
 
 use crate::credits::parse_credit_rows;
+use crate::dpns_marketplace::read_id32 as read_named_id32;
 use crate::events::{build_event_extension, build_event_vtable, KotlinEventCtx};
 use crate::persistence::{
     build_extension, build_vtable, restrict_account_writers, KotlinPersistenceCtx,
@@ -72,6 +73,8 @@ use std::os::raw::c_char;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
 
+#[cfg(feature = "shielded")]
+use jni::sys::jintArray;
 #[cfg(feature = "shielded")]
 use rs_sdk_ffi::MnemonicResolverHandle;
 use rs_sdk_ffi::{FFINetwork, SDKHandle};
@@ -3103,6 +3106,76 @@ sync_start_stop!(
     platform_wallet_ffi::platform_wallet_manager_identity_sync_is_running
 );
 
+/// Add or replace the identity-token sync registry row for one identity:
+/// `identity_id` is 32 bytes, `token_ids` is the watched token ids laid out
+/// back to back (`32 * N` bytes, empty for none). The next sync pass reads
+/// these balances and persists them through `onPersistTokenBalanceUpsert`.
+/// Mirrors Swift's `PlatformWalletManager.registerIdentityForTokenSync`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_identitySyncRegisterIdentity(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    identity_id: JByteArray,
+    token_ids: JByteArray,
+) {
+    guard(&mut env, (), |env| {
+        let Some(identity) = read_named_id32(env, &identity_id, "identityId") else {
+            return;
+        };
+        let tokens = match env.convert_byte_array(&token_ids) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                let _ = env.exception_clear();
+                throw_sdk_exception(env, 1, "tokenIds byte[] was null/invalid");
+                return;
+            }
+        };
+        if tokens.len() % 32 != 0 {
+            throw_sdk_exception(
+                env,
+                1,
+                &format!(
+                    "tokenIds must be a multiple of 32 bytes, got {}",
+                    tokens.len()
+                ),
+            );
+            return;
+        }
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_identity_sync_register_identity(
+                manager_handle as Handle,
+                identity.as_ptr(),
+                tokens.as_ptr(),
+                tokens.len() / 32,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
+/// Run one identity-token sync pass across every registered identity,
+/// blocking the calling thread until it completes. If a pass is already in
+/// flight, waits for it to finish, then runs its own pass. Throws when no
+/// pass ran because the manager is shutting down or the wait budget ran out.
+/// Kotlin wraps it in `Dispatchers.IO`.
+/// Mirrors Swift's `PlatformWalletManager.syncIdentityTokensNow()`.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_identitySyncSyncNow(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+) {
+    guard(&mut env, (), |env| {
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_identity_sync_sync_now(
+                manager_handle as Handle,
+            )
+        };
+        let _ = take_pwffi_error(env, result);
+    })
+}
+
 /// Whether the manager has frozen a durable sync watermark this manager's
 /// lifetime (dashpay/platform#4069). `true` means a persistence `store()`
 /// was rejected — the one remaining fault trigger; the lossless persistence
@@ -3338,6 +3411,61 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
     })
 }
 
+/// The ordinary (non-identity) shielded accounts bound on `walletId`, in
+/// ascending order, as an `int[]`: the list a host passes back to
+/// `shieldedBind` after `shieldedClear`, which keeps the keys the wallet
+/// handle holds. Empty for a wallet never bound; throws `DashSDKException`
+/// for an unknown wallet. Bridges
+/// `platform_wallet_manager_shielded_ordinary_accounts`.
+#[cfg(feature = "shielded")]
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_shieldedOrdinaryAccounts(
+    mut env: JNIEnv,
+    _class: JClass,
+    manager_handle: jlong,
+    wallet_id: JByteArray,
+) -> jintArray {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(id) = read_id32(env, &wallet_id) else {
+            return ptr::null_mut();
+        };
+        // A bind takes at most 64 accounts, so 64 holds every list.
+        let mut accounts = [0u32; 64];
+        let mut count = 0usize;
+        let result = unsafe {
+            platform_wallet_ffi::platform_wallet_manager_shielded_ordinary_accounts(
+                manager_handle as Handle,
+                id.as_ptr(),
+                accounts.as_mut_ptr(),
+                accounts.len(),
+                &mut count,
+            )
+        };
+        if take_pwffi_error(env, result) {
+            return ptr::null_mut();
+        }
+        // `shieldedBind` takes only non-negative ints, so an account it
+        // bound fits one. Refuse instead of bit-casting one that does not:
+        // the negative int would be refused when passed back to the bind.
+        let Ok(values) = accounts[..count]
+            .iter()
+            .map(|&account| i32::try_from(account))
+            .collect::<Result<Vec<i32>, _>>()
+        else {
+            throw_sdk_exception(env, 1, "a shielded account index does not fit a JVM int");
+            return ptr::null_mut();
+        };
+        let array = match env.new_int_array(values.len() as i32) {
+            Ok(array) => array,
+            Err(_) => return ptr::null_mut(),
+        };
+        if env.set_int_array_region(&array, 0, &values).is_err() {
+            return ptr::null_mut();
+        }
+        array.into_raw()
+    })
+}
+
 /// Run one forced shielded sync pass across all registered wallets — the
 /// user-initiated "Sync Now" entry point (`force=true` on the Rust side
 /// bypasses the caught-up cooldown). Blocks the calling thread for the
@@ -3432,8 +3560,11 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_WalletManagerNative_s
         let (_peer_cstrings, peer_ptrs) = match read_cstring_array(env, &peers) {
             Ok(v) => v,
             Err(_) => {
-                let _ = env.exception_clear();
-                throw_sdk_exception(env, 1, "peers array was null/invalid");
+                // A pending JVM error (out of memory) is the caller's to
+                // see as it is; anything else is a bad argument.
+                if !env.exception_check().unwrap_or(false) {
+                    throw_sdk_exception(env, 1, "peers array was null/invalid");
+                }
                 return;
             }
         };
@@ -3794,8 +3925,10 @@ fn read_cstring_opt(env: &mut JNIEnv, s: &JString) -> Result<Option<std::ffi::CS
 
 /// Read a Java `String[]` into owned `CString`s plus a parallel `*const
 /// c_char` pointer vec. The returned `Vec<CString>` OWNS the memory the
-/// pointer vec references — both must outlive the FFI call. Null / invalid
-/// elements are skipped (mirrors the FFI's per-peer tolerance).
+/// pointer vec references — both must outlive the FFI call. A null element,
+/// or one that cannot become a C string (an interior NUL), is passed as an
+/// empty string: the count the caller gave is kept, so the FFI can tell a
+/// list of unusable entries from an empty one.
 fn read_cstring_array(
     env: &mut JNIEnv,
     arr: &JObjectArray,
@@ -3806,21 +3939,21 @@ fn read_cstring_array(
     let len = env.get_array_length(arr)? as usize;
     let mut owned: Vec<std::ffi::CString> = Vec::with_capacity(len);
     for i in 0..len {
-        let element = env.get_object_array_element(arr, i as i32)?;
-        if element.is_null() {
-            continue;
-        }
-        let jstr = JString::from(element);
-        let s: String = match env.get_string(&jstr) {
-            Ok(v) => v.into(),
-            Err(_) => {
-                let _ = env.exception_clear();
-                continue;
+        // One local frame per element: the element and the two class
+        // references `get_string` takes would otherwise stay in the native
+        // frame until the call returns, three per entry of the list.
+        let entry = env.with_local_frame(4, |env| -> Result<_, jni::errors::Error> {
+            let element = env.get_object_array_element(arr, i as i32)?;
+            if element.is_null() {
+                return Ok(std::ffi::CString::default());
             }
-        };
-        if let Ok(c) = std::ffi::CString::new(s) {
-            owned.push(c);
-        }
+            // A string the JVM cannot hand over (out of memory) fails the
+            // whole call: the caller must not start with part of the list.
+            let jstr = JString::from(element);
+            let s: String = env.get_string(&jstr)?.into();
+            Ok(std::ffi::CString::new(s).unwrap_or_default())
+        })?;
+        owned.push(entry);
     }
     let ptrs: Vec<*const std::os::raw::c_char> = owned.iter().map(|c| c.as_ptr()).collect();
     Ok((owned, ptrs))

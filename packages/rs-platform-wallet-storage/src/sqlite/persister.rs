@@ -9,7 +9,7 @@ use rusqlite::{Connection, OptionalExtension};
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{
     ClientStartState, IdentityChangeSet, PersistenceCapabilities, PersistenceError,
-    PlatformWalletChangeSet, PlatformWalletPersistence,
+    PlatformWalletChangeSet, PlatformWalletPersistence, StoreAndCommitError,
 };
 use platform_wallet::wallet::identity::ManagedIdentity;
 use platform_wallet::wallet::platform_wallet::WalletId;
@@ -808,6 +808,7 @@ impl SqlitePersister {
                         error_kind = e.error_kind_str(),
                         "buffer restore failed during delete_wallet error path — changeset lost"
                     );
+                    self.buffer.note_dropped(&wallet_id);
                 }
             }
         };
@@ -941,13 +942,21 @@ impl SqlitePersister {
             // here rather than being restored to a buffer no flush could
             // ever drain.
             drop(drained_slot.take());
+            // Counted as a drop for the wallet whatever was staged: what
+            // the pre-flush above did write went with the cascade too, so
+            // a changeset that was buffered when the delete began is on no
+            // disk either way (`buffered_writes_dropped`).
+            self.buffer.note_dropped(&wallet_id);
             // Discard any changeset a Manual-mode store buffered during the
             // delete window — the wallet is gone.
             match self.buffer.take_for_flush(&wallet_id) {
-                Ok(Some(_late)) => tracing::warn!(
-                    wallet_id = %hex::encode(wallet_id),
-                    "discarded racing buffered changeset after delete_wallet commit"
-                ),
+                Ok(Some(_late)) => {
+                    self.buffer.note_dropped(&wallet_id);
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        "discarded racing buffered changeset after delete_wallet commit"
+                    )
+                }
                 Ok(None) => {}
                 // The delete itself already committed, so this still returns
                 // Ok — but a poisoned buffer mutex here is a signal every
@@ -1131,6 +1140,60 @@ impl SqlitePersister {
             .map_err(PersistenceError::from)
     }
 
+    /// Merge `changeset` into `wallet_id`'s buffer and commit that buffer
+    /// under ONE connection guard, in either flush mode.
+    ///
+    /// Every path that drains the buffer takes the same lock and holds it
+    /// across its take, its write and its restore-on-failure
+    /// ([`flush_inner`](Self::flush_inner), so `commit_writes` and the
+    /// trait's `flush`; `delete_wallet`). So from the merge to the end of the
+    /// commit no other drain can own, and fatally drop or put back, the
+    /// changeset merged here, and none that began earlier still holds
+    /// anything it took: the answer is for exactly what this call staged.
+    /// A `Manual`-mode `store` of a changeset without identities merges
+    /// without the connection and can land in the buffer meanwhile; it only
+    /// adds, and is committed with this call or left for a later flush.
+    ///
+    /// The two failures are kept apart. A changeset the merge refused never
+    /// reached the buffer, which is as it was
+    /// ([`StoreAndCommitError::NotStaged`]). One whose commit failed
+    /// ([`StoreAndCommitError::NotCommitted`]) is back in the buffer after a
+    /// transient failure and gone after any other
+    /// ([`handle_flush_error`](Self::handle_flush_error)).
+    ///
+    /// A poisoned lock is never `NotStaged`, although nothing was staged:
+    /// the buffer is not as it was. Finding the connection poisoned discards
+    /// every buffered changeset ([`conn`](Self::conn)), and a poisoned
+    /// buffer lock leaves what it guards out of reach for good. Both are
+    /// reported as `NotCommitted` with [`PersistenceError::LockPoisoned`],
+    /// which is not transient: what the wallet had buffered is gone.
+    ///
+    /// That discard is every wallet's, here as on every other path that
+    /// finds the connection poisoned, and this call answers for its own
+    /// wallet alone. The others are not told by it. They cannot be misled
+    /// either: from then on every `store`, `flush` and `store_and_commit`
+    /// of every wallet on this persister fails with `LockPoisoned`, so none
+    /// is told a record is on disk, and each wallet's next flush or step
+    /// reports the loss to whoever made it.
+    fn stage_and_commit(
+        &self,
+        wallet_id: WalletId,
+        changeset: PlatformWalletChangeSet,
+    ) -> Result<(), StoreAndCommitError> {
+        let mut conn = self
+            .conn()
+            .map_err(|e| StoreAndCommitError::NotCommitted(PersistenceError::from(e)))?;
+        self.merge_checked(Some(&conn), wallet_id, changeset)
+            .map_err(|refused| match refused {
+                PersistenceError::LockPoisoned => StoreAndCommitError::NotCommitted(refused),
+                refused => StoreAndCommitError::NotStaged(refused),
+            })?;
+        #[cfg(any(test, feature = "__test-helpers"))]
+        self.run_store_flush_seam();
+        self.flush_locked(&mut conn, &wallet_id)
+            .map_err(StoreAndCommitError::NotCommitted)
+    }
+
     /// Classify the failure: transient errors restore the buffer and
     /// surface as `FlushRetryable`; everything else drops the changeset
     /// and returns the original variant.
@@ -1152,6 +1215,7 @@ impl SqlitePersister {
                     restored_field_count = field_count,
                     "buffer restore failed after transient flush error — changeset lost"
                 );
+                self.buffer.note_dropped(wallet_id);
                 return Err(PersistenceError::from(restore_err));
             }
             // Narrow to the rusqlite source for `FlushRetryable`.
@@ -1187,6 +1251,9 @@ impl SqlitePersister {
                 dropped_field_count = field_count,
                 "flush failed fatally — buffer wiped"
             );
+            // Counted while the connection is still held, so the next flush
+            // of this wallet, whoever makes it, finds the count changed.
+            self.buffer.note_dropped(wallet_id);
             drop(cs);
             Err(PersistenceError::from(err))
         }
@@ -1321,8 +1388,26 @@ impl Drop for SqlitePersister {
 }
 
 impl PlatformWalletPersistence for SqlitePersister {
+    /// In [`FlushMode::Immediate`] a `store` that answers `Ok` is on disk.
+    /// That says nothing of an empty buffer: a `store` or a
+    /// [`store_and_commit`](Self::store_and_commit) whose commit failed
+    /// transiently left its changeset buffered, in this mode too, until the
+    /// next `store`, `flush`, `commit_writes` or `store_and_commit` writes
+    /// it or drops it. A caller that asks whether everything stored is on
+    /// disk flushes, in either mode.
     fn store_commits_inline(&self) -> bool {
         self.config.flush_mode == FlushMode::Immediate
+    }
+
+    /// Every changeset this persister took from `wallet_id`'s buffer and
+    /// dropped without writing it, whichever call drained the buffer:
+    /// `flush`, [`commit_writes`](Self::commit_writes), or the discard of
+    /// every buffer once the connection is unusable. A wallet's deletion
+    /// counts too, whatever it had buffered: what it wrote first went with
+    /// the wallet's rows. The drop is counted while the connection is held,
+    /// before any later flush of the wallet can run.
+    fn buffered_writes_dropped(&self, wallet_id: WalletId) -> Option<u64> {
+        Some(self.buffer.dropped(&wallet_id))
     }
 
     fn persistence_capabilities(&self) -> PersistenceCapabilities {
@@ -1488,18 +1573,17 @@ impl PlatformWalletPersistence for SqlitePersister {
         // keeps a changeset another caller staged for the same wallet
         // from being dropped as collateral of this one's rejection.
         match self.config.flush_mode {
-            // ONE connection guard spans the merge AND the flush. Every
-            // path that drains the buffer takes the same lock, so no
-            // other flush can own — and fatally drop — the changeset
-            // merged just above: the flush below reports the fate of
-            // exactly what this call staged, which is what the
-            // durability contract above promises.
+            // ONE connection guard spans the merge AND the flush
+            // (`stage_and_commit`), so the flush reports the fate of
+            // exactly what this call staged, which is what the durability
+            // contract above promises. `store` has one error to give, so
+            // a refused merge and a failed commit both come back as it.
             FlushMode::Immediate => {
-                let mut conn = self.conn().map_err(PersistenceError::from)?;
-                self.merge_checked(Some(&conn), wallet_id, changeset)?;
-                #[cfg(any(test, feature = "__test-helpers"))]
-                self.run_store_flush_seam();
-                self.flush_locked(&mut conn, &wallet_id)
+                self.stage_and_commit(wallet_id, changeset)
+                    .map_err(|not_committed| match not_committed {
+                        StoreAndCommitError::NotStaged(e)
+                        | StoreAndCommitError::NotCommitted(e) => e,
+                    })
             }
             // Nothing reaches disk here, so the connection is worth
             // taking only for the identity-slot probe.
@@ -1520,6 +1604,66 @@ impl PlatformWalletPersistence for SqlitePersister {
 
     fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError> {
         self.flush_inner(&wallet_id)
+    }
+
+    /// In both flush modes: the connection every drain takes is held from
+    /// the merge to the end of the commit
+    /// ([`stage_and_commit`](Self::stage_and_commit)).
+    fn offers_store_and_commit(&self) -> bool {
+        true
+    }
+
+    /// Merge `changeset` into the wallet's buffer and commit that buffer in
+    /// one transaction, under one connection guard.
+    ///
+    /// In [`FlushMode::Manual`] this is how one changeset is made durable
+    /// with an answer for it alone: `store` followed by `flush` leaves the
+    /// buffer open, between the two calls, to a
+    /// [`commit_writes`](Self::commit_writes) or a `flush` from anywhere
+    /// else, which can take the changeset and drop it on a fatal failure
+    /// while the caller's own flush then succeeds over an empty buffer. It
+    /// commits everything buffered for the wallet, as `flush` does, the
+    /// changeset last. In [`FlushMode::Immediate`] it is `store` with the
+    /// two failures told apart.
+    ///
+    /// # Other processes
+    ///
+    /// The guard is this persister's connection, so the step is one step
+    /// with every drain of THIS persister's buffer. Another process that
+    /// has the same database open buffers on its own. SQLite serializes the
+    /// two transactions, and a later commit by that process lands over this
+    /// one, exactly as it lands over a `store` or a `flush`: nothing in this
+    /// crate orders what two processes hold in memory. As for
+    /// [`delete_wallet`](Self::delete_wallet) and
+    /// [`restore_from`](Self::restore_from), callers that let two processes
+    /// write one wallet serialize them.
+    ///
+    /// # Errors
+    ///
+    /// - [`StoreAndCommitError::NotStaged`]: the changeset never reached the
+    ///   buffer, which is as it was, and nothing was written. Raised under
+    ///   [`LoadPolicy::Recovery`](crate::LoadPolicy) and for an
+    ///   identity-slot conflict
+    ///   ([`WalletStorageError::IdentityIndexConflict`] /
+    ///   [`WalletStorageError::WalletlessIdentityIndex`]).
+    /// - [`StoreAndCommitError::NotCommitted`]: the changeset was merged and
+    ///   the transaction failed. A transient failure
+    ///   ([`WalletStorageError::FlushRetryable`]) restored the buffer, the
+    ///   changeset in it, for a later `flush`, `commit_writes` or
+    ///   `store_and_commit`; any other dropped the buffer. A poisoned lock
+    ///   is reported this way too, as [`PersistenceError::LockPoisoned`]:
+    ///   finding it discards every buffered changeset, so the buffer is not
+    ///   as it was even though this changeset never reached it.
+    fn store_and_commit(
+        &self,
+        wallet_id: WalletId,
+        changeset: PlatformWalletChangeSet,
+    ) -> Result<(), StoreAndCommitError> {
+        // Refused at the door, as `store` refuses it: a recovery-mode
+        // changeset never reaches the buffer.
+        self.ensure_writable("store_and_commit")
+            .map_err(|e| StoreAndCommitError::NotStaged(PersistenceError::from(e)))?;
+        self.stage_and_commit(wallet_id, changeset)
     }
 
     /// Load every wallet's start-state from disk.

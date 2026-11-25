@@ -86,6 +86,13 @@ class DecisionProposalsFfiTest {
         assertCode(1) { create(endDateMs = -1L) }
         assertCode(1) { DecisionProposalsNative.listByEndDate(handle, 0L, 0L, -1, null) }
         assertCode(1) { DecisionProposalsNative.listByEndDate(handle, -1L, 0L, 0, null) }
+        assertCode(1) { DecisionProposalsNative.getEndDate(handle, -1L) }
+    }
+
+    /** The end date read refuses a null SDK handle before anything else. */
+    @Test
+    fun shouldRefuseAnEndDateReadWithoutAnSdk() {
+        assertCode(1) { DecisionProposalsNative.getEndDate(0L, 1_800_000_000_000L) }
     }
 
     /**

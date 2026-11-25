@@ -376,7 +376,17 @@ pub(super) fn generated_schema(
         insert("multipleOf", cases.pick(&divisors));
     }
     if cases.chance(10) {
-        insert("enum", json!([cases.pick(values), cases.pick(values)]));
+        // Now and then an enum long enough to be looked up rather than scanned
+        let members: Vec<serde_json::Value> = if cases.chance(30) {
+            values
+                .iter()
+                .filter(|_| cases.chance(70))
+                .cloned()
+                .collect()
+        } else {
+            vec![cases.pick(values), cases.pick(values)]
+        };
+        insert("enum", serde_json::Value::Array(members));
     }
     if cases.chance(8) {
         insert("const", cases.pick(values));

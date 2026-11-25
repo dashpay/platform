@@ -1521,7 +1521,8 @@ mod tests {
                     .expect("build complete admission event")
                     .into_data()
                     .expect("valid admission event")
-                    .expect("first CheckTx produces an event");
+                    .expect("first CheckTx produces an event")
+                    .event;
                     let ExecutionEvent::Paid {
                         execution_operations,
                         additional_fixed_fee_cost,

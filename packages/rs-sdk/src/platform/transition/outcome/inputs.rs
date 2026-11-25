@@ -106,7 +106,7 @@ impl TransitionInputs {
                 credit_spend(st.nullifiers(), st.anchor())
             }
             // Token pool transitions pay their fee from a credit pool bundle and spend a token
-            // pool bundle; both are recorded at once.
+            // pool bundle; both are recorded at once, and the token bundle carries the effect.
             StateTransition::TokenShieldedTransferWithShieldedFee(st) => {
                 TransitionInputs::Shielded(vec![
                     PoolSpend {
@@ -135,9 +135,10 @@ impl TransitionInputs {
             ]),
             // A purchase's token bundle is outputs-only: it mints notes into the token pool and
             // spends none, so validation checks no token anchor. The pool records the bundle's
-            // dummy nullifiers all the same, and refuses a bundle whose nullifiers it holds, so
-            // the same bundle put into another purchase with another fee bundle takes them from
-            // this one.
+            // dummy nullifiers all the same, and refuses a bundle whose nullifiers it holds.
+            // Before protocol version 15 the same bundle can go into another purchase with
+            // another fee bundle, which takes them from this one: the tokens were still minted
+            // to this purchase's notes, and the judge reports it as executed or superseded.
             StateTransition::TokenPurchaseFromShieldedPool(st) => TransitionInputs::Shielded(vec![
                 PoolSpend {
                     pool: ShieldedPool::Credit,

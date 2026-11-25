@@ -119,6 +119,7 @@ struct DocumentFieldsView: View {
                     TextField("Base58 identifier", text: binding(for: property.name, in: $textFields))
                         .textFieldStyle(RoundedBorderTextFieldStyle())
                         .font(.system(.body, design: .monospaced))
+                        .machineTextEntry()
                         .accessibilityIdentifier("createDocument.field.\(property.name)")
                     Text("Enter a valid base58 identifier (e.g., 4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF)")
                         .font(.caption2)
@@ -157,6 +158,7 @@ struct DocumentFieldsView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         TextField("Enter comma-separated values", text: binding(for: property.name, in: $arrayFields))
                             .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .machineTextEntry()
                             .accessibilityIdentifier("createDocument.field.\(property.name)")
                         Text("Separate multiple values with commas")
                             .font(.caption2)
@@ -165,18 +167,21 @@ struct DocumentFieldsView: View {
                 }
 
             case "object":
-                TextEditor(text: binding(for: property.name, in: $textFields))
-                    .font(.system(.caption, design: .monospaced))
-                    .frame(minHeight: 100)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                    )
-                    .accessibilityIdentifier("createDocument.field.\(property.name)")
+                PlainTextEditor(
+                    text: binding(for: property.name, in: $textFields),
+                    textStyle: .caption1,
+                    accessibilityIdentifier: "createDocument.field.\(property.name)"
+                )
+                .frame(minHeight: 100)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                )
 
                 default:
                     TextField("Enter \(property.name)", text: binding(for: property.name, in: $textFields))
                         .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .machineTextEntry()
                         .accessibilityIdentifier("createDocument.field.\(property.name)")
                 }
             }

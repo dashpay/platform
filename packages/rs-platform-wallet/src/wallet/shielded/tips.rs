@@ -8,10 +8,14 @@
 //! reconstructs it even after publication was removed. Address rotation uses
 //! another diversifier in the same account, so all old addresses remain covered.
 
+use crate::wallet::identity::types::dashpay::profile::parse_shielded_address;
 use crate::wallet::platform_wallet::{PlatformWallet, PlatformWalletInfo};
 use crate::PlatformWalletError;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::prelude::Identifier;
+use grovedb_commitment_tree::Scope;
+use key_wallet::wallet::root_extended_keys::RootExtendedPrivKey;
+use key_wallet::Wallet;
 use key_wallet_manager::WalletManager;
 use std::sync::PoisonError;
 
@@ -52,7 +56,7 @@ impl PreparedTipAccount {
 /// master key is another wallet's or another index's. A disabled key still
 /// counts: rotating the master key does not change the index the identity
 /// was created at.
-fn carries_master_key(identity: &dpp::identity::Identity, key_hash: &[u8; 20]) -> bool {
+pub(crate) fn carries_master_key(identity: &dpp::identity::Identity, key_hash: &[u8; 20]) -> bool {
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;
     use dpp::identity::{KeyType, Purpose, SecurityLevel};
@@ -141,6 +145,34 @@ impl PlatformWallet {
             .collect())
     }
 
+    /// Fails unless `seed` is the seed this wallet was created from: the wallet id is
+    /// computed from the seed's root public key, with or without the network. A wallet
+    /// restored watch-only or externally signed keeps the id it was created with, so
+    /// the same seed passes for it.
+    ///
+    /// A shielded bind derives the wallet's viewing keys from the seed it is given, and
+    /// a first bind has no persisted key against which to detect a wrong one. Keys of
+    /// another seed would give out addresses, a contact address among them, that a
+    /// restore from this wallet's own seed never finds.
+    pub(crate) fn ensure_seed_of_this_wallet(
+        &self,
+        seed: &[u8],
+    ) -> Result<(), PlatformWalletError> {
+        let root = RootExtendedPrivKey::new_master(seed)
+            .map_err(|e| PlatformWalletError::ShieldedKeyDerivation(e.to_string()))?;
+        let public = root.to_root_extended_pub_key();
+        drop(root);
+        let scoped_id =
+            Wallet::compute_wallet_id_from_root_extended_pub_key(&public, Some(self.sdk.network));
+        let legacy_id = Wallet::compute_wallet_id_from_root_extended_pub_key(&public, None);
+        if self.wallet_id() != scoped_id && self.wallet_id() != legacy_id {
+            return Err(PlatformWalletError::ShieldedKeyDerivation(
+                "The supplied seed does not belong to this wallet".to_string(),
+            ));
+        }
+        Ok(())
+    }
+
     /// Prepare a dedicated receiving account without publishing anything. Full
     /// bind persists its viewing key and registers it with the coordinator before
     /// callers can publish the returned address. Repeated calls are idempotent.
@@ -162,23 +194,8 @@ impl PlatformWallet {
         // a coordinator of another network they would scan the wrong chain,
         // while the address was handed out and recorded as prepared.
         coordinator.ensure_network(self.sdk.network)?;
-        // Do not publish a key from a mis-associated mnemonic. A first bind
-        // has no persisted FVK against which to detect a wrong seed.
-        let root = key_wallet::wallet::root_extended_keys::RootExtendedPrivKey::new_master(seed)
-            .map_err(|e| PlatformWalletError::ShieldedKeyDerivation(e.to_string()))?;
-        let public = root.to_root_extended_pub_key();
-        drop(root);
-        let scoped_id = key_wallet::Wallet::compute_wallet_id_from_root_extended_pub_key(
-            &public,
-            Some(self.sdk.network),
-        );
-        let legacy_id =
-            key_wallet::Wallet::compute_wallet_id_from_root_extended_pub_key(&public, None);
-        if self.wallet_id() != scoped_id && self.wallet_id() != legacy_id {
-            return Err(PlatformWalletError::ShieldedKeyDerivation(
-                "The supplied seed does not belong to this wallet".to_string(),
-            ));
-        }
+        // Refused before any wait, as the bind below refuses it too.
+        self.ensure_seed_of_this_wallet(seed)?;
         let _lifecycle = self.core().generation_payment_guard().await;
         if !self.core().is_current_generation().await {
             return Err(PlatformWalletError::WalletNotFound(hex::encode(
@@ -192,6 +209,13 @@ impl PlatformWallet {
         // replaces the registration, so another bind landing in between
         // would have its ordinary accounts dropped by this stale snapshot.
         let _config = self.shielded_config_lock.lock().await;
+        // The keys this handle holds outlive a Clear, which drops the
+        // registration without touching them. Preparing from them would bind
+        // the wallet again on its own: the wallet must be bound, with no
+        // Clear since.
+        if !coordinator.is_wallet_registered(self.wallet_id()).await {
+            return Err(PlatformWalletError::ShieldedNotBound);
+        }
         let mut accounts = self.shielded_account_indices().await;
         if accounts.is_empty() {
             return Err(PlatformWalletError::ShieldedNotBound);
@@ -273,6 +297,86 @@ impl PlatformWallet {
             .filter(|prepared| *prepared == current)
     }
 
+    /// Refuse a profile `shieldedAddress` this wallet must not publish for
+    /// `identity_id`. An address of another wallet passes: only its owner
+    /// can tell what it is. One of this wallet's own passes only when it is
+    /// the default address of the identity's dedicated account (the one
+    /// [`Self::prepare_shielded_identity_address`] returns), and that account
+    /// stands prepared for the identity in this session
+    /// ([`Self::prepared_shielded_identity_account`]). An ordinary account's
+    /// address would tie the wallet's own funds to the identity, another
+    /// identity's account would tie the two identities together, and another
+    /// address of the identity's own account is one it gives to a contact.
+    ///
+    /// The wallet tells its own addresses by the viewing keys of its bound
+    /// shielded accounts. Before the first bind it holds none and could not
+    /// tell, so it refuses with [`PlatformWalletError::ShieldedNotBound`]
+    /// instead of letting one of its own through. An account of the same
+    /// seed that is not bound (never bound, or left out of the last bind)
+    /// is not recognised: the wallet holds no key of it, and its address
+    /// passes as another wallet's would.
+    ///
+    /// The caller holds an operation admission on the manager's coordinator
+    /// from before this check until the profile is written, so a Clear
+    /// cannot end the preparation in between.
+    pub(crate) async fn check_shielded_address_publication(
+        &self,
+        identity_id: &Identifier,
+        address: &[u8; 43],
+    ) -> Result<(), PlatformWalletError> {
+        let address = parse_shielded_address(address).ok_or_else(|| {
+            PlatformWalletError::InvalidIdentityData(
+                "Invalid or unsupported shieldedAddress".to_string(),
+            )
+        })?;
+        let owning_account = {
+            let keys = self.shielded_keys.read().await;
+            let keys = keys.as_ref().ok_or(PlatformWalletError::ShieldedNotBound)?;
+            keys.iter().find_map(|(account, views)| {
+                views
+                    .full_viewing_key
+                    .scope_for_address(&address)
+                    .map(|scope| (*account, scope, views.default_address == address))
+            })
+        };
+        let Some((owning_account, scope, is_default_address)) = owning_account else {
+            return Ok(());
+        };
+        if !is_shielded_identity_account(owning_account) {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "An address from this wallet's ordinary shielded accounts cannot be published \
+                 in an identity profile"
+                    .to_string(),
+            ));
+        }
+        if matches!(scope, Scope::Internal) {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "Only external receiving addresses from this wallet can be published \
+                 in an identity profile"
+                    .to_string(),
+            ));
+        }
+        // The account's other external addresses are the ones it hands to
+        // contacts, one each. Published in the profile, such an address
+        // would no longer tell its contact apart.
+        if !is_default_address {
+            return Err(PlatformWalletError::InvalidIdentityData(
+                "Only the default address of the identity's shielded account can be \
+                 published in its profile; its other addresses are reserved for contacts"
+                    .to_string(),
+            ));
+        }
+        if self.prepared_shielded_identity_account(identity_id).await == Some(owning_account) {
+            Ok(())
+        } else {
+            Err(PlatformWalletError::InvalidIdentityData(
+                "This shielded address was not prepared for the identity's account in this \
+                 session; prepare the identity's shielded address again"
+                    .to_string(),
+            ))
+        }
+    }
+
     /// The tip account of a wallet-owned identity's slot, proved with the
     /// seed. A restored index is metadata, and hosts that cannot represent
     /// "unknown" restore a placeholder 0 for wallet-attached identities, so
@@ -285,6 +389,18 @@ impl PlatformWallet {
     ) -> Result<(u32, [u8; 20]), PlatformWalletError> {
         let wm = self.wallet_manager.read().await;
         self.verified_tip_account_in(&wm, seed, identity_id)
+    }
+
+    /// The shielded account of the slot the seed proves `identity_id` holds
+    /// now ([`Self::verified_tip_account`]), for a spend from it.
+    pub(crate) async fn verified_identity_account(
+        &self,
+        seed: &[u8],
+        identity_id: &Identifier,
+    ) -> Result<u32, PlatformWalletError> {
+        self.verified_tip_account(seed, identity_id)
+            .await
+            .map(|(account, _)| account)
     }
 
     /// [`Self::verified_tip_account`] under a wallet-manager lock the caller
@@ -316,8 +432,9 @@ impl PlatformWallet {
     }
 }
 
-/// Test-only pause point between tip preparation's account snapshot and
-/// its bind, keyed by wallet instance (shared by its clones) so parallel
+/// Test-only pause points (between tip preparation's account snapshot and
+/// its bind, and before and after a profile write's publication check),
+/// keyed by wallet instance (shared by its clones) so parallel
 /// tests built from the same mnemonic do not interfere.
 #[cfg(test)]
 pub(crate) mod test_hooks {
@@ -330,6 +447,8 @@ pub(crate) mod test_hooks {
     #[derive(Clone, Copy, PartialEq, Eq, Hash)]
     enum Stage {
         Snapshot,
+        PublicationAdmitted,
+        PublicationChecked,
     }
     static HOOKS: Mutex<Option<HashMap<(usize, Stage), Hook>>> = Mutex::new(None);
 
@@ -371,6 +490,30 @@ pub(crate) mod test_hooks {
 
     pub(crate) async fn after_snapshot(wallet: &PlatformWallet) {
         reach(wallet, Stage::Snapshot).await;
+    }
+
+    /// Pause a profile write right after it chose the coordinator admission
+    /// to hold, before its shielded publication check.
+    pub(crate) fn pause_before_publication_check(
+        wallet: &PlatformWallet,
+    ) -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
+        pause(wallet, Stage::PublicationAdmitted)
+    }
+
+    pub(crate) async fn before_publication_check(wallet: &PlatformWallet) {
+        reach(wallet, Stage::PublicationAdmitted).await;
+    }
+
+    /// Pause a profile write right after its shielded publication check,
+    /// before the profile is submitted.
+    pub(crate) fn pause_after_publication_check(
+        wallet: &PlatformWallet,
+    ) -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
+        pause(wallet, Stage::PublicationChecked)
+    }
+
+    pub(crate) async fn after_publication_check(wallet: &PlatformWallet) {
+        reach(wallet, Stage::PublicationChecked).await;
     }
 }
 

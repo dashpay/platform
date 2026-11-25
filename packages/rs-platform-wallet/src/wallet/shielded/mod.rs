@@ -37,10 +37,16 @@ pub mod activity;
 pub mod activity_recorder;
 pub mod anchor_cache;
 pub mod balance;
+pub(crate) mod balance_emitter;
+#[cfg(test)]
+mod balance_emitter_tests;
 #[cfg(test)]
 mod balance_tests;
 #[cfg(test)]
 mod cancelled_scan_tests;
+pub(crate) mod contact_address;
+#[cfg(test)]
+mod contact_address_tests;
 pub mod coordinator;
 pub mod file_store;
 #[cfg(test)]
@@ -55,12 +61,25 @@ pub mod prover;
 pub mod seed_pool;
 pub mod store;
 pub mod sync;
+pub mod tip_payment;
+#[cfg(test)]
+mod tip_payment_tests;
+mod tip_recipients;
 pub mod tips;
+pub mod token_pool;
+pub mod wallet_drain_recovery;
+pub use tip_payment::{
+    parse_shielded_tip_amount, ShieldedIdentityBalance, ShieldedTipAdmission, ShieldedTipRecipient,
+    ShieldedTipRecipientChange, ShieldedTipReview, ShieldedTipSource,
+    SHIELDED_IDENTITY_BALANCE_WAIT,
+};
 pub use tips::{
     is_shielded_identity_account, shielded_identity_account_index, SHIELDED_IDENTITY_ACCOUNT_BASE,
 };
 #[cfg(test)]
-mod viewing_key_bind_tests;
+mod spend_admission_tests;
+#[cfg(test)]
+pub(crate) mod viewing_key_bind_tests;
 #[cfg(test)]
 mod wallet_drain_tests;
 
@@ -71,9 +90,10 @@ pub use activity::{
 };
 pub use anchor_cache::{RecordedAnchorCache, RECORDED_ANCHOR_CACHE_TTL};
 pub use balance::{
-    ShieldedBalanceSource, ShieldedLocalAccountBalance, ShieldedLocalBalanceSnapshot,
-    ShieldedLocalBalanceState,
+    ShieldedBalanceSource, ShieldedBalanceUpdate, ShieldedLocalAccountBalance,
+    ShieldedLocalBalanceSnapshot, ShieldedLocalBalanceState, ShieldedOrdinaryBalance,
 };
+pub(crate) use contact_address::ContactShieldedAddresses;
 pub use coordinator::NetworkShieldedCoordinator;
 
 /// The manager's slot for its network's [`NetworkShieldedCoordinator`]:
@@ -85,6 +105,11 @@ pub(crate) type ShieldedCoordinatorSlot =
     std::sync::Arc<tokio::sync::RwLock<Option<std::sync::Arc<NetworkShieldedCoordinator>>>>;
 pub use file_store::{FileBackedShieldedStore, FileShieldedStoreError};
 pub use keys::{AccountViewingKeys, OrchardKeySet};
+pub use note_selection::TokenPoolSpendKind;
+pub use operations::{
+    ShieldedTokenPurchaseAvailability, ShieldedTokenPurchaseOutcome, ShieldedTokenSpendOutcome,
+    ShieldedTokenSpendPreview,
+};
 pub use prover::CachedOrchardProver;
 pub use seed_pool::{SeedPoolOutcome, SeedPoolProgress, DEFAULT_SEED_POOL_TARGET_NOTES};
 pub use store::{
@@ -93,6 +118,7 @@ pub use store::{
     ShieldedOutgoingNote, ShieldedStore, SubwalletId,
 };
 pub use sync::{ShieldedSyncSummary, SyncNotesResult};
+pub use token_pool::{ShieldedTokenPoolBalance, ShieldedTokenPoolWatch};
 
 /// How long after a no-op sync the background loop should skip
 /// further passes. Tuned against the wallet's typical 60s sync

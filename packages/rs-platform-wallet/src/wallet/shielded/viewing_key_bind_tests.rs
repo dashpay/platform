@@ -14,13 +14,14 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use dashcore::Network;
+use grovedb_commitment_tree::Scope;
 use key_wallet::account::StandardAccountType;
 
 use crate::changeset::PersistenceError;
 use crate::changeset::PlatformWalletPersistence;
 use crate::changeset::{ClientStartState, PlatformWalletChangeSet, ShieldedSubwalletStartState};
 use crate::error::PlatformWalletError;
-use crate::test_support::funded_wallet_manager;
+use crate::test_support::funded_wallet_manager_from_seed;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::{PlatformWallet, WalletId};
 use crate::wallet::shielded::keys::OrchardKeySet;
@@ -37,7 +38,7 @@ use crate::wallet::shielded::{
 ///   counted so the test can assert the seedless path actually read
 ///   persistence rather than short-circuiting.
 #[derive(Default)]
-struct CapturingPersistence {
+pub(crate) struct CapturingPersistence {
     stored: Mutex<Vec<PlatformWalletChangeSet>>,
     durability_events: Mutex<Vec<&'static str>>,
     fail_flush: std::sync::atomic::AtomicBool,
@@ -175,7 +176,7 @@ async fn clear(coordinator: &NetworkShieldedCoordinator) -> Result<(), crate::Pl
 }
 
 /// Unique temp directory for a test's SQLite tree (no `tempfile` dev-dep).
-fn temp_dir(tag: &str) -> PathBuf {
+pub(super) fn temp_dir(tag: &str) -> PathBuf {
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -183,7 +184,7 @@ fn temp_dir(tag: &str) -> PathBuf {
     std::env::temp_dir().join(format!("viewing_key_bind_test_{tag}_{nanos}"))
 }
 
-fn coordinator_at(dir: &std::path::Path) -> Arc<NetworkShieldedCoordinator> {
+pub(super) fn coordinator_at(dir: &std::path::Path) -> Arc<NetworkShieldedCoordinator> {
     coordinator_for(dir, Network::Testnet)
 }
 
@@ -208,12 +209,16 @@ fn coordinator_for(dir: &std::path::Path, network: Network) -> Arc<NetworkShield
 /// Build a `PlatformWallet` over a fresh test wallet manager with the
 /// given persister. Each call mimics one app process: a fresh handle
 /// whose shielded slot starts unbound.
-async fn platform_wallet_with<P>(persister: Arc<P>) -> PlatformWallet
+/// The seed of the wallet [`platform_wallet_with`] builds, the one the tests bind.
+pub(super) const BIND_SEED: [u8; 64] = [0x42; 64];
+
+pub(super) async fn platform_wallet_with<P>(persister: Arc<P>) -> PlatformWallet
 where
     P: PlatformWalletPersistence + 'static,
 {
+    // The wallet of the seed the tests bind: a bind takes no other.
     let (wallet_manager, wallet_id, balance, _signer) =
-        funded_wallet_manager(StandardAccountType::BIP44Account).await;
+        funded_wallet_manager_from_seed(BIND_SEED, StandardAccountType::BIP44Account).await;
     // On the wallet manager's and the coordinators' network: the bare mock
     // SDK is a mainnet one, and a bind refuses a coordinator of another
     // network than the SDK's.
@@ -392,6 +397,74 @@ mod zero_amount_tests {
     }
 }
 
+/// A bind derives the viewing keys every shielded address of the wallet comes from,
+/// so it takes only the seed the wallet was created from: another seed is refused
+/// before anything is derived, stored or registered.
+#[tokio::test]
+async fn should_refuse_a_bind_with_a_seed_that_is_not_the_wallets() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("foreign_seed_bind"));
+    wallet
+        .attach_shielded_coordinator_for_test(&coordinator)
+        .await;
+    let stored_before = persister.stored_count();
+
+    let err = wallet
+        .bind_shielded(&[0x99u8; 64], &[0])
+        .await
+        .expect_err("a seed of another wallet is refused");
+    assert!(
+        matches!(&err, crate::PlatformWalletError::ShieldedKeyDerivation(message)
+            if message.contains("does not belong to this wallet")),
+        "{err}"
+    );
+    assert!(!wallet.is_shielded_bound().await);
+    assert_eq!(persister.stored_count(), stored_before, "nothing is stored");
+    assert!(persister.captured_viewing_keys().is_empty());
+    assert!(coordinator.registered_subwallets().await.is_empty());
+
+    // The wallet's own seed binds.
+    wallet
+        .bind_shielded(&BIND_SEED, &[0])
+        .await
+        .expect("the wallet's own seed binds");
+}
+
+/// An account added to a bound wallet takes its keys from the seed it is given, as a
+/// bind does, so another seed is refused there too: nothing is stored and the account
+/// is not bound.
+#[tokio::test]
+async fn should_refuse_an_account_add_with_a_seed_that_is_not_the_wallets() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("foreign_seed_add"));
+    wallet
+        .attach_shielded_coordinator_for_test(&coordinator)
+        .await;
+    wallet.bind_shielded(&BIND_SEED, &[0]).await.expect("bound");
+    let stored_before = persister.stored_count();
+
+    let err = wallet
+        .shielded_add_account(&[0x99u8; 64], 1)
+        .await
+        .expect_err("a seed of another wallet is refused");
+    assert!(
+        matches!(&err, crate::PlatformWalletError::ShieldedKeyDerivation(message)
+            if message.contains("does not belong to this wallet")),
+        "{err}"
+    );
+    assert_eq!(persister.stored_count(), stored_before, "nothing is stored");
+    assert!(!wallet.shielded_account_indices().await.contains(&1));
+
+    // The wallet's own seed adds it.
+    wallet
+        .shielded_add_account(&BIND_SEED, 1)
+        .await
+        .expect("the wallet's own seed adds the account");
+    assert!(wallet.shielded_account_indices().await.contains(&1));
+}
+
 /// A shielded bind must not install ephemeral FVK state when the backend
 /// cannot persist and reload it. The capability gate runs before derivation,
 /// persistence, or coordinator registration.
@@ -425,7 +498,7 @@ async fn local_balance_bind_load_error_surfaces_and_retry_hydrates() {
         .await;
     *persister.fail_next_load.lock().unwrap() = true;
     let error = wallet
-        .bind_shielded(&[42; 64], &[0])
+        .bind_shielded(&BIND_SEED, &[0])
         .await
         .expect_err("local storage failure must fail binding");
     assert!(error
@@ -441,7 +514,7 @@ async fn local_balance_bind_load_error_surfaces_and_retry_hydrates() {
     assert!(!wallet.is_shielded_bound().await);
 
     wallet
-        .bind_shielded(&[42; 64], &[0])
+        .bind_shielded(&BIND_SEED, &[0])
         .await
         .expect("retry bind");
     let ShieldedLocalBalanceState::Ready(snapshot) = coordinator
@@ -1072,6 +1145,146 @@ async fn should_refuse_a_clear_while_an_account_add_is_in_flight() {
     );
 }
 
+/// A Clear drops the wallet's registration, and the host wipes its rows once
+/// the Clear returns. An account added after it would write a viewing key
+/// into the wiped state for a wallet the coordinator no longer knows, so it
+/// is refused until the wallet is bound again.
+#[tokio::test]
+async fn should_refuse_an_account_add_after_a_clear_until_the_wallet_is_bound_again() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("account_add_after_clear"));
+    wallet
+        .attach_shielded_coordinator_for_test(&coordinator)
+        .await;
+    let seed = [0x42u8; 64];
+    wallet
+        .bind_shielded(&seed, &[0])
+        .await
+        .expect("seed bind succeeds");
+    let stored = persister.stored_count();
+
+    clear(&coordinator).await.expect("clear succeeds");
+    let refused = wallet.shielded_add_account(&seed, 1).await;
+    assert!(
+        matches!(refused, Err(crate::PlatformWalletError::ShieldedNotBound)),
+        "{refused:?}"
+    );
+    assert_eq!(
+        persister.stored_count(),
+        stored,
+        "nothing stored after the Clear"
+    );
+    assert_eq!(wallet.shielded_account_indices().await, vec![0]);
+
+    wallet
+        .bind_shielded(&seed, &[0])
+        .await
+        .expect("bound again");
+    wallet
+        .shielded_add_account(&seed, 1)
+        .await
+        .expect("an account is added to the wallet bound again");
+    assert_eq!(wallet.shielded_account_indices().await, vec![0, 1]);
+}
+
+/// A Clear drops the wallet's registration while the handle keeps its keys,
+/// so a token pool spend from the same seed and account would still derive
+/// its keys. The public entry points refuse it as not bound, before any
+/// network read, note selection or proving.
+#[tokio::test]
+async fn should_refuse_token_pool_spends_after_a_clear_until_the_wallet_is_bound_again() {
+    use dpp::prelude::Identifier;
+    use dpp::shielded::builder::OrchardProver;
+    use grovedb_commitment_tree::ProvingKey;
+
+    struct PanicProver;
+    impl OrchardProver for PanicProver {
+        fn proving_key(&self) -> &ProvingKey {
+            panic!("a spend refused at admission must not prove");
+        }
+    }
+
+    let wallet = platform_wallet_with(Arc::new(CapturingPersistence::default())).await;
+    let coordinator = coordinator_at(&temp_dir("token_spend_after_clear"));
+    wallet
+        .attach_shielded_coordinator_for_test(&coordinator)
+        .await;
+    let seed = [0x42u8; 64];
+    wallet
+        .bind_shielded(&seed, &[0])
+        .await
+        .expect("seed bind succeeds");
+    clear(&coordinator).await.expect("clear succeeds");
+
+    let contract = Identifier::from([0x66; 32]);
+    let recipient = dpp::address_funds::OrchardAddress::from(
+        OrchardKeySet::from_seed(&[0x43; 64], wallet.network(), 0)
+            .expect("recipient keys")
+            .default_address,
+    );
+    let transfer = wallet
+        .shielded_token_transfer(&seed, 0, &contract, 0, &recipient, 5, PanicProver)
+        .await;
+    assert!(
+        matches!(transfer, Err(crate::PlatformWalletError::ShieldedNotBound)),
+        "{transfer:?}"
+    );
+    let unshield = wallet
+        .shielded_token_unshield(
+            &seed,
+            0,
+            &contract,
+            0,
+            &Identifier::from([0x11; 32]),
+            5,
+            PanicProver,
+        )
+        .await;
+    assert!(
+        matches!(unshield, Err(crate::PlatformWalletError::ShieldedNotBound)),
+        "{unshield:?}"
+    );
+}
+
+/// An account add that waited for a Clear is refused the same way: by the
+/// time it is admitted the Clear has dropped the registration.
+#[tokio::test]
+async fn should_refuse_an_account_add_admitted_behind_a_clear() {
+    let persister = Arc::new(CapturingPersistence::default());
+    let wallet = platform_wallet_with(Arc::clone(&persister)).await;
+    let coordinator = coordinator_at(&temp_dir("account_add_behind_clear"));
+    wallet
+        .attach_shielded_coordinator_for_test(&coordinator)
+        .await;
+    let seed = [0x42u8; 64];
+    wallet
+        .bind_shielded(&seed, &[0])
+        .await
+        .expect("seed bind succeeds");
+    let stored = persister.stored_count();
+
+    // A plain admission is held, as a sync pass holds one, so the Clear is
+    // admitted and parks on it, and the add queues behind the Clear for
+    // admission. Releasing it lets the Clear run first.
+    let pass = coordinator.admit().await.expect("admitted");
+    let (cleared, added, ()) = tokio::join!(
+        clear(&coordinator),
+        wallet.shielded_add_account(&seed, 1),
+        async move { drop(pass) },
+    );
+    cleared.expect("clear succeeds");
+    assert!(
+        matches!(added, Err(crate::PlatformWalletError::ShieldedNotBound)),
+        "{added:?}"
+    );
+    assert_eq!(
+        persister.stored_count(),
+        stored,
+        "nothing stored behind the Clear"
+    );
+}
+
 /// Two binds of one wallet must not interleave: neither may publish its
 /// registration while the other's transaction is open. That is what
 /// keeps the handle's key slot and the coordinator's registration from
@@ -1394,7 +1607,7 @@ async fn fresh_address_and_own_check_follow_the_bound_account() {
 /// The MASTER authentication key this seed derives for `identity_index` on
 /// testnet, as an identity public-key map: what discovery and registration
 /// leave on a wallet-owned identity, and what tip preparation verifies.
-fn seed_master_key(
+pub(super) fn seed_master_key(
     seed: &[u8],
     identity_index: u32,
 ) -> BTreeMap<dpp::identity::KeyID, dpp::identity::IdentityPublicKey> {
@@ -1802,7 +2015,7 @@ async fn should_bind_more_than_64_persisted_tip_accounts_from_an_ordinary_reques
 
 /// A wallet bound to account 0 whose identity at index 2 can prepare a tip
 /// address, for racing preparation against other account-set writers.
-async fn tip_race_fixture(
+pub(super) async fn tip_race_fixture(
     tag: &str,
 ) -> (
     PlatformWallet,
@@ -2185,6 +2398,32 @@ async fn should_refuse_tip_preparation_when_the_derived_key_is_not_the_master_ke
     }
 }
 
+/// A Clear that is admitted while a preparation waits for admission wins.
+/// It drops the wallet's registration, so a preparation admitted right
+/// behind it would bind the wallet again on its own: it is refused and
+/// nothing is prepared.
+#[tokio::test]
+async fn should_refuse_a_tip_preparation_admitted_behind_a_clear() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("tips_behind_clear").await;
+    // A plain admission is held, as a sync pass holds one, so the Clear is
+    // admitted and parks on it, and the preparation queues behind the Clear
+    // for admission. Releasing it lets the Clear run first.
+    let pass = coordinator.admit().await.expect("admitted");
+    let (cleared, prepared, ()) = tokio::join!(
+        clear(&coordinator),
+        wallet.prepare_shielded_identity_address(&seed, &id),
+        async move { drop(pass) },
+    );
+
+    cleared.unwrap();
+    assert!(
+        matches!(prepared, Err(crate::PlatformWalletError::ShieldedNotBound)),
+        "{prepared:?}"
+    );
+    assert_eq!(wallet.prepared_shielded_identity_account(&id).await, None);
+    assert!(coordinator.registered_subwallets().await.is_empty());
+}
+
 /// A Clear drops the coordinator's state for the account, so the preparation no
 /// longer stands, and a rebind of the ordinary accounts does not bring it back: the
 /// identity's account is proved and prepared again.
@@ -2220,6 +2459,351 @@ async fn should_require_fresh_tip_preparation_after_clear_even_after_rebind() {
         wallet.prepared_shielded_identity_account(&id).await,
         Some(account)
     );
+}
+
+/// Add a second wallet-owned identity to the fixture's wallet at `slot`,
+/// carrying the MASTER key the seed derives there.
+pub(super) async fn add_identity_at_slot(
+    wallet: &PlatformWallet,
+    seed: &[u8],
+    id_byte: u8,
+    slot: u32,
+) -> dpp::prelude::Identifier {
+    use dpp::identity::{Identity, IdentityV0};
+    let id = dpp::prelude::Identifier::from([id_byte; 32]);
+    let mut wm = wallet.wallet_manager.write().await;
+    wm.get_wallet_info_mut(&wallet.wallet_id())
+        .unwrap()
+        .identity_manager
+        .add_identity(
+            Identity::V0(IdentityV0 {
+                id,
+                public_keys: seed_master_key(seed, slot),
+                balance: 0,
+                revision: 0,
+            }),
+            slot,
+            wallet.wallet_id(),
+            wallet.persister(),
+        )
+        .unwrap();
+    id
+}
+
+fn publication_refusal(result: Result<(), crate::PlatformWalletError>) -> String {
+    match result {
+        Err(crate::PlatformWalletError::InvalidIdentityData(message)) => message,
+        other => panic!("expected the publication to be refused, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn should_publish_only_the_prepared_default_address_among_this_wallets_shielded_addresses() {
+    let (wallet, seed, id, _coordinator) = tip_race_fixture("profile_publication").await;
+    wallet.bind_shielded(&seed, &[0, 1]).await.unwrap();
+    let prepared = wallet
+        .prepare_shielded_identity_address(&seed, &id)
+        .await
+        .unwrap();
+
+    // The wallet's ordinary accounts, at any diversifier and either scope.
+    for account in [0, 1] {
+        let keys = OrchardKeySet::from_seed(&seed, Network::Testnet, account).unwrap();
+        for address in [
+            keys.default_address,
+            keys.address_at(17),
+            keys.full_viewing_key.address_at(3u32, Scope::Internal),
+        ] {
+            let message = publication_refusal(
+                wallet
+                    .check_shielded_address_publication(&id, &address.to_raw_address_bytes())
+                    .await,
+            );
+            assert!(message.contains("ordinary shielded accounts"), "{message}");
+        }
+    }
+
+    // The identity's own account, but a change address.
+    let own = OrchardKeySet::from_seed(
+        &seed,
+        Network::Testnet,
+        crate::shielded_identity_account_index(2).unwrap(),
+    )
+    .unwrap();
+    for index in [0u32, 17] {
+        let address = own.full_viewing_key.address_at(index, Scope::Internal);
+        let message = publication_refusal(
+            wallet
+                .check_shielded_address_publication(&id, &address.to_raw_address_bytes())
+                .await,
+        );
+        assert!(
+            message.contains("external receiving addresses"),
+            "{message}"
+        );
+    }
+
+    // Another identity's account, prepared for that identity only.
+    let other_id = add_identity_at_slot(&wallet, &seed, 0x67, 7).await;
+    let other = wallet
+        .prepare_shielded_identity_address(&seed, &other_id)
+        .await
+        .unwrap();
+    let message = publication_refusal(wallet.check_shielded_address_publication(&id, &other).await);
+    assert!(message.contains("was not prepared"), "{message}");
+    wallet
+        .check_shielded_address_publication(&other_id, &other)
+        .await
+        .unwrap();
+
+    // Another external address of the identity's own account: those are the
+    // addresses it gives to contacts.
+    let message = publication_refusal(
+        wallet
+            .check_shielded_address_publication(&id, &own.address_at(17).to_raw_address_bytes())
+            .await,
+    );
+    assert!(message.contains("reserved for contacts"), "{message}");
+
+    // The prepared default address, and any address of another wallet,
+    // whose owner alone can tell what it is.
+    let external = OrchardKeySet::from_seed(&[9; 64], Network::Testnet, 0).unwrap();
+    for address in [
+        prepared,
+        external.default_address.to_raw_address_bytes(),
+        external.address_at(17).to_raw_address_bytes(),
+        external
+            .full_viewing_key
+            .address_at(17u32, Scope::Internal)
+            .to_raw_address_bytes(),
+    ] {
+        wallet
+            .check_shielded_address_publication(&id, &address)
+            .await
+            .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn should_refuse_a_prepared_address_once_its_preparation_no_longer_stands() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("profile_publication_clear").await;
+    let address = wallet
+        .prepare_shielded_identity_address(&seed, &id)
+        .await
+        .unwrap();
+    wallet
+        .check_shielded_address_publication(&id, &address)
+        .await
+        .unwrap();
+
+    // A Clear drops the registration but not the keys this handle holds, so
+    // the address is still recognised as this wallet's and is refused.
+    clear(&coordinator).await.unwrap();
+    let message = publication_refusal(
+        wallet
+            .check_shielded_address_publication(&id, &address)
+            .await,
+    );
+    assert!(message.contains("was not prepared"), "{message}");
+
+    wallet.bind_shielded(&seed, &[0]).await.unwrap();
+    wallet
+        .prepare_shielded_identity_address(&seed, &id)
+        .await
+        .unwrap();
+    wallet
+        .check_shielded_address_publication(&id, &address)
+        .await
+        .unwrap();
+}
+
+/// A Clear ends an identity's preparation. One that ran between a profile
+/// write's publication check and its submission would let the write publish
+/// an address whose preparation no longer stands, so the Clear is refused
+/// while the write is in flight: the write is paused right after its check,
+/// a Clear requested then is refused with the preparation standing, and one
+/// requested after the write returned goes through.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_refuse_a_clear_while_a_profile_write_publishes_a_prepared_address() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("profile_write_clear").await;
+    let address = wallet
+        .prepare_shielded_identity_address(&seed, &id)
+        .await
+        .unwrap();
+
+    let (reached, resume) = super::tips::test_hooks::pause_after_publication_check(&wallet);
+    let writing = {
+        let wallet = wallet.clone();
+        tokio::spawn(async move {
+            wallet
+                .write_dashpay_profile(
+                    &id,
+                    crate::ProfileUpdate {
+                        shielded_address: crate::PaymentAddressUpdate::Set(address.to_vec()),
+                        ..Default::default()
+                    },
+                    &simple_signer::signer::SimpleSigner::default(),
+                    false,
+                )
+                .await
+        })
+    };
+    reached
+        .await
+        .expect("the write passed its publication check");
+
+    let refused = match futures::poll!(std::pin::pin!(clear(&coordinator))) {
+        std::task::Poll::Ready(refused) => refused,
+        std::task::Poll::Pending => {
+            resume.send(()).expect("release the parked write");
+            panic!("the Clear waited for the profile write in flight");
+        }
+    };
+    assert!(
+        matches!(
+            refused,
+            Err(crate::PlatformWalletError::ShieldedOperationInProgress)
+        ),
+        "{refused:?}"
+    );
+    assert!(
+        wallet
+            .prepared_shielded_identity_account(&id)
+            .await
+            .is_some(),
+        "a refused Clear leaves the preparation standing"
+    );
+    resume.send(()).expect("release the parked write");
+    // The mock SDK holds no DashPay contract, so the write itself fails
+    // after the check; only its ordering against the Clear is under test.
+    let written = writing.await.expect("write task");
+    assert!(
+        !matches!(
+            written,
+            Err(crate::PlatformWalletError::InvalidIdentityData(ref message))
+                if message.contains("was not prepared")
+        ),
+        "the publication check passed with no Clear before it: {written:?}"
+    );
+    clear(&coordinator)
+        .await
+        .expect("clear succeeds once the write has returned");
+    assert_eq!(wallet.prepared_shielded_identity_account(&id).await, None);
+}
+
+/// A profile write that sets a shielded address takes the coordinator's
+/// admission before its publication check, whether or not the identity is
+/// prepared yet. A first preparation that lands after the write started is
+/// therefore covered: the write is paused right after it was admitted while
+/// the identity is prepared, a Clear requested then is refused, and the
+/// write goes on to publish the prepared address.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn should_refuse_a_clear_for_a_profile_write_whose_address_was_prepared_after_it_started() {
+    let (wallet, seed, id, coordinator) = tip_race_fixture("profile_write_first_prep").await;
+    // The bind already scans the identity's account, but nothing has
+    // prepared it for the identity in this session.
+    assert_eq!(wallet.prepared_shielded_identity_account(&id).await, None);
+    let address = OrchardKeySet::from_seed(
+        &seed,
+        Network::Testnet,
+        crate::shielded_identity_account_index(2).unwrap(),
+    )
+    .unwrap()
+    .default_address
+    .to_raw_address_bytes();
+
+    let (reached, resume) = super::tips::test_hooks::pause_before_publication_check(&wallet);
+    let writing = {
+        let wallet = wallet.clone();
+        tokio::spawn(async move {
+            wallet
+                .write_dashpay_profile(
+                    &id,
+                    crate::ProfileUpdate {
+                        shielded_address: crate::PaymentAddressUpdate::Set(address.to_vec()),
+                        ..Default::default()
+                    },
+                    &simple_signer::signer::SimpleSigner::default(),
+                    false,
+                )
+                .await
+        })
+    };
+    reached.await.expect("the write was admitted");
+    assert_eq!(
+        wallet
+            .prepare_shielded_identity_address(&seed, &id)
+            .await
+            .unwrap(),
+        address
+    );
+    let refused = match futures::poll!(std::pin::pin!(clear(&coordinator))) {
+        std::task::Poll::Ready(refused) => refused,
+        std::task::Poll::Pending => {
+            resume.send(()).expect("release the parked write");
+            panic!("the Clear waited for the profile write in flight");
+        }
+    };
+    assert!(
+        matches!(
+            refused,
+            Err(crate::PlatformWalletError::ShieldedOperationInProgress)
+        ),
+        "{refused:?}"
+    );
+    resume.send(()).expect("release the parked write");
+    // The mock SDK holds no DashPay contract, so the write itself fails
+    // after the check; only its ordering against the Clear is under test.
+    let written = writing.await.expect("write task");
+    assert!(
+        !matches!(
+            written,
+            Err(crate::PlatformWalletError::InvalidIdentityData(ref message))
+                if message.contains("was not prepared")
+        ),
+        "the publication check passed with the preparation standing: {written:?}"
+    );
+    clear(&coordinator)
+        .await
+        .expect("clear succeeds once the write has returned");
+}
+
+#[tokio::test]
+async fn should_refuse_a_profile_write_that_publishes_an_ordinary_account_address() {
+    let (wallet, seed, id, _coordinator) = tip_race_fixture("profile_write_refusal").await;
+    wallet
+        .prepare_shielded_identity_address(&seed, &id)
+        .await
+        .unwrap();
+    let ordinary = OrchardKeySet::from_seed(&seed, Network::Testnet, 0)
+        .unwrap()
+        .default_address
+        .to_raw_address_bytes();
+    // Refused before the contract is read or anything is signed: the mock
+    // SDK holds no expectations and the signer holds no keys.
+    let signer = simple_signer::signer::SimpleSigner::default();
+    for create in [true, false] {
+        let error = wallet
+            .write_dashpay_profile(
+                &id,
+                crate::ProfileUpdate {
+                    shielded_address: crate::PaymentAddressUpdate::Set(ordinary.to_vec()),
+                    ..Default::default()
+                },
+                &signer,
+                create,
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(
+                error,
+                crate::PlatformWalletError::InvalidIdentityData(ref message)
+                    if message.contains("ordinary shielded accounts")
+            ),
+            "{error:?}"
+        );
+    }
 }
 
 /// Move the fixture's identity from slot 2 to slot 3, as its removal and a
@@ -2428,4 +3012,64 @@ async fn should_report_a_failed_load_in_an_account_add_as_a_persister_load_failu
         "{failed:?}"
     );
     assert_eq!(wallet.shielded_account_indices().await, vec![0]);
+}
+
+/// A host passes the ordinary accounts back to a bind, which refuses an
+/// identity account, so the read leaves out the identity account the wallet
+/// also holds and reports the rest in ascending order.
+#[tokio::test]
+async fn should_report_only_the_ordinary_accounts_of_a_bound_wallet() {
+    use crate::shielded_identity_account_index;
+    let (wallet, seed, id, _coordinator) = tip_race_fixture("ordinary_accounts_bound").await;
+    wallet
+        .prepare_shielded_identity_address(&seed, &id)
+        .await
+        .unwrap();
+    wallet.bind_shielded(&seed, &[2, 1]).await.unwrap();
+    let tip = shielded_identity_account_index(2).unwrap();
+    assert!(
+        wallet.shielded_account_indices().await.contains(&tip),
+        "the identity account is held, so leaving it out is what is tested"
+    );
+
+    assert_eq!(wallet.shielded_ordinary_account_indices().await, vec![1, 2]);
+}
+
+/// A Clear drops the registration, not the keys the handle holds, so the
+/// ordinary accounts read after it are the ones bound before, and binding
+/// exactly them registers every subwallet again rather than the defaults.
+#[tokio::test]
+async fn should_keep_the_ordinary_accounts_after_a_clear_and_register_them_again() {
+    let wallet = platform_wallet_with(Arc::new(CapturingPersistence::default())).await;
+    let coordinator = coordinator_at(&temp_dir("ordinary_accounts_after_clear"));
+    wallet
+        .attach_shielded_coordinator_for_test(&coordinator)
+        .await;
+    wallet
+        .bind_shielded(&BIND_SEED, &[1, 2])
+        .await
+        .expect("seed bind succeeds");
+
+    clear(&coordinator).await.expect("clear succeeds");
+    assert!(coordinator.registered_subwallets().await.is_empty());
+    let accounts = wallet.shielded_ordinary_account_indices().await;
+    assert_eq!(accounts, vec![1, 2]);
+
+    wallet
+        .bind_shielded(&BIND_SEED, &accounts)
+        .await
+        .expect("bound again");
+    let registered = coordinator.registered_subwallets().await;
+    for account in [1, 2] {
+        assert!(
+            registered.contains(&SubwalletId::new(wallet.wallet_id(), account)),
+            "account {account} registered again"
+        );
+    }
+}
+
+#[tokio::test]
+async fn should_report_no_ordinary_accounts_for_a_wallet_never_bound() {
+    let wallet = platform_wallet_with(Arc::new(CapturingPersistence::default())).await;
+    assert!(wallet.shielded_ordinary_account_indices().await.is_empty());
 }

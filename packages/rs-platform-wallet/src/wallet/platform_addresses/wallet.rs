@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
+use key_wallet::managed_account::managed_platform_account::ManagedPlatformAccount;
 use key_wallet::PlatformP2PKHAddress;
 use tokio::sync::RwLock;
 
@@ -33,6 +34,25 @@ pub(crate) fn merge_platform_payment_candidate_addresses(
         .into_iter()
         .chain(hydrated_addresses)
         .collect()
+}
+
+/// One platform payment account's candidate addresses: its transient derived
+/// pool (`addresses.addresses`) united with its hydrated `address_balances`
+/// keys, as [`PlatformAddress`]es. Nothing is derived and no balance is read.
+pub(crate) fn platform_payment_account_candidate_addresses(
+    account: &ManagedPlatformAccount,
+) -> BTreeSet<PlatformAddress> {
+    merge_platform_payment_candidate_addresses(
+        account
+            .addresses
+            .addresses()
+            .values()
+            .filter_map(|addr_info| PlatformP2PKHAddress::from_address(&addr_info.address).ok()),
+        account.address_balances.keys().copied(),
+    )
+    .into_iter()
+    .map(|p2pkh| PlatformAddress::P2pkh(p2pkh.to_bytes()))
+    .collect()
 }
 
 /// Platform address wallet providing DIP-17 platform payment address functionality.
@@ -120,19 +140,7 @@ impl PlatformAddressWallet {
                 ))
             })?;
 
-        Ok(merge_platform_payment_candidate_addresses(
-            account
-                .addresses
-                .addresses()
-                .values()
-                .filter_map(|addr_info| {
-                    PlatformP2PKHAddress::from_address(&addr_info.address).ok()
-                }),
-            account.address_balances.keys().copied(),
-        )
-        .into_iter()
-        .map(|p2pkh| PlatformAddress::P2pkh(p2pkh.to_bytes()))
-        .collect())
+        Ok(platform_payment_account_candidate_addresses(account))
     }
 
     /// Build (or rebuild) the unified address provider covering every

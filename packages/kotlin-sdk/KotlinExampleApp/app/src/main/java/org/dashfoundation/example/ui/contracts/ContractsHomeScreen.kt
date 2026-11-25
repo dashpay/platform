@@ -45,6 +45,7 @@ import org.dashfoundation.example.navigation.TokenSearch
 import org.dashfoundation.example.navigation.TokensHome
 import org.dashfoundation.example.ui.components.EntityRow
 import org.dashfoundation.example.ui.components.SectionHeader
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.formatRelative
 import org.dashfoundation.example.util.toHex
@@ -67,7 +68,7 @@ fun ContractsHomeScreen(navController: NavHostController) {
     val contractsFlow = remember(network) {
         container.database.dataContractDao().observeByNetwork(network.ffiValue)
     }
-    val contracts by contractsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val contracts by contractsFlow.collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     // Wallet-owned identities are the possible contract owners; the manual
     // register screen registers under the first one (matching the Swift
@@ -75,7 +76,7 @@ fun ContractsHomeScreen(navController: NavHostController) {
     val ownedIdentitiesFlow = remember(network) {
         container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
     }
-    val ownedIdentities by ownedIdentitiesFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val ownedIdentities by ownedIdentitiesFlow.collectEachAsStateWithLifecycle(initialValue = emptyList())
     val registerOwnerIdHex = ownedIdentities.firstOrNull()?.identityId?.toHex()
 
     Scaffold(

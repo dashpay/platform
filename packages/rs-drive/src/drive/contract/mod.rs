@@ -143,8 +143,15 @@ mod tests {
     }
 
     pub(in crate::drive::contract) fn setup_reference_contract() -> (Drive, DataContract) {
-        let drive: Drive = setup_drive_with_initial_state_structure(None);
-        let platform_version = PlatformVersion::latest();
+        setup_reference_contract_at(PlatformVersion::latest())
+    }
+
+    /// [`setup_reference_contract`] with the drive and the contract set up at
+    /// `platform_version`.
+    pub(in crate::drive::contract) fn setup_reference_contract_at(
+        platform_version: &PlatformVersion,
+    ) -> (Drive, DataContract) {
+        let drive: Drive = setup_drive_with_initial_state_structure(Some(platform_version));
 
         let contract_path = "tests/supporting_files/contract/references/references.json";
 

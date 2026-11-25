@@ -39,6 +39,7 @@ import org.dashfoundation.example.navigation.IdentityDetail
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.prettyPrintJson
@@ -68,13 +69,13 @@ fun GroupDetailScreen(
 
     val contract by remember(contractIdHex) {
         container.database.dataContractDao().observeById(contractId)
-    }.collectAsStateWithLifecycle(initialValue = null)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
 
     // Local identities, for the "in local store" member resolution
     // (← the targeted `@Query` in the iOS `GroupMemberRow`).
     val identities by remember {
         container.database.identityDao().observeAll()
-    }.collectAsStateWithLifecycle(initialValue = emptyList())
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val walletsFlow = remember(manager) {

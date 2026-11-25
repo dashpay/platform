@@ -1,6 +1,6 @@
 //! Top up an existing identity's balance from the shielded pool.
 
-use super::broadcast::BroadcastStateTransition;
+use super::broadcast::{identity_top_up_from_shielded_pool_requirement, BroadcastStateTransition};
 use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
 use crate::{Error, Sdk};
@@ -74,6 +74,13 @@ impl IdentityTopUpFromShieldedPool for Sdk {
         bundle: OrchardBundleParams,
         settings: Option<PutSettings>,
     ) -> Result<StateTransitionProofResult, Error> {
+        // Refused before the transition is built when the network does not serve it yet;
+        // the broadcast checks it again.
+        self.establish_protocol_requirement(
+            identity_top_up_from_shielded_pool_requirement(),
+            settings.map(|settings| settings.request_settings),
+        )
+        .await?;
         let state_transition =
             self.identity_top_up_from_shielded_pool_transition(identity_id, top_up_amount, bundle)?;
         let proof_result = state_transition

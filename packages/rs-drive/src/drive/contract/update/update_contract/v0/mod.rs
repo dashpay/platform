@@ -5,7 +5,7 @@ use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_
 use crate::drive::{contract_documents_path, Drive};
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fees::op::LowLevelDriveOperation;
+use crate::fees::op::{LowLevelDriveOperation, LowLevelDriveOperationTreeTypeConverter};
 use crate::util::estimated_layers::EstimatedLayers;
 use crate::util::grove_operations::BatchInsertTreeApplyType;
 use crate::util::object_size_info::DriveKeyInfo::KeyRef;
@@ -460,6 +460,18 @@ impl Drive {
                                 &mut batch_operations,
                                 drive_version,
                             )?,
+                        // A type that keeps its sums in 128 bits. No type does before protocol version
+                        // 15 (`tree_type_for_sum_width`), so no earlier version reaches this arm.
+                        tree_type @ (TreeType::BigSumTree
+                        | TreeType::CountBigSumTree
+                        | TreeType::ProvableBigSumTree
+                        | TreeType::ProvableCountProvableBigSumTree) => batch_operations.push(
+                            tree_type.empty_tree_operation_for_known_path_key(
+                                type_path.iter().map(|segment| segment.to_vec()).collect(),
+                                vec![0],
+                                storage_flags.as_ref().map(|flags| flags.as_ref()),
+                            )?,
+                        ),
                         _ => self.batch_insert_empty_tree(
                             type_path,
                             key_info,
@@ -541,6 +553,28 @@ impl Drive {
                                     &mut batch_operations,
                                     drive_version,
                                 )?,
+                            // The trees of a type that keeps its sums in 128 bits. No type does before
+                            // protocol version 15 (`tree_type_for_sum_width`), so no earlier version
+                            // reaches these arms.
+                            tree_type @ (TreeType::ProvableBigSumTree
+                            | TreeType::ProvableCountProvableBigSumTree) => batch_operations.push(
+                                tree_type.empty_tree_operation_for_known_path_key(
+                                    type_path.iter().map(|segment| segment.to_vec()).collect(),
+                                    index_bytes.to_vec(),
+                                    storage_flags.as_ref().map(|flags| flags.as_ref()),
+                                )?,
+                            ),
+                            tree_type @ (TreeType::ProvableBigSumIndexedTree
+                            | TreeType::ProvableCountProvableBigSumIndexedTree) => batch_operations
+                                .push(
+                                    LowLevelDriveOperation::for_known_path_key_empty_indexed_tree(
+                                        type_path.iter().map(|segment| segment.to_vec()).collect(),
+                                        index_bytes.to_vec(),
+                                        tree_type,
+                                        &ranked_axes,
+                                        storage_flags.as_ref().map(|flags| flags.as_ref()),
+                                    )?,
+                                ),
                             _ => self.batch_insert_empty_tree(
                                 type_path,
                                 KeyRef(index_bytes),

@@ -1,5 +1,5 @@
-// Seed the contract from an app's test plan (the iOS SwiftExampleApp/TEST_PLAN.md
-// §4 catalog). Seeds the app/tier/category lookup documents first, then one
+// Seed the contract from an app's test plan (the §4 catalog of that app's
+// TEST_PLAN.md; --plan overrides the file). Seeds the app/tier/category lookup documents first, then one
 // testCase per plan row with integer foreign keys (app/tier/category codes).
 //
 // Idempotent: lookups are keyed by `code`, testCases by the unique (testId, app).
@@ -8,12 +8,13 @@
 // Usage:
 //   QA_IDENTITY_ID=... QA_PRIVATE_KEY=... node src/seed.mjs
 //   ... node src/seed.mjs --app SwiftExampleApp --ids CORE-01,ID-04 --update
+//   ... node src/seed.mjs --app KotlinExampleApp   # reads the Kotlin app's own TEST_PLAN.md
 //   ... node src/seed.mjs --tier Essential --category Identity --limit 10
 
 import { parseArgs } from 'node:util';
 import { randomBytes } from 'node:crypto';
 import { loadDotEnv, connect, loadOwnerAuth, readConfig } from './sdk.mjs';
-import { parseTestPlan, resolvePlanCommit, DEFAULT_TEST_PLAN } from './parse-test-plan.mjs';
+import { parseTestPlan, resolvePlanCommit, testPlanFor } from './parse-test-plan.mjs';
 import {
   APPS, TIERS, CATEGORIES, DEFAULT_APP, appCode, tierCode, categoryCode, checkTags,
 } from './codes.mjs';
@@ -101,7 +102,7 @@ async function main() {
 
   const appName = values.app || DEFAULT_APP;
   const app = appCode(appName);
-  const planPath = values.plan || DEFAULT_TEST_PLAN;
+  const planPath = values.plan || testPlanFor(APPS.find((a) => a.code === app).name);
 
   const { sdk, mod, network } = await connect();
   const cfg = readConfig(network);

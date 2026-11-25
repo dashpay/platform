@@ -230,15 +230,22 @@ async fn unconfigured(
     Arc<PlatformWalletManager<BoundaryHost>>,
     Arc<PlatformWallet>,
 ) {
+    // On the wallet's network: a bind checks its seed against the wallet id
+    // of the SDK's network, and the bare mock SDK is a mainnet one.
+    let sdk = dash_sdk::SdkBuilder::new_mock()
+        .with_network(Network::Testnet)
+        .build()
+        .expect("mock sdk");
     let manager = Arc::new(PlatformWalletManager::new(
-        Arc::new(dash_sdk::Sdk::new_mock()),
+        Arc::new(sdk),
         Arc::clone(host),
         Arc::new(NoopEventHandler),
     ));
     let wallet = manager
         .create_wallet_from_seed_bytes(
             Network::Testnet,
-            &[0x17; 64],
+            // The seed the tests bind with: a bind takes no other.
+            &SEED,
             WalletAccountCreationOptions::Default,
             Some(0),
         )
@@ -449,7 +456,8 @@ async fn should_hold_a_bind_started_during_the_wipe_until_clear_finishes() {
 
 /// Adding an account is admitted like a bind: a Clear requested while one is
 /// parked in its host load is refused, and the Clear that follows removes
-/// the account it added.
+/// the account it added. An add that waited for a Clear is refused once it
+/// is admitted: the Clear dropped the wallet's registration.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn should_order_an_account_add_and_a_clear() {
     let dir = tempfile::tempdir().unwrap();
@@ -474,8 +482,13 @@ async fn should_order_an_account_add_and_a_clear() {
     assert_eq!(host.viewing_key_rows(), 0);
     assert!(coordinator.registered_subwallets().await.is_empty());
 
-    // An add started while the wipe runs waits for the whole Clear, then
-    // reads the wiped host.
+    // An add started while the wipe runs waits for the whole Clear, and is
+    // then refused before it reads or writes the host: the wallet is bound
+    // again first.
+    wallet
+        .bind_shielded(&SEED, &[0])
+        .await
+        .expect("bound again");
     type Add = tokio::task::JoinHandle<Result<(), PlatformWalletError>>;
     let started: Arc<Mutex<Option<Add>>> = Arc::default();
     {
@@ -496,17 +509,17 @@ async fn should_order_an_account_add_and_a_clear() {
         .unwrap()
         .take()
         .expect("the hook started an add");
-    add.await.unwrap().expect("the add runs after Clear");
+    let refused = add.await.unwrap();
+    assert!(
+        matches!(refused, Err(PlatformWalletError::ShieldedNotBound)),
+        "{refused:?}"
+    );
     assert_eq!(
         host.events(),
-        CLEAR_THEN_BIND,
-        "the add reads the host only after the wipe"
+        vec!["wipe", "wiped"],
+        "the add neither read nor wrote the host"
     );
-    assert_eq!(
-        host.viewing_key_rows(),
-        1,
-        "only the post-Clear account row"
-    );
+    assert_eq!(host.viewing_key_rows(), 0, "no row after the Clear");
 }
 
 /// A bind queued behind a long shield-class operation on its wallet (a
@@ -704,10 +717,8 @@ async fn should_refuse_mutations_and_balance_reads_while_the_host_wipe_is_pendin
         .await
         .expect_err("so is the local balance snapshot");
     assert!(refused_for_pending_wipe(&refused), "{refused:?}");
-    let crypto = crate::wallet::identity::network::SeedCryptoProvider::from_seed(
-        [0x17; 64],
-        Network::Testnet,
-    );
+    let crypto =
+        crate::wallet::identity::network::SeedCryptoProvider::from_seed(SEED, Network::Testnet);
     let refused = wallet
         .restore_pending_private_contact_requests(&crypto)
         .await
