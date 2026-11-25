@@ -248,7 +248,7 @@ private struct DecisionProposalRow: View {
                 pollState: pollState,
                 badgeIdentifier: "decisionProposals.row.pollState"
             )
-            HStack(spacing: 12) {
+            ProposalRowDetails {
                 Label {
                     Text(proposal.endDate, style: proposal.endDate > Date() ? .relative : .date)
                 } icon: {
@@ -257,8 +257,6 @@ private struct DecisionProposalRow: View {
                 Label("\(proposal.passPercent)%", systemImage: "checkmark.circle")
                 Label("\(proposal.minimumTurnoutPercent)%", systemImage: "person.3")
             }
-            .font(.caption)
-            .foregroundColor(.secondary)
             Text(proposal.id)
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundColor(.secondary)
