@@ -2795,6 +2795,7 @@ impl CoreChangeSet {
             && self.account_highest_used.is_empty()
             && self.utxo_credit_verdicts.is_empty()
             && self.outpoint_locks.is_empty()
+            && self.dismissal_changes.is_empty()
     }
 }
 

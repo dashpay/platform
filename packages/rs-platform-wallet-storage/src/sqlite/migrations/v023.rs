@@ -179,7 +179,10 @@ mod tests {
     fn should_rerun_over_its_own_column_without_change() {
         let mut conn = at_v022();
         insert_lock_row(&conn, 0x01, None);
-        migrations::run(&mut conn).unwrap();
+        migrations::runner()
+            .set_target(refinery::Target::Version(23))
+            .run(&mut conn)
+            .unwrap();
         insert_lock_row(&conn, 0x02, Some(1));
         let schema = table_sql(&conn);
         conn.execute("DELETE FROM refinery_schema_history WHERE version = 23", [])
