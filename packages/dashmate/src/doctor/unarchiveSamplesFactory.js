@@ -185,6 +185,17 @@ export default function unarchiveSamplesFactory(getServiceList) {
         samples.setDashmateVersion(readSampleFile(dashmateVersionFilePath));
       }
 
+      // Absent from a report collected by a dashmate that predates the check
+      const activationFilePath = path.join(extractDir, 'activation.json');
+      if (fs.existsSync(activationFilePath)) {
+        // Unreadable is a verdict the analyser reports, not a reason to refuse the whole report
+        try {
+          samples.setActivation(readSampleFile(activationFilePath));
+        } catch {
+          samples.setActivation({ error: 'The activation sample in this report could not be read' });
+        }
+      }
+
       const serviceNames = getServiceList(samples.getDashmateConfig())
         .map((service) => service.name);
 

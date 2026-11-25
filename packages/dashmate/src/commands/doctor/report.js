@@ -46,6 +46,7 @@ The command collects diagnostic information and creates an obfuscated archive fo
 
   - System information
   - The node configuration
+  - The name of every node on this host and the helper image it runs
   - Service logs, metrics and status
 
   Collected data will not contain any information which is not already publicly known.

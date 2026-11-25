@@ -4,6 +4,8 @@ import os from 'os';
 import path from 'path';
 import { gzipSync } from 'zlib';
 import { create, Header } from 'tar';
+import archiveSamples from '../../../src/doctor/archiveSamples.js';
+import Samples from '../../../src/doctor/Samples.js';
 import unarchiveSamplesFactory from '../../../src/doctor/unarchiveSamplesFactory.js';
 
 describe('unarchiveSamplesFactory', () => {
@@ -58,6 +60,43 @@ describe('unarchiveSamplesFactory', () => {
 
     expect(samples.date).to.be.an.instanceOf(Date);
     expect(samples.date.toISOString()).to.equal('2026-01-01T00:00:00.000Z');
+  });
+
+  // Support reads the activation of every node on the host from the report, and it belongs to
+  // no single service, so it travels at the archive root.
+  it('should carry the activation of every node through a report', async () => {
+    const activation = {
+      dashmateVersion: '5.2.0',
+      migration: { state: 'activated', reason: 'config-format-current', message: 'migrated' },
+      configs: [{
+        name: 'mainnet', masternode: true, state: 'pending', reason: 'helper-image-mismatch', message: 'old helper',
+      }],
+    };
+
+    const collected = new Samples();
+    collected.setActivation(activation);
+
+    await archiveSamples(collected, testRoot);
+
+    const [archiveName] = fs.readdirSync(testRoot).filter((name) => name.endsWith('.tar.gz'));
+
+    const unarchiveSamples = unarchiveSamplesFactory(() => []);
+    const samples = await unarchiveSamples(path.join(testRoot, archiveName));
+
+    expect(samples.getActivation()).to.deep.equal(activation);
+  });
+
+  it('should read the rest of a report whose activation sample is unreadable', async () => {
+    fs.writeFileSync(path.join(sourceDir, 'dashmateVersion.txt'), '5.2.0');
+    fs.writeFileSync(path.join(sourceDir, 'activation.json'), '{ not json');
+    const archivePath = path.join(testRoot, 'broken.tar.gz');
+    await create({ cwd: sourceDir, gzip: true, file: archivePath }, ['.']);
+
+    const unarchiveSamples = unarchiveSamplesFactory(() => []);
+    const samples = await unarchiveSamples(archivePath);
+
+    expect(samples.getDashmateVersion()).to.equal('5.2.0');
+    expect(samples.getActivation().error).to.be.a('string');
   });
 
   it('rejects symbolic-link archive members', async () => {
