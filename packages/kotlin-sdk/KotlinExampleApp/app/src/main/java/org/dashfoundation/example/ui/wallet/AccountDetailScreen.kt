@@ -37,6 +37,7 @@ import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.CoreAddressDetail
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.formatDuffs
 import org.dashfoundation.example.util.truncateMiddle
 
@@ -72,7 +73,7 @@ fun AccountDetailScreen(
     val txos by remember(walletIdHex, accountId) {
         container.database.txoDao().observeByWallet(walletId)
             .map { rows -> rows.filter { it.accountId == accountId } }
-    }.collectAsStateWithLifecycle(initialValue = emptyList())
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     // ← AccountDetailView.balanceCard: Rust's per-account read for a Core
     // account. PlatformPayment shows no balance until Rust offers an

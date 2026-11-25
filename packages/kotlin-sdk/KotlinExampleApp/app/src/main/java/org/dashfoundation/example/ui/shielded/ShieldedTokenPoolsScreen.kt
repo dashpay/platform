@@ -66,7 +66,9 @@ import org.dashfoundation.dashsdk.wallet.WalletSyncEvent
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.navigation.ShieldedTokenSend
 import org.dashfoundation.example.navigation.ShieldedTokenUnshield
+import org.dashfoundation.example.ui.components.EmissionKey
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.toHex
@@ -111,7 +113,7 @@ fun ShieldedTokenPoolsScreen(walletIdHex: String, navController: NavHostControll
     val tokens by remember(network) {
         network?.let { container.database.tokenDao().observeTokensByNetwork(it.ffiValue) }
             ?: flowOf(emptyList())
-    }.collectAsStateWithLifecycle(initialValue = emptyList())
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
     val scope = rememberCoroutineScope()
 
     // The balances Rust last returned, in its order; null before the first
@@ -524,7 +526,7 @@ private fun ShieldedTokenPoolWatchSheet(
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val sortedTokens = remember(tokens) { tokens.sortedBy { it.name } }
+    val sortedTokens = remember(EmissionKey(tokens)) { tokens.sortedBy { it.name } }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,

@@ -53,6 +53,7 @@ import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.RecipientPicker
 import org.dashfoundation.example.ui.components.RecipientSelection
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.LenientJson
 import org.dashfoundation.example.util.hexToBytes
@@ -96,11 +97,11 @@ fun DocumentActionsScreen(
     val contractFlow = remember(contractIdHex) {
         container.database.dataContractDao().observeById(contractIdBytes)
     }
-    val contract by contractFlow.collectAsStateWithLifecycle(initialValue = null)
+    val contract by contractFlow.collectEachAsStateWithLifecycle(initialValue = null)
 
-    val identities by container.database.identityDao()
-        .observeWalletOwnedByNetwork(network.ffiValue)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val identities by remember(network.ffiValue) {
+        container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
     var actingIdentity by remember { mutableStateOf<IdentityEntity?>(null) }
 
     var documentIdText by rememberSaveable { mutableStateOf(initialDocumentId) }

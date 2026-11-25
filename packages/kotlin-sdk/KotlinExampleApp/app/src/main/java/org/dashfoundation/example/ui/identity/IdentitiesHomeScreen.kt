@@ -49,6 +49,7 @@ import org.dashfoundation.example.navigation.StateTransitions
 import org.dashfoundation.example.ui.components.EntityRow
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.SectionHeader
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.ui.funding.PendingAssetLocksList
 import org.dashfoundation.example.ui.funding.resumableTopUpsAcrossWallets
 import org.dashfoundation.example.ui.wallet.toHexString
@@ -73,7 +74,7 @@ fun IdentitiesHomeScreen(navController: NavHostController) {
     val identitiesFlow = remember(network) {
         container.database.identityDao().observeByNetwork(network.ffiValue)
     }
-    val identities by identitiesFlow.collectAsStateWithLifecycle(initialValue = emptyList())
+    val identities by identitiesFlow.collectEachAsStateWithLifecycle(initialValue = emptyList())
     val controllers by coordinator.controllers.collectAsStateWithLifecycle()
     val addressFundControllers by container.addressFundCoordinator.controllers
         .collectAsStateWithLifecycle()

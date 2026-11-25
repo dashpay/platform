@@ -40,6 +40,7 @@ import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.navigation.DocumentTypeDetail
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.formatByteCount
 import org.dashfoundation.example.util.formatDate
@@ -67,16 +68,16 @@ fun DataContractDetailsScreen(
     val contractFlow = remember(contractIdHex) {
         container.database.dataContractDao().observeById(contractId)
     }
-    val contract by contractFlow.collectAsStateWithLifecycle(initialValue = null)
+    val contract by contractFlow.collectEachAsStateWithLifecycle(initialValue = null)
 
     var showRawJson by rememberSaveable { mutableStateOf(false) }
     // Update Contract is offered when a wallet identity here owns the contract
     // (← `DataContractDetailsView.swift`'s `contractDetails.updateContract`)
     val appState = org.dashfoundation.example.di.LocalAppState.current
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
-    val walletIdentities by container.database.identityDao()
-        .observeWalletOwnedByNetwork(network.ffiValue)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val walletIdentities by remember(network.ffiValue) {
+        container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     Scaffold(
         topBar = {

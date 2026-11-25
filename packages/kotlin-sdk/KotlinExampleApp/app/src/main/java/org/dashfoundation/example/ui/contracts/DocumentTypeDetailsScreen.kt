@@ -49,6 +49,7 @@ import org.dashfoundation.example.navigation.PrivateDocumentEntryCreate
 import org.dashfoundation.example.navigation.SumAverageDocuments
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.hexToBytes
 
 /**
@@ -83,7 +84,7 @@ fun DocumentTypeDetailsScreen(
     val contractFlow = remember(contractIdHex) {
         container.database.dataContractDao().observeById(contractId)
     }
-    val contract by contractFlow.collectAsStateWithLifecycle(initialValue = null)
+    val contract by contractFlow.collectEachAsStateWithLifecycle(initialValue = null)
 
     var expandedIndices by rememberSaveable { mutableStateOf(setOf<String>()) }
     var constraintsSection by remember(contractIdHex, typeName) {

@@ -63,8 +63,10 @@ import org.dashfoundation.example.services.transitions.StateTransitionDefinition
 import org.dashfoundation.example.services.transitions.TransitionInput
 import org.dashfoundation.example.services.transitions.TransitionInputType
 import org.dashfoundation.example.ui.components.AccessiblePicker
+import org.dashfoundation.example.ui.components.EmissionKey
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.ui.contracts.ParsedContract
 import org.dashfoundation.example.ui.contracts.isPrivateDocumentType
 import org.dashfoundation.example.util.Base58
@@ -106,15 +108,15 @@ fun TransitionDetailScreen(transitionKey: String, navController: NavHostControll
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
 
-    val identities by container.database.identityDao()
-        .observeWalletOwnedByNetwork(network.ffiValue)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
-    val tokens by container.database.tokenDao()
-        .observeTokensByNetwork(network.ffiValue)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
-    val contracts by container.database.dataContractDao()
-        .observeByNetwork(network.ffiValue)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val identities by remember(network.ffiValue) {
+        container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
+    val tokens by remember(network.ffiValue) {
+        container.database.tokenDao().observeTokensByNetwork(network.ffiValue)
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
+    val contracts by remember(network.ffiValue) {
+        container.database.dataContractDao().observeByNetwork(network.ffiValue)
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     // Per-field form state (survives config change / picker pops).
     val textInputs = remember { mutableStateMapOf<String, String>() }
@@ -608,7 +610,7 @@ private fun TransitionInputField(
             }
         }
         TransitionInputType.DOCUMENT_TYPE_PICKER -> {
-            val typeNames = remember(contracts, selectedContractIdHex) {
+            val typeNames = remember(EmissionKey(contracts), selectedContractIdHex) {
                 contracts.firstOrNull { it.id.toHex() == selectedContractIdHex }
                     // A private type takes no ordinary document (protocol version 15)
                     ?.let { contract ->

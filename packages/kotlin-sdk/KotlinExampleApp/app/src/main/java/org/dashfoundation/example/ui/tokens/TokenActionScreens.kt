@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -17,7 +16,6 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,10 +36,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.flowOf
+import org.dashfoundation.dashsdk.Network
 import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.funding.ShieldedProver
 import org.dashfoundation.dashsdk.tokens.GroupAction
 import org.dashfoundation.dashsdk.tokens.TokenConfigChange
+import org.dashfoundation.dashsdk.tokens.TokenConfigUpdateOutcome
 import org.dashfoundation.dashsdk.tokens.TokenDistributionType
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
@@ -55,6 +55,7 @@ import org.dashfoundation.example.services.tokens.TokenActionResolver
 import org.dashfoundation.example.services.tokens.TokenAmounts
 import org.dashfoundation.example.services.tokens.TokenDirectPurchasePricing
 import org.dashfoundation.example.services.tokens.TokenDistributionChangeRules
+import org.dashfoundation.example.ui.contracts.ContractDownloader
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.RecipientPicker
@@ -964,16 +965,6 @@ private fun PurchaseForm(
         }
     }
 
-    viewModel.notice?.let { notice ->
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissNotice() },
-            title = { Text(notice.title) },
-            text = { Text(notice.message, modifier = Modifier.testTag(notice.testTag)) },
-            confirmButton = {
-                TextButton(onClick = { viewModel.dismissNotice() }) { Text("OK") }
-            },
-        )
-    }
 }
 
 /**
@@ -1129,6 +1120,7 @@ private fun UpdateMaxSupplyForm(
     navController: NavHostController,
 ) {
     val token = context.token
+    val container = LocalAppContainer.current
     var removeCap by rememberSaveable { mutableStateOf(false) }
     var amountText by rememberSaveable { mutableStateOf("") }
     var note by rememberSaveable { mutableStateOf("") }
@@ -1142,6 +1134,8 @@ private fun UpdateMaxSupplyForm(
     TokenActionScaffold(
         title = "Update Max Supply",
         context = context,
+        // The update is paid once sent: stay until its outcome is stored or read.
+        backBlocked = viewModel.isSubmitting,
         banner = banner,
         bannerActionLabel = "max-supply change",
         submitLabel = "Update Max Supply",
@@ -1165,7 +1159,7 @@ private fun UpdateMaxSupplyForm(
             val groupAction = banner.toGroupAction()
             val noteOrNull = note.toPublicNoteOrNull()
             viewModel.submit {
-                wallet.tokens.updateConfig(
+                val outcome = wallet.tokens.updateConfig(
                     identityId = context.identity.identityId,
                     tokenContractId = token.contractId,
                     tokenPosition = token.position,
@@ -1174,6 +1168,34 @@ private fun UpdateMaxSupplyForm(
                     groupAction = groupAction,
                     signingKeyId = TokenActionContext.SIGNING_KEY_ID,
                     signerHandle = signer,
+                )
+                // Rust says whether the update took effect and hands back the
+                // contract it produced; store that, so the token list and
+                // details show the new cap. A pending group action changes
+                // nothing yet.
+                val notice = when (outcome) {
+                    TokenConfigUpdateOutcome.Pending -> null
+                    is TokenConfigUpdateOutcome.Applied -> try {
+                        ContractDownloader.storeFetchedContract(
+                            outcome.contract, token.contractId, container.database,
+                            Network.fromFfiValue(context.identity.networkRaw),
+                        )
+                        null
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        e.message ?: e.toString()
+                    }
+                    is TokenConfigUpdateOutcome.AppliedNotRefreshed -> outcome.reason
+                } ?: return@submit
+                viewModel.showNoticeUntilDismissed(
+                    TokenActionNotice(
+                        "Max supply updated",
+                        "The update was confirmed, but the updated contract could not be " +
+                            "saved on this device ($notice). It keeps showing the old max " +
+                            "supply until the contract is downloaded again.",
+                        "tokenAction.configRefreshNotice",
+                    ),
                 )
             }
         },

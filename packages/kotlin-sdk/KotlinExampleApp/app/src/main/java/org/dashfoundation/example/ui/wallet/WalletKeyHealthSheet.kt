@@ -32,13 +32,16 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.services.IdentityKeys
 import org.dashfoundation.example.ui.components.FormSection
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
+import org.dashfoundation.example.util.toHex
 
 /**
  * Wallet key-health diagnostic — port of `WalletKeyHealthSheet.swift`,
@@ -69,27 +72,36 @@ fun WalletKeyHealthSheet(
 
     val identities by remember {
         container.database.identityDao().observeByWallet(walletId)
-    }.collectAsStateWithLifecycle(initialValue = null)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
 
     // Bumping this re-runs the key check after a repair writes new material.
     var refreshTick by remember { mutableStateOf(0) }
 
     // identityId(base58) → list of (keyId, purpose, pubkeyHexShort, healthy).
+    // Rebuilt when an identity joins or leaves the wallet or changes index
+    // (what the report shows of it; the rows compare by id alone, so a
+    // balance write does not restart the probes), and whenever any of their
+    // public-key rows is written: key writes do not touch the identity rows.
     val reports by produceState<List<IdentityKeyReport>?>(
         initialValue = null,
-        identities,
+        identities?.map { it.identityId.toHex() to it.identityIndex },
         refreshTick,
     ) {
         val ids = identities ?: return@produceState
-        // The recoverability probe opens each Keystore blob (a decrypt), so it
-        // MUST run off the composition/Main thread — do the whole report build
-        // on IO (the Room reads suspend, the probes are blocking Keystore work).
-        value = withContext(Dispatchers.IO) {
-            ids.map { identity ->
-                val base58Id = Base58.encode(identity.identityId)
-                val keys = container.database.publicKeyDao()
-                    .observeByIdentityId(base58Id).first()
-                    .map { row ->
+        if (ids.isEmpty()) {
+            value = emptyList()
+            return@produceState
+        }
+        val keyRows = ids.map { identity ->
+            container.database.publicKeyDao().observeByIdentityId(Base58.encode(identity.identityId))
+        }
+        combine(keyRows) { it.toList() }.collectLatest { rowsPerIdentity ->
+            // The recoverability probe opens each Keystore blob (a decrypt), so it
+            // MUST run off the composition/Main thread — build the report on IO
+            // (the probes are blocking Keystore work).
+            value = withContext(Dispatchers.IO) {
+                ids.zip(rowsPerIdentity).map { (identity, rows) ->
+                    val keys = rows.map { row ->
                         val pubkeyHex = row.publicKeyData.joinToString("") { "%02x".format(it) }
                         KeyHealthRow(
                             keyId = row.keyId,
@@ -108,11 +120,12 @@ fun WalletKeyHealthSheet(
                             }.getOrDefault(false),
                         )
                     }
-                IdentityKeyReport(
-                    identityIdBase58 = base58Id,
-                    identityIndex = identity.identityIndex,
-                    keys = keys,
-                )
+                    IdentityKeyReport(
+                        identityIdBase58 = Base58.encode(identity.identityId),
+                        identityIndex = identity.identityIndex,
+                        keys = keys,
+                    )
+                }
             }
         }
     }

@@ -25,6 +25,8 @@ import kotlinx.coroutines.delay
 import org.dashfoundation.dashsdk.persistence.entities.AccountEntity
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.navigation.AccountDetail
+import org.dashfoundation.example.ui.components.EmissionKey
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.ui.dashpay.AccountBalance
 import org.dashfoundation.example.ui.dashpay.parseAccountBalances
 import org.dashfoundation.example.util.formatDuffs
@@ -49,7 +51,7 @@ internal fun AccountListSection(
     val container = LocalAppContainer.current
     val accounts by remember(walletIdHex) {
         container.database.accountDao().observeByWallet(walletId)
-    }.collectAsStateWithLifecycle(initialValue = emptyList())
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
     val coreBalances = rememberCoreAccountBalances(walletId)
 
     if (accounts.isEmpty()) {
@@ -62,7 +64,7 @@ internal fun AccountListSection(
         return
     }
 
-    val ordered = remember(accounts) { accounts.sortedWith(compareBy(::accountSortKey)) }
+    val ordered = remember(EmissionKey(accounts)) { accounts.sortedWith(compareBy(::accountSortKey)) }
     Column {
         ordered.forEachIndexed { index, account ->
             AccountRow(
