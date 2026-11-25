@@ -119,7 +119,11 @@ async fn should_preserve_a_payment_persisted_while_a_sweep_snapshot_is_in_flight
             wallet_id,
             txids: vec![loser],
             superseded_by: dashcore::Txid::from_byte_array([0x77; 32]),
-            winner_mined_height: Some(1_499_050),
+            winner_block: Some(key_wallet::transaction_checking::BlockInfo::new(
+                1_499_050,
+                dashcore::BlockHash::all_zeros(),
+                0,
+            )),
             released_outpoints: Vec::new(),
             balance: key_wallet::WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),

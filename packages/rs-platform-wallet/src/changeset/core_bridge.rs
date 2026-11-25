@@ -1830,7 +1830,7 @@ async fn build_core_changeset(
         WalletEvent::TransactionsSwept {
             txids,
             superseded_by,
-            winner_mined_height,
+            winner_block,
             released_outpoints,
             ..
         } => {
@@ -1853,7 +1853,7 @@ async fn build_core_changeset(
                 swept = txids.len(),
                 released = released_outpoints.len(),
                 superseded_by = %superseded_by,
-                winner_mined_height = ?winner_mined_height,
+                winner_block = ?winner_block,
                 "Mirroring swept transactions to the persister"
             );
             CoreChangeSet {
@@ -1869,7 +1869,7 @@ async fn build_core_changeset(
                     // and uncollectible, the durable stand-in for the
                     // `spent_outpoints` retention upstream cannot rebuild
                     // once the loser's record is gone.
-                    winner_mined_height: *winner_mined_height,
+                    winner_mined_height: winner_block.map(|block| block.height()),
                     released_outpoints: released_outpoints.clone(),
                 }],
                 ..CoreChangeSet::default()
@@ -2856,7 +2856,11 @@ mod swept_transaction_projection_tests {
             wallet_id: WALLET_ID,
             txids,
             superseded_by: txid(0xff),
-            winner_mined_height: Some(WINNER_HEIGHT),
+            winner_block: Some(key_wallet::transaction_checking::BlockInfo::new(
+                WINNER_HEIGHT,
+                dashcore::BlockHash::all_zeros(),
+                0,
+            )),
             released_outpoints,
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
@@ -2915,7 +2919,7 @@ mod swept_transaction_projection_tests {
             wallet_id: WALLET_ID,
             txids: vec![txid(1)],
             superseded_by: txid(0xff),
-            winner_mined_height: None,
+            winner_block: None,
             released_outpoints: vec![],
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
@@ -3212,7 +3216,11 @@ mod sent_payment_verdict_tests {
             wallet_id,
             txids: vec![txid],
             superseded_by: Txid::from_byte_array([0x77; 32]),
-            winner_mined_height: Some(1_499_050),
+            winner_block: Some(key_wallet::transaction_checking::BlockInfo::new(
+                1_499_050,
+                dashcore::BlockHash::all_zeros(),
+                0,
+            )),
             released_outpoints: Vec::new(),
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
@@ -7723,7 +7731,11 @@ mod tests {
             wallet_id,
             txids: vec![dashcore::Txid::from_byte_array([txid_byte; 32])],
             superseded_by: dashcore::Txid::from_byte_array([superseded_by_byte; 32]),
-            winner_mined_height: Some(WINNER_HEIGHT),
+            winner_block: Some(key_wallet::transaction_checking::BlockInfo::new(
+                WINNER_HEIGHT,
+                dashcore::BlockHash::all_zeros(),
+                0,
+            )),
             released_outpoints: vec![],
             balance: WalletCoreBalance::default(),
             account_balances: BTreeMap::new(),
@@ -8169,7 +8181,11 @@ mod tests {
                 wallet_id,
                 txids: vec![tx.txid()],
                 superseded_by: dashcore::Txid::from_byte_array([0x77; 32]),
-                winner_mined_height: Some(WINNER_HEIGHT),
+                winner_block: Some(key_wallet::transaction_checking::BlockInfo::new(
+                    WINNER_HEIGHT,
+                    dashcore::BlockHash::all_zeros(),
+                    0,
+                )),
                 released_outpoints: vec![],
                 balance: WalletCoreBalance::default(),
                 account_balances: BTreeMap::new(),
