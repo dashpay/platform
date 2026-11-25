@@ -168,6 +168,13 @@ impl IdentityPublicKey {
         self.security_level() == SecurityLevel::MASTER
     }
 
+    /// Whether the key may sign a transition that is not a batch. A contract-bound
+    /// AUTHENTICATION key signs only batches inside its bounds; consensus refuses it anywhere
+    /// else.
+    pub fn can_sign_non_batch(&self) -> bool {
+        self.purpose() != Purpose::AUTHENTICATION || self.contract_bounds().is_none()
+    }
+
     /// Generates an identity public key with the maximum possible size based on the platform version.
     ///
     /// This method constructs a key of the largest possible size for the given platform version.
