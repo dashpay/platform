@@ -2242,6 +2242,7 @@ mod chain_lock_wait_tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    operation_revision: 0,
                     shielded_recipient: None,
                     out_point,
                     transaction,
@@ -2347,6 +2348,7 @@ mod chain_lock_wait_tests {
                 out_point,
                 TrackedAssetLock {
                     operation_id: None,
+                    operation_revision: 0,
                     shielded_recipient: None,
                     out_point,
                     transaction,

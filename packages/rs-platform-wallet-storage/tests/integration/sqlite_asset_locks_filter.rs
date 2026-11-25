@@ -7,15 +7,39 @@
 use crate::common;
 
 use common::{ensure_wallet_meta, fresh_persister, wid};
-use dashcore::{OutPoint, Transaction, Txid};
+use dashcore::{Network, OutPoint, Transaction, Txid};
+#[cfg(feature = "shielded")]
+use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+#[cfg(feature = "shielded")]
+use dpp::prelude::AssetLockProof;
+use key_wallet::account::StandardAccountType;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use platform_wallet::changeset::{
-    AssetLockChangeSet, AssetLockEntry, PlatformWalletPersistence, ShieldedRecipientRaw,
-    SHIELDED_RECIPIENT_SIZE,
+    AccountRegistrationEntry, AssetLockChangeSet, AssetLockEntry, PlatformWalletChangeSet,
+    PlatformWalletPersistence, ShieldedRecipientRaw, WalletMetadataEntry, SHIELDED_RECIPIENT_SIZE,
 };
+use platform_wallet::test_support::funded_wallet_manager;
 use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
 use platform_wallet_storage::sqlite::error::WalletStorageError;
-use platform_wallet_storage::sqlite::schema::asset_locks;
+use platform_wallet_storage::sqlite::{
+    migrations,
+    schema::{asset_locks, blob},
+};
+#[cfg(feature = "shielded")]
+use platform_wallet_storage::LoadCtx;
+
+#[cfg(feature = "shielded")]
+use platform_wallet::{
+    changeset::CoreChangeSet,
+    events::EventHandler,
+    wallet::{
+        asset_lock::{AssetLockFunding, AssetLockOperationContext, AssetLockOperationState},
+        shielded::CachedOrchardProver,
+    },
+    PlatformEventHandler, PlatformWalletError, PlatformWalletManager,
+};
+#[cfg(feature = "shielded")]
+use std::sync::Arc;
 
 fn reopen(path: &std::path::Path) -> platform_wallet_storage::SqlitePersister {
     platform_wallet_storage::SqlitePersister::open(
@@ -38,6 +62,8 @@ fn entry(op: OutPoint, status: AssetLockStatus) -> AssetLockEntry {
         funding_type: AssetLockFundingType::IdentityTopUp,
         identity_index: 0,
         operation_id: None,
+        operation_revision: 0,
+        expected_operation_revision: None,
         shielded_recipient: None,
         amount_duffs: 1000,
         status,
@@ -397,6 +423,148 @@ fn should_preserve_shielded_recipient_when_later_snapshot_lacks_it_and_reject_a_
         .is_err());
 }
 
+#[tokio::test]
+async fn should_preserve_recipient_across_funding_conflict() {
+    let (source, wallet_id, _, _) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
+    let account_registrations: Vec<_> = source
+        .read()
+        .await
+        .get_wallet(&wallet_id)
+        .unwrap()
+        .accounts
+        .all_accounts()
+        .into_iter()
+        .map(|account| AccountRegistrationEntry {
+            account_type: account.account_type,
+            account_xpub: account.account_xpub,
+        })
+        .collect();
+    for operation_id in [None, Some([0xA9; 16])] {
+        let (persister, _tmp, path) = fresh_persister();
+        persister
+            .store(
+                wallet_id,
+                PlatformWalletChangeSet {
+                    wallet_metadata: Some(WalletMetadataEntry {
+                        network: Network::Testnet,
+                        wallet_group_id: [0; 32],
+                        birth_height: 1,
+                    }),
+                    account_registrations: account_registrations.clone(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        let legacy_outpoint = op(0x36);
+        let recipient = recipient_bytes(0x11);
+        let mut original = entry(op(0x35), AssetLockStatus::Broadcast);
+        original.out_point.txid = original.transaction.txid();
+        let outpoint = original.out_point;
+        original.funding_type = AssetLockFundingType::AssetLockShieldedAddressTopUp;
+        original.shielded_recipient = Some(recipient);
+        original.operation_id = operation_id;
+        let store = |persister: &platform_wallet_storage::SqlitePersister, asset_locks| {
+            persister.store(
+                wallet_id,
+                platform_wallet::changeset::PlatformWalletChangeSet {
+                    asset_locks: Some(asset_locks),
+                    ..Default::default()
+                },
+            )
+        };
+        let upsert = |entry: AssetLockEntry| AssetLockChangeSet {
+            asset_locks: [(entry.out_point, entry)].into_iter().collect(),
+            ..Default::default()
+        };
+        let removal = AssetLockChangeSet {
+            removed: [outpoint, legacy_outpoint].into_iter().collect(),
+            ..Default::default()
+        };
+        store(&persister, upsert(original.clone())).unwrap();
+        store(
+            &persister,
+            upsert(entry(legacy_outpoint, AssetLockStatus::Broadcast)),
+        )
+        .unwrap();
+        store(&persister, removal.clone()).unwrap();
+        assert_eq!(
+            persister
+                .asset_lock_status(&wallet_id, &legacy_outpoint)
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            persister.asset_lock_status(&wallet_id, &outpoint).unwrap(),
+            Some(AssetLockStatus::Broadcast),
+            "a delayed removal cannot erase the recorded recipient"
+        );
+
+        let mut conflict = original.clone();
+        conflict.status = AssetLockStatus::Conflicted;
+        conflict.advance_operation_revision();
+        store(
+            &persister,
+            upsert(AssetLockEntry {
+                shielded_recipient: None,
+                ..conflict.clone()
+            }),
+        )
+        .unwrap();
+        store(
+            &persister,
+            upsert(AssetLockEntry {
+                shielded_recipient: None,
+                ..conflict.clone()
+            }),
+        )
+        .unwrap();
+        store(&persister, removal.clone()).unwrap();
+        assert!(store(&persister, upsert(original)).is_err());
+        drop(persister);
+
+        let persister = reopen(&path);
+        let load = |persister: &platform_wallet_storage::SqlitePersister| {
+            persister.load().unwrap().wallets[&wallet_id].unused_asset_locks[&0][&outpoint].clone()
+        };
+        let blocked = load(&persister);
+        assert_eq!(blocked.status, AssetLockStatus::Conflicted);
+        assert_eq!(blocked.shielded_recipient, Some(recipient));
+        assert_eq!(blocked.operation_id, operation_id);
+        assert_eq!(blocked.operation_revision, 1);
+        assert!(blocked.proof.is_none());
+
+        let mut recovered = conflict;
+        recovered.status = AssetLockStatus::RecoveredFromChain;
+        recovered.proof = Some(dpp::prelude::AssetLockProof::Chain(
+            dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof {
+                core_chain_locked_height: 88,
+                out_point: outpoint,
+            },
+        ));
+        recovered.advance_operation_revision();
+        let mut redirected = recovered.clone();
+        redirected.shielded_recipient = Some(recipient_bytes(0x12));
+        assert!(store(&persister, upsert(redirected)).is_err());
+        recovered.shielded_recipient = None;
+        store(&persister, upsert(recovered)).unwrap();
+        store(&persister, removal).unwrap();
+        drop(persister);
+
+        let recovered = load(&reopen(&path));
+        assert_eq!(recovered.status, AssetLockStatus::RecoveredFromChain);
+        assert_eq!(recovered.operation_id, operation_id);
+        assert_eq!(recovered.shielded_recipient, Some(recipient));
+        assert_eq!(recovered.operation_revision, 2);
+        assert_eq!(
+            recovered
+                .proof
+                .as_ref()
+                .and_then(dpp::prelude::AssetLockProof::out_point),
+            Some(outpoint)
+        );
+    }
+}
+
 #[test]
 fn should_fail_the_load_when_a_stored_shielded_recipient_has_the_wrong_length() {
     let (persister, _tmp, _) = fresh_persister();
@@ -617,4 +785,445 @@ fn should_not_see_a_buffered_lock_until_its_flush() {
         persister.asset_lock_status(&w, &buffered).unwrap(),
         Some(AssetLockStatus::InstantSendLocked)
     );
+}
+
+/// The snapshot the wallet's conflict cleanup
+/// (`remove_tracked_asset_locks_for_swept`) persists for a UUID-bound lock
+/// whose funding transaction lost a conflict.
+#[cfg(feature = "shielded")]
+fn conflict_snapshot(lock: &AssetLockEntry) -> AssetLockChangeSet {
+    let mut conflict = lock.clone();
+    conflict.status = AssetLockStatus::Conflicted;
+    conflict.proof = None;
+    conflict.advance_operation_revision();
+    AssetLockChangeSet {
+        asset_locks: [(conflict.out_point, conflict)].into_iter().collect(),
+        ..Default::default()
+    }
+}
+
+/// A real restored manager reports durable conflict and rejects the same UUID
+/// before signing, broadcasting, or mutating storage after restart.
+#[cfg(feature = "shielded")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn should_report_conflict_and_refuse_same_uuid_drain_after_conflict_and_reopen() {
+    struct NoopHandler;
+    impl EventHandler for NoopHandler {}
+    impl PlatformEventHandler for NoopHandler {}
+
+    let (source, wallet_id, _, signer) =
+        funded_wallet_manager(StandardAccountType::BIP44Account).await;
+    let (persister, tmp, path) = fresh_persister();
+    let snapshot = {
+        let source = source.read().await;
+        let wallet = source.get_wallet(&wallet_id).unwrap();
+        let info = &source.get_wallet_info(&wallet_id).unwrap().core_wallet;
+        PlatformWalletChangeSet {
+            wallet_metadata: Some(WalletMetadataEntry {
+                network: Network::Testnet,
+                wallet_group_id: [0; 32],
+                birth_height: 1,
+            }),
+            account_registrations: wallet
+                .accounts
+                .all_accounts()
+                .into_iter()
+                .map(|account| AccountRegistrationEntry {
+                    account_type: account.account_type,
+                    account_xpub: account.account_xpub,
+                })
+                .collect(),
+            core: Some(CoreChangeSet {
+                new_utxos: info.accounts.standard_bip44_accounts[&0]
+                    .utxos
+                    .values()
+                    .cloned()
+                    .collect(),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }
+    };
+    persister.store(wallet_id, snapshot).unwrap();
+    let operation_id = [7; 16];
+    let mut lock = entry(op(0x70), AssetLockStatus::Broadcast);
+    lock.out_point.txid = lock.transaction.txid();
+    lock.operation_id = Some(operation_id);
+    let loser = lock.out_point;
+    persister
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                asset_locks: Some(AssetLockChangeSet {
+                    asset_locks: [(loser, lock.clone())].into_iter().collect(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        asset_locks::load_unconsumed(
+            &persister.lock_conn_for_test(),
+            &wallet_id,
+            &LoadCtx::strict()
+        )
+        .unwrap()[&0][&loser]
+            .operation_id,
+        Some(operation_id)
+    );
+    persister
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                asset_locks: Some(conflict_snapshot(&lock)),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+    let persister = Arc::new(reopen(&path));
+    assert_eq!(
+        asset_locks::load_unconsumed(
+            &persister.lock_conn_for_test(),
+            &wallet_id,
+            &LoadCtx::strict()
+        )
+        .unwrap()[&0][&loser]
+            .status,
+        AssetLockStatus::Conflicted
+    );
+    let manager = PlatformWalletManager::new(
+        Arc::new(
+            dash_sdk::SdkBuilder::new_mock()
+                .with_network(Network::Testnet)
+                .build()
+                .unwrap(),
+        ),
+        Arc::clone(&persister),
+        Arc::new(NoopHandler),
+    );
+    manager.load_from_persistor().await.unwrap();
+    manager
+        .configure_shielded(tmp.path().join("shielded.db"))
+        .await
+        .unwrap();
+    let coordinator = manager.shielded_coordinator().await.unwrap();
+    let wallet = manager.get_wallet(&wallet_id).await.unwrap();
+    let changes_before = persister.lock_conn_for_test().total_changes();
+    let status = wallet
+        .asset_locks()
+        .wallet_drain_operation_status(operation_id)
+        .await
+        .unwrap();
+    assert_eq!(status.state, AssetLockOperationState::Conflicted);
+    assert_eq!(status.out_point, Some(loser));
+    let drain_error = wallet
+        .shielded_fund_from_asset_lock(
+            &coordinator,
+            AssetLockFunding::DrainWalletBalance {
+                account_index: 0,
+                minimum_lock_duffs: None,
+                operation: Arc::new(AssetLockOperationContext::new(operation_id)),
+            },
+            Vec::new(),
+            &signer,
+            &CachedOrchardProver::new(),
+            None,
+            0,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        persister.lock_conn_for_test().total_changes(),
+        changes_before
+    );
+    assert_eq!(wallet.asset_locks().list_tracked_locks().await.len(), 1);
+    assert!(manager.shutdown().await.all_clean());
+    assert!(
+        matches!(drain_error, PlatformWalletError::AssetLockConflicted(outpoint) if outpoint == loser)
+    );
+}
+
+#[cfg(feature = "shielded")]
+#[test]
+fn should_retain_operation_binding_through_removal_across_restart() {
+    let (persister, _tmp, path) = fresh_persister();
+    let wallet_id = wid(0xBC);
+    ensure_wallet_meta(&persister, &wallet_id);
+    let outpoint = op(0xBC);
+    let mut lock = entry(outpoint, AssetLockStatus::Broadcast);
+    lock.operation_id = Some([0xBC; 16]);
+    persister
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                asset_locks: Some(AssetLockChangeSet {
+                    asset_locks: [(outpoint, lock)].into_iter().collect(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    persister
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                asset_locks: Some(AssetLockChangeSet {
+                    removed: [outpoint].into_iter().collect(),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+    let reopened = reopen(&path);
+    let restored = asset_locks::load_unconsumed(
+        &reopened.lock_conn_for_test(),
+        &wallet_id,
+        &LoadCtx::strict(),
+    )
+    .unwrap();
+    let binding = restored
+        .values()
+        .flat_map(|locks| locks.values())
+        .find(|lock| lock.operation_id == Some([0xBC; 16]));
+    assert_eq!(
+        binding.map(|lock| lock.out_point),
+        Some(outpoint),
+        "a removal must retain the original UUID binding"
+    );
+}
+
+/// Conflict/recovery writes are ordered by operation generation, independently
+/// of arrival order. Rollback leaves both the lifecycle and UUID binding intact.
+#[cfg(feature = "shielded")]
+#[test]
+fn should_fence_stale_operation_snapshots_and_preserve_same_outpoint_recovery() {
+    let (persister, _tmp, path) = fresh_persister();
+    let wallet_id = wid(0xBD);
+    ensure_wallet_meta(&persister, &wallet_id);
+    let outpoint = op(0xBD);
+    let mut original = entry(outpoint, AssetLockStatus::Broadcast);
+    original.operation_id = Some([0xBD; 16]);
+    let upsert = |entry: AssetLockEntry| AssetLockChangeSet {
+        asset_locks: [(entry.out_point, entry)].into_iter().collect(),
+        ..Default::default()
+    };
+    let mut conn = persister.lock_conn_for_test();
+    let tx = conn.transaction().unwrap();
+    asset_locks::apply(&tx, &wallet_id, &upsert(original.clone())).unwrap();
+    tx.commit().unwrap();
+    // A delayed cleanup from the Built window cannot delete a dispatched UUID.
+    let tx = conn.transaction().unwrap();
+    asset_locks::apply(
+        &tx,
+        &wallet_id,
+        &AssetLockChangeSet {
+            removed: [outpoint].into_iter().collect(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    tx.commit().unwrap();
+    assert_eq!(
+        asset_locks::load_unconsumed(&conn, &wallet_id, &LoadCtx::strict()).unwrap()[&0][&outpoint]
+            .operation_id,
+        Some([0xBD; 16])
+    );
+    let tx = conn.transaction().unwrap();
+    asset_locks::apply(&tx, &wallet_id, &conflict_snapshot(&original)).unwrap();
+    tx.rollback().unwrap();
+    let before = asset_locks::load_unconsumed(&conn, &wallet_id, &LoadCtx::strict()).unwrap();
+    assert_eq!(before[&0][&outpoint].status, AssetLockStatus::Broadcast);
+    assert_eq!(before[&0][&outpoint].operation_revision, 0);
+    let tx = conn.transaction().unwrap();
+    asset_locks::apply(&tx, &wallet_id, &conflict_snapshot(&original)).unwrap();
+    tx.commit().unwrap();
+    let conflict = asset_locks::load_unconsumed(&conn, &wallet_id, &LoadCtx::strict()).unwrap()[&0]
+        [&outpoint]
+        .clone();
+    assert_eq!(conflict.status, AssetLockStatus::Conflicted);
+    assert_eq!(conflict.operation_revision, 1);
+    assert!(conflict.proof.is_none());
+    assert_eq!(
+        asset_locks::status_of(&conn, &wallet_id, &outpoint, &LoadCtx::strict()).unwrap(),
+        Some(AssetLockStatus::Conflicted)
+    );
+    // Recovery reads cannot soften a conflicted blob into an actionable row.
+    let tx = conn.transaction().unwrap();
+    tx.execute(
+        "UPDATE asset_locks SET status = 'broadcast' WHERE wallet_id = ?1",
+        [wallet_id.as_slice()],
+    )
+    .unwrap();
+    let changes_before = tx.total_changes();
+    assert!(asset_locks::load_unconsumed(&tx, &wallet_id, &LoadCtx::recovery()).is_err());
+    assert_eq!(tx.total_changes(), changes_before);
+    tx.rollback().unwrap();
+    let tx = conn.transaction().unwrap();
+    assert!(asset_locks::apply(&tx, &wallet_id, &upsert(original)).is_err());
+    tx.rollback().unwrap();
+    let removal = AssetLockChangeSet {
+        removed: [outpoint].into_iter().collect(),
+        ..Default::default()
+    };
+    let tx = conn.transaction().unwrap();
+    asset_locks::apply(&tx, &wallet_id, &removal).unwrap();
+    tx.commit().unwrap();
+    assert_eq!(
+        asset_locks::load_unconsumed(&conn, &wallet_id, &LoadCtx::strict()).unwrap()[&0][&outpoint]
+            .status,
+        AssetLockStatus::Conflicted
+    );
+
+    let mut recovered = AssetLockEntry::from(&conflict);
+    recovered.status = AssetLockStatus::RecoveredFromChain;
+    recovered.proof = Some(AssetLockProof::Chain(ChainAssetLockProof {
+        core_chain_locked_height: 401,
+        out_point: outpoint,
+    }));
+    // A generic snapshot carrying a proof is not authenticated reactivation.
+    let tx = conn.transaction().unwrap();
+    assert!(asset_locks::apply(&tx, &wallet_id, &upsert(recovered.clone())).is_err());
+    tx.rollback().unwrap();
+    recovered.advance_operation_revision();
+    let mut wrong_outpoint = recovered.clone();
+    wrong_outpoint.proof = Some(AssetLockProof::Chain(ChainAssetLockProof {
+        core_chain_locked_height: 401,
+        out_point: op(0xCC),
+    }));
+    let tx = conn.transaction().unwrap();
+    assert!(asset_locks::apply(&tx, &wallet_id, &upsert(wrong_outpoint)).is_err());
+    tx.rollback().unwrap();
+    let tx = conn.transaction().unwrap();
+    asset_locks::apply(&tx, &wallet_id, &upsert(recovered.clone())).unwrap();
+    tx.commit().unwrap();
+    // Delivery acknowledgement may be lost; replaying the exact CAS is safe.
+    let tx = conn.transaction().unwrap();
+    asset_locks::apply(&tx, &wallet_id, &upsert(recovered.clone())).unwrap();
+    asset_locks::apply(&tx, &wallet_id, &removal).unwrap();
+    tx.commit().unwrap();
+    let tx = conn.transaction().unwrap();
+    assert!(asset_locks::apply(&tx, &wallet_id, &upsert(AssetLockEntry::from(&conflict))).is_err());
+    tx.rollback().unwrap();
+    let mut replacement = recovered.clone();
+    replacement.out_point = op(0xCC);
+    replacement.operation_revision = 0;
+    replacement.expected_operation_revision = None;
+    let tx = conn.transaction().unwrap();
+    assert!(asset_locks::apply(&tx, &wallet_id, &upsert(replacement)).is_err());
+    tx.rollback().unwrap();
+    drop(conn);
+    drop(persister);
+    let reopened = reopen(&path);
+    let final_state = asset_locks::load_unconsumed(
+        &reopened.lock_conn_for_test(),
+        &wallet_id,
+        &LoadCtx::strict(),
+    )
+    .unwrap();
+    let lock = &final_state[&0][&outpoint];
+    assert_eq!(lock.operation_id, Some([0xBD; 16]));
+    assert_eq!(lock.operation_revision, 2);
+    assert_eq!(lock.status, AssetLockStatus::RecoveredFromChain);
+    assert_eq!(lock.proof, recovered.proof);
+}
+
+#[test]
+fn should_migrate_conflict_sidecar_without_changing_existing_lifecycle_blobs() {
+    let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+    migrations::runner()
+        .set_target(refinery::Target::Version(22))
+        .run(&mut conn)
+        .unwrap();
+    let wallet_id = wid(0xC1);
+    conn.execute(
+        "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+        [&wallet_id[..]],
+    )
+    .unwrap();
+    let outpoint = op(0xC1);
+    let original = entry(outpoint, AssetLockStatus::Broadcast);
+    let blob = asset_locks::encode_entry_for_test(&original).unwrap();
+    let op_bytes = blob::encode_outpoint(&outpoint).unwrap();
+    conn.execute("INSERT INTO asset_locks (wallet_id,outpoint,status,account_index,identity_index,amount_duffs,lifecycle_blob,operation_id) VALUES (?1,?2,'broadcast',0,0,1000,?3,?4)", rusqlite::params![wallet_id.as_slice(), op_bytes, &blob, [0xC1u8;16].as_slice()]).unwrap();
+    migrations::run(&mut conn).unwrap();
+    let (restored_blob, revision): (Vec<u8>, i64) = conn
+        .query_row(
+            "SELECT lifecycle_blob,operation_revision FROM asset_locks",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(restored_blob, blob);
+    assert_eq!(revision, 0);
+    assert_eq!(
+        asset_locks::load_unconsumed(
+            &conn,
+            &wallet_id,
+            &platform_wallet_storage::LoadCtx::strict()
+        )
+        .unwrap()[&0][&outpoint]
+            .operation_id,
+        Some([0xC1; 16])
+    );
+}
+
+/// A compare-and-set re-delivered over a row that stores a shielded recipient
+/// is accepted when it is the exact committed snapshot, and refused when it
+/// names a different recipient; the stored recipient never changes.
+#[test]
+fn should_accept_exact_cas_redelivery_and_refuse_a_changed_recipient() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let wallet_id = wid(0xC2);
+    ensure_wallet_meta(&persister, &wallet_id);
+    let outpoint = op(0xC2);
+    let recipient = recipient_bytes(0x21);
+    let mut lock = entry(outpoint, AssetLockStatus::Broadcast);
+    lock.operation_id = Some([0xC2; 16]);
+    lock.shielded_recipient = Some(recipient);
+    let upsert = |entry: AssetLockEntry| AssetLockChangeSet {
+        asset_locks: [(entry.out_point, entry)].into_iter().collect(),
+        ..Default::default()
+    };
+    let mut conflict = lock.clone();
+    conflict.status = AssetLockStatus::Conflicted;
+    conflict.advance_operation_revision();
+
+    let mut conn = persister.lock_conn_for_test();
+    for (row, accepted) in [
+        (lock, true),
+        (conflict.clone(), true),
+        // Lost commit acknowledgement: the identical CAS is re-delivered.
+        (conflict.clone(), true),
+        (
+            AssetLockEntry {
+                shielded_recipient: Some(recipient_bytes(0x22)),
+                ..conflict.clone()
+            },
+            false,
+        ),
+    ] {
+        let tx = conn.transaction().unwrap();
+        let result = asset_locks::apply(&tx, &wallet_id, &upsert(row));
+        assert_eq!(result.is_ok(), accepted, "{result:?}");
+        if accepted {
+            tx.commit().unwrap();
+        }
+    }
+    let (stored_recipient, revision): (Vec<u8>, i64) = conn
+        .query_row(
+            "SELECT shielded_recipient, operation_revision FROM asset_locks WHERE wallet_id = ?1",
+            [wallet_id.as_slice()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(stored_recipient, recipient.to_vec());
+    assert_eq!(revision, 1);
 }

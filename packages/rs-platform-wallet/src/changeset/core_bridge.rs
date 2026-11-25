@@ -1540,13 +1540,8 @@ async fn reconstruct_asset_locks_for_event(
             )
             .await;
         }
-        // The subtractive arm: a swept funding tx can never confirm, so
-        // every tracked lock it funds is dead. Nothing else cascades the
-        // sweep into this table — without this arm the entry is a zombie
-        // `resume_asset_lock` re-broadcasts and waits on without bound,
-        // mirrored forever by every store. A chainlocked return re-emits
-        // the funding record through the arms above, which re-insert the
-        // entry, so removal here is not a one-way door.
+        // Remove unbound locks whose funding was swept. Locks with an
+        // operation ID or recipient stay blocked until a chain-locked return.
         WalletEvent::TransactionsSwept {
             wallet_id, txids, ..
         } => {
@@ -8486,6 +8481,8 @@ mod tests {
             out_point,
             AssetLockEntry {
                 operation_id: None,
+                operation_revision: 0,
+                expected_operation_revision: None,
                 shielded_recipient: None,
                 out_point,
                 transaction: dashcore::Transaction {

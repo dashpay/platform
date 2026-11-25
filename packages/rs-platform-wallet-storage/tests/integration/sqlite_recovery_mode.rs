@@ -299,6 +299,8 @@ fn seed_asset_lock_status_drift(
         funding_type: AssetLockFundingType::IdentityTopUp,
         identity_index: 0,
         operation_id: None,
+        operation_revision: 0,
+        expected_operation_revision: None,
         shielded_recipient: None,
         amount_duffs: 1_000,
         status: AssetLockStatus::Consumed,

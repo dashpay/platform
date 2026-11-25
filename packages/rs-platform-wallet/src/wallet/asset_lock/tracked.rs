@@ -14,6 +14,9 @@ use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundin
 
 use crate::changeset::{AssetLockEntry, ShieldedRecipientRaw};
 
+/// Shared durable range for SQLite and host stores with signed integer columns.
+pub const MAX_ASSET_LOCK_OPERATION_REVISION: u64 = i64::MAX as u64;
+
 /// Asset lock status on Core chain.
 ///
 /// The wallet tracks asset locks from build through consumption. The
@@ -113,6 +116,9 @@ pub enum AssetLockStatus {
     /// and never regressed. Unlike generic `Consumed`, this is a durable
     /// drain-completion receipt.
     DrainCompleted,
+    /// Funding lost a Core input conflict. The operation ID and recipient stay
+    /// bound to the outpoint. Resume requires authenticated finality.
+    Conflicted,
 }
 
 impl AssetLockStatus {
@@ -120,6 +126,30 @@ impl AssetLockStatus {
     /// Drain success requires `DrainCompleted`, not generic `Consumed`.
     pub fn is_consumed(&self) -> bool {
         matches!(self, Self::Consumed | Self::DrainCompleted)
+    }
+
+    /// Delete only legacy locks and known-unsent builds. A dispatched lock's
+    /// operation ID and shielded recipient survive delayed removals.
+    pub fn permits_removal(
+        &self,
+        has_operation_id: bool,
+        has_shielded_recipient: bool,
+        revision: u64,
+    ) -> bool {
+        !self.is_consumed()
+            && *self != Self::Conflicted
+            && revision == 0
+            && (*self == Self::Built || !(has_operation_id || has_shielded_recipient))
+    }
+
+    /// A stored conflict needs a revision and an immutable recovery binding.
+    pub fn has_valid_operation_revision(&self, revision: u64, has_binding: bool) -> bool {
+        revision <= MAX_ASSET_LOCK_OPERATION_REVISION
+            && if revision == 0 {
+                *self != Self::Conflicted
+            } else {
+                has_binding
+            }
     }
 }
 
@@ -129,6 +159,9 @@ impl AssetLockStatus {
 pub struct TrackedAssetLock {
     /// Stable host operation identifier, retained through consumption and restart.
     pub operation_id: Option<[u8; 16]>,
+    /// Monotonic generation of the operation's conflict/recovery evidence.
+    /// Bounded by [`MAX_ASSET_LOCK_OPERATION_REVISION`] in durable stores.
+    pub operation_revision: u64,
     /// The outpoint identifying this credit output (txid + vout).
     pub out_point: OutPoint,
     pub transaction: Transaction,
@@ -158,6 +191,8 @@ impl From<&TrackedAssetLock> for AssetLockEntry {
     fn from(lock: &TrackedAssetLock) -> Self {
         Self {
             operation_id: lock.operation_id,
+            operation_revision: lock.operation_revision,
+            expected_operation_revision: None,
             out_point: lock.out_point,
             transaction: lock.transaction.clone(),
             account_index: lock.account_index,

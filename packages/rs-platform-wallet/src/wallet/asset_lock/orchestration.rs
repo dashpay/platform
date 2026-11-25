@@ -1012,6 +1012,7 @@ mod tests {
                     out_point,
                     TrackedAssetLock {
                         operation_id: None,
+                        operation_revision: 0,
                         shielded_recipient: None,
                         out_point,
                         transaction: transaction.clone(),

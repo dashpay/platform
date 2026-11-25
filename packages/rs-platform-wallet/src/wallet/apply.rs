@@ -384,6 +384,10 @@ impl PlatformWalletInfo {
                     if !entry.preserve_recovery_metadata(
                         existing.operation_id,
                         existing.shielded_recipient,
+                    ) || !entry.follows_operation(
+                        existing.operation_revision,
+                        &existing.status,
+                        existing.shielded_recipient.is_some(),
                     ) {
                         continue;
                     }
@@ -399,6 +403,7 @@ impl PlatformWalletInfo {
                     out_point,
                     TrackedAssetLock {
                         operation_id: entry.operation_id,
+                        operation_revision: entry.operation_revision,
                         out_point: entry.out_point,
                         transaction: entry.transaction,
                         account_index: entry.account_index,
@@ -412,12 +417,17 @@ impl PlatformWalletInfo {
                 );
             }
             for out_point in al_cs.removed {
-                // Match changeset folding and durable stores: a stale removal
-                // cannot erase the terminal operation-recovery tombstone.
+                // Match changeset folding and durable stores for stale removals.
                 if self
                     .tracked_asset_locks
                     .get(&out_point)
-                    .is_some_and(|entry| entry.status.is_consumed())
+                    .is_some_and(|entry| {
+                        !entry.status.permits_removal(
+                            entry.operation_id.is_some(),
+                            entry.shielded_recipient.is_some(),
+                            entry.operation_revision,
+                        )
+                    })
                 {
                     continue;
                 }
@@ -777,6 +787,8 @@ mod tests {
             out_point,
             AssetLockEntry {
                 operation_id: None,
+                operation_revision: 0,
+                expected_operation_revision: None,
                 shielded_recipient: None,
                 out_point,
                 transaction: dashcore::Transaction {
@@ -841,6 +853,8 @@ mod tests {
     ) -> AssetLockEntry {
         AssetLockEntry {
             operation_id,
+            operation_revision: 0,
+            expected_operation_revision: None,
             out_point: OutPoint::default(),
             transaction: dashcore::Transaction {
                 version: 3,
@@ -913,6 +927,23 @@ mod tests {
         let mut recorded = recovery_asset_lock(AssetLockStatus::Broadcast, None);
         recorded.shielded_recipient = Some(recipient);
         apply_recovery_asset_lock(&mut info, &mut wallet, recorded);
+
+        let removal = AssetLockChangeSet {
+            removed: [OutPoint::default()].into_iter().collect(),
+            ..Default::default()
+        };
+        info.apply_changeset(
+            &mut wallet,
+            PlatformWalletChangeSet {
+                asset_locks: Some(removal),
+                ..Default::default()
+            },
+        )
+        .expect("ignore stale removal of dispatched recipient");
+        assert_eq!(
+            info.tracked_asset_locks[&OutPoint::default()].shielded_recipient,
+            Some(recipient)
+        );
 
         // A stale snapshot without the recipient keeps it.
         apply_recovery_asset_lock(

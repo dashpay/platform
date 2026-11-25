@@ -12,7 +12,7 @@ use dashcore::{Network, OutPoint, ScriptBuf, Transaction, TxOut};
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use dpp::prelude::AssetLockProof;
 use dpp::version::PlatformVersion;
-use key_wallet::account::StandardAccountType;
+use key_wallet::account::{AccountType, StandardAccountType};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet::Wallet;
@@ -27,6 +27,9 @@ use crate::error::PlatformWalletError;
 use crate::events::PlatformEventManager;
 use crate::spv::SpvRuntime;
 use crate::test_support::{funded_wallet_manager, WalletSigner};
+use crate::wallet::asset_lock::sync::reconstruction::{
+    enrich_tracked_asset_locks_from_chain_lock, remove_tracked_asset_locks_for_swept,
+};
 use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 use crate::wallet::asset_lock::{
     AssetLockFunding, AssetLockOperationContext, AssetLockOperationState,
@@ -69,6 +72,7 @@ fn drain_lock_fixture() -> (TrackedAssetLock, BTreeMap<u32, AccountViewingKeys>)
     (
         TrackedAssetLock {
             operation_id: Some(OPERATION_ID),
+            operation_revision: 0,
             out_point,
             transaction,
             account_index: 0,
@@ -152,6 +156,7 @@ impl PlatformWalletPersistence for RecoveryPersistence {
                     *out_point,
                     TrackedAssetLock {
                         operation_id: row.operation_id,
+                        operation_revision: row.operation_revision,
                         out_point: *out_point,
                         transaction: row.transaction.clone(),
                         account_index: row.account_index,
@@ -830,6 +835,110 @@ async fn status_reads_durable_state_without_network_or_guards() {
     );
 }
 
+#[tokio::test]
+async fn should_prefer_durable_conflict_over_stale_live_lock_and_operation_context() {
+    let (lock, keys) = drain_lock_fixture();
+    let (wallet, persistence, _, _dir) = wallet_fixture(&lock, keys).await;
+    let operation = Arc::new(AssetLockOperationContext::new(OPERATION_ID));
+    let _registration = wallet
+        .asset_locks
+        .register_wallet_drain_operation(operation.clone());
+    operation.set(AssetLockOperationState::Pending, Some(lock.out_point));
+    {
+        let mut manager = wallet.wallet_manager.write().await;
+        let live = manager
+            .get_wallet_info_mut(&wallet.wallet_id())
+            .unwrap()
+            .tracked_asset_locks
+            .get_mut(&lock.out_point)
+            .unwrap();
+        live.status = AssetLockStatus::Conflicted;
+        live.operation_revision = 1;
+    }
+    assert!(matches!(
+        wallet
+            .shielded_wallet_drain_operation_status(OPERATION_ID)
+            .await,
+        Err(PlatformWalletError::TransactionBroadcastUnconfirmed(_))
+    ));
+    wallet
+        .wallet_manager
+        .write()
+        .await
+        .get_wallet_info_mut(&wallet.wallet_id())
+        .unwrap()
+        .tracked_asset_locks
+        .insert(lock.out_point, lock.clone());
+    let mut conflict = AssetLockEntry::from(&lock);
+    conflict.status = AssetLockStatus::Conflicted;
+    conflict.proof = None;
+    conflict.advance_operation_revision();
+    persistence
+        .committed
+        .lock()
+        .unwrap()
+        .insert(lock.out_point, conflict.clone());
+    let status = wallet
+        .shielded_wallet_drain_operation_status(OPERATION_ID)
+        .await
+        .unwrap();
+    assert_eq!(status.state, AssetLockOperationState::Conflicted);
+    assert_eq!(status.out_point, Some(lock.out_point));
+    assert!(
+        matches!(wallet.asset_locks.begin_wallet_drain(&operation).await,
+        Err(PlatformWalletError::AssetLockConflicted(outpoint)) if outpoint == lock.out_point)
+    );
+    assert!(
+        matches!(wallet.asset_locks.complete_wallet_drain(lock.out_point, OPERATION_ID).await,
+        Err(PlatformWalletError::AssetLockConflicted(outpoint)) if outpoint == lock.out_point)
+    );
+    assert!(persistence.staged.lock().unwrap().is_empty());
+    assert_eq!(live_status(&wallet, &lock.out_point).await, lock.status);
+
+    // A stale context for a settled conflict must not block unrelated UUIDs.
+    operation.set(AssetLockOperationState::Pending, Some(lock.out_point));
+    {
+        let other = Arc::new(AssetLockOperationContext::new([0x74; 16]));
+        let _other_registration = wallet
+            .asset_locks
+            .register_wallet_drain_operation(other.clone());
+        assert_eq!(
+            wallet.asset_locks.begin_wallet_drain(&other).await.unwrap(),
+            None
+        );
+    }
+
+    // Only a newer, durably authenticated return re-enables this same outpoint.
+    let mut returned = AssetLockEntry::from(&lock);
+    returned.operation_revision = 2;
+    returned.expected_operation_revision = Some(1);
+    persistence
+        .committed
+        .lock()
+        .unwrap()
+        .insert(lock.out_point, returned);
+    assert_eq!(
+        wallet
+            .asset_locks
+            .begin_wallet_drain(&operation)
+            .await
+            .unwrap(),
+        Some(lock.out_point)
+    );
+    let live = wallet.asset_locks.list_tracked_locks().await;
+    assert_eq!(live.len(), 1);
+    assert_eq!(live[0].operation_revision, 2);
+    assert_eq!(live[0].operation_id, Some(OPERATION_ID));
+    assert!(persistence.staged.lock().unwrap().is_empty());
+    persistence.committed.lock().unwrap().clear();
+    assert!(matches!(
+        wallet
+            .shielded_wallet_drain_operation_status(OPERATION_ID)
+            .await,
+        Err(PlatformWalletError::Persistence(_))
+    ));
+}
+
 /// `shielded_fund_from_asset_lock` hands its `on_asset_lock_built` to the
 /// lock builder: the caller hears the outpoint of a fresh lock from the
 /// wallet balance, here one the never-started SPV client refuses to send, so
@@ -920,29 +1029,51 @@ async fn should_report_a_wallet_drain_lock_to_the_caller() {
     assert!(snapshot.out_point.is_none());
 }
 
-/// A generic outpoint resume that names a different recipient than the row
-/// recorded is refused before any funding resolution: no send, no staged
-/// write, the row unchanged.
+/// Generic resume stays blocked during a funding conflict, then honors the
+/// saved recipient even when the lock has no operation UUID.
 #[tokio::test]
-async fn should_refuse_a_generic_resume_to_a_recipient_other_than_the_recorded_one() {
+async fn should_preserve_recipient_across_funding_conflict() {
     let (mut lock, keys) = drain_lock_fixture();
     lock.operation_id = None;
+    lock.status = AssetLockStatus::Broadcast;
+    lock.proof = None;
     let recorded = crate::test_support::orchard_address_fixture(0x51);
     let other = crate::test_support::orchard_address_fixture(0x52);
     lock.shielded_recipient = Some(recorded.to_raw_bytes());
     let (wallet, persistence, coordinator, _dir) = wallet_fixture(&lock, keys).await;
+    let wallet_id = wallet.wallet_id();
+    let conflict = remove_tracked_asset_locks_for_swept(
+        &wallet.wallet_manager,
+        &wallet_id,
+        &[lock.out_point.txid],
+    )
+    .await;
+    assert_eq!(
+        live_status(&wallet, &lock.out_point).await,
+        AssetLockStatus::Conflicted
+    );
+    persistence
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                asset_locks: Some(conflict),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let wallet = restart_wallet(wallet, Arc::clone(&persistence)).await;
     let coordinator = Arc::new(coordinator);
     let (_, _, _, signer) = funded_wallet_manager(StandardAccountType::BIP44Account).await;
     let prover: &'static super::prover::CachedOrchardProver = &super::prover::CachedOrchardProver;
 
-    let error = wallet
-        .shielded_fund_from_asset_lock(
+    let resume = |recipient| {
+        wallet.shielded_fund_from_asset_lock(
             &coordinator,
             AssetLockFunding::FromExistingAssetLock {
                 out_point: lock.out_point,
                 consume_invitation_voucher: false,
             },
-            vec![(other, None)],
+            vec![(recipient, None)],
             &signer,
             prover,
             None,
@@ -951,8 +1082,34 @@ async fn should_refuse_a_generic_resume_to_a_recipient_other_than_the_recorded_o
             None,
             None,
         )
-        .await
-        .unwrap_err();
+    };
+    assert!(matches!(
+        resume(recorded).await,
+        Err(PlatformWalletError::AssetLockConflicted(out_point)) if out_point == lock.out_point
+    ));
+    let recovered = enrich_tracked_asset_locks_from_chain_lock(
+        &wallet.wallet_manager,
+        &wallet_id,
+        88,
+        &BTreeMap::from([(
+            AccountType::AssetLockShieldedAddressTopUp,
+            vec![lock.out_point.txid],
+        )]),
+    )
+    .await;
+    persistence
+        .store(
+            wallet_id,
+            PlatformWalletChangeSet {
+                asset_locks: Some(recovered),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let staged_before = persistence.staged.lock().unwrap().clone();
+    let committed_before = persistence.committed.lock().unwrap().clone();
+    let error = resume(other).await.unwrap_err();
     assert!(
         matches!(
             &error,
@@ -964,7 +1121,8 @@ async fn should_refuse_a_generic_resume_to_a_recipient_other_than_the_recorded_o
         ),
         "{error}"
     );
-    assert!(persistence.staged.lock().unwrap().is_empty());
+    assert_eq!(*persistence.staged.lock().unwrap(), staged_before);
+    assert_eq!(*persistence.committed.lock().unwrap(), committed_before);
     assert_eq!(
         persistence.committed_status(&lock.out_point),
         AssetLockStatus::RecoveredFromChain
@@ -973,6 +1131,12 @@ async fn should_refuse_a_generic_resume_to_a_recipient_other_than_the_recorded_o
         live_status(&wallet, &lock.out_point).await,
         AssetLockStatus::RecoveredFromChain
     );
+    // Recipient A passes preflight. This fixture's synthetic credit address
+    // stops funding resolution at local key lookup, before submission.
+    assert!(matches!(
+        resume(recorded).await,
+        Err(PlatformWalletError::AssetLockTransaction(_))
+    ));
 }
 
 /// A repeated-UUID drain that names a different recipient is refused the
