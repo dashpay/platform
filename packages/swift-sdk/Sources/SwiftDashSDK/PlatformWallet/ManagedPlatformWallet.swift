@@ -4299,8 +4299,9 @@ extension ManagedPlatformWallet {
     /// fold it into the wallet (`IdentityWallet::refresh_identity`). Keys
     /// added or changed on another client are taken in, a node behind what
     /// the wallet already holds cannot roll an update back, and changed key
-    /// rows are handed to the persist-identity-keys callback (a failed
-    /// store there is logged by Rust, not thrown).
+    /// rows are handed to the persist-identity-keys callback. A failed
+    /// store there is thrown and leaves the wallet's copy as it was, so a
+    /// retry still includes those keys.
     public func refreshIdentity(identityId: Identifier) async throws {
         guard identityId.count == 32 else {
             throw PlatformWalletError.invalidParameter("identityId must be 32 bytes")

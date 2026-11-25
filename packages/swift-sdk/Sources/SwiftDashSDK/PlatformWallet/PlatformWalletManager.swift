@@ -1458,6 +1458,12 @@ public class PlatformWalletManager: ObservableObject {
     /// permit mutation before a completed read's MainActor delivery: deletion
     /// could otherwise remove the wallet while its old snapshot is still queued.
     /// Both operations remain counted through delivery to close that window.
+    /// Whether an async native operation is admitted and has not finished.
+    /// For a synchronous entrypoint that reports that refusal by a typed
+    /// error of its own instead of [`ensureSyncNativeOpAllowed`]'s
+    /// `invalidHandle`.
+    var hasAdmittedNativeOp: Bool { activeNativeOpCount > 0 }
+
     func ensureSyncNativeOpAllowed(_ name: String) throws {
         try ensureConfigured()
         guard !shutdownRequested else {

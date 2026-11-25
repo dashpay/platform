@@ -306,7 +306,7 @@ class UpdateKeyLimitsViewModel(private val saved: SavedStateHandle) : ViewModel(
             } catch (e: Exception) {
                 gate = Gate.Refused(
                     "Could not read this identity from Platform: ${e.message ?: e}. " +
-                        "Close this screen and try again when the network is reachable.",
+                        "Close this screen and try again.",
                 )
                 return@launch
             }

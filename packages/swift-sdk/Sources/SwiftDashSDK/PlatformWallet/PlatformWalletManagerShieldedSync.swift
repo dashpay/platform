@@ -687,10 +687,6 @@ extension PlatformWalletManager {
     /// flight: Clear quiesces the same loop and would wait on the calling
     /// thread for the pass that stop is draining.
     ///
-    /// Throws `invalidHandle` while an async native operation is admitted
-    /// (for example a shielded spend or a wallet drain): Clear would wipe the
-    /// recovery state that operation is about to write or has armed.
-    ///
     /// Throws `PlatformWalletError.shieldedOperationInProgress` at once,
     /// without waiting, while a shielded operation is in flight (a bind, an
     /// account being added, a token pool transfer or unshield, a DashPay
@@ -700,9 +696,19 @@ extension PlatformWalletManager {
     /// this manager keeps its sync generation, progress mirrors and any
     /// local balance read in flight. The host must not wipe its own rows;
     /// call again once the operation has finished.
+    ///
+    /// Throws the same error, before Rust is called, while an async native
+    /// operation is admitted on this manager (for example a shielded spend
+    /// or a wallet drain): Clear would wipe the recovery state that
+    /// operation is about to write or has armed. Nothing changed here
+    /// either.
     public func clearShielded() throws {
         try ensureShieldedLifecycleAllowed("clearShielded")
         try ensureNoShieldedStopInFlight(before: "clearing shielded state")
+        guard !hasAdmittedNativeOp else {
+            throw PlatformWalletError.shieldedOperationInProgress(
+                "an async native operation is in flight; clearShielded rejected")
+        }
         try ensureSyncNativeOpAllowed("clearShielded")
         // Every throw, the refusal included, leaves before the bump and the
         // progress reset below.

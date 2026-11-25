@@ -1,7 +1,6 @@
 //! The main PlatformWallet struct combining core, identity (+DashPay), and platform sub-wallets.
 
 use std::collections::{BTreeMap, BTreeSet};
-#[cfg(feature = "shielded")]
 use std::future::Future;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
