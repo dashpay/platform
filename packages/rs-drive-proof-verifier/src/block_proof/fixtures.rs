@@ -16,6 +16,8 @@ use dapi_grpc::platform::v0::get_owner_transactions_in_block_response::get_owner
 use dapi_grpc::platform::v0::get_owner_transactions_in_block_response::GetOwnerTransactionsInBlockResponseV0;
 use dapi_grpc::platform::v0::tenderdash_block_proof::{BlockId, Header};
 use dapi_grpc::platform::v0::{TenderdashBlockProof, TenderdashTransactionProof};
+#[cfg(test)]
+use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 use dapi_grpc::Message;
 use dpp::bls::SecretKey;
 use dpp::data_contract::TokenConfiguration;
@@ -24,6 +26,11 @@ use dpp::version::PlatformVersion;
 use sha2::{Digest, Sha256};
 use std::sync::{Arc, Mutex};
 use tenderdash_abci::proto::types::{CanonicalBlockId, CanonicalPartSetHeader};
+#[cfg(test)]
+use tenderdash_abci::{
+    proto::types::{CanonicalVote, SignedMsgType, StateId},
+    signatures::{Hashable, Signable},
+};
 
 /// The LLMQ type of the test quorums.
 pub const QUORUM_TYPE: u32 = 106;
@@ -42,6 +49,58 @@ fn secret_key(quorum_hash: &[u8]) -> SecretKey {
     // Kept in 1..=0x73, so the repeated byte is a scalar below the order of the curve
     let seed = quorum_hash.first().copied().unwrap_or_default() % 0x73 + 1;
     SecretKey::from_be_bytes(&[seed; 32]).expect("a scalar below the curve order is a key")
+}
+
+/// The synthetic signing key of the default test quorum.
+#[cfg(test)]
+pub(crate) fn signing_key() -> SecretKey {
+    secret_key(&QUORUM_HASH)
+}
+
+/// Sign a state-proof envelope over an independently supplied app hash.
+#[cfg(test)]
+pub(crate) fn sign_state_proof(
+    key: &SecretKey,
+    metadata: &ResponseMetadata,
+    root: [u8; 32],
+    proof: &mut Proof,
+) {
+    let state_id = StateId {
+        app_version: metadata.protocol_version as u64,
+        core_chain_locked_height: metadata.core_chain_locked_height,
+        time: metadata.time_ms,
+        app_hash: root.to_vec(),
+        height: metadata.height,
+    };
+    let vote = CanonicalVote {
+        r#type: SignedMsgType::Precommit.into(),
+        block_id: proof.block_id_hash.clone(),
+        chain_id: metadata.chain_id.clone(),
+        height: metadata.height as i64,
+        round: proof.round as i64,
+        state_id: state_id
+            .calculate_msg_hash(
+                &metadata.chain_id,
+                metadata.height as i64,
+                proof.round as i32,
+            )
+            .expect("hash signed state"),
+    };
+    let quorum_hash: [u8; 32] = proof
+        .quorum_hash
+        .as_slice()
+        .try_into()
+        .expect("test quorum hash");
+    let digest = vote
+        .calculate_sign_hash(
+            &metadata.chain_id,
+            proof.quorum_type.try_into().expect("test quorum type"),
+            &quorum_hash,
+            metadata.height as i64,
+            proof.round as i32,
+        )
+        .expect("hash vote");
+    proof.signature = key.sign(&digest).expect("sign vote").to_bytes().to_vec();
 }
 
 /// The public key of the test quorum `quorum_hash`.

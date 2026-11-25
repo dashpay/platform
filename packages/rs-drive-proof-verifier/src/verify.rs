@@ -302,6 +302,7 @@ pub fn verify_signature_digest(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::block_proof::fixtures::sign_state_proof;
     use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
     use dash_context_provider::ContextProviderError;
     use dpp::data_contract::TokenConfiguration;
@@ -819,37 +820,7 @@ mod tests {
             block_id_hash: vec![3; 32],
             quorum_type: 1,
         };
-        let state_id = StateId {
-            app_version: metadata.protocol_version as u64,
-            core_chain_locked_height: metadata.core_chain_locked_height,
-            time: metadata.time_ms,
-            app_hash: root.to_vec(),
-            height: metadata.height,
-        };
-        let vote = CanonicalVote {
-            r#type: SignedMsgType::Precommit.into(),
-            block_id: proof.block_id_hash.clone(),
-            chain_id: metadata.chain_id.clone(),
-            height: metadata.height as i64,
-            round: proof.round as i64,
-            state_id: state_id
-                .calculate_msg_hash(
-                    &metadata.chain_id,
-                    metadata.height as i64,
-                    proof.round as i32,
-                )
-                .expect("hash signed state"),
-        };
-        let digest = vote
-            .calculate_sign_hash(
-                &metadata.chain_id,
-                proof.quorum_type as u8,
-                &[2; 32],
-                metadata.height as i64,
-                proof.round as i32,
-            )
-            .expect("hash vote");
-        proof.signature = key.sign(&digest).expect("sign vote").to_bytes().to_vec();
+        sign_state_proof(key, metadata, root, &mut proof);
         proof
     }
 

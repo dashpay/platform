@@ -68,15 +68,12 @@ impl FromProof<GetAssetLockOutpointInfoRequest> for StoredAssetLockInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::block_proof::fixtures::{TestQuorum, QUORUM_HASH, QUORUM_TYPE};
+    use crate::block_proof::fixtures::{
+        sign_state_proof, signing_key, TestQuorum, QUORUM_HASH, QUORUM_TYPE,
+    };
     use dapi_grpc::platform::v0::get_asset_lock_outpoint_info_response::{
         get_asset_lock_outpoint_info_response_v0::Result as ResponseResult, AssetLockOutpointInfo,
         GetAssetLockOutpointInfoResponseV0, Version,
-    };
-    use dpp::bls::SecretKey;
-    use tenderdash_abci::{
-        proto::types::{CanonicalVote, SignedMsgType, StateId},
-        signatures::{Hashable, Signable},
     };
 
     fn request(outpoint: [u8; 36]) -> GetAssetLockOutpointInfoRequest {
@@ -118,46 +115,12 @@ mod tests {
             block_id_hash: vec![3; 32],
             quorum_type: QUORUM_TYPE,
         };
-        let root =
+        let root: [u8; 32] =
             hex::decode(include_str!("../../tests/vectors/asset-lock-outpoint/root.hex").trim())
-                .expect("fixture root hex");
-        let state_id = StateId {
-            app_version: metadata.protocol_version as u64,
-            core_chain_locked_height: metadata.core_chain_locked_height,
-            time: metadata.time_ms,
-            app_hash: root,
-            height: metadata.height,
-        };
-        let vote = CanonicalVote {
-            r#type: SignedMsgType::Precommit.into(),
-            block_id: proof.block_id_hash.clone(),
-            chain_id: metadata.chain_id.clone(),
-            height: metadata.height as i64,
-            round: proof.round as i64,
-            state_id: state_id
-                .calculate_msg_hash(
-                    &metadata.chain_id,
-                    metadata.height as i64,
-                    proof.round as i32,
-                )
-                .expect("hash signed state"),
-        };
-        let digest = vote
-            .calculate_sign_hash(
-                &metadata.chain_id,
-                QUORUM_TYPE as u8,
-                &QUORUM_HASH,
-                metadata.height as i64,
-                proof.round as i32,
-            )
-            .expect("hash vote");
-        // TestQuorum derives the key from QUORUM_HASH's first byte plus one.
-        let key = SecretKey::from_be_bytes(&[3; 32]).expect("test scalar");
-        proof.signature = key
-            .sign(&digest)
-            .expect("sign fixture root")
-            .to_bytes()
-            .to_vec();
+                .expect("fixture root hex")
+                .try_into()
+                .expect("32-byte fixture root");
+        sign_state_proof(&signing_key(), metadata, root, &mut proof);
         proof
     }
 
