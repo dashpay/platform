@@ -1975,6 +1975,7 @@ mod tests {
     use key_wallet::managed_account::transaction_record::{
         TransactionDirection, TransactionRecord,
     };
+    use key_wallet::test_utils::sign_owned_inputs;
     use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
     use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
@@ -2914,6 +2915,34 @@ mod tests {
                 .expect("funded fixture has BIP44 account 0")
                 .transactions_mut()
                 .insert(record.txid, record);
+        }
+
+        /// `tx` with each input the wallet owns signed by the wallet.
+        async fn signed(&self, tx: Transaction) -> Transaction {
+            let wm = self.wallet_manager.read().await;
+            let wallet = wm
+                .get_wallet(&self.wallet_id)
+                .expect("wallet must remain registered");
+            let info = &wm
+                .get_wallet_info(&self.wallet_id)
+                .expect("wallet must remain registered")
+                .core_wallet;
+            let fundings: Vec<Transaction> = tx
+                .input
+                .iter()
+                .filter_map(|input| {
+                    info.accounts
+                        .all_accounts()
+                        .into_iter()
+                        .find_map(|account| {
+                            let funding =
+                                account.transactions().get(&input.previous_output.txid)?;
+                            Some(funding.transaction.clone())
+                        })
+                })
+                .collect();
+            let fundings: Vec<&Transaction> = fundings.iter().collect();
+            sign_owned_inputs(wallet, info, tx, &fundings).await
         }
 
         /// Route `tx` through the wallet's real transaction pipeline at
@@ -3952,7 +3981,9 @@ mod tests {
         // Unconfirmed when the screen looks: a competing candidate, not a
         // conflict, so the resume enters the wait with no caller-provided
         // bound and no conflict cap — the recovery backstop applies.
-        let spender = transaction_spending(fixture.funded_input());
+        let spender = fixture
+            .signed(transaction_spending(fixture.funded_input()))
+            .await;
         let spender_txid = spender.txid();
         fixture.observe(&spender, TransactionContext::Mempool).await;
 
