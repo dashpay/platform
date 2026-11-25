@@ -227,8 +227,8 @@ pub(crate) fn restore_provider_platform_node_pool(
 /// - **Address-pool used-state**: every `used_pool_addresses` entry is
 ///   re-marked used (in union with the unspent-UTXO addresses), so an
 ///   address whose funds were since spent is not re-handed-out as fresh.
-///   An entry owned by a keys-only account of `wallet_info` (identity,
-///   asset-lock, provider) is skipped: no funds account can derive it, and
+///   An entry owned by a non-funding account of `wallet_info` (keys-only or
+///   DashPay external) is skipped: no funding account can derive it, and
 ///   the SQLite loader has already restored it on its own pool through
 ///   `core_pool::restore_pools`. A caller that has not leaves that pool as
 ///   it was; routing the entry to a funds account never marked it there.
@@ -364,23 +364,28 @@ pub fn apply_persisted_core_state(
         .filter(|u| !spent_outpoints.contains(&u.outpoint))
         .collect();
 
-    // Owners of the keys-only accounts this wallet rebuilt. A used address of
+    let account_keys: Vec<OwningAccount> = wallet_info
+        .accounts
+        .all_funding_accounts()
+        .into_iter()
+        .map(owning_account_of)
+        .collect();
+    // Owners of the non-funding accounts this wallet rebuilt. A used address of
     // theirs is already back on its own pool, and no funds account can derive
     // it. An owner missing from the wallet is not here, so it still takes the
     // orphan path below.
-    let keys_owners: Vec<OwningAccount> = wallet_info
+    let non_funding_owners: Vec<OwningAccount> = wallet_info
         .accounts
         .all_accounts()
         .into_iter()
-        .filter_map(|account| account.as_keys())
         .map(|account| owning_account_for(&account.managed_account_type().to_account_type()))
+        .filter(|owner| !account_keys.contains(owner))
         .collect();
 
     let mut funding = wallet_info.accounts.all_funding_accounts_mut();
     if !unspent.is_empty() && funding.is_empty() {
         return Err(WalletStorageError::MissingAccount { wallet_id });
     }
-    let account_keys: Vec<OwningAccount> = funding.iter().map(|a| owning_account_of(a)).collect();
     // Every stored used address, whatever owner its row names: marked
     // wherever the pools, once extended, derive it. None without a funds
     // account, which has no pool to mark one in.
@@ -393,12 +398,12 @@ pub fn apply_persisted_core_state(
         // its own attributed addresses, so `extend_pools_for_restored_addresses`
         // never scans another account's keys as "unresolved".
         let mut per_account_addrs: Vec<Vec<key_wallet::Address>> = vec![Vec::new(); funding.len()];
-        // Used addresses of the keys-only accounts this wallet rebuilt are
+        // Used addresses of the non-funding accounts this wallet rebuilt are
         // already back on their own pools, and no funds account derives them.
         let funds_used: Vec<(&key_wallet::Address, Option<&OwningAccount>)> = used_pool_addresses
             .iter()
             .map(|(addr, owner)| (addr, owner.as_ref()))
-            .filter(|(_, owner)| !owner.is_some_and(|owner| keys_owners.contains(owner)))
+            .filter(|(_, owner)| !owner.is_some_and(|owner| non_funding_owners.contains(owner)))
             .collect();
         used.extend(funds_used.iter().map(|(addr, _)| (*addr).clone()));
 
@@ -433,9 +438,9 @@ pub fn apply_persisted_core_state(
         }
 
         // Degraded in BOTH policies, never fatal. Used addresses of the
-        // keys-only accounts this wallet rebuilt were skipped above, so an
+        // non-funding accounts this wallet rebuilt were skipped above, so an
         // owner left here is one the wallet did not rebuild, or a UTXO whose
-        // pool row names a keys-only account. Neither costs funds: the wallet
+        // pool row names a non-funding account. Neither costs funds: the wallet
         // total is exact, and the per-account view re-warms on the next sync.
         if !orphaned_owners.is_empty() {
             ctx.note_degraded(

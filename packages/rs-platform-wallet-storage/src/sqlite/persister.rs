@@ -1626,11 +1626,13 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// and counted on [`last_load_degradation`](Self::last_load_degradation)
     /// instead, and the persister is read-only for the rest of its life.
     ///
-    /// Two sites degrade in **both** policies because their signal cannot
-    /// distinguish corruption from a healthy wallet: a used address whose
-    /// owner is not one of this wallet's funds accounts, and a restored
-    /// address that does not resolve against its account xpub. Both re-warm
-    /// on the next sync and the balance total is exact regardless.
+    /// Four sites degrade in **both** policies: `OrphanedUtxoOwner` for
+    /// unavailable owners, `UnresolvedUtxoAddress` for addresses unresolved
+    /// against funding accounts, `PoolRowBeyondDerivationBudget` for pool
+    /// rows above the bounded derivation range, and `UnrestoredPoolReservation`
+    /// for reservations no restored pool took back. Used or reserved
+    /// one-time funding keys that cannot be restored instead fail the wallet
+    /// (abort under Strict, drop the wallet under Recovery), preventing reuse.
     ///
     /// **Query budget.** Platform addresses load via grouped bulk scans
     /// (constant), but the keyless per-wallet payload is a fan-out: one
@@ -2040,8 +2042,8 @@ fn load_wallet_snapshot(
         // FFI hosts' wallet row only. Empty keeps the rescan sweep on its
         // pre-record behaviour here (a rewind per launch, never lossy).
         dashpay_backfill: Default::default(),
-        // This backend restores pools through `apply_persisted_core_state`,
-        // which reports no unreachable funding rows.
+        // `core_pool::restore_pools` fails the wallet on unreachable used or
+        // reserved one-time funding rows, so no issuance floor is needed.
         funding_issuance_floors: Default::default(),
     })
 }

@@ -899,6 +899,59 @@ async fn should_restore_each_dashpay_contact_pool_under_its_own_identity_pair() 
     assert!(manager.shutdown().await.all_clean());
 }
 
+#[test]
+fn should_restore_used_and_reserved_dashpay_external_pool_without_degradation() {
+    use key_wallet::managed_account::address_pool::AddressPoolType;
+    use platform_wallet_storage::LoadPolicy;
+
+    let account_type = AccountType::DashpayExternalAccount {
+        index: 0,
+        user_identity_id: [0x21; 32],
+        friend_identity_id: [0x31; 32],
+    };
+    let mut wallet =
+        Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default).unwrap();
+    wallet.add_account(account_type, None).unwrap();
+    let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+    let source = account_key_source(&wallet, account_type);
+    let expected = with_pool(&mut info, account_type, AddressPoolType::Absent, |pool| {
+        let used = pool.next_unused(&source).unwrap();
+        assert!(pool.mark_used(&used));
+        reserve_next(pool, &source, 12345);
+        pool.addresses().clone()
+    });
+    assert_eq!(expected[&0].state, AddressState::Used);
+    assert_eq!(expected[&1].state, AddressState::Reserved { at: 12345 });
+
+    let (persister, _tmp, path) = common::fresh_persister();
+    persister
+        .store(wallet.wallet_id, registration(&wallet, &info))
+        .unwrap();
+    drop(persister);
+    for policy in [LoadPolicy::Strict, LoadPolicy::Recovery] {
+        let persister =
+            SqlitePersister::open(SqlitePersisterConfig::new(&path).with_load_policy(policy))
+                .unwrap();
+        let mut state = persister.load().unwrap();
+        let restored = &mut state
+            .wallets
+            .get_mut(&wallet.wallet_id)
+            .unwrap()
+            .wallet_info;
+        with_pool(restored, account_type, AddressPoolType::Absent, |pool| {
+            for (index, expected) in &expected {
+                let actual = pool.addresses().get(index).expect("stored contact address");
+                assert_eq!(actual.state, expected.state);
+                assert_eq!(actual.address, expected.address);
+                assert_eq!(actual.path, expected.path);
+                assert_eq!(actual.public_key, expected.public_key);
+            }
+        });
+        let degradation = persister.last_load_degradation();
+        assert!(!degradation.degraded, "{policy:?}: {degradation:?}");
+    }
+}
+
 /// A stored key of another curve than its account's.
 #[test]
 fn should_reject_a_pool_row_whose_key_type_is_not_its_accounts() {

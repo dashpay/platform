@@ -563,7 +563,7 @@ fn derive_towards(
     let Some(key_source) = key_source else {
         return Ok(());
     };
-    let missing = highest_stored - derived + 1;
+    let missing = (highest_stored - derived).saturating_add(1);
     let budget = stored_rows.saturating_add(UNSTORED_INDEX_ALLOWANCE);
     pool.generate_addresses(missing.min(budget), key_source)
         .map_err(|e| WalletStorageError::AccountRecordInvalid { e })?;
@@ -1287,6 +1287,30 @@ mod tests {
                 "nothing may be derived beyond the budget"
             );
         });
+    }
+
+    #[test]
+    fn should_bound_derivation_from_an_empty_pool_at_the_maximum_stored_index() {
+        use key_wallet::bip32::DerivationPath;
+        use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+        use key_wallet::wallet::Wallet;
+
+        let wallet = Wallet::new_random(
+            dashcore::Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .unwrap();
+        let source = KeySource::Public(wallet.accounts.all_accounts()[0].account_xpub);
+        let mut pool = AddressPool::new_without_generation(
+            DerivationPath::master(),
+            AddressPoolType::External,
+            20,
+            dashcore::Network::Testnet,
+        );
+        assert_eq!(pool.highest_generated(), None);
+        derive_towards(&mut pool, Some(&source), u32::MAX, 1).unwrap();
+        assert_eq!(pool.highest_generated(), Some(UNSTORED_INDEX_ALLOWANCE));
+        assert!(pool.address_at_index(u32::MAX).is_none());
     }
 
     /// The typed error names what is wrong; the log has to name where, without
