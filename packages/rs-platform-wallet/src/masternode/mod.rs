@@ -9,7 +9,7 @@
 //!   path read through it, so every host renders the same records.
 
 pub mod key_candidates;
-mod key_reference;
+pub(crate) mod key_reference;
 pub mod list;
 pub mod locator;
 pub mod record;

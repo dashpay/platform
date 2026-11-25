@@ -47,7 +47,7 @@ pub(super) fn first_available<'a>(
 /// Signer-aware `get_first_public_key_matching`: key-ID order, same eligibility policy.
 /// Call on an identity snapshot, outside wallet manager guards.
 /// `Ok(None)` means no eligible key; `Err` means eligible keys are unavailable.
-pub(super) trait AvailableSigningKey {
+pub(crate) trait AvailableSigningKey {
     fn available_signing_key(
         &self,
         signer: &impl Signer<IdentityPublicKey>,
