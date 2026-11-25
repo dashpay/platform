@@ -9,8 +9,10 @@ use crate::changeset::changeset::{DpnsNameStateEntry, PlatformWalletChangeSet};
 use crate::changeset::client_start_state::ClientStartState;
 use crate::changeset::persistence_capabilities::PersistenceCapabilities;
 use crate::wallet::platform_wallet::WalletId;
-use dashcore::{OutPoint, Txid};
+use dashcore::{Address, OutPoint, Txid};
 use dpp::prelude::Identifier;
+use key_wallet::account::AccountType;
+use key_wallet::managed_account::address_pool::AddressPoolType;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 
 /// One row of [`PlatformWalletPersistence::list_wallet_core_txids`]:
@@ -331,6 +333,36 @@ pub trait PlatformWalletPersistence: Send + Sync {
         Err(PersistenceError::backend(
             "this backend cannot assign an asset-lock identity recipient",
         ))
+    }
+
+    /// Clear the used mark of `wallet_id`'s address `address`, at `index` of
+    /// `account_type`'s `pool_type` pool, by itself and at once.
+    ///
+    /// Only for an address that provably never reached the network: the
+    /// funding key of an asset lock that was never sent and whose row is
+    /// durably gone. Kept used, it would push the next lock of that account
+    /// past the addresses a restore from the seed scans, and a lock there
+    /// would not be found again. The wallet hands it back in memory and calls
+    /// this while it still holds the wallet, so nothing marks the address
+    /// used in between.
+    ///
+    /// Writes buffered before it are committed first, so a used mark already
+    /// stored for the address is not written after the release. Nothing of it
+    /// is buffered. No stored row for that address is `Ok`, nothing changed.
+    ///
+    /// The default does nothing, for a backend that keeps no used mark the
+    /// wallet's own state does not overwrite. A backend that only ever raises
+    /// a stored mark implements it.
+    fn release_unsent_pool_address(
+        &self,
+        wallet_id: WalletId,
+        account_type: &AccountType,
+        pool_type: AddressPoolType,
+        index: u32,
+        address: &Address,
+    ) -> Result<(), PersistenceError> {
+        let _ = (wallet_id, account_type, pool_type, index, address);
+        Ok(())
     }
 
     /// Feature-specific contracts this backend can persist and, where the

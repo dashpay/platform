@@ -6,8 +6,10 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use rusqlite::{Connection, OptionalExtension};
 
-use dashcore::OutPoint;
+use dashcore::{Address, OutPoint};
 use dpp::prelude::Identifier;
+use key_wallet::account::AccountType;
+use key_wallet::managed_account::address_pool::AddressPoolType;
 use platform_wallet::changeset::{
     ClientStartState, IdentityChangeSet, PersistenceCapabilities, PersistenceError,
     PersistenceErrorKind, PlatformWalletChangeSet, PlatformWalletPersistence, StoreAndCommitError,
@@ -1583,6 +1585,33 @@ impl PlatformWalletPersistence for SqlitePersister {
             PersistenceErrorKind::Constraint,
             format!("identity recipient not assigned at {out_point}: {refusal}"),
         ))
+    }
+
+    /// The wallet's buffered writes are committed first, under the same
+    /// connection guard, so a used mark buffered for the address lands before
+    /// the release clears it; then the mark alone is cleared in a transaction
+    /// of its own ([`schema::core_pool::release_unsent_address`]).
+    fn release_unsent_pool_address(
+        &self,
+        wallet_id: WalletId,
+        account_type: &AccountType,
+        pool_type: AddressPoolType,
+        index: u32,
+        address: &Address,
+    ) -> Result<(), PersistenceError> {
+        self.ensure_writable("release_unsent_pool_address")
+            .map_err(PersistenceError::from)?;
+        let mut conn = self.conn().map_err(PersistenceError::from)?;
+        self.flush_locked(&mut conn, &wallet_id)?;
+        schema::core_pool::release_unsent_address(
+            &conn,
+            &wallet_id,
+            account_type,
+            pool_type,
+            index,
+            address.script_pubkey().as_bytes(),
+        )
+        .map_err(PersistenceError::from)
     }
 
     /// In both flush modes: the connection every drain takes is held from

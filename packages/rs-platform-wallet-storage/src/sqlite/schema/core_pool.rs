@@ -16,6 +16,7 @@ use rusqlite::{params, Connection, Transaction};
 use platform_wallet::changeset::AccountAddressPoolEntry;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
+use key_wallet::account::AccountType;
 use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
 
 use crate::sqlite::error::WalletStorageError;
@@ -199,6 +200,46 @@ pub fn apply_pools(
             ])?;
         }
     }
+    Ok(())
+}
+
+const RELEASE_UNSENT_ADDRESS_SQL: &str = "UPDATE core_address_pool \
+        SET used = 0, reserved_at = NULL \
+     WHERE wallet_id = ?1 AND account_type = ?2 AND account_index = ?3 \
+       AND key_class = ?4 AND user_identity_id = ?5 AND friend_identity_id = ?6 \
+       AND pool_type = ?7 AND address_index = ?8 AND script = ?9";
+
+/// Clear the used mark of one address row, the only write that lowers it.
+///
+/// For an address that provably never reached the network (an unsent asset
+/// lock's funding key, its row durably removed): kept used, the next lock of
+/// that account would sit past the addresses a recovery from scratch scans.
+/// The row must also hold `script`, so a release for another wallet's address
+/// at the same index changes nothing. No matching row is not an error. One
+/// statement, so it commits by itself.
+pub fn release_unsent_address(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    account_type: &AccountType,
+    pool_type: AddressPoolType,
+    address_index: u32,
+    script: &[u8],
+) -> Result<(), WalletStorageError> {
+    let (user_identity_id, friend_identity_id) = accounts::account_dashpay_ids(account_type);
+    conn.execute(
+        RELEASE_UNSENT_ADDRESS_SQL,
+        params![
+            wallet_id.as_slice(),
+            accounts::account_type_db_label(account_type),
+            i64::from(accounts::account_index(account_type)),
+            i64::from(accounts::account_key_class(account_type)),
+            user_identity_id.as_slice(),
+            friend_identity_id.as_slice(),
+            pool_type_to_i64(pool_type),
+            i64::from(address_index),
+            script,
+        ],
+    )?;
     Ok(())
 }
 

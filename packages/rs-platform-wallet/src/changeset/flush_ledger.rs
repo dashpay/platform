@@ -7,8 +7,10 @@ use std::sync::{Arc, Mutex, PoisonError, Weak};
 use crate::changeset::changeset::PlatformWalletChangeSet;
 use crate::changeset::traits::{PersistenceError, PlatformWalletPersistence, StoreAndCommitError};
 use crate::wallet::platform_wallet::WalletId;
-use dashcore::OutPoint;
+use dashcore::{Address, OutPoint};
 use dpp::prelude::Identifier;
+use key_wallet::account::AccountType;
+use key_wallet::managed_account::address_pool::AddressPoolType;
 
 /// What this process knows of the flushes of one wallet's records.
 ///
@@ -201,6 +203,26 @@ impl FlushLedger {
         let assigned = backend.assign_asset_lock_identity_recipient(wallet_id, out_point, identity);
         in_flight.record(assigned.as_ref().err());
         assigned
+    }
+
+    /// Release an unsent address's used mark on `backend`
+    /// ([`PlatformWalletPersistence::release_unsent_pool_address`]), counted
+    /// as a flush for the same reason as
+    /// [`assign_identity_recipient`](Self::assign_identity_recipient).
+    pub(crate) fn release_unsent_pool_address(
+        &self,
+        backend: &dyn PlatformWalletPersistence,
+        wallet_id: WalletId,
+        account_type: &AccountType,
+        pool_type: AddressPoolType,
+        index: u32,
+        address: &Address,
+    ) -> Result<(), PersistenceError> {
+        let mut in_flight = InFlight::enter(self, keeps_a_buffer(backend));
+        let released =
+            backend.release_unsent_pool_address(wallet_id, account_type, pool_type, index, address);
+        in_flight.record(released.as_ref().err());
+        released
     }
 
     /// Count one flush that failed, `for_good` when the backend dropped what

@@ -8,7 +8,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
-use dashcore::{OutPoint, Txid};
+use dashcore::{Address, OutPoint, Txid};
+use key_wallet::account::AccountType;
+use key_wallet::managed_account::address_pool::AddressPoolType;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 
 use crate::changeset::flush_ledger::{keeps_a_buffer, FlushLedgers};
@@ -824,6 +826,26 @@ impl WalletPersister {
             self.wallet_id,
             out_point,
             identity,
+        )
+    }
+
+    /// Clear the stored used mark of this wallet's unsent address
+    /// ([`PlatformWalletPersistence::release_unsent_pool_address`]), at once,
+    /// counted in the flush ledger as a recipient assignment is.
+    pub(crate) fn release_unsent_pool_address(
+        &self,
+        account_type: &AccountType,
+        pool_type: AddressPoolType,
+        index: u32,
+        address: &Address,
+    ) -> Result<(), PersistenceError> {
+        self.flush_ledger.release_unsent_pool_address(
+            self.inner.as_ref(),
+            self.wallet_id,
+            account_type,
+            pool_type,
+            index,
+            address,
         )
     }
 

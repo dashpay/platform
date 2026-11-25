@@ -14,6 +14,7 @@ use dashcore::{OutPoint, Transaction, TxOut};
 use dpp::prelude::Identifier;
 use key_wallet::account::AccountType;
 use key_wallet::bip32::DerivationPath;
+use key_wallet::managed_account::address_pool::AddressPoolType;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::signer::ExtendedPubKeySigner;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::{
@@ -41,6 +42,15 @@ use super::manager::{AssetLockManager, DEFAULT_FEE_PER_KB};
 use super::top_up_floor::min_top_up_duffs;
 use super::tracked::{AssetLockStatus, TrackedAssetLock};
 use super::{input_cap_violation, AssetLockOperationContext, AssetLockOperationState};
+
+/// A funding address handed back in memory, located for clearing its stored
+/// used mark.
+struct ReleasedFundingAddress {
+    account_type: AccountType,
+    pool_type: AddressPoolType,
+    index: u32,
+    address: DashAddress,
+}
 
 /// Callback that receives the outpoint of an asset lock built for a
 /// [`AssetLockFunding::FromWalletBalance`](super::AssetLockFunding::FromWalletBalance),
@@ -653,30 +663,39 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// the first `DEFAULT_SPECIAL_GAP_LIMIT` addresses until one is seen on
     /// chain, so the next lock would not be recovered from the seed. Nothing
     /// was broadcast or exported with this key, so the next build reuses it.
+    ///
+    /// Returns the address it released, for a caller that also clears the
+    /// stored mark ([`Self::hand_back_unsent_funding_index`]).
     fn release_discarded_funding_index(
         wallet_info: &mut ManagedWalletInfo,
         funding_type: AssetLockFundingType,
         identity_index: u32,
         path: &DerivationPath,
-    ) {
+    ) -> Option<ReleasedFundingAddress> {
         let account_type = funding_account_type(funding_type, identity_index);
         for mut account in wallet_info.accounts.all_accounts_mut() {
             if account.managed_account_type().to_account_type() != account_type {
                 continue;
             }
             for pool in account.managed_account_type_mut().address_pools_mut() {
-                let Some(address) = pool
+                let Some((address, index)) = pool
                     .addresses()
                     .values()
                     .find(|info| info.path == *path && info.is_used())
-                    .map(|info| info.address.clone())
+                    .map(|info| (info.address.clone(), info.index))
                 else {
                     continue;
                 };
                 pool.unmark_used(&address);
-                return;
+                return Some(ReleasedFundingAddress {
+                    account_type,
+                    pool_type: pool.pool_type(),
+                    index,
+                    address,
+                });
             }
         }
+        None
     }
 
     /// Idempotently derive + insert the per-index `IdentityTopUp`
@@ -1262,9 +1281,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// index. Not for an invitation: its funding key becomes a bearer
     /// voucher, so an index once handed out is never reused.
     ///
-    /// In memory only: an index already stored as used stays so (SQLite keeps
-    /// the highest mark), so a restart skips it; the session no longer runs
-    /// out of addresses.
+    /// The stored used mark is cleared too
+    /// ([`WalletPersister::release_unsent_pool_address`](crate::wallet::persister::WalletPersister::release_unsent_pool_address)),
+    /// while the manager is still held, so no build can take the index in
+    /// between. Kept stored, every such exit would move the account's next
+    /// lock one address further after a restart, past the addresses a
+    /// restore from the seed scans, and that lock would not be found again.
+    /// A release that fails is only logged: the index is then skipped after a
+    /// restart, as before, and nothing is lost that was sent.
     async fn hand_back_unsent_funding_index(
         &self,
         in_broadcast_pin: &InBroadcastPin,
@@ -1278,12 +1302,28 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         let mut wm = self.wallet_manager.write().await;
         if let Some((_, info)) = wm.get_wallet_mut_and_info_mut(&self.wallet_id) {
             if in_broadcast_pin.is_on(&info.generation) {
-                Self::release_discarded_funding_index(
+                let released = Self::release_discarded_funding_index(
                     &mut info.core_wallet,
                     funding_type,
                     identity_index,
                     path,
                 );
+                if let Some(released) = released {
+                    if let Err(error) = self.persister.release_unsent_pool_address(
+                        &released.account_type,
+                        released.pool_type,
+                        released.index,
+                        &released.address,
+                    ) {
+                        tracing::warn!(
+                            account_type = ?released.account_type,
+                            index = released.index,
+                            %error,
+                            "unsent funding index handed back in memory only; \
+                             a restart will skip it"
+                        );
+                    }
+                }
             }
         }
     }
@@ -2171,10 +2211,12 @@ mod tests {
     use std::sync::{mpsc, Arc, Mutex};
     use std::time::Duration;
 
+    use dashcore::Address as DashAddress;
     use dashcore::OutPoint;
     use key_wallet::account::account_type::StandardAccountType;
     use key_wallet::account::AccountType;
     use key_wallet::bip32::{ChildNumber, DerivationPath};
+    use key_wallet::managed_account::address_pool::AddressPoolType;
     use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
     use key_wallet::managed_account::transaction_record::{
         TransactionDirection, TransactionRecord,
@@ -2203,6 +2245,7 @@ mod tests {
         funded_wallet_manager_with_contact, funded_wallet_manager_with_outputs,
         AlwaysMaybeSentBroadcaster, AlwaysOkBroadcaster, AlwaysRejectedBroadcaster, WalletSigner,
     };
+    use crate::wallet::asset_lock::funding_account::funding_account_type;
     use crate::wallet::asset_lock::manager::AssetLockManager;
     use crate::wallet::asset_lock::tracked::AssetLockStatus;
     use crate::wallet::asset_lock::tracked::TrackedAssetLock;
@@ -2394,6 +2437,9 @@ mod tests {
         failed_lock_stores: Mutex<Vec<PlatformWalletChangeSet>>,
         /// Recipients committed through `assign_asset_lock_identity_recipient`.
         assigned: Mutex<Vec<(OutPoint, dpp::prelude::Identifier)>>,
+        /// Addresses whose stored used mark was cleared through
+        /// `release_unsent_pool_address`.
+        released: Mutex<Vec<(AccountType, AddressPoolType, u32, DashAddress)>>,
         records_identity_recipients: bool,
         /// Declare exactly these capabilities instead of the fixture's.
         capabilities_override: Option<crate::changeset::PersistenceCapabilities>,
@@ -2559,6 +2605,21 @@ mod tests {
     impl PlatformWalletPersistence for CapturingPersistence {
         fn store_commits_inline(&self) -> bool {
             self.commits_inline
+        }
+
+        fn release_unsent_pool_address(
+            &self,
+            _wallet_id: WalletId,
+            account_type: &AccountType,
+            pool_type: AddressPoolType,
+            index: u32,
+            address: &DashAddress,
+        ) -> Result<(), PersistenceError> {
+            self.released
+                .lock()
+                .unwrap()
+                .push((*account_type, pool_type, index, address.clone()));
+            Ok(())
         }
 
         /// The recipient alone, at once: refused like a lock store under
@@ -4589,9 +4650,11 @@ mod tests {
     }
 
     /// A lock Core rejects before sending, whose row is then durably gone,
-    /// hands its funding index back, whatever its funding type: however many
-    /// are rejected, the next lock that goes out signs with the first funding
-    /// address, so rejections cannot use up the pool.
+    /// hands its funding index back, whatever its funding type, in memory and
+    /// in the backend: however many are rejected, the next lock that goes out
+    /// signs with the first funding address, so rejections cannot use up the
+    /// pool, nor push a restarted wallet's next lock past the addresses a
+    /// restore from the seed scans.
     #[tokio::test]
     async fn should_hand_back_the_funding_index_of_a_rejected_lock() {
         use crate::changeset::AssetLockRecipient;
@@ -4638,6 +4701,18 @@ mod tests {
                     "{funding_type:?}: {result:?}"
                 );
             }
+            let released = persistence.released.lock().unwrap().clone();
+            assert_eq!(
+                released.len(),
+                8,
+                "{funding_type:?}: every rejection clears the stored used mark too"
+            );
+            assert!(
+                released.iter().all(|(account_type, _, index, _)| {
+                    *account_type == funding_account_type(funding_type, 0) && *index == 0
+                }),
+                "{funding_type:?}: the release names the lock's funding address: {released:?}"
+            );
             let (path, _) = fund()
                 .await
                 .expect("the rejected locks left the pool's addresses unused");

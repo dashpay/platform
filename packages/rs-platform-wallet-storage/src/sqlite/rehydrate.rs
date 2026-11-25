@@ -195,9 +195,12 @@ pub(crate) fn restore_provider_platform_node_pool(
 /// The pool's unused gap is then derived again from the account's xpub in
 /// `manifest`. A live wallet refills it when it sees a lock's transaction, so
 /// an index marked used by a lock that never reached the chain (rejected at
-/// broadcast, or abandoned before it) is never refilled there; the stored
-/// mark survives the in-memory hand-back, and without the refill such locks
-/// would exhaust the pool across restarts.
+/// broadcast, or abandoned before it) is never refilled there. The wallet
+/// clears such a mark when it hands the index back
+/// ([`core_pool::release_unsent_address`]),
+/// but a mark whose release failed, or one stored before releases were
+/// written, survives, and without the refill such locks would exhaust the
+/// pool across restarts.
 pub(crate) fn restore_asset_lock_funding_pools(
     wallet_info: &mut ManagedWalletInfo,
     manifest: &[AccountRegistrationEntry],
