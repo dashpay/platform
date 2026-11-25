@@ -1087,6 +1087,20 @@ async fn should_leave_no_funding_activity_row_after_a_removal_returns() {
         let wallet_id = wallet.wallet_id();
         tokio::spawn(async move { manager.remove_wallet(&wallet_id).await.map(drop) })
     };
+    // The removal holds the wallet's lifecycle gate once a payment can no
+    // longer enter it: it is running, with only the funding's guard between
+    // it and its end.
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while !removal.is_finished()
+            && tokio::time::timeout(Duration::ZERO, wallet.core().generation_payment_guard())
+                .await
+                .is_ok()
+        {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the removal takes the wallet's lifecycle gate");
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert!(
         !removal.is_finished(),
