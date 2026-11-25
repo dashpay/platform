@@ -108,3 +108,28 @@ struct ProposalRowHeader: View {
         ProposalPollStateBadge(state: pollState, accessibilityIdentifier: badgeIdentifier)
     }
 }
+
+/// A proposal listing row's details under its title (dates, thresholds,
+/// who enters choices): one line at normal text sizes, one detail per line
+/// at accessibility text sizes, where a single line breaks each detail
+/// into fragments.
+///
+/// The labels are pinned to the title-and-icon style: in a List row the
+/// automatic style lays them out as list-row labels, which cuts a live
+/// relative date to its first character and the row's two-line title to
+/// one line.
+struct ProposalRowDetails<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(spacing: 12))
+        layout { content }
+            .labelStyle(.titleAndIcon)
+            .font(.caption)
+            .foregroundColor(.secondary)
+    }
+}

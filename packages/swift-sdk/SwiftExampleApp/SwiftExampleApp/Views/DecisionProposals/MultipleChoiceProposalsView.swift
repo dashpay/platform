@@ -239,7 +239,7 @@ private struct MultipleChoiceProposalRow: View {
                 pollState: pollState,
                 badgeIdentifier: "multipleChoiceProposals.row.pollState"
             )
-            HStack(spacing: 12) {
+            ProposalRowDetails {
                 if let createdAt = proposal.createdAt {
                     Label {
                         Text(createdAt, style: .date)
@@ -257,8 +257,6 @@ private struct MultipleChoiceProposalRow: View {
                     Label("Document", systemImage: "doc.text")
                 }
             }
-            .font(.caption)
-            .foregroundColor(.secondary)
             Text(proposal.id)
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundColor(.secondary)
