@@ -1055,6 +1055,10 @@ impl_transport_request_grpc!(
     PlatformGrpcClient,
     RequestSettings {
         timeout: Some(STREAMING_TIMEOUT),
+        // A node admits a bounded number of streams, in all and from one source. One that has
+        // no room for another still serves every other request, so it is not banned for it.
+        // A node that fails in any other way is still banned.
+        ban_busy_address: Some(false),
         ..RequestSettings::default()
     },
     subscribe_to_state_transitions
