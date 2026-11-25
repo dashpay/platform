@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure the review rounds of a pull request.
+"""List the review rounds of a pull request.
 
 A round is one head commit on which a reviewer other than the author opened at
 least one new inline thread or requested changes. Replies inside existing
@@ -8,40 +8,29 @@ do not inflate the count. A head that got only a review summary is listed as
 "summary only" and left out of the count, because a summary can be an approval
 as easily as a list of findings: read those before trusting the count.
 
-For each round the report lists the new findings, says whether each one sits
-on code the author changed since the same reviewer's previous review, and
-sizes the change the author made before the next reviewed head. The summary
-shows where findings cluster, how much was rewritten during review, and which
-threads went back and forth. `--round` and `--threads` print the conversations
-in full; each run reads the pull request again, so ask for several in one call.
+The overview lists the rounds in the order they happened, the new findings of
+each, the files and areas the findings keep returning to, and the threads that
+went back and forth. `--round` and `--threads` print the conversations in
+full; each run reads the pull request again, so ask for several in one call.
 
 The numbers are evidence for the `review-rounds` skill. Deciding what they
 mean is left to the reader. Everything is read through the `gh` CLI and
 nothing is written. Review text is printed as data: nothing in it is acted on.
 
-How a change between two reviewed heads is measured. It is the difference
-between the two trees, taken only when the first commit leads to the second.
-A merge from the base branch is cut out by measuring the stretch before it and
-the stretch after it separately, so what the merge brought in is never counted
-as the author's, and what the author wrote on top of it is. A merge of any
-other branch is the author's change. When the first commit does not lead to
-the second (a rebase or a force-push in between), or a commit is no longer
-among the pull request's commits, the change is reported as unavailable and
-the findings as `unknown` instead of being guessed from a diff that means
-something else. Whatever cannot be shown exactly is left out of the numbers.
+The script does not measure what the author changed between two reviewed
+commits. GitHub's comparison of two commits stops being the difference between
+their trees as soon as a merge from the base branch, a rebase or a force-push
+lies between them, and the pieces cannot be put back together exactly from the
+API. So the overview names the commit each review looked at, the commit the
+same reviewer had looked at before, and the next reviewed commit, and leaves
+the diffs to `git`, which has the history.
 
-Limits. Only inline threads are counted as findings. In a file that a merge
-from the base branch also changed, a line is called `new code` only when the
-author wrote it after that merge; an earlier line there is called `changed
-file`. A finding on a file that changed only inside such a merge commit is
-called `base merge`: the change is the base branch's, or the author's conflict
-resolution, and the script cannot tell which. Lines in a file a base merge
-touched are not followed for the rework count. GitHub lists at most 300 files
-for one comparison and 250 commits for one pull request; a change that reaches
-past either cut is flagged or unavailable, and no line in it is called new.
+Limit: only inline threads are counted as findings. A reviewer that lists
+findings in its review summary alone shows up as a round with few or no
+threads, or as "summary only".
 """
 import argparse
-from collections import Counter, OrderedDict
+from collections import OrderedDict
 from datetime import datetime
 import json
 import re
@@ -49,7 +38,6 @@ import subprocess
 import sys
 
 
-HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
 PR_URL = re.compile(r"github\.com/([^/]+/[^/]+)/pull/(\d+)")
 DETAILS = re.compile(r"(<details[^<>]*>|</details>)", re.I)
 # Collapsed sections of a bot review that describe the run, not the code.
@@ -70,15 +58,8 @@ SEVERITIES = (
     ("minor", re.compile(r"\b(?:minor|suggestion)\b", re.I)),
     ("nit", re.compile(r"\b(?:nit|nitpick|trivial)\b", re.I)),
 )
-# A finding's place relative to the head its reviewer had reviewed before.
-FIRST, NEW_LINES, CHANGED_FILE, BASE_MERGE, OLD_CODE, UNKNOWN = (
-    "first pass", "new code", "changed file", "base merge", "old code", "unknown",
-)
-PLACES = (NEW_LINES, CHANGED_FILE, BASE_MERGE, OLD_CODE, UNKNOWN)
 # A thread with this many replies is listed as a long thread.
 LONG_THREAD = 4
-# Shorter lines (braces, `else`, blank) say nothing about rework.
-REWORK_LINE = 12
 THREADS_QUERY = """
 query($owner: String!, $name: String!, $number: Int!, $after: String) {
   repository(owner: $owner, name: $name) {
@@ -197,29 +178,6 @@ def severity_hint(text):
     return min(found)[1] if found else None
 
 
-def patch_lines(patch):
-    """The lines a patch adds, with their new line numbers, and those it removes."""
-    added, removed, current = [], [], None
-    for row in (patch or "").splitlines():
-        hunk = HUNK.match(row)
-        if hunk:
-            current = int(hunk.group(1))
-        elif current is None or row.startswith("\\"):
-            continue
-        elif row.startswith("-"):
-            removed.append(row[1:])
-        else:
-            if row.startswith("+"):
-                added.append((current, row[1:]))
-            current += 1
-    return added, removed
-
-
-def added_lines(patch):
-    """Line numbers, in the new file, of the lines a patch adds."""
-    return {number for number, _ in patch_lines(patch)[0]}
-
-
 def area(path):
     """The package, or the top-level directory, a path belongs to."""
     parts = path.split("/")
@@ -228,14 +186,11 @@ def area(path):
     return parts[0] if len(parts) > 1 else path
 
 
-def review_passes(pr, reviews, comments, commits=(), raw=False):
+def review_passes(pr, reviews, comments, raw=False):
     """Group the reviews other people left by the head commit they reviewed.
 
-    The passes come back in the order of the commits they reviewed, whatever
-    the order the reviews were submitted in; a head that is not among the pull
-    request's commits comes first, in submission order, and no change is
-    measured from or to it. A pass with `findings` is a round. A review with no
-    new thread, no body and no verdict is a reply.
+    The passes come back in the order they began. A pass with `findings` is a
+    round. A review with no new thread, no body and no verdict is a reply.
     """
     author = login(pr)
     starters, replies = {}, {}
@@ -245,7 +200,7 @@ def review_passes(pr, reviews, comments, commits=(), raw=False):
         elif login(comment) != author:
             starters.setdefault(comment.get("pull_request_review_id"), []).append(comment)
 
-    passes, last_seen = OrderedDict(), {}
+    passes, seen = OrderedDict(), {}
     for review in sorted(reviews, key=lambda item: item.get("submitted_at") or ""):
         state, reviewer = review.get("state"), login(review)
         if reviewer == author or state == "PENDING":
@@ -255,23 +210,23 @@ def review_passes(pr, reviews, comments, commits=(), raw=False):
         if not threads and not body and state == "COMMENTED":
             continue
         head = review.get("commit_id") or "unknown"
-        # What this reviewer had seen when writing this review: the head of
-        # their previous review by time, whichever commit that was.
-        seen = last_seen.setdefault(reviewer, [])
-        if not seen or seen[-1] != head:
-            seen.append(head)
-        previous = seen[-2] if len(seen) > 1 else None
+        # What this reviewer had looked at before: the head of their previous
+        # review in time, whichever commit that was.
+        heads = seen.setdefault(reviewer, [])
+        if not heads or heads[-1] != head:
+            heads.append(head)
+        previous = heads[-2] if len(heads) > 1 else None
         entry = passes.setdefault(head, {
             "head": head, "started": review.get("submitted_at"),
             "reviews": [], "threads": [], "findings": False, "summary_only": False,
         })
         entry["ended"] = review.get("submitted_at")
-        requested = state == "CHANGES_REQUESTED"
-        entry["findings"] = entry["findings"] or bool(threads) or requested
+        entry["findings"] = entry["findings"] or bool(threads) or state == "CHANGES_REQUESTED"
         # A summary with no thread and no verdict: findings or thanks, unknown.
         entry["summary_only"] = entry["summary_only"] or (state == "COMMENTED" and not threads)
         entry["reviews"].append({
-            "reviewer": reviewer, "state": state, "threads": len(threads), "body": body,
+            "reviewer": reviewer, "state": state, "threads": len(threads),
+            "previous": previous, "body": body,
         })
         for comment in threads:
             text = headline(comment.get("body"))
@@ -281,12 +236,9 @@ def review_passes(pr, reviews, comments, commits=(), raw=False):
                 "reviewer": reviewer,
                 "path": comment["path"],
                 "line": comment.get("original_line") or comment.get("line"),
-                "start_line": comment.get("original_start_line"),
-                "side": comment.get("side") or "RIGHT",
                 "headline": text,
                 "severity": severity_hint(text),
                 "body": clean(comment.get("body"), raw),
-                "since": previous,
                 "replies": len(answers),
                 "author_replies": sum(1 for answer in answers if login(answer) == author),
                 "conversation": [
@@ -295,271 +247,39 @@ def review_passes(pr, reviews, comments, commits=(), raw=False):
                     for answer in answers
                 ],
             })
-
     for entry in passes.values():
         entry["summary_only"] = entry["summary_only"] and not entry["findings"]
-    position = {item["sha"]: index for index, item in enumerate(commits)}
-    return sorted(passes.values(), key=lambda entry: position.get(entry["head"], -1))
-
-
-def is_merge(commit):
-    return len(commit.get("parents") or []) > 1
-
-
-def base_merges(pr, commits):
-    """For each merge commit: whether what it merged in came from the base branch.
-
-    A pull request's commit list holds the commits that are not on its base,
-    and GitHub keeps that list as it was once the pull request is merged. So a
-    merged-in parent that is in the list is another branch's work, and one that
-    is not was already on the base branch. None when the list is incomplete.
-    """
-    own = {item["sha"] for item in commits}
-    complete = len(commits) >= pr["commits"]
-    found = {}
-    for item in filter(is_merge, commits):
-        if any(parent["sha"] in own for parent in item["parents"][1:]):
-            found[item["sha"]] = False
-        else:
-            found[item["sha"]] = True if complete else None
-    return found
-
-
-def stretches(pr, commits, old, new):
-    """The parts of the history from `old` to `new` that are the author's work.
-
-    Returns the (from, to) pairs to compare, the merges from the base branch
-    that were cut out, and whether a merge of unknown origin was left in.
-    Returns None when `new` is not known to come after `old`: a commit that is
-    not among the pull request's commits was force-pushed away or lies past
-    the 250 GitHub lists, and its place in the history cannot be shown.
-    """
-    order = [item["sha"] for item in commits]
-    if old not in order or new not in order or order.index(old) >= order.index(new):
-        return None
-    origins = base_merges(pr, commits)
-    pairs, cut_out, unsure, start = [], [], False, old
-    for item in commits[order.index(old) + 1: order.index(new) + 1]:
-        from_base = origins.get(item["sha"], False)
-        unsure = unsure or from_base is None
-        if from_base:
-            # The first parent is the pull request's side of the merge.
-            before = item["parents"][0]["sha"]
-            cut_out.append((before, item["sha"]))
-            if before != start:
-                pairs.append((start, before))
-            start = item["sha"]
-    if start != new:
-        pairs.append((start, new))
-    return pairs, cut_out, unsure
-
-
-def compare(raw, old, new):
-    """The comparison of two commits, fetched once when the report is live."""
-    known = raw["compares"]
-    if (old, new) not in known and raw.get("live"):
-        known[(old, new)] = fetch_compare(raw["repo"], old, new)
-    return known.get((old, new))
-
-
-def author_change(raw, old, new):
-    """What the author changed from `old` to `new`, or None when that is unknowable."""
-    plan = stretches(raw["pr"], raw["commits"], old, new)
-    if plan is None:
-        return None
-    pairs, cut_out, unsure = plan
-    files, cut = {}, False
-    for index, pair in enumerate(pairs):
-        change = compare(raw, *pair)
-        # Only then is the comparison the difference between the two trees.
-        if change is None or change["status"] not in ("ahead", "identical"):
-            return None
-        cut = cut or change["truncated"]
-        for path, item in change["files"].items():
-            row = files.setdefault(path, {
-                "added": False, "additions": 0, "deletions": 0, "patches": [], "stretches": [],
-            })
-            row["additions"] += item["additions"]
-            row["deletions"] += item["deletions"]
-            row["added"] = row["added"] or item["status"] == "added"
-            row["patches"].append(item.get("patch"))
-            row["stretches"].append(index)
-    # The files the cut-out merges changed, or None when GitHub cannot say.
-    merged_files = set()
-    for pair in cut_out:
-        brought = compare(raw, *pair)
-        if brought is None or brought["truncated"] or merged_files is None:
-            merged_files = None
-        else:
-            merged_files.update(brought["files"])
-    # Line numbers from a patch hold at `new` only when nothing changed the
-    # file after it: no later stretch, and no merge from the base branch.
-    # A file missing from a list GitHub cut short may have changed all the same.
-    final = len(pairs) - 1 if pairs and pairs[-1][1] == new else None
-    for path, row in files.items():
-        untouched_by_base = not cut and merged_files is not None and path not in merged_files
-        exact = not cut and (
-            row["stretches"][-1] == final or (untouched_by_base and len(row["stretches"]) == 1)
-        )
-        patch = row["patches"][-1]
-        row["lines"] = added_lines(patch) if exact and patch else None
-        # Everything in a file the author added is new, unless base changed it too.
-        row["whole"] = row["added"] and (untouched_by_base or not cut_out)
-    return {
-        "files": files, "merged": bool(cut_out), "merged_files": merged_files,
-        "unsure": unsure, "cut": cut,
-    }
-
-
-def place(thread, change):
-    """Where a finding sits relative to what the author changed since the last review."""
-    if change is None:
-        return UNKNOWN
-    changed = change["files"].get(thread["path"])
-    if changed is None:
-        if change["cut"] or change["merged_files"] is None:
-            return UNKNOWN
-        # Changed since that review, but not by the author.
-        return BASE_MERGE if thread["path"] in change["merged_files"] else OLD_CODE
-    if changed["whole"]:
-        return NEW_LINES
-    if thread["side"] != "RIGHT" or not thread["line"] or changed["lines"] is None:
-        return CHANGED_FILE
-    first = thread["start_line"] or thread["line"]
-    commented = set(range(min(first, thread["line"]), thread["line"] + 1))
-    return NEW_LINES if commented & changed["lines"] else CHANGED_FILE
-
-
-def response(change):
-    """The size of what the author changed between two reviewed heads."""
-    if change is None:
-        return None
-    files = [
-        {"path": path, "additions": item["additions"], "deletions": item["deletions"],
-         "patches": item["patches"]}
-        for path, item in change["files"].items()
-    ]
-    files.sort(key=lambda item: -(item["additions"] + item["deletions"]))
-    return {
-        "files": files,
-        "additions": sum(item["additions"] for item in files),
-        "deletions": sum(item["deletions"] for item in files),
-        "merged": change["merged"],
-        "merged_files": change["merged_files"],
-        "unsure": change["unsure"],
-        "cut": change["cut"],
-    }
-
-
-def undone_lines(responses):
-    """Per file, lines one response added that a later response removed.
-
-    `responses` holds None for a change that could not be measured. A line is
-    followed only while every change to its file is known: an unmeasured change
-    or one whose file list GitHub cut short forgets every file, and a merge
-    from the base branch forgets the files it touched, so text that merely
-    looks the same later is not counted.
-    """
-    written, undone = {}, Counter()
-    for change in responses:
-        if change is None or change["merged_files"] is None or change["cut"]:
-            written.clear()
-            continue
-        for path in change["merged_files"]:
-            written.pop(path, None)
-        for item in change["files"]:
-            if item["path"] in change["merged_files"]:
-                continue
-            added, removed = [], []
-            for patch in item["patches"]:
-                more_added, more_removed = patch_lines(patch)
-                added += more_added
-                removed += more_removed
-            earlier = written.setdefault(item["path"], Counter())
-            for text in (row.strip() for row in removed):
-                if earlier[text] > 0:
-                    earlier[text] -= 1
-                    undone[item["path"]] += 1
-            # Counted after the removals, so a line moved inside one response
-            # is not rework.
-            earlier.update(
-                text for text in (row.strip() for _, row in added) if len(text) >= REWORK_LINE
-            )
-    return undone
+    return list(passes.values())
 
 
 def build_report(raw):
     """Turn the fetched pull request data into the rounds report."""
     pr = raw["pr"]
-    passes = review_passes(pr, raw["reviews"], raw["comments"], raw["commits"], raw.get("raw", False))
+    passes = review_passes(pr, raw["reviews"], raw["comments"], raw.get("raw", False))
     resolved = raw.get("resolved")
 
     number = 0
     heads = [entry["head"] for entry in passes]
-    for entry, head, following in zip(passes, heads, heads[1:] + [pr["head"]["sha"]]):
+    for entry, following in zip(passes, heads[1:] + [pr["head"]["sha"]]):
         if entry["findings"]:
             number += 1
             entry["round"] = number
         else:
             entry["round"] = None
+        # The commit reviewed next, or the tip: the author's answer lies between.
+        entry["next"] = following if following != entry["head"] else None
         for thread in entry["threads"]:
             thread["round"] = entry["round"]
-            thread["place"] = (
-                place(thread, author_change(raw, thread["since"], head))
-                if thread["since"] else FIRST
-            )
             thread["resolved"] = resolved.get(thread["id"]) if resolved else None
-        entry["unchanged"] = following == head
-        entry["response"] = (
-            None if entry["unchanged"] or head == "unknown"
-            else response(author_change(raw, head, following))
-        )
 
-    # Review began at the head reviewed first in time. A change before that
-    # head, seen only because an older commit was reviewed later, is not a
-    # response to review and stays out of the totals and the tables.
-    earliest = min(passes, key=lambda entry: entry["started"]) if passes else None
-    since_review = passes[passes.index(earliest):] if passes else []
-    undone = undone_lines([entry["response"] for entry in since_review if not entry["unchanged"]])
-    responses = [entry["response"] for entry in since_review if entry["response"]]
-    files, areas = {}, {}
+    files, areas, reviewers = {}, {}, {}
     for entry in passes:
         for thread in entry["threads"]:
             for table, key in ((files, thread["path"]), (areas, area(thread["path"]))):
-                row = table.setdefault(key, {"threads": 0, "rounds": set(), "responses": 0, "undone": 0})
+                row = table.setdefault(key, {"threads": 0, "rounds": []})
                 row["threads"] += 1
-                row["rounds"].add(entry["round"])
-    for item in (item for change in responses for item in change["files"]):
-        if item["path"] in files:
-            files[item["path"]]["responses"] += 1
-    for path, count in undone.items():
-        if path in files:
-            files[path]["undone"] = count
-    for table in (files, areas):
-        for row in table.values():
-            row["rounds"] = sorted(row["rounds"])
-    for change in responses:
-        change["merged_files"] = sorted(change["merged_files"] or [])
-        for item in change["files"]:
-            del item["patches"]
-
-    # From the merge base to that head: the size when review began.
-    began = earliest["head"] if earliest else "unknown"
-    first = compare(raw, pr["base"]["sha"], began) if began != "unknown" else None
-    first_size = None
-    if first and not first["truncated"]:
-        first_size = {
-            "files": len(first["files"]),
-            "additions": sum(item["additions"] for item in first["files"].values()),
-            "deletions": sum(item["deletions"] for item in first["files"].values()),
-            "added_since": sorted(
-                item["filename"] for item in raw["files"]
-                if item["filename"] not in first["files"]
-                and item.get("previous_filename") not in first["files"]
-            ),
-        }
-    reviewers = {}
-    for entry in passes:
+                if entry["round"] not in row["rounds"]:
+                    row["rounds"].append(entry["round"])
         for review in entry["reviews"]:
             row = reviewers.setdefault(review["reviewer"], {"reviews": 0, "threads": 0})
             row["reviews"] += 1
@@ -572,12 +292,12 @@ def build_report(raw):
         "author": login(pr),
         "state": "merged" if pr.get("merged_at") else pr["state"],
         "base": pr["base"]["ref"],
-        # While open: the tip of the base branch. Once merged: the tip just
-        # before the merge, so rules read there do not include this change.
+        # A commit of the target branch that does not contain this pull
+        # request, so rules read there do not include its changes.
         "base_sha": pr["base"]["sha"],
+        "head": pr["head"]["sha"],
         "created": pr["created_at"],
         "size": {"files": pr["changed_files"], "additions": pr["additions"], "deletions": pr["deletions"]},
-        "size_at_first_review": first_size,
         "commits": pr["commits"],
         "reverts": sum(
             1 for item in raw["commits"]
@@ -590,36 +310,8 @@ def build_report(raw):
         "reviewers": reviewers,
         "threads": len(threads),
         "unresolved": sum(1 for thread in threads if thread["resolved"] is False) if resolved else None,
-        "later_findings": dict(Counter(thread["place"] for thread in threads if thread["place"] != FIRST)),
-        "changed_since_first_review": {
-            "additions": sum(change["additions"] for change in responses),
-            "deletions": sum(change["deletions"] for change in responses),
-            "undone": sum(undone.values()),
-            "unavailable": sum(
-                1 for entry in since_review if not entry["unchanged"] and not entry["response"]
-            ),
-        } if passes else None,
         "files": files,
         "areas": areas,
-    }
-
-
-def fetch_compare(repo, old, new):
-    try:
-        data = json.loads(gh("api", f"repos/{repo}/compare/{old}...{new}"))
-    except GhError:
-        return None
-    files = data.get("files") or []
-    return {
-        "status": data.get("status"),
-        # GitHub lists at most 300 files for one comparison.
-        "truncated": len(files) >= 300,
-        "files": {
-            item["filename"]: {
-                "status": item["status"], "additions": item["additions"],
-                "deletions": item["deletions"], "patch": item.get("patch"),
-            } for item in files
-        },
     }
 
 
@@ -647,19 +339,15 @@ def fetch_resolved(repo, number):
 
 def fetch(repo, number, raw_text=False):
     base = f"repos/{repo}/pulls/{number}"
-    raw = {
+    return {
         "repo": repo,
         "raw": raw_text,
         "pr": json.loads(gh("api", base)),
         "reviews": gh_list(base + "/reviews"),
         "comments": gh_list(base + "/comments"),
-        "files": gh_list(base + "/files"),
         "commits": gh_list(base + "/commits"),
         "resolved": fetch_resolved(repo, number),
     }
-    # Comparisons are fetched as the report asks for them.
-    raw["live"], raw["compares"] = True, {}
-    return raw
 
 
 def when(stamp):
@@ -675,19 +363,17 @@ def span(start, end):
     return f"{days}d {hours}h" if days else f"{hours}h {minutes:02d}m"
 
 
-def size(item):
-    files = item["files"]
-    count = files if isinstance(files, int) else len(files)
-    return f"{count} files, +{item['additions']} -{item['deletions']}"
+def short(sha):
+    return sha[:12]
 
 
 def tags(thread):
-    found = [thread["place"]] + [thread["severity"]] * bool(thread["severity"])
+    found = [thread["severity"]] * bool(thread["severity"])
     if thread["resolved"] is False:
         found.append("unresolved")
     if thread["replies"] >= LONG_THREAD - 1:
         found.append(f"{thread['replies']} replies")
-    return ", ".join(found)
+    return f"[{', '.join(found)}] " if found else ""
 
 
 def shorten(text, limit, hint):
@@ -707,8 +393,8 @@ def render_thread(thread):
     """A thread in full: the finding and every reply."""
     out = [
         "",
-        f"#### {thread['path']}:{thread['line'] or '?'} "
-        f"(round {thread['round']}, {thread['reviewer']}; {tags(thread)})",
+        f"#### {tags(thread)}{thread['path']}:{thread['line'] or '?'} "
+        f"(round {thread['round']}, {thread['reviewer']})",
     ] + indent(thread["body"])
     for answer in thread["conversation"]:
         out += [f"  -> {answer['who']}, {when(answer['at'])}:"] + indent(answer["body"], "     ")
@@ -721,11 +407,11 @@ def pass_label(entry):
     return "Summary only, not counted as a round" if entry["summary_only"] else "Pass without findings"
 
 
-def render_pass(entry, last, body_chars, full=False):
-    label = pass_label(entry)
-    out = ["", f"### {label}: head {entry['head'][:8]}, {when(entry['started'])}"]
+def render_pass(entry, body_chars, full=False):
+    out = ["", f"### {pass_label(entry)}: head {short(entry['head'])}, {when(entry['started'])}"]
     out.append("Reviews: " + ", ".join(
-        f"{review['reviewer']} {review['state']} ({review['threads']} threads)"
+        f"{review['reviewer']} {review['state']} ({review['threads']} threads; "
+        + (f"reviewed {short(review['previous'])} before" if review["previous"] else "first review") + ")"
         for review in entry["reviews"]
     ))
     for thread in entry["threads"]:
@@ -733,7 +419,7 @@ def render_pass(entry, last, body_chars, full=False):
             out += render_thread(thread)
         else:
             out.append(
-                f"- [{tags(thread)}] {thread['reviewer']} "
+                f"- {tags(thread)}{thread['reviewer']} "
                 f"{thread['path']}:{thread['line'] or '?'}: {thread['headline']}"
             )
     for review in entry["reviews"]:
@@ -742,38 +428,22 @@ def render_pass(entry, last, body_chars, full=False):
             hint = f"--round {entry['round']}" if entry["round"] else "--body-chars -1"
             body = review["body"] if full else shorten(review["body"], body_chars, hint)
             out += ["" if full else None, f"Summary by {review['reviewer']}:"] + indent(body)
-    change = entry["response"]
-    label = "Change since this review" if last else "Change before the next reviewed head"
-    if change:
-        top = ", ".join(
-            f"{item['path'].rsplit('/', 1)[-1]} (+{item['additions']} -{item['deletions']})"
-            for item in change["files"][:6]
-        )
-        notes = [
-            note for flag, note in (
-                ("merged", "a merge from the base branch is left out"),
-                ("unsure", "may include a merge from the base branch: the commit list is incomplete"),
-                ("cut", "partial: GitHub cut a file list short"),
-            ) if change[flag]
-        ]
-        out.append(
-            f"{label}: {size(change)}" + (f": {top}" if top else "")
-            + (f" ({'; '.join(notes)})" if notes else "")
-        )
-    else:
-        out.append(f"{label}: " + (
-            "none" if entry["unchanged"]
-            else "unavailable (the history was rewritten in between, or a commit is no longer listed)"
-        ))
+    out.append(
+        f"Next reviewed commit or tip: {short(entry['next'])}" if entry["next"]
+        else "This is the tip of the pull request."
+    )
     return [row for row in out if row is not None]
 
 
 def render_header(report):
+    size = report["size"]
     return [
         f"# Review rounds: {report['repo']}#{report['number']}",
         f"{report['title']}",
-        f"Author {report['author']}, {report['state']}, base {report['base']} at {report['base_sha'][:12]}, "
-        f"{report['commits']} commits, {report['reverts']} named as reverts",
+        f"Author {report['author']}, {report['state']}, base {report['base']} at {short(report['base_sha'])}, "
+        f"tip {short(report['head'])}",
+        f"{report['commits']} commits, {report['reverts']} named as reverts, "
+        f"{size['files']} files, +{size['additions']} -{size['deletions']}",
         "",
     ]
 
@@ -794,7 +464,7 @@ def render(report, body_chars=1000):
         out.append(
             f"  ({report['summary_only']} more heads got a review summary with no thread and no change "
             "request. They are listed as 'Summary only' and are rounds if the summary carries findings: "
-            "read them with --body-chars -1)"
+            "read them with --body-chars -1 --raw)"
         )
     out.append("New threads per round: " + " ".join(
         f"{len(entry['threads'])}" + "*" * (not entry["threads"]) for entry in rounds
@@ -809,48 +479,15 @@ def render(report, body_chars=1000):
         f"{name} ({row['reviews']} reviews, {row['threads']} threads)"
         for name, row in report["reviewers"].items()
     ))
-    later = report["later_findings"]
-    if later:
-        out.append(
-            "Threads after a reviewer's first pass, against the head that reviewer saw before: "
-            + ", ".join(f"{later[key]} {key}" for key in PLACES if key in later)
-        )
-    first = report["size_at_first_review"]
-    out.append(
-        f"Size now: {size(report['size'])}."
-        + (f" At first review: {size(first)}; {len(first['added_since'])} files joined later."
-           if first else " Size at first review unavailable.")
-    )
-    changed = report["changed_since_first_review"]
-    now = report["size"]["additions"] + report["size"]["deletions"]
-    churn = changed["additions"] + changed["deletions"]
-    out.append(
-        f"Changed by the author since the first review, summed step by step: "
-        f"+{changed['additions']} -{changed['deletions']}"
-        + (f" ({churn / now:.1f}x the diff as it stands)" if now else "")
-        + f"; {changed['undone']} lines written in one response were removed by a later one"
-    )
-    if changed["unavailable"]:
-        out.append(
-            f"  ({changed['unavailable']} of the changes between reviewed heads could not be measured "
-            "and are not in these numbers or in the tables below)"
-        )
 
     total = report["rounds"]
     tables = (("Hot files", report["files"], 15), ("Areas", report["areas"], 10))
     for title, table, limit in tables if report["threads"] else ():
-        hot = title == "Hot files"
-        out += ["", f"## {title}", "threads  rounds    " + ("changed-in  undone  " if hot else "") + "path"]
+        out += ["", f"## {title}", "threads  rounds    path"]
         ranked = sorted(table.items(), key=lambda item: (-item[1]["threads"], item[0]))
         for path, row in ranked[:limit]:
             in_rounds = len([value for value in row["rounds"] if value])
-            extra = f"{row['responses']:>10}  {row['undone']:>6}  " if hot else ""
-            out.append(f"{row['threads']:>7}  {in_rounds:>2} of {total:<2}  {extra}{path}")
-        if hot:
-            out.append(
-                "(changed-in: responses that changed the file. undone: lines one response "
-                "added there and a later one removed)"
-            )
+            out.append(f"{row['threads']:>7}  {in_rounds:>2} of {total:<2}  {path}")
 
     threads = [thread for entry in passes for thread in entry["threads"]]
     long_threads = sorted(
@@ -869,18 +506,18 @@ def render(report, body_chars=1000):
 
     out += ["", "## Rounds"]
     for entry in passes:
-        out += render_pass(entry, entry is passes[-1], body_chars)
+        out += render_pass(entry, body_chars)
     return "\n".join(out)
 
 
 def render_rounds(report, numbers):
     """The chosen rounds in full: every thread with its replies, and the summaries."""
-    passes, out = report["passes"], []
+    out = []
     for number in numbers:
-        chosen = [entry for entry in passes if entry["round"] == number]
+        chosen = [entry for entry in report["passes"] if entry["round"] == number]
         if not chosen:
             raise ValueError(f"no round {number}: the pull request has {report['rounds']}")
-        out += render_pass(chosen[0], chosen[0] is passes[-1], 0, full=True)
+        out += render_pass(chosen[0], 0, full=True)
     return out
 
 

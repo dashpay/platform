@@ -38,20 +38,17 @@ suffering from picky reviewers. More often a responsibility sits in the wrong
 layer, or one fact is kept in two places, and each fix is local, so the next
 review finds the next case of the same problem.
 
-The skill measures the history first: the rounds, the new findings in each,
-the files that findings and rewrites concentrate in, how much code was written
-in one response and removed by a later one, and whether later findings sit on
-code written since the same reviewer last looked. Then it asks one question of
-each group of findings: is there a single structural change that would have
-made them impossible? If there is, the cause is architectural and the advice is
-to restructure, or to split the pull request, instead of answering one more
-round. If there is not, it names the ordinary cause: a diff that grew during
-review, one push per finding, optional suggestions taken as scope, or a
-reviewer raising new points on code it had already passed.
-
-A change between two reviewed commits is measured only when the first leads to
-the second, with merges from the base branch cut out. After a rebase or a
-force-push the script reports the change as unavailable instead of guessing.
+The skill lists the history first: the rounds, the new findings in each, the
+files the findings keep returning to, and the threads that went back and
+forth. For the rounds that did not die down it reads, with `git`, whether the
+findings were raised on the author's last change or on code the reviewer had
+already seen. Then it asks one question of each group of findings: is there a
+single structural change that would have made them impossible? If there is,
+the cause is architectural and the advice is to restructure, or to split the
+pull request, instead of answering one more round. If there is not, it names
+the ordinary cause: a diff that grew during review, one push per finding,
+optional suggestions taken as scope, or a reviewer raising new points on code
+it had already passed.
 
 Run the skill from a clean checkout of one of the repository's long-lived
 branches (`master` or a `vX-dev` branch), not from the pull request's own
@@ -59,7 +56,7 @@ branch. An agent takes its instructions from the checkout it runs in, and a
 pull request should not supply the instructions it is judged by. The skill
 reads the pull request by number and does not need its branch checked out.
 
-The measuring part also runs by itself, for the overview or for the full
+The listing part also runs by itself, for the overview or for the full
 conversations of a round or a file:
 
 ```bash
