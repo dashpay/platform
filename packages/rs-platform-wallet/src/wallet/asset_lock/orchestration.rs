@@ -749,8 +749,9 @@ struct RecipientCheck<'a> {
 /// external funding) serves only a funding to exactly those addresses:
 /// anything else is
 /// [`PlatformWalletError::AssetLockPlatformAddressRecipientMismatch`]. One
-/// that records none is the wallet's own and serves any Platform-address
-/// funding. Invitation vouchers never pass this generic validator—the
+/// that records none serves any Platform-address funding: it is an owned
+/// funding or an external one tracked before recipients were recorded, which
+/// the wallet cannot tell apart, so the host picks the payees. Invitation vouchers never pass this generic validator—the
 /// explicit reclaim authorization above is the only bypass.
 fn validate_existing_asset_lock_role(
     out_point: OutPoint,
@@ -997,7 +998,8 @@ mod tests {
                 }) if o == out_point && *r == recorded
             ));
         }
-        // A lock that records none is the wallet's own: any funding resumes it.
+        // A lock that records none (owned, or tracked before recipients were
+        // recorded) is not refused: any funding resumes it.
         for requested in [Some(&other), None] {
             assert!(validate(requested, None).is_ok());
         }

@@ -304,9 +304,12 @@ impl PlatformAddressWallet {
     /// ([`PlatformWalletError::AssetLockNotTracked`]), one of another funding
     /// type ([`PlatformWalletError::AssetLockFundingMismatch`]), a consumed
     /// one ([`PlatformWalletError::AssetLockAlreadyConsumed`]), a
-    /// Platform-address lock that records no recipients (an owned funding,
-    /// resumed with [`Self::fund_from_asset_lock`]:
-    /// [`PlatformWalletError::InvalidParameter`]), and one whose remainder
+    /// Platform-address lock that records no recipients
+    /// ([`PlatformWalletError::InvalidParameter`]: an owned funding, or an
+    /// external payment tracked before recipients were recorded, which the
+    /// wallet cannot tell apart; the host resumes the latter to the payees it
+    /// saved with the payment, and only a lock it knows funds the wallet's own
+    /// addresses with [`Self::fund_from_asset_lock`]), and one whose remainder
     /// address no platform payment account of the wallet holds
     /// ([`PlatformWalletError::AddressNotFound`]).
     pub async fn resume_platform_address_funding_to_recorded_recipients<S, AS>(
@@ -339,8 +342,10 @@ impl PlatformAddressWallet {
         }
         let recipients = lock.platform_address_recipients.ok_or_else(|| {
             PlatformWalletError::InvalidParameter(format!(
-                "asset lock {out_point} records no recipients; it funds the wallet's own \
-                 Platform addresses and is resumed as an owned funding"
+                "asset lock {out_point} records no recipients: resume it to the payees \
+                 saved with the payment if it was an external payment tracked before \
+                 recipients were recorded, and as an owned funding only if it is known \
+                 to fund the wallet's own Platform addresses"
             ))
         })?;
         let platform_account_index = self
@@ -2720,8 +2725,9 @@ mod tests {
     }
 
     /// A Platform-address lock that records no recipients (an owned funding,
-    /// or one tracked before recipients were recorded) is the wallet's own
-    /// and resumes through the owned path as before.
+    /// or one tracked before recipients were recorded) is not refused by the
+    /// owned path, as before: the wallet cannot tell the two apart, so which
+    /// path resumes it is the host's call.
     #[tokio::test]
     async fn should_resume_a_lock_without_recipients_as_owned() {
         let (_manager, wallet, _persister, _recipients, mut row, signer) =

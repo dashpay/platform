@@ -2,7 +2,8 @@
 //! pay, so a resume after restart pays them or is refused instead of
 //! refunding the sender. Stored as the wallet's opaque
 //! `PlatformAddressRecipients::to_bytes` form. Legacy blobs stay
-//! byte-identical; old rows receive NULL and are the wallet's own fundings.
+//! byte-identical; old rows receive NULL: an owned funding, or an external
+//! payment tracked before this column, whose payees only the host recorded.
 pub fn migration() -> String {
     "ALTER TABLE asset_locks ADD COLUMN platform_address_recipients BLOB \
      CHECK (platform_address_recipients IS NULL OR (typeof(platform_address_recipients) = 'blob' AND length(platform_address_recipients) BETWEEN 1 AND 4096)); \
