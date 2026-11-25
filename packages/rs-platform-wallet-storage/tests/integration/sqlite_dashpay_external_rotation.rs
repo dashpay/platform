@@ -500,15 +500,85 @@ fn a_snapshot_of_an_unknown_xpub_still_conflicts() {
     assert!(retired(&persister, &w).is_empty());
 }
 
-/// Rewinds the file at `path` to the V023 schema: what V001..V023 left on disk.
-fn rewind_to_v023(path: &std::path::Path) {
-    rusqlite::Connection::open(path)
+/// The tables of `conn`'s main schema, in creation order.
+fn table_names(conn: &rusqlite::Connection) -> Vec<String> {
+    conn.prepare(
+        "SELECT name FROM main.sqlite_master \
+         WHERE type = 'table' AND name NOT LIKE 'sqlite_%' \
+           AND name <> 'refinery_schema_history' ORDER BY rowid",
+    )
+    .unwrap()
+    .query_map([], |r| r.get(0))
+    .unwrap()
+    .collect::<Result<_, _>>()
+    .unwrap()
+}
+
+/// The columns of `main.table` on `conn`, quoted for SQL.
+fn quoted_columns(conn: &rusqlite::Connection, table: &str) -> String {
+    conn.prepare("SELECT name FROM pragma_table_info(?1, 'main') ORDER BY cid")
         .unwrap()
-        .execute_batch(
-            "DROP TABLE core_address_pool_retired;
-             DELETE FROM refinery_schema_history WHERE version = 24;",
+        .query_map([table], |r| r.get::<_, String>(0))
+        .unwrap()
+        .map(|name| format!("\"{}\"", name.unwrap()))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Replaces the file at `path` with a file of the schema `version` left on
+/// disk, holding the rows the wallet wrote. The crate's migrations build a new
+/// file up to `version`, so every later migration is missing from its schema
+/// and its history whatever those migrations are. Each of its tables then
+/// takes the rows of the same table in the written file, attached as
+/// `written`, in the columns the table has at `version`, which holds while
+/// later migrations only add tables and columns. `finish` runs last, in the
+/// same transaction.
+fn rebuild_at_version(
+    path: &std::path::Path,
+    version: i32,
+    finish: impl FnOnce(&rusqlite::Connection),
+) {
+    let rebuilt = path.with_extension("rebuilt");
+    let mut conn = rusqlite::Connection::open(&rebuilt).unwrap();
+    platform_wallet_storage::sqlite::migrations::runner()
+        .set_target(refinery::Target::Version(version))
+        .run(&mut conn)
+        .unwrap();
+    conn.execute(
+        "ATTACH DATABASE ?1 AS written",
+        [path.to_str().expect("utf-8 path")],
+    )
+    .unwrap();
+    conn.execute_batch("PRAGMA foreign_keys = OFF; BEGIN;")
+        .unwrap();
+    for table in table_names(&conn) {
+        let columns = quoted_columns(&conn, &table);
+        conn.execute_batch(&format!(
+            "DELETE FROM main.\"{table}\";
+             INSERT INTO main.\"{table}\" ({columns}) SELECT {columns} FROM written.\"{table}\";"
+        ))
+        .unwrap();
+    }
+    finish(&conn);
+    conn.execute_batch("COMMIT; DETACH DATABASE written;")
+        .unwrap();
+    let max_version: i64 = conn
+        .query_row(
+            "SELECT MAX(version) FROM refinery_schema_history",
+            [],
+            |r| r.get(0),
         )
         .unwrap();
+    assert_eq!(max_version, i64::from(version));
+    drop(conn);
+    for suffix in ["-wal", "-shm"] {
+        let mut sidecar = path.as_os_str().to_owned();
+        sidecar.push(suffix);
+        if let Err(e) = std::fs::remove_file(&sidecar) {
+            assert_eq!(e.kind(), std::io::ErrorKind::NotFound, "remove {sidecar:?}");
+        }
+    }
+    std::fs::rename(&rebuilt, path).unwrap();
 }
 
 /// A database written before V024 migrates in place: its pool is untouched,
@@ -522,7 +592,7 @@ fn a_pre_v024_database_migrates_in_place() {
     let a = contact_xpub(0x0A);
     persister.store(w, registration(a, &[2])).unwrap();
     drop(persister);
-    rewind_to_v023(&path);
+    rebuild_at_version(&path, 23, |_| {});
 
     let persister = reopen(&path);
     assert_eq!(live_scripts(&persister, &w), scripts_of(a));
@@ -569,16 +639,15 @@ CREATE TABLE core_address_pool_retired (
 CREATE INDEX idx_core_address_pool_retired_script
     ON core_address_pool_retired(wallet_id, script);";
 
-/// SQL that rebuilds the retired table through [`DOWNSTREAM_RETIRED_POOL_DDL`],
-/// keeping its rows.
-fn rebuild_retired_table_as_downstream() -> String {
-    format!(
-        "CREATE TEMP TABLE kept AS SELECT * FROM core_address_pool_retired;
-         DROP TABLE core_address_pool_retired;
-         {DOWNSTREAM_RETIRED_POOL_DDL}
-         INSERT INTO core_address_pool_retired SELECT * FROM kept;
-         DROP TABLE kept;"
-    )
+/// Creates the retired table in a file [`rebuild_at_version`] builds, through
+/// [`DOWNSTREAM_RETIRED_POOL_DDL`], with the rows the wallet wrote to it.
+fn create_retired_table_as_downstream(conn: &rusqlite::Connection) {
+    conn.execute_batch(&format!(
+        "{DOWNSTREAM_RETIRED_POOL_DDL}
+         INSERT INTO main.core_address_pool_retired
+             SELECT * FROM written.core_address_pool_retired;"
+    ))
+    .unwrap();
 }
 
 /// Everything SQLite knows about the retired table's shape: its stored DDL,
@@ -631,19 +700,11 @@ fn v024_adopts_a_downstream_retired_pool_table() {
     let fresh_shape = retired_table_shape(&persister.lock_conn_for_test());
     drop(persister);
 
-    // Recreate the table through the downstream DDL, carrying its rows, and
-    // drop V024 from the history: a V023 file with the downstream table.
+    // A V023 file with the table the downstream DDL creates, carrying its
+    // rows.
+    rebuild_at_version(&path, 23, create_retired_table_as_downstream);
     {
         let conn = rusqlite::Connection::open(&path).unwrap();
-        conn.execute_batch(&format!(
-            "PRAGMA foreign_keys = OFF;
-             BEGIN;
-             {}
-             DELETE FROM refinery_schema_history WHERE version = 24;
-             COMMIT;",
-            rebuild_retired_table_as_downstream()
-        ))
-        .unwrap();
         let version: i64 = conn
             .query_row(
                 "SELECT MAX(version) FROM refinery_schema_history",
@@ -1142,47 +1203,28 @@ fn a_payment_to_a_contacts_current_and_old_address_counts_only_the_change() {
     assert_only_the_change_loads(&persister, &w, incoming.txid);
 }
 
-/// Rewinds the file at `path` to a V020 schema that already holds the retired
+/// Rebuilds the file at `path` as a V020 file that already holds the retired
 /// table, the order of a file a downstream build wrote: that build created the
-/// table before V021 existed. V021's and V022's tables go, as the crate's
-/// `rewind_v021` drops them; the retired table is rebuilt through the
-/// downstream DDL with its rows; and the record of `txid` is put back as the
-/// wallet handed it to the store, before any repair.
-fn rewind_to_v020_with_the_retired_table(
+/// table before V021 existed. The retired table comes through the downstream
+/// DDL with its rows, and the record of `txid` is put back as the wallet
+/// handed it to the store, before any repair.
+fn rebuild_at_v020_with_the_retired_table(
     path: &std::path::Path,
     w: &WalletId,
     as_handed: &TransactionRecord,
 ) {
-    let conn = rusqlite::Connection::open(path).unwrap();
-    conn.execute_batch("PRAGMA foreign_keys = OFF; BEGIN;")
-        .unwrap();
-    conn.execute(
-        "UPDATE core_transactions SET record_blob = ?1 WHERE wallet_id = ?2 AND txid = ?3",
-        rusqlite::params![
-            blob::encode(as_handed).unwrap(),
-            w.as_slice(),
-            AsRef::<[u8]>::as_ref(&as_handed.txid)
-        ],
-    )
-    .unwrap();
-    conn.execute_batch(&format!(
-        "{}
-         DROP TABLE core_transaction_inputs;
-         DROP TABLE core_transaction_record_originals;
-         DROP TABLE core_locked_outpoints;
-         DELETE FROM refinery_schema_history WHERE version >= 21;
-         COMMIT;",
-        rebuild_retired_table_as_downstream()
-    ))
-    .unwrap();
-    let version: i64 = conn
-        .query_row(
-            "SELECT MAX(version) FROM refinery_schema_history",
-            [],
-            |r| r.get(0),
+    rebuild_at_version(path, 20, |conn| {
+        create_retired_table_as_downstream(conn);
+        conn.execute(
+            "UPDATE core_transactions SET record_blob = ?1 WHERE wallet_id = ?2 AND txid = ?3",
+            rusqlite::params![
+                blob::encode(as_handed).unwrap(),
+                w.as_slice(),
+                AsRef::<[u8]>::as_ref(&as_handed.txid)
+            ],
         )
         .unwrap();
-    assert_eq!(version, 20);
+    });
 }
 
 /// V021 replays history through the same accounting. On a file that already
@@ -1196,7 +1238,7 @@ fn v021_counts_only_the_change_on_a_file_that_already_holds_the_retired_table() 
     let incoming = store_mixed_payment(&persister, &w);
     let history = retired(&persister, &w);
     drop(persister);
-    rewind_to_v020_with_the_retired_table(&path, &w, &incoming);
+    rebuild_at_v020_with_the_retired_table(&path, &w, &incoming);
 
     let persister = reopen(&path);
     assert_eq!(retired(&persister, &w), history);
