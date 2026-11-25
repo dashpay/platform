@@ -10,6 +10,8 @@
 
 use std::os::raw::c_char;
 
+use crate::error::PlatformWalletFFIResultCode;
+
 #[cfg(feature = "shielded")]
 use platform_wallet::wallet::shielded::{IdentityDebitRecoveryRecord, IdentityDebitRecoveryStatus};
 
@@ -100,6 +102,10 @@ pub struct ShieldedShieldPreflightFFI {
 ///   `error_message` is NULL.
 /// - both flags `false` and `error_message != NULL`: the sync
 ///   itself failed.
+///
+/// The layout is frozen: legacy hosts index the
+/// `on_shielded_sync_completed_fn` array with its element size.
+/// [`ShieldedSyncWalletOutcomeFFI`] adds the failure's result code.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct ShieldedSyncWalletResultFFI {
@@ -144,6 +150,20 @@ impl Default for ShieldedSyncWalletResultFFI {
             error_message: std::ptr::null(),
         }
     }
+}
+
+/// Per-wallet outcome delivered through
+/// `EventHandlerCallbacksExtension::on_shielded_sync_outcomes_fn`: the
+/// legacy result plus Rust's classification of a failure.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ShieldedSyncWalletOutcomeFFI {
+    pub result: ShieldedSyncWalletResultFFI,
+    /// `Success` on success and skipped wallets. On failure,
+    /// `ErrorShieldedTreeInconsistent` means only
+    /// `platform_wallet_manager_shielded_rebuild_tree` repairs it;
+    /// any other failure is `ErrorWalletOperation`.
+    pub error_code: PlatformWalletFFIResultCode,
 }
 
 // Constructors only used by the feature-gated event-handler dispatch.

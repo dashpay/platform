@@ -247,6 +247,7 @@ final class DpnsMarketplaceManagerWrapperTests: XCTestCase {
             UInt32(PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION)
         )
         XCTAssertNotNil(eventExtension.on_dpns_marketplace_sync_completed_fn)
+        XCTAssertNotNil(eventExtension.on_shielded_sync_outcomes_fn)
 
         let walletId = Data(repeating: 0x66, count: 32)
         var ffi = DpnsSyncWalletResultFFI()

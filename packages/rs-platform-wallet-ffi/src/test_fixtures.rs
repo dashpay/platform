@@ -8,7 +8,7 @@ use std::sync::Arc;
 use platform_wallet::PlatformWalletManager;
 
 use crate::error::{PlatformWalletFFIResult, PlatformWalletFFIResultCode};
-use crate::event_handler::{EventHandlerCallbacks, FFIEventHandler};
+use crate::event_handler::{EventExtensionCallbacks, EventHandlerCallbacks, FFIEventHandler};
 use crate::persistence::{FFIPersister, PersistenceCallbacks};
 use crate::runtime::runtime;
 use crate::xpub_render::platform_wallet_free_string;
@@ -57,7 +57,7 @@ pub(crate) fn mock_manager_on(
             on_shielded_tree_progress_fn: None,
             release_fn: None,
         },
-        None,
+        EventExtensionCallbacks::default(),
     );
     let _runtime_guard = runtime().enter();
     PlatformWalletManager::new(Arc::new(sdk), Arc::new(persister), Arc::new(events))

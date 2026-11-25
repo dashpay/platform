@@ -29,7 +29,7 @@ public struct ShieldedIdentityCreateUnconfirmedError: LocalizedError {
 /// Per-wallet outcome from a completed shielded sync pass.
 ///
 /// Mirrors the Rust-side
-/// [`ShieldedSyncWalletResultFFI`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-platform-wallet-ffi/src/shielded_types.rs)
+/// [`ShieldedSyncWalletOutcomeFFI`](https://github.com/dashpay/platform/blob/v4.0-dev/packages/rs-platform-wallet-ffi/src/shielded_types.rs)
 /// with three states:
 ///
 /// - `success == true`: sync succeeded; the numeric counters are
@@ -38,7 +38,7 @@ public struct ShieldedIdentityCreateUnconfirmedError: LocalizedError {
 ///   so the pass passed it over; both `success` and `errorMessage`
 ///   are vacuous.
 /// - both flags `false` and `errorMessage != nil`: the sync itself
-///   failed.
+///   failed; `error` carries it typed.
 public struct ShieldedWalletSyncResult: Sendable {
     public let walletId: Data
     public let success: Bool
@@ -57,8 +57,19 @@ public struct ShieldedWalletSyncResult: Sendable {
     public let newlySpent: UInt32
     public let balance: UInt64
     public let errorMessage: String?
+    /// Rust's classification of the failure; `.success` on success and
+    /// skipped wallets.
+    public let errorCode: PlatformWalletResultCode
 
-    init(ffi: ShieldedSyncWalletResultFFI) {
+    /// The failure as a typed error, or `nil` on success and skipped wallets.
+    /// `.shieldedTreeInconsistent` means only `rebuildShieldedTree()` repairs it.
+    public var error: PlatformWalletError? {
+        guard !success, !skipped else { return nil }
+        return PlatformWalletError(code: errorCode, message: errorMessage)
+    }
+
+    init(ffi outcome: ShieldedSyncWalletOutcomeFFI) {
+        let ffi = outcome.result
         var walletId = ffi.wallet_id
         self.walletId = withUnsafeBytes(of: &walletId) { Data($0) }
         self.success = ffi.success
@@ -69,6 +80,7 @@ public struct ShieldedWalletSyncResult: Sendable {
         self.newlySpent = ffi.newly_spent
         self.balance = ffi.balance
         self.errorMessage = ffi.error_message.map { String(cString: $0) }
+        self.errorCode = PlatformWalletResultCode(ffi: outcome.error_code)
     }
 }
 
@@ -123,12 +135,12 @@ extension PlatformWalletManager {
         // suppresses callbacks immediately, while leaving the generation
         // valid until admitted local reads finish their MainActor delivery.
         guard !shutdownRequested, generation == shieldedSyncGeneration.current() else { return }
-        // The main actor is free while an async stop drains, so a completion
-        // of the pass being stopped arrives with a current generation. Hold
-        // it for the stop to settle (`shieldedCompletionHeldByStop`): dropped
-        // if the stop drains that pass, published if the stop times out and
-        // the pass keeps running.
-        if shieldedStopsInFlight > 0 {
+        // The main actor is free while an async stop or rebuild drains, so a
+        // completion of the pass being drained arrives with a current
+        // generation. Hold it for them to settle
+        // (`shieldedCompletionHeldByStop`): dropped if the pass was drained,
+        // published if it keeps running or the rebuild failed.
+        if shieldedDrainsInFlight {
             shieldedCompletionHeldByStop = (event, generation)
             return
         }
@@ -138,6 +150,24 @@ extension PlatformWalletManager {
         // starts from nil. Also matches the false→true edge UI gating
         // in ShieldedService's currentSyncElapsed timer.
         resetCurrentShieldedProgress()
+    }
+
+    /// An async stop or rebuild is draining the sync loop.
+    private var shieldedDrainsInFlight: Bool {
+        shieldedStopsInFlight > 0 || shieldedRebuildsInFlight > 0
+    }
+
+    /// Called by an async stop or rebuild before its in-flight count drops:
+    /// the last one settles the held completion, stale after a bump and
+    /// still current otherwise.
+    private func settleHeldShieldedCompletion() {
+        guard shieldedStopsInFlight + shieldedRebuildsInFlight == 1,
+              let held = shieldedCompletionHeldByStop else { return }
+        shieldedCompletionHeldByStop = nil
+        if !shutdownRequested, held.generation == shieldedSyncGeneration.current() {
+            lastShieldedSyncEvent = held.event
+            resetCurrentShieldedProgress()
+        }
     }
 
     /// Clear the four per-pass live-progress mirrors so the next pass
@@ -164,14 +194,14 @@ extension PlatformWalletManager {
     /// progress hop delivered after a stop/clear bumped the generation
     /// must be dropped so it can't re-publish phantom progress over the
     /// `resetCurrentShieldedProgress()` mirrors the stop/clear just reset.
-    /// Dropped outright while an async stop is in flight, for the same
-    /// reason.
+    /// Dropped outright while an async stop or rebuild is in flight, for the
+    /// same reason.
     func handleShieldedSyncProgress(
         cumulativeScanned: UInt64,
         blockHeight: UInt64,
         generation: UInt64
     ) {
-        guard !shutdownRequested, shieldedStopsInFlight == 0,
+        guard !shutdownRequested, !shieldedDrainsInFlight,
               generation == shieldedSyncGeneration.current() else { return }
         currentShieldedSyncScanned = cumulativeScanned
         currentShieldedSyncBlockHeight = blockHeight
@@ -188,14 +218,14 @@ extension PlatformWalletManager {
     /// tree-progress hop delivered after a stop/clear bumped the
     /// generation must be dropped so it can't re-publish phantom progress
     /// over the `resetCurrentShieldedProgress()` mirrors the stop/clear
-    /// just reset. Dropped outright while an async stop is in flight, for
-    /// the same reason.
+    /// just reset. Dropped outright while an async stop or rebuild is in
+    /// flight, for the same reason.
     func handleShieldedTreeProgress(
         committed: UInt64,
         total: UInt64,
         generation: UInt64
     ) {
-        guard !shutdownRequested, shieldedStopsInFlight == 0,
+        guard !shutdownRequested, !shieldedDrainsInFlight,
               generation == shieldedSyncGeneration.current() else { return }
         currentShieldedTreeCommitted = committed
         currentShieldedTreeTotal = total
@@ -434,15 +464,7 @@ extension PlatformWalletManager {
             shieldedSyncGeneration.bump()
             resetCurrentShieldedProgress()
         }
-        // The last stop in flight settles the held completion: stale after
-        // the bump above, still current after a timeout.
-        if shieldedStopsInFlight == 1, let held = shieldedCompletionHeldByStop {
-            shieldedCompletionHeldByStop = nil
-            if !shutdownRequested, held.generation == shieldedSyncGeneration.current() {
-                lastShieldedSyncEvent = held.event
-                resetCurrentShieldedProgress()
-            }
-        }
+        settleHeldShieldedCompletion()
         if let failure {
             throw failure
         }
@@ -486,6 +508,52 @@ extension PlatformWalletManager {
         // progress mirrors; do it here so a pass cleared mid-flight
         // doesn't leave stale `currentShielded*` values on the UI.
         resetCurrentShieldedProgress()
+    }
+
+    /// Repair an inconsistent shielded commitment tree
+    /// (`PlatformWalletError.shieldedTreeInconsistent`): empty the tree and
+    /// rewind scan cursors so the next pass rescans the whole pool. Notes,
+    /// spent status and registrations are kept, so the host keeps its
+    /// SwiftData rows. Background shielded sync restarts by itself if it was
+    /// running, except after a quiesce timeout on top of an earlier stop's:
+    /// check `isShieldedSyncRunning()` after a successful retry. The native
+    /// call runs off the main actor, since it waits up to 10 s for an
+    /// in-flight pass to drain. Concurrent rebuilds run one at a time, so a
+    /// second caller also waits for the first to finish.
+    ///
+    /// Throws `walletOperation` while an async [`stopShieldedSync()`] is in
+    /// flight, for the same reason as [`clearShielded()`]. Admitted like the
+    /// async stop: `shutdown()` waits for an in-flight rebuild. Sync events
+    /// reaching the main actor meanwhile are held like during an async stop:
+    /// dropped after a successful repair, published after a failure.
+    public func rebuildShieldedTree() async throws {
+        try ensureShieldedLifecycleAllowed("rebuildShieldedTree")
+        try ensureNoShieldedStopInFlight(before: "rebuilding the shielded tree")
+        try admitNativeOp("rebuildShieldedTree")
+        defer { finishNativeOp() }
+        shieldedRebuildsInFlight += 1
+        defer { shieldedRebuildsInFlight -= 1 }
+        // Invalidate local balance reads before entering native code, as
+        // `withShieldedLocalBalanceMutation` does for synchronous calls.
+        shieldedLocalBalanceGeneration.bump()
+        let handle = self.handle
+        // Map the result off the main actor: the raw result's Rust-owned
+        // message never crosses the await.
+        let failure = await Task.detached(priority: .userInitiated) { () -> PlatformWalletError? in
+            let result = PlatformWalletResult(platform_wallet_manager_shielded_rebuild_tree(handle))
+            return result.isSuccess ? nil : PlatformWalletError(result: result)
+        }.value
+        // Drop completions from the pass that found the tree inconsistent,
+        // so they cannot re-surface the error after the repair. A shutdown
+        // draining admitted operations bumps the generation itself.
+        if failure == nil, !shutdownRequested {
+            shieldedSyncGeneration.bump()
+            resetCurrentShieldedProgress()
+        }
+        settleHeldShieldedCompletion()
+        if let failure {
+            throw failure
+        }
     }
 
     public func isShieldedSyncRunning() throws -> Bool {
@@ -1704,10 +1772,10 @@ extension PlatformWalletManager {
     }
 }
 
-/// C trampoline matching `EventHandlerCallbacks.on_shielded_sync_completed_fn`.
+/// C trampoline matching `EventHandlerCallbacksExtension.on_shielded_sync_outcomes_fn`.
 func shieldedSyncCompletedCallback(
     context: UnsafeMutableRawPointer?,
-    resultsPtr: UnsafePointer<ShieldedSyncWalletResultFFI>?,
+    resultsPtr: UnsafePointer<ShieldedSyncWalletOutcomeFFI>?,
     count: UInt,
     syncUnixSeconds: UInt64
 ) {

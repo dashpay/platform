@@ -3,8 +3,9 @@
 use crate::check_ptr;
 use crate::error::*;
 use crate::event_handler::{
-    DpnsMarketplaceSyncCompletedFn, EventHandlerCallbacks, EventHandlerCallbacksExtension,
-    FFIEventHandler, PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION,
+    DpnsMarketplaceSyncCompletedFn, EventExtensionCallbacks, EventHandlerCallbacks,
+    EventHandlerCallbacksExtension, FFIEventHandler, ShieldedSyncOutcomesFn,
+    PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION,
 };
 use crate::handle::*;
 use crate::persistence::{
@@ -88,7 +89,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create(
         event_handler,
         PersistenceCapabilities::NONE,
         PersistenceExtensionCallbacks::default(),
-        None,
+        EventExtensionCallbacks::default(),
         out_handle,
     )
 }
@@ -115,7 +116,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_persistence_capabil
         event_handler,
         declaration,
         PersistenceExtensionCallbacks::default(),
-        None,
+        EventExtensionCallbacks::default(),
         out_handle,
     )
 }
@@ -149,7 +150,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_persistence_extensi
         event_handler,
         declaration,
         extensions,
-        None,
+        EventExtensionCallbacks::default(),
         out_handle,
     )
 }
@@ -173,7 +174,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_extensions(
     check_ptr!(event_extension);
     let declaration = persistence_capabilities_declaration(&*persistence_capabilities);
     let persistence_extensions = persistence_extension_callbacks(persistence_extension);
-    let dpns_event_callback = event_extension_dpns_callback(event_extension);
+    let event_extensions = event_extension_callbacks(event_extension);
     platform_wallet_manager_create_impl(
         sdk_ptr,
         None,
@@ -181,7 +182,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_extensions(
         event_handler,
         declaration,
         persistence_extensions,
-        dpns_event_callback,
+        event_extensions,
         out_handle,
     )
 }
@@ -227,7 +228,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_sdk(
 
     let declaration = persistence_capabilities_declaration(&*persistence_capabilities);
     let persistence_extensions = persistence_extension_callbacks(persistence_extension);
-    let dpns_event_callback = event_extension_dpns_callback(event_extension);
+    let event_extensions = event_extension_callbacks(event_extension);
     platform_wallet_manager_create_impl(
         sdk_ptr,
         spv_quorum_lease,
@@ -235,7 +236,7 @@ pub unsafe extern "C" fn platform_wallet_manager_create_with_sdk(
         event_handler,
         declaration,
         persistence_extensions,
-        dpns_event_callback,
+        event_extensions,
         out_handle,
     )
 }
@@ -424,23 +425,38 @@ unsafe fn persistence_extension_callbacks(
     }
 }
 
-unsafe fn event_extension_dpns_callback(
+/// Read every negotiated event-extension slot against one header snapshot,
+/// like [`persistence_extension_callbacks`].
+unsafe fn event_extension_callbacks(
     extension: *const EventHandlerCallbacksExtension,
-) -> Option<DpnsMarketplaceSyncCompletedFn> {
+) -> EventExtensionCallbacks {
     let supplied_size = std::ptr::addr_of!((*extension).struct_size).read();
     let version_end =
         std::mem::offset_of!(EventHandlerCallbacksExtension, version) + std::mem::size_of::<u32>();
     let version_ok = supplied_size >= version_end
         && std::ptr::addr_of!((*extension).version).read()
             == PLATFORM_WALLET_EVENT_CALLBACKS_EXTENSION_VERSION;
-    negotiated_extension_slot!(
-        extension,
-        EventHandlerCallbacksExtension,
-        supplied_size,
-        version_ok,
-        on_dpns_marketplace_sync_completed_fn,
-        DpnsMarketplaceSyncCompletedFn
-    )
+
+    macro_rules! slot {
+        ($field:ident, $fn_ty:ty) => {
+            negotiated_extension_slot!(
+                extension,
+                EventHandlerCallbacksExtension,
+                supplied_size,
+                version_ok,
+                $field,
+                $fn_ty
+            )
+        };
+    }
+
+    EventExtensionCallbacks {
+        dpns_sync_completed: slot!(
+            on_dpns_marketplace_sync_completed_fn,
+            DpnsMarketplaceSyncCompletedFn
+        ),
+        shielded_sync_outcomes: slot!(on_shielded_sync_outcomes_fn, ShieldedSyncOutcomesFn),
+    }
 }
 
 // The C entry point's own shape: every callback table and out-param the
@@ -454,7 +470,7 @@ unsafe fn platform_wallet_manager_create_impl(
     event_handler: *const EventHandlerCallbacks,
     declared_capabilities: PersistenceCapabilities,
     persistence_extensions: PersistenceExtensionCallbacks,
-    dpns_event_callback: Option<DpnsMarketplaceSyncCompletedFn>,
+    event_extensions: EventExtensionCallbacks,
     out_handle: *mut Handle,
 ) -> PlatformWalletFFIResult {
     check_ptr!(sdk_ptr);
@@ -499,7 +515,7 @@ unsafe fn platform_wallet_manager_create_impl(
     );
     let handler: Arc<dyn platform_wallet::PlatformEventHandler> = Arc::new(FFIEventHandler::new(
         std::ptr::read(event_handler),
-        dpns_event_callback,
+        event_extensions,
     ));
 
     // `PlatformWalletManager::new` spawns the wallet-event adapter
@@ -1675,6 +1691,45 @@ mod tests {
         assert!(read_unknown.wallet_changeset_chain_lock_height.is_none());
         assert!(read_unknown.wallet_changeset_utxo_verdicts.is_none());
         assert!(read_unknown.wallet_dashpay_backfill.is_none());
+    }
+
+    /// A host built before the typed shielded slot declares a struct ending
+    /// after the DPNS slot: it keeps DPNS and the shielded slot is never read.
+    #[test]
+    fn a_dpns_era_event_extension_refuses_the_shielded_outcomes_slot() {
+        unsafe extern "C" fn dpns(
+            _: *mut c_void,
+            _: *const crate::event_handler::DpnsSyncWalletResultFFI,
+            _: usize,
+            _: u64,
+        ) {
+        }
+        unsafe extern "C" fn outcomes(
+            _: *mut c_void,
+            _: *const crate::shielded_types::ShieldedSyncWalletOutcomeFFI,
+            _: usize,
+            _: u64,
+        ) {
+        }
+        let full = EventHandlerCallbacksExtension {
+            on_dpns_marketplace_sync_completed_fn: Some(dpns),
+            on_shielded_sync_outcomes_fn: Some(outcomes),
+            ..Default::default()
+        };
+        let dpns_era = EventHandlerCallbacksExtension {
+            struct_size: std::mem::offset_of!(
+                EventHandlerCallbacksExtension,
+                on_shielded_sync_outcomes_fn
+            ),
+            ..full
+        };
+
+        let read = unsafe { event_extension_callbacks(&dpns_era) };
+        assert!(read.dpns_sync_completed.is_some());
+        assert!(read.shielded_sync_outcomes.is_none());
+        let read = unsafe { event_extension_callbacks(&full) };
+        assert!(read.dpns_sync_completed.is_some());
+        assert!(read.shielded_sync_outcomes.is_some());
     }
 
     /// A host whose `struct_size` stops right after the identity
