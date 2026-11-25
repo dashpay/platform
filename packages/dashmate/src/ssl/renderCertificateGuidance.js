@@ -220,11 +220,12 @@ function renderWithheldObtain(cfg, renewal) {
   // Refused before an issuance task existed, so nothing was asked of the
   // authority and nothing about a request can be claimed either way.
   if (renewal.code === RENEWAL_FAILURE_CODES.HELPER_OUTDATED) {
-    return `  The dashmate helper refused to save over the newer configuration before it
-  asked for a certificate, so none was requested. It refuses the next renewal
-  the same way, so do not obtain one by hand yet. Send a report instead:
+    return `  On its last attempt the dashmate helper refused to save over the newer
+  configuration before it asked for a certificate, so none was requested. Use
+  the newer dashmate for every dashmate command on this node, and check the
+  certificate here before obtaining one:
 
-      dashmate doctor report ${cfg}
+      dashmate doctor ${cfg}
 `;
   }
 

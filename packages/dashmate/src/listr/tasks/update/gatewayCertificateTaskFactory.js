@@ -352,10 +352,11 @@ export default function gatewayCertificateTaskFactory(
         const isHelperRefusalOnly = guidance.code === RENEWAL_FAILURE_CODES.HELPER_OUTDATED
           && guidance.issuanceStatus === ISSUANCE_STATUS.NONE;
         const withheld = isHelperRefusalOnly
-          ? `\n\n    Do not obtain one yet - the dashmate helper on this node is older than the
-    dashmate that last saved its configuration, and it refused to save over it
-    before it asked for a certificate, so none was requested.
-    Send a report instead: dashmate doctor report ${cfg}`
+          ? `\n\n    Do not obtain one yet - on its last attempt the dashmate helper ran an older
+    dashmate than the one that had saved the configuration, and it refused to
+    save over it before it asked for a certificate, so none was requested.
+    Use the newer dashmate for every dashmate command on this node, and check
+    here: dashmate doctor ${cfg}`
           : `\n\n    Do not obtain one yet - a certificate may already have been issued.
     Send a report instead: dashmate doctor report ${cfg}`;
 

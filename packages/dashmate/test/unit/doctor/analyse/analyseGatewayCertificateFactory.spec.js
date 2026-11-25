@@ -1243,10 +1243,16 @@ describe('analyseGatewayCertificateFactory', () => {
         const problems = analyse(served());
         const text = problems.map((p) => `${p.getDescription()}\n${p.getSolution()}`).join('\n');
 
-        expect(text).to.contain('runs an older dashmate than the one that last saved its configuration');
+        // What happened on the last attempt, not a claim about the helper now:
+        // a later start can run a helper that matches the config.
+        expect(text).to.contain('ran an older dashmate than the one that had saved the configuration');
+        expect(text).to.contain('newer dashmate');
         expect(text).to.not.contain('ssl obtain');
         expect(text).to.not.contain('dashmate restart');
         expect(text).to.not.contain('could not work out why');
+        // Nothing for this cause is worth sending anywhere.
+        expect(text).to.not.contain('doctor report');
+        expect(text).to.not.contain('Dash support');
       });
     });
 

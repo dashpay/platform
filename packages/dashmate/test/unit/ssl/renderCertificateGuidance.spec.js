@@ -649,7 +649,13 @@ describe('renderCertificateGuidance', () => {
       });
 
       expect(output).to.contain('so none was requested');
-      expect(output).to.contain('dashmate doctor report');
+      // A local check, not a report to send anywhere.
+      expect(output).to.match(/^ {6}dashmate doctor --config/m);
+      expect(output).to.not.contain('doctor report');
+      // The last attempt, described as past: a later start can run a helper
+      // that matches the config.
+      expect(output).to.contain('last attempt');
+      expect(output).to.not.contain('refuses the next renewal');
       expect(output).to.not.contain('would not succeed');
       expect(output).to.not.contain('may already have been issued');
       expect(output).to.not.contain('ssl obtain');

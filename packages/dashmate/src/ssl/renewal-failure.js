@@ -160,12 +160,13 @@ const DESCRIPTIONS = {
     sentence: 'another dashmate command was changing configuration, so renewal stopped part way',
     remedy: REMEDY_CLASS.WAIT,
   },
-  // The cause is known; a safe repair is not. Obtaining by hand does not stop
-  // the next refusal, and a restart reloads the gateway from certificate files
-  // nothing on this path has checked - so nothing is prescribed.
+  // The cause is known; a safe repair is not. A restart reloads the gateway
+  // from certificate files nothing on this path has checked - so nothing is
+  // prescribed. Worded as what happened on that attempt: a later start can
+  // run a helper that matches the config.
   [RENEWAL_FAILURE_CODES.HELPER_OUTDATED]: {
-    sentence: 'the dashmate helper on this node runs an older dashmate than the one that last'
-      + ' saved its configuration, so it stopped rather than overwrite the newer settings',
+    sentence: 'the dashmate helper that last tried to renew ran an older dashmate than the one'
+      + ' that had saved the configuration, so it stopped rather than overwrite the newer settings',
     remedy: REMEDY_CLASS.SUPPORT,
   },
   [RENEWAL_FAILURE_CODES.UNKNOWN]: {
