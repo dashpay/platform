@@ -1251,6 +1251,15 @@ pub enum PlatformWalletError {
 
     #[error("Shielded sub-wallet not bound: call bind_shielded first")]
     ShieldedNotBound,
+
+    /// A shielded spend's `*_with_keyset` entry point was handed an Orchard
+    /// keyset that does not match `account`'s bound keys, so it was refused
+    /// before anything was parsed, built, proven or written. The keyset may come from another seed,
+    /// account or network, or be inconsistent in its own fields: nothing was
+    /// reserved or recorded, and the spend can be retried with the account's
+    /// own keyset.
+    #[error("Shielded keyset does not match the bound keys for shielded account {account}")]
+    ShieldedKeysetMismatch { account: u32 },
 }
 
 /// The SDK's invitation errors map onto the variants the wallet used before
