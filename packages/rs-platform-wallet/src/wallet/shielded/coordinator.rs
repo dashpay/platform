@@ -1236,14 +1236,21 @@ impl NetworkShieldedCoordinator {
                     );
                     continue;
                 }
-                match store.purge_subwallet(id) {
-                    Ok(()) => purged.push(id),
-                    Err(e) => tracing::warn!(
+                // A dropped account whose purge failed keeps its state, and a
+                // pass that committed it still delivers it. A re-keyed one is
+                // marked purged either way: what is left is the old key's,
+                // and the replacement persister must not receive it.
+                let purge = store.purge_subwallet(id);
+                if purge.is_ok() || rekeyed.contains(&id.account_index) {
+                    purged.push(id);
+                }
+                if let Err(e) = purge {
+                    tracing::warn!(
                         wallet_id = %hex::encode(id.wallet_id),
                         account = id.account_index,
                         error = %e,
                         "Failed to purge dropped subwallet store state on re-register"
-                    ),
+                    );
                 }
             }
             // Purges first, wallet last: a pass that watched the epoch while
@@ -6690,6 +6697,71 @@ mod tests {
                 .iter()
                 .any(|round| round.synced_indices.get(&account(1)) == Some(&4096)),
             "the unpurged account's watermark reaches the host: {rounds:?}"
+        );
+        drop(rounds);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A re-bind that replaces an account's viewing key marks the old key's
+    /// state purged even when the purge fails, so a pass that committed under
+    /// the old key never hands its receipts to the replacement persister.
+    #[tokio::test]
+    async fn should_not_queue_old_key_state_to_a_rekeyed_account_whose_purge_failed() {
+        let dir = temp_dir("fan_out_after_failed_rekey_purge");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let views = |seed: u8, account| {
+            OrchardKeySet::from_seed(&[seed; 64], dashcore::Network::Testnet, account)
+                .expect("derive viewing keys")
+                .viewing_keys()
+        };
+        let account = |index| SubwalletId::new(wallet_id, index);
+        let register = |seed_of_account_1: u8, recorder: Arc<RecordingPersistence>| {
+            let account_views: BTreeMap<u32, AccountViewingKeys> =
+                [(0, views(0x42, 0)), (1, views(seed_of_account_1, 1))]
+                    .into_iter()
+                    .collect();
+            coordinator.register_wallet(
+                wallet_id,
+                account_views,
+                WalletPersister::new(wallet_id, recorder),
+            )
+        };
+        register(0x42, Arc::new(RecordingPersistence::default()))
+            .await
+            .unwrap();
+
+        let epoch = coordinator.store_epoch.watch();
+        let received = test_note([0xB3; 32], 3, false);
+        let mut pass = ShieldedChangeSet::default();
+        {
+            let mut store = coordinator.store().write().await;
+            store.save_note(account(1), &received).unwrap();
+            store.set_last_synced_note_index(account(1), 4096).unwrap();
+            pass.record_synced_index(account(1), 4096);
+            pass.record_note(account(1), received.clone());
+        }
+
+        let conn = rusqlite::Connection::open(dir.join("tree.sqlite")).expect("open db");
+        conn.execute_batch(
+            "ALTER TABLE shielded_pending_spends RENAME TO unavailable_pending_spends;",
+        )
+        .expect("break schema");
+        let replacement = Arc::new(RecordingPersistence::default());
+        let rebound = register(0x43, replacement.clone()).await;
+        conn.execute_batch(
+            "ALTER TABLE unavailable_pending_spends RENAME TO shielded_pending_spends;",
+        )
+        .expect("restore schema");
+        rebound.unwrap();
+        coordinator.queue_pass_changeset(&epoch, pass).await;
+
+        let rounds = replacement.0.lock().unwrap();
+        assert!(
+            !rounds.iter().any(|round| round.notes_saved.contains_key(&account(1))
+                || round.synced_indices.contains_key(&account(1))),
+            "the old key's receipt and watermark must not reach the replacement persister: {rounds:?}"
         );
         drop(rounds);
 
