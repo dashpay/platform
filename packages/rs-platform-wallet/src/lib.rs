@@ -50,7 +50,8 @@ pub use manager::dashpay_sync::{
     DEFAULT_SYNC_INTERVAL_SECS as DASHPAY_SYNC_DEFAULT_INTERVAL_SECS,
 };
 pub use manager::identity_sync::{
-    IdentitySyncManager, IdentityTokenSyncInfo, IdentityTokenSyncState,
+    IdentitySyncManager, IdentitySyncPassSummary, IdentityTokenSyncInfo, IdentityTokenSyncOutcome,
+    IdentityTokenSyncState, TokenBalanceBatchOutcome, TokenBalanceReadError,
     DEFAULT_SYNC_INTERVAL_SECS as IDENTITY_SYNC_DEFAULT_INTERVAL_SECS,
     MAX_TOKENS_PER_BALANCE_BATCH as IDENTITY_SYNC_MAX_TOKENS_PER_BATCH,
 };
@@ -101,6 +102,7 @@ pub use wallet::mnemonic::{
     first_receive_address_for_mnemonic, master_key_for_mnemonic, parse_mnemonic_any_language,
     seed_for_mnemonic, wallet_id_for_mnemonic,
 };
+pub use wallet::outpoint_locks::registered_collaterals;
 pub use wallet::platform_wallet::PlatformWalletInfo;
 #[cfg(feature = "shielded")]
 pub use wallet::platform_wallet::{PrivateReplyPayment, ShieldedShieldPreflight};

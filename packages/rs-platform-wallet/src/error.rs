@@ -8,7 +8,7 @@ use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::prelude::{AddressNonce, CoreBlockHeight};
-use key_wallet::account::StandardAccountType;
+use key_wallet::account::{AccountType, StandardAccountType};
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 use key_wallet::wallet::managed_wallet_info::transaction_building::AccountTypePreference;
 use key_wallet::Network;
@@ -183,6 +183,15 @@ pub enum PlatformWalletError {
         contact: Identifier,
         network: Network,
         account_index: u32,
+    },
+
+    /// key-wallet could not build the address pools of a DashPay account
+    /// from its xpub.
+    #[error("Failed to build DashPay account {account_type}: {source}")]
+    DashpayAccountBuild {
+        account_type: AccountType,
+        #[source]
+        source: key_wallet::Error,
     },
 
     #[error("Asset lock transaction failed: {0}")]
@@ -680,6 +689,20 @@ pub enum PlatformWalletError {
 
     #[error("SDK error: {0}")]
     Sdk(#[from] dash_sdk::Error),
+
+    /// Platform could not be asked for an identity an operation names, so
+    /// nothing was signed, reserved or broadcast: the operation never
+    /// started and may be retried as it is. Distinct from [`Self::Sdk`],
+    /// which a host that treats an unknown error as "may have gone through"
+    /// cannot tell from a failure after a dispatch, and from
+    /// [`Self::IdentityNotFound`], which is Platform's answer that the
+    /// identity does not exist. `source` is the SDK's error.
+    #[error("could not look up identity {identity_id} on Platform; nothing was sent: {source}")]
+    IdentityLookupFailed {
+        identity_id: Identifier,
+        #[source]
+        source: dash_sdk::Error,
+    },
 
     /// The contact requests with this identity came or went privately
     /// (protocol version 15): a `contactRequest` document to it, in reply or

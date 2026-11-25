@@ -68,6 +68,7 @@ use super::contact_requests::{
     newest_sent_per_recipient, predates, records_or_supersedes, tear_down_stale_external_accounts,
     AutoAcceptProofSource, ContactCryptoProvider, PreparedContactRequest, ReplyOutcome,
 };
+use super::loading::FoldStoreFailure;
 use super::signing_key::first_available;
 use super::{dashpay_contract, DashPayView, IdentityWallet};
 use crate::broadcaster::TransactionBroadcaster;
@@ -1220,7 +1221,9 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
         let mut uncovered = PrivateStoreCoverage::Unread;
         for _ in 0..PRIVATE_KEY_COVERAGE_ATTEMPTS {
             let read = self.read_private_store_to_end(identity_id, crypto).await?;
-            let (_, identity_height) = self.fetch_and_fold_identity(identity_id).await?;
+            let (_, identity_height) = self
+                .fetch_and_fold_identity(identity_id, FoldStoreFailure::Log)
+                .await?;
             self.reconcile_private_scan_keys().await?;
             match self
                 .private_store_coverage(identity_id, identity_height)
@@ -3254,6 +3257,7 @@ mod tests {
                     unused_asset_locks: BTreeMap::new(),
                     unconfirmed_outgoing_txs: Vec::new(),
                     dashpay_backfill: Default::default(),
+                    funding_issuance_floors: Default::default(),
                 },
             );
             #[allow(unused_mut)]

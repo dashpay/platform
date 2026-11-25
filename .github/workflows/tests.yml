@@ -164,6 +164,7 @@ jobs:
               - packages/wallet-lib/**
               - packages/wasm-sdk/**
               - packages/wasm-dpp2/**
+              - packages/scripts/build-wasm.sh
               - packages/js-evo-sdk/**
               - packages/dapi/.env.example
               - packages/rs-drive-abci/.env.local

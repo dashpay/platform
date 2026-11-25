@@ -73,6 +73,7 @@ use crate::manager::{
     coordinator_worker_config, drain_pass, QuiesceGate, QuiesceGuard, SyncSlotGuard, WalletWorker,
     COORDINATOR_DRAIN_BUDGET, LATCHED_RETRY_INTERVAL,
 };
+use crate::wallet::identity::BlockTime;
 use crate::wallet::platform_wallet::WalletId;
 
 /// Default cadence for the identity-token sync loop.
@@ -141,6 +142,88 @@ pub struct IdentityTokenSyncState {
     pub last_sync_unix: u64,
     /// One row per watched token for this identity.
     pub tokens: Vec<IdentityTokenSyncInfo>,
+}
+
+/// Why reading one batch of an identity's token balances failed.
+#[derive(Debug, thiserror::Error)]
+pub enum TokenBalanceReadError {
+    /// Platform could not be queried, or its proof did not verify.
+    #[error("could not read token balances from Platform")]
+    Fetch(#[source] dash_sdk::Error),
+}
+
+/// Outcome of reading one batch of an identity's watched token balances.
+#[derive(Debug)]
+pub enum TokenBalanceBatchOutcome {
+    /// Platform answered with proved balances.
+    Ok {
+        /// Balance per requested token; `None` means Platform proved there is none.
+        balances: BTreeMap<Identifier, Option<TokenAmount>>,
+        /// Platform block at which `balances` were proved.
+        proved_at: BlockTime,
+    },
+    /// The read failed; the cached balances of `token_ids` were left unchanged.
+    Err {
+        /// Tokens this batch requested.
+        token_ids: Vec<Identifier>,
+        /// Why the read failed.
+        error: TokenBalanceReadError,
+    },
+}
+
+impl TokenBalanceBatchOutcome {
+    /// Whether this batch was read successfully.
+    pub fn is_ok(&self) -> bool {
+        matches!(self, TokenBalanceBatchOutcome::Ok { .. })
+    }
+}
+
+/// Outcome of syncing a single identity's watched tokens in a pass.
+#[derive(Debug, Default)]
+pub struct IdentityTokenSyncOutcome {
+    /// One entry per balance batch, in the order the batches were read.
+    pub batches: Vec<TokenBalanceBatchOutcome>,
+}
+
+impl IdentityTokenSyncOutcome {
+    /// Whether every batch of this identity was read successfully.
+    pub fn is_ok(&self) -> bool {
+        self.batches.iter().all(TokenBalanceBatchOutcome::is_ok)
+    }
+}
+
+/// Summary of one full identity-token sync pass across every registered
+/// identity.
+#[derive(Debug, Default)]
+pub struct IdentitySyncPassSummary {
+    /// Per-identity outcomes keyed by identity id. Identities with no
+    /// watched tokens are not read and do not appear.
+    pub identity_results: BTreeMap<Identifier, IdentityTokenSyncOutcome>,
+    /// Unix seconds at which the pass completed. `0` means "no pass ran"
+    /// (a concurrent pass was in flight, or sync admission was closed).
+    pub sync_unix_seconds: u64,
+}
+
+impl IdentitySyncPassSummary {
+    /// Whether no identity was read this pass.
+    pub fn is_empty(&self) -> bool {
+        self.identity_results.is_empty()
+    }
+
+    /// Whether this pass ran rather than being skipped.
+    pub fn pass_ran(&self) -> bool {
+        self.sync_unix_seconds != 0
+    }
+
+    /// Number of identities whose every batch was read successfully.
+    pub fn success_count(&self) -> usize {
+        self.identity_results.values().filter(|o| o.is_ok()).count()
+    }
+
+    /// Number of identities with at least one failed batch.
+    pub fn error_count(&self) -> usize {
+        self.identity_results.len() - self.success_count()
+    }
 }
 
 /// Periodic per-identity token state sync coordinator.
@@ -552,6 +635,24 @@ where
         drained
     }
 
+    /// Test-only: claim the `is_syncing` slot and never release it,
+    /// standing in for a pass wedged in a network / persister await.
+    /// Returns `false` if the slot was already taken.
+    #[cfg(test)]
+    pub(crate) fn wedge_sync_slot_for_test(&self) -> bool {
+        self.is_syncing
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    }
+
+    /// Test-only: release a slot taken by
+    /// [`wedge_sync_slot_for_test`](Self::wedge_sync_slot_for_test), as the
+    /// wedged pass finally draining would.
+    #[cfg(test)]
+    pub(crate) fn release_sync_slot_for_test(&self) {
+        self.is_syncing.store(false, Ordering::Release);
+    }
+
     /// Test-only: whether new sync passes are currently barred — a drain in
     /// flight, a latched timeout, or the terminal seal `shutdown` applies.
     #[cfg(test)]
@@ -561,15 +662,17 @@ where
 
     /// Run one sync pass across every registered identity.
     ///
-    /// If a pass is already in flight, returns immediately without
-    /// doing any work (re-entrant safe).
+    /// If a pass is already in flight, or sync admission is closed,
+    /// returns an empty summary with `sync_unix_seconds == 0` without
+    /// doing any work (re-entrant safe). Per-batch read failures are
+    /// logged and recorded in the summary but never abort the sweep.
     ///
     /// Iteration order: identities in `Identifier` order, batches in
     /// token-id order. Sequential — no parallelism across batches or
     /// identities — both because the SDK token-fetch futures are
     /// `!Send` (no `tokio::spawn`) and because the design brief
     /// explicitly forbids it.
-    pub async fn sync_now(&self) {
+    pub async fn sync_now(&self) -> IdentitySyncPassSummary {
         // A drained timeout latch is cleared here as well as in `start()`:
         // with no loop running, a one-shot pass after a timed-out drain
         // would otherwise bail on the stale latch until something
@@ -582,7 +685,7 @@ where
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
-            return;
+            return IdentitySyncPassSummary::default();
         }
         // Clears `is_syncing` on every exit path — including panic unwind —
         // so a failed pass can never wedge `quiesce()`'s drain.
@@ -593,7 +696,7 @@ where
         // so the drain can complete and shutdown gets a true barrier
         // (no further `persister.store(...)` after quiesce returns).
         if self.quiescing.is_closed() {
-            return;
+            return IdentitySyncPassSummary::default();
         }
 
         // Snapshot the per-identity watch list under a short read
@@ -609,15 +712,19 @@ where
                 .collect()
         };
 
+        let mut summary = IdentitySyncPassSummary::default();
         for (identity_id, token_ids) in per_identity {
-            self.sync_identity(identity_id, &token_ids).await;
+            let outcome = self.sync_identity(identity_id, &token_ids).await;
+            summary.identity_results.insert(identity_id, outcome);
         }
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
+        summary.sync_unix_seconds = now;
         self.last_sync_unix.store(now, Ordering::Release);
+        summary
     }
 
     /// Sync a single identity's watched tokens against Platform.
@@ -628,12 +735,18 @@ where
     /// [`TokenBalanceChangeSet`] for the persister, and rewrites this
     /// manager's per-identity cache row.
     ///
-    /// Errors are logged and the per-identity row is left at its
-    /// previous value rather than being cleared — a transient DAPI
-    /// error shouldn't drop the cached balance from under the UI.
-    async fn sync_identity(&self, identity_id: Identifier, token_ids: &[Identifier]) {
+    /// Errors are logged, reported per batch in the returned outcome, and
+    /// the per-identity row is left at its previous value rather than
+    /// being cleared — a transient DAPI error shouldn't drop the cached
+    /// balance from under the UI.
+    async fn sync_identity(
+        &self,
+        identity_id: Identifier,
+        token_ids: &[Identifier],
+    ) -> IdentityTokenSyncOutcome {
+        let mut outcome = IdentityTokenSyncOutcome::default();
         if token_ids.is_empty() {
-            return;
+            return outcome;
         }
 
         // Accumulate balances across batches before touching the
@@ -646,17 +759,21 @@ where
                 token_ids: chunk.to_vec(),
             };
 
-            // Type-annotate the call site explicitly: `fetch_many`
+            // Type-annotate the call site explicitly: `fetch_many_with_metadata`
             // is generic over the response type, and the inference
             // chain through `RetrievedObjects` doesn't pick a unique
             // implementor without a hint.
-            let fetched: Result<IdentityTokenBalances, _> =
-                TokenAmount::fetch_many(self.sdk.as_ref(), query).await;
+            let fetched: Result<(IdentityTokenBalances, _), _> =
+                TokenAmount::fetch_many_with_metadata(self.sdk.as_ref(), query, None).await;
             match fetched {
-                Ok(result) => {
-                    for (token_id, maybe_balance) in result.iter() {
-                        fresh_balances.insert(*token_id, *maybe_balance);
-                    }
+                Ok((result, metadata)) => {
+                    let balances: BTreeMap<Identifier, Option<TokenAmount>> =
+                        result.iter().map(|(id, b)| (*id, *b)).collect();
+                    fresh_balances.extend(&balances);
+                    outcome.batches.push(TokenBalanceBatchOutcome::Ok {
+                        balances,
+                        proved_at: BlockTime::from(metadata),
+                    });
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -668,15 +785,18 @@ where
                     // Skip this batch; do not poison fresh_balances.
                     // Other batches for this identity may still
                     // succeed.
+                    outcome.batches.push(TokenBalanceBatchOutcome::Err {
+                        token_ids: chunk.to_vec(),
+                        error: TokenBalanceReadError::Fetch(e),
+                    });
                 }
             }
         }
 
-        if fresh_balances.is_empty() {
-            return;
+        if !fresh_balances.is_empty() {
+            self.apply_fresh_balances(identity_id, fresh_balances).await;
         }
-
-        self.apply_fresh_balances(identity_id, fresh_balances).await;
+        outcome
     }
 
     async fn apply_fresh_balances(
@@ -831,13 +951,62 @@ mod tests {
     /// running runtime for the registry/lifecycle tests below; none
     /// of them exercise the network path.
     fn make_manager() -> Arc<IdentitySyncManager<NoopPersister>> {
+        make_manager_with_registry().0
+    }
+
+    /// [`make_manager`] plus the registry that owns the loop thread, for
+    /// tests that join it.
+    fn make_manager_with_registry() -> (
+        Arc<IdentitySyncManager<NoopPersister>>,
+        Arc<ThreadRegistry<WalletWorker>>,
+    ) {
         let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
         let persister = Arc::new(NoopPersister);
-        Arc::new(IdentitySyncManager::new(
-            sdk,
+        let registry = ThreadRegistry::<WalletWorker>::new();
+        (
+            Arc::new(IdentitySyncManager::new(
+                sdk,
+                persister,
+                Arc::clone(&registry),
+            )),
+            registry,
+        )
+    }
+
+    const PROVED_HEIGHT: u64 = 4_242;
+    const PROVED_TIME_MS: u64 = 1_750_000_000_000;
+
+    /// Build a recording manager whose mock SDK answers exactly the given
+    /// balance queries, proved at [`PROVED_HEIGHT`] / [`PROVED_TIME_MS`].
+    /// Any other query fails, standing in for a DAPI error.
+    async fn make_answering_manager(
+        answers: Vec<(IdentityTokenBalancesQuery, IdentityTokenBalances)>,
+    ) -> (
+        Arc<IdentitySyncManager<RecordingPersister>>,
+        Arc<RecordingPersister>,
+    ) {
+        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk");
+        let mut mock = sdk.mock();
+        mock.set_response_height(PROVED_HEIGHT)
+            .set_response_time_ms(PROVED_TIME_MS);
+        for (query, balances) in answers {
+            mock.expect_fetch_many::<Identifier, TokenAmount, _, IdentityTokenBalances>(
+                query,
+                Some(balances),
+            )
+            .await
+            .expect("token balances expectation");
+        }
+        drop(mock);
+        let persister = Arc::new(RecordingPersister::new());
+        (
+            Arc::new(IdentitySyncManager::new(
+                Arc::new(sdk),
+                Arc::clone(&persister),
+                ThreadRegistry::<WalletWorker>::new(),
+            )),
             persister,
-            ThreadRegistry::<WalletWorker>::new(),
-        ))
+        )
     }
 
     fn make_recording_manager() -> (
@@ -975,58 +1144,44 @@ mod tests {
     /// `quiesce()` must not return while a pass is in flight, and must
     /// return promptly once the pass drains.
     ///
-    /// Drives the real `is_syncing` lifecycle: a background task takes
-    /// the slot via the same `compare_exchange` the real `sync_now`
-    /// uses, holds it across a sleep (standing in for the pass body +
-    /// persister fan-out, which `sync_now` keeps the flag set across),
-    /// then clears it. We assert `quiesce()` is still pending while the
-    /// flag is held and completes after it falls — i.e. the falling edge
-    /// of `is_syncing` is what unblocks the barrier.
+    /// Drives the real `is_syncing` lifecycle: the test takes the slot
+    /// via the same `compare_exchange` the real `sync_now` uses and holds
+    /// it (standing in for the pass body + persister fan-out, which
+    /// `sync_now` keeps the flag set across), then clears it. We assert
+    /// `quiesce()` is still pending while the flag is held and completes
+    /// after it falls — i.e. the falling edge of `is_syncing` is what
+    /// unblocks the barrier.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn quiesce_blocks_until_in_flight_pass_drains() {
         let mgr = make_manager();
 
-        // Stand in for an in-flight `sync_now`: take the `is_syncing`
-        // slot exactly as the real pass does, hold it, then release.
-        let holder = Arc::clone(&mgr);
-        let pass = tokio::spawn(async move {
-            assert!(
-                holder
-                    .is_syncing
-                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-                    .is_ok(),
-                "test should own the is_syncing slot"
-            );
-            tokio::time::sleep(Duration::from_millis(200)).await;
-            holder.is_syncing.store(false, Ordering::Release);
-        });
-
-        // Give the holder task a chance to take the slot before we
-        // start draining.
-        while !mgr.is_syncing() {
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
+        // Hold the slot as an in-flight pass would, for exactly as long as
+        // the test decides — no timer the test could miss on a loaded runner.
+        assert!(
+            mgr.wedge_sync_slot_for_test(),
+            "test should own the is_syncing slot"
+        );
 
         let quiesce_fut = mgr.quiesce();
         tokio::pin!(quiesce_fut);
 
-        // While the pass holds the flag, quiesce must stay pending.
-        tokio::select! {
-            _ = &mut quiesce_fut => panic!("quiesce returned while a pass was in flight"),
-            _ = tokio::time::sleep(Duration::from_millis(50)) => {}
-        }
+        // While the pass holds the slot, quiesce must stay pending, with
+        // admission already shut.
+        assert!(
+            futures::poll!(quiesce_fut.as_mut()).is_pending(),
+            "quiesce returned while a pass was in flight"
+        );
+        assert!(mgr.sync_admission_closed());
         assert!(mgr.is_syncing(), "pass should still be in flight");
 
-        // Once the pass drains, quiesce must return (well within a
-        // generous bound — it polls every 20ms).
-        tokio::time::timeout(Duration::from_secs(2), &mut quiesce_fut)
+        // Once the pass drains, quiesce must return, with admission reopened.
+        mgr.release_sync_slot_for_test();
+        let drained = tokio::time::timeout(Duration::from_secs(2), quiesce_fut)
             .await
             .expect("quiesce did not return after the pass drained");
-
-        // The gate is reopened before quiesce returns.
-        assert!(!mgr.quiescing.is_closed());
+        assert!(drained);
+        assert!(!mgr.sync_admission_closed());
         assert!(!mgr.is_syncing());
-        pass.await.unwrap();
     }
 
     /// A pass that never drains must NOT hang `quiesce_within` forever:
@@ -1038,10 +1193,7 @@ mod tests {
     async fn quiesce_within_times_out_and_leaves_gate_up_when_pass_never_drains() {
         let mgr = make_manager();
 
-        assert!(mgr
-            .is_syncing
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok());
+        assert!(mgr.wedge_sync_slot_for_test());
 
         let drained = tokio::time::timeout(
             Duration::from_secs(2),
@@ -1051,13 +1203,13 @@ mod tests {
         .expect("bounded quiesce must return at its deadline");
         assert!(!drained, "a wedged pass must be reported as non-drained");
         assert!(
-            mgr.quiescing.is_closed(),
+            mgr.sync_admission_closed(),
             "gate must stay up after a timed-out drain"
         );
 
-        mgr.is_syncing.store(false, Ordering::Release);
+        mgr.release_sync_slot_for_test();
         assert!(mgr.quiesce().await);
-        assert!(!mgr.quiescing.is_closed());
+        assert!(!mgr.sync_admission_closed());
     }
 
     /// A `sync_now()` invoked while `quiescing` is set must bail without
@@ -1073,15 +1225,142 @@ mod tests {
 
         // Raise the gate as an in-flight `quiesce()` would (a drain holds
         // the gate from its first instruction).
-        let gate_hold = mgr.quiescing.hold();
+        let gate_hold = mgr
+            .quiesce_held_within(Duration::from_secs(1))
+            .await
+            .expect("an idle coordinator must drain immediately");
 
-        mgr.sync_now().await;
+        let summary = mgr.sync_now().await;
 
         // No persister store happened, and the slot was released so a
         // later (post-quiesce) pass can still run.
         assert_eq!(persister.stores.load(AtomicOrdering::SeqCst), 0);
+        assert!(!summary.pass_ran(), "a skipped pass must not report as ran");
+        assert!(summary.is_empty());
         assert!(!mgr.is_syncing());
         drop(gate_hold);
+    }
+
+    /// A successful read reports the proved balances and the Platform block
+    /// they were proved at, so a caller can order them against local writes.
+    #[tokio::test]
+    async fn should_report_proved_balances_and_block_for_each_identity_read() {
+        let id_a = Identifier::from([1u8; 32]);
+        let token_x = Identifier::from([10u8; 32]);
+        let token_y = Identifier::from([11u8; 32]);
+        let query = IdentityTokenBalancesQuery {
+            identity_id: id_a,
+            token_ids: vec![token_x, token_y],
+        };
+        let answer: IdentityTokenBalances = [(token_x, Some(7u64)), (token_y, None)]
+            .into_iter()
+            .collect();
+        let (mgr, _persister) = make_answering_manager(vec![(query, answer)]).await;
+        mgr.register_identity(id_a, [token_x, token_y]).await;
+
+        let summary = mgr.sync_now().await;
+
+        assert!(summary.pass_ran());
+        assert_eq!(summary.success_count(), 1);
+        assert_eq!(summary.error_count(), 0);
+        let outcome = summary.identity_results.get(&id_a).expect("identity read");
+        assert!(outcome.is_ok());
+        match outcome.batches.as_slice() {
+            [TokenBalanceBatchOutcome::Ok {
+                balances,
+                proved_at,
+            }] => {
+                assert_eq!(balances.get(&token_x), Some(&Some(7)));
+                assert_eq!(balances.get(&token_y), Some(&None));
+                assert_eq!(*proved_at, BlockTime::new(PROVED_HEIGHT, 0, PROVED_TIME_MS));
+            }
+            other => panic!("expected one proved batch, got {other:?}"),
+        }
+    }
+
+    /// A failed read is reported with a typed error for the identity, and the
+    /// failed identity's cache row keeps its unchecked placeholder.
+    #[tokio::test]
+    async fn should_report_typed_failure_for_identity_whose_read_fails() {
+        let id_a = Identifier::from([1u8; 32]);
+        let id_b = Identifier::from([2u8; 32]);
+        let token_x = Identifier::from([10u8; 32]);
+        let query_a = IdentityTokenBalancesQuery {
+            identity_id: id_a,
+            token_ids: vec![token_x],
+        };
+        let answer: IdentityTokenBalances = [(token_x, Some(3u64))].into_iter().collect();
+        let (mgr, _persister) = make_answering_manager(vec![(query_a, answer)]).await;
+        mgr.register_identity(id_a, [token_x]).await;
+        mgr.register_identity(id_b, [token_x]).await;
+
+        let summary = mgr.sync_now().await;
+
+        assert!(summary.pass_ran());
+        assert_eq!(summary.success_count(), 1);
+        assert_eq!(summary.error_count(), 1);
+        assert!(summary.identity_results[&id_a].is_ok());
+        let failed = &summary.identity_results[&id_b];
+        assert!(!failed.is_ok());
+        match failed.batches.as_slice() {
+            [TokenBalanceBatchOutcome::Err {
+                token_ids,
+                error: TokenBalanceReadError::Fetch(_),
+            }] => assert_eq!(token_ids, &vec![token_x]),
+            other => panic!("expected one failed batch, got {other:?}"),
+        }
+        let row_b = mgr.state_for_identity(&id_b).await.expect("row kept");
+        assert_eq!(row_b.last_sync_unix, 0);
+        assert_eq!(row_b.tokens[0].balance, 0);
+    }
+
+    /// When one batch of an identity fails and another succeeds, each batch
+    /// reports its own outcome, so the failed batch's placeholders are not
+    /// mistaken for checked balances (dashpay/platform#5771).
+    #[tokio::test]
+    async fn should_report_each_batch_when_one_batch_of_an_identity_fails() {
+        let id_a = Identifier::from([1u8; 32]);
+        let tokens: Vec<Identifier> = (0..=MAX_TOKENS_PER_BALANCE_BATCH)
+            .map(|i| {
+                let mut bytes = [0u8; 32];
+                bytes[..8].copy_from_slice(&(i as u64).to_be_bytes());
+                Identifier::from(bytes)
+            })
+            .collect();
+        let (first, rest) = tokens.split_at(MAX_TOKENS_PER_BALANCE_BATCH);
+        let query = IdentityTokenBalancesQuery {
+            identity_id: id_a,
+            token_ids: first.to_vec(),
+        };
+        let answer: IdentityTokenBalances = first.iter().map(|t| (*t, Some(1u64))).collect();
+        let (mgr, _persister) = make_answering_manager(vec![(query, answer)]).await;
+        mgr.register_identity(id_a, tokens.clone()).await;
+
+        let summary = mgr.sync_now().await;
+
+        let outcome = &summary.identity_results[&id_a];
+        assert!(!outcome.is_ok());
+        assert_eq!(summary.error_count(), 1);
+        match outcome.batches.as_slice() {
+            [TokenBalanceBatchOutcome::Ok { balances, .. }, TokenBalanceBatchOutcome::Err { token_ids, .. }] =>
+            {
+                assert_eq!(balances.len(), MAX_TOKENS_PER_BALANCE_BATCH);
+                assert_eq!(token_ids.as_slice(), rest);
+            }
+            other => panic!("expected a proved then a failed batch, got {other:?}"),
+        }
+    }
+
+    /// A pass that ran with nothing to read still reports as ran, unlike a
+    /// pass skipped because admission was closed.
+    #[tokio::test]
+    async fn should_report_pass_with_no_watched_identities_as_ran() {
+        let mgr = make_manager();
+
+        let summary = mgr.sync_now().await;
+
+        assert!(summary.pass_ran());
+        assert!(summary.is_empty());
     }
 
     /// Round-trip: register → read → update_watched_tokens → read.
@@ -1136,5 +1415,301 @@ mod tests {
         let unknown = Identifier::from([99u8; 32]);
         mgr.update_watched_tokens(unknown, [token_x]).await;
         assert!(mgr.state_for_identity(&unknown).await.is_none());
+    }
+
+    /// Poll until the coordinator has stamped a completed pass.
+    async fn wait_for_a_pass(stamped: impl Fn() -> bool, what: &str) {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while !stamped() {
+            assert!(tokio::time::Instant::now() < deadline, "{what}");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+
+    /// Admission stays shut for as long as the drain's guard is held and
+    /// is restored when it drops.
+    #[tokio::test]
+    async fn should_bar_passes_until_the_quiesce_guard_drops() {
+        let mgr = make_manager();
+
+        let guard = mgr
+            .quiesce_held_within(Duration::from_secs(1))
+            .await
+            .expect("an idle coordinator must drain immediately");
+        assert!(mgr.sync_admission_closed());
+
+        mgr.sync_now().await;
+        assert_eq!(
+            mgr.last_sync_unix_seconds(),
+            None,
+            "no pass may run while the guard is held"
+        );
+        assert!(!mgr.is_syncing(), "the slot must be released on the bail");
+
+        drop(guard);
+
+        assert!(!mgr.sync_admission_closed());
+        mgr.sync_now().await;
+        assert!(mgr.last_sync_unix_seconds().is_some());
+    }
+
+    /// Overlapping holders compose: the gate reopens only when the last
+    /// guard drops.
+    #[tokio::test]
+    async fn should_reopen_admission_only_after_the_last_quiesce_guard_drops() {
+        let mgr = make_manager();
+
+        let outer = mgr
+            .quiesce_held_within(Duration::from_secs(1))
+            .await
+            .expect("drain");
+        let inner = mgr
+            .quiesce_held_within(Duration::from_secs(1))
+            .await
+            .expect("drain");
+
+        drop(inner);
+        assert!(
+            mgr.sync_admission_closed(),
+            "the outer holder is still mutating; admission must stay shut"
+        );
+
+        drop(outer);
+        assert!(!mgr.sync_admission_closed());
+    }
+
+    /// The shutdown drain seals the gate: no later pass or drain reopens
+    /// it.
+    #[tokio::test]
+    async fn should_never_reopen_admission_after_a_sealed_quiesce() {
+        let mgr = make_manager();
+
+        assert!(mgr.quiesce_sealed_within(Duration::from_secs(1)).await);
+        assert!(mgr.sync_admission_closed(), "seal must leave the gate shut");
+
+        mgr.sync_now().await;
+        assert_eq!(mgr.last_sync_unix_seconds(), None);
+
+        assert!(mgr.quiesce().await);
+        assert!(mgr.sync_admission_closed());
+        mgr.sync_now().await;
+        assert_eq!(mgr.last_sync_unix_seconds(), None);
+        assert!(!mgr.is_syncing());
+    }
+
+    /// A sealed drain that times out still seals, and reports non-drained.
+    #[tokio::test]
+    async fn should_seal_admission_even_when_the_sealed_quiesce_times_out() {
+        let mgr = make_manager();
+        assert!(mgr.wedge_sync_slot_for_test());
+
+        assert!(!mgr.quiesce_sealed_within(Duration::from_millis(50)).await);
+
+        mgr.release_sync_slot_for_test();
+        mgr.sync_now().await;
+        assert!(
+            mgr.sync_admission_closed(),
+            "a sealed gate survives the drained-latch reopen"
+        );
+        assert_eq!(mgr.last_sync_unix_seconds(), None);
+    }
+
+    /// A loop started behind a pass a timed-out drain gave up on runs no
+    /// pass while that one is wedged, and resumes once it drains.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn should_resume_passes_once_the_wedged_pass_drains_after_start() {
+        let mgr = make_manager();
+
+        assert!(mgr.wedge_sync_slot_for_test());
+        assert!(!mgr.quiesce_within(Duration::from_millis(50)).await);
+        assert!(
+            mgr.sync_admission_closed(),
+            "timed-out drain latches the gate"
+        );
+
+        // The loop's first attempt loses the slot CAS to the wedge; it then
+        // polls at `LATCHED_RETRY_INTERVAL`, not the 60 s default.
+        Arc::clone(&mgr).start();
+        assert!(mgr.is_running());
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        assert!(
+            mgr.sync_admission_closed(),
+            "gate stays latched while wedged"
+        );
+        assert_eq!(
+            mgr.last_sync_unix_seconds(),
+            None,
+            "no pass may run behind a wedged one"
+        );
+
+        mgr.release_sync_slot_for_test();
+        wait_for_a_pass(
+            || mgr.last_sync_unix_seconds().is_some(),
+            "loop never resumed passes after the wedged pass drained",
+        )
+        .await;
+        assert!(!mgr.sync_admission_closed(), "latch is cleared");
+
+        mgr.stop();
+        assert!(mgr.quiesce().await);
+    }
+
+    /// The wedged pass is already gone when `start()` runs: the start
+    /// itself clears the latch.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn should_reopen_a_latched_gate_on_start_when_the_wedged_pass_is_gone() {
+        let mgr = make_manager();
+
+        assert!(mgr.wedge_sync_slot_for_test());
+        assert!(!mgr.quiesce_within(Duration::from_millis(50)).await);
+        mgr.release_sync_slot_for_test();
+        assert!(
+            mgr.sync_admission_closed(),
+            "latch outlives the wedged pass"
+        );
+
+        Arc::clone(&mgr).start();
+        assert!(!mgr.sync_admission_closed(), "start clears a stale latch");
+
+        wait_for_a_pass(
+            || mgr.last_sync_unix_seconds().is_some(),
+            "loop never ran a pass after start cleared the latch",
+        )
+        .await;
+
+        mgr.stop();
+        assert!(mgr.quiesce().await);
+    }
+
+    /// A one-shot `sync_now` with no loop running clears a latch whose
+    /// wedged pass has drained, and not one whose pass is still wedged.
+    #[tokio::test]
+    async fn should_reopen_a_drained_latch_on_sync_now() {
+        let mgr = make_manager();
+
+        assert!(mgr.wedge_sync_slot_for_test());
+        assert!(!mgr.quiesce_within(Duration::from_millis(50)).await);
+        mgr.sync_now().await;
+        assert_eq!(mgr.last_sync_unix_seconds(), None, "bails behind the wedge");
+        assert!(mgr.sync_admission_closed(), "latch stays while wedged");
+
+        mgr.release_sync_slot_for_test();
+        mgr.sync_now().await;
+        assert!(
+            mgr.last_sync_unix_seconds().is_some(),
+            "a direct pass runs once the wedged pass is gone"
+        );
+        assert!(
+            !mgr.sync_admission_closed(),
+            "the direct pass cleared the latch"
+        );
+    }
+
+    /// The first pass runs as soon as the loop starts, not one interval
+    /// later (the default interval is far longer than the wait here).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn should_run_first_pass_immediately_after_start() {
+        let mgr = make_manager();
+
+        Arc::clone(&mgr).start();
+        wait_for_a_pass(
+            || mgr.last_sync_unix_seconds().is_some(),
+            "the loop never ran its first pass",
+        )
+        .await;
+
+        mgr.stop();
+        assert!(mgr.quiesce().await);
+    }
+
+    /// A pass over an empty registry still completes and stamps the
+    /// coordinator.
+    #[tokio::test]
+    async fn should_stamp_a_completed_pass() {
+        let mgr = make_manager();
+        assert_eq!(mgr.last_sync_unix_seconds(), None);
+
+        mgr.sync_now().await;
+
+        assert!(mgr.last_sync_unix_seconds().is_some());
+        assert!(!mgr.is_syncing());
+    }
+
+    /// A second `sync_now` while a pass holds the slot does nothing: no
+    /// timestamp, and the slot it lost stays with its owner.
+    #[tokio::test]
+    async fn should_skip_sync_now_while_slot_is_held() {
+        let mgr = make_manager();
+        assert!(mgr.wedge_sync_slot_for_test());
+
+        mgr.sync_now().await;
+
+        assert_eq!(mgr.last_sync_unix_seconds(), None);
+        assert!(
+            mgr.is_syncing(),
+            "the losing call must not release the in-flight pass's slot"
+        );
+        assert!(!mgr.sync_admission_closed());
+
+        mgr.release_sync_slot_for_test();
+        mgr.sync_now().await;
+        assert!(mgr.last_sync_unix_seconds().is_some());
+    }
+
+    /// A refused `sync_now` behind a closed gate leaves no timestamp.
+    #[tokio::test]
+    async fn should_not_stamp_sync_now_refused_by_a_shut_gate() {
+        let mgr = make_manager();
+        let _guard = mgr
+            .quiesce_held_within(Duration::from_secs(1))
+            .await
+            .expect("drain");
+
+        mgr.sync_now().await;
+
+        assert_eq!(mgr.last_sync_unix_seconds(), None);
+    }
+
+    /// `start()` on a running loop is a no-op: the loop keeps running, one
+    /// `stop()` cancels it, and exactly one thread is there to join.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn should_ignore_start_when_loop_is_running() {
+        let (mgr, registry) = make_manager_with_registry();
+
+        Arc::clone(&mgr).start();
+        assert!(mgr.is_running());
+
+        Arc::clone(&mgr).start();
+        assert!(mgr.is_running());
+
+        mgr.stop();
+        assert!(!mgr.is_running(), "one stop cancels the only loop");
+        let report = registry.shutdown().await;
+        assert!(report.all_clean(), "clean join: {report:?}");
+        assert_eq!(report.detached, 0, "no second loop thread was left behind");
+    }
+
+    /// A `stop()` followed at once by `start()` leaves the new loop
+    /// running and cancellable, and both generations join cleanly.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn should_keep_new_loop_cancellable_after_stop_then_quick_start() {
+        let (mgr, registry) = make_manager_with_registry();
+
+        Arc::clone(&mgr).start();
+        assert!(mgr.is_running());
+
+        mgr.stop();
+        assert!(!mgr.is_running(), "stop() clears the running flag at once");
+
+        Arc::clone(&mgr).start();
+        assert!(mgr.is_running(), "loop B must be running after the restart");
+
+        mgr.stop();
+        assert!(!mgr.is_running());
+        let report = registry.shutdown().await;
+        assert!(
+            report.all_clean(),
+            "clean shutdown after restart: {report:?}"
+        );
     }
 }

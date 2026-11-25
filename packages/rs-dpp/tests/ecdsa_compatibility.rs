@@ -276,6 +276,24 @@ fn should_reject_high_s_verification_but_accept_high_s_recovery() {
     .unwrap();
 }
 
+/// A key that does not parse is reported before S is looked at, high or low, as every released
+/// Platform reports it.
+#[test]
+fn should_report_an_unreadable_key_before_a_high_s_value() {
+    let (data, signature, _) = fixture();
+    let unreadable_key = [0u8; 33];
+    let key_error = verify_data_signature(&data, &signature, &unreadable_key)
+        .unwrap_err()
+        .to_string();
+    assert_eq!(
+        verify_data_signature(&data, &high_s_twin(), &unreadable_key)
+            .unwrap_err()
+            .to_string(),
+        key_error
+    );
+    assert!(PublicKey::from_slice(&unreadable_key).is_err());
+}
+
 /// The historical signature with its header rewritten from that of a compressed key to that of
 /// an uncompressed one: R, S and the recovery id are untouched. Key recovery hashes the recovered
 /// key in its compressed form either way.

@@ -4,6 +4,7 @@
 //! addresses, and the unified `create_funded_asset_lock_proof` entry point.
 
 use crate::broadcaster::TransactionBroadcaster;
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use crate::changeset::ShieldedRecipientRaw;
@@ -11,7 +12,6 @@ use dashcore::Address as DashAddress;
 use dashcore::{OutPoint, Transaction, TxOut};
 use key_wallet::account::AccountType;
 use key_wallet::bip32::DerivationPath;
-use key_wallet::managed_account::address_pool::AddressState;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::signer::ExtendedPubKeySigner;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::{
@@ -33,6 +33,7 @@ use crate::wallet::core::InBroadcastPin;
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 use crate::ASSET_LOCK_FUNDING_SOURCES;
 
+use super::funding_account::funding_account_type;
 use super::manager::{AssetLockManager, DEFAULT_FEE_PER_KB};
 use super::tracked::{AssetLockStatus, TrackedAssetLock};
 use super::{input_cap_violation, AssetLockOperationContext, AssetLockOperationState};
@@ -297,9 +298,9 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         //    build the credit output P2PKH script.
         let funding_address = Self::peek_next_funding_address(
             &mut info.core_wallet,
-            wallet,
             funding_type,
             identity_index,
+            &info.funding_issuance_floors,
         )?;
 
         // 2. Build the credit output for the asset lock payload.
@@ -450,133 +451,102 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///
     /// The key-wallet builder's `next_private_key` will later find the same
     /// address, derive the private key, and mark it as used.
+    ///
+    /// Refuses an address at or below the account's entry in
+    /// `issuance_floors`: its key may already be handed out.
     fn peek_next_funding_address(
         wallet_info: &mut ManagedWalletInfo,
-        wallet: &Wallet,
         funding_type: AssetLockFundingType,
         identity_index: u32,
+        issuance_floors: &BTreeMap<AccountType, u32>,
     ) -> Result<DashAddress, PlatformWalletError> {
-        let (managed_account, account_xpub) = match funding_type {
-            AssetLockFundingType::IdentityRegistration => {
-                let xpub = wallet
-                    .accounts
-                    .identity_registration
-                    .as_ref()
-                    .map(|a| a.account_xpub);
-                let account = wallet_info
-                    .accounts
-                    .identity_registration
-                    .as_mut()
-                    .ok_or_else(|| {
-                        PlatformWalletError::AssetLockTransaction(
-                            "Identity registration account not found".to_string(),
-                        )
-                    })?;
-                (account, xpub)
-            }
-            AssetLockFundingType::IdentityTopUp => {
-                let xpub = wallet
-                    .accounts
-                    .identity_topup
-                    .get(&identity_index)
-                    .map(|a| a.account_xpub);
-                let account = wallet_info
-                    .accounts
-                    .identity_topup
-                    .get_mut(&identity_index)
-                    .ok_or_else(|| {
-                        PlatformWalletError::AssetLockTransaction(format!(
-                            "Identity top-up account for index {} not found",
-                            identity_index
-                        ))
-                    })?;
-                (account, xpub)
-            }
-            AssetLockFundingType::IdentityTopUpNotBound => {
-                let xpub = wallet
-                    .accounts
-                    .identity_topup_not_bound
-                    .as_ref()
-                    .map(|a| a.account_xpub);
-                let account = wallet_info
-                    .accounts
-                    .identity_topup_not_bound
-                    .as_mut()
-                    .ok_or_else(|| {
-                        PlatformWalletError::AssetLockTransaction(
-                            "Identity top-up (unbound) account not found".to_string(),
-                        )
-                    })?;
-                (account, xpub)
-            }
-            AssetLockFundingType::IdentityInvitation => {
-                let xpub = wallet
-                    .accounts
-                    .identity_invitation
-                    .as_ref()
-                    .map(|a| a.account_xpub);
-                let account = wallet_info
-                    .accounts
-                    .identity_invitation
-                    .as_mut()
-                    .ok_or_else(|| {
-                        PlatformWalletError::AssetLockTransaction(
-                            "Identity invitation account not found".to_string(),
-                        )
-                    })?;
-                (account, xpub)
-            }
-            AssetLockFundingType::AssetLockAddressTopUp => {
-                let xpub = wallet
-                    .accounts
-                    .asset_lock_address_topup
-                    .as_ref()
-                    .map(|a| a.account_xpub);
-                let account = wallet_info
-                    .accounts
-                    .asset_lock_address_topup
-                    .as_mut()
-                    .ok_or_else(|| {
-                        PlatformWalletError::AssetLockTransaction(
-                            "Asset lock address top-up account not found".to_string(),
-                        )
-                    })?;
-                (account, xpub)
-            }
-            AssetLockFundingType::AssetLockShieldedAddressTopUp => {
-                let xpub = wallet
-                    .accounts
-                    .asset_lock_shielded_address_topup
-                    .as_ref()
-                    .map(|a| a.account_xpub);
-                let account = wallet_info
-                    .accounts
-                    .asset_lock_shielded_address_topup
-                    .as_mut()
-                    .ok_or_else(|| {
-                        PlatformWalletError::AssetLockTransaction(
-                            "Asset lock shielded address top-up account not found".to_string(),
-                        )
-                    })?;
-                (account, xpub)
-            }
+        let managed_account = match funding_type {
+            AssetLockFundingType::IdentityRegistration => wallet_info
+                .accounts
+                .identity_registration
+                .as_mut()
+                .ok_or_else(|| {
+                    PlatformWalletError::AssetLockTransaction(
+                        "Identity registration account not found".to_string(),
+                    )
+                })?,
+            AssetLockFundingType::IdentityTopUp => wallet_info
+                .accounts
+                .identity_topup
+                .get_mut(&identity_index)
+                .ok_or_else(|| {
+                    PlatformWalletError::AssetLockTransaction(format!(
+                        "Identity top-up account for index {} not found",
+                        identity_index
+                    ))
+                })?,
+            AssetLockFundingType::IdentityTopUpNotBound => wallet_info
+                .accounts
+                .identity_topup_not_bound
+                .as_mut()
+                .ok_or_else(|| {
+                    PlatformWalletError::AssetLockTransaction(
+                        "Identity top-up (unbound) account not found".to_string(),
+                    )
+                })?,
+            AssetLockFundingType::IdentityInvitation => wallet_info
+                .accounts
+                .identity_invitation
+                .as_mut()
+                .ok_or_else(|| {
+                    PlatformWalletError::AssetLockTransaction(
+                        "Identity invitation account not found".to_string(),
+                    )
+                })?,
+            AssetLockFundingType::AssetLockAddressTopUp => wallet_info
+                .accounts
+                .asset_lock_address_topup
+                .as_mut()
+                .ok_or_else(|| {
+                    PlatformWalletError::AssetLockTransaction(
+                        "Asset lock address top-up account not found".to_string(),
+                    )
+                })?,
+            AssetLockFundingType::AssetLockShieldedAddressTopUp => wallet_info
+                .accounts
+                .asset_lock_shielded_address_topup
+                .as_mut()
+                .ok_or_else(|| {
+                    PlatformWalletError::AssetLockTransaction(
+                        "Asset lock shielded address top-up account not found".to_string(),
+                    )
+                })?,
         };
 
         // The first generated, unused address of the pool. It is NOT marked
         // used yet: the builder does that once the signer returns the
         // credit-output key. The builder resolves that key from the pool alone,
         // with no key source, so the pool must already hold an unused address;
-        // `add_to_state = false` does not store one derived here. The window
+        // no key source is passed here either, so nothing is derived. The window
         // moves when a lock is seen on chain; a discarded build hands its
         // index back (`release_discarded_funding_index`).
-        managed_account
-            .next_address(account_xpub.as_ref(), false)
-            .map_err(|e| {
-                PlatformWalletError::AssetLockTransaction(format!(
-                    "Failed to get next funding address: {}",
-                    e
-                ))
-            })
+        let address = managed_account.next_address(None).map_err(|e| {
+            PlatformWalletError::AssetLockTransaction(format!(
+                "Failed to get next funding address: {}",
+                e
+            ))
+        })?;
+        let account_type = funding_account_type(funding_type, identity_index);
+        if let Some(floor) = issuance_floors.get(&account_type) {
+            let index = managed_account
+                .managed_account_type()
+                .address_pools()
+                .iter()
+                .find_map(|pool| pool.address_index(&address));
+            if index.is_none_or(|index| index <= *floor) {
+                return Err(PlatformWalletError::AssetLockTransaction(format!(
+                    "The {account_type:?} funding keys up to index {floor} may already be \
+                     handed out, but the wallet's stored addresses could not be restored that \
+                     far; this account cannot fund an asset lock"
+                )));
+            }
+        }
+        Ok(address)
     }
 
     /// Hand back the funding-key index a discarded build consumed.
@@ -592,47 +562,27 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// the first `DEFAULT_SPECIAL_GAP_LIMIT` addresses until one is seen on
     /// chain, so the next lock would not be recovered from the seed. Nothing
     /// was broadcast or exported with this key, so the next build reuses it.
-    ///
-    /// key-wallet has no call that un-marks an index, so this reverts exactly
-    /// what `AddressPool::mark_index_used` sets.
     fn release_discarded_funding_index(
         wallet_info: &mut ManagedWalletInfo,
         funding_type: AssetLockFundingType,
         identity_index: u32,
         path: &DerivationPath,
     ) {
-        let account_type = match funding_type {
-            AssetLockFundingType::IdentityRegistration => AccountType::IdentityRegistration,
-            AssetLockFundingType::IdentityTopUp => AccountType::IdentityTopUp {
-                registration_index: identity_index,
-            },
-            AssetLockFundingType::IdentityTopUpNotBound => {
-                AccountType::IdentityTopUpNotBoundToIdentity
-            }
-            AssetLockFundingType::IdentityInvitation => AccountType::IdentityInvitation,
-            AssetLockFundingType::AssetLockAddressTopUp => AccountType::AssetLockAddressTopUp,
-            AssetLockFundingType::AssetLockShieldedAddressTopUp => {
-                AccountType::AssetLockShieldedAddressTopUp
-            }
-        };
+        let account_type = funding_account_type(funding_type, identity_index);
         for mut account in wallet_info.accounts.all_accounts_mut() {
             if account.managed_account_type().to_account_type() != account_type {
                 continue;
             }
             for pool in account.managed_account_type_mut().address_pools_mut() {
-                let Some(index) = pool
-                    .addresses
+                let Some(address) = pool
+                    .addresses()
                     .values()
                     .find(|info| info.path == *path && info.is_used())
-                    .map(|info| info.index)
+                    .map(|info| info.address.clone())
                 else {
                     continue;
                 };
-                if let Some(info) = pool.addresses.get_mut(&index) {
-                    info.state = AddressState::Available;
-                }
-                pool.used_indices.remove(&index);
-                pool.highest_used = pool.used_indices.iter().copied().max();
+                pool.unmark_used(&address);
                 return;
             }
         }
@@ -934,6 +884,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             None,
             signer,
             None,
+            |_| {},
         )
         .await
     }
@@ -950,6 +901,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         shielded_recipient: Option<ShieldedRecipientRaw>,
         signer: &S,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
+        on_dispatch: impl FnOnce(OutPoint) + Send,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         self.create_funded_asset_lock_proof_pooled(
             AssetLockBuildAmount::Exact(amount_duffs),
@@ -960,6 +912,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             shielded_recipient,
             signer,
             on_built,
+            on_dispatch,
         )
         .await
     }
@@ -986,6 +939,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             None,
             signer,
             None,
+            |_| {},
         )
         .await
     }
@@ -1004,6 +958,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         shielded_recipient: Option<ShieldedRecipientRaw>,
         signer: &S,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
+        on_dispatch: impl FnOnce(OutPoint) + Send,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         self.create_funded_asset_lock_proof_pooled(
             amount,
@@ -1014,6 +969,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             shielded_recipient,
             signer,
             on_built,
+            on_dispatch,
         )
         .await
     }
@@ -1025,6 +981,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// `on_built` receives the new lock's outpoint once the lock is tracked,
     /// before its row is persisted or it is broadcast (see
     /// [`AssetLockBuiltObserver`]).
+    /// `on_dispatch` receives it after persistence admission, before awaiting
+    /// network acceptance, which may arrive only with the InstantSend lock.
     #[allow(clippy::too_many_arguments)]
     async fn create_funded_asset_lock_proof_pooled<S: ExtendedPubKeySigner>(
         &self,
@@ -1036,6 +994,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         shielded_recipient: Option<ShieldedRecipientRaw>,
         signer: &S,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
+        on_dispatch: impl FnOnce(OutPoint) + Send,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         let (path, out_point) = self
             .broadcast_funded_asset_lock_tracked(
@@ -1048,6 +1007,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 signer,
                 None,
                 on_built,
+                on_dispatch,
             )
             .await?;
         let proof = self
@@ -1126,6 +1086,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         signer: &S,
         operation: &AssetLockOperationContext,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
+        on_dispatch: impl FnOnce(OutPoint) + Send,
     ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         self.require_wallet_drain_persistence()?;
         let (path, out_point) = self
@@ -1139,6 +1100,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 signer,
                 Some(operation),
                 on_built,
+                on_dispatch,
             )
             .await?;
         let proof = self
@@ -1169,6 +1131,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             signer,
             operation,
             on_built,
+            |_| {},
         )
         .await
     }
@@ -1216,6 +1179,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         signer: &S,
         operation: Option<&AssetLockOperationContext>,
         on_built: Option<&AssetLockBuiltObserver<'_>>,
+        on_dispatch: impl FnOnce(OutPoint) + Send,
     ) -> Result<(DerivationPath, OutPoint), PlatformWalletError> {
         if operation.is_some() {
             self.require_wallet_drain_persistence()?;
@@ -1583,6 +1547,7 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         //    pending-spend fence everywhere else, until the wallet observes the
         //    spend. A cancellation or unwind inside `broadcast` reaches no arm
         //    at all and settles as pending through `InBroadcastPin::drop`.
+        on_dispatch(out_point);
         let broadcast_outcome = self.broadcaster.broadcast(&tx).await;
         if let Err(e) = broadcast_outcome {
             if matches!(e, crate::broadcaster::BroadcastError::Rejected { .. }) {
@@ -1864,6 +1829,8 @@ mod tests {
         ClientStartState, ClientWalletStartState, PersistenceError, PlatformWalletChangeSet,
         PlatformWalletPersistence,
     };
+    #[cfg(feature = "shielded")]
+    use crate::test_support::orchard_address_fixture;
     use crate::test_support::{
         funded_wallet_manager, funded_wallet_manager_dual_standard,
         funded_wallet_manager_with_contact, funded_wallet_manager_with_outputs,
@@ -1877,8 +1844,84 @@ mod tests {
     use crate::wallet::platform_wallet::PlatformWalletInfo;
     use crate::wallet::platform_wallet::WalletId;
     use crate::{AssetLockFundingType, PlatformWalletError, ASSET_LOCK_FUNDING_SOURCES};
+    use std::collections::BTreeMap;
+
+    use crate::changeset::AccountAddressPoolEntry;
+    use crate::manager::restore_account_address_pools;
+    use crate::wallet::address_pool_restore::{derive_through, MAX_RESTORE_GAP_FILL};
+    use key_wallet::managed_account::address_pool::AddressState;
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::Network;
 
     use super::{AssetLockBuildAmount, AssetLockOperationContext};
+
+    /// An invitation row persisted past what the restore may derive leaves
+    /// every index up to it possibly exported in a voucher. A lock seen on
+    /// chain later refills the pool with keys below that row, and none of
+    /// them may fund the next voucher.
+    #[test]
+    fn should_refuse_a_funding_key_below_a_row_the_restore_could_not_reach() {
+        let wallet = Wallet::from_seed_bytes(
+            [5u8; 64],
+            Network::Testnet,
+            WalletAccountCreationOptions::Default,
+        )
+        .expect("wallet from seed");
+        let mut info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        let key_source = wallet.key_source_for_account(AccountType::IdentityInvitation);
+        let mut probe = info
+            .accounts
+            .identity_invitation
+            .as_mut()
+            .expect("managed invitation account")
+            .managed_account_type_mut()
+            .address_pools_mut()
+            .remove(0)
+            .clone();
+        let far = probe.highest_generated().map_or(0, |h| h + 1) + MAX_RESTORE_GAP_FILL + 1;
+        derive_through(&mut probe, &key_source, far).expect("derive the persisted row");
+        let mut row = probe.addresses()[&far].clone();
+        row.state = AddressState::Used;
+
+        let stats = restore_account_address_pools(
+            &wallet,
+            &mut info,
+            vec![AccountAddressPoolEntry {
+                account_type: AccountType::IdentityInvitation,
+                pool_type: probe.pool_type(),
+                addresses: vec![row],
+            }],
+        );
+        assert_eq!(
+            stats.funding_issuance_floors,
+            BTreeMap::from([(AccountType::IdentityInvitation, far)])
+        );
+        // The refill key-wallet's transaction check runs for a lock that pays
+        // a pool address.
+        let account = info
+            .accounts
+            .identity_invitation
+            .as_mut()
+            .expect("managed invitation account");
+        let first = probe.addresses()[&0].address.clone();
+        account.mark_address_used(&first);
+        for pool in account.managed_account_type_mut().address_pools_mut() {
+            pool.maintain_gap_limit(&key_source)
+                .expect("refill the pool");
+        }
+
+        let next = AssetLockManager::<AlwaysOkBroadcaster>::peek_next_funding_address(
+            &mut info,
+            AssetLockFundingType::IdentityInvitation,
+            0,
+            &stats.funding_issuance_floors,
+        );
+
+        assert!(
+            matches!(next, Err(PlatformWalletError::AssetLockTransaction(_))),
+            "{next:?}"
+        );
+    }
 
     /// The zero-spendable-candidate selection error must surface the SAME
     /// typed shortfall as a partial shortfall (not the generic string form),
@@ -2093,6 +2136,7 @@ mod tests {
                     wallet.compute_wallet_id(),
                     ClientWalletStartState {
                         dashpay_backfill: Default::default(),
+                        funding_issuance_floors: Default::default(),
                         wallet: wallet.clone(),
                         wallet_info: info.clone(),
                         identity_manager: Default::default(),
@@ -2185,6 +2229,94 @@ mod tests {
             self.entered.wait().await;
             self.release.wait().await;
             Ok(transaction.txid())
+        }
+    }
+
+    #[cfg(feature = "shielded")]
+    #[tokio::test]
+    async fn should_notify_speculation_before_network_acceptance() {
+        for drain in [false, true] {
+            let (wallet_manager, wallet_id, _, signer) =
+                funded_wallet_manager(StandardAccountType::BIP44Account).await;
+            let entered = Arc::new(tokio::sync::Barrier::new(2));
+            let (manager, persistence) = asset_lock_manager_over(
+                wallet_manager,
+                wallet_id,
+                Arc::new(GatedBroadcaster {
+                    entered: entered.clone(),
+                    release: Arc::new(tokio::sync::Barrier::new(2)),
+                }),
+            );
+            let operation = Arc::new(AssetLockOperationContext::new([0x71; 16]));
+            let _registration = manager.register_wallet_drain_operation(operation.clone());
+            let funding = if drain {
+                manager.begin_wallet_drain(&operation).await.unwrap();
+                AssetLockFunding::DrainWalletBalance {
+                    account_index: 0,
+                    minimum_lock_duffs: Some(1),
+                    operation: operation.clone(),
+                }
+            } else {
+                AssetLockFunding::FromWalletBalance {
+                    amount_duffs: 1_000_000,
+                    account_index: 0,
+                }
+            };
+            let built = Mutex::new(Vec::new());
+            let on_built = |out_point| built.lock().unwrap().push(out_point);
+            let (dispatch_tx, mut dispatch_rx) = tokio::sync::oneshot::channel();
+            let persisted_at_dispatch = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let drain_out_point_at_dispatch = Arc::new(Mutex::new(None));
+            let persisted_at_dispatch_callback = Arc::clone(&persisted_at_dispatch);
+            let drain_out_point_at_dispatch_callback = Arc::clone(&drain_out_point_at_dispatch);
+            let persistence_for_dispatch = Arc::clone(&persistence);
+            let operation_for_dispatch = operation.clone();
+            let resolve = manager.resolve_funding_observing_out_point(
+                funding,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                0,
+                Some(orchard_address_fixture(0x71).to_raw_bytes()),
+                &signer,
+                Some(&on_built),
+                |out_point| {
+                    persisted_at_dispatch_callback.store(
+                        persistence_for_dispatch
+                            .stored_outpoints()
+                            .contains(&out_point),
+                        std::sync::atomic::Ordering::SeqCst,
+                    );
+                    if drain {
+                        *drain_out_point_at_dispatch_callback.lock().unwrap() =
+                            operation_for_dispatch.snapshot().out_point;
+                    }
+                    dispatch_tx.send(out_point).unwrap();
+                },
+            );
+            tokio::pin!(resolve);
+            tokio::select! {
+                _ = &mut resolve => panic!("acceptance is withheld"),
+                _ = entered.wait() => {}
+            }
+
+            let out_point = dispatch_rx
+                .try_recv()
+                .expect("speculation must be notified before network acceptance");
+            assert_eq!(*built.lock().unwrap(), vec![out_point]);
+            assert!(
+                persisted_at_dispatch.load(std::sync::atomic::Ordering::SeqCst),
+                "dispatch callback must run after the asset-lock row is persisted"
+            );
+            assert!(persistence.stored_outpoints().contains(&out_point));
+            let rows = manager.list_tracked_locks().await;
+            let row = rows.iter().find(|row| row.out_point == out_point).unwrap();
+            assert_eq!(row.status, AssetLockStatus::Built);
+            if drain {
+                assert_eq!(
+                    *drain_out_point_at_dispatch.lock().unwrap(),
+                    Some(out_point)
+                );
+                assert_eq!(operation.snapshot().out_point, Some(out_point));
+            }
         }
     }
 
@@ -4977,8 +5109,12 @@ mod tests {
                 .as_ref()
                 .expect("registration funding account");
             let pool = &account.managed_account_type().address_pools()[0];
-            assert_eq!(pool.used_indices, [0].into_iter().collect());
-            assert_eq!(pool.highest_used, Some(0));
+            let used: Vec<u32> = (pool.addresses().values())
+                .filter(|info| info.is_used())
+                .map(|info| info.index)
+                .collect();
+            assert_eq!(used, [0]);
+            assert_eq!(pool.highest_used(), Some(0));
         }
 
         let (next, _) = broadcast_exact_registration_lock(&manager, &signer, 300_000, 62)
@@ -5889,6 +6025,63 @@ mod tests {
                 .await
                 .unwrap(),
             snapshot
+        );
+    }
+
+    /// An asset lock from a wallet holding a 1,000 DASH masternode collateral
+    /// and a 5 DASH coin is funded from the 5 DASH coin: a lock only the
+    /// collateral could fund is refused, and draining the account locks the
+    /// spare coin alone.
+    #[tokio::test]
+    async fn should_fund_an_asset_lock_without_the_masternode_collateral() {
+        const DASH: u64 = 100_000_000;
+        let (wallet_manager, wallet_id, _generation, signer, _collateral, spare) =
+            crate::test_support::wallet_manager_with_registered_collateral(
+                StandardAccountType::BIP44Account,
+                5 * DASH,
+            )
+            .await;
+        let (manager, _persistence) = asset_lock_manager_over(
+            wallet_manager,
+            wallet_id,
+            Arc::new(CountingOkBroadcaster::default()),
+        );
+
+        let shortfall = manager
+            .build_asset_lock_transaction(
+                6 * DASH,
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await;
+        assert!(
+            matches!(
+                shortfall,
+                Err(PlatformWalletError::AssetLockInsufficientFunds { .. })
+            ),
+            "a 6 DASH lock needs the collateral, got {shortfall:?}"
+        );
+
+        let (tx, _path, _token, _accounts) = manager
+            .build_asset_lock_transaction_with_funding(
+                super::AssetLockBuildAmount::DrainAll {
+                    minimum_lock_duffs: None,
+                },
+                &[AccountTypePreference::BIP44],
+                0,
+                AssetLockFundingType::IdentityRegistration,
+                0,
+                &signer,
+            )
+            .await
+            .expect("draining the account locks the spare coin");
+        let inputs: Vec<OutPoint> = tx.input.iter().map(|input| input.previous_output).collect();
+        assert_eq!(
+            inputs,
+            vec![spare],
+            "the drain must leave the collateral alone"
         );
     }
 }

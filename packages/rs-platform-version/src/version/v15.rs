@@ -442,9 +442,8 @@ pub const PROTOCOL_VERSION_15: ProtocolVersion = 15;
 ///     escrow (`calculate_total_tokens_balance` stays at 1), the escrow methods (`order_escrow`)
 ///     are `None`, the token market contract does not exist (`token_market: 0`, registered
 ///     neither at genesis nor by the upgrade, and absent from the system contract cache), and
-///     no tradeable token is admitted (note 5). The code of all of it is present and selected by
-///     no protocol version's tables; the test version `TEST_PLATFORM_V5` selects it on top of
-///     this version's tables so it stays tested. The data trigger `bindings` 3
+///     no tradeable token is admitted (note 5). Protocol version 16 selects all of it (v16
+///     note 1). The data trigger `bindings` 3
 ///     (`DRIVE_ABCI_VALIDATION_VERSIONS_V11`), which this version selects for DashPay (note
 ///     24), also list the rejects of a replace or a delete of a token market order: they match
 ///     the token market contract's id only, so nothing reaches them before that contract exists.
