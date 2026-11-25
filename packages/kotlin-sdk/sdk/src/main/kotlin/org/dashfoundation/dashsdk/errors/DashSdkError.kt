@@ -912,6 +912,52 @@ sealed class DashSdkError(
             PlatformWallet(message, cause)
 
         /**
+         * `ErrorShieldedPlanChanged` (native code 77). A shielded spend run
+         * against a plan (`platform_wallet_manager_shielded_plan_spend`, then
+         * a `_with_plan` spend) selected different notes or a different fee
+         * than the plan, as the wallet's notes changed since, or is priced at
+         * another protocol version than the plan. Nothing is built or
+         * broadcast and no note stays reserved: plan again and confirm the
+         * new fee.
+         * ← Swift `PlatformWalletError.shieldedPlanChanged`.
+         */
+        class ShieldedPlanChanged(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorShieldedSpendTooManyNotes` (native code 78). The wallet's
+         * notes cover a shielded spend, or its plan, only with more notes
+         * than one shielded transition spends
+         * (`max_shielded_actions_per_transition`). Nothing was reserved, built or
+         * broadcast: a smaller amount fits, or the notes can be merged first.
+         * ← Swift `PlatformWalletError.shieldedSpendTooManyNotes`.
+         */
+        class ShieldedSpendTooManyNotes(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorShieldedWithdrawalAmountOutOfRange` (native code 79). A
+         * shielded withdrawal, or its plan, reserves an amount for Core below
+         * the protocol minimum for its Core fee rate or above the maximum.
+         * Nothing was reserved, built or broadcast: another amount fits.
+         * ← Swift `PlatformWalletError.shieldedWithdrawalAmountOutOfRange`.
+         */
+        class ShieldedWithdrawalAmountOutOfRange(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
+         * `ErrorNetworkProtocolVersionUnsupported` (native code 81). The
+         * network runs a protocol version this SDK has no tables for, so a
+         * shielded transfer, unshield, withdrawal or identity top-up from the
+         * pool, or its plan, cannot be priced. Nothing is built or broadcast
+         * and no note stays reserved. A retry does not help: ask the user to
+         * update the app.
+         * ← Swift `PlatformWalletError.networkProtocolVersionUnsupported`.
+         */
+        class NetworkProtocolVersionUnsupported(message: String, cause: Throwable? = null) :
+            PlatformWallet(message, cause)
+
+        /**
          * `ErrorIdentityLookupFailed` (native code 80). Platform could not be
          * asked for an identity the operation names (the lookup failed, which
          * is not Platform's answer that it does not exist, code 7). Nothing
@@ -1219,7 +1265,11 @@ sealed class DashSdkError(
             74 -> PlatformWallet.PrivateContactStoreNotRead(message, cause) // ErrorPrivateContactStoreNotRead
             75 -> PlatformWallet.SdkPinnedBelowProtocolVersion(message, cause) // ErrorSdkPinnedBelowProtocolVersion
             76 -> PlatformWallet.PublicContactRequestUnconfirmed(message, cause) // ErrorPublicContactRequestUnconfirmed
+            77 -> PlatformWallet.ShieldedPlanChanged(message, cause) // ErrorShieldedPlanChanged
+            78 -> PlatformWallet.ShieldedSpendTooManyNotes(message, cause) // ErrorShieldedSpendTooManyNotes
+            79 -> PlatformWallet.ShieldedWithdrawalAmountOutOfRange(message, cause) // ErrorShieldedWithdrawalAmountOutOfRange
             80 -> PlatformWallet.IdentityLookupFailed(message, cause) // ErrorIdentityLookupFailed
+            81 -> PlatformWallet.NetworkProtocolVersionUnsupported(message, cause) // ErrorNetworkProtocolVersionUnsupported
             83 -> PlatformWallet.BalanceHistoryInconsistentHeights(message, cause) // ErrorBalanceHistoryInconsistentHeights
             84 -> PlatformWallet.ShieldedOperationInProgress(message, cause) // ErrorShieldedOperationInProgress
             85 -> PlatformWallet.ShieldedTipPending(message, cause) // ErrorShieldedTipPending

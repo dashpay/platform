@@ -501,6 +501,69 @@ class DashSdkErrorTest {
     }
 
     /**
+     * A shielded spend run against a plan whose notes moved since has its own
+     * code, apart from an unconfirmed spend (18): nothing was sent, and the
+     * spend needs a new plan and a new confirmation, not a retry.
+     */
+    @Test
+    fun shouldReportAChangedShieldedPlanByItsOwnCode() {
+        val detail = "the shielded spend no longer selects the planned notes"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 77, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedPlanChanged)
+        assertFalse(mapped is DashSdkError.PlatformWallet.ShieldedSpendUnconfirmed)
+        assertEquals(detail, mapped.message)
+        assertFalse("plan again and confirm, not a retry", mapped.isRetryable)
+    }
+
+    /**
+     * A shielded spend the notes cover only with more notes than one
+     * transition spends has its own code: nothing was sent, and a smaller
+     * amount fits, so it is neither a retry nor a balance shortfall (41).
+     */
+    @Test
+    fun shouldReportAShieldedSpendOfTooManyNotesByItsOwnCode() {
+        val detail = "Shielded spend needs 7 notes, more than the 6 one transition can spend"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 78, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedSpendTooManyNotes)
+        assertFalse(mapped is DashSdkError.PlatformWallet.PlatformShieldCapacityExceeded)
+        assertEquals(detail, mapped.message)
+        assertFalse("a smaller amount fits, not a retry", mapped.isRetryable)
+    }
+
+    /**
+     * A shielded withdrawal amount outside the protocol bounds has its own
+     * code: nothing was sent, and another amount fits, so it is neither a
+     * retry nor a balance shortfall (41).
+     */
+    @Test
+    fun shouldReportAWithdrawalAmountOutOfRangeByItsOwnCode() {
+        val detail = "Shielded withdrawal amount 1 is outside the allowed range 1000000 to 50000000000000"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 79, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.ShieldedWithdrawalAmountOutOfRange)
+        assertFalse(mapped is DashSdkError.PlatformWallet.PlatformShieldCapacityExceeded)
+        assertEquals(detail, mapped.message)
+        assertFalse("another amount fits, not a retry", mapped.isRetryable)
+    }
+
+    /**
+     * A network on a protocol version this SDK has no tables for has its own
+     * code, apart from a generic build error, so a host can ask for an app
+     * update; a retry does not lift it.
+     */
+    @Test
+    fun shouldReportAnUnsupportedNetworkProtocolVersionByItsOwnCode() {
+        val detail = "The network runs protocol version 16, which this SDK does not support (it supports up to 15); update the app"
+        val native = DashSDKException(DashSdkError.PLATFORM_WALLET_CODE_OFFSET + 81, detail)
+        val mapped = DashSdkError.fromNative(native)
+        assertTrue(mapped is DashSdkError.PlatformWallet.NetworkProtocolVersionUnsupported)
+        assertEquals(detail, mapped.message)
+        assertFalse("only an app update lifts it, not a retry", mapped.isRetryable)
+    }
+
+    /**
      * A failed identity lookup sent nothing: its own code, retryable as it is,
      * apart from the unmapped SDK errors a host reads as possibly delivered.
      */

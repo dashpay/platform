@@ -452,6 +452,7 @@ async fn should_keep_the_highest_batch_height_before_a_spend_drops_its_record() 
             .arm_redrive(
                 sub,
                 PendingRedrive {
+                    spend_context: None,
                     activity_id: [0xA1; 32],
                     anchor: [0xA2; 32],
                     nullifiers: vec![fee_nf],
@@ -535,6 +536,7 @@ async fn should_mark_nothing_spent_when_the_spend_scan_height_is_not_kept() {
             .arm_redrive(
                 sub,
                 PendingRedrive {
+                    spend_context: None,
                     activity_id: [0xA1; 32],
                     anchor: [0xA2; 32],
                     nullifiers: vec![fee_nf],
