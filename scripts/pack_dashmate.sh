@@ -58,15 +58,20 @@ ROOT_PATH=$(dirname "$DIR_PATH")
 #
 # The repack also adds the source file and keyring of Dash's apt repository, so installing
 # the package once configures the repository it upgrades from. The source file names the
-# `stable` suite for every version, prereleases included, and is listed as a conffile:
-# moving to `testing` is the operator's choice, and dpkg keeps an operator's edit on upgrade
-# where it would otherwise replace the file. The keyring is not a conffile, so a renewed
-# keyring reaches every host that upgrades.
+# `stable` suite for every version, prereleases included: moving to `testing` is the
+# operator's choice. Both are conffiles under /etc/apt, so they share one lifecycle:
+#   - an upgrade keeps an operator's edit, and silently replaces an unmodified file, which is
+#     how a renewed keyring reaches every host;
+#   - removing the package without purging it, or rolling back to a version that ships
+#     neither, keeps both, so the source never outlives the key it names;
+#   - purging the package removes both.
 rewrite_deb_versions() {
   DIST_PATH="$1"
   STAGING_PATH="tmp/rewritten"
   APT_SOURCES_PATH="$ROOT_PATH/packages/dashmate/deb/dashmate.sources"
   APT_KEYRING_PATH="$ROOT_PATH/packages/dashmate/deb/dashmate-archive-keyring.gpg"
+  APT_SOURCES_TARGET="etc/apt/sources.list.d/dashmate.sources"
+  APT_KEYRING_TARGET="etc/apt/keyrings/dashmate-archive-keyring.gpg"
 
   if ! ls "$DIST_PATH"/*.deb > /dev/null 2>&1
   then
@@ -194,14 +199,13 @@ rewrite_deb_versions() {
 
     mv "$WORKSPACE_PATH/DEBIAN/control.rewritten" "$WORKSPACE_PATH/DEBIAN/control"
 
-    # oclif writes no conffiles, and nothing at either path. Writing over them would
-    # silently drop what oclif put there.
-    for OCLIF_PATH in DEBIAN/conffiles etc/apt/sources.list.d/dashmate.sources \
-      usr/share/keyrings/dashmate-archive-keyring.gpg
+    # oclif writes no conffiles, and nothing at these paths. Writing over them would silently
+    # drop what oclif put there.
+    for OCLIF_PATH in DEBIAN/conffiles "$APT_SOURCES_TARGET" "$APT_KEYRING_TARGET"
     do
       if [ -e "$WORKSPACE_PATH/$OCLIF_PATH" ] || [ -L "$WORKSPACE_PATH/$OCLIF_PATH" ]
       then
-        echo "$DEB_PATH already has $OCLIF_PATH; the apt source file and keyring would replace it"
+        echo "$DEB_PATH already has $OCLIF_PATH; the apt repository files would replace it"
         exit 1
       fi
     done
@@ -209,11 +213,11 @@ rewrite_deb_versions() {
     # A directory oclif built as a symlink would send the files outside the package, and the
     # package would be built without them. Missing directories get an explicit mode so that
     # the build user's umask cannot reach /etc/apt; existing ones keep oclif's.
-    for APT_DIRECTORY in etc etc/apt etc/apt/sources.list.d usr usr/share usr/share/keyrings
+    for APT_DIRECTORY in etc etc/apt etc/apt/keyrings etc/apt/sources.list.d
     do
       if [ -L "$WORKSPACE_PATH/$APT_DIRECTORY" ]
       then
-        echo "$DEB_PATH has $APT_DIRECTORY as a symlink; the apt source file and keyring would not be packaged"
+        echo "$DEB_PATH has $APT_DIRECTORY as a symlink; the apt repository files would not be packaged"
         exit 1
       fi
 
@@ -223,9 +227,9 @@ rewrite_deb_versions() {
       fi
     done
 
-    install -m 0644 "$APT_SOURCES_PATH" "$WORKSPACE_PATH/etc/apt/sources.list.d/dashmate.sources"
-    install -m 0644 "$APT_KEYRING_PATH" "$WORKSPACE_PATH/usr/share/keyrings/dashmate-archive-keyring.gpg"
-    echo "/etc/apt/sources.list.d/dashmate.sources" > "$WORKSPACE_PATH/DEBIAN/conffiles"
+    install -m 0644 "$APT_SOURCES_PATH" "$WORKSPACE_PATH/$APT_SOURCES_TARGET"
+    install -m 0644 "$APT_KEYRING_PATH" "$WORKSPACE_PATH/$APT_KEYRING_TARGET"
+    printf '/%s\n' "$APT_SOURCES_TARGET" "$APT_KEYRING_TARGET" > "$WORKSPACE_PATH/DEBIAN/conffiles"
     chmod 0644 "$WORKSPACE_PATH/DEBIAN/conffiles"
 
     # oclif builds the payload as root, so restore that after extracting and rebuilding

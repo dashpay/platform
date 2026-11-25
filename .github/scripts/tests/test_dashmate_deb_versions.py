@@ -25,7 +25,7 @@ Aliases: undefined
 '''
 
 SOURCES = 'etc/apt/sources.list.d/dashmate.sources'
-KEYRING = 'usr/share/keyrings/dashmate-archive-keyring.gpg'
+KEYRING = 'etc/apt/keyrings/dashmate-archive-keyring.gpg'
 
 # The primary key of the keyring infra handed over for the repository. A keyring with any
 # other primary key has to come with a deliberate change here.
@@ -39,8 +39,13 @@ URIs: https://apt.services.dash.org/dashmate
 Suites: stable
 Components: main
 Architectures: amd64 arm64
-Signed-By: /usr/share/keyrings/dashmate-archive-keyring.gpg
+Signed-By: /etc/apt/keyrings/dashmate-archive-keyring.gpg
 '''
+
+# Both are conffiles, so they share one lifecycle: an operator's suite choice survives
+# upgrades, removing the package without purging it or rolling back to a version that ships
+# neither keeps the source together with the key it names, and purging removes both.
+CONFFILES = [f'/{SOURCES}', f'/{KEYRING}']
 
 
 def oclif_maintainer():
@@ -94,7 +99,7 @@ def added_entries(keyring):
     """The entries the repack adds to oclif's payload: the two files and the directories
     holding them that oclif's payload has no entry for, all root owned."""
     root = (0, 0, 'root', 'root')
-    directories = ['./etc', './etc/apt', './etc/apt/sources.list.d', './usr/share', './usr/share/keyrings']
+    directories = ['./etc', './etc/apt', './etc/apt/keyrings', './etc/apt/sources.list.d']
     return ([(d, tarfile.DIRTYPE, 0o755, *root, 0, '') for d in directories]
             + [(f'./{SOURCES}', tarfile.REGTYPE, 0o644, *root, len(STANZA.encode()), ''),
                (f'./{KEYRING}', tarfile.REGTYPE, 0o644, *root, len(keyring), '')])
@@ -321,17 +326,79 @@ class RewriteDebVersionsTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(payload_file(self.dist / 'dashmate_5.1.0-1_amd64.deb', KEYRING), committed)
 
-    def test_should_list_the_source_file_as_the_only_conffile(self):
+    def test_should_list_the_source_file_and_its_keyring_as_the_only_conffiles(self):
         self.build_oclif_deb('5.1.0.0f38a693a4-1', 'amd64')
 
         self.assertEqual(self.rewrite('5.1.0').returncode, 0)
 
         # a final release names `stable` too
         self.assertEqual(payload_file(self.dist / 'dashmate_5.1.0-1_amd64.deb', SOURCES).decode(), STANZA)
-        # without it dpkg would overwrite an operator's switch to `testing` on every upgrade;
-        # the keyring is not one, so a renewed keyring reaches every host that upgrades
         self.assertEqual(control_member(self.dist / 'dashmate_5.1.0-1_amd64.deb', 'conffiles'),
-                         (f'/{SOURCES}\n', 0o644))
+                         (''.join(f'{path}\n' for path in CONFFILES), 0o644))
+
+    def dpkg(self, host, *args):
+        """dpkg on a scratch host root, as the current user, with no terminal to answer a
+        conffile prompt, so a prompt fails the command."""
+        return subprocess.run(['dpkg', f'--root={host}', '--force-not-root', '--force-bad-path', *args],
+                              stdin=subprocess.DEVNULL, capture_output=True, text=True)
+
+    def scratch_host(self):
+        host = self.tmp / 'host'
+        for directory in ['var/lib/dpkg/info', 'var/lib/dpkg/updates', 'var/lib/dpkg/triggers']:
+            (host / directory).mkdir(parents=True)
+        (host / 'var/lib/dpkg/status').touch()
+        return host
+
+    def repack_into(self, semver, name):
+        self.build_oclif_deb('5.1.0.0f38a693a4-1', 'all')
+        result = self.rewrite(semver)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        (built,) = self.dist.iterdir()
+        return built.rename(self.tmp / name)
+
+    def assert_installed_files(self, host, expected):
+        """Each conffile's content on the host, or None where it is absent."""
+        actual = {path: (host / path).read_bytes() if (host / path).exists() else None
+                  for path in [SOURCES, KEYRING]}
+        self.assertEqual(actual, expected)
+
+    @unittest.skipUnless(shutil.which('dpkg'), 'needs dpkg')
+    def test_should_keep_the_source_and_its_key_together_until_the_package_is_purged(self):
+        deb = self.repack_into('5.1.0', 'new.deb')
+        # a version from before the repository files, such as the first release published
+        # to the repository
+        rollback = self.build_oclif_deb('5.1.0~rc.1-1', 'all')
+        host = self.scratch_host()
+        shipped = {SOURCES: STANZA.encode(), KEYRING: self.keyring}
+
+        for step, args, expected in [
+            ('install', ['-i', str(deb)], shipped),
+            # removing without purging keeps the source, so it has to keep its key too
+            ('remove', ['-r', 'dashmate'], shipped),
+            ('install again', ['-i', str(deb)], shipped),
+            ('roll back to a version without the files', ['-i', str(rollback)], shipped),
+            ('purge', ['-P', 'dashmate'], dict.fromkeys(shipped)),
+        ]:
+            with self.subTest(step):
+                result = self.dpkg(host, *args)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assert_installed_files(host, expected)
+
+    @unittest.skipUnless(shutil.which('dpkg'), 'needs dpkg')
+    def test_should_upgrade_to_a_renewed_keyring_and_keep_the_operators_suite(self):
+        first = self.repack_into('5.1.0', 'first.deb')
+        self.use_keyring(self.other_keyring)
+        renewed = self.repack_into('5.1.1', 'renewed.deb')
+        host = self.scratch_host()
+
+        self.assertEqual(self.dpkg(host, '-i', str(first)).returncode, 0)
+        testing = STANZA.replace('Suites: stable', 'Suites: testing').encode()
+        (host / SOURCES).write_bytes(testing)
+
+        # no prompt: the operator's change is kept, and the unchanged keyring is replaced
+        result = self.dpkg(host, '-i', str(renewed))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_installed_files(host, {SOURCES: testing, KEYRING: self.other_keyring})
 
     def test_should_leave_the_built_debs_alone_without_a_usable_keyring(self):
         cases = {
@@ -381,8 +448,8 @@ class RewriteDebVersionsTests(unittest.TestCase):
             SOURCES: ({SOURCES: 'Types: deb\n'}, None, f'already has {SOURCES}'),
             KEYRING: ({KEYRING: 'key\n'}, None, f'already has {KEYRING}'),
             'a symlinked keyrings directory': ({'usr/lib/dashmate/keyrings/.keep': ''},
-                                               ('../lib/dashmate/keyrings', 'usr/share/keyrings'),
-                                               'has usr/share/keyrings as a symlink'),
+                                               ('../../usr/lib/dashmate/keyrings', 'etc/apt/keyrings'),
+                                               'has etc/apt/keyrings as a symlink'),
         }
         for case, (extra, link, reason) in cases.items():
             with self.subTest(case):

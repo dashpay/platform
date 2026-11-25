@@ -3,4 +3,4 @@ URIs: https://apt.services.dash.org/dashmate
 Suites: stable
 Components: main
 Architectures: amd64 arm64
-Signed-By: /usr/share/keyrings/dashmate-archive-keyring.gpg
+Signed-By: /etc/apt/keyrings/dashmate-archive-keyring.gpg
