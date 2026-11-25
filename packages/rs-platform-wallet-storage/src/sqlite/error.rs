@@ -11,6 +11,7 @@
 
 use std::path::PathBuf;
 
+use key_wallet::transaction_checking::spend_authorization::SpendAuthorizationError;
 use platform_wallet::changeset::{PersistenceError, PersistenceErrorKind};
 
 use crate::sqlite::util::safe_cast::SafeCastTarget;
@@ -34,6 +35,9 @@ pub enum AutoBackupOperation {
 /// Errors produced by the wallet-storage SQLite backend.
 #[derive(Debug, thiserror::Error)]
 pub enum WalletStorageError {
+    /// Persisted authorization uses rules this wallet cannot verify.
+    #[error("cannot verify pending spend authorization")]
+    SpendAuthorization(#[from] SpendAuthorizationError),
     /// File-system I/O error reaching the database or backup files.
     #[error("io error")]
     Io(#[from] std::io::Error),
@@ -763,7 +767,8 @@ impl WalletStorageError {
             | Self::UnownedIdentityHasRegistrationIndex { .. }
             | Self::EmptyUtxoScript { .. }
             | Self::EmptyPoolAddressScript { .. }
-            | Self::DatabasePathIsSymlink { .. } => false,
+            | Self::DatabasePathIsSymlink { .. }
+            | Self::SpendAuthorization(_) => false,
         }
     }
 
@@ -870,7 +875,8 @@ impl WalletStorageError {
             | Self::UnownedIdentityHasRegistrationIndex { .. }
             | Self::EmptyUtxoScript { .. }
             | Self::EmptyPoolAddressScript { .. }
-            | Self::DatabasePathIsSymlink { .. } => PersistenceErrorKind::Fatal,
+            | Self::DatabasePathIsSymlink { .. }
+            | Self::SpendAuthorization(_) => PersistenceErrorKind::Fatal,
         }
     }
 
@@ -955,6 +961,7 @@ impl WalletStorageError {
             Self::EmptyUtxoScript { .. } => "empty_utxo_script",
             Self::EmptyPoolAddressScript { .. } => "empty_pool_address_script",
             Self::DatabasePathIsSymlink { .. } => "database_path_is_symlink",
+            Self::SpendAuthorization(_) => "spend_authorization",
         }
     }
 }

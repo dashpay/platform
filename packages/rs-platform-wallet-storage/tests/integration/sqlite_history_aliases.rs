@@ -3,19 +3,24 @@
 //! The signed fixture uses the public test key [0x19; 32] and SIGHASH_ALL;
 //! signature preservation is tested independently of chain/quorum validity.
 
-use crate::common::{ensure_wallet_meta, fresh_persister, wid};
+use crate::common::{ensure_wallet_meta, fresh_persister, registration, wid};
 use dashcore::crypto::ecdsa::{EcdsaPublicKey, EcdsaSignature};
 use dashcore::sighash::SighashCache;
 use dashcore::{consensus, Address, Network, OutPoint, Txid};
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::Utxo;
+use platform_wallet::changeset::recorded_history::ReplayEvidence;
 use platform_wallet::changeset::{
     CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
+use platform_wallet::test_support::core_fixtures::wallet_with_receive_address;
+use platform_wallet::PlatformWalletManager;
 use platform_wallet_storage::sqlite::migrations;
 use platform_wallet_storage::sqlite::schema::blob;
 use platform_wallet_storage::{SqlitePersister, SqlitePersisterConfig};
 use rusqlite::params;
+use std::sync::Arc;
 
 fn migrated_history() -> (
     SqlitePersister,
@@ -43,6 +48,7 @@ fn migrated_fixture(
         conn.execute_batch(
             "DROP TABLE core_transaction_inputs; DROP TABLE core_transaction_record_originals; \
              DROP TABLE core_locked_outpoints; \
+             DROP INDEX idx_core_utxos_funding; DROP INDEX idx_core_utxos_claimant; \
              DELETE FROM refinery_schema_history WHERE version >= 21;",
         )
         .unwrap();
@@ -818,4 +824,218 @@ fn should_preserve_recovery_height_drift_policy_during_alias_projection() {
     assert_eq!(loaded.txid, canonical.txid);
     assert_eq!(loaded.context, funding.context);
     assert_eq!(snapshot(&recovery, "core_transactions"), before);
+}
+
+struct NoopAliasEvents;
+impl platform_wallet::events::EventHandler for NoopAliasEvents {}
+impl platform_wallet::events::PlatformEventHandler for NoopAliasEvents {}
+
+/// Literal old-writer bodies on the current schema isolate replay from rescan policy.
+async fn signed_history_load_and_reopen(adopted: bool) {
+    let (persister, _directory, path) = fresh_persister();
+    let (wallet, _, _) = wallet_with_receive_address();
+    let wallet_id = wallet.wallet_id;
+    persister
+        .store(wallet_id, registration(&wallet, None))
+        .unwrap();
+    let records: Vec<TransactionRecord> =
+        include_str!("../fixtures/v019_asset_unlock_v2_signed.txt")
+            .lines()
+            .map(|line| {
+                blob::decode(&hex::decode(line.split_whitespace().nth(2).unwrap()).unwrap())
+                    .unwrap()
+            })
+            .collect();
+    let (funding, consumer) = (&records[0], &records[1]);
+    assert_signed_consumer(funding, consumer);
+    for record in &records {
+        seed_record(&persister, wallet_id, record);
+    }
+    if adopted {
+        let mut canonical = funding.clone();
+        canonical.txid = canonical.transaction.txid();
+        persister
+            .store(
+                wallet_id,
+                PlatformWalletChangeSet {
+                    core: Some(CoreChangeSet {
+                        records: vec![canonical],
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+    }
+    drop(persister);
+
+    for _ in 0..2 {
+        let persister = Arc::new(SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap());
+        let loaded = persister
+            .load_with_replay(&ReplayEvidence::default())
+            .unwrap();
+        let state = &loaded.state.wallets[&wallet_id];
+        let history = state.wallet_info.accounts.standard_bip44_accounts[&0].transactions();
+        assert_eq!(
+            history
+                .values()
+                .filter(|record| record.transaction.txid() == funding.transaction.txid())
+                .count(),
+            1,
+            "one legacy funding body must remain one logical history record"
+        );
+        let restored_consumer = history
+            .get(&consumer.txid)
+            .expect("signed consumer survives replay");
+        assert_eq!(
+            consensus::serialize(&restored_consumer.transaction),
+            consensus::serialize(&consumer.transaction)
+        );
+        assert_signed_consumer(funding, restored_consumer);
+        assert_eq!(
+            state.wallet_info.balance.total(),
+            0,
+            "historical ownership annotations alone cannot credit this unrelated HD wallet"
+        );
+        let physical_key = if adopted {
+            funding.transaction.txid()
+        } else {
+            funding.txid
+        };
+        assert!(state
+            .recorded_history
+            .transactions
+            .iter()
+            .any(|record| record.txid == physical_key));
+        {
+            let conn = persister.lock_conn_for_test();
+            let raw: Vec<u8> = conn
+                .query_row(
+                    "SELECT record_blob FROM core_transactions WHERE wallet_id = ?1 AND txid = ?2",
+                    params![
+                        wallet_id.as_slice(),
+                        consumer.txid.as_byte_array().as_slice()
+                    ],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            let record: TransactionRecord = blob::decode(&raw).unwrap();
+            assert_eq!(
+                consensus::serialize(&record.transaction),
+                consensus::serialize(&consumer.transaction)
+            );
+        }
+        let manager = PlatformWalletManager::new(
+            Arc::new(dash_sdk::SdkBuilder::new_mock().build().unwrap()),
+            Arc::clone(&persister),
+            Arc::new(NoopAliasEvents),
+        );
+        manager.load_from_persistor().await.unwrap();
+        let published = manager
+            .get_wallet(&wallet_id)
+            .await
+            .expect("manager publishes the restored wallet");
+        let guard = published.wallet_manager().read().await;
+        let info = guard.get_wallet_info(&wallet_id).unwrap();
+        assert_eq!(
+            info.core_wallet.accounts.standard_bip44_accounts[&0]
+                .transactions()
+                .values()
+                .filter(|record| record.transaction.txid() == funding.transaction.txid())
+                .count(),
+            1
+        );
+        drop(guard);
+        drop(published);
+        assert!(manager.shutdown().await.all_clean());
+        drop(manager);
+        drop(persister);
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn should_load_literal_legacy_only_history_through_replay_manager_and_reopen() {
+    signed_history_load_and_reopen(false).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn should_load_adopted_literal_history_through_replay_manager_and_reopen() {
+    signed_history_load_and_reopen(true).await;
+}
+
+#[tokio::test]
+async fn should_keep_one_literal_legacy_funding_record_when_its_script_is_owned() {
+    use key_wallet::managed_account::address_pool::AddressInfo;
+    use platform_wallet::manager::history_replay::replay_recorded_history;
+
+    let (persister, _directory, _) = fresh_persister();
+    let (wallet, _, _) = wallet_with_receive_address();
+    let wallet_id = wallet.wallet_id;
+    persister
+        .store(wallet_id, registration(&wallet, None))
+        .unwrap();
+    let records: Vec<TransactionRecord> =
+        include_str!("../fixtures/v019_asset_unlock_v2_signed.txt")
+            .lines()
+            .map(|line| {
+                blob::decode(&hex::decode(line.split_whitespace().nth(2).unwrap()).unwrap())
+                    .unwrap()
+            })
+            .collect();
+    assert_signed_consumer(&records[0], &records[1]);
+    for record in &records {
+        seed_record(&persister, wallet_id, record);
+    }
+    let mut state = persister
+        .load_read_snapshot()
+        .unwrap()
+        .wallets
+        .remove(&wallet_id)
+        .unwrap();
+    // The literal fixture uses a standalone known key, not this test wallet's HD seed.
+    // Install only its public script in the owner seam; raw history stays unchanged.
+    let script = records[0].transaction.output[0].script_pubkey.clone();
+    let address = Address::from_script(&script, Network::Testnet).unwrap();
+    {
+        let account = state
+            .wallet_info
+            .accounts
+            .standard_bip44_accounts
+            .get_mut(&0)
+            .unwrap();
+        let mut pools = account.managed_account_type_mut().address_pools_mut();
+        let pool = &mut pools[0];
+        // The next underived index: `insert` refuses an entry leaving a gap,
+        // and gap maintenance then advances past the installed entry.
+        let index = pool.highest_generated().map_or(0, |highest| highest + 1);
+        let info = AddressInfo::new_from_script_pubkey_p2pkh(
+            script,
+            index,
+            pool.base_path().clone(),
+            Network::Testnet,
+        )
+        .unwrap();
+        pool.insert(info).unwrap();
+        assert!(account.contains_address(&address));
+    }
+    replay_recorded_history(
+        &mut state.wallet_info,
+        &mut state.wallet,
+        state.recorded_history,
+    )
+    .await
+    .unwrap();
+    let history = state.wallet_info.accounts.standard_bip44_accounts[&0].transactions();
+    assert_eq!(
+        history
+            .values()
+            .filter(|record| record.transaction.txid() == records[0].transaction.txid())
+            .count(),
+        1,
+        "replay must not restore physical I beside the same funding body under C"
+    );
+    assert_eq!(
+        consensus::serialize(&history[&records[1].txid].transaction),
+        consensus::serialize(&records[1].transaction)
+    );
 }

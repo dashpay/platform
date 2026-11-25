@@ -464,7 +464,8 @@ final class DashModelMigrationTests: XCTestCase {
                 "PersistentPrivateContactRequestsPosition",
                 "PersistentPrivateShieldedAddress",
                 "PersistentLockedOutpoint",
-                "PersistentTransactionAccounting"
+                "PersistentTransactionAccounting",
+                "PersistentCoreInstantLock"
             ])
     }
 

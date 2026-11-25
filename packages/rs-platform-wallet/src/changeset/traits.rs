@@ -8,7 +8,9 @@ use std::error::Error as StdError;
 use crate::changeset::changeset::{DpnsNameStateEntry, PlatformWalletChangeSet};
 use crate::changeset::client_start_state::ClientStartState;
 use crate::changeset::persistence_capabilities::PersistenceCapabilities;
+use crate::changeset::recorded_history::ReplayEvidence;
 use crate::changeset::wallet_accounting::WalletAccounting;
+use crate::manager::history_replay::HistoryReplayLoad;
 use crate::wallet::platform_wallet::WalletId;
 use dashcore::{Transaction, Txid};
 use dpp::prelude::Identifier;
@@ -452,6 +454,55 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// (`ClientStartState::retained_private_contact_scan_states`, see
     /// [`PersistenceCapabilities::PRIVATE_CONTACT_REQUEST_SCAN_STATE`]).
     fn load(&self) -> Result<ClientStartState, PersistenceError>;
+
+    /// Read startup data without settling history; active wallets may share this backend.
+    fn load_read_snapshot(&self) -> Result<ClientStartState, PersistenceError> {
+        self.load()
+    }
+
+    /// Restore with prefetched evidence inside the backend's atomic scope.
+    ///
+    /// The default supplies raw history for the common owner; it does not claim
+    /// that replay effects were committed. Backends override this only when
+    /// reading and applying effects share one transaction.
+    fn load_with_replay(
+        &self,
+        _evidence: &ReplayEvidence,
+    ) -> Result<HistoryReplayLoad, PersistenceError> {
+        Ok(HistoryReplayLoad {
+            state: self.load()?,
+            outcomes: Default::default(),
+        })
+    }
+
+    /// Restore one wallet under the manager's publication fence, including explicit retries.
+    ///
+    /// The default reads raw history without applying effects. The manager rejects
+    /// histories requiring durable repair unless this method returns a committed outcome.
+    /// Transactional backends override this method as well as `load_with_replay`.
+    fn load_wallet_with_replay(
+        &self,
+        wallet_id: WalletId,
+        _evidence: &ReplayEvidence,
+    ) -> Result<HistoryReplayLoad, PersistenceError> {
+        let mut state = self.load_read_snapshot()?;
+        state.wallets.retain(|id, _| *id == wallet_id);
+        state.platform_addresses.retain(|id, _| *id == wallet_id);
+        Ok(HistoryReplayLoad {
+            state,
+            outcomes: Default::default(),
+        })
+    }
+
+    /// Advisory lock candidates; callers must rebind verified proof in a fresh snapshot.
+    fn replay_lock_candidates(&self) -> Result<Vec<dashcore::InstantLock>, PersistenceError> {
+        Ok(self
+            .load_read_snapshot()?
+            .wallets
+            .values()
+            .flat_map(super::recorded_history::replay_lock_candidates)
+            .collect())
+    }
 
     /// Look up a single core transaction record by `txid` for `wallet_id`.
     ///

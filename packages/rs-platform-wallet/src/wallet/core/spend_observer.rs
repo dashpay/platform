@@ -8,7 +8,7 @@
 //! outpoints are spent.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use arc_swap::ArcSwap;
 use dash_spv::EventHandler;
@@ -91,12 +91,16 @@ use crate::wallet::PlatformWallet;
 /// nothing to retry against.
 ///
 pub struct SpendObservationHandler {
-    wallets: Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
+    wallets: Weak<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
 }
 
 impl SpendObservationHandler {
+    /// Observe the manager-owned map without extending its lifetime.
     pub fn new(wallets: Arc<ArcSwap<BTreeMap<WalletId, Arc<PlatformWallet>>>>) -> Self {
-        Self { wallets }
+        Self {
+            // Wallet broadcasters reach this handler through the SPV runtime.
+            wallets: Arc::downgrade(&wallets),
+        }
     }
 
     /// Apply `observation` to its wallet's generation.
@@ -107,7 +111,10 @@ impl SpendObservationHandler {
     fn observe(&self, wallet_id: WalletId, outpoints: Vec<OutPoint>) {
         // The wallets map, NOT the SPV-contended wallet_manager lock — see
         // the type docs.
-        if let Some(wallet) = self.wallets.load().get(&wallet_id) {
+        let Some(wallets) = self.wallets.upgrade() else {
+            return;
+        };
+        if let Some(wallet) = wallets.load().get(&wallet_id) {
             wallet.generation().observe_spent(outpoints);
         }
     }
