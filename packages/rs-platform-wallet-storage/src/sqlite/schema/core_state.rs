@@ -1,6 +1,6 @@
 //! Writers + readers for the `core_*` tables.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
@@ -10,7 +10,7 @@ use dashcore::transaction::special_transaction::TransactionPayload;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::Utxo;
-use platform_wallet::changeset::{BlockSpend, CoreChangeSet};
+use platform_wallet::changeset::{BlockSpend, CoreChangeSet, DismissalChange};
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
@@ -252,6 +252,9 @@ pub fn apply(
         )?;
     }
     apply_block_spends(tx, wallet_id, cs)?;
+    // Before the sweeps, which return early when there are none: a
+    // dismissal is written in the same transaction as the removal it records.
+    apply_dismissal_changes(tx, wallet_id, &cs.dismissal_changes)?;
     // Sweeps run last so a winner arriving in this very changeset has its
     // own rows committed before the removal below touches the coins it took,
     // and batch by batch in order: each sweep is only true of the wallet it
@@ -1392,7 +1395,150 @@ pub fn load_state(
         }
     }
 
+    (cs.dismissed_txids, cs.abandoned_txids) = kept_dismissals(conn, wallet_id)?;
+
     Ok((cs, utxo_accounts))
+}
+
+/// The bound on a wallet's kept dismissals of each kind, as key-wallet's own.
+const MAX_DISMISSED: usize = 4_096;
+
+/// One kind of a wallet's kept dismissals, oldest first, as key-wallet's set.
+#[derive(Default)]
+struct DismissalSet {
+    rows: VecDeque<(i64, Vec<u8>)>,
+    held: HashSet<Vec<u8>>,
+}
+
+/// Mirror the changes to the wallet's dismissed transactions, one row per
+/// set key-wallet holds the transaction in, replaying its sets change by
+/// change from the rows a load would hand it (a settled one is deleted
+/// first). A sweep adds a swept row and an abandon an abandoned one, each
+/// leaving the other kind's row alone; one already held keeps its place, and
+/// past [`MAX_DISMISSED`] of its kind the oldest goes, as key-wallet pushes it
+/// out without a report while the other set still holds it. A forgetting
+/// deletes both.
+fn apply_dismissal_changes(
+    tx: &Transaction<'_>,
+    wallet_id: &WalletId,
+    changes: &[DismissalChange],
+) -> Result<(), WalletStorageError> {
+    if changes.is_empty() {
+        return Ok(());
+    }
+    tx.execute(
+        &format!(
+            "DELETE FROM core_dismissed_txids AS d WHERE d.wallet_id = ?1 AND {SETTLED_DISMISSAL}"
+        ),
+        params![wallet_id.as_slice()],
+    )?;
+    let mut sets = [DismissalSet::default(), DismissalSet::default()];
+    {
+        let mut stmt = tx.prepare_cached(
+            "SELECT id, txid, abandoned FROM core_dismissed_txids WHERE wallet_id = ?1 ORDER BY id",
+        )?;
+        let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+        while let Some(row) = rows.next()? {
+            let txid: Vec<u8> = row.get(1)?;
+            let set = &mut sets[usize::from(row.get::<_, bool>(2)?)];
+            set.held.insert(txid.clone());
+            set.rows.push_back((row.get(0)?, txid));
+        }
+    }
+    let mut insert = tx.prepare_cached(
+        "INSERT INTO core_dismissed_txids (wallet_id, txid, abandoned) VALUES (?1, ?2, ?3)",
+    )?;
+    let mut delete_row = tx.prepare_cached("DELETE FROM core_dismissed_txids WHERE id = ?1")?;
+    let mut delete =
+        tx.prepare_cached("DELETE FROM core_dismissed_txids WHERE wallet_id = ?1 AND txid = ?2")?;
+    for change in changes {
+        let (txid, abandoned) = match change {
+            DismissalChange::Dismissed(txid) => (txid, false),
+            DismissalChange::Abandoned(txid) => (txid, true),
+            DismissalChange::Forgotten(txid) => {
+                let txid: &[u8] = txid.as_ref();
+                delete.execute(params![wallet_id.as_slice(), txid])?;
+                for set in &mut sets {
+                    if set.held.remove(txid) {
+                        set.rows.retain(|(_, held)| held.as_slice() != txid);
+                    }
+                }
+                continue;
+            }
+        };
+        let txid = AsRef::<[u8]>::as_ref(txid).to_vec();
+        let set = &mut sets[usize::from(abandoned)];
+        if !set.held.insert(txid.clone()) {
+            continue;
+        }
+        insert.execute(params![wallet_id.as_slice(), txid, abandoned])?;
+        set.rows.push_back((tx.last_insert_rowid(), txid));
+        while set.rows.len() > MAX_DISMISSED {
+            let Some((id, oldest)) = set.rows.pop_front() else {
+                break;
+            };
+            set.held.remove(&oldest);
+            delete_row.execute([id])?;
+        }
+    }
+    Ok(())
+}
+
+/// A `core_dismissed_txids` row `d` whose transaction the store holds
+/// mined, or with a lock stored as verified: it is not dead. An unverified
+/// lock settles nothing.
+const SETTLED_DISMISSAL: &str = "(EXISTS (SELECT 1 FROM core_transactions t \
+       WHERE t.wallet_id = d.wallet_id AND t.txid = d.txid AND t.height IS NOT NULL) \
+     OR EXISTS (SELECT 1 FROM core_instant_locks l \
+       WHERE l.wallet_id = d.wallet_id AND l.txid = d.txid AND l.verified = 1))";
+
+/// Delete the kept dismissals of every wallet whose transaction the store
+/// holds mined or verified-locked. A write that settled one while its
+/// forgetting was lost leaves such a row; the load skips them too
+/// ([`kept_dismissals`]). Takes the write lock only when there is one.
+pub(crate) fn drop_settled_dismissals(conn: &mut Connection) -> Result<(), WalletStorageError> {
+    let any: bool = conn.query_row(
+        &format!(
+            "SELECT EXISTS (SELECT 1 FROM core_dismissed_txids AS d WHERE {SETTLED_DISMISSAL})"
+        ),
+        [],
+        |r| r.get(0),
+    )?;
+    if !any {
+        return Ok(());
+    }
+    let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    tx.execute(
+        &format!("DELETE FROM core_dismissed_txids AS d WHERE {SETTLED_DISMISSAL}"),
+        [],
+    )?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// The wallet's kept dismissals, swept and abandoned, each oldest first,
+/// but for any whose transaction the store holds mined or verified-locked.
+fn kept_dismissals(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<(Vec<dashcore::Txid>, Vec<dashcore::Txid>), WalletStorageError> {
+    let mut stmt = conn.prepare_cached(&format!(
+        "SELECT d.abandoned, length(d.txid), d.txid FROM core_dismissed_txids d \
+         WHERE d.wallet_id = ?1 AND NOT ({SETTLED_DISMISSAL}) ORDER BY d.id"
+    ))?;
+    let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+    let (mut swept, mut abandoned) = (Vec::new(), Vec::new());
+    while let Some(row) = rows.next()? {
+        blob::check_fixed_width(row.get::<_, i64>(1)?, 32, "core_dismissed_txids.txid")?;
+        let bytes: Vec<u8> = row.get(2)?;
+        let txid = dashcore::Txid::from_slice(&bytes)?;
+        if row.get::<_, bool>(0)? {
+            abandoned.push(txid);
+        } else {
+            swept.push(txid);
+        }
+    }
+    Ok((swept, abandoned))
 }
 
 /// Every address that has ever held a `core_utxos` row for this wallet —

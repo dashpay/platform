@@ -365,6 +365,9 @@ fn samples() -> Vec<WalletStorageError> {
             table: "core_instant_locks",
             column: "verified",
         },
+        WalletStorageError::TableDefinitionMismatch {
+            table: "core_dismissed_txids",
+        },
     ]
 }
 
@@ -511,6 +514,9 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::DatabasePathIsSymlink { .. } => (false, "database_path_is_symlink"),
             WalletStorageError::ColumnDefinitionMismatch { .. } => {
                 (false, "column_definition_mismatch")
+            }
+            WalletStorageError::TableDefinitionMismatch { .. } => {
+                (false, "table_definition_mismatch")
             }
         }
     }

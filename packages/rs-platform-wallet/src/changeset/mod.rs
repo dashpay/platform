@@ -37,7 +37,7 @@ pub(crate) use changeset::account_address_pool_entries;
 pub use changeset::{
     upsert_pending_contact_crypto, AccountAddressPoolEntry, AccountRegistrationEntry,
     AssetLockChangeSet, AssetLockEntry, BlockSpend, ContactChangeSet, ContactRequestEntry,
-    CoreChangeSet, DpnsNameSaleStatus, DpnsNameStateChangeSet, DpnsNameStateEntry,
+    CoreChangeSet, DismissalChange, DpnsNameSaleStatus, DpnsNameStateChangeSet, DpnsNameStateEntry,
     HighestUsedIndexes, IdentityChangeSet, IdentityEntry, IdentityKeyDerivationIndices,
     IdentityKeyEntry, IdentityKeysChangeSet, InvitationChangeSet, InvitationEntry,
     InvitationStatus, KeyDerivationBreadcrumb, KeyWithBreadcrumb, PendingContactCrypto,

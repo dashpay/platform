@@ -44,6 +44,7 @@ mod sqlite_delete_real_apply_failure;
 mod sqlite_delete_wallet;
 mod sqlite_delete_wallet_constraint_carveout;
 mod sqlite_deleted_wallet_residue;
+mod sqlite_dismissed_txids;
 mod sqlite_error_classification;
 mod sqlite_fk_changeset_ordering;
 mod sqlite_foreign_db_rejection;

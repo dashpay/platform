@@ -2889,6 +2889,7 @@ impl CoreChangeSet {
             && self.outpoint_locks.is_empty()
             && self.block_spends.is_empty()
             && self.block_spends_truncated_above.is_none()
+            && self.dismissal_changes.is_empty()
     }
 }
 

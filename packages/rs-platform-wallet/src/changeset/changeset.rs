@@ -313,6 +313,26 @@ pub struct CoreChangeSet {
     #[cfg_attr(feature = "serde", serde(default))]
     pub sweeps: Vec<SweepBatch>,
 
+    /// Load only, oldest first: the conflict losers the wallet swept as dead
+    /// that a store kept from earlier sessions and holds neither mined nor
+    /// with a verified lock, for rehydration to hand back to key-wallet, whose
+    /// own memory of them does not survive a restart. The event path sets
+    /// [`Self::dismissal_changes`] instead.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub dismissed_txids: Vec<Txid>,
+
+    /// Load only, oldest first: as [`Self::dismissed_txids`], for the
+    /// transactions the user abandoned. Kept apart, with a bound of their
+    /// own, so swept losers never push an abandon out.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub abandoned_txids: Vec<Txid>,
+
+    /// The changes to the wallet's own dismissals, in order. Stored in the
+    /// same write as the sweep or record they ride on, so after a crash
+    /// both or neither are on disk. Merge appends in order.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub dismissal_changes: Vec<DismissalChange>,
+
     /// The engine's verdict on every `Received` / `Change` output this
     /// batch's records carry that the engine did NOT credit to the owning
     /// account's UTXO set, keyed by outpoint. Absence means credited — the
@@ -433,6 +453,35 @@ pub enum UtxoCreditVerdict {
     /// Not in `utxos` for a reason the bridge cannot name — an account-level
     /// spent mark, a spend, an abandon or a sweep between emit and drain.
     Uncredited,
+}
+
+/// A change to the transactions a wallet dropped as dead (an abandoned
+/// payment, the loser of a locked conflict), which key-wallet remembers so
+/// a peer delivering one again is not counted again. key-wallet keeps the
+/// two kinds in two sets with the same cap and reports each set a
+/// transaction joins; one set pushing it out while the other still holds it
+/// is no change, so a store mirrors the sets one by one with the same caps,
+/// change by change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum DismissalChange {
+    /// `txid` was swept as the loser of a locked conflict. It may be
+    /// abandoned as well.
+    Dismissed(Txid),
+    /// `txid` was abandoned by the user. It may be swept as well.
+    Abandoned(Txid),
+    /// `txid` is dismissed no more, of either kind: mined or locked after
+    /// all, or pushed out of the last set that held it.
+    Forgotten(Txid),
+}
+
+/// Append the txids of `more` not already in `kept`, in order.
+fn extend_unique(kept: &mut Vec<Txid>, more: Vec<Txid>) {
+    if more.is_empty() {
+        return;
+    }
+    let mut seen: std::collections::HashSet<Txid> = kept.iter().copied().collect();
+    kept.extend(more.into_iter().filter(|t| seen.insert(*t)));
 }
 
 /// One `TransactionsSwept` event: the transactions it removed, the
@@ -868,6 +917,9 @@ impl Merge for CoreChangeSet {
         // overwrites — the lock object itself is canonical.
         self.instant_locks_for_non_final_records
             .extend(other.instant_locks_for_non_final_records);
+        self.dismissal_changes.extend(other.dismissal_changes);
+        extend_unique(&mut self.dismissed_txids, other.dismissed_txids);
+        extend_unique(&mut self.abandoned_txids, other.abandoned_txids);
 
         // Height watermarks: monotonic-max. A later changeset can only
         // advance the watermark, never roll it back. `None` means
@@ -1003,6 +1055,9 @@ impl Merge for CoreChangeSet {
             && self.new_utxos.is_empty()
             && self.rescan_utxos.is_empty()
             && self.instant_locks_for_non_final_records.is_empty()
+            && self.dismissed_txids.is_empty()
+            && self.abandoned_txids.is_empty()
+            && self.dismissal_changes.is_empty()
             && self.last_processed_height.is_none()
             && self.synced_height.is_none()
             && self.addresses_derived.is_empty()

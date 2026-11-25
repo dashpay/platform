@@ -1548,7 +1548,7 @@ fn tc_p4_012_load_query_count_bounded() {
     );
     let per_wallet = delta / 9;
     assert!(
-        (1..=20).contains(&per_wallet),
+        (1..=21).contains(&per_wallet),
         "per-wallet statement count must be small + bounded, got {per_wallet}"
     );
     // Shared (wallet-count-independent) overhead: the `list_ids` +
