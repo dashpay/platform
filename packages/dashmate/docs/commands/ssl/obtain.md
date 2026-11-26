@@ -36,7 +36,7 @@ If IP verification fails, the command will retry automatically unless the `--no-
 
 The `--force` flag can be used to replace a certificate even if it's still valid, which is useful for testing or when you need to replace a certificate for other reasons.
 
-Before it enables TLS, the command checks the certificate files it leaves: the bundle and the private key must load as a matching pair, and the certificate must not have expired. A certificate file found on disk is not downloaded again, so if the files are damaged, for example cut short by a full disk, the command fails without enabling TLS. Obtain a new certificate with `--force` in that case.
+Before it enables TLS, the command checks the certificate files it leaves: the bundle and the private key must load as a matching pair, and the certificate must be inside its validity window (not expired, and not valid only from a later date). A bundle on disk counts as downloaded only when it passes this check. One that is damaged, for example cut short by a full disk, is downloaded again from ZeroSSL while ZeroSSL holds the certificate as issued, without creating a new one. A downloaded certificate that does not belong to the private key on disk is not written; obtain a new certificate with `--force` in that case.
 
 ## Examples
 
