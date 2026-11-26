@@ -1275,6 +1275,32 @@ describe('collectSamplesTaskFactory', () => {
         .to.equal(`ops+${masked}@example.com`);
     });
 
+    // A URL that carries a password can carry a token in its query too, and
+    // the description can quote a build argument's URL in full
+    it('should mask the query values of a URL with a password in the description', async () => {
+      const password = 'buildPassword7Qx';
+      const token = 'signedQueryToken7Qx';
+      const buildUrl = `https://builder:${password}@builds.example.com/drive.tar?sig=${token}&expires=99`;
+
+      config.set('platform.drive.abci.docker.build.buildArgs', { PRIVATE_BUILD_URL: buildUrl });
+      config.set('description', `drive built from ${buildUrl} for testing`);
+
+      const archivePath = await collectAndArchive();
+
+      const archived = readArchivedBytes(archivePath);
+
+      expect(archived).to.not.contain(password);
+      expect(archived).to.not.contain(token);
+
+      const restoredConfig = (await unarchiveSamplesFactory(getServiceList)(archivePath))
+        .getDashmateConfig();
+
+      expect(restoredConfig.get('description')).to.equal(
+        `drive built from https://*******:${'*'.repeat(password.length)}@builds.example.com/drive.tar`
+        + `?sig=${'*'.repeat(token.length)}&expires=** for testing`,
+      );
+    });
+
     // A password can be spelled like a value the config schema requires
     // elsewhere, such as the environment name. Doctor validates the config copy
     // when it reads a report back, so the copy must keep that value while the

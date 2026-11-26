@@ -25,6 +25,12 @@ const NON_SECRET_BUILD_ARGS = ['CARGO_BUILD_PROFILE', 'SDK_TEST_DATA'];
  */
 const URL_USERINFO = /((?:[a-z][a-z0-9+.-]*:[\\/]+)|(?:(?:https?|wss?|ftp):))([^\s/\\?#]+)@/gi;
 
+/**
+ * A URL written inside other text with credentials before its host, up to the
+ * start of its query, and the query itself
+ */
+const URL_USERINFO_QUERY = new RegExp(`((?:${URL_USERINFO.source})[^\\s?#]*\\?)([^\\s#]*)`, 'gi');
+
 const VALUE_KIND = {
   PLAIN: 'plain',
   // Hidden whole
@@ -146,6 +152,26 @@ function hideTextUrlCredentials(text) {
       : `${hideString(userinfo.slice(0, separatorIndex))}:${hideString(userinfo.slice(separatorIndex + 1))}`;
 
     return `${scheme}${hiddenUserinfo}@`;
+  });
+}
+
+/**
+ * @param {string} text
+ * @return {string} the text with the query values hidden in each URL written
+ *   in it with credentials: a URL that carries a password can carry a token
+ *   in its query too
+ */
+function hideTextUrlQueryValues(text) {
+  return text.replace(URL_USERINFO_QUERY, (_match, start, _scheme, _userinfo, query) => {
+    const hiddenQuery = query.split('&').map((parameter) => {
+      const separatorIndex = parameter.indexOf('=');
+
+      return separatorIndex === -1
+        ? parameter
+        : `${parameter.slice(0, separatorIndex + 1)}${hideString(parameter.slice(separatorIndex + 1))}`;
+    });
+
+    return `${start}${hiddenQuery.join('&')}`;
   });
 }
 
@@ -321,9 +347,11 @@ export default function obfuscateConfig(
     const isFreeText = FREE_TEXT_FIELD_NAMES.includes(field);
 
     // Before the operator's identity is masked, which could rewrite part of
-    // a secret
+    // a secret. Nothing reads free text as a value, so a URL's query in it
+    // can be hidden too: once its credentials are hidden, a secret the query
+    // shares with a config value no longer matches that value whole.
     if (isFreeText) {
-      value = scrubFreeText(value);
+      value = scrubFreeText(hideTextUrlQueryValues(value));
     }
 
     const namesOperator = isLocalPath(value) || isFreeText;
