@@ -584,6 +584,23 @@ describe('resetNodeTaskFactory', () => {
       expect(error.message).to.include(`  '${sslPath.split("'").join("\\'")}'\n`);
     });
 
+    it('should quote the directory holding the target in the commands it gives', async function test() {
+      skipAsRoot(this);
+      useHomeDirWithApostrophe();
+
+      const configPath = lockDirectory('testnet');
+      const quotedConfigPath = `'${configPath.split("'").join("'\\''")}'`;
+      const { uid, gid } = os.userInfo();
+
+      const error = await hardReset({ isPlatformOnlyReset: true }).then(
+        () => { throw new Error('the reset succeeded'); },
+        (e) => e,
+      );
+
+      expect(error.message).to.include(`  sudo chown ${uid}:${gid} ${quotedConfigPath}\n`);
+      expect(error.message).to.include(`  chmod u+rwx ${quotedConfigPath}\n`);
+    });
+
     it('should quote the path in the removal it advises once removal has begun', async function test() {
       useHomeDirWithApostrophe();
 
@@ -916,7 +933,7 @@ describe('resetNodeTaskFactory', () => {
         const composeOptions = (options.composeOptions ?? []).flat();
         const commandOptions = (options.commandOptions ?? []).flat();
         composeCalls.push({
-          command, args, composeOptions, commandOptions,
+          command, args, composeOptions, commandOptions, configName: options.env?.CONFIG_NAME,
         });
 
         const profiles = composeOptions.filter((_, i) => composeOptions[i - 1] === '--profile');
@@ -1144,6 +1161,38 @@ describe('resetNodeTaskFactory', () => {
 
       expect(error.getError().message).to.include('logger.env');
       expect(composeCalls.filter(({ command }) => command === 'rm')).to.be.empty();
+    });
+
+    // The removal goes by the plan the group's check prepared for the
+    // member, rather than asking Compose again once other members are gone.
+    it('should reset each member of a group by the plan its check prepared', async () => {
+      const members = ['node_1', 'node_2'].map((name) => {
+        const options = platformConfig.getStoredOptions();
+        options.group = 'testnet';
+
+        return new Config(name, options);
+      });
+
+      await GroupResetCommand.prototype.runWithDependencies.call(
+        {},
+        {},
+        {
+          verbose: false, hard: false, force: true, platform: true,
+        },
+        diContainer.resolve('resetNodeTask'),
+        members,
+        () => new Listr([]),
+        () => new Listr([]),
+      );
+
+      const callsFor = (command) => composeCalls
+        .filter((call) => call.command === command)
+        .map(({ configName }) => configName);
+
+      expect(callsFor('config')).to.have.members(['node_1', 'node_2']);
+      expect(callsFor('rm')).to.deep.equal(['node_1', 'node_2']);
+      expect(composeCalls.findIndex(({ command }) => command === 'rm'))
+        .to.be.above(composeCalls.map(({ command }) => command).lastIndexOf('config'));
     });
 
     it('should remove the Platform services again the same way while a volume is in use', async () => {
