@@ -164,6 +164,48 @@ describe('gatewayCertificateTaskFactory', () => {
     // The reason it reached WARN is a fact about this node in its own right and
     // has to survive: it is what tells the operator the certificate is nearly
     // out, which is why the switch is urgent at all.
+    // An outdated helper recorded with this cause refused before it created an
+    // issuance, so nothing can be outstanding. The request is still withheld,
+    // but the reason given has to be the one that happened.
+    [
+      ['no earlier issuance', {}, 'so none was requested', 'may already have been issued', true],
+      ['an earlier result that was never read', {
+        issuanceUncertainAt: new Date().toISOString(),
+      }, 'may already have been issued', 'so none was requested', false],
+    ].forEach(([name, overrides, expected, unexpected, isHelperRefusalOnly]) => {
+      it(`should explain an outdated helper's refusal on a working ZeroSSL certificate with ${name}`, async function it() {
+        config.set('platform.gateway.ssl.enabled', true);
+
+        const { context } = await run.call(this, {
+          checkGatewayCertificate: () => expiringSoon(),
+          interactive: false,
+          renewalRecord: RenewalRecord.fromObject({
+            provider: 'zerossl',
+            outcome: 'failed',
+            code: 'HELPER_OUTDATED',
+            attemptedAt: new Date().toISOString(),
+            consecutiveFailures: 1,
+            ...overrides,
+          }),
+        });
+
+        const warnings = context.certificateWarnings.join('\n');
+
+        expect(warnings).to.contain(expected);
+        expect(warnings).to.not.contain(unexpected);
+        expect(warnings).to.not.contain('ssl obtain');
+        expect(warnings).to.not.contain('dashmate restart');
+
+        if (isHelperRefusalOnly) {
+          // A local check, and the last attempt described as past: a later
+          // start can run a helper that matches the config.
+          expect(warnings).to.contain('dashmate doctor --config');
+          expect(warnings).to.not.contain('doctor report');
+          expect(warnings).to.contain('last attempt');
+        }
+      });
+    });
+
     it('should keep the warning that made it WARN', async function it() {
       const { context } = await run.call(this, {
         checkGatewayCertificate: () => expiringSoon(),
