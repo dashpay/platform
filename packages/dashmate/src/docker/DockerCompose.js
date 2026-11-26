@@ -488,9 +488,13 @@ export default class DockerCompose {
    *
    * Docker knows a volume by its name, and several keys of the Compose files
    * can give the same one, so each check is on that name. The project's whole
-   * model is read, every profile given enabled: given service names, Compose
-   * describes only them and what they depend on, and the services that mount
-   * the same volume would go unseen.
+   * model is read, every profile enabled by Compose's wildcard: given service
+   * names, Compose describes only them and what they depend on, and it leaves
+   * out a service whose profile is not enabled, with the keys only that
+   * service mounts. Either way the services that mount the same volume would
+   * go unseen. dashmate's own list of profiles misses one that only an
+   * override declares, and Compose cannot list them while a service the
+   * config enables depends on one it does not.
    *
    * A volume is left out when any key that names it is external, since the
    * operator manages it, and when a service that is not removed with the
@@ -506,14 +510,11 @@ export default class DockerCompose {
    *  looked up
    * @param {string[]} [options.removedServiceNames] - every service removed
    *  with them, the given ones included
-   * @param {string[]} [options.profiles] - Profiles to enable, so that every
-   *  service of the Compose files is part of the model
    * @return {Promise<VolumeCandidate[]>}
    */
   async getVolumeCandidates(config, {
     serviceNames,
     removedServiceNames = serviceNames,
-    profiles = [],
   }) {
     if (serviceNames.length === 0) {
       return [];
@@ -524,7 +525,7 @@ export default class DockerCompose {
     let project;
     try {
       const { out } = await dockerCompose.execCompose('config', [], {
-        ...this.#createOptions(config, { profiles }),
+        ...this.#createOptions(config, { profiles: ['*'] }),
         commandOptions: ['--format', 'json'],
       });
 

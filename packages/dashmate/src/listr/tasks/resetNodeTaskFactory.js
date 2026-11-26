@@ -338,13 +338,24 @@ export default function resetNodeTaskFactory(
 
     // Node's own recursive removal: its native implementation can remove
     // entries relative to the directories it holds open, which a walk by path
-    // name cannot.
+    // name cannot. A target that is a link is unlinked instead: some Node
+    // versions' recursive removal leaves a link that points nowhere in place
+    // and reports success.
     let removalError;
     try {
-      fs.rmSync(targetPath, { recursive: true, force: true });
+      if (fs.lstatSync(targetPath, { throwIfNoEntry: false })?.isSymbolicLink()) {
+        fs.unlinkSync(targetPath);
+      } else {
+        fs.rmSync(targetPath, { recursive: true, force: true });
+      }
 
       return;
     } catch (e) {
+      // Removed meanwhile by something else, as `force` takes it
+      if (e.code === 'ENOENT') {
+        return;
+      }
+
       removalError = e;
     }
 
@@ -358,13 +369,25 @@ export default function resetNodeTaskFactory(
     }
 
     // A permission error the walk does not see, such as for a file in a
-    // sticky directory, still yields to a removal that has the rights.
+    // sticky directory, yields to a removal that has the rights. EPERM also
+    // comes from a filesystem protection, such as an immutable file, which
+    // no rights get past until it is cleared.
     if (deniedPaths.length === 0) {
+      let remedy = ['Fix the cause,'];
+      if (removalError.code === 'EACCES') {
+        remedy = ['Remove it with sufficient rights, for example:', ...formatPathCommands(['sudo rm -rf'], targetPath)];
+      } else if (removalError.code === 'EPERM') {
+        remedy = [
+          'More rights help only when access rights are what stop the removal, for example:',
+          ...formatPathCommands(['sudo rm -rf'], targetPath),
+          'If that fails with EPERM too, a filesystem protection such as the immutable flag stops it'
+            + ' (lsattr and chattr on Linux, ls -lO and chflags on macOS): find it and clear it,',
+        ];
+      }
+
       throw new Error([
         `Could not remove ${formatPath(targetPath)}: ${escapeForDisplay(removalError.message)}`,
-        ...(isPermissionError(removalError)
-          ? ['Remove it with sufficient rights, for example:', ...formatPathCommands(['sudo rm -rf'], targetPath)]
-          : ['Fix the cause,']),
+        ...remedy,
         ...recovery,
       ].join('\n'));
     }
@@ -475,7 +498,6 @@ export default function resetNodeTaskFactory(
       : await dockerCompose.getVolumeCandidates(config, {
         serviceNames,
         removedServiceNames: [...serviceNames, HELPER_SERVICE_NAME],
-        profiles,
       });
 
     // Whose a volume is counts only when it is removed, but asking Docker now

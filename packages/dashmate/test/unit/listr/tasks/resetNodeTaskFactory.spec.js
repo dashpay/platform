@@ -773,6 +773,60 @@ describe('resetNodeTaskFactory', () => {
       expect(fs.readFileSync(outsidePath, 'utf8')).to.equal('content');
     });
 
+    // The target itself can be a link, to a directory elsewhere or to one a
+    // storage move retired. The link goes and what it points to stays. Left
+    // in place, a link that points nowhere would have the Platform files
+    // rendered through it.
+    it('should remove a target that is a link, even one that points nowhere', async function test() {
+      const platformPath = homeDir.joinPath('testnet', 'platform');
+      const outsidePath = writeFile('outside', 'keep.txt');
+      fs.rmSync(platformPath, { recursive: true });
+
+      // Node's recursive removal, as some Node 24 versions run it: a link
+      // that points nowhere is left in place and the removal succeeds.
+      const { rmSync } = fs;
+      this.sinon.stub(fs, 'rmSync').callsFake((removedPath, ...args) => {
+        if (removedPath === platformPath && !fs.existsSync(removedPath)) {
+          return undefined;
+        }
+
+        return rmSync.call(fs, removedPath, ...args);
+      });
+
+      fs.symlinkSync(path.dirname(outsidePath), platformPath);
+      await hardReset({ isPlatformOnlyReset: true });
+
+      // lstat: a link that points nowhere does not exist to stat
+      expect(() => fs.lstatSync(platformPath)).to.throw().with.property('code', 'ENOENT');
+      expect(fs.readFileSync(outsidePath, 'utf8')).to.equal('content');
+
+      fs.symlinkSync(homeDir.joinPath('retired'), platformPath);
+      await hardReset({ isPlatformOnlyReset: true });
+
+      expect(() => fs.lstatSync(platformPath)).to.throw().with.property('code', 'ENOENT');
+    });
+
+    // Something else can remove the link between the look at it and the
+    // unlink. Gone is what the removal is for.
+    it('should take a link removed meanwhile for removed', async function test() {
+      const platformPath = homeDir.joinPath('testnet', 'platform');
+      fs.rmSync(platformPath, { recursive: true });
+      fs.symlinkSync(homeDir.joinPath('retired'), platformPath);
+
+      const { unlinkSync } = fs;
+      this.sinon.stub(fs, 'unlinkSync').callsFake((unlinkedPath) => {
+        unlinkSync.call(fs, unlinkedPath);
+
+        if (unlinkedPath === platformPath) {
+          throw fsError('ENOENT', `ENOENT: no such file or directory, unlink '${unlinkedPath}'`);
+        }
+      });
+
+      await hardReset({ isPlatformOnlyReset: true });
+
+      expect(() => fs.lstatSync(platformPath)).to.throw().with.property('code', 'ENOENT');
+    });
+
     // A directory that becomes read-only between the check and the removal
     // makes Node's recursive removal fail, naming the target at most. The
     // reset does not go on past the failure: it names each path left that this
@@ -808,11 +862,12 @@ describe('resetNodeTaskFactory', () => {
       expect(error.message.split('\n').filter((line) => /^\s*sudo\b/.test(line))).to.be.empty();
     });
 
-    // What the check cannot foresee, such as a file in a sticky directory or
-    // one marked immutable, fails once removal has begun, and permissions do
-    // not show it. Node's error is shown with a removal that has the rights,
-    // and Compose then needs the service files rendered again before the
-    // reset can run.
+    // What the check cannot foresee fails once removal has begun, and
+    // permissions do not show it. EPERM comes from an access restriction, such
+    // as a file in a sticky directory, which more rights get past, or from a
+    // filesystem protection, such as an immutable file, which they do not.
+    // Node's error is shown, and Compose then needs the service files
+    // rendered again before the reset can run.
     it('should show the removal\'s error for a failure the check cannot foresee', async function test() {
       failRemoval(
         this.sinon,
@@ -825,11 +880,35 @@ describe('resetNodeTaskFactory', () => {
         (e) => e,
       );
 
+      const lines = error.message.split('\n');
       expect(error.message).to.include('EPERM: operation not permitted, rm');
-      expect(error.message.split('\n'))
-        .to.include(`  sudo rm -rf ${quoteShellArgument(homeDir.joinPath('testnet', 'platform'))}`);
+      expect(lines).to.include('More rights help only when access rights are what stop the removal, for example:');
+      expect(lines).to.include(`  sudo rm -rf ${quoteShellArgument(homeDir.joinPath('testnet', 'platform'))}`);
+      expect(lines.find((line) => line.startsWith('If that fails with EPERM too')))
+        .to.include('such as the immutable flag').and.include('find it and clear it,');
       expect(error.message).to.include('dashmate config render --config testnet');
       expect(dockerCompose.rm).to.have.been.calledOnce();
+    });
+
+    // EACCES is an access restriction only, which more rights get past.
+    it('should give a removal with more rights for an access error the check cannot foresee', async function test() {
+      failRemoval(
+        this.sinon,
+        homeDir.joinPath('testnet', 'platform'),
+        fsError('EACCES', 'EACCES: permission denied, rm'),
+      );
+
+      const error = await hardReset({ isPlatformOnlyReset: true }).then(
+        () => { throw new Error('the reset succeeded'); },
+        (e) => e,
+      );
+
+      const lines = error.message.split('\n');
+      expect(error.message).to.include('EACCES: permission denied, rm');
+      expect(lines).to.include('Remove it with sufficient rights, for example:');
+      expect(lines).to.include(`  sudo rm -rf ${quoteShellArgument(homeDir.joinPath('testnet', 'platform'))}`);
+      expect(lines.filter((line) => line.startsWith('If that fails with EPERM'))).to.be.empty();
+      expect(error.message).to.include('dashmate config render --config testnet');
     });
 
     // Node's recursive removal is what the reset used before it could report
@@ -892,8 +971,12 @@ describe('resetNodeTaskFactory', () => {
   // Run against the real Compose model and DockerCompose, with only the
   // `docker compose` process replaced by a stand-in that answers as Compose
   // does: a `--profile` selection that leaves out Core makes the quorum list's
-  // dependency on Core invalid, and a service named explicitly brings the
-  // services it depends on into the model.
+  // dependency on Core invalid, and so does a service an override adds that
+  // depends on a service whose profile is not enabled. A service named
+  // explicitly brings the services it depends on into the model, a service
+  // whose profile is not enabled is left out of it, and so is a volume key no
+  // service in it mounts. `--profile '*'` enables every profile, and without
+  // any `--profile` the config's own profiles are enabled.
   describe('Compose commands of a Platform reset', () => {
     const ALL_PROFILES = ['core', 'platform', 'platform-quorum'];
 
@@ -920,6 +1003,7 @@ describe('resetNodeTaskFactory', () => {
 
     let composeCalls;
     let serviceVolumes;
+    let overrideServices;
     let volumeDefinitions;
     let dockerVolumeLabels;
     let removedVolumes;
@@ -989,6 +1073,8 @@ describe('resetNodeTaskFactory', () => {
 
       serviceVolumes = structuredClone(SERVICE_VOLUMES);
       createProjectVolumes();
+      // Services an override adds: their profiles, mounts and dependencies
+      overrideServices = {};
 
       removedVolumes = [];
       runningContainers = [];
@@ -1025,6 +1111,26 @@ describe('resetNodeTaskFactory', () => {
           });
         }
 
+        const enabledProfiles = profiles.length > 0
+          ? profiles
+          : (options.env?.COMPOSE_PROFILES ?? '').split(',');
+        const isEnabled = (serviceProfiles) => serviceProfiles.length === 0
+          || enabledProfiles.includes('*')
+          || serviceProfiles.some((profile) => enabledProfiles.includes(profile));
+        const enabledOverrideServices = Object.entries(overrideServices)
+          .filter(([, service]) => isEnabled(service.profiles));
+
+        const brokenDependant = enabledOverrideServices.find(([, service]) => (service.dependsOn ?? [])
+          .some((dependency) => PLATFORM_SERVICES.includes(dependency) && !isEnabled(['platform'])));
+        if (brokenDependant) {
+          // eslint-disable-next-line prefer-promise-reject-errors
+          return Promise.reject({
+            exitCode: 1,
+            out: '',
+            err: `service "${brokenDependant[0]}" depends on undefined service "${brokenDependant[1].dependsOn[0]}": invalid compose project\n`,
+          });
+        }
+
         if (command === 'ps') {
           // Compose before 2.15 fails `ps <names>` when a named service has
           // no container.
@@ -1055,11 +1161,18 @@ describe('resetNodeTaskFactory', () => {
           const serviceNames = args.length > 0
             ? [...args, ...(args.includes('quorum_list') ? ['core'] : [])]
             : [...PLATFORM_SERVICES, 'core', 'dashmate_helper', ...Object.keys(serviceVolumes)];
-          const services = Object.fromEntries(
-            serviceNames.map((name) => [name, { volumes: serviceVolumes[name] }]),
-          );
+          const services = Object.fromEntries([
+            ...serviceNames.map((name) => [name, { volumes: serviceVolumes[name] }]),
+            ...enabledOverrideServices.map(([name, service]) => [name, { volumes: service.volumes }]),
+          ]);
 
-          const volumes = volumeDefinitionsByConfig[options.env?.CONFIG_NAME] ?? volumeDefinitions;
+          const mountedKeys = new Set(Object.values(services)
+            .flatMap((service) => service.volumes ?? [])
+            .map(({ source }) => source));
+
+          const volumes = Object.fromEntries(Object.entries(
+            volumeDefinitionsByConfig[options.env?.CONFIG_NAME] ?? volumeDefinitions,
+          ).filter(([key]) => mountedKeys.has(key)));
 
           return {
             exitCode: 0,
@@ -1097,6 +1210,17 @@ describe('resetNodeTaskFactory', () => {
     }
 
     /**
+     * @param {string[]} profiles - the profiles a command selects
+     */
+    function expectEveryProfile(profiles) {
+      if (profiles.length === 1 && profiles[0] === '*') {
+        return;
+      }
+
+      expect(profiles).to.have.members(ALL_PROFILES);
+    }
+
+    /**
      * @return {string[]}
      */
     function removedServices() {
@@ -1117,7 +1241,7 @@ describe('resetNodeTaskFactory', () => {
         const profiles = selectedProfiles(composeOptions);
 
         if (profiles.length > 0) {
-          expect(profiles).to.have.members(ALL_PROFILES);
+          expectEveryProfile(profiles);
         }
       });
 
@@ -1180,7 +1304,27 @@ describe('resetNodeTaskFactory', () => {
       ]);
 
       const [configCall] = composeCalls.filter(({ command }) => command === 'config');
-      expect(selectedProfiles(configCall.composeOptions)).to.have.members(ALL_PROFILES);
+      expect(selectedProfiles(configCall.composeOptions)).to.deep.equal(['*']);
+    });
+
+    // An override can add a service in a profile none of dashmate's Compose
+    // files declares, and mount a Platform volume into it, under an external
+    // key or under the Platform key itself. Compose leaves a service whose
+    // profile is not enabled out of the model, with the keys only it mounts,
+    // while Docker still labels the volume for the Platform key.
+    it('should keep a volume a service in a profile only an override declares mounts too', async () => {
+      overrideServices.drive_backup = {
+        profiles: ['backup'],
+        volumes: [
+          { type: 'volume', source: 'drive_backup_data', target: '/backup/drive' },
+          { type: 'volume', source: 'drive_tenderdash', target: '/backup/tenderdash' },
+        ],
+      };
+      volumeDefinitions.drive_backup_data = { name: 'docker_drive_abci_data', external: true };
+
+      await platformReset();
+
+      expect(removedVolumes).to.have.members(['docker_rs-dapi-access-logs']);
     });
 
     // An override can mount into a Platform service a volume the operator
@@ -1490,11 +1634,30 @@ describe('resetNodeTaskFactory', () => {
         const profiles = selectedProfiles(composeOptions);
 
         if (profiles.length > 0) {
-          expect(profiles).to.have.members(ALL_PROFILES);
+          expectEveryProfile(profiles);
         }
       });
 
       expect(removedServices()).to.have.members([...PLATFORM_SERVICES, 'dashmate_helper']);
+      expect(removedVolumes).to.have.members([
+        'docker_drive_abci_data',
+        'docker_drive_tenderdash',
+        'docker_rs-dapi-access-logs',
+      ]);
+    });
+
+    // An override can add a service with no profile that depends on a
+    // Platform service. With Platform disabled, Compose refuses to load the
+    // project with the config's own profiles, even to list them, so the
+    // lookup loads it with every profile.
+    it('should clear Platform data when Platform is disabled and an override service depends on it', async () => {
+      platformConfig = diContainer.resolve('configFile').getConfig('mainnet');
+      projectName = diContainer.resolve('generateEnvs')(platformConfig).COMPOSE_PROJECT_NAME;
+      createProjectVolumes();
+      overrideServices.drive_watcher = { profiles: [], volumes: [], dependsOn: ['drive_abci'] };
+
+      await platformReset({ isHardReset: true });
+
       expect(removedVolumes).to.have.members([
         'docker_drive_abci_data',
         'docker_drive_tenderdash',

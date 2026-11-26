@@ -96,7 +96,7 @@ export default function getPlatformArtefactsFactory(
   async function getPlatformArtefacts(config) {
     await dockerCompose.throwErrorIfNotInstalled();
 
-    const { serviceNames, profiles } = selectPlatformServices(getServiceList, config);
+    const { serviceNames } = selectPlatformServices(getServiceList, config);
 
     const certificateFiles = findCertificateFiles(homeDir, config.getName());
 
@@ -107,7 +107,6 @@ export default function getPlatformArtefactsFactory(
     const candidates = await dockerCompose.getVolumeCandidates(config, {
       serviceNames,
       removedServiceNames: [...serviceNames, HELPER_SERVICE_NAME],
-      profiles,
     });
 
     const ownership = await Promise.all(

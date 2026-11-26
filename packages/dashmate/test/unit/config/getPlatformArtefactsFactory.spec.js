@@ -54,7 +54,6 @@ describe('getPlatformArtefacts', () => {
     expect(dockerCompose.getVolumeCandidates).to.have.been.calledOnceWithExactly(config, {
       serviceNames: ['drive_abci', 'quorum_list'],
       removedServiceNames: ['drive_abci', 'quorum_list', 'dashmate_helper'],
-      profiles: ['core', 'platform', 'platform-quorum'],
     });
     expect(dockerCompose.getContainersList).to.have.been.calledOnceWithExactly(config, {
       all: true,

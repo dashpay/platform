@@ -165,47 +165,106 @@ describe('DockerCompose service selection', () => {
       };
     }
 
+    /**
+     * Answer as Compose does with the model of the profiles selected
+     *
+     * @param {Object|function(string[]): Object} model - the model, or what
+     *  gives it for the profiles selected
+     */
+    function stubCompose(model) {
+      sandbox.stub(compose, 'execCompose').callsFake(async (command, args, options) => {
+        const selectedProfiles = options.composeOptions
+          .filter((_, i) => options.composeOptions[i - 1] === '--profile');
+
+        return {
+          exitCode: 0,
+          err: '',
+          out: JSON.stringify(typeof model === 'function' ? model(selectedProfiles) : model),
+        };
+      });
+    }
+
     // Compose loads the services the named ones depend on, Core for the
     // quorum list, and their volumes with them.
     it('should return only the named services\' own volumes', async () => {
       dockerVolumeLabels.dashmate_project_node_core_data = composeLabels('dashmate_project_node', 'core_data');
       dockerVolumeLabels.dashmate_project_node_drive_tenderdash = composeLabels('dashmate_project_node', 'drive_tenderdash');
 
-      sandbox.stub(compose, 'execCompose').resolves({
-        exitCode: 0,
-        err: '',
-        out: JSON.stringify({
-          name: 'dashmate_project_node',
-          services: {
-            core: { volumes: [{ type: 'volume', source: 'core_data', target: '/home/dash' }] },
-            drive_tenderdash: {
-              volumes: [
-                { type: 'volume', source: 'drive_tenderdash', target: '/tenderdash' },
-                { type: 'bind', source: '/home/user/.dashmate/node/platform', target: '/tenderdash/config' },
-              ],
-            },
-            quorum_list: {},
+      stubCompose({
+        name: 'dashmate_project_node',
+        services: {
+          core: { volumes: [{ type: 'volume', source: 'core_data', target: '/home/dash' }] },
+          drive_tenderdash: {
+            volumes: [
+              { type: 'volume', source: 'drive_tenderdash', target: '/tenderdash' },
+              { type: 'bind', source: '/home/user/.dashmate/node/platform', target: '/tenderdash/config' },
+            ],
           },
-          volumes: {
-            core_data: { name: 'dashmate_project_node_core_data' },
-            drive_tenderdash: { name: 'dashmate_project_node_drive_tenderdash' },
-          },
-        }),
+          quorum_list: {},
+        },
+        volumes: {
+          core_data: { name: 'dashmate_project_node_core_data' },
+          drive_tenderdash: { name: 'dashmate_project_node_drive_tenderdash' },
+        },
       });
 
       const volumeNames = await getOwnedVolumeNames({
         serviceNames: ['drive_tenderdash', 'quorum_list'],
-        profiles: ['core', 'platform'],
       });
 
       expect(volumeNames).to.deep.equal(['dashmate_project_node_drive_tenderdash']);
-      expect(compose.execCompose.firstCall.args[2].composeOptions)
-        .to.deep.equal(['--profile', 'core', '--profile', 'platform']);
       expect(compose.execCompose).to.have.been.calledOnce();
       expect(compose.execCompose.firstCall.args[0]).to.equal('config');
+      // Every profile, by Compose's wildcard
+      expect(compose.execCompose.firstCall.args[2].composeOptions)
+        .to.deep.equal(['--profile', '*']);
       // Given names, Compose describes only them and what they depend on, and
       // a service that mounts the same volume would go unseen.
       expect(compose.execCompose.firstCall.args[1]).to.deep.equal([]);
+    });
+
+    // An override can add a service in a profile that none of dashmate's
+    // Compose files declares. Compose leaves a service whose profile is not
+    // enabled out of the model, and with it the keys only that service
+    // mounts, an external one included, while Docker still labels the volume
+    // for the Platform key.
+    it('should see a service in a profile only an override declares', async () => {
+      dockerVolumeLabels.dashmate_project_node_drive_abci_data = composeLabels('dashmate_project_node', 'drive_abci_data');
+      dockerVolumeLabels.dashmate_project_node_drive_abci_cache = composeLabels('dashmate_project_node', 'drive_abci_cache');
+
+      stubCompose((selectedProfiles) => {
+        const withBackup = selectedProfiles.includes('*') || selectedProfiles.includes('backup');
+
+        return {
+          name: 'dashmate_project_node',
+          services: {
+            drive_abci: {
+              volumes: [
+                { type: 'volume', source: 'drive_abci_data', target: '/data' },
+                { type: 'volume', source: 'drive_abci_cache', target: '/cache' },
+              ],
+            },
+            ...(withBackup ? {
+              backup: {
+                volumes: [
+                  { type: 'volume', source: 'drive_backup', target: '/backup' },
+                  { type: 'volume', source: 'drive_abci_cache', target: '/cache' },
+                ],
+              },
+            } : {}),
+          },
+          volumes: {
+            drive_abci_data: { name: 'dashmate_project_node_drive_abci_data' },
+            drive_abci_cache: { name: 'dashmate_project_node_drive_abci_cache' },
+            ...(withBackup ? {
+              drive_backup: { name: 'dashmate_project_node_drive_abci_data', external: true },
+            } : {}),
+          },
+        };
+      });
+
+      expect(await getOwnedVolumeNames({ serviceNames: ['drive_abci'] }))
+        .to.deep.equal([]);
     });
 
     /**
@@ -213,14 +272,10 @@ describe('DockerCompose service selection', () => {
      * @param {Object} volumes - the project's volume definitions
      */
     function describeDriveAbci(mounts, volumes) {
-      sandbox.stub(compose, 'execCompose').resolves({
-        exitCode: 0,
-        err: '',
-        out: JSON.stringify({
-          name: 'dashmate_project_node',
-          services: { drive_abci: { volumes: mounts } },
-          volumes,
-        }),
+      stubCompose({
+        name: 'dashmate_project_node',
+        services: { drive_abci: { volumes: mounts } },
+        volumes,
       });
     }
 
@@ -303,15 +358,11 @@ describe('DockerCompose service selection', () => {
      * @param {Object} volumes - the project's volume definitions
      */
     function describeServices(serviceMounts, volumes) {
-      sandbox.stub(compose, 'execCompose').resolves({
-        exitCode: 0,
-        err: '',
-        out: JSON.stringify({
-          name: 'dashmate_project_node',
-          services: Object.fromEntries(Object.entries(serviceMounts)
-            .map(([name, mounts]) => [name, { volumes: mounts }])),
-          volumes,
-        }),
+      stubCompose({
+        name: 'dashmate_project_node',
+        services: Object.fromEntries(Object.entries(serviceMounts)
+          .map(([name, mounts]) => [name, { volumes: mounts }])),
+        volumes,
       });
     }
 
@@ -433,12 +484,10 @@ describe('DockerCompose service selection', () => {
     });
 
     // A service missing from the description has volumes nobody would remove.
+    // A Compose that did not take the wildcard for every profile would leave
+    // out every Platform service, since each is in a profile.
     it('should fail when Compose does not describe a named service', async () => {
-      sandbox.stub(compose, 'execCompose').resolves({
-        exitCode: 0,
-        err: '',
-        out: JSON.stringify({ name: 'dashmate_project_node', services: { core: {} } }),
-      });
+      stubCompose({ name: 'dashmate_project_node', services: { core: {} } });
 
       await expect(getOwnedVolumeNames({ serviceNames: ['drive_abci'] }))
         .to.be.rejectedWith("did not describe service 'drive_abci'");
