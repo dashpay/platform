@@ -101,8 +101,9 @@ expected() {
   local lines
   lines="$(awk -v suffix="_$1.deb" 'substr($2, length($2) - length(suffix) + 1) == suffix && $2 ~ /^dashmate_/' \
     "${WORK_DIR}/SHA256SUMS")"
-  [ -n "${lines}" ] && [ "$(echo "${lines}" | wc -l | tr -d ' ')" = 1 ] \
-    || fail "the SHA256SUMS of ${TAG} does not list exactly one $1 deb"
+  if [ -z "${lines}" ] || [ "$(echo "${lines}" | wc -l | tr -d ' ')" != 1 ]; then
+    fail "the SHA256SUMS of ${TAG} does not list exactly one $1 deb"
+  fi
   echo "${lines}" | cut -d' ' -f1
 }
 AMD64="$(expected amd64)"
