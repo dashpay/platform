@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use dashcore::Address as DashAddress;
 use dpp::address_funds::AddressWitness;
 use dpp::consensus::basic::identity::WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError;
-use dpp::consensus::signature::SignatureError;
 use dpp::consensus::ConsensusError;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -26,7 +25,10 @@ use dash_sdk::platform::transition::withdraw_from_identity::{
 use crate::error::PlatformWalletError;
 use crate::BlockTime;
 
-use super::signing_key::credit_signing_key;
+use super::key_selection::{
+    check_signing_key_eligibility, SigningScope, PLATFORM_SIGNING_KEY_TYPES,
+};
+use super::signing_key::{credit_signing_key, CREDIT_SIGNING_LEVELS};
 use super::*;
 
 // Borrowed-signer adapter — see `dpns.rs`/`transfer.rs` for the same
@@ -186,39 +188,35 @@ impl IdentityWallet {
         signer: S,
         settings: Option<PutSettings>,
     ) -> Result<u64, dash_sdk::Error> {
-        // Validate an explicit key against both withdrawal purposes. Automatic selection
-        // considers OWNER only for a withdrawal to the identity's payout address.
-        let signing_key = credit_signing_key(
-            identity,
-            signing_withdrawal_key_to_use,
-            &signer,
-            signing_withdrawal_key_to_use.is_some() || to_address.is_none(),
-        );
         if let Some((address, owner_key)) = to_address
             .as_ref()
             .zip(signing_withdrawal_key_to_use)
             .filter(|(_, key)| key.purpose() == Purpose::OWNER)
         {
-            // Drive rejects the output script before fee validation checks key expiry.
-            if signing_key.as_ref().err().is_none_or(|error| {
-                matches!(
-                    error.consensus_error(),
-                    Some(ConsensusError::SignatureError(
-                        SignatureError::PublicKeyExpiredError(_)
-                    ))
-                )
-            }) {
-                return Err(ConsensusError::from(
-                    WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError::new(
-                        CoreScript::new(address.script_pubkey()),
-                        owner_key.id(),
-                    ),
-                )
-                .into());
-            }
+            check_signing_key_eligibility(
+                owner_key,
+                &[Purpose::TRANSFER, Purpose::OWNER],
+                &CREDIT_SIGNING_LEVELS,
+                &PLATFORM_SIGNING_KEY_TYPES,
+                SigningScope::NonBatch,
+            )?;
+            // Drive rejects the output script before expiry; local signer access is irrelevant.
+            return Err(ConsensusError::from(
+                WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError::new(
+                    CoreScript::new(address.script_pubkey()),
+                    owner_key.id(),
+                ),
+            )
+            .into());
         }
 
-        let signing_key = signing_key?;
+        // Automatic selection considers OWNER only for the identity's payout address.
+        let signing_key = credit_signing_key(
+            identity,
+            signing_withdrawal_key_to_use,
+            &signer,
+            signing_withdrawal_key_to_use.is_some() || to_address.is_none(),
+        )?;
         identity
             .withdraw(
                 &self.sdk,

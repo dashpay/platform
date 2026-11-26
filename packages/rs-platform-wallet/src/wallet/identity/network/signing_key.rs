@@ -93,7 +93,7 @@ pub(super) fn master_signing_key<'a>(
 }
 
 /// The security levels a credit transfer or withdrawal accepts, whatever the key's purpose.
-const CREDIT_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::CRITICAL];
+pub(super) const CREDIT_SIGNING_LEVELS: [SecurityLevel; 1] = [SecurityLevel::CRITICAL];
 
 /// The key that signs a credit transfer or withdrawal: a CRITICAL TRANSFER key, or a CRITICAL
 /// OWNER key when `allow_owner`. Automatic selection only sets it for a withdrawal to the
@@ -735,6 +735,40 @@ pub(super) mod tests {
             ),
         );
         assert_eq!(explicit.consensus_error(), Some(&expected));
+    }
+
+    #[tokio::test]
+    async fn should_refuse_an_unavailable_owner_key_for_credit_withdrawal_to_an_address() {
+        use dashcore::{Address as DashAddress, Network};
+
+        let wallet = wallet_with_signing_keys().await;
+        let identity = identity(
+            Purpose::OWNER,
+            SecurityLevel::CRITICAL,
+            KeyType::ECDSA_HASH160,
+        );
+        let owner_key = &identity.public_keys()[&1];
+        let to_address = DashAddress::dummy(Network::Testnet, 1);
+        let output_script = CoreScript::new(to_address.script_pubkey());
+        let error = wallet
+            .identity()
+            .withdraw_credits_with_signer(
+                &identity,
+                Some(to_address),
+                1,
+                Some(owner_key),
+                available(&[]),
+                None,
+            )
+            .await
+            .unwrap_err();
+        let expected = ConsensusError::from(
+            WithdrawalOutputScriptNotAllowedWhenSigningWithOwnerKeyError::new(
+                output_script,
+                owner_key.id(),
+            ),
+        );
+        assert_eq!(error.consensus_error(), Some(&expected));
     }
 
     #[tokio::test]

@@ -238,16 +238,13 @@ pub fn check_signing_key(
     )
 }
 
-/// [`check_signing_key`] at wall-clock time `now`, in milliseconds since the Unix epoch;
-/// `None` when the clock cannot be read.
-fn check_signing_key_at(
+/// Check protocol eligibility before expiry, without consulting the clock or signer.
+pub(super) fn check_signing_key_eligibility(
     key: &IdentityPublicKey,
-    signer: &impl Signer<IdentityPublicKey>,
     purposes: &[Purpose],
     security_levels: &[SecurityLevel],
     key_types: &[KeyType],
     scope: SigningScope<'_>,
-    now: Option<u64>,
 ) -> Result<(), dash_sdk::Error> {
     // Drive's identity-signed validation checks in this order: key type, purpose, security
     // level, disabled.
@@ -298,6 +295,21 @@ fn check_signing_key_at(
             ));
         }
     }
+    Ok(())
+}
+
+/// [`check_signing_key`] at wall-clock time `now`, in milliseconds since the Unix epoch;
+/// `None` when the clock cannot be read.
+fn check_signing_key_at(
+    key: &IdentityPublicKey,
+    signer: &impl Signer<IdentityPublicKey>,
+    purposes: &[Purpose],
+    security_levels: &[SecurityLevel],
+    key_types: &[KeyType],
+    scope: SigningScope<'_>,
+    now: Option<u64>,
+) -> Result<(), dash_sdk::Error> {
+    check_signing_key_eligibility(key, purposes, security_levels, key_types, scope)?;
     if let Some(expires_at) = key.expires_at() {
         let Some(now) = now else {
             return Err(dash_sdk::Error::Config(format!(
