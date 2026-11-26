@@ -34,9 +34,11 @@ export default function validateZeroSslCertificateFactory(homeDir, getCertificat
     data.privateKeyFilePath = path.join(data.sslConfigDir, 'private.key');
     data.bundleFilePath = path.join(data.sslConfigDir, 'bundle.crt');
 
-    data.apiKey = config.get('platform.gateway.ssl.providerConfigs.zerossl.apiKey');
+    // Kept out of the result: callers report and record it, and whether a key
+    // is set is already the verdict below
+    const apiKey = config.get('platform.gateway.ssl.providerConfigs.zerossl.apiKey');
 
-    if (!data.apiKey) {
+    if (!apiKey) {
       return {
         error: ERRORS.API_KEY_IS_NOT_SET,
         data,
@@ -70,7 +72,7 @@ export default function validateZeroSslCertificateFactory(homeDir, getCertificat
 
     // This function will throw an error if certificate with specified ID is not present
     try {
-      data.certificate = await getCertificate(data.apiKey, certificateId);
+      data.certificate = await getCertificate(apiKey, certificateId);
     } catch (e) {
       if (e.code) {
         data.error = e;
