@@ -366,24 +366,61 @@ describe('archiveSamples', () => {
     });
 
     // Core's and Tenderdash's answers keep only the facts doctor decides on,
-    // found by where they are in the answer and by looking like what they
-    // are; everything else in them is scrubbed
-    it('should keep only the facts of an RPC answer that are where and what they should be', async () => {
+    // found by the keys that lead to them; everything else in them is
+    // scrubbed, however much it looks like one of those facts. A key with a
+    // dot in it, or an empty one, is a key of its own, never a path.
+    it('should keep only the facts of an RPC answer that are where they should be', async () => {
+      const nodeIdSecret = '5b'.repeat(20);
+      const stateSecret = 'PLANTED_STATE_SECRET';
+      const nodeId = 'a'.repeat(40);
+
+      config.set('core.rpc.users.tenderdash.password', nodeIdSecret);
+      config.set('core.rpc.users.dashmate.password', stateSecret);
+
+      samples.setServiceInfo('core', 'masternodeStatus', {
+        state: 'POSE_BANNED',
+        'dmnState.platformNodeID': nodeIdSecret,
+        '': { state: stateSecret },
+        dmnState: { platformNodeID: nodeId, ownerAddress: nodeIdSecret },
+      });
+      samples.setServiceInfo('drive_tenderdash', 'status', {
+        value: { result: { node_info: { id: nodeId } }, 'result.node_info.id': nodeIdSecret },
+      });
+      samples.setServiceInfo('drive_tenderdash', 'nodeIdFromKey', nodeId);
+
+      const restored = await unarchiveSamplesFactory(() => [{ name: 'core' }, { name: 'drive_tenderdash' }])(
+        await archiveSamples(samples, archiveRoot, config),
+      );
+
+      const maskedNodeId = '*'.repeat(nodeIdSecret.length);
+
+      expect(restored.getServiceInfo('core', 'masternodeStatus')).to.deep.equal({
+        state: 'POSE_BANNED',
+        'dmnState.platformNodeID': maskedNodeId,
+        '': { state: '*'.repeat(stateSecret.length) },
+        dmnState: { platformNodeID: nodeId, ownerAddress: maskedNodeId },
+      });
+      expect(restored.getServiceInfo('drive_tenderdash', 'status')).to.deep.equal({
+        value: { result: { node_info: { id: nodeId } }, 'result.node_info.id': maskedNodeId },
+      });
+      expect(restored.getServiceInfo('drive_tenderdash', 'nodeIdFromKey')).to.equal(nodeId);
+    });
+
+    // Where a fact belongs, what is kept is only what looks like that fact
+    it('should scrub a value where a fact of an RPC answer belongs that does not look like it', async () => {
       const secret = 'plantedFactSecret7Qx';
       const nodeId = 'a'.repeat(40);
 
       config.set('core.rpc.users.tenderdash.password', secret);
 
       samples.setServiceInfo('core', 'masternodeStatus', {
-        state: 'POSE_BANNED',
-        'dmnState.platformNodeID': secret,
-        '': { state: secret },
-        dmnState: { platformNodeID: nodeId, ownerAddress: secret },
+        state: secret,
+        dmnState: { platformNodeID: `${nodeId} ${secret}` },
       });
       samples.setServiceInfo('drive_tenderdash', 'status', {
         value: { result: { node_info: { id: `${nodeId} ${secret}` } } },
       });
-      samples.setServiceInfo('drive_tenderdash', 'nodeIdFromKey', nodeId);
+      samples.setServiceInfo('drive_tenderdash', 'nodeIdFromKey', `${nodeId} ${secret}`);
 
       const restored = await unarchiveSamplesFactory(() => [{ name: 'core' }, { name: 'drive_tenderdash' }])(
         await archiveSamples(samples, archiveRoot, config),
@@ -392,14 +429,12 @@ describe('archiveSamples', () => {
       const masked = '*'.repeat(secret.length);
 
       expect(restored.getServiceInfo('core', 'masternodeStatus')).to.deep.equal({
-        state: 'POSE_BANNED',
-        'dmnState.platformNodeID': masked,
-        '': { state: masked },
-        dmnState: { platformNodeID: nodeId, ownerAddress: masked },
+        state: masked,
+        dmnState: { platformNodeID: `${nodeId} ${masked}` },
       });
       expect(restored.getServiceInfo('drive_tenderdash', 'status').value.result.node_info.id)
         .to.equal(`${nodeId} ${masked}`);
-      expect(restored.getServiceInfo('drive_tenderdash', 'nodeIdFromKey')).to.equal(nodeId);
+      expect(restored.getServiceInfo('drive_tenderdash', 'nodeIdFromKey')).to.equal(`${nodeId} ${masked}`);
     });
 
     // A secret can be spelled like a field name or be all digits. Masking it
