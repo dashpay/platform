@@ -3,6 +3,7 @@ import RestartCommand from '../../../src/commands/restart.js';
 import ReindexCommand from '../../../src/commands/core/reindex.js';
 import GroupStartCommand from '../../../src/commands/group/start.js';
 import GroupRestartCommand from '../../../src/commands/group/restart.js';
+import GroupReindexCommand from '../../../src/commands/group/core/reindex.js';
 import Config from '../../../src/config/Config.js';
 import MuteOneLineError from '../../../src/oclif/errors/MuteOneLineError.js';
 
@@ -89,5 +90,36 @@ describe('commands that start Platform', () => {
       expect(assertPlatformCanStart).to.have.been.calledWith(config);
       expect(work).to.not.have.been.called();
     });
+  });
+
+  // A group reindex stops and restarts members one by one. One that cannot
+  // start again would be found only after the members before it went down.
+  it('should check every member in group core reindex before touching any', async function it() {
+    const healthy = new Config('local_1', { group: 'local' }, true);
+    assertPlatformCanStart = this.sinon.stub().callsFake((member) => {
+      if (member === config) {
+        throw refusal;
+      }
+    });
+    const dockerCompose = { isNodeRunning: this.sinon.stub().resolves(true) };
+
+    const error = await new GroupReindexCommand().runWithDependencies(
+      {},
+      flags,
+      work,
+      work,
+      dockerCompose,
+      {},
+      [healthy, config],
+      assertPlatformCanStart,
+    ).then(() => null, (e) => e);
+
+    expect(error).to.be.an.instanceOf(MuteOneLineError);
+    expect(error.getError()).to.equal(refusal);
+    expect(stderr).to.equal(`${refusal.message}\n`);
+    expect(assertPlatformCanStart).to.have.been.calledWith(healthy);
+    expect(assertPlatformCanStart).to.have.been.calledWith(config);
+    expect(dockerCompose.isNodeRunning).to.not.have.been.called();
+    expect(work).to.not.have.been.called();
   });
 });

@@ -3,6 +3,7 @@ import { Listr } from 'listr2';
 import { Flags } from '@oclif/core';
 import GroupBaseCommand from '../../../oclif/command/GroupBaseCommand.js';
 import MuteOneLineError from '../../../oclif/errors/MuteOneLineError.js';
+import printUnwrapped from '../../../oclif/errors/printUnwrapped.js';
 
 export default class GroupReindexCommand extends GroupBaseCommand {
   // Reindex temporarily replaces each Core service configuration, so other
@@ -34,6 +35,7 @@ export default class GroupReindexCommand extends GroupBaseCommand {
    * @param {dockerCompose} dockerCompose
    * @param {ConfigFile} configFile
    * @param {Config[]} configGroup
+   * @param {assertPlatformCanStart} assertPlatformCanStart
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -48,7 +50,17 @@ export default class GroupReindexCommand extends GroupBaseCommand {
     dockerCompose,
     configFile,
     configGroup,
+    assertPlatformCanStart,
   ) {
+    // Every member before any is touched: the reindex stops and starts them
+    // one by one, and a member that cannot start again would be found only
+    // after the ones before it went down.
+    try {
+      configGroup.forEach((config) => assertPlatformCanStart(config));
+    } catch (e) {
+      throw printUnwrapped(e);
+    }
+
     const tasks = new Listr(
       [
         {
