@@ -503,6 +503,7 @@ describe('DockerCompose service selection', () => {
       // A profile filter picks services and enables no profile: the config's
       // own make up the model, which without Core can be invalid.
       expect(await nodeCompose.isNodeRunning({}, { profiles: ['platform'] })).to.be.false();
+      expect(await nodeCompose.isNodeRunning({}, { profiles: ['core'] })).to.be.true();
       compose.ps.getCalls().forEach(({ args: [{ composeOptions }] }) => {
         expect(composeOptions).to.deep.equal([]);
       });

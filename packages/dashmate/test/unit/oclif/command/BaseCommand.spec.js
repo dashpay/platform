@@ -342,14 +342,17 @@ describe('BaseCommand', () => {
 
     /**
      * Render every service file, as the command that set the config up did,
-     * and edit Core's configuration the way an operator might
+     * and edit each of Core's the way an operator might, so that writing any
+     * of them again shows
      *
      * @param {Config} config
      */
     function renderAndEditCore(config) {
       container.resolve('writeConfigTemplates')(config);
 
-      fs.appendFileSync(homeDir.joinPath(config.getName(), 'core', 'dash.conf'), '# operator edit\n');
+      Object.keys(readFiles(config.getName(), 'core')).forEach((file) => {
+        fs.appendFileSync(homeDir.joinPath(config.getName(), 'core', file), '# operator edit\n');
+      });
       fs.rmSync(homeDir.joinPath(config.getName(), 'dynamic-compose.yml'));
     }
 
