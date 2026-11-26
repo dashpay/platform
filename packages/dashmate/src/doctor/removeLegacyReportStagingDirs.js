@@ -390,7 +390,19 @@ function removeVerified(dir, { dev, ino }, uid, tempDev, state) {
   const holding = fs.mkdtempSync(path.join(path.dirname(dir), '.dashmate-report-removal-'));
   const moved = path.join(holding, path.basename(dir));
 
-  fs.renameSync(dir, moved);
+  try {
+    fs.renameSync(dir, moved);
+  } catch (error) {
+    // Nothing was moved, so the holding directory is empty. Removed without
+    // recursing: anything put in it meanwhile is not this run's to remove.
+    try {
+      fs.rmdirSync(holding);
+    } catch {
+      // The failed move is the error to report
+    }
+
+    throw error;
+  }
 
   try {
     const stat = fs.lstatSync(moved);

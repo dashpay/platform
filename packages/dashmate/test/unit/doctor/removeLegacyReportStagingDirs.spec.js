@@ -203,6 +203,22 @@ describe('removeLegacyReportStagingDirs', () => {
     expect(fs.readdirSync(tempDir)).to.deep.equal([legacyName]);
   });
 
+  it('should remove its empty holding directory and report why when it cannot move a directory there', function it() {
+    const dir = makeStagingDir(legacyName);
+
+    const { found } = findLegacyReportStagingDirs(tempDir);
+
+    const renameError = Object.assign(new Error('no such file or directory'), { code: 'ENOENT' });
+
+    this.sinon.stub(fs, 'renameSync').throws(renameError);
+
+    const { removed, failed } = removeLegacyReportStagingDirs(found);
+
+    expect(removed).to.be.empty();
+    expect(failed.map(({ dir: failedDir, error }) => [failedDir, error])).to.deep.equal([[dir, renameError]]);
+    expect(fs.readdirSync(tempDir)).to.deep.equal([legacyName]);
+  });
+
   it('should leave nothing of its own behind once a directory is removed', () => {
     makeStagingDir(legacyName);
 
