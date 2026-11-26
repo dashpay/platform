@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -65,6 +66,18 @@ describe('archiveSamples', () => {
     expect(error).to.be.an('error');
     expect(error.syscall).to.equal('rename');
     expect(fs.readdirSync(outputDir).filter((name) => name.endsWith('.partial'))).to.be.empty();
+  });
+
+  // A temporary name already taken belongs to someone else
+  it('should not remove a temporary file it did not create', async function it() {
+    this.sinon.stub(crypto, 'randomBytes').returns(Buffer.from('0badf00d', 'hex'));
+
+    const takenPath = path.join(outputDir, 'dashmate-report-2026-11-26T10-15-30.123Z.tar.gz.0badf00d.partial');
+    fs.writeFileSync(takenPath, 'not ours');
+
+    await expect(archiveSamples(samples, outputDir)).to.be.rejectedWith('EEXIST');
+
+    expect(fs.readFileSync(takenPath, 'utf8')).to.equal('not ours');
   });
 
   describe('when packing fails', () => {

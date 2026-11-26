@@ -65,12 +65,13 @@ export default async function archiveSamples(samples, folderPath) {
   // touches a file this run did not create.
   const partialFilePath = `${archiveFilePath}.${crypto.randomBytes(4).toString('hex')}.partial`;
 
+  // Opened before the guard below: `wx` refuses a file that already exists,
+  // and a file this run did not create is not its own to remove.
+  const output = fs.createWriteStream(null, { fd: fs.openSync(partialFilePath, 'wx') });
+
   try {
     // pipeline closes the file when packing fails, so it can be removed
-    await pipeline(
-      create({ cwd: archiveDir, gzip: true }, ['.']),
-      fs.createWriteStream(partialFilePath, { flags: 'wx' }),
-    );
+    await pipeline(create({ cwd: archiveDir, gzip: true }, ['.']), output);
 
     fs.renameSync(partialFilePath, archiveFilePath);
   } catch (e) {
