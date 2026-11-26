@@ -91,4 +91,11 @@ describe('maskOperatorIdentity', () => {
       { homeReplacement: '/~' },
     )).to.equal('/~/.dashmate/logs/core.log');
   });
+
+  it('should mask every home directory it is given, one inside another included', () => {
+    expect(maskOperatorIdentity(
+      'a /srv/dash-data/x b /home/alice/y c /home/alice/nested/z',
+      { username: 'bob', homePath: '/home/alice', homePaths: ['/home/alice/nested', '/srv/dash-data', '/home/alice'] },
+    )).to.equal('a ~/x b ~/y c ~/z');
+  });
 });

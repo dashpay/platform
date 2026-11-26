@@ -312,6 +312,29 @@ describe('obfuscateConfig', () => {
     expect(JSON.stringify(obfuscated)).to.not.contain(homePath);
   });
 
+  // Dashmate keeps its files under the home directory HOME names, which can
+  // differ from the one the account is registered with; both name the
+  // operator
+  it('should mask both the registered home directory and the one HOME names', function it() {
+    this.sinon.stub(os, 'userInfo').returns({ username: 'operator', homedir: '/home/operator' });
+    this.sinon.stub(os, 'homedir').returns('/srv/dash-data');
+
+    const config = getBaseConfigFactory()();
+
+    config.set('core.log.filePath', '/srv/dash-data/logs/core.log');
+    config.set('platform.drive.abci.logs.file', {
+      destination: '/home/operator/logs/drive.log',
+      level: 'info',
+      format: 'full',
+      color: null,
+    });
+
+    const obfuscated = obfuscateConfig(config);
+
+    expect(obfuscated.get('core.log.filePath')).to.equal('/~/logs/core.log');
+    expect(obfuscated.get('platform.drive.abci.logs.file.destination')).to.equal('/~/logs/drive.log');
+  });
+
   // An account name can be spelled like a value the config is made of - an
   // environment name, a part of an image name - and masking it there would
   // change what the config says, or make it invalid. It is masked in paths,

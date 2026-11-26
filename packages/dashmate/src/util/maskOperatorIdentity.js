@@ -49,7 +49,11 @@ function wholeWord(name) {
  * mask and the data is left alone rather than having "undefined" replaced in
  * it.
  *
- * @return {{username: string|null, homePath: string|null}}
+ * The home directory the account is registered with and the one HOME names
+ * can differ, and dashmate keeps its files under the second, so both are
+ * masked.
+ *
+ * @return {{username: string|null, homePath: string|null, homePaths: string[]}}
  */
 export function getOperatorIdentity() {
   let username = null;
@@ -61,9 +65,12 @@ export function getOperatorIdentity() {
     // A process running under a uid with no passwd entry has no name to read.
   }
 
+  const homePaths = [...new Set([homePath, os.homedir()].filter(Boolean))];
+
   return {
     username: username || process.env.USER || process.env.USERNAME || null,
-    homePath: homePath || os.homedir() || null,
+    homePath: homePaths[0] ?? null,
+    homePaths,
   };
 }
 
@@ -79,6 +86,7 @@ export function getOperatorIdentity() {
  * @param {Object} identity
  * @param {string|null} identity.username
  * @param {string|null} identity.homePath
+ * @param {string[]} [identity.homePaths] - every home directory to mask
  * @param {Object} [options]
  * @param {string} [options.homeReplacement] - what the home directory is
  *   written as, `~` unless the result has to stay an absolute path
@@ -86,7 +94,7 @@ export function getOperatorIdentity() {
  */
 export default function maskOperatorIdentity(
   value,
-  { username, homePath },
+  { username, homePath, homePaths },
   { homeReplacement = '~' } = {},
 ) {
   if (typeof value !== 'string') {
@@ -95,7 +103,11 @@ export default function maskOperatorIdentity(
 
   let masked = value;
 
-  if (homePath) {
+  // Longest first, so a home directory inside another is masked whole
+  const homes = [...new Set([...(homePaths ?? []), homePath].filter(Boolean))]
+    .sort((a, b) => b.length - a.length);
+
+  for (const home of homes) {
     // Written home-relative rather than blanked out. A masked segment removes
     // the name but also removes the operator's ability to paste the path back;
     // `~` removes the name and still resolves.
@@ -106,7 +118,7 @@ export default function maskOperatorIdentity(
     // because macOS and Windows resolve paths that way, so the same directory
     // arrives in more than one spelling.
     masked = masked.replace(
-      new RegExp(`${escapeForRegExp(homePath)}(?![A-Za-z0-9_.-])`, 'gi'),
+      new RegExp(`${escapeForRegExp(home)}(?![A-Za-z0-9_.-])`, 'gi'),
       homeReplacement,
     );
   }

@@ -307,7 +307,7 @@ export default function obfuscateConfig(
     // config is made of, such as the environment name.
     value = maskOperatorIdentity(
       value,
-      isLocalPath(value) ? identity : { username: null, homePath: identity.homePath },
+      isLocalPath(value) ? identity : { ...identity, username: null },
       { homeReplacement: '/~' },
     );
 
