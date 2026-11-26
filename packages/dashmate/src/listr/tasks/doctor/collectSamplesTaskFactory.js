@@ -1,5 +1,4 @@
 import fs from 'fs';
-import os from 'os';
 import { Listr } from 'listr2';
 import path from 'path';
 import process from 'process';
@@ -11,7 +10,7 @@ import Certificate from '../../../ssl/zerossl/Certificate.js';
 import probeServedCertificate, { STATE as PROBE_STATE } from '../../../ssl/probeServedCertificate.js';
 import readCertificateBundle from '../../../ssl/readCertificateBundle.js';
 import providers from '../../../status/providers.js';
-import maskOperatorIdentity from '../../../util/maskOperatorIdentity.js';
+import maskOperatorIdentity, { getOperatorIdentity } from '../../../util/maskOperatorIdentity.js';
 import obfuscateObjectRecursive from '../../../util/obfuscateObjectRecursive.js';
 import validateSslCertificateFiles from '../../prompts/validators/validateSslCertificateFiles.js';
 
@@ -44,38 +43,6 @@ async function fetchTextOrError(url) {
  * @param {RenewalRecordRepository} renewalRecordRepository
  * @return {collectSamplesTask}
  */
-/**
- * Mask the name of whoever is running dashmate out of collected data.
- *
- * A report is the artefact an operator hands to whoever is helping them, and
- * the paths in it are absolute, so they carry a home directory. The paths stay
- * - they are what makes a problem actionable - and the name in them does not.
- *
- * The name is read from the operating system rather than the environment.
- * Doctor runs unattended often enough - from cron, from a service manager -
- * that USER cannot be relied on, and replacing an undefined needle silently
- * masks nothing at all. When no name can be determined there is nothing to
- * mask and the data is left alone rather than having "undefined" replaced in
- * it.
- *
- * @return {{username: string|null, homePath: string|null}}
- */
-function getOperatorIdentity() {
-  let username = null;
-  let homePath = null;
-
-  try {
-    ({ username, homedir: homePath } = os.userInfo());
-  } catch {
-    // A process running under a uid with no passwd entry has no name to read.
-  }
-
-  return {
-    username: username || process.env.USER || process.env.USERNAME || null,
-    homePath: homePath || os.homedir() || null,
-  };
-}
-
 /**
  * @param {Object} data - mutated in place
  */

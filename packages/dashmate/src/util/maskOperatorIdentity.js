@@ -1,3 +1,5 @@
+import os from 'os';
+import process from 'process';
 import hideString from './hideString.js';
 
 /**
@@ -31,6 +33,38 @@ function escapeForRegExp(value) {
  */
 function wholeWord(name) {
   return new RegExp(`(?<![A-Za-z0-9])${escapeForRegExp(name)}(?![A-Za-z0-9])`, 'g');
+}
+
+/**
+ * Who is running dashmate, so their name can be masked out of collected data.
+ *
+ * A report is the artefact an operator hands to whoever is helping them, and
+ * the paths in it are absolute, so they carry a home directory. The paths stay
+ * - they are what makes a problem actionable - and the name in them does not.
+ *
+ * The name is read from the operating system rather than the environment.
+ * Doctor runs unattended often enough - from cron, from a service manager -
+ * that USER cannot be relied on, and replacing an undefined needle silently
+ * masks nothing at all. When no name can be determined there is nothing to
+ * mask and the data is left alone rather than having "undefined" replaced in
+ * it.
+ *
+ * @return {{username: string|null, homePath: string|null}}
+ */
+export function getOperatorIdentity() {
+  let username = null;
+  let homePath = null;
+
+  try {
+    ({ username, homedir: homePath } = os.userInfo());
+  } catch {
+    // A process running under a uid with no passwd entry has no name to read.
+  }
+
+  return {
+    username: username || process.env.USER || process.env.USERNAME || null,
+    homePath: homePath || os.homedir() || null,
+  };
 }
 
 /**
