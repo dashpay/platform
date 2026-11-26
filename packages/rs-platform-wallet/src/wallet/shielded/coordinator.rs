@@ -390,7 +390,7 @@ pub struct NetworkShieldedCoordinator {
     /// holds the store lock for its duration, so this is what keeps the
     /// pass the shared tree's only appender (a second concurrent pass
     /// would otherwise only be caught, and abandoned, by the leaf-count
-    /// check). [`clear`](Self::clear) holds it too, so no pass can start
+    /// check). Clear ([`clear_admitted`](Self::clear_admitted)) holds it too, so no pass can start
     /// between its reset and its registry clear and write into the emptied
     /// store. Taken after `lifecycle` (by Clear) and before `fan_out` and
     /// any store lock; nothing takes them the other way round.
@@ -3000,24 +3000,28 @@ impl NetworkShieldedCoordinator {
     /// correction round; a send marking it later queues its own round after
     /// this one. No store guard is held across the host write.
     ///
-    /// A wallet with no persister had its registration released or removed
-    /// while the pass ran, so the host will never receive what the pass
-    /// scanned for it. A released wallet keeps its store state, so its scan
-    /// results are dropped from the store instead
-    /// ([`FileBackedShieldedStore::forget_wallet_scan`]): a later bind
-    /// hydrates from the host and rescans those notes rather than resuming
-    /// past them, and its signed recovery records stay. Returns those
-    /// wallets, whose pass results the caller must not report as synced. The
+    /// A wallet with no persister had its registration released while the
+    /// pass ran, so the host will never receive what the pass scanned for
+    /// it. It keeps its store state, so its scan results are dropped from
+    /// the store instead ([`FileBackedShieldedStore::forget_wallet_scan`]):
+    /// a later bind hydrates from the host and rescans those notes rather
+    /// than resuming past them, and its signed recovery records stay. The
     /// persister map is read-locked across the whole delivery, so a release
     /// or a new registration lands either before a wallet's decision or
     /// after it.
+    ///
+    /// Returns the wallets the host did not get the whole pass for, which
+    /// the caller must not report as synced with the pass's counts and
+    /// amounts: a released one, and one any of whose accounts lost its state
+    /// since the pass committed (a removal, or a re-bind that dropped or
+    /// re-keyed an account), whether or not it has a persister now.
     async fn queue_pass_changeset(
         &self,
         epoch: &EpochWatch<'_>,
         mut changeset: ShieldedChangeSet,
     ) -> BTreeSet<WalletId> {
         let _fan_out = self.fan_out.lock().await;
-        // The wallets a removal purged after the pass committed for them.
+        // The wallets with an account purged after the pass committed for it.
         let purged = std::sync::Mutex::new(BTreeSet::new());
         changeset.retain_subwallets(|id| {
             let kept = epoch.state_kept(id);
@@ -3028,13 +3032,7 @@ impl NetworkShieldedCoordinator {
             }
             kept
         });
-        let persisters = self.persisters.read().await;
-        let mut discarded: BTreeSet<WalletId> = purged
-            .into_inner()
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|wallet_id| !persisters.contains_key(wallet_id))
-            .collect();
+        let mut discarded: BTreeSet<WalletId> = purged.into_inner().unwrap_or_default();
         if Merge::is_empty(&changeset) {
             return discarded;
         }
@@ -3056,6 +3054,7 @@ impl NetworkShieldedCoordinator {
                     .map(|note| (*id, note.nullifier))
             })
             .collect();
+        let persisters = self.persisters.read().await;
         let released = Self::deliver(&persisters, changeset);
         if !released.is_empty() {
             let mut store = self.store.write().await;
@@ -4041,8 +4040,8 @@ impl NetworkShieldedCoordinator {
 }
 
 /// Report each wallet in `discarded` as skipped rather than synced: its
-/// registration went away during the pass, so the note counts and balances
-/// the pass computed for it were neither kept nor handed to its host
+/// registration went away or changed during the pass, so the note counts and
+/// balances the pass computed for it were not all kept and handed to its host
 /// ([`NetworkShieldedCoordinator::queue_pass_changeset`]).
 fn skip_discarded_wallets(summary: &mut ShieldedSyncPassSummary, discarded: &BTreeSet<WalletId>) {
     for wallet_id in discarded {
@@ -6915,6 +6914,73 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// A pass whose wallet dropped an account in a re-bind before the handoff
+    /// hands the replacement persister only the accounts that kept their
+    /// state, and reports the wallet as one it did not hand the whole pass
+    /// for: the counts and amounts it computed include the dropped account.
+    #[tokio::test]
+    async fn should_discard_a_wallet_that_dropped_an_account_before_the_handoff() {
+        let dir = temp_dir("handoff_dropped_account");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        let wallet_id: WalletId = [0x11; 32];
+        let account = |index| SubwalletId::new(wallet_id, index);
+        let register = |accounts: &'static [u32], host: Arc<RoundRecordingPersistence>| {
+            let account_views: BTreeMap<u32, AccountViewingKeys> = accounts
+                .iter()
+                .map(|account| {
+                    let views = OrchardKeySet::from_seed(
+                        &[0x42u8; 64],
+                        dashcore::Network::Testnet,
+                        *account,
+                    )
+                    .expect("derive viewing keys")
+                    .viewing_keys();
+                    (*account, views)
+                })
+                .collect();
+            coordinator.register_wallet(
+                wallet_id,
+                account_views,
+                WalletPersister::new(wallet_id, host),
+            )
+        };
+        register(&[0, 1], Arc::new(RoundRecordingPersistence::default()))
+            .await
+            .unwrap();
+        let watch = coordinator.store_epoch.watch();
+        let received = test_note([0xB7; 32], 3, false);
+        let mut pass = ShieldedChangeSet::default();
+        {
+            let mut store = coordinator.store().write().await;
+            store.save_note(account(1), &received).unwrap();
+            for index in [0, 1] {
+                store
+                    .set_last_synced_note_index(account(index), 4096)
+                    .unwrap();
+                pass.record_synced_index(account(index), 4096);
+            }
+            pass.record_note(account(1), received);
+        }
+
+        let replacement = Arc::new(RoundRecordingPersistence::default());
+        register(&[0], Arc::clone(&replacement)).await.unwrap();
+        let discarded = coordinator.queue_pass_changeset(&watch, pass).await;
+
+        assert_eq!(discarded, BTreeSet::from([wallet_id]));
+        let rounds = replacement.0.lock().unwrap();
+        let [round] = rounds.as_slice() else {
+            panic!(
+                "the replacement host receives one round, got {}",
+                rounds.len()
+            );
+        };
+        assert_eq!(round.synced_indices.get(&account(0)), Some(&4096));
+        assert!(!round.synced_indices.contains_key(&account(1)));
+        assert!(round.notes_saved.is_empty());
+        drop(rounds);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// A note the dropped scan results proved spent is not offered again when
     /// a later bind restores the host's copy of it, still unspent because the
     /// host never received that spend: it stays out of selection until a
@@ -7887,11 +7953,12 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Clear must not return while a spend's round is still on its way to the
-    /// host. The host deletes its shielded rows once Clear returns, and the
-    /// round carries the whole note, so landing after that deletion would put
-    /// the deleted note back. The round here is held up in the host (as one
-    /// waiting on the persister's round lock would be) while Clear runs.
+    /// Clear must not wipe the host while a spend's round is still on its way
+    /// to it. Clear has the host delete its shielded rows before it returns,
+    /// and the round carries the whole note, so landing after that deletion
+    /// would put the deleted note back. The round here is held up in the host
+    /// (as one waiting on the persister's round lock would be) while Clear
+    /// runs.
     #[tokio::test]
     async fn should_not_let_a_delayed_spend_round_recreate_a_note_after_clear() {
         let dir = temp_dir("spend_round_vs_clear");
@@ -7939,8 +8006,8 @@ mod tests {
             .expect("timed out waiting for the spend's host round")
             .expect("the spend's round reaches the host");
 
-        // The host wipes its rows as soon as Clear returns; `wiped_at` is how
-        // many rounds had landed by then.
+        // Clear wipes the host's rows before it returns; `wiped_at` is how
+        // many rounds had landed by the wipe.
         let host = WipeCountingPersistence::default();
         let clear = coordinator.clear(&host);
         tokio::pin!(clear);
@@ -7953,11 +8020,20 @@ mod tests {
                 wiped_at
             }
             Err(_) => {
+                // Clear is still waiting, with the round held up in the host:
+                // it must not have wiped the host yet, or the round lands on
+                // the wiped rows whatever Clear waits for afterwards.
+                assert_eq!(
+                    host.wipe_count(),
+                    0,
+                    "the host was wiped while the spend's round was still on its way"
+                );
                 release_tx.send(()).unwrap();
                 clear.await.unwrap();
                 recorder.0.lock().unwrap().len()
             }
         };
+        assert_eq!(host.wipe_count(), 1);
         spend.join().expect("spend thread").unwrap();
 
         {
