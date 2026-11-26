@@ -939,10 +939,12 @@ describe('resetNodeTaskFactory', () => {
   // Run against the real Compose model and DockerCompose, with only the
   // `docker compose` process replaced by a stand-in that answers as Compose
   // does: a `--profile` selection that leaves out Core makes the quorum list's
-  // dependency on Core invalid, a service named explicitly brings the
-  // services it depends on into the model, a service whose profile is not
-  // enabled is left out of it, and so is a volume key no service in it
-  // mounts.
+  // dependency on Core invalid, and so does a service an override adds that
+  // depends on a service whose profile is not enabled. A service named
+  // explicitly brings the services it depends on into the model, a service
+  // whose profile is not enabled is left out of it, and so is a volume key no
+  // service in it mounts. `--profile '*'` enables every profile, and without
+  // any `--profile` the config's own profiles are enabled.
   describe('Compose commands of a Platform reset', () => {
     const ALL_PROFILES = ['core', 'platform', 'platform-quorum'];
 
@@ -1039,7 +1041,7 @@ describe('resetNodeTaskFactory', () => {
 
       serviceVolumes = structuredClone(SERVICE_VOLUMES);
       createProjectVolumes();
-      // Services an override adds, each in profiles of its own
+      // Services an override adds: their profiles, mounts and dependencies
       overrideServices = {};
 
       removedVolumes = [];
@@ -1077,6 +1079,26 @@ describe('resetNodeTaskFactory', () => {
           });
         }
 
+        const enabledProfiles = profiles.length > 0
+          ? profiles
+          : (options.env?.COMPOSE_PROFILES ?? '').split(',');
+        const isEnabled = (serviceProfiles) => serviceProfiles.length === 0
+          || enabledProfiles.includes('*')
+          || serviceProfiles.some((profile) => enabledProfiles.includes(profile));
+        const enabledOverrideServices = Object.entries(overrideServices)
+          .filter(([, service]) => isEnabled(service.profiles));
+
+        const brokenDependant = enabledOverrideServices.find(([, service]) => (service.dependsOn ?? [])
+          .some((dependency) => PLATFORM_SERVICES.includes(dependency) && !isEnabled(['platform'])));
+        if (brokenDependant) {
+          // eslint-disable-next-line prefer-promise-reject-errors
+          return Promise.reject({
+            exitCode: 1,
+            out: '',
+            err: `service "${brokenDependant[0]}" depends on undefined service "${brokenDependant[1].dependsOn[0]}": invalid compose project\n`,
+          });
+        }
+
         if (command === 'ps') {
           // Compose before 2.15 fails `ps <names>` when a named service has
           // no container.
@@ -1098,15 +1120,6 @@ describe('resetNodeTaskFactory', () => {
           return Promise.reject(configFailure);
         }
 
-        if (command === 'config' && commandOptions.includes('--profiles')) {
-          const declaredProfiles = new Set([
-            ...ALL_PROFILES,
-            ...Object.values(overrideServices).flatMap((service) => service.profiles),
-          ]);
-
-          return { exitCode: 0, err: '', out: `${Array.from(declaredProfiles).join('\n')}\n` };
-        }
-
         if (command === 'config' && commandOptions.includes('--volumes')) {
           return { exitCode: 0, err: '', out: Object.values(serviceVolumes).flat().map(({ source }) => source).join('\n') };
         }
@@ -1118,9 +1131,7 @@ describe('resetNodeTaskFactory', () => {
             : [...PLATFORM_SERVICES, 'core', 'dashmate_helper', ...Object.keys(serviceVolumes)];
           const services = Object.fromEntries([
             ...serviceNames.map((name) => [name, { volumes: serviceVolumes[name] }]),
-            ...Object.entries(overrideServices)
-              .filter(([, service]) => service.profiles.some((profile) => profiles.includes(profile)))
-              .map(([name, service]) => [name, { volumes: service.volumes }]),
+            ...enabledOverrideServices.map(([name, service]) => [name, { volumes: service.volumes }]),
           ]);
 
           const mountedKeys = new Set(Object.values(services)
@@ -1167,6 +1178,17 @@ describe('resetNodeTaskFactory', () => {
     }
 
     /**
+     * @param {string[]} profiles - the profiles a command selects
+     */
+    function expectEveryProfile(profiles) {
+      if (profiles.length === 1 && profiles[0] === '*') {
+        return;
+      }
+
+      expect(profiles).to.have.members(ALL_PROFILES);
+    }
+
+    /**
      * @return {string[]}
      */
     function removedServices() {
@@ -1187,7 +1209,7 @@ describe('resetNodeTaskFactory', () => {
         const profiles = selectedProfiles(composeOptions);
 
         if (profiles.length > 0) {
-          expect(profiles).to.have.members(ALL_PROFILES);
+          expectEveryProfile(profiles);
         }
       });
 
@@ -1203,11 +1225,10 @@ describe('resetNodeTaskFactory', () => {
       expect(selectedProfiles(rmCall.composeOptions)).to.have.members(ALL_PROFILES);
     });
 
-    // The volume lookup asks Compose for the profiles, then for the model.
     it('should run no Compose command but the volume lookup and removal', async () => {
       await platformReset();
 
-      expect(composeCalls.map(({ command }) => command)).to.deep.equal(['config', 'config', 'rm']);
+      expect(composeCalls.map(({ command }) => command)).to.deep.equal(['config', 'rm']);
     });
 
     // Anonymous volumes are data too, and go unless data is kept.
@@ -1250,9 +1271,8 @@ describe('resetNodeTaskFactory', () => {
         'docker_rs-dapi-access-logs',
       ]);
 
-      const [modelCall] = composeCalls
-        .filter(({ command, commandOptions }) => command === 'config' && commandOptions.includes('--format'));
-      expect(selectedProfiles(modelCall.composeOptions)).to.have.members(ALL_PROFILES);
+      const [configCall] = composeCalls.filter(({ command }) => command === 'config');
+      expect(selectedProfiles(configCall.composeOptions)).to.deep.equal(['*']);
     });
 
     // An override can add a service in a profile none of dashmate's Compose
@@ -1405,16 +1425,11 @@ describe('resetNodeTaskFactory', () => {
         () => new Listr([]),
       );
 
-      const callsFor = (command, commandOption = undefined) => composeCalls
-        .filter((call) => call.command === command
-          && (!commandOption || call.commandOptions.includes(commandOption)))
+      const callsFor = (command) => composeCalls
+        .filter((call) => call.command === command)
         .map(({ configName }) => configName);
 
-      // The volume lookup asks for the profiles, then for the model, once
-      // for each member.
-      expect(callsFor('config', '--profiles')).to.have.members(['node_1', 'node_2']);
-      expect(callsFor('config', '--format')).to.have.members(['node_1', 'node_2']);
-      expect(callsFor('config')).to.have.lengthOf(4);
+      expect(callsFor('config')).to.have.members(['node_1', 'node_2']);
       expect(callsFor('rm')).to.deep.equal(['node_1', 'node_2']);
       expect(composeCalls.findIndex(({ command }) => command === 'rm'))
         .to.be.above(composeCalls.map(({ command }) => command).lastIndexOf('config'));
@@ -1587,11 +1602,30 @@ describe('resetNodeTaskFactory', () => {
         const profiles = selectedProfiles(composeOptions);
 
         if (profiles.length > 0) {
-          expect(profiles).to.have.members(ALL_PROFILES);
+          expectEveryProfile(profiles);
         }
       });
 
       expect(removedServices()).to.have.members([...PLATFORM_SERVICES, 'dashmate_helper']);
+      expect(removedVolumes).to.have.members([
+        'docker_drive_abci_data',
+        'docker_drive_tenderdash',
+        'docker_rs-dapi-access-logs',
+      ]);
+    });
+
+    // An override can add a service with no profile that depends on a
+    // Platform service. With Platform disabled, Compose refuses to load the
+    // project with the config's own profiles, even to list them, so the
+    // lookup loads it with every profile.
+    it('should clear Platform data when Platform is disabled and an override service depends on it', async () => {
+      platformConfig = diContainer.resolve('configFile').getConfig('mainnet');
+      projectName = diContainer.resolve('generateEnvs')(platformConfig).COMPOSE_PROJECT_NAME;
+      createProjectVolumes();
+      overrideServices.drive_watcher = { profiles: [], volumes: [], dependsOn: ['drive_abci'] };
+
+      await platformReset({ isHardReset: true });
+
       expect(removedVolumes).to.have.members([
         'docker_drive_abci_data',
         'docker_drive_tenderdash',

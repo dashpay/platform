@@ -166,36 +166,22 @@ describe('DockerCompose service selection', () => {
     }
 
     /**
-     * Answer as Compose does: the profiles the Compose files declare, and the
-     * model of the profiles enabled
+     * Answer as Compose does with the model of the profiles selected
      *
      * @param {Object|function(string[]): Object} model - the model, or what
-     *  gives it for the profiles enabled
-     * @param {string[]} [declaredProfiles]
+     *  gives it for the profiles selected
      */
-    function stubCompose(model, declaredProfiles = ['core', 'platform']) {
+    function stubCompose(model) {
       sandbox.stub(compose, 'execCompose').callsFake(async (command, args, options) => {
-        if (options.commandOptions.includes('--profiles')) {
-          return { exitCode: 0, err: '', out: `${declaredProfiles.join('\n')}\n` };
-        }
-
-        const enabledProfiles = options.composeOptions
+        const selectedProfiles = options.composeOptions
           .filter((_, i) => options.composeOptions[i - 1] === '--profile');
 
         return {
           exitCode: 0,
           err: '',
-          out: JSON.stringify(typeof model === 'function' ? model(enabledProfiles) : model),
+          out: JSON.stringify(typeof model === 'function' ? model(selectedProfiles) : model),
         };
       });
-    }
-
-    /**
-     * @return {sinon.SinonSpyCall[]} the calls that read the model
-     */
-    function modelCalls() {
-      return compose.execCompose.getCalls()
-        .filter((call) => call.args[2].commandOptions.includes('--format'));
     }
 
     // Compose loads the services the named ones depend on, Core for the
@@ -227,15 +213,14 @@ describe('DockerCompose service selection', () => {
       });
 
       expect(volumeNames).to.deep.equal(['dashmate_project_node_drive_tenderdash']);
-
-      const [modelCall, ...otherModelCalls] = modelCalls();
-      expect(otherModelCalls).to.be.empty();
-      expect(modelCall.args[0]).to.equal('config');
-      expect(modelCall.args[2].composeOptions)
-        .to.deep.equal(['--profile', 'core', '--profile', 'platform']);
+      expect(compose.execCompose).to.have.been.calledOnce();
+      expect(compose.execCompose.firstCall.args[0]).to.equal('config');
+      // Every profile, by Compose's wildcard
+      expect(compose.execCompose.firstCall.args[2].composeOptions)
+        .to.deep.equal(['--profile', '*']);
       // Given names, Compose describes only them and what they depend on, and
       // a service that mounts the same volume would go unseen.
-      expect(modelCall.args[1]).to.deep.equal([]);
+      expect(compose.execCompose.firstCall.args[1]).to.deep.equal([]);
     });
 
     // An override can add a service in a profile that none of dashmate's
@@ -247,8 +232,8 @@ describe('DockerCompose service selection', () => {
       dockerVolumeLabels.dashmate_project_node_drive_abci_data = composeLabels('dashmate_project_node', 'drive_abci_data');
       dockerVolumeLabels.dashmate_project_node_drive_abci_cache = composeLabels('dashmate_project_node', 'drive_abci_cache');
 
-      stubCompose((enabledProfiles) => {
-        const withBackup = enabledProfiles.includes('backup');
+      stubCompose((selectedProfiles) => {
+        const withBackup = selectedProfiles.includes('*') || selectedProfiles.includes('backup');
 
         return {
           name: 'dashmate_project_node',
@@ -276,30 +261,10 @@ describe('DockerCompose service selection', () => {
             } : {}),
           },
         };
-      }, ['core', 'platform', 'backup']);
+      });
 
       expect(await getOwnedVolumeNames({ serviceNames: ['drive_abci'] }))
         .to.deep.equal([]);
-      expect(modelCalls()[0].args[2].composeOptions)
-        .to.deep.equal(['--profile', 'core', '--profile', 'platform', '--profile', 'backup']);
-    });
-
-    // Without every profile a service that mounts a volume too can go unseen,
-    // so the lookup gives no volume at all rather than guess.
-    it('should fail when Compose cannot list the profiles', async () => {
-      sandbox.stub(compose, 'execCompose').callsFake(async (command, args, options) => {
-        if (options.commandOptions.includes('--profiles')) {
-          // eslint-disable-next-line prefer-promise-reject-errors
-          return Promise.reject({ exitCode: 1, out: '', err: 'unknown flag: --profiles\n' });
-        }
-
-        throw new Error('unexpected call');
-      });
-
-      await expect(getOwnedVolumeNames({ serviceNames: ['drive_abci'] }))
-        .to.be.rejectedWith(/could not list the profiles[\s\S]*unknown flag: --profiles/);
-
-      expect(compose.execCompose).to.have.been.calledOnce();
     });
 
     /**
@@ -519,6 +484,8 @@ describe('DockerCompose service selection', () => {
     });
 
     // A service missing from the description has volumes nobody would remove.
+    // A Compose that did not take the wildcard for every profile would leave
+    // out every Platform service, since each is in a profile.
     it('should fail when Compose does not describe a named service', async () => {
       stubCompose({ name: 'dashmate_project_node', services: { core: {} } });
 
