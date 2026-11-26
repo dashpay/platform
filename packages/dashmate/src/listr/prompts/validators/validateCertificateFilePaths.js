@@ -3,10 +3,10 @@ import validateFileExists from './validateFileExists.js';
 import selectLeafCertificate, { LEAF_SELECTION_ERRORS } from '../../../ssl/selectLeafCertificate.js';
 
 /**
- * Any private key block, whatever its type or form. Unanchored, so a marker
- * on a mangled line counts too.
+ * Any private key block, whatever its type or form, an OpenPGP one ("PRIVATE
+ * KEY BLOCK") included. Unanchored, so a marker on a mangled line counts too.
  */
-const BEGIN_PRIVATE_KEY = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/;
+const BEGIN_PRIVATE_KEY = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY[A-Z0-9 ]*-----/;
 
 /**
  * Read a file once, through a descriptor checked to be a regular file's

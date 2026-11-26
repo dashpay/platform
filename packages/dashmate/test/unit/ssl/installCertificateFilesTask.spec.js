@@ -227,6 +227,7 @@ describe('readCertificateFilePair', () => {
     ['an EC key', () => '-----BEGIN EC PRIVATE KEY-----\nAAAA\n-----END EC PRIVATE KEY-----\n'],
     ['an encrypted key', () => '-----BEGIN ENCRYPTED PRIVATE KEY-----\nAAAA\n-----END ENCRYPTED PRIVATE KEY-----\n'],
     ['an indented key', () => '  -----BEGIN PRIVATE KEY-----\nAAAA\n'],
+    ['an OpenPGP private key', () => '-----BEGIN PGP PRIVATE KEY BLOCK-----\n\nAAAA\n-----END PGP PRIVATE KEY BLOCK-----\n'],
   ].forEach(([description, keyBlock]) => {
     it(`should refuse a chain file that holds ${description}`, () => {
       fs.writeFileSync(form.chainFilePath, `${pair.pem}${keyBlock(pair.keyPem)}`);
