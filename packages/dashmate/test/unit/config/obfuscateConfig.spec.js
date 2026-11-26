@@ -1,4 +1,6 @@
+import os from 'os';
 import getBaseConfigFactory from '../../../configs/defaults/getBaseConfigFactory.js';
+import { getOperatorIdentity } from '../../../src/util/maskOperatorIdentity.js';
 import configJsonSchema from '../../../src/config/configJsonSchema.js';
 import obfuscateConfig, {
   getConfigSecretValues,
@@ -259,6 +261,49 @@ describe('obfuscateConfig', () => {
       'registryToken7Qx',
     ]);
     expect(getConfigSecretValues(config)).to.not.include('release');
+  });
+
+  // The config copy is shared like the rest of the report, and paths in it
+  // carry the home directory too. They stay absolute, since the schema
+  // requires that of log paths and doctor validates the copy when it reads a
+  // report back.
+  it('should mask the home directory in paths and keep them absolute', () => {
+    const config = getBaseConfigFactory()();
+    const { homePath } = getOperatorIdentity();
+
+    config.set('core.log.filePath', `${homePath}/dash/core.log`);
+    config.set('platform.drive.abci.logs.file', {
+      destination: `${homePath}/dash/drive.log`,
+      level: 'info',
+      format: 'full',
+      color: null,
+    });
+
+    const obfuscated = obfuscateConfig(config);
+
+    expect(obfuscated.get('core.log.filePath')).to.equal('/~/dash/core.log');
+    expect(obfuscated.get('platform.drive.abci.logs.file.destination')).to.equal('/~/dash/drive.log');
+    expect(JSON.stringify(obfuscated)).to.not.contain(homePath);
+  });
+
+  // An account name can be spelled like a value the config is made of - an
+  // environment name, a part of an image name - and masking it there would
+  // change what the config says, or make it invalid. It is masked in paths,
+  // where it names the operator.
+  it('should mask the account name in paths only', function it() {
+    this.sinon.stub(os, 'userInfo').returns({ username: 'production', homedir: '/home/production' });
+
+    const config = getBaseConfigFactory()();
+
+    config.set('environment', 'production');
+    config.set('core.docker.image', 'dashpay/production:test');
+    config.set('core.log.filePath', '/srv/production/core.log');
+
+    const obfuscated = obfuscateConfig(config);
+
+    expect(obfuscated.get('environment')).to.equal('production');
+    expect(obfuscated.get('core.docker.image')).to.equal('dashpay/production:test');
+    expect(obfuscated.get('core.log.filePath')).to.equal('/srv/**********/core.log');
   });
 
   // Core takes its options on the command line as well as from its config

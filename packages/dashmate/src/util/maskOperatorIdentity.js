@@ -79,9 +79,16 @@ export function getOperatorIdentity() {
  * @param {Object} identity
  * @param {string|null} identity.username
  * @param {string|null} identity.homePath
+ * @param {Object} [options]
+ * @param {string} [options.homeReplacement] - what the home directory is
+ *   written as, `~` unless the result has to stay an absolute path
  * @return {*}
  */
-export default function maskOperatorIdentity(value, { username, homePath }) {
+export default function maskOperatorIdentity(
+  value,
+  { username, homePath },
+  { homeReplacement = '~' } = {},
+) {
   if (typeof value !== 'string') {
     return value;
   }
@@ -100,7 +107,7 @@ export default function maskOperatorIdentity(value, { username, homePath }) {
     // arrives in more than one spelling.
     masked = masked.replace(
       new RegExp(`${escapeForRegExp(homePath)}(?![A-Za-z0-9_.-])`, 'gi'),
-      '~',
+      homeReplacement,
     );
   }
 

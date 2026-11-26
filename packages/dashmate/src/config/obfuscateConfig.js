@@ -1,8 +1,8 @@
 import lodash from 'lodash';
-import obfuscateObjectRecursive from '../util/obfuscateObjectRecursive.js';
 import Config from './Config.js';
 import hideString from '../util/hideString.js';
 import { getOptionValue, hideOptionValue, isOption } from '../util/commandLineOption.js';
+import maskOperatorIdentity, { getOperatorIdentity } from '../util/maskOperatorIdentity.js';
 
 /**
  * Config fields whose values are secret, at whatever depth they occur
@@ -76,6 +76,14 @@ function forEachStringValue(object, callback, parentField = undefined, grandpare
       callback(object, field, classifyValue(field, parentField, grandparentField));
     }
   }
+}
+
+/**
+ * @param {string} value
+ * @return {boolean} whether the value is an absolute local path
+ */
+function isLocalPath(value) {
+  return value.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value);
 }
 
 /**
@@ -267,7 +275,7 @@ export function getConfigSecretValues(config) {
 export default function obfuscateConfig(
   config,
 ) {
-  const username = process.env.USER;
+  const identity = getOperatorIdentity();
 
   const clonedOptions = lodash.cloneDeep(config.getOptions());
 
@@ -284,15 +292,21 @@ export default function obfuscateConfig(
       value = hideUrlCredentials(value);
     }
 
+    // The operator's name and home directory are masked the way they are in
+    // the samples, except that a home directory is written `/~`: the schema
+    // requires log paths to be absolute, and doctor validates this copy when
+    // it reads a report back. The account name is only masked in paths, where
+    // it names the operator; elsewhere it can be spelled like a value the
+    // config is made of, such as the environment name.
+    value = maskOperatorIdentity(
+      value,
+      isLocalPath(value) ? identity : { username: null, homePath: identity.homePath },
+      { homeReplacement: '/~' },
+    );
+
     // eslint-disable-next-line no-param-reassign
     object[field] = value;
   });
-
-  // sanitize also usernames & external ip from the rest of the fields values
-  obfuscateObjectRecursive(clonedOptions, (_field, value) => (typeof value === 'string' ? value.replaceAll(
-    username,
-    hideString(username),
-  ) : value));
 
   return new Config(config.getName(), clonedOptions);
 }

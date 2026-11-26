@@ -81,4 +81,14 @@ describe('maskOperatorIdentity', () => {
   it('should pass through anything that is not a string', () => {
     expect(maskOperatorIdentity(42, { username: 'alice', homePath: '/home/alice' })).to.equal(42);
   });
+
+  // Where the result has to stay an absolute path, the home directory can be
+  // written as one
+  it('should write the home directory with the replacement it is given', () => {
+    expect(maskOperatorIdentity(
+      '/home/alice/.dashmate/logs/core.log',
+      { username: 'bob', homePath: '/home/alice' },
+      { homeReplacement: '/~' },
+    )).to.equal('/~/.dashmate/logs/core.log');
+  });
 });
