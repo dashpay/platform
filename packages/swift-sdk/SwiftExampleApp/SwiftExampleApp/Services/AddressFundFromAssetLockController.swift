@@ -6,7 +6,7 @@ import SwiftDashSDK
 /// Mirrors [`IdentityRegistrationController`] for the
 /// `AddressFundingFromAssetLockTransition` flow. One controller is
 /// created per `(walletId, platformAccountIndex, recipientHash)`
-/// slot when the user submits `FundFromAssetLockPlatformAddressView`. The
+/// slot, or per `(walletId, outpoint)` for an external resume, when the user submits `FundFromAssetLockPlatformAddressView`. The
 /// controller owns the in-flight `Task`, exposes its current `phase`
 /// via `@Published`, and survives view dismissal via
 /// `AddressFundFromAssetLockCoordinator` on `PlatformWalletManager`.
@@ -76,13 +76,16 @@ final class AddressFundFromAssetLockController: ObservableObject {
     let walletId: Data
 
     /// Platform-payment account index of the recipient. Stored for
-    /// the resume surface label and the live progress query.
-    let platformAccountIndex: UInt32
+    /// the resume surface label and the live progress query. `nil` for
+    /// an external resume: it pays the lock's recorded recipients, and
+    /// the SDK finds the account of its recorded remainder itself.
+    let platformAccountIndex: UInt32?
 
     /// 20-byte hash of the recipient platform address. Composite-key
     /// component so two concurrent funds to different addresses on
-    /// the same account don't collide.
-    let recipientHash: Data
+    /// the same account don't collide. `nil` for an external resume,
+    /// which pays no picked address.
+    let recipientHash: Data?
 
     /// `PlatformAddress` type byte for the recipient (0 = P2PKH,
     /// 1 = P2SH). Carried so the post-success back-fill onto
@@ -92,7 +95,8 @@ final class AddressFundFromAssetLockController: ObservableObject {
     /// because the stored type drives the bech32m encoder's type
     /// byte (`0xb0` vs `0x80`) and a hardcoded `0` would silently
     /// mis-tag any future P2SH funding for the lifetime of the row.
-    let recipientType: UInt8
+    /// `nil` with `recipientHash`.
+    let recipientType: UInt8?
 
     /// The resumed lock's `outPointHex`, or `nil` for a fresh funding.
     /// Part of the slot: an external payment does not credit the picked
@@ -124,9 +128,9 @@ final class AddressFundFromAssetLockController: ObservableObject {
 
     init(
         walletId: Data,
-        platformAccountIndex: UInt32,
-        recipientHash: Data,
-        recipientType: UInt8,
+        platformAccountIndex: UInt32?,
+        recipientHash: Data?,
+        recipientType: UInt8?,
         assetLockOutPoint: String? = nil
     ) {
         self.walletId = walletId

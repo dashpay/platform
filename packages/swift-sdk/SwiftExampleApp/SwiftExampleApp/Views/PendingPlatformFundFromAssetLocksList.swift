@@ -57,34 +57,22 @@ struct PendingPlatformFundFromAssetLocksList: View {
 
     var body: some View {
         let walletControllers = controllersForWallet
-        // Whether any funding is currently in flight on this wallet (a
-        // controller in `.inFlight`). We can't match a controller to the
-        // outpoint it's driving, so while this holds, ANY resumable row
-        // might be the lock that funding is consuming — a fresh fund's own
-        // lock passes through Broadcast → InstantSendLocked during its
-        // (unbounded) finality wait + ST submit, and it's indistinguishable
-        // here from an unrelated proof-ready (statusRaw 2/3) orphan. The
-        // gate below therefore suppresses Resume on EVERY row while a
-        // funding is in flight; offering it would risk a second consume on
-        // the same outpoint. Safe superset: `.inFlight` controllers are
-        // transient, so a genuinely-orphaned lock always becomes resumable
-        // once they clear. `.completed`/`.failed` controllers aren't
-        // consuming (only `.isActive` counts), and their phase transitions
-        // re-render this view via the coordinator's forwarded
+        // A resume names its lock (`assetLockOutPoint`), so while it runs
+        // only that row is hidden: it is listed once, as the controller.
+        // A fresh funding does not know its outpoint until it is built, and
+        // its own lock passes through Broadcast → InstantSendLocked during
+        // its finality wait, indistinguishable here from an unrelated
+        // proof-ready orphan. While one is in flight Resume is therefore
+        // suppressed on every row, which would risk a second consume of the
+        // same outpoint otherwise. Only `.isActive` controllers count: a
+        // failed resume's lock stays eligible for retry, and phase
+        // transitions re-render this view via the coordinator's forwarded
         // `objectWillChange`.
-        let hasActiveFunding = walletControllers.contains { $0.phase.isActive }
-        let orphans = resumableLocks(excludingControllerOutpoints: Set(walletControllers.compactMap { _ in
-            // Controllers don't currently store the outpoint of the
-            // asset lock they're driving. The de-dupe set therefore
-            // never has entries today — but the status filter
-            // (`isVisibleAsResumable`) already excludes locks that
-            // have been Consumed, so an in-flight controller whose
-            // lock is mid-transition lands at status 2/3 and would
-            // only briefly co-render. The plumbing is here so a future
-            // tweak (controller exposes its outpoint after broadcast)
-            // can de-dupe by returning a non-nil here.
-            nil
-        }))
+        let activeControllers = walletControllers.filter { $0.phase.isActive }
+        let hasActiveFunding = activeControllers.contains { $0.assetLockOutPoint == nil }
+        let orphans = resumableLocks(
+            excludingControllerOutpoints: Set(activeControllers.compactMap(\.assetLockOutPoint))
+        )
 
         if !walletControllers.isEmpty || !orphans.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
@@ -240,11 +228,13 @@ private extension AddressFundFromAssetLockController {
     /// plus `-(outpoint)` for a resume (the outpoint is part of the slot).
     /// The recipient hash is the within-account discriminator: two
     /// concurrent fund calls to different addresses on the same
-    /// account otherwise collide on `(walletId, accountIndex)`.
+    /// account otherwise collide on `(walletId, accountIndex)`. An external
+    /// resume has neither (`-`): its outpoint alone tells it apart.
     var platformFundFromAssetLockRowID: String {
         let walletHex = walletId.map { String(format: "%02x", $0) }.joined()
-        let recipientHex = recipientHash.map { String(format: "%02x", $0) }.joined()
-        let base = "\(walletHex)-\(platformAccountIndex)-\(recipientHex)"
+        let account = platformAccountIndex.map(String.init) ?? "-"
+        let recipientHex = recipientHash.map { $0.map { String(format: "%02x", $0) }.joined() } ?? "-"
+        let base = "\(walletHex)-\(account)-\(recipientHex)"
         return assetLockOutPoint.map { "\(base)-\($0)" } ?? base
     }
 }
@@ -262,7 +252,7 @@ struct PendingPlatformFundFromAssetLockRow: View {
                     HStack {
                         Image(systemName: phaseIcon)
                             .foregroundColor(phaseTint)
-                        Text("Platform Account #\(controller.platformAccountIndex)")
+                        Text(accountLabel)
                             .font(.body)
                         Spacer()
                         Text(phaseLabel)
@@ -309,8 +299,16 @@ struct PendingPlatformFundFromAssetLockRow: View {
         }
     }
 
+    /// An external resume picked no account: it pays the lock's recorded
+    /// recipients.
+    private var accountLabel: String {
+        guard let account = controller.platformAccountIndex else { return "External payment" }
+        return "Platform Account #\(account)"
+    }
+
     private var recipientLabel: String {
-        let prefix = controller.recipientHash
+        guard let hash = controller.recipientHash else { return "→ recorded payees" }
+        let prefix = hash
             .prefix(6)
             .map { String(format: "%02x", $0) }
             .joined()

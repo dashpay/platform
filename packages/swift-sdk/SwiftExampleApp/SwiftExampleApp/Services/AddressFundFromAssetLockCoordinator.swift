@@ -22,10 +22,13 @@ final class AddressFundFromAssetLockCoordinator: ObservableObject {
     /// `walletId` is 32 raw bytes; `recipientHash` is 20 raw bytes;
     /// `platformAccountIndex` is the DIP-17 account that owns the
     /// recipient address.
+    /// An external resume pays its lock's recorded recipients, so its slot
+    /// is the wallet and the outpoint alone: `platformAccountIndex` and
+    /// `recipientHash` are `nil`.
     struct SlotKey: Hashable {
         let walletId: Data
-        let platformAccountIndex: UInt32
-        let recipientHash: Data
+        let platformAccountIndex: UInt32?
+        let recipientHash: Data?
         /// The resumed lock's `outPointHex`, `nil` for a fresh funding.
         let assetLockOutPoint: String?
     }
@@ -66,8 +69,8 @@ final class AddressFundFromAssetLockCoordinator: ObservableObject {
     /// reuse the existing one.
     func controller(
         walletId: Data,
-        platformAccountIndex: UInt32,
-        recipientHash: Data,
+        platformAccountIndex: UInt32?,
+        recipientHash: Data?,
         assetLockOutPoint: String? = nil
     ) -> AddressFundFromAssetLockController? {
         controllers[
@@ -102,9 +105,9 @@ final class AddressFundFromAssetLockCoordinator: ObservableObject {
     /// FFI calls for the same asset lock.
     func startFunding(
         walletId: Data,
-        platformAccountIndex: UInt32,
-        recipientHash: Data,
-        recipientType: UInt8,
+        platformAccountIndex: UInt32?,
+        recipientHash: Data?,
+        recipientType: UInt8?,
         assetLockOutPoint: String? = nil,
         body: @escaping () async throws -> UInt64?
     ) -> AddressFundFromAssetLockController {
@@ -158,8 +161,8 @@ final class AddressFundFromAssetLockCoordinator: ObservableObject {
     /// error).
     func dismiss(
         walletId: Data,
-        platformAccountIndex: UInt32,
-        recipientHash: Data,
+        platformAccountIndex: UInt32?,
+        recipientHash: Data?,
         assetLockOutPoint: String? = nil
     ) {
         let key = SlotKey(
