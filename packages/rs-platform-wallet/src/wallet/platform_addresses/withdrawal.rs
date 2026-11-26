@@ -541,8 +541,8 @@ fn reserve_withdrawal_fee_on_largest_input(
         .address_funds
         .min_input_amount;
     let min_withdrawal_amount = min_withdrawal_amount_for(core_fee_per_byte, platform_version);
-    // DPP rejects `withdrawal_amount > max_withdrawal_amount` (50_000_000_000_000
-    // = 500 DASH on v1/v2 system_limits) with `WithdrawalBelowMinAmountError`
+    // DPP rejects `withdrawal_amount > max_withdrawal_amount` (500 DASH up to
+    // protocol version 15, 4000 DASH from 16) with `WithdrawalBelowMinAmountError`
     // (the range error carries both bounds) — see `validate_structure` in
     // `address_credit_withdrawal_transition/v0/state_transition_validation.rs`.
     // The auto path withdraws the full withdrawable balance, so an account whose
@@ -1009,7 +1009,7 @@ mod tests {
     }
 
     /// A withdrawal whose net (aggregate − fee) exceeds
-    /// `system_limits.max_withdrawal_amount` (500 DASH) must NOT preflight as
+    /// `system_limits.max_withdrawal_amount` must NOT preflight as
     /// withdrawable: DPP's v0 validator rejects the transition with the
     /// `WithdrawalBelowMinAmountError` range error once
     /// `withdrawal_amount > max_withdrawal_amount`. A single input keeps the

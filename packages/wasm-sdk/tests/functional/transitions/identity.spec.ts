@@ -186,6 +186,7 @@ describe('Identity State Transitions', function describeIdentityStateTransitions
       // Since protocol v14 the minimum is 1000000 credits plus the Core fee of the
       // asset unlock transaction (190000 credits at 1 duff per byte), because that
       // fee is carved out of the withdrawn amount; maximum is 50000000000000
+      // (500 Dash) up to protocol version 15 and 400000000000000 (4000 Dash) from 16
       const remainingBalance = await client.identityCreditWithdrawal({
         identity,
         amount: 2000000n, // Must be >= 1000000 + Core fee

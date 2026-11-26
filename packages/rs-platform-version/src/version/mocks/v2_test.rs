@@ -636,9 +636,11 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         // arms the defect inside drive-abci's own protocol-upgrade suite.
         max_transitions_in_documents_batch: 1,
         withdrawal_transactions_per_block_limit: 4,
+        withdrawal_pooling_candidates_per_block_limit: None,
         retry_signing_expired_withdrawal_documents_per_block_limit: 1,
         max_withdrawal_amount: 50_000_000_000_000,
         daily_withdrawal_limit_percent: None,
+        daily_withdrawal_limit_floor: None,
         core_credit_pool_unlock_limit_percent: None,
         core_credit_pool_unlock_limit_floor: None,
         core_credit_pool_window_blocks: None,

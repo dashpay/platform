@@ -3973,7 +3973,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_large_amount_withdrawal() {
-            // Test withdrawal at the maximum allowed amount (500 Dash)
+            // Test withdrawal at the maximum allowed amount (4000 Dash from protocol version 16)
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3991,15 +3991,15 @@ mod tests {
 
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([1u8; 32]);
+            let max_withdrawal = platform_version.system_limits.max_withdrawal_amount;
             // Balance large enough to cover max withdrawal + fees
-            let large_balance = dash_to_credits!(600.0);
+            let large_balance = max_withdrawal + dash_to_credits!(100.0);
             setup_address_with_balance(&mut platform, input_address, 0, large_balance);
 
             let mut rng = StdRng::seed_from_u64(567);
 
             let mut inputs = BTreeMap::new();
-            // Withdraw the max allowed amount (500 Dash = 50_000_000_000_000 credits)
-            let max_withdrawal = platform_version.system_limits.max_withdrawal_amount;
+            // Withdraw the max allowed amount
             inputs.insert(input_address, (1 as AddressNonce, max_withdrawal));
 
             let transition = create_signed_address_credit_withdrawal_transition(

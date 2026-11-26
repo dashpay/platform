@@ -52,7 +52,10 @@ mod tests {
     use crate::dash_to_credits;
 
     fn platform_version_with(percent: Option<u8>) -> PlatformVersion {
-        let mut platform_version = PlatformVersion::latest().clone();
+        // Version 2 is frozen: the last protocol version that selects it.
+        let mut platform_version = PlatformVersion::get(15)
+            .expect("expected protocol version 15")
+            .clone();
         platform_version
             .system_limits
             .daily_withdrawal_limit_percent = percent;
