@@ -1312,10 +1312,7 @@ impl DapiRequestExecutor for Sdk {
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { ref dapi, .. } => {
                 let dapi_guard = lock_mock(dapi).await;
-                let result = dapi_guard.execute(request, settings).await;
-                #[cfg(all(test, feature = "core_key_wallet"))]
-                let result = result.map_err(top_up_tests::restore_status);
-                result
+                dapi_guard.execute(request, settings).await
             }
         }
     }

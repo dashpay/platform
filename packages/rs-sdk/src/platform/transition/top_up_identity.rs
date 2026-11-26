@@ -18,9 +18,18 @@ use dpp::state_transition::StateTransition;
 #[async_trait::async_trait]
 pub trait TopUpIdentity: Waitable {
     /// Tops up an existing identity using an asset lock proof whose
-    /// private key is held in-process. Retries definite ChainLock-height lag within
-    /// the bounded SDK retry budget. A duplicate returns [`Error::AlreadyExists`];
-    /// uncertain delivery stays [`Error::StateTransitionResultUnconfirmed`].
+    /// private key is held in-process.
+    ///
+    /// [`Error::AlreadyExists`] means this exact transition (same hash) is already
+    /// accepted by Platform, credited by an earlier call or an earlier attempt of
+    /// this call. The asset lock is consumed: refresh the balance instead of
+    /// reporting this call's credit amount or resubmitting the lock. Unresolved
+    /// delivery stays [`Error::StateTransitionResultUnconfirmed`].
+    ///
+    /// Definite ChainLock-height lag is retried within a roughly 210-second budget;
+    /// network calls can extend elapsed time beyond it. Each retry increments
+    /// `user_fee_increase` by one and re-signs, raising the processing fee charged
+    /// to the lock. Cancelling mid-retry does not prove non-delivery of an attempt.
     ///
     /// Prefer [`Self::top_up_identity_with_signer`] when the asset-lock
     /// private key lives outside Rust (Swift / hardware wallet / HSM):
@@ -42,6 +51,17 @@ pub trait TopUpIdentity: Waitable {
     /// produces the outer state-transition ECDSA signature for the key
     /// at `asset_lock_proof_path` — atomically deriving, signing, and
     /// zeroising inside the signer's trust boundary.
+    ///
+    /// [`Error::AlreadyExists`] means this exact transition (same hash) is already
+    /// accepted by Platform, credited by an earlier call or an earlier attempt of
+    /// this call. The lock is consumed: refresh the balance; do not report this
+    /// call's credit amount or resubmit the lock. Unresolved delivery stays
+    /// [`Error::StateTransitionResultUnconfirmed`].
+    ///
+    /// As with [`Self::top_up_identity_with_private_key`], height retries have a
+    /// roughly 210-second budget (network calls can extend elapsed time). Each retry
+    /// increments `user_fee_increase` by one and re-signs, raising the processing
+    /// fee. Cancelling mid-retry does not prove non-delivery.
     #[cfg(feature = "core_key_wallet")]
     async fn top_up_identity_with_signer<AS>(
         &self,
@@ -59,7 +79,16 @@ pub trait TopUpIdentity: Waitable {
 #[async_trait::async_trait]
 pub trait TopUpIdentityWithMetadata: Waitable {
     /// Returns the balance snapshot and its proof metadata after an acknowledged submission.
-    /// Uses the same bounded height retry and duplicate handling as [`TopUpIdentity`].
+    ///
+    /// [`Error::AlreadyExists`] means the same transition hash is already accepted
+    /// and credited by an earlier call or attempt of this call. The lock is consumed:
+    /// refresh the balance; do not report this call's credit amount or resubmit it.
+    /// Unresolved delivery stays [`Error::StateTransitionResultUnconfirmed`].
+    ///
+    /// As with [`TopUpIdentity::top_up_identity_with_private_key`], height retries
+    /// have a roughly 210-second budget (network calls can extend elapsed time).
+    /// Each retry increments `user_fee_increase` by one and re-signs, raising the
+    /// processing fee. Cancelling mid-retry does not prove non-delivery.
     #[cfg(feature = "core_key_wallet")]
     async fn top_up_identity_with_signer_with_metadata<AS>(
         &self,
@@ -180,10 +209,8 @@ async fn submit_top_up(
         .wait_for_outcome_with_metadata(sdk, settings)
         .await
         .map_err(Error::into_unconfirmed)?;
-    if !outcome.is_execution_proved() {
-        if let Some(error) = broadcast_error {
-            return Err(top_up_submission_error(error));
-        }
+    if let Some(error) = broadcast_error {
+        return Err(top_up_submission_error(error));
     }
     let identity: PartialIdentity =
         convert_proof_result(outcome.into_result()).map_err(Error::into_unconfirmed)?;

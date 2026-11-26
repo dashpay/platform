@@ -41,11 +41,9 @@ use dpp::state_transition::StateTransition;
 use dpp::version::PlatformVersion;
 use rs_dapi_client::transport::TransportError;
 use rs_dapi_client::{DapiClientError, ExecutionError, ExecutionResponse, RequestSettings};
-use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
 use std::time::Duration;
 
 struct AssetLockSigner {
@@ -99,7 +97,6 @@ struct Fixture {
     identity: Identity,
     signer: AssetLockSigner,
     proof: AssetLockProof,
-    statuses: Mutex<BTreeMap<String, Status>>,
 }
 
 impl Fixture {
@@ -116,7 +113,6 @@ impl Fixture {
                 key: PrivateKey::from_byte_array(&[7; 32], Network::Regtest).unwrap(),
                 calls: AtomicUsize::new(0),
             },
-            statuses: Mutex::new(BTreeMap::new()),
             proof: AssetLockProof::Chain(ChainAssetLockProof {
                 core_chain_locked_height: 100,
                 out_point: OutPoint::from([9; 36]),
@@ -137,45 +133,40 @@ impl Fixture {
     }
 
     async fn submit(&self, api: Api, settings: Option<PutSettings>) -> Result<u64, Error> {
-        let statuses = self.statuses.lock().unwrap().clone();
-        MOCK_STATUSES
-            .scope(statuses, async {
-                match api {
-                    Api::PrivateKey => {
-                        self.identity
-                            .top_up_identity_with_private_key(
-                                &self.sdk,
-                                self.proof.clone(),
-                                &self.signer.key,
-                                settings,
-                            )
-                            .await
-                    }
-                    Api::Signer => {
-                        self.identity
-                            .top_up_identity_with_signer(
-                                &self.sdk,
-                                self.proof.clone(),
-                                &DerivationPath::default(),
-                                &self.signer,
-                                settings,
-                            )
-                            .await
-                    }
-                    Api::SignerWithMetadata => self
-                        .identity
-                        .top_up_identity_with_signer_with_metadata(
-                            &self.sdk,
-                            self.proof.clone(),
-                            &DerivationPath::default(),
-                            &self.signer,
-                            settings,
-                        )
-                        .await
-                        .map(|(balance, _)| balance),
-                }
-            })
-            .await
+        match api {
+            Api::PrivateKey => {
+                self.identity
+                    .top_up_identity_with_private_key(
+                        &self.sdk,
+                        self.proof.clone(),
+                        &self.signer.key,
+                        settings,
+                    )
+                    .await
+            }
+            Api::Signer => {
+                self.identity
+                    .top_up_identity_with_signer(
+                        &self.sdk,
+                        self.proof.clone(),
+                        &DerivationPath::default(),
+                        &self.signer,
+                        settings,
+                    )
+                    .await
+            }
+            Api::SignerWithMetadata => self
+                .identity
+                .top_up_identity_with_signer_with_metadata(
+                    &self.sdk,
+                    self.proof.clone(),
+                    &DerivationPath::default(),
+                    &self.signer,
+                    settings,
+                )
+                .await
+                .map(|(balance, _)| balance),
+        }
     }
 
     async fn broadcast_error(
@@ -184,10 +175,6 @@ impl Fixture {
         status: Status,
         possibly_accepted: bool,
     ) -> BroadcastStateTransitionRequest {
-        self.statuses
-            .lock()
-            .unwrap()
-            .insert(status.message().to_owned(), status.clone());
         let request = self
             .transition(fee)
             .broadcast_request_for_state_transition()
@@ -304,6 +291,8 @@ fn consensus_status(error: ConsensusError) -> Status {
     status
 }
 
+// TODO: Cover lost ACK followed by AlreadyExists once the mock supports sequential
+// responses for identical requests; it currently stores one fixed response per request.
 #[test_case::test_case(Api::PrivateKey; "private_key")]
 #[test_case::test_case(Api::Signer; "signer")]
 #[test_case::test_case(Api::SignerWithMetadata; "signer_with_metadata")]
@@ -442,24 +431,6 @@ async fn should_not_resign_top_up_after_uncertainty_wrapped_height_rejection(api
     );
     assert_eq!(started.elapsed(), Duration::ZERO);
     fixture.assert_broadcasts(&[request], api).await;
-}
-
-// Recorded tonic statuses omit metadata. Preserve it in the test task before SDK decoding.
-tokio::task_local! {
-    static MOCK_STATUSES: BTreeMap<String, Status>;
-}
-
-pub(super) fn restore_status(
-    mut error: ExecutionError<DapiClientError>,
-) -> ExecutionError<DapiClientError> {
-    if let DapiClientError::Transport(TransportError::Grpc(status)) = &mut error.inner {
-        if let Ok(Some(original)) =
-            MOCK_STATUSES.try_with(|statuses| statuses.get(status.message()).cloned())
-        {
-            *status = original;
-        }
-    }
-    error
 }
 
 #[test_case::test_case(Api::PrivateKey; "private_key")]

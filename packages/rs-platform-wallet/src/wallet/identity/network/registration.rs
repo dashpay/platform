@@ -449,7 +449,7 @@ impl IdentityWallet {
             .await?;
         let (mut new_balance, metadata) = self
             .asset_locks
-            .reconcile_asset_lock_submit_result(
+            .reconcile_identity_top_up_result(
                 submit_result,
                 &proof_out_point,
                 &effective_proof,
