@@ -777,10 +777,21 @@ describe('resetNodeTaskFactory', () => {
     // storage move retired. The link goes and what it points to stays. Left
     // in place, a link that points nowhere would have the Platform files
     // rendered through it.
-    it('should remove a target that is a link, even one that points nowhere', async () => {
+    it('should remove a target that is a link, even one that points nowhere', async function test() {
       const platformPath = homeDir.joinPath('testnet', 'platform');
       const outsidePath = writeFile('outside', 'keep.txt');
       fs.rmSync(platformPath, { recursive: true });
+
+      // Node's recursive removal, as some Node 24 versions run it: a link
+      // that points nowhere is left in place and the removal succeeds.
+      const { rmSync } = fs;
+      this.sinon.stub(fs, 'rmSync').callsFake((removedPath, ...args) => {
+        if (removedPath === platformPath && !fs.existsSync(removedPath)) {
+          return undefined;
+        }
+
+        return rmSync.call(fs, removedPath, ...args);
+      });
 
       fs.symlinkSync(path.dirname(outsidePath), platformPath);
       await hardReset({ isPlatformOnlyReset: true });
