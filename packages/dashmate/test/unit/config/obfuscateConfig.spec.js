@@ -183,6 +183,46 @@ describe('obfuscateConfig', () => {
     expect(getConfigSecretValues(config)).to.not.include('release');
   });
 
+  // Core takes its options on the command line as well as from its config
+  // file, and a key or a password is a normal thing to pass that way. The
+  // option names stay: which options a node runs with is what makes the
+  // config worth reading.
+  it('should hide the value of every option passed to Core on its command line', () => {
+    const config = getBaseConfigFactory()();
+    const blsKey = '4a'.repeat(32);
+
+    config.set('core.docker.commandArgs', [
+      `-masternodeblsprivkey=${blsKey}`,
+      '--rpcpassword=cliPassword7Qx',
+      '-debug=net',
+      '-printtoconsole',
+    ]);
+
+    expect(obfuscateConfig(config).get('core.docker.commandArgs')).to.deep.equal([
+      `-masternodeblsprivkey=${'*'.repeat(blsKey.length)}`,
+      '--rpcpassword=**************',
+      '-debug=***',
+      '-printtoconsole',
+    ]);
+    expect(getConfigSecretValues(config)).to.include.members([blsKey, 'cliPassword7Qx']);
+  });
+
+  // Core reads an option's value only after `=`, and refuses to start on a
+  // bare argument, so one written as a separate argument is a value meant for
+  // the option before it
+  it('should hide an argument passed to Core that is not an option', () => {
+    const config = getBaseConfigFactory()();
+
+    config.set('core.docker.commandArgs', ['-rpcpassword', 'splitPassword7Qx', '-printtoconsole']);
+
+    expect(obfuscateConfig(config).get('core.docker.commandArgs')).to.deep.equal([
+      '-rpcpassword',
+      '****************',
+      '-printtoconsole',
+    ]);
+    expect(getConfigSecretValues(config)).to.include('splitPassword7Qx');
+  });
+
   // Build arguments are recognised by where the schema puts them, not by name
   // alone: a Drive logger can be called anything, `buildArgs` included, and
   // its settings are constrained values the config has to keep.

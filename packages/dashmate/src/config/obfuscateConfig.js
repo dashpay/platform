@@ -2,6 +2,7 @@ import lodash from 'lodash';
 import obfuscateObjectRecursive from '../util/obfuscateObjectRecursive.js';
 import Config from './Config.js';
 import hideString from '../util/hideString.js';
+import { getOptionValue, hideOptionValue, isOption } from '../util/commandLineOption.js';
 
 /**
  * Config fields whose values are secret, at whatever depth they occur
@@ -23,29 +24,47 @@ const NON_SECRET_BUILD_ARGS = ['CARGO_BUILD_PROFILE', 'SDK_TEST_DATA'];
  */
 const URL_USERINFO = /([a-z][a-z0-9+.-]*:[\\/]+)([^\s/\\?#]+)@/gi;
 
+const VALUE_KIND = {
+  PLAIN: 'plain',
+  // Hidden whole
+  SECRET: 'secret',
+  // An argument for a service's own command line, where an option can carry a
+  // key or a password as `-name=value`: the value is hidden, the name kept.
+  // Core reads values only after `=` and refuses a bare argument, so one
+  // that is not an option is a value meant for the option before it and is
+  // hidden whole.
+  COMMAND_ARGUMENT: 'commandArgument',
+};
+
 /**
  * @param {string} field
  * @param {string|undefined} parentField
  * @param {string|undefined} grandparentField
- * @return {boolean}
+ * @return {string} one of VALUE_KIND
  */
-function isSecretField(field, parentField, grandparentField) {
+function classifyValue(field, parentField, grandparentField) {
   if (SECRET_FIELD_NAMES.includes(field)) {
-    return true;
+    return VALUE_KIND.SECRET;
   }
 
-  // Build arguments are recognised where the schema puts them, in a build
-  // block. Other things can be named `buildArgs` too - a Drive logger can be
+  // Build arguments and command arguments are recognised where the schema
+  // puts them. Other things can carry the same names - a Drive logger can be
   // named anything - and their values are ones the config has to keep.
-  return parentField === 'buildArgs'
-    && grandparentField === 'build'
-    && !NON_SECRET_BUILD_ARGS.includes(field);
+  if (parentField === 'buildArgs' && grandparentField === 'build') {
+    return NON_SECRET_BUILD_ARGS.includes(field) ? VALUE_KIND.PLAIN : VALUE_KIND.SECRET;
+  }
+
+  if (parentField === 'commandArgs' && grandparentField === 'docker') {
+    return VALUE_KIND.COMMAND_ARGUMENT;
+  }
+
+  return VALUE_KIND.PLAIN;
 }
 
 /**
  * @param {Object} object
- * @param {function(Object, string, boolean)} callback - called with the object
- *   holding each string value, its field, and whether that field is secret
+ * @param {function(Object, string, string)} callback - called with the object
+ *   holding each string value, its field, and its VALUE_KIND
  * @param {string} [parentField]
  * @param {string} [grandparentField]
  */
@@ -54,7 +73,7 @@ function forEachStringValue(object, callback, parentField = undefined, grandpare
     if (typeof value === 'object' && value !== null) {
       forEachStringValue(value, callback, field, parentField);
     } else if (typeof value === 'string') {
-      callback(object, field, isSecretField(field, parentField, grandparentField));
+      callback(object, field, classifyValue(field, parentField, grandparentField));
     }
   }
 }
@@ -153,9 +172,9 @@ function getUrlCredentials(value) {
 }
 
 /**
- * The values of every secret field in a config, and the credentials embedded
- * in any URL it holds, so they can be removed from text the config itself is
- * not part of
+ * The values of every secret field in a config, of every option it passes on
+ * a service's command line, and the credentials embedded in any URL it holds,
+ * so they can be removed from text the config itself is not part of
  *
  * @param {Config} config - as stored, not obfuscated
  * @return {string[]}
@@ -163,11 +182,17 @@ function getUrlCredentials(value) {
 export function getConfigSecretValues(config) {
   const values = new Set();
 
-  forEachStringValue(config.getOptions(), (object, field, isSecret) => {
+  forEachStringValue(config.getOptions(), (object, field, kind) => {
     const value = object[field];
 
-    if (isSecret) {
+    if (kind === VALUE_KIND.SECRET) {
       values.add(value);
+    }
+
+    const argumentValue = isOption(value) ? getOptionValue(value) : value;
+
+    if (kind === VALUE_KIND.COMMAND_ARGUMENT && argumentValue !== null) {
+      values.add(argumentValue);
     }
 
     // Secret values included: a proxy URL in a build argument is hidden whole
@@ -189,9 +214,21 @@ export default function obfuscateConfig(
 
   const clonedOptions = lodash.cloneDeep(config.getOptions());
 
-  forEachStringValue(clonedOptions, (object, field, isSecret) => {
+  forEachStringValue(clonedOptions, (object, field, kind) => {
+    let value = object[field];
+
+    if (kind === VALUE_KIND.SECRET) {
+      value = hideString(value);
+    } else {
+      if (kind === VALUE_KIND.COMMAND_ARGUMENT) {
+        value = isOption(value) ? hideOptionValue(value, hideString) : hideString(value);
+      }
+
+      value = hideUrlCredentials(value);
+    }
+
     // eslint-disable-next-line no-param-reassign
-    object[field] = isSecret ? hideString(object[field]) : hideUrlCredentials(object[field]);
+    object[field] = value;
   });
 
   // sanitize also usernames & external ip from the rest of the fields values

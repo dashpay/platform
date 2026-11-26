@@ -23,9 +23,9 @@ The archive contains:
 - System information (OS, memory, CPU, disk usage)
 - Node configuration (with its secrets masked)
 - Service logs, metrics, and status
-- Docker container information (environment variable names only, without their values)
+- Docker container information (environment variable and command-line option names only, without their values)
 
-Secrets in the current node configuration, such as private keys, passwords, API keys, build arguments and credentials in URLs, are masked in the archive's copy of the configuration. The values of container environment variables are left out, and your user name and home directory are masked. Copies of the configuration's secrets elsewhere in the archive, including service logs, are masked when they are 8 characters or longer; shorter values are not searched for, because they would match unrelated text.
+Secrets in the current node configuration, such as private keys, passwords, API keys, build arguments, command-line option values and credentials in URLs, are masked in the archive's copy of the configuration. The values of container environment variables and command-line options are left out, and your user name and home directory are masked. Copies of the configuration's secrets elsewhere in the archive, including service logs, are masked when they are 8 characters or longer; shorter values are not searched for, because they would match unrelated text.
 
 Logs can still contain other sensitive text, such as earlier passwords or short values, so review the archive before you share it. The rest is diagnostic data about your node, such as its addresses, host details, certificate settings and logs, and is shared with whoever you send the archive to.
 

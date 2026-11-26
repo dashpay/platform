@@ -77,10 +77,10 @@ The command collects diagnostic information and creates an archive, with the nod
   - Service logs, metrics and status
 
   Masked: secrets in the current node configuration (private keys, passwords,
-  API keys, build arguments, credentials in URLs), the values of container
-  environment variables, and your user name and home directory. Copies of those
-  config secrets in logs and other collected data are masked when they are
-  8 characters or longer.
+  API keys, build arguments, command-line option values, credentials in URLs),
+  the values of container environment variables and command-line options, and
+  your user name and home directory. Copies of those config secrets in logs and
+  other collected data are masked when they are 8 characters or longer.
 
   Logs can still contain other sensitive text, such as earlier passwords or short
   values, so review the archive before you share it. The rest is diagnostic data

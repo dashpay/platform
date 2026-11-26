@@ -10,6 +10,7 @@ import Certificate from '../../../ssl/zerossl/Certificate.js';
 import probeServedCertificate, { STATE as PROBE_STATE } from '../../../ssl/probeServedCertificate.js';
 import readCertificateBundle from '../../../ssl/readCertificateBundle.js';
 import providers from '../../../status/providers.js';
+import { hideOptionValue } from '../../../util/commandLineOption.js';
 import maskOperatorIdentity, { getOperatorIdentity } from '../../../util/maskOperatorIdentity.js';
 import obfuscateObjectRecursive from '../../../util/obfuscateObjectRecursive.js';
 import validateSslCertificateFiles from '../../prompts/validators/validateSslCertificateFiles.js';
@@ -60,7 +61,7 @@ function hideOperatorNameIn(text) {
   return maskOperatorIdentity(text, getOperatorIdentity());
 }
 
-const REDACTED_ENVIRONMENT_VALUE = '<redacted>';
+const REDACTED_VALUE = '<redacted>';
 
 /**
  * @param {*} entry - a `NAME=value` string
@@ -68,7 +69,7 @@ const REDACTED_ENVIRONMENT_VALUE = '<redacted>';
  */
 function redactEnvironmentEntry(entry) {
   if (typeof entry !== 'string') {
-    return REDACTED_ENVIRONMENT_VALUE;
+    return REDACTED_VALUE;
   }
 
   const separatorIndex = entry.indexOf('=');
@@ -76,7 +77,7 @@ function redactEnvironmentEntry(entry) {
   // Docker reports every variable as NAME=value, so an entry without a
   // separator is not a name it is safe to assume
   if (separatorIndex === -1) {
-    return REDACTED_ENVIRONMENT_VALUE;
+    return REDACTED_VALUE;
   }
 
   // A variable set to nothing has nothing to hide, and that it is empty can
@@ -85,7 +86,7 @@ function redactEnvironmentEntry(entry) {
     return entry;
   }
 
-  return `${entry.slice(0, separatorIndex)}=${REDACTED_ENVIRONMENT_VALUE}`;
+  return `${entry.slice(0, separatorIndex)}=${REDACTED_VALUE}`;
 }
 
 /**
@@ -114,7 +115,40 @@ function redactContainerEnvironment(inspect) {
   // eslint-disable-next-line no-param-reassign
   inspect.Config.Env = Array.isArray(environment)
     ? environment.map(redactEnvironmentEntry)
-    : REDACTED_ENVIRONMENT_VALUE;
+    : REDACTED_VALUE;
+}
+
+/**
+ * @param {Object} holder
+ * @param {string} field
+ */
+function redactCommandField(holder, field) {
+  const command = holder?.[field];
+
+  if (command === undefined || command === null) {
+    return;
+  }
+
+  // eslint-disable-next-line no-param-reassign
+  holder[field] = Array.isArray(command)
+    ? command.map((argument) => hideOptionValue(argument, () => REDACTED_VALUE))
+    : REDACTED_VALUE;
+}
+
+/**
+ * Keep the command a container was started with and drop the values of its
+ * options.
+ *
+ * Options given as `-name=value` are how some operators pass a service a key
+ * or a password, for Core in particular. Which options it runs with stays;
+ * what they were set to goes, for the same reason as the environment.
+ *
+ * @param {Object} inspect - mutated in place
+ */
+function redactContainerCommand(inspect) {
+  redactCommandField(inspect, 'Args');
+  redactCommandField(inspect?.Config, 'Cmd');
+  redactCommandField(inspect?.Config, 'Entrypoint');
 }
 
 export default function collectSamplesTaskFactory(
@@ -599,6 +633,7 @@ export default function collectSamplesTaskFactory(
                 }
 
                 redactContainerEnvironment(inspect);
+                redactContainerCommand(inspect);
 
                 // Hide username & external ip from inspect
                 obfuscateOperatorName(inspect);

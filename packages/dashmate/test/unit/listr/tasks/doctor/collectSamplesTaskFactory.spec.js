@@ -589,6 +589,49 @@ describe('collectSamplesTaskFactory', () => {
       );
     });
 
+    // A key passed to Core on its command line is in the config and in the
+    // command the container was started with, and Core may print it as well
+    it('should not archive a key passed to Core on its command line', async () => {
+      const blsKey = '4a'.repeat(32);
+
+      config.set('core.docker.commandArgs', [`-masternodeblsprivkey=${blsKey}`, '-printtoconsole']);
+
+      dockerCompose.inspectService.resolves({
+        Id: 'container-id',
+        Path: 'dashd',
+        Args: [`-masternodeblsprivkey=${blsKey}`, '-printtoconsole'],
+        Config: {
+          Image: 'dashpay/dashd:test',
+          Env: [],
+          Cmd: ['dashd', `-masternodeblsprivkey=${blsKey}`, '-printtoconsole'],
+          Entrypoint: ['/docker-entrypoint.sh', '--token=entrypointToken7Qx'],
+        },
+        State: { Status: 'running', Restarting: false, ExitCode: 0 },
+      });
+      dockerCompose.logs.resolves({
+        out: `Command-line arg: masternodeblsprivkey="${blsKey}"\n`,
+        err: '',
+      });
+
+      const archivePath = await collectAndArchive();
+      const archived = readArchivedBytes(archivePath);
+
+      expect(archived).to.not.contain(blsKey);
+
+      const restored = await unarchiveSamplesFactory(getServiceList)(archivePath);
+      const inspect = restored.getServiceInfo(SERVICE.name, 'dockerInspect');
+
+      expect(inspect.Args).to.deep.equal(['-masternodeblsprivkey=<redacted>', '-printtoconsole']);
+      expect(inspect.Config.Cmd).to.deep.equal(['dashd', '-masternodeblsprivkey=<redacted>', '-printtoconsole']);
+      expect(inspect.Config.Entrypoint).to.deep.equal(['/docker-entrypoint.sh', '--token=<redacted>']);
+      expect(archived).to.not.contain('entrypointToken7Qx');
+      expect(restored.getDashmateConfig().get('core.docker.commandArgs')).to.deep.equal([
+        `-masternodeblsprivkey=${'*'.repeat(blsKey.length)}`,
+        '-printtoconsole',
+      ]);
+      expect(restored.getServiceInfo(SERVICE.name, 'stdOut')).to.contain('Command-line arg: masternodeblsprivkey="');
+    });
+
     // A password can be spelled like a value the config schema requires
     // elsewhere, such as the environment name. Doctor validates the config copy
     // when it reads a report back, so the copy must keep that value while the
