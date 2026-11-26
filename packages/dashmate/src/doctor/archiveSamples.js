@@ -58,14 +58,22 @@ export default async function archiveSamples(samples, folderPath) {
     }
   }
 
-  await create(
-    {
-      cwd: archiveDir,
-      gzip: true,
-      file: archiveFilePath,
-    },
-    ['.'],
-  );
+  try {
+    await create(
+      {
+        cwd: archiveDir,
+        gzip: true,
+        file: archiveFilePath,
+      },
+      ['.'],
+    );
+  } catch (e) {
+    // tar has already written part of the archive by the time it fails, and a
+    // truncated archive would be mistaken for a report
+    fs.rmSync(archiveFilePath, { force: true });
+
+    throw e;
+  }
 
   return archiveFilePath;
 }

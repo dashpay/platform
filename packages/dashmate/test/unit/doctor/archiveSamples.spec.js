@@ -55,4 +55,28 @@ describe('archiveSamples', () => {
 
     expect(unarchived.date.toISOString()).to.equal('2026-11-26T10:15:30.123Z');
   });
+
+  // A truncated archive looks like a report to whoever is sent it, and doctor
+  // cannot analyse it
+  it('should not leave a partial archive behind when packing fails', async function it() {
+    if (process.getuid?.() === 0) {
+      // Root reads a file whatever its mode, so packing cannot be made to fail
+      this.skip();
+    }
+
+    // Make one staged sample unreadable, so that packing fails after the
+    // archive file has been opened
+    const { writeFileSync } = fs;
+    this.sinon.stub(fs, 'writeFileSync').callsFake((filePath, ...args) => {
+      writeFileSync(filePath, ...args);
+
+      if (path.basename(filePath) === 'dashmateVersion.txt') {
+        fs.chmodSync(filePath, 0);
+      }
+    });
+
+    await expect(archiveSamples(samples, outputDir)).to.be.rejectedWith('EACCES');
+
+    expect(fs.readdirSync(outputDir)).to.be.empty();
+  });
 });
