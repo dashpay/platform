@@ -89,7 +89,7 @@ export default function analyseConfigFactory() {
     if (config?.get('platform.enable')) {
       // Platform Node ID
       const masternodeStatus = samples.getServiceInfo('core', 'masternodeStatus');
-      const platformNodeId = masternodeStatus?.dmnState?.platformNodeId;
+      const platformNodeId = masternodeStatus?.dmnState?.platformNodeID;
       if (platformNodeId && config.get('platform.drive.tenderdash.node.id') !== platformNodeId) {
         const problem = new Problem(
           'Platform Node ID doesn\'t match the one found in the ProReg transaction',

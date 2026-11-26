@@ -1,9 +1,14 @@
+import fs from 'fs';
+import path from 'path';
 import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
+import { PACKAGE_ROOT_DIR } from '../../../../src/constants.js';
 import analyseConfigFactory from '../../../../src/doctor/analyse/analyseConfigFactory.js';
 import { SEVERITY } from '../../../../src/doctor/Prescription.js';
 import Samples from '../../../../src/doctor/Samples.js';
 import { ERRORS as LETSENCRYPT_ERRORS } from '../../../../src/ssl/letsencrypt/validateLetsEncryptCertificateFactory.js';
 import { ERRORS as ZEROSSL_ERRORS } from '../../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
+import deriveTenderdashNodeId from '../../../../src/tenderdash/deriveTenderdashNodeId.js';
+import generateTenderdashNodeKey from '../../../../src/tenderdash/generateTenderdashNodeKey.js';
 
 describe('analyseConfigFactory', () => {
   let analyseConfig;
@@ -308,6 +313,42 @@ describe('analyseConfigFactory', () => {
       const [problem] = analyseWithRecord({ state: 'ABSENT' });
 
       expect(problem.getSolution()).to.contain('ssl obtain');
+    });
+  });
+
+  describe('Platform node ID', () => {
+    const NODE_ID_PROBLEM = 'Platform Node ID doesn\'t match the one found in the ProReg transaction';
+
+    let masternodeStatus;
+
+    beforeEach(() => {
+      // Captured from a Dash Core v24.0.3 node running a registered evonode
+      masternodeStatus = JSON.parse(fs.readFileSync(
+        path.join(PACKAGE_ROOT_DIR, 'test/fixtures/coreRpc/24.0.3/masternode-status-evonode.json'),
+        'utf8',
+      ));
+
+      samples.setServiceInfo('core', 'masternodeStatus', masternodeStatus);
+    });
+
+    // Tenderdash identifies itself to its peers with the configured key, and
+    // they only accept it as this evonode when its ID is the one registered on
+    // chain. A node whose key does not match runs but never takes part.
+    it('should report a node key that does not match the registered node ID', () => {
+      const nodeKey = generateTenderdashNodeKey();
+
+      config.set('platform.drive.tenderdash.node.key', nodeKey);
+      config.set('platform.drive.tenderdash.node.id', deriveTenderdashNodeId(nodeKey));
+
+      const descriptions = analyseConfig(samples).map((problem) => problem.getDescription());
+
+      expect(descriptions).to.include(NODE_ID_PROBLEM);
+    });
+
+    it('should report nothing when the node ID is the registered one', () => {
+      config.set('platform.drive.tenderdash.node.id', masternodeStatus.dmnState.platformNodeID);
+
+      expect(analyseConfig(samples)).to.be.empty();
     });
   });
 

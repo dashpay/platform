@@ -420,6 +420,16 @@ describe('collectSamplesTaskFactory', () => {
         'The masternode has been banned due to failing Proof-of-Service checks.',
       );
     });
+
+    it('should report an evonode whose Tenderdash node ID is not the registered one', async () => {
+      config.set('platform.drive.tenderdash.node.id', 'f'.repeat(40));
+
+      await collectSamples();
+
+      expect(analyseConfig(samples).map((problem) => problem.getDescription())).to.include(
+        'Platform Node ID doesn\'t match the one found in the ProReg transaction',
+      );
+    });
   });
 
   describe('gateway TLS private key permissions', () => {
