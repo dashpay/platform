@@ -47,7 +47,9 @@ use key_wallet::bip32::ExtendedPrivKey;
 use crate::changeset::PlatformWalletPersistence;
 use crate::error::PlatformWalletError;
 use crate::manager::PlatformWalletManager;
-use crate::wallet::identity::network::{ContactCryptoProvider, IdentityDiscoveryOptions};
+use crate::wallet::identity::network::{
+    AmbiguousIdentity, ContactCryptoProvider, IdentityDiscoveryOptions,
+};
 use crate::wallet::platform_wallet::WalletId;
 
 /// Whole-sequence budget when the caller does not name one.
@@ -809,13 +811,29 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
             .next()
     }
 
-    /// Scan for an identity, retrying only while Platform stays unreachable.
-    ///
-    /// An `Ok` result ends the loop whether or not it found anything: Platform
-    /// answered, and an empty answer is a proof of absence that rescanning
-    /// cannot overturn. Only [`PlatformWalletError::IdentityDiscoveryIncomplete`]
-    /// — the error for a scan that never got through — is worth another
-    /// attempt.
+    /// Whether the recorded scan has gaps other than this attempt's fixed page bounds.
+    async fn identity_scan_needs_retry(
+        &self,
+        wallet_id: &WalletId,
+        ambiguous: &[AmbiguousIdentity],
+    ) -> bool {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(wallet_id)
+            .and_then(|info| info.identity_manager.identity_scan_state(wallet_id))
+            .is_some_and(|state| {
+                !state.complete
+                    && (state.unlocated_gap
+                        || state.failed_indices.iter().any(|index| {
+                            !ambiguous.iter().any(|ambiguity| {
+                                ambiguity.identity_index == *index && ambiguity.more_candidates
+                            })
+                        }))
+            })
+    }
+
+    /// Scan for an identity, retrying unanswered probes within the startup budget.
+    /// A complete verdict settles the scan. Gaps caused only by the fixed candidate
+    /// page bound wait for a later launch, which can observe a changed candidate set.
     async fn discover_identity_with_backoff(
         &self,
         wallet_id: &WalletId,
@@ -956,7 +974,10 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
                     // again. Retry it here, inside the budget the caller
                     // already granted and with the scan key already resolved,
                     // rather than leaving it to a launch that may never come.
-                    if !self.identity_scan_is_incomplete(wallet_id).await {
+                    if !self
+                        .identity_scan_needs_retry(wallet_id, &found.ambiguous)
+                        .await
+                    {
                         return;
                     }
                     if backoff.is_none() {
@@ -1064,6 +1085,10 @@ impl<P: PlatformWalletPersistence + Send + Sync + 'static> PlatformWalletManager
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::identity_fixtures::{expect_candidates, hash160_candidate};
+    use crate::wallet::identity::network::MASTER_KEY_HASH_MAX_PAGES;
+    use dash_sdk::platform::types::identity::PublicKeyHash;
+    use dpp::identity::Identity;
     use zeroize::Zeroizing;
 
     fn identity() -> Identifier {
@@ -2377,58 +2402,25 @@ mod tests {
         .expect("key hash")
     }
 
-    /// Answer the test wallet's index 0 with `count` candidates that all
+    /// Answer the test wallet's `index` with `count` candidates that all
     /// belong to it, one per non-unique page, then an empty page.
-    async fn answer_index_zero_with_owned_candidates(sdk: &mut dash_sdk::Sdk, count: u8) {
-        use dash_sdk::platform::types::identity::{NonUniquePublicKeyHashQuery, PublicKeyHash};
-        use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-        use dpp::identity::v0::IdentityV0;
-        use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
-
-        let hash = test_wallet_key_hash(0);
-        let candidates = (0..count).map(|n| {
-            let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
-                id: 0,
-                purpose: Purpose::AUTHENTICATION,
-                security_level: SecurityLevel::MASTER,
-                contract_bounds: None,
-                key_type: KeyType::ECDSA_HASH160,
-                read_only: false,
-                data: dpp::platform_value::BinaryData::new(hash.to_vec()),
-                disabled_at: None,
-            });
-            Identity::V0(IdentityV0 {
-                id: Identifier::from([0xE0 + n; 32]),
-                public_keys: [(0, key)].into(),
-                balance: 0,
-                revision: 0,
-            })
-        });
+    async fn answer_index_with_owned_candidates(sdk: &mut dash_sdk::Sdk, index: u32, count: u8) {
+        let hash = test_wallet_key_hash(index);
+        let candidates = (0..count)
+            .map(|n| hash160_candidate(0xE0 + index as u8 * 10 + n, hash, []))
+            .collect();
         sdk.mock()
             .expect_fetch(PublicKeyHash(hash), None::<Identity>)
             .await
             .expect("unique-tree expectation");
-        let mut after = None;
-        for candidate in candidates.map(Some).chain([None]) {
-            let next = candidate.as_ref().map(|identity| identity.id().to_buffer());
-            sdk.mock()
-                .expect_fetch(
-                    NonUniquePublicKeyHashQuery {
-                        key_hash: hash,
-                        after,
-                    },
-                    candidate,
-                )
-                .await
-                .expect("non-unique-tree expectation");
-            after = next;
-        }
+        expect_candidates(sdk, hash, candidates).await;
     }
 
-    /// Run the startup discovery step for the test wallet with a gap of one.
+    /// Run the startup discovery step for the test wallet.
     async fn startup_discovery_tally(
         manager: &crate::PlatformWalletManager<crate::test_support::NoopTestPersister>,
         wallet_id: &WalletId,
+        gap_limit: u32,
     ) -> StartupTally {
         let mnemonic = key_wallet::mnemonic::Mnemonic::from_phrase(
             crate::test_support::TEST_PLATFORM_WALLET_MNEMONIC,
@@ -2445,7 +2437,7 @@ mod tests {
                 wallet_id,
                 wallet.identity(),
                 Some(&resolve),
-                Some(1),
+                Some(gap_limit),
                 Instant::now() + Duration::from_secs(30),
                 &mut tally,
             )
@@ -2460,9 +2452,9 @@ mod tests {
     async fn should_settle_an_ambiguous_only_launch_with_every_candidate_read_as_no_identity() {
         let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
         let mut sdk = manager.sdk().clone();
-        answer_index_zero_with_owned_candidates(&mut sdk, 2).await;
+        answer_index_with_owned_candidates(&mut sdk, 0, 2).await;
 
-        let tally = startup_discovery_tally(&manager, &wallet_id).await;
+        let tally = startup_discovery_tally(&manager, &wallet_id, 1).await;
 
         assert!(!tally.has_identity());
         assert_eq!(tally.status(), WalletStartupStatus::NoIdentity);
@@ -2475,15 +2467,65 @@ mod tests {
     async fn should_keep_an_ambiguous_only_launch_with_unread_candidates_open() {
         let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
         let mut sdk = manager.sdk().clone();
-        let more_than_one_probe_reads =
-            crate::wallet::identity::network::MASTER_KEY_HASH_MAX_PAGES as u8 + 1;
-        answer_index_zero_with_owned_candidates(&mut sdk, more_than_one_probe_reads).await;
+        let more_than_one_probe_reads = MASTER_KEY_HASH_MAX_PAGES as u8 + 1;
+        answer_index_with_owned_candidates(&mut sdk, 0, more_than_one_probe_reads).await;
 
-        let tally = startup_discovery_tally(&manager, &wallet_id).await;
+        let tally = startup_discovery_tally(&manager, &wallet_id, 1).await;
 
         assert!(!tally.has_identity());
         assert_eq!(tally.status(), WalletStartupStatus::PartialNoIdentity);
         assert!(!tally.status().identity_is_settled());
         assert!(manager.identity_scan_is_incomplete(&wallet_id).await);
+    }
+
+    #[tokio::test]
+    async fn should_not_retry_a_scan_incomplete_only_because_of_the_candidate_page_bound() {
+        assert_candidate_page_bound_attempts(false, 1).await;
+    }
+
+    #[tokio::test]
+    async fn should_retry_a_probe_failure_alongside_the_candidate_page_bound() {
+        assert_candidate_page_bound_attempts(true, DISCOVERY_BACKOFF.len() as u32 + 1).await;
+    }
+
+    async fn assert_candidate_page_bound_attempts(probe_failure: bool, expected_attempts: u32) {
+        let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+        let mut sdk = manager.sdk().clone();
+        answer_index_with_owned_candidates(&mut sdk, 0, 1).await;
+        answer_index_with_owned_candidates(&mut sdk, 1, MASTER_KEY_HASH_MAX_PAGES as u8 + 1).await;
+        if !probe_failure {
+            let hash = test_wallet_key_hash(2);
+            sdk.mock()
+                .expect_fetch(PublicKeyHash(hash), None::<Identity>)
+                .await
+                .unwrap();
+            expect_candidates(&mut sdk, hash, vec![]).await;
+        }
+        // With no expectation at index 2, its probe fails on every attempt.
+        let mut tally = startup_discovery_tally(&manager, &wallet_id, 2).await;
+
+        assert_eq!(tally.discovery_attempts, expected_attempts);
+        assert_eq!(tally.identity_id, Some(Identifier::from([0xE0; 32])));
+        {
+            let wm = manager.wallet_manager.read().await;
+            let verdict = wm
+                .get_wallet_info(&wallet_id)
+                .unwrap()
+                .identity_manager
+                .identity_scan_state(&wallet_id)
+                .unwrap();
+            assert!(!verdict.complete);
+            assert_eq!(
+                verdict.failed_indices,
+                if probe_failure { vec![1, 2] } else { vec![1] }
+            );
+        }
+        assert!(manager.identity_scan_is_incomplete(&wallet_id).await);
+        // The remaining startup steps completed; the scan keeps this off Ready.
+        tally.record_identity_scan_incomplete();
+        tally.record_sync_ran();
+        let outcome = tally.into_outcome(Duration::ZERO);
+        assert_eq!(outcome.status, WalletStartupStatus::IdentityScanIncomplete);
+        assert!(outcome.identity_scan_incomplete);
     }
 }

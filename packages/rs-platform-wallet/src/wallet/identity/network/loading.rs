@@ -592,6 +592,7 @@ mod tests {
     use crate::changeset::IdentityKeyDerivationIndices;
     use crate::error::PlatformWalletError;
     use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::test_support::identity_fixtures::{expect_candidates, hash160_candidate};
     use crate::wallet::identity::network::AmbiguousIdentity;
     use crate::PlatformWalletManager;
     use dash_sdk::platform::types::identity::{NonUniquePublicKeyHashQuery, PublicKeyHash};
@@ -887,71 +888,9 @@ mod tests {
     /// the MASTER key verifies against the seed by its hash.
     #[tokio::test]
     async fn should_load_an_identity_whose_master_key_is_ecdsa_hash160() {
-        struct Events;
-        impl EventHandler for Events {}
-        impl PlatformEventHandler for Events {}
-
-        const SEED: [u8; 64] = [7; 64];
-        let network = Network::Testnet;
-        let master = ExtendedPrivKey::new_master(network, &SEED).unwrap();
+        let master = candidate_master();
         let identity_id = Identifier::from([0x6B; 32]);
-        let probe =
-            derive_load_probe_hash(ResolvedLoadKeyHashSource::Master(&master), network, 0).unwrap();
-        let master_key: IdentityPublicKey = IdentityPublicKeyV0 {
-            id: MASTER_KEY_INDEX,
-            purpose: Purpose::AUTHENTICATION,
-            security_level: SecurityLevel::MASTER,
-            contract_bounds: None,
-            key_type: KeyType::ECDSA_HASH160,
-            read_only: false,
-            data: BinaryData::new(probe.to_vec()),
-            disabled_at: None,
-        }
-        .into();
-        let on_chain = Identity::V0(IdentityV0 {
-            id: identity_id,
-            public_keys: [(MASTER_KEY_INDEX, master_key)].into(),
-            balance: 1_000_000,
-            revision: 1,
-        });
-
-        let mut sdk = dash_sdk::SdkBuilder::new_mock().build().unwrap();
-        sdk.mock()
-            .expect_fetch(PublicKeyHash(probe), None::<Identity>)
-            .await
-            .unwrap();
-        sdk.mock()
-            .expect_fetch(
-                NonUniquePublicKeyHashQuery {
-                    key_hash: probe,
-                    after: None,
-                },
-                Some(on_chain),
-            )
-            .await
-            .unwrap();
-        sdk.mock()
-            .expect_fetch(
-                NonUniquePublicKeyHashQuery {
-                    key_hash: probe,
-                    after: Some(identity_id.to_buffer()),
-                },
-                None::<Identity>,
-            )
-            .await
-            .unwrap();
-        let store = Arc::new(CapturingStore::default());
-        let manager = PlatformWalletManager::new(Arc::new(sdk), store.clone(), Arc::new(Events));
-        let wallet = manager
-            .create_wallet_from_seed_bytes(
-                network,
-                &SEED,
-                WalletAccountCreationOptions::Default,
-                Some(0),
-            )
-            .await
-            .unwrap();
-        store.take();
+        let (store, wallet) = wallet_with_candidates(vec![candidate(0x6B, None)]).await;
 
         let loaded = wallet
             .identity()
@@ -1064,21 +1003,7 @@ mod tests {
             .expect_fetch(PublicKeyHash(probe), None::<Identity>)
             .await
             .unwrap();
-        let mut after = None;
-        for candidate in candidates.into_iter().map(Some).chain([None]) {
-            let next = candidate.as_ref().map(|identity| identity.id().to_buffer());
-            sdk.mock()
-                .expect_fetch(
-                    NonUniquePublicKeyHashQuery {
-                        key_hash: probe,
-                        after,
-                    },
-                    candidate,
-                )
-                .await
-                .unwrap();
-            after = next;
-        }
+        expect_candidates(&mut sdk, probe, candidates).await;
         let store = Arc::new(CapturingStore::default());
         let manager = PlatformWalletManager::new(Arc::new(sdk), store.clone(), Arc::new(Events));
         let wallet = manager
@@ -1110,28 +1035,7 @@ mod tests {
             0,
         )
         .unwrap();
-        let master_key: IdentityPublicKey = IdentityPublicKeyV0 {
-            id: MASTER_KEY_INDEX,
-            purpose: Purpose::AUTHENTICATION,
-            security_level: SecurityLevel::MASTER,
-            contract_bounds: None,
-            key_type: KeyType::ECDSA_HASH160,
-            read_only: false,
-            data: BinaryData::new(probe.to_vec()),
-            disabled_at: None,
-        }
-        .into();
-        let mut public_keys: std::collections::BTreeMap<_, _> =
-            [(MASTER_KEY_INDEX, master_key)].into();
-        if let Some(key) = extra {
-            public_keys.insert(1, key);
-        }
-        Identity::V0(IdentityV0 {
-            id: Identifier::from([id_byte; 32]),
-            public_keys,
-            balance: 0,
-            revision: 0,
-        })
+        hash160_candidate(id_byte, probe, extra)
     }
 
     /// A HIGH authentication key at key id 1 derived from another seed.

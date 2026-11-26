@@ -31,10 +31,12 @@ pub(crate) const MASTER_KEY_HASH_MAX_PAGES: usize = 8;
 /// seed. None or more than one candidate did, or more candidates exist than
 /// one lookup reads.
 ///
-/// An index whose candidates were all read is answered in the scan verdict,
-/// so a warm launch and a resumed scan do not probe it again; only a scan
-/// from index 0 or a load by this index checks it again. An index with
-/// candidates left unread stays unanswered, like a failed probe.
+/// An index whose candidates were all read is answered in the scan verdict.
+/// A known identity and a complete verdict allow startup's warm shortcut.
+/// Startup scans again when no identity is known.
+/// Resumed discovery starts after the highest registered identity index, so
+/// ambiguity beyond it can be probed again; no ambiguity cursor is stored.
+/// Candidates left unread keep the index unanswered, like a failed probe.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AmbiguousIdentity {
     /// The identity index whose key hash was looked up.
@@ -221,8 +223,9 @@ fn breadcrumb_decisions(
 ///
 /// The defaults match `sync()`'s historical behavior: resume one past
 /// the wallet's highest already-registered identity index and stop
-/// after [`IDENTITY_GAP_LIMIT`] consecutive indices that import nothing
-/// (empty or ambiguous). Callers who
+/// after [`IDENTITY_GAP_LIMIT`] consecutive indices without a single importable
+/// wallet identity (empty, ambiguous or unanswered). Confirming an already-known
+/// identity resets the gap. Callers who
 /// want a full rescan pass `start_index: Some(0)`; callers who want a
 /// deeper gap tolerance bump `gap_limit`.
 ///
@@ -242,8 +245,10 @@ pub struct IdentityDiscoveryOptions {
     /// past the wallet's highest already-registered identity index"
     /// (default).
     pub start_index: Option<u32>,
-    /// How many consecutive identity indices that import nothing (empty or
-    /// ambiguous) to tolerate before stopping. Defaults to [`IDENTITY_GAP_LIMIT`].
+    /// How many consecutive indices without a single importable wallet identity
+    /// to tolerate: empty, ambiguous or unanswered probes advance the counter;
+    /// confirming an already-known identity resets it. Probe errors leave the
+    /// index unanswered in the verdict. Defaults to [`IDENTITY_GAP_LIMIT`].
     pub gap_limit: u32,
 }
 
@@ -266,8 +271,10 @@ impl IdentityWallet {
     /// registered identity bound to that key hash (the unique-key
     /// lookup, then the non-unique one; see
     /// [`Self::fetch_identity_by_master_key_hash`]). Stops after
-    /// `opts.gap_limit` consecutive indices that import nothing: misses and
-    /// ambiguous indices alike, so an ambiguous index can end the scan.
+    /// `opts.gap_limit` consecutive indices without a single importable wallet
+    /// identity: empty, ambiguous and unanswered probes all advance the gap.
+    /// Confirming an already-known identity resets it. A probe error still
+    /// leaves the index unanswered in the scan verdict.
     ///
     /// For every discovered identity this method also:
     /// - queries DPNS for associated usernames,
@@ -927,7 +934,7 @@ impl IdentityWallet {
 /// proved too weak: it kept passing while the scan fed it the wrong number.
 #[derive(Default)]
 struct ScanTally {
-    /// Empty-or-unanswered indices since the last sighting. Terminates the
+    /// Empty, ambiguous or unanswered indices since the last sighting. Terminates the
     /// scan at the gap limit.
     consecutive_misses: u32,
     /// Probes that never reached Platform.
@@ -993,9 +1000,9 @@ impl ScanTally {
     /// Platform answered with candidates for this index and no single one
     /// verified as the wallet's own. Advances the miss counter, so the scan
     /// still terminates. The index is answered unless candidates were left
-    /// unread: another scan would get the same answer, so a warm launch and a
-    /// resumed scan skip it, and only a scan from index 0 or a load by index
-    /// checks it again.
+    /// unread. This does not advance the resume position, which follows the
+    /// highest registered identity index. Startup's warm shortcut also needs
+    /// a known identity and a complete verdict.
     fn record_ambiguity(&mut self, ambiguity: AmbiguousIdentity) {
         self.ambiguous.push(ambiguity);
         self.consecutive_misses += 1;
@@ -1098,8 +1105,11 @@ mod tests {
         ScanTally,
     };
     use crate::changeset::IdentityScanStateEntry;
+    use crate::test_support::identity_fixtures::{
+        self, expect_candidates, identity_with_master_key,
+    };
     use crate::test_support::NoopTestPersister;
-    use dash_sdk::platform::types::identity::{NonUniquePublicKeyHashQuery, PublicKeyHash};
+    use dash_sdk::platform::types::identity::PublicKeyHash;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::identity_public_key::accessors::v0::{
         IdentityPublicKeyGettersV0, IdentityPublicKeySettersV0,
@@ -1744,26 +1754,6 @@ mod tests {
         .expect("derive master key hash")
     }
 
-    /// An identity whose MASTER key (key id 0) is `key_type` with `data`.
-    fn identity_with_master_key(id_byte: u8, key_type: KeyType, data: Vec<u8>) -> Identity {
-        let key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
-            id: MASTER_KEY_INDEX,
-            purpose: Purpose::AUTHENTICATION,
-            security_level: SecurityLevel::MASTER,
-            contract_bounds: None,
-            key_type,
-            read_only: false,
-            data: dpp::platform_value::BinaryData::new(data),
-            disabled_at: None,
-        });
-        Identity::V0(IdentityV0 {
-            id: Identifier::from([id_byte; 32]),
-            public_keys: BTreeMap::from([(MASTER_KEY_INDEX, key)]),
-            balance: 0,
-            revision: 0,
-        })
-    }
-
     /// Answer the unique-tree probe for `key_hash` with `identity`.
     async fn expect_unique(
         sdk: &mut dash_sdk::Sdk,
@@ -1776,24 +1766,6 @@ mod tests {
             .expect("unique-tree expectation");
     }
 
-    /// Answer the non-unique-tree pages for `key_hash` with `candidates`, one
-    /// per page, then an empty page.
-    async fn expect_candidates(
-        sdk: &mut dash_sdk::Sdk,
-        key_hash: [u8; 20],
-        candidates: Vec<Identity>,
-    ) {
-        let mut after = None;
-        for candidate in candidates.into_iter().map(Some).chain([None]) {
-            let next = candidate.as_ref().map(|identity| identity.id().to_buffer());
-            sdk.mock()
-                .expect_fetch(NonUniquePublicKeyHashQuery { key_hash, after }, candidate)
-                .await
-                .expect("non-unique-tree expectation");
-            after = next;
-        }
-    }
-
     /// A candidate for `identity_index`: its key 0 is the `ECDSA_HASH160`
     /// MASTER key over the index's key hash, followed by `extra_keys`.
     fn hash160_candidate(
@@ -1801,13 +1773,7 @@ mod tests {
         identity_index: u32,
         extra_keys: Vec<IdentityPublicKey>,
     ) -> Identity {
-        let hash = master_key_hash(identity_index);
-        let mut identity = identity_with_master_key(id_byte, KeyType::ECDSA_HASH160, hash.to_vec());
-        let Identity::V0(v0) = &mut identity;
-        for key in extra_keys {
-            v0.public_keys.insert(key.id(), key);
-        }
-        identity
+        identity_fixtures::hash160_candidate(id_byte, master_key_hash(identity_index), extra_keys)
     }
 
     /// An authentication key derived from a seed other than the wallet's.
@@ -1847,7 +1813,8 @@ mod tests {
     /// Dash Evo Tool registers identities with an `ECDSA_HASH160` MASTER key,
     /// which Platform indexes only in its non-unique key-hash tree. The scan
     /// finds them there, at their own identity index, and a run of them does
-    /// not end the scan early: only an index both trees answer empty is a miss.
+    /// not advance the gap: finding a single importable identity resets it,
+    /// including when the wallet already knows that identity.
     #[tokio::test]
     async fn should_discover_identities_whose_master_key_is_ecdsa_hash160() {
         let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
@@ -2318,6 +2285,47 @@ mod tests {
             assert!(result.ambiguous.is_empty(), "{condition}");
             let verdict = scan_verdict(&manager, &wallet_id).await;
             assert!(verdict.complete, "{condition}: {verdict:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn should_record_a_miss_when_the_matching_master_hash_is_only_at_key_one() {
+        for key_zero_present in [false, true] {
+            let (manager, wallet_id) = crate::test_support::test_platform_wallet_manager().await;
+            let wallet = manager.get_wallet(&wallet_id).await.expect("wallet");
+            let mut sdk = manager.sdk().clone();
+            let mut identity = hash160_candidate(0x0C, 0, vec![]);
+            let id = identity.id();
+            let mut key = identity
+                .public_keys_mut()
+                .remove(&MASTER_KEY_INDEX)
+                .unwrap();
+            key.set_id(1);
+            identity.public_keys_mut().insert(1, key);
+            if key_zero_present {
+                let mut different_key = identity.public_keys()[&1].clone();
+                different_key.set_id(MASTER_KEY_INDEX);
+                different_key.set_data(dpp::platform_value::BinaryData::new(vec![0xEE; 20]));
+                identity
+                    .public_keys_mut()
+                    .insert(MASTER_KEY_INDEX, different_key);
+            }
+            expect_unique(&mut sdk, master_key_hash(0), None).await;
+            expect_candidates(&mut sdk, master_key_hash(0), vec![identity]).await;
+
+            let result = scan_from_zero(&wallet)
+                .await
+                .expect("every index was answered");
+
+            assert!(result.discovered.is_empty());
+            assert!(result.ambiguous.is_empty());
+            assert!(!is_managed(&manager, &wallet_id, id).await);
+            let verdict = scan_verdict(&manager, &wallet_id).await;
+            assert!(
+                verdict.complete,
+                "key_zero_present={key_zero_present}: {verdict:?}"
+            );
+            assert!(verdict.failed_indices.is_empty());
         }
     }
 }
