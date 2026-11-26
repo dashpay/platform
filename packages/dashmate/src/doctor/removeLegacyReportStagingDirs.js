@@ -378,7 +378,9 @@ export function findLegacyReportStagingDirs(tempDir) {
  * It is first moved into a fresh directory of its own beside it, which only
  * the user can reach, and checked again there; what is removed is then the
  * directory that was moved, whatever appears at the old path meanwhile. One
- * that turns out not to be the directory found is put back.
+ * that turns out not to be the directory found is left where it was moved,
+ * and the error says where: putting it back could replace whatever is at the
+ * old path by then.
  *
  * @param {string} dir
  * @param {{dev: number, ino: number}} identity - as recorded when found
@@ -404,6 +406,10 @@ function removeVerified(dir, { dev, ino }, uid, tempDev, state) {
     throw error;
   }
 
+  // Only the user can reach anything in the holding directory
+  // eslint-disable-next-line no-param-reassign
+  state.restricted = true;
+
   try {
     const stat = fs.lstatSync(moved);
 
@@ -413,14 +419,7 @@ function removeVerified(dir, { dev, ino }, uid, tempDev, state) {
 
     verifyStagingDir(moved, uid, tempDev, state);
   } catch (error) {
-    try {
-      fs.renameSync(moved, dir);
-      fs.rmdirSync(holding);
-    } catch {
-      throw new Error(`${error.message}; it was left in ${holding}`);
-    }
-
-    throw error;
+    throw new Error(`${error.message}; it is now in ${moved}`);
   }
 
   try {

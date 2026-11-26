@@ -180,7 +180,9 @@ describe('removeLegacyReportStagingDirs', () => {
     expect(fs.readFileSync(path.join(dir, 'core', 'stdOut.txt'), 'utf8')).to.equal('replacement\n');
   });
 
-  it('should put a directory back if what was moved for removal is not the one found', function it() {
+  // Putting it back could replace whatever was put at its path meanwhile, so
+  // it stays where it was moved, closed to others, and the operator is told
+  it('should leave what was moved for removal where it is, and say where, if it is not the one found', function it() {
     const dir = makeStagingDir(legacyName);
 
     const { found } = findLegacyReportStagingDirs(tempDir);
@@ -197,10 +199,19 @@ describe('removeLegacyReportStagingDirs', () => {
 
     const { removed, failed } = removeLegacyReportStagingDirs(found);
 
+    const [holdingName] = fs.readdirSync(tempDir);
+    const moved = path.join(tempDir, holdingName, legacyName);
+
     expect(removed).to.be.empty();
-    expect(failed.map(({ dir: failedDir }) => failedDir)).to.deep.equal([dir]);
-    expect(fs.existsSync(path.join(dir, 'date.txt'))).to.be.true();
-    expect(fs.readdirSync(tempDir)).to.deep.equal([legacyName]);
+    expect(fs.readdirSync(tempDir)).to.deep.equal([holdingName]);
+    expect(holdingName).to.match(/^\.dashmate-report-removal-/);
+    expect(modeOf(path.join(tempDir, holdingName))).to.equal(0o700);
+    expect(fs.existsSync(path.join(moved, 'date.txt'))).to.be.true();
+    expect(failed.map(({ dir: failedDir, restricted }) => [failedDir, restricted]))
+      .to.deep.equal([[dir, true]]);
+    expect(failed[0].error.message).to.equal(
+      `${dir} is not the directory that was found there; it is now in ${moved}`,
+    );
   });
 
   it('should remove its empty holding directory and report why when it cannot move a directory there', function it() {
