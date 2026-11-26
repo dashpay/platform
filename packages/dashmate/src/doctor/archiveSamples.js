@@ -74,6 +74,51 @@ function writeSampleFile(archiveDir, service, filename, data, scrub) {
 }
 
 /**
+ * @param {*} error
+ * @return {string}
+ */
+function describeError(error) {
+  return error?.message ?? String(error);
+}
+
+/**
+ * @param {string} archiveDir
+ * @param {*} removalError
+ * @return {string} what the operator is told when the staged samples are
+ *   left behind: they are under a name no later run looks for
+ */
+function describeStagedSamplesLeft(archiveDir, removalError) {
+  return `the staged samples could not be removed (${describeError(removalError)}): remove ${archiveDir} yourself`;
+}
+
+/**
+ * @param {*} error - what stopped the archive, which comes first
+ * @param {string} archiveDir
+ * @param {*} removalError
+ * @return {Error} the error, also saying where the staged samples were left
+ */
+function withStagedSamplesLeft(error, archiveDir, removalError) {
+  const note = describeStagedSamplesLeft(archiveDir, removalError);
+  const sentence = `${note[0].toUpperCase()}${note.slice(1)}`;
+
+  if (error instanceof Error) {
+    try {
+      // eslint-disable-next-line no-param-reassign
+      error.message = `${error.message}\n${sentence}`;
+
+      return error;
+    } catch {
+      // An error that cannot be changed is reported inside a new one
+    }
+  }
+
+  return Object.assign(
+    new Error(`${describeError(error)}\n${sentence}`, { cause: error }),
+    { code: error?.code },
+  );
+}
+
+/**
  * @param {Samples} samples
  * @param {string} folderPath
  * @param {Config} config - the config the samples were collected from, not obfuscated
@@ -165,14 +210,21 @@ export default async function archiveSamples(samples, folderPath, config) {
   } catch (e) {
     try {
       fs.rmSync(archiveDir, { recursive: true, force: true });
-    } catch {
-      // The error that stopped the archive is the one to report
+    } catch (removalError) {
+      throw withStagedSamplesLeft(e, archiveDir, removalError);
     }
 
     throw e;
   }
 
-  fs.rmSync(archiveDir, { recursive: true, force: true });
+  try {
+    fs.rmSync(archiveDir, { recursive: true, force: true });
+  } catch (removalError) {
+    throw new Error(
+      `The report was saved to ${archiveFilePath}, but ${describeStagedSamplesLeft(archiveDir, removalError)}`,
+      { cause: removalError },
+    );
+  }
 
   return archiveFilePath;
 }

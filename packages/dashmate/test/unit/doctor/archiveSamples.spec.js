@@ -614,6 +614,56 @@ describe('archiveSamples', () => {
       expect(fs.readdirSync(archiveRoot)).to.deep.equal(['output']);
     });
 
+    // A failure is reported as it was thrown when the staged samples could
+    // be removed: nothing is added to it
+    it('should rethrow a failure that is not an error as it is', async function it() {
+      this.sinon.stub(os, 'tmpdir').returns(archiveRoot);
+
+      const failure = { code: 'EODD', message: 'not an error' };
+
+      const { readdirSync } = fs;
+      this.sinon.stub(fs, 'readdirSync').callsFake((dirPath, ...args) => {
+        if (path.dirname(dirPath) === archiveRoot && path.basename(dirPath).startsWith('dashmate-report-')) {
+          throw failure;
+        }
+
+        return readdirSync(dirPath, ...args);
+      });
+
+      const rejection = await archiveSamples(samples, outputDir, config).catch((e) => e);
+
+      expect(rejection).to.equal(failure);
+      expect(fs.readdirSync(archiveRoot)).to.deep.equal(['output']);
+    });
+
+    // The report was saved, so the operator is told where, and where the
+    // staged samples were left
+    it('should say where the report was saved and the staged files were left when removing them fails', async function it() {
+      this.sinon.stub(os, 'tmpdir').returns(archiveRoot);
+
+      const { rmSync } = fs;
+      let stagingDir;
+      this.sinon.stub(fs, 'rmSync').callsFake((filePath, ...args) => {
+        if (path.dirname(filePath) === archiveRoot && path.basename(filePath).startsWith('dashmate-report-')) {
+          stagingDir = filePath;
+
+          throw Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
+        }
+
+        return rmSync(filePath, ...args);
+      });
+
+      const archiveFilePath = path.join(outputDir, 'dashmate-report-2026-11-26T10-15-30.123Z.tar.gz');
+
+      const error = await archiveSamples(samples, outputDir, config).catch((e) => e);
+
+      expect(error.message).to.equal(
+        `The report was saved to ${archiveFilePath}, but the staged samples could not be removed`
+          + ` (EPERM: operation not permitted): remove ${stagingDir} yourself`,
+      );
+      expect(fs.existsSync(archiveFilePath)).to.be.true();
+    });
+
     describe('when packing fails', () => {
       beforeEach(function beforeEach() {
         // Root reads a file whatever its mode, and Windows cannot revoke read
@@ -668,14 +718,32 @@ describe('archiveSamples', () => {
         await expect(archiveSamples(samples, outputDir, config)).to.be.rejectedWith('EACCES');
       });
 
-      // Removing the staged samples can fail as well, and the packing failure
-      // is still what the operator has to act on
-      it('should report the packing error when removing the staged files fails too', async function it() {
+      // Whatever the removal threw, the packing failure is what is reported
+      it('should report the packing error when removing the staged files throws something else', async function it() {
         const { rmSync } = fs;
-        let stagingRemovalFailed = false;
         this.sinon.stub(fs, 'rmSync').callsFake((filePath, ...args) => {
           if (path.dirname(filePath) === archiveRoot && path.basename(filePath).startsWith('dashmate-report-')) {
-            stagingRemovalFailed = true;
+            throw null; // eslint-disable-line no-throw-literal
+          }
+
+          return rmSync(filePath, ...args);
+        });
+
+        const error = await archiveSamples(samples, outputDir, config).catch((e) => e);
+
+        expect(error.code).to.equal('EACCES');
+        expect(error.message).to.match(/^EACCES[^]*\nThe staged samples could not be removed \(null\): remove /);
+      });
+
+      // Removing the staged samples can fail as well. The packing failure is
+      // still what the operator has to act on first, but the samples are left
+      // under a name no later run looks for, so the operator is told where
+      it('should report the packing error, and where the staged files were left, when removing them fails too', async function it() {
+        const { rmSync } = fs;
+        let stagingDir;
+        this.sinon.stub(fs, 'rmSync').callsFake((filePath, ...args) => {
+          if (path.dirname(filePath) === archiveRoot && path.basename(filePath).startsWith('dashmate-report-')) {
+            stagingDir = filePath;
 
             throw Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
           }
@@ -683,10 +751,17 @@ describe('archiveSamples', () => {
           return rmSync(filePath, ...args);
         });
 
-        await expect(archiveSamples(samples, outputDir, config)).to.be.rejectedWith('EACCES');
+        const error = await archiveSamples(samples, outputDir, config).catch((e) => e);
 
         // The removal was attempted and failed, rather than never tried
-        expect(stagingRemovalFailed).to.be.true();
+        expect(stagingDir).to.be.a('string');
+        expect(fs.existsSync(stagingDir)).to.be.true();
+
+        expect(error.code).to.equal('EACCES');
+        expect(error.message).to.match(/^EACCES/);
+        expect(error.message).to.contain(
+          `The staged samples could not be removed (EPERM: operation not permitted): remove ${stagingDir} yourself`,
+        );
       });
     });
   });

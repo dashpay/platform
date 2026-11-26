@@ -103,6 +103,9 @@ The command collects diagnostic information and creates an archive, with the nod
       {
         renderer: isVerbose ? 'verbose' : 'default',
         rendererOptions: {
+          // Wrapped rather than cut at the terminal's width: what the report
+          // says includes paths the operator has to act on
+          formatOutput: 'wrap',
           clearOutput: false,
           showTimer: isVerbose,
           removeEmptyLines: false,
