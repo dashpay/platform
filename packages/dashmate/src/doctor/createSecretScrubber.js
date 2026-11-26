@@ -86,13 +86,15 @@ function maskRanges(text, ranges) {
  * written.
  *
  * @param {Config} config - as stored, not obfuscated
+ * @param {string[]} [extraValues] - secrets known from elsewhere, such as the
+ *   option values of a container's command
  * @return {function(string): string}
  */
-export default function createSecretScrubber(config) {
+export default function createSecretScrubber(config, extraValues = []) {
   const identity = getOperatorIdentity();
 
   const needles = [...new Set(
-    getConfigSecretValues(config)
+    [...getConfigSecretValues(config), ...extraValues]
       .filter((value) => value.length >= MIN_SCRUBBED_SECRET_LENGTH)
       // Samples have the operator's name masked out as they are collected, so
       // a secret that contains the name is found there in that form

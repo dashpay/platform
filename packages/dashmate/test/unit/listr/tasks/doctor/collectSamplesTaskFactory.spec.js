@@ -686,6 +686,50 @@ describe('collectSamplesTaskFactory', () => {
       expect(inspect.Config.Entrypoint).to.deep.equal(['/entry.sh', '<redacted>']);
     });
 
+    // Docker runs the entrypoint with the command after it, so an option at
+    // the end of one takes its value from the start of the other
+    it('should not archive an option value split between the entrypoint and the command', async () => {
+      dockerCompose.inspectService.resolves({
+        Id: 'container-id',
+        Path: 'app',
+        Args: ['--token', 'splitAcrossToken7Qx'],
+        Config: {
+          Image: 'example/service:test',
+          Env: [],
+          Entrypoint: ['app', '--token'],
+          Cmd: ['splitAcrossToken7Qx'],
+        },
+        State: { Status: 'running', Restarting: false, ExitCode: 0 },
+      });
+
+      const archivePath = await collectAndArchive();
+
+      expect(readArchivedBytes(archivePath)).to.not.contain('splitAcrossToken7Qx');
+
+      const inspect = (await unarchiveSamplesFactory(getServiceList)(archivePath))
+        .getServiceInfo(SERVICE.name, 'dockerInspect');
+
+      expect(inspect.Config.Cmd).to.deep.equal(['<redacted>']);
+    });
+
+    // A container can print the command it was started with, and the
+    // credentials an image passes itself are not in the config
+    it('should not archive an option value a container prints in its own log', async () => {
+      dockerCompose.inspectService.resolves({
+        Id: 'container-id',
+        Path: 'app',
+        Args: ['--token=loggedToken7Qx'],
+        Config: { Image: 'example/service:test', Env: [], Cmd: ['app', '--token=loggedToken7Qx'] },
+        State: { Status: 'running', Restarting: false, ExitCode: 0 },
+      });
+      dockerCompose.logs.resolves({ out: 'starting app --token=loggedToken7Qx\n', err: '' });
+
+      const archived = readArchivedBytes(await collectAndArchive());
+
+      expect(archived).to.not.contain('loggedToken7Qx');
+      expect(archived).to.contain('starting app --token=');
+    });
+
     // A password can be spelled like a value the config schema requires
     // elsewhere, such as the environment name. Doctor validates the config copy
     // when it reads a report back, so the copy must keep that value while the

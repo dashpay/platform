@@ -126,44 +126,69 @@ function redactContainerEnvironment(inspect) {
 
 /**
  * @param {*[]} command
- * @return {*[]}
+ * @param {*} [before] - the argument the command follows, if it continues
+ *   another one
+ * @return {{redacted: *[], hidden: string[]}}
  */
-function redactCommandArguments(command) {
-  return command.map((argument, index) => {
+function redactCommandArguments(command, before = undefined) {
+  const hidden = [];
+
+  const redacted = command.map((argument, index) => {
     if (typeof argument !== 'string') {
       return REDACTED_VALUE;
     }
 
+    const previous = index === 0 ? before : command[index - 1];
+
     // A shell command line in one argument, as `sh -c` takes it, can set
-    // anything; it is not taken apart but goes whole
-    if (/\s/.test(argument)) {
+    // anything; it is not taken apart but goes whole. So does the value of an
+    // option given as the next argument: `--token value`.
+    if (/\s/.test(argument)
+      || (!isOption(argument) && isOption(previous) && getOptionValue(previous) === null)) {
+      hidden.push(argument);
+
       return REDACTED_VALUE;
     }
 
-    // The value of an option given as the next argument: `--token value`
-    const previous = command[index - 1];
+    const value = getOptionValue(argument);
 
-    if (!isOption(argument) && isOption(previous) && getOptionValue(previous) === null) {
-      return REDACTED_VALUE;
+    if (value !== null) {
+      hidden.push(value);
     }
 
     return hideOptionValue(argument, () => REDACTED_VALUE);
   });
+
+  return { redacted, hidden };
 }
 
 /**
  * @param {Object} holder
  * @param {string} field
+ * @param {*} [before] - the argument the command follows, if it continues
+ *   another one
+ * @return {string[]} the values hidden
  */
-function redactCommandField(holder, field) {
+function redactCommandField(holder, field, before = undefined) {
   const command = holder?.[field];
 
   if (command === undefined || command === null) {
-    return;
+    return [];
   }
 
+  if (!Array.isArray(command)) {
+    // eslint-disable-next-line no-param-reassign
+    holder[field] = REDACTED_VALUE;
+
+    return typeof command === 'string' ? [command] : [];
+  }
+
+  const { redacted, hidden } = redactCommandArguments(command, before);
+
   // eslint-disable-next-line no-param-reassign
-  holder[field] = Array.isArray(command) ? redactCommandArguments(command) : REDACTED_VALUE;
+  holder[field] = redacted;
+
+  return hidden;
 }
 
 /**
@@ -177,12 +202,22 @@ function redactCommandField(holder, field) {
  * `-name=value` option, a value given as the argument after its option, and
  * a whole shell command line. The executable and plain arguments stay.
  *
+ * Docker runs the entrypoint with the command after it, so an option at the
+ * end of the entrypoint takes its value from the start of the command.
+ *
  * @param {Object} inspect - mutated in place
+ * @return {string[]} the values hidden, for the container's logs to be
+ *   scrubbed of too
  */
 function redactContainerCommand(inspect) {
-  redactCommandField(inspect, 'Args');
-  redactCommandField(inspect?.Config, 'Cmd');
-  redactCommandField(inspect?.Config, 'Entrypoint');
+  const entrypoint = inspect?.Config?.Entrypoint;
+  const entrypointEnd = Array.isArray(entrypoint) ? entrypoint[entrypoint.length - 1] : undefined;
+
+  return [
+    ...redactCommandField(inspect, 'Args'),
+    ...redactCommandField(inspect?.Config, 'Cmd', entrypointEnd),
+    ...redactCommandField(inspect?.Config, 'Entrypoint'),
+  ];
 }
 
 export default function collectSamplesTaskFactory(
@@ -661,20 +696,27 @@ export default function collectSamplesTaskFactory(
                   dockerStats = await si.dockerContainerStats(containerId);
                 }
 
+                redactContainerEnvironment(inspect);
+
+                // What the container's command hides is scrubbed from its
+                // logs too: an image can pass itself credentials the config
+                // does not know, and a service can print its own command
+                const commandSecrets = redactContainerCommand(inspect);
+                const serviceScrub = commandSecrets.length > 0
+                  ? createSecretScrubber(config, commandSecrets)
+                  : scrub;
+
                 if (logs?.out) {
                   // Hide username & external ip from logs
-                  logs.out = hideOperatorNameIn(logs.out, scrub);
+                  logs.out = hideOperatorNameIn(logs.out, serviceScrub);
                 }
 
                 if (logs?.err) {
-                  logs.err = hideOperatorNameIn(logs.err, scrub);
+                  logs.err = hideOperatorNameIn(logs.err, serviceScrub);
                 }
 
-                redactContainerEnvironment(inspect);
-                redactContainerCommand(inspect);
-
                 // Hide username & external ip from inspect
-                obfuscateOperatorName(inspect, scrub);
+                obfuscateOperatorName(inspect, serviceScrub);
 
                 ctx.samples.setServiceInfo(service.name, 'stdOut', logs?.out);
                 ctx.samples.setServiceInfo(service.name, 'stdErr', logs?.err);
