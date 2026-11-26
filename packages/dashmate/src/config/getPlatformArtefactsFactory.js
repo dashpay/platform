@@ -25,34 +25,14 @@ export function findCertificateFiles(homeDir, configName) {
 /**
  * @param {HomeDir} homeDir
  * @param {DockerCompose} dockerCompose
- * @param {Docker} docker
  * @param {getServiceList} getServiceList
  * @return {getPlatformArtefacts}
  */
 export default function getPlatformArtefactsFactory(
   homeDir,
   dockerCompose,
-  docker,
   getServiceList,
 ) {
-  /**
-   * @param {string} volumeName
-   * @return {Promise<boolean>}
-   */
-  async function isVolumePresent(volumeName) {
-    try {
-      await docker.getVolume(volumeName).inspect();
-
-      return true;
-    } catch (e) {
-      if (e.statusCode === 404) {
-        return false;
-      }
-
-      throw e;
-    }
-  }
-
   /**
    * The Platform services whose containers are not stopped
    *
@@ -98,10 +78,10 @@ export default function getPlatformArtefactsFactory(
 
     const certificateFiles = findCertificateFiles(homeDir, config.getName());
 
-    const volumeNames = await dockerCompose.getVolumeNames(config, { serviceNames, profiles });
-
-    const presence = await Promise.all(volumeNames.map(isVolumePresent));
-    const dataVolumes = volumeNames.filter((volumeName, i) => presence[i]);
+    // The volumes that exist and that Compose created for this project: what
+    // a reset that kept data leaves, and what a Platform-only reset removes.
+    // An external volume, or another project's, is neither.
+    const dataVolumes = await dockerCompose.getVolumeNames(config, { serviceNames, profiles });
 
     const activeServices = await getActivePlatformServices(config);
 

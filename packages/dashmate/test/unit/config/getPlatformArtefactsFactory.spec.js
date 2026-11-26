@@ -8,39 +8,22 @@ describe('getPlatformArtefacts', () => {
   let homeDir;
   let config;
   let dockerCompose;
-  let docker;
-  let existingVolumes;
   let getPlatformArtefacts;
 
   beforeEach(function beforeEach() {
     homeDir = HomeDir.createTemp();
     config = new Config('testnet', {}, true);
-    existingVolumes = [];
 
     dockerCompose = {
       throwErrorIfNotInstalled: this.sinon.stub().resolves(),
-      getVolumeNames: this.sinon.stub().resolves(['p_drive_abci_data', 'p_drive_tenderdash']),
+      // Only the volumes that exist and that Compose created for the project
+      getVolumeNames: this.sinon.stub().resolves([]),
       getContainersList: this.sinon.stub().resolves([]),
-    };
-
-    docker = {
-      getVolume: (name) => ({
-        inspect: async () => {
-          if (!existingVolumes.includes(name)) {
-            const error = new Error('no such volume');
-            error.statusCode = 404;
-            throw error;
-          }
-
-          return { Name: name };
-        },
-      }),
     };
 
     getPlatformArtefacts = getPlatformArtefactsFactory(
       homeDir,
       dockerCompose,
-      docker,
       () => [
         { name: 'core', profiles: ['core'] },
         { name: 'drive_abci', profiles: ['platform'] },
@@ -86,8 +69,9 @@ describe('getPlatformArtefacts', () => {
     expect(certificateFiles).to.deep.equal([path.join(sslDir, 'bundle.crt')]);
   });
 
-  it('should find the Platform volumes that exist', async () => {
-    existingVolumes = ['p_drive_tenderdash'];
+  // A reset that kept data leaves them; one that did not removed them.
+  it('should report the Platform volumes the project created', async () => {
+    dockerCompose.getVolumeNames.resolves(['p_drive_tenderdash']);
 
     const { dataVolumes } = await getPlatformArtefacts(config);
 
@@ -114,14 +98,8 @@ describe('getPlatformArtefacts', () => {
     await expect(getPlatformArtefacts(config)).to.be.rejectedWith('Docker is not running');
   });
 
-  it('should fail when a volume cannot be inspected for another reason', async () => {
-    docker.getVolume = () => ({
-      inspect: async () => {
-        const error = new Error('permission denied');
-        error.statusCode = 500;
-        throw error;
-      },
-    });
+  it('should fail when the volumes cannot be read', async () => {
+    dockerCompose.getVolumeNames.rejects(new Error('permission denied'));
 
     await expect(getPlatformArtefacts(config)).to.be.rejectedWith('permission denied');
   });
