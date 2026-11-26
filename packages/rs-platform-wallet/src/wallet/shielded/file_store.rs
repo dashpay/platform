@@ -27,7 +27,8 @@ use tokio::sync::watch;
 use super::balance::{ShieldedBalanceSource, ShieldedLocalAccountBalance};
 use super::store::{
     PendingRedrive, PrivateContactPayment, PrivatePaymentEntry, PrivatePaymentRecord, ShieldedNote,
-    ShieldedOutgoingNote, ShieldedStore, StalePendingSpend, SubwalletId, SubwalletState,
+    ShieldedOutgoingNote, ShieldedStore, SpendContext, StalePendingSpend, SubwalletId,
+    SubwalletState,
 };
 use super::tip_recipients::{self, ConfirmedTipRecipient};
 use crate::error::PlatformWalletError;
@@ -264,10 +265,25 @@ impl FileBackedShieldedStore {
                 .transaction()
                 .map_err(|e| FileShieldedStoreError::Storage(format!("begin redrive: {e}")))?;
             let nullifier_blob: Vec<u8> = redrive.nullifiers.iter().flatten().copied().collect();
+            // A context with no layout is refused, not saved without: the record would
+            // then be re-broadcast with nothing checked.
+            let spend_context = match redrive.spend_context {
+                Some(context) => Some(
+                    context
+                        .to_bytes()
+                        .ok_or_else(|| {
+                            FileShieldedStoreError::Storage(
+                                "the spend's protocol context has no stored form".to_string(),
+                            )
+                        })?
+                        .to_vec(),
+                ),
+                None => None,
+            };
             tx.execute(
                 "INSERT OR REPLACE INTO shielded_pending_spends \
-                 (wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, attempts, identity_nonce_finalized, identity_user_abandoned, private_contact_payment, anchor_height) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                 (wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, attempts, identity_nonce_finalized, identity_user_abandoned, private_contact_payment, anchor_height, spend_context) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
                 rusqlite::params![
                     id.wallet_id.as_slice(),
                     id.account_index,
@@ -284,6 +300,7 @@ impl FileBackedShieldedStore {
                     redrive
                         .anchor_height
                         .and_then(|height| i64::try_from(height).ok()),
+                    spend_context,
                 ],
             )
             .map_err(|e| FileShieldedStoreError::Storage(format!("persist redrive: {e}")))?;
@@ -637,6 +654,19 @@ impl FileBackedShieldedStore {
                     FileShieldedStoreError::Storage(format!("upgrade pending schema: {e}"))
                 })?;
         }
+        // The protocol context a note spend was priced and built in
+        // (`PendingRedrive::spend_context`), versioned by its first byte: NULL for a
+        // record saved before it was kept, which is re-broadcast with nothing checked.
+        if !columns.iter().any(|existing| existing == "spend_context") {
+            pending_conn
+                .execute(
+                    "ALTER TABLE shielded_pending_spends ADD COLUMN spend_context BLOB",
+                    [],
+                )
+                .map_err(|e| {
+                    FileShieldedStoreError::Storage(format!("upgrade pending schema: {e}"))
+                })?;
+        }
         // The private contact request a record pays for, when it does.
         if !columns
             .iter()
@@ -757,7 +787,7 @@ impl FileBackedShieldedStore {
             .prepare(
                 "SELECT wallet_id, account_index, activity_id, anchor, nullifiers, st_bytes, \
                  attempts, identity_nonce_finalized, identity_user_abandoned, \
-                 private_contact_payment, anchor_height FROM shielded_pending_spends",
+                 private_contact_payment, anchor_height, spend_context FROM shielded_pending_spends",
             )
             .map_err(|e| FileShieldedStoreError::Storage(format!("prepare rehydrate: {e}")))?;
         let rows = stmt
@@ -792,6 +822,13 @@ impl FileBackedShieldedStore {
                     .ok()
                     .flatten()
                     .and_then(|height| u64::try_from(height).ok());
+                // NULL is a record saved without a context; one that does not read is kept
+                // as damaged rather than re-broadcast with nothing checked.
+                let spend_context = match row.get::<_, Option<Vec<u8>>>(11) {
+                    Ok(None) => Ok(None),
+                    Ok(Some(bytes)) => SpendContext::from_bytes(&bytes).map(Some).ok_or(()),
+                    Err(_) => Err(()),
+                };
                 let decoded: rusqlite::Result<_> = (|| {
                     Ok((
                         row.get::<_, Vec<u8>>(0)?,
@@ -810,6 +847,7 @@ impl FileBackedShieldedStore {
                     readable_wallet_id,
                     private_contact_payment,
                     anchor_height,
+                    spend_context,
                     decoded,
                 ))
             })
@@ -820,6 +858,7 @@ impl FileBackedShieldedStore {
                 readable_wallet_id,
                 private_contact_payment,
                 anchor_height,
+                spend_context,
                 decoded,
             ) = row.map_err(|e| FileShieldedStoreError::RecoveryCorrupted {
                 account_index: None,
@@ -912,6 +951,13 @@ impl FileBackedShieldedStore {
                     return Err(corrupted("invalid nullifier width"));
                 }
                 let nullifiers: Vec<[u8; 32]> = nullifiers.as_chunks::<32>().0.to_vec();
+                // A note spend whose context does not read keeps its reservations, in
+                // quarantine and never armed; any other record fails as before.
+                let context_unreadable = spend_context.is_err();
+                if context_unreadable && (note_spend_kind.is_none() || nullifiers.is_empty()) {
+                    return Err(corrupted("unreadable spend context"));
+                }
+                let spend_context = spend_context.unwrap_or(None);
                 Ok((
                     SubwalletId::new(wallet_id, account_index),
                     PendingRedrive {
@@ -923,10 +969,12 @@ impl FileBackedShieldedStore {
                         anchor_height,
                         identity_nonce_finalized,
                         identity_user_abandoned,
+                        spend_context,
                     },
+                    context_unreadable,
                 ))
             })();
-            let (id, redrive) = match decoded {
+            let (id, redrive, context_unreadable) = match decoded {
                 Ok(decoded) => decoded,
                 Err(error) => {
                     if let Some(kind) = note_spend_kind {
@@ -947,6 +995,24 @@ impl FileBackedShieldedStore {
                     return Err(error);
                 }
             };
+            if context_unreadable {
+                tracing::warn!(
+                    account_index,
+                    "quarantining a shielded note-spend recovery row whose spend context is \
+                     unreadable: its notes stay reserved and it is never re-broadcast"
+                );
+                if private_contact_payment.is_some()
+                    || note_spend_kind == Some(PRIVATE_DOCUMENT_CREATE_KIND)
+                {
+                    self.unloaded_private_contact_payments
+                        .insert(readable_wallet_id);
+                }
+                self.subwallets
+                    .entry(id)
+                    .or_default()
+                    .quarantine_redrive(&redrive);
+                continue;
+            }
             if let Some(payment) = private_contact_payment {
                 self.private_contact_payments
                     .insert((id, redrive.activity_id), payment);
@@ -2081,6 +2147,7 @@ mod tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
         {
@@ -2143,6 +2210,7 @@ mod tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
         let payment = PrivateContactPayment {
@@ -2216,6 +2284,7 @@ mod tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
         let payment = PrivateContactPayment {
@@ -2296,6 +2365,7 @@ mod tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
         {
@@ -2350,6 +2420,10 @@ mod tests {
                 !record.identity_user_abandoned,
                 "legacy guards require explicit recovery"
             );
+            assert_eq!(
+                record.spend_context, None,
+                "legacy records carry no protocol context"
+            );
             record.identity_nonce_finalized = true;
             record.identity_user_abandoned = true;
             store.arm_redrive(id, record).unwrap();
@@ -2394,6 +2468,7 @@ mod tests {
                         attempts: 0,
                         identity_nonce_finalized: false,
                         identity_user_abandoned: false,
+                        spend_context: None,
                         anchor_height: None,
                     },
                 )
@@ -2424,6 +2499,154 @@ mod tests {
         }
     }
 
+    /// The protocol context a spend saves with its record survives a reopen, in the stored
+    /// form of every fee model a spend checks, and a context that does not read keeps its
+    /// note-spend row without loading it, so recovery never re-broadcasts it unchecked.
+    #[test]
+    fn should_keep_a_spends_protocol_context_across_a_reopen() {
+        use super::super::note_selection::ShieldedFeeKind;
+        use dpp::state_transition::shielded_transfer_transition::v0::ShieldedTransferTransitionV0;
+
+        let path = temp_tree_path("spend_context");
+        let id = SubwalletId::new([0x6C; 32], 0);
+        let transition: StateTransition = ShieldedTransferTransitionV0 {
+            actions: vec![],
+            value_balance: 1_000,
+            anchor: [0x53; 32],
+            proof: vec![],
+            binding_signature: [0; 64],
+        }
+        .into();
+        let record = |activity: u8, spend_context| PendingRedrive {
+            activity_id: [activity; 32],
+            anchor: [0x53; 32],
+            nullifiers: vec![[activity ^ 0xFF; 32]],
+            st_bytes: transition.serialize_to_bytes().unwrap(),
+            attempts: 0,
+            identity_nonce_finalized: false,
+            identity_user_abandoned: false,
+            spend_context,
+            anchor_height: Some(5),
+        };
+        let kinds = [
+            ShieldedFeeKind::Base,
+            ShieldedFeeKind::Unshield,
+            ShieldedFeeKind::Withdrawal,
+            ShieldedFeeKind::IdentityTopUp,
+            ShieldedFeeKind::IdentityCreate { num_keys: 3 },
+        ];
+        let saved: Vec<PendingRedrive> = kinds
+            .into_iter()
+            .enumerate()
+            .map(|(i, fee_kind)| {
+                record(
+                    i as u8 + 1,
+                    Some(SpendContext {
+                        operation_version: 13,
+                        network_version: (i % 2 == 0).then_some(14),
+                        fee_kind,
+                        planned_fee: 168_934_000 + i as u64,
+                    }),
+                )
+            })
+            .collect();
+        {
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+            for redrive in &saved {
+                store.arm_redrive(id, redrive.clone()).unwrap();
+            }
+        }
+        let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+        let mut got = store.pending_redrives(id).unwrap();
+        got.sort_by_key(|redrive| redrive.activity_id);
+        assert_eq!(got, saved);
+        drop(store);
+
+        // A context of another format, or one that is cut short, is not read.
+        for damaged in ["x'02000000000000000000000000000000000000000000'", "x'01'"] {
+            rusqlite::Connection::open(&path)
+                .unwrap()
+                .execute(
+                    &format!("UPDATE shielded_pending_spends SET spend_context = {damaged}"),
+                    [],
+                )
+                .unwrap();
+            let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+            assert!(
+                store.pending_redrives(id).unwrap().is_empty(),
+                "{damaged}: not loaded, so never re-broadcast unchecked"
+            );
+            // The host restores its notes from a snapshot after the open: the ones the
+            // unreadable records spend stay reserved, out of selection and the balance.
+            for record in &saved {
+                store
+                    .save_note(
+                        id,
+                        &ShieldedNote {
+                            position: u64::from(record.activity_id[0]),
+                            cmx: [record.activity_id[0]; 32],
+                            nullifier: record.nullifiers[0],
+                            block_height: 1,
+                            is_spent: false,
+                            value: 10,
+                            note_data: vec![],
+                        },
+                    )
+                    .unwrap();
+            }
+            assert!(
+                store.get_unspent_notes(id).unwrap().is_empty(),
+                "{damaged}: the notes of an unresolved spend are not selectable"
+            );
+            assert_eq!(
+                store.spendable_balance(id).unwrap(),
+                0,
+                "{damaged}: nor spendable"
+            );
+            assert_eq!(
+                store.stale_pending_spends(id).unwrap().len(),
+                saved.len(),
+                "{damaged}: the prune backstop can still release them"
+            );
+            drop(store);
+            let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+            assert!(store.pending_redrives(id).unwrap().is_empty());
+            let rows: u32 = rusqlite::Connection::open(&path)
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM shielded_pending_spends", [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(rows, saved.len() as u32, "{damaged}: the rows are kept");
+        }
+        // A quarantined record resolves as an armed one does: the scan seeing its
+        // nullifier drops the row.
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+        store
+            .save_note(
+                id,
+                &ShieldedNote {
+                    position: 0,
+                    cmx: [1; 32],
+                    nullifier: saved[0].nullifiers[0],
+                    block_height: 1,
+                    is_spent: false,
+                    value: 10,
+                    note_data: vec![],
+                },
+            )
+            .unwrap();
+        store.mark_spent(id, &saved[0].nullifiers[0]).unwrap();
+        let rows: u32 = rusqlite::Connection::open(&path)
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM shielded_pending_spends", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(rows, saved.len() as u32 - 1, "the resolved row is dropped");
+        let _ = std::fs::remove_file(&path);
+    }
+
     /// A saved payment's private contact request association that does not
     /// read back fails restoring its wallet's reservations, rather than losing
     /// the pair it holds: a non-null value that does not decode on a record
@@ -2451,6 +2674,7 @@ mod tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             // As a spend saved by this build keeps it.
             anchor_height: Some(5),
         };
@@ -2565,6 +2789,7 @@ mod tests {
                 attempts: 0,
                 identity_nonce_finalized: false,
                 identity_user_abandoned: false,
+                spend_context: None,
                 anchor_height: None,
             };
             {
@@ -2580,6 +2805,7 @@ mod tests {
                             attempts: 0,
                             identity_nonce_finalized: false,
                             identity_user_abandoned: false,
+                            spend_context: None,
                             anchor_height: None,
                         },
                     )
@@ -2646,6 +2872,7 @@ mod tests {
                         attempts: 0,
                         identity_nonce_finalized: false,
                         identity_user_abandoned: false,
+                        spend_context: None,
                         anchor_height: None,
                     },
                 )
@@ -2700,6 +2927,7 @@ mod tests {
                         attempts: 0,
                         identity_nonce_finalized: false,
                         identity_user_abandoned: false,
+                        spend_context: None,
                         anchor_height: None,
                     },
                 )
@@ -2734,6 +2962,7 @@ mod tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
         {
@@ -2762,6 +2991,7 @@ mod tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
         {
@@ -2812,6 +3042,7 @@ mod tests {
             attempts: 5,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
         let note_spend = PendingRedrive {
@@ -2822,6 +3053,7 @@ mod tests {
             attempts: 1,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
         {
@@ -2868,6 +3100,7 @@ mod tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
 
@@ -2971,6 +3204,7 @@ mod tests {
                         attempts: 0,
                         identity_nonce_finalized: false,
                         identity_user_abandoned: false,
+                        spend_context: None,
                         anchor_height: None,
                     },
                 )
@@ -3395,6 +3629,7 @@ mod tests {
             attempts: 0,
             identity_nonce_finalized: false,
             identity_user_abandoned: false,
+            spend_context: None,
             anchor_height: None,
         };
         let expected = PrivatePaymentRecord {
@@ -3549,6 +3784,7 @@ mod tests {
                 attempts: 0,
                 identity_nonce_finalized: false,
                 identity_user_abandoned: false,
+                spend_context: None,
                 anchor_height: None,
             };
             let mut store = FileBackedShieldedStore::open_path(&path, 100).expect("open");
@@ -3650,6 +3886,7 @@ mod tests {
                             attempts: 0,
                             identity_nonce_finalized: false,
                             identity_user_abandoned: false,
+                            spend_context: None,
                             anchor_height: None,
                         },
                         payment,
@@ -3715,6 +3952,7 @@ mod tests {
                         attempts: 0,
                         identity_nonce_finalized: false,
                         identity_user_abandoned: false,
+                        spend_context: None,
                         anchor_height: None,
                     },
                 )
@@ -3762,6 +4000,7 @@ mod tests {
             note_data: vec![n; 115],
         };
         let redrive = |activity: u8, nullifier: u8| PendingRedrive {
+            spend_context: None,
             activity_id: [activity; 32],
             anchor: [2u8; 32],
             nullifiers: vec![[nullifier; 32]],

@@ -3,8 +3,9 @@ import Combine
 import DashSDKFFI
 @testable import SwiftDashSDK
 
-/// The shielded spend wrappers on `PlatformWalletManager` (pool spends,
-/// shields and the identity-debit abandonment) stay admitted as native
+/// The shielded spend wrappers on `PlatformWalletManager` (pool spends with
+/// and without a plan, the spend plan, shields and the identity-debit
+/// abandonment) stay admitted as native
 /// operations from before their FFI call until their result is delivered.
 /// While one is paused inside its native call, `deleteWallet` is refused and
 /// `shutdown()` does not destroy the native manager; a spend started once
@@ -175,7 +176,15 @@ final class ShieldedSpendAdmissionTests: XCTestCase {
         _ r: NativeSpendRecorder
     ) -> PlatformWalletNativeShieldedSpendCalls {
         PlatformWalletNativeShieldedSpendCalls(
+            planSpend: { h, w, _, kind, _, _, _, out in
+                let result = r.enter("planSpend", handle: h, walletId: w)
+                out?.pointee.kind = kind
+                return result
+            },
             transfer: { h, w, _, _, _, _, _ in r.enter("transfer", handle: h, walletId: w) },
+            transferWithPlan: { h, w, _, _, _, _, _, _ in
+                r.enter("transferWithPlan", handle: h, walletId: w)
+            },
             shield: { h, w, _, _, _, _ in r.enter("shield", handle: h, walletId: w) },
             shieldFromIdentity: { h, w, _, _, _, _, newBalance in
                 let result = r.enter("shieldFromIdentity", handle: h, walletId: w)
@@ -186,13 +195,22 @@ final class ShieldedSpendAdmissionTests: XCTestCase {
                 r.enter("shieldToRecipient", handle: h, walletId: w)
             },
             unshield: { h, w, _, _, _, _ in r.enter("unshield", handle: h, walletId: w) },
+            unshieldWithPlan: { h, w, _, _, _, _, _ in
+                r.enter("unshieldWithPlan", handle: h, walletId: w)
+            },
             identityTopUpFromPool: { h, w, _, _, _, _ in
                 r.enter("identityTopUpFromPool", handle: h, walletId: w)
+            },
+            identityTopUpFromPoolWithPlan: { h, w, _, _, _, _, _ in
+                r.enter("identityTopUpFromPoolWithPlan", handle: h, walletId: w)
             },
             tokenPurchaseFromPool: { h, w, _, _, _, _, _, _ in
                 r.enter("tokenPurchaseFromPool", handle: h, walletId: w)
             },
             withdraw: { h, w, _, _, _, _, _ in r.enter("withdraw", handle: h, walletId: w) },
+            withdrawWithPlan: { h, w, _, _, _, _, _, _ in
+                r.enter("withdrawWithPlan", handle: h, walletId: w)
+            },
             identityCreateFromPool: { h, w, _, _, _, _, _, _, _, _, outIdentityId in
                 let result = r.enter("identityCreateFromPool", handle: h, walletId: w)
                 if let outIdentityId {
@@ -235,7 +253,42 @@ final class ShieldedSpendAdmissionTests: XCTestCase {
         let pubkey = ManagedPlatformWallet.IdentityPubkey(
             keyId: 0, keyType: .ecdsaSecp256k1, purpose: .authentication,
             securityLevel: .master, pubkeyBytes: Data(repeating: 2, count: 33))
+        func plan(_ kind: ShieldedSpendKind) -> ShieldedSpendPlan {
+            ShieldedSpendPlan(
+                kind: kind, coreFeePerByte: kind == .withdrawal ? 1 : 0, amount: 1,
+                recipientAmount: 1, fee: 2, totalInput: 3, totalDebited: 3, noteCount: 1,
+                digest: Data(repeating: 9, count: 32))
+        }
         return [
+            Spend(wrapper: "shieldedPlanSpend", native: "planSpend") { m in
+                let planned = try await m.shieldedPlanSpend(
+                    walletId: wid, kind: .transfer, amount: .exact(1))
+                XCTAssertEqual(planned.kind, .transfer, "the plan must be converted from Rust's")
+            },
+            Spend(wrapper: "shieldedTransfer(plan:)", native: "transferWithPlan") { m in
+                try await m.shieldedTransfer(
+                    walletId: wid, resolver: resolver, recipientRaw43: raw43, amount: 1,
+                    plan: plan(.transfer))
+            },
+            Spend(wrapper: "shieldedUnshield(plan:)", native: "unshieldWithPlan") { m in
+                try await m.shieldedUnshield(
+                    walletId: wid, resolver: resolver, toPlatformAddress: "tdash1test", amount: 1,
+                    plan: plan(.unshield))
+            },
+            Spend(
+                wrapper: "shieldedIdentityTopUpFromPool(plan:)",
+                native: "identityTopUpFromPoolWithPlan"
+            ) { m in
+                try await m.shieldedIdentityTopUpFromPool(
+                    walletId: wid, resolver: resolver, identityId: id32, amount: 1,
+                    plan: plan(.identityTopUp))
+            },
+            Spend(wrapper: "shieldedWithdraw(plan:)", native: "withdrawWithPlan") { m in
+                let planned = plan(.withdrawal)
+                try await m.shieldedWithdraw(
+                    walletId: wid, resolver: resolver, toCoreAddress: "yTestAddress", amount: 1,
+                    coreFeePerByte: planned.coreFeePerByte, plan: planned)
+            },
             Spend(wrapper: "shieldedTransfer", native: "transfer") { m in
                 try await m.shieldedTransfer(
                     walletId: wid, resolver: resolver, recipientRaw43: raw43, amount: 1, memo: "hi")
@@ -396,7 +449,7 @@ final class ShieldedSpendAdmissionTests: XCTestCase {
         let manager = makeManager(handle: 0x5A02, recorder: recorder, destroys: destroys)
         let spends = try allSpends()
 
-        let first = spends[0].run
+        let first = try XCTUnwrap(spends.first { $0.native == "transfer" }).run
         let inFlight = Task { try await first(manager) }
         await fulfillment(of: [entered], timeout: 5)
 
@@ -469,5 +522,62 @@ final class ShieldedSpendAdmissionTests: XCTestCase {
         guard await expectSpendSucceeds(spend, "cancelled shieldedTransfer") else { return }
         guard await boundedShutdown(shutdown, "cancelled shieldedTransfer") != nil else { return }
         XCTAssertEqual(destroys.value, 1)
+    }
+
+    // MARK: - Entry points without a native-call seam
+
+    /// `operation` must be admitted exactly once under `name`, and the
+    /// admission released once it returned, whatever the FFI answered.
+    private func assertAdmitted(
+        _ name: String,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        _ operation: (PlatformWalletManager) async throws -> Void
+    ) async {
+        let manager = PlatformWalletManager.makeForTesting(
+            handle: 71, calls: Self.makeTeardownCalls(DestroyCounter()))
+        var admitted: [String] = []
+        manager.nativeOpAdmissionObserver = { admitted.append($0) }
+        _ = try? await operation(manager)
+        XCTAssertEqual(admitted, [name], "\(name) was not admitted", file: file, line: line)
+        XCTAssertNoThrow(
+            try manager.ensureSyncNativeOpAllowed("probe"),
+            "\(name) left its admission held", file: file, line: line)
+        await manager.shutdown()
+    }
+
+    func testShouldAdmitTheShieldPreflight() async {
+        await assertAdmitted("shieldedShieldPreflight") { manager in
+            _ = try await manager.shieldedShieldPreflight(walletId: Self.walletId)
+        }
+    }
+
+    func testShouldAdmitAResumedFundFromAssetLock() async {
+        await assertAdmitted("shieldedResumeFundFromAssetLock") { manager in
+            try await manager.shieldedResumeFundFromAssetLock(
+                walletId: Self.walletId, outPointTxid: Data(repeating: 4, count: 32),
+                outPointVout: 0,
+                recipients: [
+                    ShieldedFundFromAssetLockRecipient(recipientRaw43: Data(repeating: 3, count: 43))
+                ])
+        }
+    }
+
+    func testShouldAdmitAnIdentityDebitRecoveryRead() async {
+        await assertAdmitted("shieldedIdentityDebitRecoveryRecords") { manager in
+            _ = try await manager.shieldedIdentityDebitRecoveryRecords(walletId: Self.walletId)
+        }
+    }
+
+    /// The pool-note seed is a long devnet/testnet QA loop that does not
+    /// watch for shutdown, so it is deliberately left unadmitted (#6003).
+    func testShouldNotAdmitAPoolNoteSeedSoShutdownDoesNotWaitForIt() async {
+        let manager = PlatformWalletManager.makeForTesting(
+            handle: 71, calls: Self.makeTeardownCalls(DestroyCounter()))
+        var admitted: [String] = []
+        manager.nativeOpAdmissionObserver = { admitted.append($0) }
+        _ = try? await manager.seedShieldedPoolNotes(walletId: Self.walletId)
+        XCTAssertEqual(admitted, [], "seedShieldedPoolNotes must not be admitted")
+        await manager.shutdown()
     }
 }
