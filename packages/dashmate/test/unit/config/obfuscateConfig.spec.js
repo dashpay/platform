@@ -223,6 +223,18 @@ describe('obfuscateConfig', () => {
       ]);
     });
 
+    // A URL parser also takes a web URL with no slashes after the scheme, so
+    // text can carry one that way too
+    it('should hide a token in a web URL without slashes inside other text', () => {
+      const config = getBaseConfigFactory()();
+
+      config.set('description', 'mirror https:mirrorToken7Qx@mirror.example.com/ for builds');
+
+      expect(obfuscateConfig(config).get('description'))
+        .to.equal(`mirror https:${'*'.repeat('mirrorToken7Qx'.length)}@mirror.example.com/ for builds`);
+      expect(getConfigSecretValues(config)).to.include('mirrorToken7Qx');
+    });
+
     it('should hide them when the URL has extra slashes before them', () => {
       const { config, obfuscatedUrl } = obfuscateUrl(
         'https:///acmeUser:acmePassword7Qx@acme.example.com/directory',

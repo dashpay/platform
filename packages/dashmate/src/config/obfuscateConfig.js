@@ -18,11 +18,12 @@ const NON_SECRET_BUILD_ARGS = ['CARGO_BUILD_PROFILE', 'SDK_TEST_DATA'];
 
 /**
  * The credentials a URL written inside other text carries before its host:
- * `scheme://<userinfo>@host`. Matched up to the last `@` before the host,
- * because that is where URL parsers split, so a password can hold one
- * unescaped.
+ * `scheme://<userinfo>@host`, or `scheme:<userinfo>@host` for the web schemes
+ * a URL parser also takes without slashes. Matched up to the last `@` before
+ * the host, because that is where URL parsers split, so a password can hold
+ * one unescaped.
  */
-const URL_USERINFO = /([a-z][a-z0-9+.-]*:[\\/]+)([^\s/\\?#]+)@/gi;
+const URL_USERINFO = /((?:[a-z][a-z0-9+.-]*:[\\/]+)|(?:(?:https?|wss?|ftp):))([^\s/\\?#]+)@/gi;
 
 const VALUE_KIND = {
   PLAIN: 'plain',
