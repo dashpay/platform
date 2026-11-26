@@ -3,6 +3,7 @@ import renderConfigFlag from '../util/renderConfigFlag.js';
 import getPlatformSetupState, {
   PLATFORM_SETUP_STATE,
   describePlatformSetupState,
+  hasCertificateFiles,
 } from './getPlatformSetupState.js';
 import { findCertificateFiles } from './getPlatformArtefactsFactory.js';
 import parseTenderdashNodeKey from '../tenderdash/parseTenderdashNodeKey.js';
@@ -82,10 +83,12 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs) {
    * with no certificate, and `update && start` would bring up a gateway that
    * cannot serve TLS, and create the Platform data volumes that setup then
    * refuses as data a reset kept. It is refused while Platform-only setup sees
-   * its Platform part as not set up, by the same markers setup checks. The
-   * gateway serves TLS from its certificate files whatever the provider, so a
-   * fullnode whose Platform was set up has TLS on or files of its own. Only the
-   * presets Platform-only setup serves are refused: it cannot set up others.
+   * its Platform part as not set up, by the same markers setup checks, and
+   * while a ZeroSSL setup that stopped half-way left the gateway without its
+   * certificate files. The gateway serves TLS from those files whatever the
+   * provider, so a fullnode whose Platform was set up has TLS on or files of
+   * its own. Only the presets Platform-only setup serves are refused: it
+   * cannot set up others.
    *
    * Every case is refused here, before anything is rendered or started, with
    * the command that sets it right.
@@ -116,6 +119,18 @@ export default function assertPlatformCanStartFactory(homeDir, defaultConfigs) {
           describePlatformSetupState(setupState, name),
           `To run Core alone until then: dashmate config set platform.enable false ${flag}`,
         ].join('\n'));
+      }
+
+      // ZeroSSL saves the answers when it creates the certificate, and a
+      // failed verification leaves no certificate behind. Once the issued pair
+      // is installed the gateway serves TLS, and only renewal waits.
+      if (setupState.state === PLATFORM_SETUP_STATE.ZEROSSL_INTERRUPTED
+        && !hasCertificateFiles(setupState)) {
+        refuse(
+          name,
+          'its Platform setup did not finish, and the gateway has no certificate',
+          describePlatformSetupState(setupState, name),
+        );
       }
 
       return;

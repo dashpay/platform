@@ -72,7 +72,7 @@ Setup refuses, changing nothing, when:
 
 Only one flag can read stdin, and reading stdin makes the run non-interactive. Setup warns when a key file can be read by other users.
 
-If setup fails or is interrupted, config.json is as it was, and certificate files the failed run installed are removed, so setup can simply run again. The exception is ZeroSSL: it saves the answers as soon as it creates a certificate, so a run that stops after that leaves them saved, and the next run prints the commands that finish it. A Let's Encrypt certificate already issued is reused by the next run; do not reset Platform or run `dashmate ssl obtain` in between.
+If setup fails or is interrupted, config.json is as it was, and certificate files the failed run installed are removed, so setup can simply run again. The exception is ZeroSSL: it saves the answers as soon as it creates a certificate, so a run that stops after that leaves them saved, and the next run prints the commands that finish it. Until the certificate is installed, `start` refuses to start Platform and prints the same commands. A Let's Encrypt certificate already issued is reused by the next run; do not reset Platform or run `dashmate ssl obtain` in between.
 
 See [Updating Dashmate](../update.md#starting-platform-over) for the whole flow.
 

@@ -152,6 +152,69 @@ describe('assertPlatformCanStart', () => {
     });
   });
 
+  // ZeroSSL saves the answers, TLS still off, when it creates the
+  // certificate, before the certificate is verified and installed.
+  describe('a fullnode whose ZeroSSL setup stopped half-way', () => {
+    /**
+     * @return {Promise<Config>} a reset Evo fullnode with ZeroSSL's mid-run save
+     */
+    async function stoppedAfterZeroSslSave() {
+      const config = await hardResetPlatform(setUp('testnet', { masternode: false }));
+      config.set('platform.gateway.ssl.provider', 'zerossl');
+      config.set('platform.gateway.ssl.providerConfigs.zerossl.apiKey', 'k'.repeat(32));
+      config.set('platform.gateway.ssl.providerConfigs.zerossl.id', 'c'.repeat(32));
+
+      return config;
+    }
+
+    /**
+     * @param {string[]} fileNames
+     */
+    function installCertificateFiles(fileNames) {
+      const sslDir = homeDir.joinPath('testnet', 'platform', 'gateway', 'ssl');
+      fs.mkdirSync(sslDir, { recursive: true });
+      fileNames.forEach((fileName) => fs.writeFileSync(path.join(sslDir, fileName), fileName));
+    }
+
+    // The gateway mounts both files. Without them it serves no TLS, and the
+    // mounts would leave directories where the recovery writes the files.
+    it('should refuse it after a failed verification, with the commands that finish it', async () => {
+      const config = await stoppedAfterZeroSslSave();
+
+      const refusal = refusalOf(config);
+
+      expect(refusal.problem).to.equal('its Platform setup did not finish, and the gateway has no certificate');
+      expect(refusal.remedy).to.include('dashmate ssl obtain --force --config testnet');
+    });
+
+    it('should refuse it with only one of the certificate files', async () => {
+      const config = await stoppedAfterZeroSslSave();
+      installCertificateFiles(['bundle.crt']);
+
+      expect(refusalOf(config).remedy).to.include('dashmate ssl obtain --force --config testnet');
+    });
+
+    // TLS works from the installed pair: only renewal is not managed yet,
+    // which update reports.
+    it('should start once the issued certificate is installed', async () => {
+      const config = await stoppedAfterZeroSslSave();
+      installCertificateFiles(['bundle.crt', 'private.key']);
+
+      expect(refusalOf(config)).to.be.null();
+      expect(assertPlatformCanStart.findPendingSetup(config).remedy)
+        .to.include('dashmate ssl obtain --config testnet');
+    });
+
+    it('should start once the setup is finished', async () => {
+      const config = await stoppedAfterZeroSslSave();
+      installCertificateFiles(['bundle.crt', 'private.key']);
+      config.set('platform.gateway.ssl.enabled', true);
+
+      expect(refusalOf(config)).to.be.null();
+      expect(assertPlatformCanStart.findPendingSetup(config)).to.be.null();
+    });
+  });
+
   // After a testnet hard reset Platform stays enabled and the key is gone.
   // Tenderdash would start on a node_key.json that says "null".
   it('should refuse an evonode reset with --hard and point to setup --platform', async () => {

@@ -125,6 +125,18 @@ export default function getPlatformSetupState(config, {
 }
 
 /**
+ * Whether both gateway certificate files are among a state's markers, as
+ * they are once an interrupted ZeroSSL setup installed its certificate
+ *
+ * @param {{ markers: string[] }} setupState
+ * @return {boolean}
+ */
+export function hasCertificateFiles({ markers }) {
+  return CERTIFICATE_FILE_NAMES
+    .every((fileName) => markers.some((marker) => path.basename(marker) === fileName));
+}
+
+/**
  * What the state means for the operator and what to run
  *
  * @param {{ state: string, markers: string[], certificateId?: string }} setupState
@@ -148,10 +160,7 @@ export function describePlatformSetupState({ state, markers, certificateId }, co
       ].join('\n');
 
     case PLATFORM_SETUP_STATE.ZEROSSL_INTERRUPTED: {
-      const isCertificateInstalled = CERTIFICATE_FILE_NAMES
-        .every((fileName) => markers.some((marker) => path.basename(marker) === fileName));
-
-      if (isCertificateInstalled) {
+      if (hasCertificateFiles({ markers })) {
         return [
           `An earlier Platform setup of ${configName} stopped after ZeroSSL issued its certificate`,
           'and the certificate was installed. Its answers were saved. To finish the setup:',
