@@ -623,14 +623,6 @@ export default function resetNodeTaskFactory(
             await Promise.all(
               volumes
                 .map(async (candidate) => {
-                  // Asked now rather than when the reset was planned: a group
-                  // reset plans every member before it resets any, and
-                  // meanwhile a volume can be created, or replaced by one
-                  // that is not Platform's.
-                  if (!await dockerCompose.isVolumeOwned(candidate)) {
-                    return;
-                  }
-
                   const volumeName = candidate.name;
                   const volume = await docker.getVolume(volumeName);
 
@@ -639,6 +631,15 @@ export default function resetNodeTaskFactory(
                   do {
                     isRetry = false;
                     attempts += 1;
+
+                    // Asked before each attempt rather than when the reset was
+                    // planned: a group reset plans every member before it
+                    // resets any, and meanwhile, or while the volume is in
+                    // use, it can be created, or replaced by one that is not
+                    // Platform's.
+                    if (!await dockerCompose.isVolumeOwned(candidate)) {
+                      break;
+                    }
 
                     try {
                       await volume.remove({ force: true });

@@ -1401,6 +1401,45 @@ describe('resetNodeTaskFactory', () => {
       expect(removedVolumes).to.be.empty();
     });
 
+    // While the reset waits for a volume in use, it can be removed and
+    // replaced under the same name by a volume Platform does not own.
+    it('should ask whose a volume is again before each attempt to remove it', async () => {
+      let attempts = 0;
+      diContainer.register({
+        docker: asValue({
+          getVolume: (name) => dockerVolume(name, async () => {
+            if (name === 'docker_drive_abci_data') {
+              attempts += 1;
+
+              if (attempts === 1) {
+                // eslint-disable-next-line no-throw-literal
+                throw { statusCode: 409 };
+              }
+            }
+
+            removedVolumes.push(name);
+          }),
+        }),
+      });
+
+      let removals = 0;
+      onRemoveServices = () => {
+        removals += 1;
+
+        if (removals === 2) {
+          dockerVolumeLabels.docker_drive_abci_data = {
+            'com.docker.compose.project': 'other_project',
+            'com.docker.compose.volume': 'drive_abci_data',
+          };
+        }
+      };
+
+      await platformReset();
+
+      expect(removals).to.equal(2);
+      expect(removedVolumes).to.not.include('docker_drive_abci_data');
+    });
+
     it('should remove the Platform services again the same way while a volume is in use', async () => {
       let attempts = 0;
       diContainer.register({
