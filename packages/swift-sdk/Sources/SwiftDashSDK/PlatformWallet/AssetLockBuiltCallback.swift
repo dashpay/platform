@@ -33,6 +33,16 @@ public struct AssetLockBuiltOutPoint: Hashable, Sendable {
         vout = UInt32(littleEndian: value)
         outPointHex = PersistentAssetLock.encodeOutPoint(rawBytes: rawBytes)
     }
+
+    /// Decodes the outpoint an FFI call wrote to an `out_asset_lock_outpoint`
+    /// parameter. `nil` when it is all zero, which the FFI writes when
+    /// nothing was built.
+    init?(reported outPoint: OutPointFFI) {
+        var rawBytes = Swift.withUnsafeBytes(of: outPoint.txid) { Data($0) }
+        rawBytes.append(contentsOf: Swift.withUnsafeBytes(of: outPoint.vout.littleEndian) { Data($0) })
+        guard rawBytes.contains(where: { $0 != 0 }) else { return nil }
+        self.init(reportedBytes: rawBytes)
+    }
 }
 
 /// Handler a fresh-build funding call invokes with the new asset lock's
