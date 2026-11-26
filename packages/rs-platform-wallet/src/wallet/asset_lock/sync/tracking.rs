@@ -169,9 +169,12 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// rather than written back. Only once it is committed is it recorded in
     /// memory, where a resume reads it, and only on a lock that is still
     /// tracked and assignable: a lock swept meanwhile is
-    /// [`PlatformWalletError::AssetLockNotTracked`]. A failed assignment left
-    /// nothing behind, in memory or in the backend, so any identity may be
-    /// assigned afterwards.
+    /// [`PlatformWalletError::AssetLockNotTracked`]. A refused backend write
+    /// ([`PlatformWalletError::Persistence`]) left nothing behind, in memory
+    /// or in the backend, so any identity may be assigned afterwards. An error
+    /// after the commit (the lock swept, consumed, or recording another
+    /// recipient by then) leaves the recipient stored: the caller reads the
+    /// tracked lock before offering another identity.
     ///
     /// `generation` is the caller's handle's wallet generation. A wallet
     /// removed, or re-created under its id, since the handle was taken is

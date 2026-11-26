@@ -501,9 +501,13 @@ impl IdentityWallet {
     /// refused there and reports the lock consumed, and nothing is paid twice.
     ///
     /// The backend records the recipient alone, and only once that is
-    /// committed does a resume see it. A failure stores nothing, so any
-    /// identity may be assigned afterwards. A lock the backend no longer
-    /// stores, or one swept meanwhile, is refused. A wallet removed or
+    /// committed does a resume see it. A refused backend write
+    /// ([`PlatformWalletError::Persistence`]) stores nothing, so any identity
+    /// may be assigned afterwards. Another error does not establish that the
+    /// lock is still unassigned: the backend may have committed before a sweep,
+    /// a consumption or another recipient on the row was found, so read the
+    /// tracked lock before offering another identity. A lock the backend no
+    /// longer stores, or one swept meanwhile, is refused. A wallet removed or
     /// re-created under its id while the identity was looked up is
     /// [`PlatformWalletError::WalletRemovedBeforeSend`], with nothing
     /// assigned.

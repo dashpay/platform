@@ -903,3 +903,57 @@ fn should_extend_an_upgraded_funding_pool_past_a_lock_stored_on_chain() {
         "the next lock takes the address after the confirmed one"
     );
 }
+
+/// A stored funding row whose address is not the one its index derives (a
+/// damaged but well-formed script) is not restored as stored: a lock paid to
+/// it could not be signed for on Platform. The derived address takes its
+/// place, used, since the key the row stood for may have been handed out.
+#[test]
+fn should_restore_the_derived_address_over_a_damaged_funding_row() {
+    use key_wallet::managed_account::address_pool::KeySource;
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xE5);
+    let (wallet, mut info, manifest) = funding_test_wallet(0x4A);
+    let xpub = wallet
+        .accounts
+        .identity_topup_not_bound
+        .as_ref()
+        .expect("unbound top-up account")
+        .account_xpub;
+    register_wallet(&persister, w, manifest, Vec::new());
+    let pool = unbound_top_up_pool(&mut info);
+    let window = pool.addresses().len() as u32;
+    pool.generate_addresses(2, &KeySource::Public(xpub))
+        .unwrap();
+    let expected: Vec<_> = pool.addresses().values().cloned().collect();
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    // Past the window, unused, but holding the address of index 0.
+    conn.execute(
+        "INSERT INTO core_address_pool \
+            (wallet_id, account_type, account_index, key_class, user_identity_id, \
+             friend_identity_id, pool_type, address_index, script, used) \
+         VALUES (?1, 'identity_topup_unbound', 0, 0, zeroblob(32), zeroblob(32), \
+                 2, ?2, ?3, 0)",
+        rusqlite::params![
+            w.as_slice(),
+            i64::from(window),
+            expected[0].address.script_pubkey().as_bytes(),
+        ],
+    )
+    .unwrap();
+    drop(conn);
+    drop(persister);
+
+    let state = reopen(&path).load().expect("load");
+    let mut restored = state.wallets[&w].wallet_info.clone();
+    let pool = unbound_top_up_pool(&mut restored);
+    let row = &pool.addresses()[&window];
+    assert_eq!(row.address, expected[window as usize].address);
+    assert_eq!(row.path, expected[window as usize].path);
+    assert!(
+        row.is_used(),
+        "the damaged row's key may have been handed out"
+    );
+    assert_eq!(pool.address_index(&expected[0].address), Some(0));
+}

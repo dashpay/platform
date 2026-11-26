@@ -5,6 +5,7 @@
 //! runs here; that gate lives in the resolver-backed signing entrypoints.
 
 use key_wallet::account::account_collection::AccountCollection;
+use key_wallet::account::derivation::AccountDerivation;
 use key_wallet::account::{Account, AccountType};
 use key_wallet::bip32::ChildNumber;
 use key_wallet::bip32::DerivationPath;
@@ -229,8 +230,9 @@ pub(crate) fn restore_asset_lock_funding_pools(
     let mut entries = Vec::new();
     for (account_type, pool_type, base_path) in funding_pools(wallet_info) {
         let rows = core_pool::load_funding_pool_rows(conn, wallet_id, &account_type, pool_type)?;
+        let account = wallet.accounts.account_of_type(account_type);
         let mut addresses = Vec::with_capacity(rows.len());
-        for (index, script, public_key, used) in rows {
+        for (index, script, public_key, mut used) in rows {
             let script_pubkey = dashcore::ScriptBuf::from_bytes(script);
             let address = match dashcore::Address::from_script(&script_pubkey, network) {
                 Ok(address) => address,
@@ -254,6 +256,28 @@ pub(crate) fn restore_asset_lock_funding_pools(
                     "core_address_pool.address_index is not a normal child index",
                 )
             })?;
+            // A lock is paid to the stored address and signed with the key at
+            // the index's path: a row whose address that key does not derive
+            // would fund a lock the wallet cannot spend on Platform. The
+            // account's own derivation is kept instead, used, since the key
+            // the damaged row stood for may have been handed out.
+            let (address, public_key) = match account
+                .and_then(|account| account.derive_address_at(pool_type, index, None).ok())
+            {
+                Some(derived) if derived.script_pubkey() != address.script_pubkey() => {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        ?account_type,
+                        ?pool_type,
+                        index,
+                        "load: stored funding address does not match its derivation; \
+                         restoring the derived address as used"
+                    );
+                    used = true;
+                    (derived, None)
+                }
+                _ => (address, public_key),
+            };
             let mut path = base_path.clone();
             path.push(child);
             addresses.push(AddressInfo {

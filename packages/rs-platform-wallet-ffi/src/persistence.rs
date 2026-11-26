@@ -519,10 +519,13 @@ pub type FreeWalletLockedOutpointsFn =
 /// changeset. An assignment sends it in a round of its own, with no upsert of
 /// the outpoint's row: the host applies it to the row it already stores and
 /// must refuse it (non-zero, or by failing the round's commit) when it stores
-/// no row for the outpoint, and must not change anything else on the row. All
-/// three byte pointers are readable for the duration of the callback. A host
-/// must refuse (non-zero) a different identity for an outpoint that already
-/// records one.
+/// no row for the outpoint or the row is consumed, and must not change
+/// anything else on the row: a standalone assignment fills a missing
+/// recipient only on an existing, unconsumed row. (A store round's ordinary
+/// upsert of a consumed row may still carry the recipient it already records.)
+/// All three byte pointers are readable for the duration of the callback. A
+/// host must refuse (non-zero) a different identity for an outpoint that
+/// already records one.
 pub type PersistAssetLockIdentityRecipientFn = unsafe extern "C" fn(
     context: *mut c_void,
     wallet_id: *const u8,

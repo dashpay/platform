@@ -833,27 +833,6 @@ pub enum PlatformWalletFFIResultCode {
     /// signing): the top-up of any identity and the deprecated external and
     /// managed ones.
     ErrorIdentityLookupFailed = 80,
-    /// Maps `PlatformWalletError::AssetLockRecipientUnknown`: an unbound
-    /// identity top-up lock records no identity to pay (it was rebuilt from
-    /// the chain, for example after a restore from the seed, and its credit
-    /// output names none), so no resume pays it: it may have been meant for
-    /// someone else's identity. Nothing was submitted or paid. Not retryable
-    /// as is. A lock the tracked-lock lists flag `identity_recipient_unassigned`
-    /// is recoverable once the user assigns it a recipient
-    /// (`platform_wallet_assign_identity_top_up_recipient`), after which a
-    /// resume to that identity proceeds. One whose Platform consumption is
-    /// unknown (status `RecoveredFromChain`) is not flagged, and assigning it
-    /// is refused with [`Self::ErrorAssetLockConsumptionUnknown`] (82).
-    ErrorAssetLockRecipientUnknown = 81,
-    /// Maps `PlatformWalletError::AssetLockConsumptionUnknown`: an unbound
-    /// identity top-up lock that records no recipient and whose Platform
-    /// consumption is unknown (rebuilt from the chain after a restore, status
-    /// `RecoveredFromChain`) cannot be assigned a recipient, since Platform
-    /// may already have used it. Nothing was assigned; the lock stays
-    /// tracked. Distinct from [`Self::ErrorAssetLockAlreadyConsumed`] (24),
-    /// a confirmed use: this one is unknown, and the funds may still be
-    /// unspent on Platform.
-    ErrorAssetLockConsumptionUnknown = 82,
 
     /// Maps `PlatformWalletError::BalanceHistoryInconsistentHeights`: the
     /// balance history read kept getting one page of Platform's address
@@ -921,6 +900,28 @@ pub enum PlatformWalletFFIResultCode {
     /// create from the pool, private document create). Distinct from
     /// [`Self::ErrorShieldedSpendUnconfirmed`] (18), which must NOT be retried.
     ErrorShieldedMerkleWitnessUnavailable = 88,
+
+    /// Maps `PlatformWalletError::AssetLockRecipientUnknown`: an unbound
+    /// identity top-up lock records no identity to pay (it was rebuilt from
+    /// the chain, for example after a restore from the seed, and its credit
+    /// output names none), so no resume pays it: it may have been meant for
+    /// someone else's identity. Nothing was submitted or paid. Not retryable
+    /// as is. A lock the tracked-lock lists flag `identity_recipient_unassigned`
+    /// is recoverable once the user assigns it a recipient
+    /// (`platform_wallet_assign_identity_top_up_recipient`), after which a
+    /// resume to that identity proceeds. One whose Platform consumption is
+    /// unknown (status `RecoveredFromChain`) is not flagged, and assigning it
+    /// is refused with [`Self::ErrorAssetLockConsumptionUnknown`] (90).
+    ErrorAssetLockRecipientUnknown = 89,
+    /// Maps `PlatformWalletError::AssetLockConsumptionUnknown`: an unbound
+    /// identity top-up lock that records no recipient and whose Platform
+    /// consumption is unknown (rebuilt from the chain after a restore, status
+    /// `RecoveredFromChain`) cannot be assigned a recipient, since Platform
+    /// may already have used it. Nothing was assigned; the lock stays
+    /// tracked. Distinct from [`Self::ErrorAssetLockAlreadyConsumed`] (24),
+    /// a confirmed use: this one is unknown, and the funds may still be
+    /// unspent on Platform.
+    ErrorAssetLockConsumptionUnknown = 90,
 
     /// The named thing does not exist.
     ///
@@ -3002,10 +3003,10 @@ mod tests {
     }
 
     #[test]
-    fn should_pin_the_unassigned_unbound_top_up_code_at_81() {
+    fn should_pin_the_unassigned_unbound_top_up_code_at_89() {
         assert_eq!(
             PlatformWalletFFIResultCode::ErrorAssetLockRecipientUnknown as i32,
-            81
+            89
         );
         let result: PlatformWalletFFIResult =
             PlatformWalletError::AssetLockRecipientUnknown(dashcore::OutPoint::null()).into();
@@ -3017,10 +3018,10 @@ mod tests {
     }
 
     #[test]
-    fn should_pin_the_consumption_unknown_code_at_82() {
+    fn should_pin_the_consumption_unknown_code_at_90() {
         assert_eq!(
             PlatformWalletFFIResultCode::ErrorAssetLockConsumptionUnknown as i32,
-            82
+            90
         );
         let result: PlatformWalletFFIResult =
             PlatformWalletError::AssetLockConsumptionUnknown(dashcore::OutPoint::null()).into();
