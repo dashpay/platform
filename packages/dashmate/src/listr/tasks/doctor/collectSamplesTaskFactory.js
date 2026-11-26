@@ -139,9 +139,10 @@ export default function collectSamplesTaskFactory(
 
             // Tenderdash takes its ID from the node key, which the sampled
             // config has redacted. The ID itself is public: Tenderdash
-            // announces it to every peer.
+            // announces it to every peer. The schema requires the node object
+            // but not the key in it, so the key is read off the object.
             const nodeKey = config.get('platform.enable')
-              ? config.get('platform.drive.tenderdash.node.key')
+              ? config.get('platform.drive.tenderdash.node').key
               : null;
 
             if (typeof nodeKey === 'string') {

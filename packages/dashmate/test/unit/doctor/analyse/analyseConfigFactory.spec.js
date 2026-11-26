@@ -352,6 +352,14 @@ describe('analyseConfigFactory', () => {
       expect(analyseConfig(samples)).to.be.empty();
     });
 
+    it('should analyse a config with neither a node key nor a saved node ID', () => {
+      config.set('platform.drive.tenderdash.node', {});
+
+      const descriptions = analyseConfig(samples).map((problem) => problem.getDescription());
+
+      expect(descriptions).to.include(NODE_ID_PROBLEM);
+    });
+
     // A report collected by an older dashmate has no ID derived from the key
     it('should report nothing when the node ID is the registered one', () => {
       config.set('platform.drive.tenderdash.node.id', masternodeStatus.dmnState.platformNodeID);

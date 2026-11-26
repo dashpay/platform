@@ -446,6 +446,19 @@ describe('collectSamplesTaskFactory', () => {
       );
     });
 
+    // The schema requires neither the key nor the ID, and a masternode is
+    // never given a generated key, so a config can hold only the saved ID
+    it('should diagnose an evonode whose config has a saved node ID but no key', async () => {
+      config.set('platform.drive.tenderdash.node', { id: 'f'.repeat(40) });
+
+      await collectSamples();
+
+      expect(samples.getServiceInfo('drive_tenderdash', 'nodeIdFromKey')).to.be.undefined();
+      expect(analyseConfig(samples).map((problem) => problem.getDescription())).to.include(
+        'Platform Node ID doesn\'t match the one found in the ProReg transaction',
+      );
+    });
+
     // The key is redacted from the report, so the ID it gives is collected
     // instead. The ID is public: Tenderdash announces it to every peer.
     it('should collect the node ID derived from the node key', async () => {

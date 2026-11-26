@@ -93,8 +93,10 @@ export default function analyseConfigFactory() {
       // The ID Tenderdash runs with comes from its key. A report collected by
       // an older dashmate only has the saved ID, which `config set` does not
       // update when the key alone changes.
-      const configuredNodeId = samples.getServiceInfo('drive_tenderdash', 'nodeIdFromKey')
-        ?? config.get('platform.drive.tenderdash.node.id');
+      // Neither the key nor the saved ID is required by the schema.
+      const configuredNodeId = platformNodeId
+        && (samples.getServiceInfo('drive_tenderdash', 'nodeIdFromKey')
+          ?? config.get('platform.drive.tenderdash.node').id);
       if (platformNodeId && configuredNodeId !== platformNodeId) {
         const problem = new Problem(
           'Platform Node ID doesn\'t match the one found in the ProReg transaction',
