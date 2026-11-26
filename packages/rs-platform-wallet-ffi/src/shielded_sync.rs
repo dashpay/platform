@@ -706,9 +706,10 @@ pub unsafe extern "C" fn platform_wallet_manager_configure_shielded(
 /// Before anything is reset, the load callbacks are called once: Clear keeps
 /// the identity accounts the viewing key rows record, which the wipe then
 /// deletes. A load that fails as retryable returns
-/// `ErrorPersisterLoadTransient` (49) with nothing reset, the sync loop still
-/// running and the wipe slot not called, as a refusal with code 84 leaves
-/// them; call again. A load that fails otherwise does not stop the Clear.
+/// `ErrorPersisterLoadTransient` (49) with nothing reset and the wipe slot
+/// not called; call again. The sync loop, stopped for the Clear, is started
+/// again when it was running, so a host that puts the retry off keeps its
+/// background scans. A load that fails otherwise does not stop the Clear.
 /// A failed native reset returns an error before the host is called. A
 /// failed host wipe after a successful reset returns an error and refuses
 /// binds until a Clear succeeds.

@@ -1073,9 +1073,10 @@ async fn should_refuse_a_clear_and_keep_the_sync_loop_while_an_operation_is_admi
     );
 }
 
-/// A Clear whose host is busy for now fails as a refused one does, before
-/// the manager does anything: the sync loop keeps running, nothing is reset
-/// and the host is not asked to wipe. The same Clear goes through on a retry.
+/// A Clear whose host is busy for now fails with nothing reset and the host
+/// not asked to wipe, and leaves the sync loop running: the manager starts
+/// it again after the quiesce that stopped it. The same Clear goes through
+/// on a retry.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn should_fail_a_clear_and_keep_the_sync_loop_while_the_host_is_busy() {
     let dir = tempfile::tempdir().unwrap();
@@ -1098,7 +1099,7 @@ async fn should_fail_a_clear_and_keep_the_sync_loop_while_the_host_is_busy() {
     );
     assert!(
         manager.shielded_sync().is_running(),
-        "a Clear that failed on a busy host does not stop the sync loop"
+        "a Clear that failed on a busy host leaves the sync loop running"
     );
     assert_eq!(host.wipe_count(), 0);
     assert_eq!(coordinator.clear_epoch().await, epoch);
