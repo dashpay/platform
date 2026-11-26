@@ -389,10 +389,14 @@ export default function resetNodeTaskFactory(
       // The removal's own error is what is reported then.
     }
 
+    // A permission error the walk does not see, such as for a file in a
+    // sticky directory, still yields to a removal that has the rights.
     if (deniedPaths.length === 0) {
       throw new Error([
         `Could not remove ${formatPath(targetPath)}: ${escapeForDisplay(removalError.message)}`,
-        'Fix the cause,',
+        ...(isPermissionError(removalError)
+          ? ['Remove it with sufficient rights, for example:', ...formatPathCommands(['sudo rm -rf'], targetPath)]
+          : ['Fix the cause,']),
         ...recovery,
       ].join('\n'));
     }

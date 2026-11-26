@@ -799,14 +799,20 @@ describe('resetNodeTaskFactory', () => {
     it('should give the same recovery for any other failure during removal', async function test() {
       failRemoval(this.sinon, homeDir.joinPath('testnet', 'platform'), fsError('EIO', 'EIO: i/o error, rm'));
 
-      await expect(hardReset({ isPlatformOnlyReset: true }))
-        .to.be.rejectedWith(/EIO: i\/o error[\s\S]*dashmate config render --config testnet/);
+      const error = await hardReset({ isPlatformOnlyReset: true }).then(
+        () => { throw new Error('the reset succeeded'); },
+        (e) => e,
+      );
+
+      expect(error.message).to.match(/EIO: i\/o error[\s\S]*dashmate config render --config testnet/);
+      expect(error.message).to.not.include('sudo');
     });
 
     // What the check cannot foresee, such as a file in a sticky directory or
     // one marked immutable, fails once removal has begun, and permissions do
-    // not show it. Node's error is shown, and Compose then needs the service
-    // files rendered again before the reset can run.
+    // not show it. Node's error is shown with a removal that has the rights,
+    // and Compose then needs the service files rendered again before the
+    // reset can run.
     it('should show the removal\'s error for a failure the check cannot foresee', async function test() {
       failRemoval(
         this.sinon,
@@ -820,6 +826,7 @@ describe('resetNodeTaskFactory', () => {
       );
 
       expect(error.message).to.include('EPERM: operation not permitted, rm');
+      expect(error.message.split('\n')).to.include(`  sudo rm -rf ${homeDir.joinPath('testnet', 'platform')}`);
       expect(error.message).to.include('dashmate config render --config testnet');
       expect(dockerCompose.rm).to.have.been.calledOnce();
     });
