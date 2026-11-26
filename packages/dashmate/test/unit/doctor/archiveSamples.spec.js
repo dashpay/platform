@@ -595,6 +595,10 @@ describe('archiveSamples', () => {
     // it. A failure before packing starts, such as listing the staged
     // samples, must not leave the file open or behind.
     it('should not open the archive file when the staged samples cannot be listed', async function it() {
+      // The writer stages under the system temp directory, which Windows does
+      // not take from TMPDIR, so the fault below is aimed where it stages
+      this.sinon.stub(os, 'tmpdir').returns(archiveRoot);
+
       const { readdirSync } = fs;
       this.sinon.stub(fs, 'readdirSync').callsFake((dirPath, ...args) => {
         if (path.dirname(dirPath) === archiveRoot && path.basename(dirPath).startsWith('dashmate-report-')) {
