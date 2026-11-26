@@ -58,6 +58,8 @@ describe('setupPlatformTask', () => {
   let readPlatformRegistration;
   let configureSSLCertificateTask;
   let getPlatformArtefacts;
+  let configFileRepository;
+  let writeConfigTemplates;
   let setupPlatformTask;
   let sandbox;
 
@@ -133,6 +135,8 @@ describe('setupPlatformTask', () => {
       configureSSLCertificateTask,
       getPlatformArtefacts,
       defaultConfigs,
+      configFileRepository,
+      writeConfigTemplates,
     );
   }
 
@@ -168,6 +172,8 @@ describe('setupPlatformTask', () => {
     }]));
 
     getPlatformArtefacts = { getActiveServices: this.sinon.stub().resolves([]) };
+    configFileRepository = { write: this.sinon.stub() };
+    writeConfigTemplates = this.sinon.stub();
 
     useConfig(await hardResetPlatform(setUp('testnet', { masternode: true })));
   });
@@ -470,6 +476,44 @@ describe('setupPlatformTask', () => {
     expect(checked.get('platform.drive.tenderdash.node.key')).to.be.null();
   });
 
+  // Saved and rendered before success is reported, not when the command
+  // exits: a failure is then a failed setup, which removes the certificate
+  // files this run installed, so the next run is not refused over them.
+  describe('saving', () => {
+    const answers = () => ({ platformNodeKey: { key: registeredKey, id: registration.platformNodeId } });
+
+    it('should write config.json and render the service files before it reports success', async () => {
+      const { ctx, error } = await run(answers());
+
+      expect(error).to.be.null();
+      expect(configFileRepository.write).to.have.been.calledOnceWithExactly(configFile);
+      expect(writeConfigTemplates).to.have.been.calledOnceWithExactly(ctx.config);
+      expect(writeConfigTemplates).to.have.been.calledAfter(configFileRepository.write);
+      expect(saved()).to.equal(ctx.config);
+      expect(ctx.isConfigSaved).to.be.true();
+    });
+
+    it('should fail, with nothing rendered, when config.json cannot be written', async () => {
+      configFileRepository.write.throws(new Error('ENOSPC: no space left on device'));
+
+      const { ctx, error } = await run(answers());
+
+      expect(error.message).to.include('ENOSPC');
+      expect(ctx.isConfigSaved).to.not.equal(true);
+      expect(writeConfigTemplates).to.not.have.been.called();
+    });
+
+    // config.json refers to the certificate now, so it must stay.
+    it('should fail, recording that config.json was saved, when rendering fails', async () => {
+      writeConfigTemplates.throws(new Error('EACCES: permission denied'));
+
+      const { ctx, error } = await run(answers());
+
+      expect(error.message).to.include('EACCES');
+      expect(ctx.isConfigSaved).to.be.true();
+    });
+  });
+
   it('should save nothing when Platform services were started meanwhile', async () => {
     getPlatformArtefacts.getActiveServices.resolves(['drive_abci']);
 
@@ -477,6 +521,7 @@ describe('setupPlatformTask', () => {
 
     expect(error.message).to.include('drive_abci').and.include('dashmate stop --platform --config testnet');
     expect(configFile.isChanged()).to.be.false();
+    expect(configFileRepository.write).to.not.have.been.called();
   });
 
   it('should not print the node key anywhere in what it reports', async () => {

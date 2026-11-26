@@ -760,9 +760,11 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
    * Say what state a failed run left behind, and clear what would block a
    * second run
    *
-   * Only ZeroSSL writes config.json before setup finishes, recording the
-   * certificate it created, so once it has, its files stay and the message
-   * says how to finish. Any other certificate this run installed is removed:
+   * Once config.json is written, only rendering the service files is left, and
+   * the certificate it refers to stays. Before that, only ZeroSSL writes
+   * config.json, recording the certificate it created, so once it has, its
+   * files stay and the message says how to finish. Any other certificate this
+   * run installed is removed:
    * no Platform option refers to it, and setup would refuse to run again over
    * it. The preconditions proved neither file was there before the run. A
    * Let's Encrypt certificate stays in lego's own directory, where the next
@@ -777,7 +779,14 @@ I will assist you with setting up a Dash node on mainnet or testnet. I can also 
 
     let message;
 
-    if (ctx.isZeroSslCertificateRecorded) {
+    if (ctx.isConfigSaved) {
+      message = [
+        'Platform setup saved the configuration, and then could not render the service files.',
+        'Render them with:',
+        `  dashmate config render ${flag}`,
+        `then continue with 'dashmate update ${flag}' and start the node.`,
+      ].join('\n');
+    } else if (ctx.isZeroSslCertificateRecorded) {
       message = describePlatformSetupState({
         state: PLATFORM_SETUP_STATE.ZEROSSL_INTERRUPTED,
         markers: certificateFiles,

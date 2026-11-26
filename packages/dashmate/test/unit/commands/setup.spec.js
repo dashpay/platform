@@ -473,7 +473,10 @@ describe('Setup command', () => {
      *
      * @param {Object} [ctxFields]
      */
-    function failAfterInstalling(ctxFields = {}) {
+    function failAfterInstalling({
+      failure = new Error('Platform services were started while setup ran'),
+      ...ctxFields
+    } = {}) {
       setupPlatformTask.callsFake(() => new Listr([{
         task: (ctx) => {
           Object.assign(ctx, { isCertificateStepStarted: true }, ctxFields);
@@ -481,7 +484,7 @@ describe('Setup command', () => {
           fs.writeFileSync(path.join(sslDir, 'bundle.crt'), 'certificate');
           fs.writeFileSync(path.join(sslDir, 'private.key'), 'key');
 
-          throw new Error('Platform services were started while setup ran');
+          throw failure;
         },
       }], { renderer: 'silent' }));
     }
@@ -502,6 +505,35 @@ describe('Setup command', () => {
       expect(stderr).to.include('were removed')
         .and.include('dashmate setup --platform --config testnet')
         .and.include('Let\'s Encrypt certificate already issued');
+    });
+
+    // No option refers to the certificate yet, so the next run would refuse it.
+    it('should remove the certificate files when config.json could not be written, so a retry is accepted', async () => {
+      failAfterInstalling({ failure: new Error('ENOSPC: no space left on device') });
+
+      const error = await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(error.message).to.include('ENOSPC');
+      expect(process.exitCode).to.equal(1);
+      expect(fs.existsSync(path.join(sslDir, 'bundle.crt'))).to.be.false();
+      expect(stderr).to.include('nothing was saved');
+
+      setupPlatformTask.callsFake(() => new Listr([]));
+      expect(await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile })).to.be.null();
+    });
+
+    // config.json refers to the certificate now: removing it would leave a
+    // configured node without one.
+    it('should keep the certificate when config.json was saved and rendering failed, and say how to render', async () => {
+      failAfterInstalling({ isConfigSaved: true, failure: new Error('EACCES: permission denied') });
+
+      const error = await setupPlatform({ 'ssl-provider': 'letsencrypt', 'platform-node-key-file': keyFile });
+
+      expect(error.message).to.include('EACCES');
+      expect(fs.existsSync(path.join(sslDir, 'bundle.crt'))).to.be.true();
+      expect(stderr).to.include('dashmate config render --config testnet')
+        .and.not.include('nothing was saved')
+        .and.not.include('were removed');
     });
 
     // config.json could not be written, so nothing records the certificate.

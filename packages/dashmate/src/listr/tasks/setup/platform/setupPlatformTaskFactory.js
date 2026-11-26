@@ -43,6 +43,8 @@ function validateNodeKeyAnswer(value) {
  * @param {configureSSLCertificateTask} configureSSLCertificateTask
  * @param {getPlatformArtefacts} getPlatformArtefacts
  * @param {DefaultConfigs} defaultConfigs
+ * @param {ConfigFileJsonRepository} configFileRepository
+ * @param {writeConfigTemplates} writeConfigTemplates
  * @return {setupPlatformTask}
  */
 export default function setupPlatformTaskFactory(
@@ -57,6 +59,8 @@ export default function setupPlatformTaskFactory(
   configureSSLCertificateTask,
   getPlatformArtefacts,
   defaultConfigs,
+  configFileRepository,
+  writeConfigTemplates,
 ) {
   /**
    * The answer for the Platform node key of an evonode: the registered one only
@@ -301,7 +305,7 @@ export default function setupPlatformTaskFactory(
    * Configure the Platform part of a preset whose Core part is set up
    *
    * Everything is held on the context's copy of the config until the last step
-   * installs it; the command saves and renders it only if every step succeeded.
+   * saves and renders it, which happens only if every step before succeeded.
    * The context carries the answers given in advance (see the setup command)
    * and states whether prompting is allowed.
    *
@@ -541,6 +545,15 @@ export default function setupPlatformTaskFactory(
           }
 
           configFile.setConfig(ctx.config);
+
+          // Written here rather than when the command exits, so that a failure
+          // is a failed setup, reported as one: before config.json is written,
+          // the certificate files this run installed are removed so that it can
+          // run again; after, config.json refers to them and they stay.
+          configFileRepository.write(configFile);
+          ctx.isConfigSaved = true;
+
+          writeConfigTemplates(ctx.config);
 
           // eslint-disable-next-line no-param-reassign
           task.output = renderSummary(ctx);
