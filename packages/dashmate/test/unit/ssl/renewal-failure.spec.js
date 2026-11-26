@@ -8,6 +8,7 @@ import classifyRenewalFailure, {
 } from '../../../src/ssl/renewal-failure.js';
 import LegoArtifactsMissingError from '../../../src/ssl/errors/LegoArtifactsMissingError.js';
 import ConfigurationLockLostError from '../../../src/ssl/errors/ConfigurationLockLostError.js';
+import ConfigFileFormatTooNewError from '../../../src/config/errors/ConfigFileFormatTooNewError.js';
 import VerificationServerUnreachableError from '../../../src/ssl/errors/VerificationServerUnreachableError.js';
 import ProviderUnreachableError from '../../../src/ssl/errors/ProviderUnreachableError.js';
 import CertificateFileMissingError from '../../../src/ssl/errors/CertificateFileMissingError.js';
@@ -226,6 +227,22 @@ describe('renewalFailure', () => {
       const CARRIED = [
         ['a lost configuration lock', () => new ConfigurationLockLostError('Lost the configuration lock'),
           RENEWAL_FAILURE_CODES.RENEWAL_INTERRUPTED],
+        // Known to the helper, so doctor can name it rather than say it could
+        // not work out why. Refused when the lock was taken, so nothing was
+        // asked of the authority.
+        ['a config updated by a newer dashmate', () => new ConfigFileFormatTooNewError(
+          '/home/op/.dashmate/config.json',
+          '5.2.0',
+          '5.1.0',
+          { isBeforeAnyWork: true },
+        ), RENEWAL_FAILURE_CODES.HELPER_OUTDATED],
+        // The same refusal at a later save: the lease was taken over while the
+        // renewal ran, and a certificate may already have been requested.
+        ['a config a newer dashmate saved during renewal', () => new ConfigFileFormatTooNewError(
+          '/home/op/.dashmate/config.json',
+          '5.2.0',
+          '5.1.0',
+        ), RENEWAL_FAILURE_CODES.HELPER_OUTDATED_MID_RENEWAL],
         ['an unreachable provider', () => new ProviderUnreachableError('fetch failed'),
           RENEWAL_FAILURE_CODES.PROVIDER_UNREACHABLE],
         ['a missing certificate file', () => new CertificateFileMissingError('/home/op/bundle.crt'),
