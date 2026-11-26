@@ -58,8 +58,9 @@ describe('archiveSamples', () => {
 
   describe('when packing fails', () => {
     beforeEach(function beforeEach() {
-      // Root reads a file whatever its mode, so packing cannot be made to fail
-      if (process.getuid?.() === 0) {
+      // Root reads a file whatever its mode, and Windows cannot revoke read
+      // access with a mode, so packing cannot be made to fail there
+      if (process.getuid?.() === 0 || process.platform === 'win32') {
         this.skip();
       }
 
