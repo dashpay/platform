@@ -55,13 +55,92 @@ ROOT_PATH=$(dirname "$DIR_PATH")
 #
 # The file name is not the version: it carries no epoch, and no `~`, so that the name
 # survives being uploaded as a release asset.
+#
+# The repack also adds the source file and keyring of Dash's apt repository, so installing
+# the package once configures the repository it upgrades from, and an apt preferences file
+# that limits that repository to the dashmate package. The source file names the `stable`
+# suite for every version, prereleases included: moving to `testing` is the operator's
+# choice. All three are conffiles under /etc/apt, so they share one lifecycle:
+#   - an upgrade silently replaces a file the operator has not changed, which is how a
+#     renewed keyring reaches every host, and keeps one the operator changed while the
+#     package's copy stays the same (dpkg asks only when both have changed);
+#   - removing the package without purging it, or rolling back to a version that ships none
+#     of them, keeps them all, so the source never outlives the key it names;
+#   - purging the package removes them all.
 rewrite_deb_versions() {
   DIST_PATH="$1"
   STAGING_PATH="tmp/rewritten"
+  APT_SOURCES_PATH="$ROOT_PATH/packages/dashmate/deb/dashmate.sources"
+  APT_KEYRING_PATH="$ROOT_PATH/packages/dashmate/deb/dashmate-archive-keyring.gpg"
+  APT_PREFERENCES_PATH="$ROOT_PATH/packages/dashmate/deb/dashmate.pref"
+  APT_SOURCES_TARGET="etc/apt/sources.list.d/dashmate.sources"
+  APT_KEYRING_TARGET="etc/apt/keyrings/dashmate-archive-keyring.gpg"
+  APT_PREFERENCES_TARGET="etc/apt/preferences.d/dashmate.pref"
 
   if ! ls "$DIST_PATH"/*.deb > /dev/null 2>&1
   then
     echo "No deb packages to rewrite in $DIST_PATH"
+    exit 1
+  fi
+
+  if [ ! -f "$APT_SOURCES_PATH" ]
+  then
+    echo "No apt source file at $APT_SOURCES_PATH"
+    exit 1
+  fi
+
+  if [ ! -f "$APT_PREFERENCES_PATH" ]
+  then
+    echo "No apt preferences file at $APT_PREFERENCES_PATH"
+    exit 1
+  fi
+
+  # A package whose source file names a key it does not carry breaks `apt-get update` on
+  # every host that installs it, so a missing keyring stops the build.
+  if [ ! -f "$APT_KEYRING_PATH" ]
+  then
+    echo "No apt repository keyring at $APT_KEYRING_PATH; the deb must ship the key its source file names"
+    exit 1
+  fi
+
+  if ! command -v gpg > /dev/null
+  then
+    echo "gpg is needed to check the apt repository keyring at $APT_KEYRING_PATH"
+    exit 1
+  fi
+
+  # apt reads a keyring with the .gpg extension as binary OpenPGP packets, and only when it
+  # starts with a public key packet header it recognises (tag 6: 0x98, 0x99 or 0xc6), which
+  # also refuses ASCII armor. gpg then has to parse every packet in the file, find exactly
+  # one primary public key (tag 6) and no secret key or subkey (tags 5 and 7) among them,
+  # and read exactly one public key: the repository's own, with its subkeys. Packets are
+  # classified by their numeric tag, which unlike gpg's labels does not depend on the key
+  # version. --show-keys only runs on a file without secret packets, because on those it
+  # starts a gpg-agent.
+  KEYRING_FIRST_BYTE=$(head -c 1 "$APT_KEYRING_PATH" | od -An -tx1 | tr -d ' \n')
+  KEYRING_KEYS=""
+
+  case "$KEYRING_FIRST_BYTE" in
+    98|99|c6)
+      KEYRING_GNUPG_HOME=$(mktemp -d)
+      if KEYRING_PACKETS=$(gpg --batch --no-options --homedir "$KEYRING_GNUPG_HOME" --list-only \
+        --list-packets "$APT_KEYRING_PATH" 2> /dev/null)
+      then
+        KEYRING_TAGS=$(echo "$KEYRING_PACKETS" | sed -n 's/^# off=[0-9]* ctb=[0-9a-f]* tag=\([0-9]*\) .*/\1/p')
+        if [ "$(echo "$KEYRING_TAGS" | grep -cx 6)" = 1 ] && ! echo "$KEYRING_TAGS" | grep -Eqx '5|7'
+        then
+          KEYRING_KEYS=$(gpg --batch --no-options --homedir "$KEYRING_GNUPG_HOME" --with-colons \
+            --show-keys "$APT_KEYRING_PATH" 2> /dev/null) || KEYRING_KEYS=""
+        fi
+      fi
+      gpgconf --homedir "$KEYRING_GNUPG_HOME" --kill all > /dev/null 2>&1 || true
+      rm -rf "$KEYRING_GNUPG_HOME"
+      ;;
+  esac
+
+  if [ "$(echo "$KEYRING_KEYS" | grep -c '^pub:')" != 1 ] || echo "$KEYRING_KEYS" | grep -Eq '^(sec|ssb):'
+  then
+    echo "$APT_KEYRING_PATH is not a binary OpenPGP public keyring holding exactly one key"
     exit 1
   fi
 
@@ -87,6 +166,17 @@ rewrite_deb_versions() {
     if ! echo "$GIT_SHA" | grep -Eq '^[0-9a-f]{7,40}$'
     then
       echo "Expected a git sha in the version $OCLIF_VERSION built by oclif"
+      exit 1
+    fi
+
+    # oclif writes the package's author as the maintainer, and `undefined` when there is
+    # none. Debian requires a name and an address there, and apt shows them as the contact.
+    # Only a plain address is accepted: one @ and no quotes, so no quoted local part.
+    MAINTAINER=$(dpkg-deb --field "$DEB_PATH" Maintainer)
+
+    if ! echo "$MAINTAINER" | LC_ALL=C grep -Eq '^[^<>]*[^<>[:space:]] <[^<>[:space:]@"]+@[^<>[:space:]@"]+>$'
+    then
+      echo "Expected a Maintainer of the form 'Name <address>' in $DEB_PATH, got '$MAINTAINER'; set author in packages/dashmate/package.json"
       exit 1
     fi
 
@@ -118,6 +208,41 @@ rewrite_deb_versions() {
     fi
 
     mv "$WORKSPACE_PATH/DEBIAN/control.rewritten" "$WORKSPACE_PATH/DEBIAN/control"
+
+    # oclif writes no conffiles, and nothing at these paths. Writing over them would silently
+    # drop what oclif put there.
+    for OCLIF_PATH in DEBIAN/conffiles "$APT_SOURCES_TARGET" "$APT_KEYRING_TARGET" "$APT_PREFERENCES_TARGET"
+    do
+      if [ -e "$WORKSPACE_PATH/$OCLIF_PATH" ] || [ -L "$WORKSPACE_PATH/$OCLIF_PATH" ]
+      then
+        echo "$DEB_PATH already has $OCLIF_PATH; the apt repository files would replace it"
+        exit 1
+      fi
+    done
+
+    # A directory oclif built as a symlink would send the files outside the package, and the
+    # package would be built without them. Missing directories get an explicit mode so that
+    # the build user's umask cannot reach /etc/apt; existing ones keep oclif's.
+    for APT_DIRECTORY in etc etc/apt etc/apt/keyrings etc/apt/preferences.d etc/apt/sources.list.d
+    do
+      if [ -L "$WORKSPACE_PATH/$APT_DIRECTORY" ]
+      then
+        echo "$DEB_PATH has $APT_DIRECTORY as a symlink; the apt repository files would not be packaged"
+        exit 1
+      fi
+
+      if [ ! -d "$WORKSPACE_PATH/$APT_DIRECTORY" ]
+      then
+        install -d -m 0755 "$WORKSPACE_PATH/$APT_DIRECTORY"
+      fi
+    done
+
+    install -m 0644 "$APT_SOURCES_PATH" "$WORKSPACE_PATH/$APT_SOURCES_TARGET"
+    install -m 0644 "$APT_KEYRING_PATH" "$WORKSPACE_PATH/$APT_KEYRING_TARGET"
+    install -m 0644 "$APT_PREFERENCES_PATH" "$WORKSPACE_PATH/$APT_PREFERENCES_TARGET"
+    printf '/%s\n' "$APT_SOURCES_TARGET" "$APT_KEYRING_TARGET" "$APT_PREFERENCES_TARGET" \
+      > "$WORKSPACE_PATH/DEBIAN/conffiles"
+    chmod 0644 "$WORKSPACE_PATH/DEBIAN/conffiles"
 
     # oclif builds the payload as root, so restore that after extracting and rebuilding
     # it as the current user.

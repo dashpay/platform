@@ -137,12 +137,17 @@ data class AccountBalance(
     val friendIdentityId: ByteArray,
     val confirmed: Long,
     val unconfirmed: Long,
+    /** The account's standard tag (BIP44 0 / BIP32 1 for a standard account). */
+    val standardTag: Int = 0,
+    /** The account index. With [typeTag] and [standardTag] it names the account. */
+    val index: Int = 0,
 ) {
     override fun equals(other: Any?): Boolean =
         other is AccountBalance && typeTag == other.typeTag &&
             userIdentityId.contentEquals(other.userIdentityId) &&
             friendIdentityId.contentEquals(other.friendIdentityId) &&
-            confirmed == other.confirmed && unconfirmed == other.unconfirmed
+            confirmed == other.confirmed && unconfirmed == other.unconfirmed &&
+            standardTag == other.standardTag && index == other.index
 
     override fun hashCode(): Int {
         var result = typeTag
@@ -150,6 +155,8 @@ data class AccountBalance(
         result = 31 * result + friendIdentityId.contentHashCode()
         result = 31 * result + confirmed.hashCode()
         result = 31 * result + unconfirmed.hashCode()
+        result = 31 * result + standardTag
+        result = 31 * result + index
         return result
     }
 }
@@ -168,6 +175,9 @@ fun parseAccountBalances(json: String?): List<AccountBalance> {
                     ?: ByteArray(0),
                 confirmed = row.optLong("confirmed"),
                 unconfirmed = row.optLong("unconfirmed"),
+                standardTag = row.optInt("standardTag"),
+                // `index` is a u32 in Rust; Room stores account indices as Int.
+                index = row.optLong("index").toInt(),
             ),
         )
     }

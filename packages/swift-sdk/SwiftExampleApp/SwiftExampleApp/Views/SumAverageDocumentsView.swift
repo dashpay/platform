@@ -135,19 +135,19 @@ struct SumAverageDocumentsView: View {
 
     private var filterSection: some View {
         Section {
-            TextField("[{\"field\":\"...\",\"operator\":\"==\",\"value\":...}]", text: $whereJSON)
-                .textInputAutocapitalization(.never)
-                .disableAutocorrection(true)
-                .font(.system(.footnote, design: .monospaced))
-                .accessibilityIdentifier("sumAverageDocuments.whereField")
-                .disabled(isRunning)
+            PlainTextField(
+                placeholder: "[{\"field\":\"...\",\"operator\":\"==\",\"value\":...}]",
+                text: $whereJSON,
+                accessibilityIdentifier: "sumAverageDocuments.whereField"
+            )
+            .disabled(isRunning)
 
-            TextField("[\"field1\",\"field2\"]", text: $groupByJSON)
-                .textInputAutocapitalization(.never)
-                .disableAutocorrection(true)
-                .font(.system(.footnote, design: .monospaced))
-                .accessibilityIdentifier("sumAverageDocuments.groupByField")
-                .disabled(isRunning)
+            PlainTextField(
+                placeholder: "[\"field1\",\"field2\"]",
+                text: $groupByJSON,
+                accessibilityIdentifier: "sumAverageDocuments.groupByField"
+            )
+            .disabled(isRunning)
         } header: {
             Text("Filters (optional)")
         } footer: {

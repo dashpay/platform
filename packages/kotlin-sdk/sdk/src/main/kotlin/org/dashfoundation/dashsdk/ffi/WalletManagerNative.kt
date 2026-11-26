@@ -555,6 +555,20 @@ internal object WalletManagerNative {
     external fun identitySyncIsRunning(managerHandle: Long): Boolean
 
     /**
+     * Add or replace the identity-token sync registry row for [identityId]
+     * (32 bytes). [tokenIds] is the watched token ids back to back
+     * (`32 * N` bytes, empty for none).
+     */
+    external fun identitySyncRegisterIdentity(
+        managerHandle: Long,
+        identityId: ByteArray,
+        tokenIds: ByteArray,
+    )
+
+    /** Run one identity-token sync pass now; blocks until it completes. */
+    external fun identitySyncSyncNow(managerHandle: Long)
+
+    /**
      * Whether the durable sync watermark has been frozen this session because
      * a persistence store was rejected (the lossless channel cannot drop
      * events) — the persisted

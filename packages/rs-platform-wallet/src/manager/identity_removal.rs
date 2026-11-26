@@ -26,7 +26,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// the same id) refuses the whole removal the same way, as `WalletNotFound`.
     /// Accepted, each holding wallet removes it through its own persister,
     /// which emits the removal to the host, and the identity's token-sync row
-    /// is dropped.
+    /// is dropped, also when no wallet held it.
     ///
     /// Returns `Ok(true)` when at least one wallet managed the identity and
     /// `Ok(false)` when none did (an identity the host loaded on its own),
@@ -73,11 +73,12 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             }
             !holders.is_empty()
         };
-        if removed {
-            self.identity_sync_manager
-                .unregister_identity(identity_id)
-                .await;
-        }
+        // Accepted either way: drop the token-sync watch too, including for an
+        // identity no wallet holds (one the host watched on its own), so the
+        // next pass cannot write back balances the host is deleting.
+        self.identity_sync_manager
+            .unregister_identity(identity_id)
+            .await;
         Ok(removed)
     }
 }
@@ -128,6 +129,24 @@ mod tests {
             .remove_identity_from_device(&Identifier::from([9u8; 32]))
             .await
             .unwrap());
+    }
+
+    #[tokio::test]
+    async fn should_drop_the_token_watch_of_an_identity_no_wallet_holds() {
+        let (manager, _wallet_id) = test_platform_wallet_manager().await;
+        let id = Identifier::from([7u8; 32]);
+        manager
+            .identity_sync_manager
+            .register_identity(id, [Identifier::from([10u8; 32])])
+            .await;
+
+        assert!(!manager.remove_identity_from_device(&id).await.unwrap());
+        assert!(
+            !manager
+                .identity_sync_manager
+                .is_identity_registered(&id)
+                .await
+        );
     }
 
     #[tokio::test]

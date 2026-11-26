@@ -50,6 +50,7 @@ import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.QrScanner
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.toHex
@@ -92,7 +93,7 @@ fun AddContactScreen(identityIdHex: String, navController: NavHostController) {
 
     val identity by remember(idBytes) {
         container.database.identityDao().observeByIdentityId(idBytes)
-    }.collectAsStateWithLifecycle(initialValue = null)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
     val walletId = identity?.walletId
     val wallet = remember(manager, walletId) {
         walletId?.let { manager?.wallet(forWalletId = it) }

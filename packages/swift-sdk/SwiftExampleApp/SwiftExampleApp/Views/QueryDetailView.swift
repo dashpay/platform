@@ -63,10 +63,16 @@ struct QueryDetailView: View {
                                     .foregroundColor(.secondary)
                             }
 
-                            TextField(input.label, text: binding(for: input.name))
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                                .autocapitalization(.none)
-                                .disableAutocorrection(true)
+                            // Every query input is machine text (ids, numbers,
+                            // keys, and JSON for where / orderBy / index
+                            // values), so none of them get smart quotes.
+                            PlainTextField(
+                                placeholder: input.label,
+                                text: binding(for: input.name),
+                                textStyle: .body,
+                                monospaced: false,
+                                borderStyle: .roundedRect
+                            )
                         }
                     }
                 }

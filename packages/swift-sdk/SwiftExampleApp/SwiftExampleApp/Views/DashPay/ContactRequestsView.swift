@@ -444,7 +444,7 @@ struct IncomingRequestRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(displayName)
                         .font(.headline)
-                    Text(relativeTimestamp(millis: createdAtMillis))
+                    RelativeTimestampText(millis: createdAtMillis)
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 }
@@ -500,7 +500,7 @@ struct OutgoingRequestRow: View {
                 Text(displayName)
                     .font(.headline)
                 if let millis = createdAtMillis {
-                    Text(relativeTimestamp(millis: millis))
+                    RelativeTimestampText(millis: millis)
                         .font(.caption2)
                         .foregroundColor(.secondary)
                 } else {
@@ -525,9 +525,21 @@ struct OutgoingRequestRow: View {
 }
 
 /// "3 min. ago"-style relative timestamp from a Unix-millis value;
-/// falls back to "—" for the zero sentinel.
-func relativeTimestamp(millis: UInt64) -> String {
-    guard millis > 0 else { return "—" }
-    let date = Date(timeIntervalSince1970: TimeInterval(millis) / 1000)
-    return date.formatted(.relative(presentation: .named))
+/// falls back to "—" for the zero sentinel. Re-renders every 30 seconds so
+/// a row left on screen does not keep the age it had when first drawn.
+struct RelativeTimestampText: View {
+    let millis: UInt64
+
+    var body: some View {
+        if millis > 0 {
+            let date = Date(timeIntervalSince1970: TimeInterval(millis) / 1000)
+            // The formatter measures against the current time each time the
+            // closure runs, which the timeline does on every tick.
+            TimelineView(.periodic(from: .now, by: 30)) { _ in
+                Text(date.formatted(.relative(presentation: .named)))
+            }
+        } else {
+            Text("—")
+        }
+    }
 }

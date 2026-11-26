@@ -53,9 +53,11 @@ import org.dashfoundation.example.BuildConfig
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.ui.components.AccessiblePicker
+import org.dashfoundation.example.ui.components.EmissionKey
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.ui.tokens.displayLabel
 import org.dashfoundation.example.ui.voting.answerTargetOf
 import org.dashfoundation.example.ui.voting.MasternodeVoteCall
@@ -93,9 +95,9 @@ fun MultipleChoiceProposalDetailScreen(
     val container = LocalAppContainer.current
     val sdk by appState.sdk.collectAsStateWithLifecycle()
     val network by appState.currentNetwork.collectAsStateWithLifecycle()
-    val walletIdentities by container.database.identityDao()
-        .observeWalletOwnedByNetwork(network.ffiValue)
-        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val walletIdentities by remember(network.ffiValue) {
+        container.database.identityDao().observeWalletOwnedByNetwork(network.ffiValue)
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     var proposal by remember { mutableStateOf<MultipleChoiceProposal?>(null) }
     var vote by remember { mutableStateOf<MultipleChoiceProposalVote?>(null) }
@@ -155,7 +157,7 @@ fun MultipleChoiceProposalDetailScreen(
     }
 
     // The local wallet identity that filed the proposal, which may edit it.
-    val owner = remember(proposal, walletIdentities) {
+    val owner = remember(proposal, EmissionKey(walletIdentities)) {
         proposal?.let { shown ->
             walletIdentities.firstOrNull { Base58.encode(it.identityId) == shown.ownerId }
         }

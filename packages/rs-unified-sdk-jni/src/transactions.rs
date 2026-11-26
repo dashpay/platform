@@ -343,7 +343,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_up
 /// `platform_wallet_document_purchase` (buyer = `actorId`); `false` routes
 /// to `platform_wallet_document_set_price` (owner = `actorId`). Both FFIs
 /// have an identical parameter shape and write the confirmed document's
-/// 32-byte id + canonical JSON via out-params.
+/// 32-byte id + canonical JSON via out-params. Neither takes a key id: the
+/// Rust side selects the actor's AUTHENTICATION key that the document
+/// type's security level allows and the signer can sign with.
 ///
 /// Returns the confirmed document's canonical JSON (carrying the new
 /// `$price` / owner) as a JVM string; the 32-byte confirmed id is embedded
@@ -359,18 +361,13 @@ fn document_price_op<'l>(
     document_type: JString,
     document_id: JByteArray,
     price: jlong,
-    signing_key_id: jint,
     signer_handle: jlong,
 ) -> jstring {
-    // Reject negatives at the boundary rather than clamping: a silently
-    // clamped-to-zero price would post a document anyone can buy for free,
-    // and a negative key id would bit-cast to a bogus huge key index.
+    // Reject a negative price at the boundary rather than clamping: a
+    // silently clamped-to-zero price would post a document anyone can buy
+    // for free.
     if price < 0 {
         throw_sdk_exception(env, 1, "price must be non-negative");
-        return ptr::null_mut();
-    }
-    if signing_key_id < 0 {
-        throw_sdk_exception(env, 1, "signingKeyId must be non-negative");
         return ptr::null_mut();
     }
 
@@ -399,7 +396,6 @@ fn document_price_op<'l>(
                 doc_type.as_ptr(),
                 doc_id.as_ptr(),
                 price as u64,
-                signing_key_id as u32,
                 signer_handle as *mut SignerHandle,
                 out_id.as_mut_ptr(),
                 &mut out_json as *mut *mut c_char,
@@ -412,7 +408,6 @@ fn document_price_op<'l>(
                 doc_type.as_ptr(),
                 doc_id.as_ptr(),
                 price as u64,
-                signing_key_id as u32,
                 signer_handle as *mut SignerHandle,
                 out_id.as_mut_ptr(),
                 &mut out_json as *mut *mut c_char,
@@ -444,7 +439,7 @@ fn document_price_op<'l>(
 
 /// Purchase for-sale `documentId` on `contractId`'s `documentType` for
 /// `price` credits, with `purchaserId` as the buyer — signed via
-/// `signerHandle` with key `signingKeyId`. Mirrors
+/// `signerHandle` with a purchaser key the Rust side selects. Mirrors
 /// `ManagedPlatformWallet.purchaseDocument` (Swift `DocumentWithPriceView`
 /// purchase flow). Returns the confirmed document's canonical JSON.
 #[no_mangle]
@@ -458,7 +453,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
     document_type: JString,
     document_id: JByteArray,
     price: jlong,
-    signing_key_id: jint,
     signer_handle: jlong,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
@@ -471,7 +465,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
             document_type,
             document_id,
             price,
-            signing_key_id,
             signer_handle,
         )
     })
@@ -479,7 +472,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
 
 /// Set (update) the trade price of `documentId` on `contractId`'s
 /// `documentType`, owned by `ownerId`, to `price` credits — signed via
-/// `signerHandle` with key `signingKeyId`. Mirrors the set-price flow
+/// `signerHandle` with an owner key the Rust side selects. Mirrors the set-price flow
 /// behind Swift `DocumentWithPriceView`. Returns the confirmed document's
 /// canonical JSON (now carrying `$price`).
 #[no_mangle]
@@ -493,7 +486,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
     document_type: JString,
     document_id: JByteArray,
     price: jlong,
-    signing_key_id: jint,
     signer_handle: jlong,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
@@ -506,7 +498,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
             document_type,
             document_id,
             price,
-            signing_key_id,
             signer_handle,
         )
     })
@@ -519,7 +510,7 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
 /// `platform_wallet_create_document_with_signer` (Swift
 /// `ManagedPlatformWallet.createDocument`, behind `CreateDocumentView`).
 ///
-/// Unlike purchase / set-price, the create FFI takes NO `signingKeyId`:
+/// Like every document write here, the create FFI takes no key id:
 /// the Rust side selects an AUTHENTICATION + ECDSA key from the wallet's
 /// in-process `IdentityManager` whose security level satisfies the
 /// document type's requirement, so key selection never crosses JNI.
@@ -607,15 +598,15 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
 
 /// Replace + broadcast the full property set of `documentId` on
 /// `contractId`'s `documentType`, owned by `ownerId`, signed via
-/// `signerHandle` with key `signingKeyId` — the JNI bridge over
+/// `signerHandle` — the JNI bridge over
 /// `platform_wallet_document_replace` (Swift
 /// `ManagedPlatformWallet.replaceDocument`, behind the DOC-03 menu).
 ///
 /// The revision is bumped on the Rust side — the caller does NOT pass a
 /// revision. `propertiesJson` is the FULL replacement property object
-/// (same hex/base58 encoding rules as create); unlike create the replace
-/// FFI takes an explicit `signingKeyId` (an AUTHENTICATION + ECDSA key on
-/// the owner). Returns the confirmed document's canonical query-side JSON
+/// (same hex/base58 encoding rules as create); as for create, the Rust
+/// side selects the owner's AUTHENTICATION key that the document type's
+/// security level allows and the signer can sign with. Returns the confirmed document's canonical query-side JSON
 /// (with the 32-byte id as the base58 `$id` field); null after throwing on
 /// error.
 #[no_mangle]
@@ -629,14 +620,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
     document_type: JString,
     document_id: JByteArray,
     properties_json: JString,
-    signing_key_id: jint,
     signer_handle: jlong,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        if signing_key_id < 0 {
-            throw_sdk_exception(env, 1, "signingKeyId must be non-negative");
-            return ptr::null_mut();
-        }
         let Some(owner) = read_id32(env, &owner_id, "ownerId") else {
             return ptr::null_mut();
         };
@@ -663,7 +649,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
                 doc_type.as_ptr(),
                 doc_id.as_ptr(),
                 props.as_ptr(),
-                signing_key_id as u32,
                 signer_handle as *mut SignerHandle,
                 out_id.as_mut_ptr(),
                 &mut out_json as *mut *mut c_char,
@@ -694,8 +679,8 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
 }
 
 /// Delete + broadcast `documentId` on `contractId`'s `documentType`,
-/// owned by `ownerId`, signed via `signerHandle` with key `signingKeyId`
-/// — the JNI bridge over `platform_wallet_document_delete` (Swift
+/// owned by `ownerId`, signed via `signerHandle` with an owner key the
+/// Rust side selects — the JNI bridge over `platform_wallet_document_delete` (Swift
 /// `ManagedPlatformWallet.deleteDocument`, behind the DOC-04 menu).
 ///
 /// Delete returns no document body (there is no canonical JSON), so this
@@ -711,14 +696,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
     contract_id: JByteArray,
     document_type: JString,
     document_id: JByteArray,
-    signing_key_id: jint,
     signer_handle: jlong,
 ) -> jni::sys::jbyteArray {
     guard(&mut env, ptr::null_mut(), |env| {
-        if signing_key_id < 0 {
-            throw_sdk_exception(env, 1, "signingKeyId must be non-negative");
-            return ptr::null_mut();
-        }
         let Some(owner) = read_id32(env, &owner_id, "ownerId") else {
             return ptr::null_mut();
         };
@@ -740,7 +720,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
                 contract.as_ptr(),
                 doc_type.as_ptr(),
                 doc_id.as_ptr(),
-                signing_key_id as u32,
                 signer_handle as *mut SignerHandle,
                 out_id.as_mut_ptr(),
             )
@@ -852,8 +831,8 @@ fn erase_outcome_to_json(
 }
 
 /// Transfer + broadcast `documentId` on `contractId`'s `documentType`,
-/// from `ownerId` to `recipientId`, signed via `signerHandle` with key
-/// `signingKeyId` — the JNI bridge over `platform_wallet_document_transfer`
+/// from `ownerId` to `recipientId`, signed via `signerHandle` with an
+/// owner key the Rust side selects — the JNI bridge over `platform_wallet_document_transfer`
 /// (Swift `ManagedPlatformWallet.transferDocument`, behind the DOC-05
 /// menu). Only valid for document types whose schema is `transferable`
 /// (gated by the caller).
@@ -872,14 +851,9 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
     document_type: JString,
     document_id: JByteArray,
     recipient_id: JByteArray,
-    signing_key_id: jint,
     signer_handle: jlong,
 ) -> jstring {
     guard(&mut env, ptr::null_mut(), |env| {
-        if signing_key_id < 0 {
-            throw_sdk_exception(env, 1, "signingKeyId must be non-negative");
-            return ptr::null_mut();
-        }
         let Some(owner) = read_id32(env, &owner_id, "ownerId") else {
             return ptr::null_mut();
         };
@@ -906,7 +880,6 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_TransactionsNative_do
                 doc_type.as_ptr(),
                 doc_id.as_ptr(),
                 recipient.as_ptr(),
-                signing_key_id as u32,
                 signer_handle as *mut SignerHandle,
                 out_id.as_mut_ptr(),
                 &mut out_json as *mut *mut c_char,

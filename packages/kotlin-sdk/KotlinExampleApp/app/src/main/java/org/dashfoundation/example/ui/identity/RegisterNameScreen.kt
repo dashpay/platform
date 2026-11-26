@@ -18,6 +18,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -27,6 +29,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -59,7 +62,17 @@ fun RegisterNameScreen(identityIdHex: String, navController: NavHostController) 
     val idBytes = remember(identityIdHex) { identityIdHex.hexToBytes() }
 
     var label by remember { mutableStateOf("") }
-    var availability by remember { mutableStateOf<String?>(null) }
+    // The answer of the FFI availability check for the current label; null
+    // while it is pending, after a label change, and after a registration
+    // (the label just registered is no longer available).
+    var availability by remember { mutableStateOf<NameAvailability?>(null) }
+    // Bumped on every edit, so the check runs again even when an edit and
+    // its undo reach the field before the screen redraws (same label key).
+    var editRevision by remember { mutableIntStateOf(0) }
+    // Normalized labels (Rust's `normalizedLabel`) submitted successfully
+    // from this screen: a second preorder for one of them would be paid
+    // and then refused (the domain or contest entry already exists).
+    val submittedThisVisit = remember { mutableStateListOf<String>() }
     // Contested-ness of the entered label, decided by the FFI (`isContested`
     // in the `dash_sdk_dpns_check_availability` JSON) — ← RegisterNameView's
     // `isNameContested` (`dash_sdk_dpns_is_contested_username`). Drives the
@@ -70,24 +83,28 @@ fun RegisterNameScreen(identityIdHex: String, navController: NavHostController) 
     var success by remember { mutableStateOf<String?>(null) }
 
     // Debounced availability check (300ms) — ← RegisterNameView's async check.
-    LaunchedEffect(label) {
+    LaunchedEffect(label, editRevision) {
         availability = null
         isContested = false
+        // A new label starts a new registration: drop the previous one's
+        // success line, which also held the Register button disabled.
+        success = null
         if (label.isBlank()) return@LaunchedEffect
         delay(300)
         val activeSdk = sdk ?: return@LaunchedEffect
-        availability = runCatching {
-            val json = activeSdk.dpns.checkAvailability(label.trim()) ?: return@runCatching "Unknown"
-            val obj = Json.parseToJsonElement(json).jsonObject
-            // `isContested` is a JSON boolean the FFI computes from the
-            // normalized (homograph-safe) label: 3-19 chars, only [a-z0-1-].
-            isContested = obj["isContested"]?.jsonPrimitive?.content == "true"
-            when {
-                obj["available"]?.jsonPrimitive?.content == "true" -> "Available"
-                obj["valid"]?.jsonPrimitive?.content == "false" -> "Invalid label"
-                else -> obj["message"]?.jsonPrimitive?.content ?: "Taken"
-            }
-        }.getOrElse { "Check failed: ${it.message}" }
+        val queried = label.trim()
+        val checked = try {
+            parseNameAvailability(queried, activeSdk.dpns.checkAvailability(queried))
+        } catch (e: CancellationException) {
+            // The label changed while the check ran: publish nothing for
+            // the old label.
+            throw e
+        } catch (e: Exception) {
+            NameAvailability(queried, "Check failed: ${e.message}", available = false)
+        }
+        val shown = nameAvailabilityForVisit(checked, submittedThisVisit.toSet())
+        isContested = shown.isContested
+        availability = shown
     }
 
     Scaffold(
@@ -109,16 +126,29 @@ fun RegisterNameScreen(identityIdHex: String, navController: NavHostController) 
             FormSection(title = "Name") {
                 OutlinedTextField(
                     value = label,
-                    onValueChange = { label = it.trim() },
+                    onValueChange = {
+                        val edited = it.trim()
+                        // Drop the old answer in the same event as the
+                        // edit, before any recomposition, so a tap that
+                        // lands in between cannot use it for the new label.
+                        if (edited != label) {
+                            availability = null
+                            editRevision++
+                        }
+                        label = edited
+                    },
                     label = { Text("Label (without .dash)") },
                     singleLine = true,
+                    // Held while a registration runs, so its result always
+                    // belongs to the label shown.
+                    enabled = !isSubmitting,
                     modifier = Modifier.fillMaxWidth().testTag("registerName.label"),
                 )
                 availability?.let {
                     Text(
-                        it,
+                        it.text,
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (it == "Available") {
+                        color = if (it.available) {
                             MaterialTheme.colorScheme.primary
                         } else {
                             MaterialTheme.colorScheme.onSurfaceVariant
@@ -187,44 +217,62 @@ fun RegisterNameScreen(identityIdHex: String, navController: NavHostController) 
             SubmitButton(
                 text = "Register",
                 isLoading = isSubmitting,
-                enabled = label.isNotBlank() && success == null,
+                // ← RegisterNameView's `.disabled(!isValidUsername ||
+                // isAvailable != true || isRegistering)`: only a label the
+                // FFI check reported available can be paid for.
+                enabled = canRegisterName(label, availability, isSubmitting),
                 modifier = Modifier.fillMaxWidth().testTag("registerName.submit"),
             ) {
+                // The button may still be drawn enabled from an earlier
+                // frame: ask again at the tap, against the live label.
+                val checked = availability
+                if (checked == null || !canRegisterName(label, checked, isSubmitting)) {
+                    return@SubmitButton
+                }
                 val mgr = manager ?: run { error = "No active wallet manager"; return@SubmitButton }
+                // The label and contested-ness the availability check
+                // covered, taken at the tap: the field is locked from here
+                // (isSubmitting), so nothing typed later can be submitted.
+                val checkedLabel = checked.label
+                val checkedContested = checked.isContested
+                isSubmitting = true
                 // The owning wallet drives the signer; resolve it from the
                 // identity's stored walletId.
                 scope.launch {
-                    val identity = container.database.identityDao().getByIdentityId(idBytes)
-                    val walletId = identity?.walletId
-                    val wallet = walletId?.let { mgr.wallet(it) }
-                    if (wallet == null) {
-                        error = "This identity has no wallet on this device — DPNS registration " +
-                            "needs the owning wallet's signer."
-                        return@launch
-                    }
-                    isSubmitting = true
                     try {
+                        val identity = container.database.identityDao().getByIdentityId(idBytes)
+                        val walletId = identity?.walletId
+                        val wallet = walletId?.let { mgr.wallet(it) }
+                        if (wallet == null) {
+                            error = "This identity has no wallet on this device — DPNS registration " +
+                                "needs the owning wallet's signer."
+                            return@launch
+                        }
                         val full = mgr.identityRegistration.registerDpnsName(
                             walletHandle = wallet.handle,
                             identityId = idBytes,
-                            label = label.trim(),
+                            label = checkedLabel,
                             signerHandle = mgr.signerHandle,
                         )
                         // ← RegisterNameView.registerName's contested vs.
                         // direct success wording. A contested name only
                         // *starts* a masternode-vote contest here; it isn't
                         // owned until the vote resolves.
-                        success = if (isContested) {
+                        success = if (checkedContested) {
                             val window = if (network == org.dashfoundation.dashsdk.Network.MAINNET) {
                                 "14 days"
                             } else {
                                 "90 minutes"
                             }
-                            "Started contest for ${label.trim()}. Awaiting masternode " +
+                            "Started contest for $checkedLabel. Awaiting masternode " +
                                 "vote — resolution in ~$window. View Contest Details to track."
                         } else {
                             "Registered $full"
                         }
+                        // The label is taken now; the next label typed
+                        // gets a fresh check, and this one stays blocked.
+                        checked.normalizedLabel?.let { submittedThisVisit.add(it) }
+                        availability = null
                     } catch (e: Exception) {
                         error = e.message ?: "Registration failed"
                     } finally {
@@ -237,3 +285,70 @@ fun RegisterNameScreen(identityIdHex: String, navController: NavHostController) 
 
     ErrorAlertDialog(message = error, onDismiss = { error = null })
 }
+
+/**
+ * The availability check's answer for one label: the label it was asked
+ * about, the text to show and whether the FFI said it can be registered.
+ * [available] is Rust's `available` flag as is; Kotlin adds no rule of its
+ * own.
+ */
+internal data class NameAvailability(
+    val label: String,
+    val text: String,
+    val available: Boolean,
+    val isContested: Boolean = false,
+    /** Rust's homograph-safe `normalizedLabel`; null when the check gave none. */
+    val normalizedLabel: String? = null,
+)
+
+/**
+ * Read the `dash_sdk_dpns_check_availability` JSON. Anything other than a
+ * JSON `"available": true` counts as not available, so a missing or
+ * unreadable answer never enables Register.
+ */
+internal fun parseNameAvailability(label: String, json: String?): NameAvailability {
+    if (json == null) return NameAvailability(label, "Unknown", available = false)
+    val obj = Json.parseToJsonElement(json).jsonObject
+    val available = obj["available"]?.jsonPrimitive?.content == "true"
+    // `isContested` is a JSON boolean the FFI computes from the normalized
+    // (homograph-safe) label: 3-19 chars, only [a-z0-1-].
+    val isContested = obj["isContested"]?.jsonPrimitive?.content == "true"
+    val text = when {
+        available -> "Available"
+        obj["valid"]?.jsonPrimitive?.content == "false" -> "Invalid label"
+        else -> obj["message"]?.jsonPrimitive?.content ?: "Taken"
+    }
+    val normalizedLabel = obj["normalizedLabel"]?.jsonPrimitive?.content
+    return NameAvailability(label, text, available, isContested, normalizedLabel)
+}
+
+/**
+ * [checked] as this screen shows it: a name whose normalized label was
+ * already submitted from this screen is not offered again (Rust's check
+ * still calls it available until the domain lands, or for good when a
+ * contest entry holds it), while a genuinely different name is.
+ */
+internal fun nameAvailabilityForVisit(
+    checked: NameAvailability,
+    submittedThisVisit: Set<String>,
+): NameAvailability =
+    if (checked.available && checked.normalizedLabel != null &&
+        checked.normalizedLabel in submittedThisVisit
+    ) {
+        checked.copy(text = "Already submitted from this screen", available = false)
+    } else {
+        checked
+    }
+
+/**
+ * Register is offered only for a non-blank label the check reported
+ * available, and only while that answer is about the label now entered.
+ */
+internal fun canRegisterName(
+    label: String,
+    availability: NameAvailability?,
+    isSubmitting: Boolean,
+): Boolean = label.isNotBlank() &&
+    availability?.available == true &&
+    availability.label == label.trim() &&
+    !isSubmitting

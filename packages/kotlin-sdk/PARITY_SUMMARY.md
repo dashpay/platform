@@ -2,23 +2,23 @@
 # Kotlin/Swift executable parity summary
 
 Audit baseline: `PR #3999 @ 6dbc72a54df72d26eb9c4a014b425d2b95134e4e`
-Capabilities tracked: **52**
+Capabilities tracked: **54**
 
 ## Status counts
 
 | Host | Surface | Supported | Partial | Unsupported | Not applicable |
 | --- | --- | ---: | ---: | ---: | ---: |
-| Swift | SDK | 32 | 18 | 1 | 1 |
-| Swift | Example app | 6 | 36 | 1 | 9 |
-| Kotlin | SDK | 27 | 22 | 2 | 1 |
-| Kotlin | Example app | 7 | 33 | 2 | 10 |
+| Swift | SDK | 33 | 18 | 2 | 1 |
+| Swift | Example app | 6 | 37 | 2 | 9 |
+| Kotlin | SDK | 29 | 22 | 2 | 1 |
+| Kotlin | Example app | 7 | 35 | 2 | 10 |
 
 ## Restart coverage
 
 | Host | Tested | Required | Not applicable |
 | --- | ---: | ---: | ---: |
-| Swift | 2 | 20 | 30 |
-| Kotlin | 9 | 18 | 25 |
+| Swift | 2 | 20 | 32 |
+| Kotlin | 9 | 18 | 27 |
 
 ## Capability status
 
@@ -45,11 +45,13 @@ Capabilities tracked: **52**
 | `identity.platform_address_auto_funding` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `tokens.authorization_decisions` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `tokens.direct_purchase_quote` | partial / partial / not_applicable | partial / partial / not_applicable |
+| `tokens.identity_balance_sync` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `protocol.address_validation` | supported / supported / not_applicable | partial / partial / not_applicable |
 | `documents.create_catalog` | supported / supported / not_applicable | supported / supported / not_applicable |
 | `contracts.update_preview` | supported / partial / not_applicable | supported / partial / not_applicable |
 | `documents.private_document_entries_read` | partial / partial / not_applicable | supported / partial / not_applicable |
 | `documents.private_document_entry_create` | partial / partial / required | partial / partial / required |
+| `tokens.config_update_refreshed_contract` | unsupported / unsupported / not_applicable | supported / partial / not_applicable |
 | `tokens.max_supply_proposal_discovery` | partial / partial / not_applicable | partial / partial / not_applicable |
 | `core.immature_balance_display` | supported / supported / not_applicable | supported / supported / not_applicable |
 | `security.key_security_policy_alias_split` | not-applicable / not-applicable / not_applicable | supported / supported / tested |

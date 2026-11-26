@@ -1,3 +1,61 @@
+## [5.1.0-rc.1](https://github.com/dashpay/platform/compare/v5.1.0-dev.4...v5.1.0-rc.1) (2026-11-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform-wallet:** document replace, delete, transfer, set price and purchase no longer take `signingKeyId` in Swift or Kotlin, or `signing_key_id` in the C FFI or the Rust wallet API. Remove the key ID and keep passing a signer that can sign with an eligible authentication key; Rust selects the key ([#6228](https://github.com/dashpay/platform/issues/6228))
+* **platform-wallet:** name private entry and contact request payments in shielded activity ([#6226](https://github.com/dashpay/platform/issues/6226))
+* **kotlin-sdk:** `Tokens.updateConfig` now returns a `TokenConfigUpdateOutcome` (`Pending`, `Applied` with the updated contract, or `AppliedNotRefreshed`) instead of `Unit`, and the JNI `TokensNative.tokenUpdateConfig` returns the outcome as JSON. Kotlin callers that ignore the result still compile; store the returned contract instead of patching the saved one ([#6262](https://github.com/dashpay/platform/issues/6262))
+* **sdk-ffi:** `dash_sdk_group_get_actions` now returns `action.event` as a JSON object, not a string of Rust debug text. Decode the object in C callers and in callers of Swift's `getGroupActions` or Kotlin's `Groups.actions` ([#6225](https://github.com/dashpay/platform/issues/6225))
+
+### Bug Fixes
+
+* show rewritten Room rows on open KotlinExampleApp screens and hand back the contract a token config update produced ([#6262](https://github.com/dashpay/platform/issues/6262))
+* **kotlin-example-app:** bind the availability answer to its label and show unread balances as unknown
+* **kotlin-example-app:** claim no more than the SDK knows in the purchase notices
+* **kotlin-example-app:** confirm a token purchase and read group actions as JSON
+* **kotlin-example-app:** keep a submitted name blocked for the visit and omit the PlatformPayment balance until Rust provides an account-scoped total, tracked in [#6235](https://github.com/dashpay/platform/issues/6235)
+* **kotlin-example-app:** keep stale reads and late edits out of Register Name and account balances
+* **kotlin-example-app:** offer Resume on a token paused from the app ([#6251](https://github.com/dashpay/platform/issues/6251))
+* **kotlin-example-app:** say only that a token purchase was submitted
+* **kotlin-example-app:** scroll to a private entry create's outcome instead of leaving it off screen ([#6255](https://github.com/dashpay/platform/issues/6255))
+* **kotlin-example-app:** small UI fixes from the PV15 devnet QA pass
+* **kotlin-example-app:** unlock token actions and perpetual claims the contract grants ([#6221](https://github.com/dashpay/platform/issues/6221))
+* **kotlin-example-app:** word a token purchase as submitted and handle an unconfirmed one
+* **kotlin-sdk:** watch an identity's tokens so the Tokens screen shows balances ([#6222](https://github.com/dashpay/platform/issues/6222))
+* **platform-wallet:** choose the signing key in Rust for document replace, delete, transfer, set price and purchase ([#6228](https://github.com/dashpay/platform/issues/6228))
+* **platform-wallet:** leave a contact's watch-only account out of per-account Core balances ([#6246](https://github.com/dashpay/platform/issues/6246))
+* **platform-wallet:** name private entry and contact request payments in shielded activity ([#6226](https://github.com/dashpay/platform/issues/6226))
+* **sdk:** leave the proposal's note off a group action co-sign ([#6252](https://github.com/dashpay/platform/issues/6252))
+* **sdk:** let decision proposals end one or four weeks from now ([#6223](https://github.com/dashpay/platform/issues/6223))
+* **swift-example-app:** four small UI fixes from the PV15 QA pass ([#6227](https://github.com/dashpay/platform/issues/6227))
+* **swift-example-app:** let the perpetual distribution's recipient claim it ([#6245](https://github.com/dashpay/platform/issues/6245))
+* **swift-example-app:** show the moderation offer when a contract is opened from search results ([#6224](https://github.com/dashpay/platform/issues/6224))
+* **swift-example-app:** show the shielded token send fee and keep Send off until it is quoted ([#6229](https://github.com/dashpay/platform/issues/6229))
+* **swift-example-app:** show the words on the proposal list's poll state badge ([#6250](https://github.com/dashpay/platform/issues/6250))
+* **swift-example-app:** wrap the proposal list title at accessibility text sizes ([#6263](https://github.com/dashpay/platform/issues/6263))
+
+
+### Continuous Integration
+
+* **dashmate:** make dashmate releases verifiable for the apt repository ([#6144](https://github.com/dashpay/platform/issues/6144))
+
+
+### Miscellaneous Chores
+
+* **platform:** bump GroveDB to 7.0.0 ([#6219](https://github.com/dashpay/platform/issues/6219))
+
+
+### Documentation
+
+* **sdk:** say that document replace, transfer, purchase and setPrice take the next revision ([#6220](https://github.com/dashpay/platform/issues/6220))
+
+
+### Tests
+
+* **kotlin-example-app:** expect the exact fee on a fee-only shielded activity row ([#6244](https://github.com/dashpay/platform/issues/6244))
+* **swift-example-app:** restore the shielded tip rows and ids KotlinExampleApp mirrors ([#6207](https://github.com/dashpay/platform/issues/6207))
+
 ## [5.1.0-dev.4](https://github.com/dashpay/platform/compare/v5.1.0-dev.3...v5.1.0-dev.4) (2026-11-24)
 
 

@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -17,7 +16,6 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,9 +36,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.flowOf
+import org.dashfoundation.dashsdk.Network
+import org.dashfoundation.dashsdk.errors.DashSdkError
 import org.dashfoundation.dashsdk.funding.ShieldedProver
 import org.dashfoundation.dashsdk.tokens.GroupAction
 import org.dashfoundation.dashsdk.tokens.TokenConfigChange
+import org.dashfoundation.dashsdk.tokens.TokenConfigUpdateOutcome
 import org.dashfoundation.dashsdk.tokens.TokenDistributionType
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
@@ -54,6 +55,7 @@ import org.dashfoundation.example.services.tokens.TokenActionResolver
 import org.dashfoundation.example.services.tokens.TokenAmounts
 import org.dashfoundation.example.services.tokens.TokenDirectPurchasePricing
 import org.dashfoundation.example.services.tokens.TokenDistributionChangeRules
+import org.dashfoundation.example.ui.contracts.ContractDownloader
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.RecipientPicker
@@ -537,6 +539,7 @@ private fun PauseResumeForm(
     isPause: Boolean,
 ) {
     val token = context.token
+    val tokenDao = LocalAppContainer.current.database.tokenDao()
     var note by rememberSaveable { mutableStateOf("") }
     val banner = GroupActionRuleEvaluator.bannerState(
         token.emergencyActionRules, token.mainControlGroupPosition,
@@ -582,6 +585,21 @@ private fun PauseResumeForm(
                         signerHandle = signer,
                     )
                 }
+                // A single-signer pause or resume took effect on chain, so
+                // record it now (TokenPauseActionView.swift /
+                // TokenResumeActionView.swift do the same). A group proposal
+                // only takes effect once co-signed: the actions screen reads
+                // the status from Platform when it opens.
+                if (groupAction == GroupAction.None) {
+                    try {
+                        tokenDao.updatePaused(token.id, isPause)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        // The action is done; the actions screen reconciles
+                        // the stored flag from Platform when it next opens.
+                    }
+                }
             }
         },
     ) {
@@ -617,14 +635,17 @@ private fun ClaimForm(
         claimStore.observe(identity.networkRaw, token.id, identity.identityId)
     }.collectAsStateWithLifecycle(initialValue = null)
     val claimed = oncePerIdentityClaimed ?: false
-    val available = TokenActionResolver.claimableDistributions(token, identity, claimed)
+    val available =
+        TokenActionResolver.claimableDistributions(token, identity, context.contract, claimed)
     // The user's pick once made; until then the first kind this identity is
     // eligible for (`preferredClaimDistribution`). With none, the fallback
     // only keeps the value valid: `canSubmit` stays false.
     var pickedOrdinal by rememberSaveable { mutableStateOf<Int?>(null) }
     val selected = pickedOrdinal?.let { TokenDistributionType.entries[it] }
         ?.takeIf { it in available }
-        ?: TokenActionResolver.preferredClaimDistribution(token, identity, claimed)
+        ?: TokenActionResolver.preferredClaimDistribution(
+            token, identity, context.contract, claimed,
+        )
         ?: TokenDistributionType.PERPETUAL
     var note by rememberSaveable { mutableStateOf("") }
     val canSubmit = oncePerIdentityClaimed != null && available.contains(selected)
@@ -854,21 +875,29 @@ private fun PurchaseForm(
                         )
                     }
                     // The form closes when the buyer dismisses the message.
-                    viewModel.showNoticeUntilDismissed(outcome)
+                    viewModel.showNoticeUntilDismissed(
+                        TokenActionNotice("Shielded purchase", outcome, "tokenPurchase.shieldedOutcome"),
+                    )
                 }
                 return@TokenActionScaffold
             }
             val signer = context.signerHandle ?: return@TokenActionScaffold
             viewModel.submit {
-                wallet.tokens.purchase(
-                    identityId = context.identity.identityId,
-                    tokenContractId = token.contractId,
-                    tokenPosition = token.position,
-                    amount = amount,
-                    expectedTotalCost = totalCost,
-                    signingKeyId = TokenActionContext.SIGNING_KEY_ID,
-                    signerHandle = signer,
-                )
+                // A purchase spends credits: say what happened before the
+                // form closes, as the shielded path does, so the buyer is
+                // not left guessing and buying again.
+                val notice = identityPurchaseNotice(TokenAmounts.format(amount, token.decimals), totalCost) {
+                    wallet.tokens.purchase(
+                        identityId = context.identity.identityId,
+                        tokenContractId = token.contractId,
+                        tokenPosition = token.position,
+                        amount = amount,
+                        expectedTotalCost = totalCost,
+                        signingKeyId = TokenActionContext.SIGNING_KEY_ID,
+                        signerHandle = signer,
+                    )
+                }
+                viewModel.showNoticeUntilDismissed(notice)
             }
         },
     ) {
@@ -936,17 +965,47 @@ private fun PurchaseForm(
         }
     }
 
-    viewModel.notice?.let { message ->
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissNotice() },
-            title = { Text("Shielded purchase") },
-            text = { Text(message, modifier = Modifier.testTag("tokenPurchase.shieldedOutcome")) },
-            confirmButton = {
-                TextButton(onClick = { viewModel.dismissNotice() }) { Text("OK") }
-            },
-        )
-    }
 }
+
+/**
+ * Run an identity-funded [purchase] and say what happened. Success means
+ * the SDK call returned normally, which can follow a node error on an earlier
+ * send attempt; the proof may show only the buyer's balance (a
+ * token without purchase history), so it is worded as submitted, not as a
+ * receipt. An unconfirmed broadcast may still execute: the buyer is told not
+ * to submit again until its outcome is known (a balance snapshot cannot
+ * settle it), and the form closes, as the shielded path does. Other errors
+ * propagate to the form's error dialog.
+ */
+internal suspend fun identityPurchaseNotice(
+    amountText: String,
+    totalCost: ULong,
+    purchase: suspend () -> Unit,
+): TokenActionNotice = try {
+    purchase()
+    TokenActionNotice(
+        title = "Purchase submitted",
+        message = "The purchase of $amountText for $totalCost credits from this identity's " +
+            "balance was submitted. Do not buy again unless you want more.",
+        testTag = "tokenPurchase.outcome",
+    )
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Exception) {
+    if (!identityPurchaseMayHaveGoneThrough(e)) throw e
+    TokenActionNotice(
+        title = "Purchase may have gone through",
+        message = "The purchase of $amountText for $totalCost credits was sent, but its result " +
+            "could not be confirmed, and it may still go through. Do not submit it again until " +
+            "you know its outcome: an unchanged token balance does not mean it failed.",
+        testTag = "tokenPurchase.outcome",
+    )
+}
+
+/** The typed outcomes of a broadcast that may have executed. */
+internal fun identityPurchaseMayHaveGoneThrough(error: Throwable): Boolean =
+    error is DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed ||
+        error is DashSdkError.StateTransitionResultUnconfirmed
 
 /** The shielded account a purchase spends from, as on iOS. */
 private const val SHIELDED_PURCHASE_ACCOUNT = 0
@@ -1061,6 +1120,7 @@ private fun UpdateMaxSupplyForm(
     navController: NavHostController,
 ) {
     val token = context.token
+    val container = LocalAppContainer.current
     var removeCap by rememberSaveable { mutableStateOf(false) }
     var amountText by rememberSaveable { mutableStateOf("") }
     var note by rememberSaveable { mutableStateOf("") }
@@ -1074,6 +1134,8 @@ private fun UpdateMaxSupplyForm(
     TokenActionScaffold(
         title = "Update Max Supply",
         context = context,
+        // The update is paid once sent: stay until its outcome is stored or read.
+        backBlocked = viewModel.isSubmitting,
         banner = banner,
         bannerActionLabel = "max-supply change",
         submitLabel = "Update Max Supply",
@@ -1097,7 +1159,7 @@ private fun UpdateMaxSupplyForm(
             val groupAction = banner.toGroupAction()
             val noteOrNull = note.toPublicNoteOrNull()
             viewModel.submit {
-                wallet.tokens.updateConfig(
+                val outcome = wallet.tokens.updateConfig(
                     identityId = context.identity.identityId,
                     tokenContractId = token.contractId,
                     tokenPosition = token.position,
@@ -1106,6 +1168,34 @@ private fun UpdateMaxSupplyForm(
                     groupAction = groupAction,
                     signingKeyId = TokenActionContext.SIGNING_KEY_ID,
                     signerHandle = signer,
+                )
+                // Rust says whether the update took effect and hands back the
+                // contract it produced; store that, so the token list and
+                // details show the new cap. A pending group action changes
+                // nothing yet.
+                val notice = when (outcome) {
+                    TokenConfigUpdateOutcome.Pending -> null
+                    is TokenConfigUpdateOutcome.Applied -> try {
+                        ContractDownloader.storeFetchedContract(
+                            outcome.contract, token.contractId, container.database,
+                            Network.fromFfiValue(context.identity.networkRaw),
+                        )
+                        null
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        e.message ?: e.toString()
+                    }
+                    is TokenConfigUpdateOutcome.AppliedNotRefreshed -> outcome.reason
+                } ?: return@submit
+                viewModel.showNoticeUntilDismissed(
+                    TokenActionNotice(
+                        "Max supply updated",
+                        "The update was confirmed, but the updated contract could not be " +
+                            "saved on this device ($notice). It keeps showing the old max " +
+                            "supply until the contract is downloaded again.",
+                        "tokenAction.configRefreshNotice",
+                    ),
                 )
             }
         },

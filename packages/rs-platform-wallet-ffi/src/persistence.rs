@@ -3969,8 +3969,8 @@ impl PlatformWalletPersistence for FFIPersister {
             use crate::shielded_persistence::*;
             use platform_wallet::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
             use platform_wallet::wallet::shielded::{
-                ShieldedActivityEntry, ShieldedDirection, ShieldedNote, ShieldedOutgoingNote,
-                SubwalletId,
+                ShieldedActivityEntry, ShieldedActivityKind, ShieldedDirection, ShieldedNote,
+                ShieldedOutgoingNote, SubwalletId,
             };
 
             let mut shielded_state = ShieldedSyncStartState::default();
@@ -4241,7 +4241,9 @@ impl PlatformWalletPersistence for FFIPersister {
                 if !act_ptr.is_null() && act_count > 0 {
                     let slice = unsafe { slice::from_raw_parts(act_ptr, act_count) };
                     for ffi in slice {
-                        let kind = restored_activity_kind(
+                        // The wallet owns the tag table and its inverse: a
+                        // tag it does not know loads as the residual spend.
+                        let kind = ShieldedActivityKind::from_tag(
                             ffi.kind_tag,
                             ffi.identity_id,
                             ffi.has_identity_id != 0,
@@ -4809,31 +4811,6 @@ fn activity_status_from_tag(tag: u8) -> ShieldedActivityStatus {
 mod activity_status_tests {
     use super::{activity_status_from_tag, activity_status_tag};
     use platform_wallet::wallet::shielded::ShieldedActivityStatus;
-
-    /// A restored token unshield takes its credited identity only when the
-    /// row carries one; without it the row is still a token unshield, its
-    /// recipient unknown, not an opaque spend nor an unshield to an all-zero
-    /// identity.
-    #[cfg(feature = "shielded")]
-    #[test]
-    fn should_restore_a_token_unshield_with_its_identity_when_it_has_one() {
-        use platform_wallet::wallet::shielded::ShieldedActivityKind;
-        let identity = [7u8; 32];
-        assert_eq!(
-            super::restored_activity_kind(12, identity, true),
-            ShieldedActivityKind::TokenUnshield {
-                identity_id: Some(identity)
-            }
-        );
-        assert_eq!(
-            super::restored_activity_kind(12, [9u8; 32], false),
-            ShieldedActivityKind::TokenUnshield { identity_id: None }
-        );
-        assert_eq!(
-            super::restored_activity_kind(11, [0u8; 32], false),
-            ShieldedActivityKind::TokenShieldedTransfer
-        );
-    }
 
     #[test]
     fn should_roundtrip_abandoned_activity_as_unknown_and_preserve_existing_status_bytes() {
@@ -8146,40 +8123,6 @@ fn restore_provider_special_txs(
         }
     }
     Ok(stats)
-}
-
-/// The activity kind a restored row's `kind_tag` stands for. A token unshield
-/// (tag 12) takes its credited identity only when the row says it carries one
-/// (`has_identity`): without it the row is still a token unshield, with its
-/// recipient unknown, never an unshield to an all-zero identity that would
-/// read as a real one, and never another kind, whose amounts and settlement
-/// differ. Tag 7 and any unknown tag are the residual opaque spend: a
-/// forward-compatible tag this build does not model still loads rather than
-/// being dropped.
-#[cfg(feature = "shielded")]
-fn restored_activity_kind(
-    kind_tag: u8,
-    identity_id: [u8; 32],
-    has_identity: bool,
-) -> platform_wallet::wallet::shielded::ShieldedActivityKind {
-    use platform_wallet::wallet::shielded::ShieldedActivityKind;
-    match kind_tag {
-        0 => ShieldedActivityKind::Shield,
-        1 => ShieldedActivityKind::ShieldFromAssetLock,
-        2 => ShieldedActivityKind::Received,
-        3 => ShieldedActivityKind::Sent,
-        4 => ShieldedActivityKind::Unshield,
-        5 => ShieldedActivityKind::Withdrawal,
-        6 => ShieldedActivityKind::IdentityCreate { identity_id },
-        8 => ShieldedActivityKind::ShieldFromIdentity { identity_id },
-        9 => ShieldedActivityKind::IdentityTopUp { identity_id },
-        10 => ShieldedActivityKind::TokenPurchase,
-        11 => ShieldedActivityKind::TokenShieldedTransfer,
-        12 => ShieldedActivityKind::TokenUnshield {
-            identity_id: has_identity.then_some(identity_id),
-        },
-        _ => ShieldedActivityKind::ShieldedSpend,
-    }
 }
 
 #[cfg(test)]

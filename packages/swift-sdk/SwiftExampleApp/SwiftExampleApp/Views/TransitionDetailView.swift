@@ -1272,6 +1272,25 @@ struct TransitionDetailView: View {
       result["lifecycle"] = observation.state.rawValue
       result["remainingRevisions"] = observation.remainingRevisions
     }
+    // Once Rust observes the document ABSENT after this submission, drop
+    // the local copy so the Documents list stops showing it. A failed local
+    // save is reported, not thrown: the erase is on chain either way.
+    // Nothing is removed when nothing was submitted: the network code does
+    // not tell two devnets apart, so the row may belong to another chain.
+    // The erase sheet offers that removal on an explicit tap instead.
+    if case .submitted = outcome, observation?.state == .absent {
+      if let warning = DocumentPersistence.removeErasedLocalCopy(
+        networkRaw: signingIdentity.networkRaw,
+        contractId: contractId.toBase58String(),
+        documentType: documentType,
+        documentId: documentId.toBase58String(),
+        modelContext: modelContext
+      ) {
+        result["localCopyWarning"] = warning
+      }
+    } else if case .notSubmitted = outcome, observation?.state == .absent {
+      result["localCopy"] = "Kept. To remove a stale copy saved on this device, use Documents → the document → ⋯ → Erase History… → Remove Local Copy."
+    }
     return result
   }
 

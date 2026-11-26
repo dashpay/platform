@@ -59,6 +59,7 @@ import org.dashfoundation.dashsdk.wallet.WalletSyncEvent
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.ui.tokens.displayLabel
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.DashAddress
@@ -372,7 +373,7 @@ private fun ShieldedTokenSpendForm(
     val tokens by remember(spendingNetwork) {
         spendingNetwork?.let { container.database.tokenDao().observeTokensByNetwork(it.ffiValue) }
             ?: flowOf(emptyList())
-    }.collectAsStateWithLifecycle(initialValue = emptyList())
+    }.collectEachAsStateWithLifecycle(initialValue = emptyList())
 
     // The row this form spends from, read again on every return and after
     // every shielded sync result for the wallet, so Available and Pending

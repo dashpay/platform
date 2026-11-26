@@ -146,13 +146,15 @@ struct ContractDocumentModerationView: View {
                 Text("Fields: \(offer.changeableFields.joined(separator: ", "))")
                     .font(.caption)
                     .accessibilityIdentifier("contractModeration.document.changeableFields")
-                TextEditor(text: $fieldsJSON)
-                    .font(.system(.caption, design: .monospaced))
-                    .frame(minHeight: 80)
-                    .accessibilityIdentifier("contractModeration.document.fieldsJSON")
-                    .onAppear {
-                        if fieldsJSON.isEmpty { fieldsJSON = Self.fieldsTemplate(offer.changeableFields) }
-                    }
+                PlainTextEditor(
+                    text: $fieldsJSON,
+                    textStyle: .caption1,
+                    accessibilityIdentifier: "contractModeration.document.fieldsJSON"
+                )
+                .frame(minHeight: 80)
+                .onAppear {
+                    if fieldsJSON.isEmpty { fieldsJSON = Self.fieldsTemplate(offer.changeableFields) }
+                }
                 actionButton("Change Fields", .changeFields, identifier: "contractModeration.document.changeFields") {
                     changeFields()
                 }

@@ -47,6 +47,14 @@ interface TokenDao {
     )
     fun observeTokensByNetwork(networkRaw: Int): Flow<List<TokenEntity>>
 
+    /** One-shot form of [observeTokensByNetwork], for persistence callbacks. */
+    @Query(
+        "SELECT tokens.* FROM tokens INNER JOIN data_contracts " +
+            "ON tokens.contractId = data_contracts.id " +
+            "WHERE data_contracts.networkRaw = :networkRaw"
+    )
+    suspend fun getTokensByNetwork(networkRaw: Int): List<TokenEntity>
+
     /** Mirror of `mintableTokensPredicate()` (`manualMintingRules != nil`). */
     @Query("SELECT * FROM tokens WHERE canManuallyMint = 1")
     fun observeMintableTokens(): Flow<List<TokenEntity>>
@@ -91,6 +99,16 @@ interface TokenDao {
     suspend fun upsertToken(token: TokenEntity)
 
     /**
+     * Record the token's on-chain paused status, changing nothing else on
+     * the row. Called with Platform's answer to a token status query, or
+     * after a pause or resume this app executed (not a group proposal).
+     * Returns the rows changed: 0 when the row is missing or already says
+     * [paused].
+     */
+    @Query("UPDATE tokens SET isPaused = :paused WHERE id = :id AND isPaused != :paused")
+    suspend fun updatePaused(id: ByteArray, paused: Boolean): Int
+
+    /**
      * Fill in the once-per-identity block of a row that has none, keeping
      * [TokenEntity.hasDistribution] in step. Rows written before schema
      * version 14 have a NULL block even when their contract carries one;
@@ -117,6 +135,21 @@ interface TokenDao {
     /** Mirror of `predicate(tokenId:identityId:)` — the upsert key. */
     @Query("SELECT * FROM token_balances WHERE tokenId = :tokenId AND identityId = :identityId")
     suspend fun getBalance(tokenId: String, identityId: ByteArray): TokenBalanceEntity?
+
+    /**
+     * [getBalance] on one network: the persister's upsert key when the
+     * network is known, so the same identity and token ids on two networks
+     * (a shared database) keep separate rows.
+     */
+    @Query(
+        "SELECT * FROM token_balances WHERE tokenId = :tokenId AND identityId = :identityId " +
+            "AND networkRaw = :networkRaw"
+    )
+    suspend fun getBalanceOnNetwork(
+        tokenId: String,
+        identityId: ByteArray,
+        networkRaw: Int,
+    ): TokenBalanceEntity?
 
     @Query("SELECT * FROM token_balances WHERE tokenId = :tokenId AND identityId = :identityId")
     fun observeBalance(tokenId: String, identityId: ByteArray): Flow<TokenBalanceEntity?>
@@ -160,6 +193,13 @@ interface TokenDao {
     /** Mirror of the persister's balance-removal pass. */
     @Query("DELETE FROM token_balances WHERE tokenId = :tokenId AND identityId = :identityId")
     suspend fun deleteBalance(tokenId: String, identityId: ByteArray)
+
+    /** [deleteBalance] on one network (see [getBalanceOnNetwork]). */
+    @Query(
+        "DELETE FROM token_balances WHERE tokenId = :tokenId AND identityId = :identityId " +
+            "AND networkRaw = :networkRaw"
+    )
+    suspend fun deleteBalanceOnNetwork(tokenId: String, identityId: ByteArray, networkRaw: Int)
 
     /**
      * Wallet teardown: drop every balance owned by an identity. The

@@ -31,10 +31,10 @@ use rs_sdk_ffi::{
     dash_sdk_decision_proposal_cast_vote, dash_sdk_decision_proposal_cast_vote_with_signer,
     dash_sdk_decision_proposal_contract_id, dash_sdk_decision_proposal_contract_id_bytes,
     dash_sdk_decision_proposal_document_type_name, dash_sdk_decision_proposal_fetch,
-    dash_sdk_decision_proposal_get_masternode_vote, dash_sdk_decision_proposal_get_vote_poll_id,
-    dash_sdk_decision_proposal_get_vote_poll_state, dash_sdk_decision_proposal_list_by_created_at,
-    dash_sdk_decision_proposal_list_by_end_date, dash_sdk_decision_proposal_list_by_owner,
-    DashSDKResult, SDKHandle, SignerHandle,
+    dash_sdk_decision_proposal_get_end_date, dash_sdk_decision_proposal_get_masternode_vote,
+    dash_sdk_decision_proposal_get_vote_poll_id, dash_sdk_decision_proposal_get_vote_poll_state,
+    dash_sdk_decision_proposal_list_by_created_at, dash_sdk_decision_proposal_list_by_end_date,
+    dash_sdk_decision_proposal_list_by_owner, DashSDKResult, SDKHandle, SignerHandle,
 };
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -589,6 +589,30 @@ pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DecisionProposalsNati
                 limit,
                 c_ptr(&start_after),
             );
+            string_or_null(env, result)
+        }
+    })
+}
+
+/// The end date to create a proposal with when the user asked for `requested_end_date_ms`
+/// now, in milliseconds since the Unix epoch as a decimal string, not JSON
+/// (`dash_sdk_decision_proposal_get_end_date`). A negative `requested_end_date_ms` throws code
+/// 1 before the C call. Null after throwing.
+#[no_mangle]
+pub extern "system" fn Java_org_dashfoundation_dashsdk_ffi_DecisionProposalsNative_getEndDate(
+    mut env: JNIEnv,
+    _class: JClass,
+    sdk: jlong,
+    requested_end_date_ms: jlong,
+) -> jstring {
+    guard(&mut env, ptr::null_mut(), |env| {
+        let Some(requested) = to_unsigned::<u64>(env, requested_end_date_ms, "requestedEndDateMs")
+        else {
+            return ptr::null_mut();
+        };
+        unsafe {
+            let result =
+                dash_sdk_decision_proposal_get_end_date(sdk as *const SDKHandle, requested);
             string_or_null(env, result)
         }
     })

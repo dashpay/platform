@@ -224,11 +224,14 @@ struct UpdateContractView: View {
     @ViewBuilder
     private var metadataSection: some View {
         Section {
-            TextField("Keywords (comma separated or a JSON array)", text: $keywords)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .disabled(isBusy)
-                .accessibilityIdentifier("updateContract.keywords")
+            PlainTextField(
+                placeholder: "Keywords (comma separated or a JSON array)",
+                text: $keywords,
+                textStyle: .body,
+                monospaced: false,
+                accessibilityIdentifier: "updateContract.keywords"
+            )
+            .disabled(isBusy)
             TextField("Description", text: $descriptionText)
                 .disabled(isBusy)
                 .accessibilityIdentifier("updateContract.description")
@@ -358,13 +361,9 @@ struct UpdateContractView: View {
     }
 
     private func jsonEditor(text: Binding<String>, identifier: String) -> some View {
-        TextEditor(text: text)
-            .font(.system(.footnote, design: .monospaced))
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
+        PlainTextEditor(text: text, textStyle: .footnote, accessibilityIdentifier: identifier)
             .frame(minHeight: 110)
             .disabled(isBusy)
-            .accessibilityIdentifier(identifier)
     }
 
     // MARK: - State

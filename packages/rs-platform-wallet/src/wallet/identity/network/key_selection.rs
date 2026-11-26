@@ -56,14 +56,8 @@ pub(crate) fn usable_authentication_key_for_types<'a>(
 ) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
     let now = now_ms();
     let qualifies = |key: &IdentityPublicKey| {
-        key.purpose() == Purpose::AUTHENTICATION
-            && security_levels.contains(&key.security_level())
-            && key_types.contains(&key.key_type())
-            && document_type_names
-                .iter()
-                .all(|name| bounds_cover(key.contract_bounds(), contract_id, name))
-            && !key.is_disabled()
-            && !key.is_expired_at(now)
+        key_types.contains(&key.key_type())
+            && eligible(key, contract_id, document_type_names, security_levels, now)
     };
     let keys = identity.public_keys();
     let unlimited = keys
@@ -73,6 +67,51 @@ pub(crate) fn usable_authentication_key_for_types<'a>(
         .values()
         .filter(|key| qualifies(key) && key.has_limits());
     first_available(unlimited.chain(limited), signer)
+}
+
+/// [`usable_authentication_key_for_types`] with `key_types` read as a preference order inside
+/// each tier: among keys without limits, every key of the first type (in key-id order) comes
+/// before any key of the next type, and the same again among limited keys, which all come
+/// after the unlimited ones. An unlimited key of any listed type is therefore still taken
+/// before a limited one, whose budget may be spent.
+pub(crate) fn usable_authentication_key_preferring_types<'a>(
+    identity: &'a Identity,
+    signer: &impl Signer<IdentityPublicKey>,
+    contract_id: Identifier,
+    document_type_names: &[&str],
+    security_levels: &[SecurityLevel],
+    key_types: &[KeyType],
+) -> Result<Option<&'a IdentityPublicKey>, dash_sdk::Error> {
+    let now = now_ms();
+    let keys = identity.public_keys();
+    let candidates = [false, true].into_iter().flat_map(|limited| {
+        key_types.iter().flat_map(move |key_type| {
+            keys.values().filter(move |key| {
+                key.key_type() == *key_type
+                    && key.has_limits() == limited
+                    && eligible(key, contract_id, document_type_names, security_levels, now)
+            })
+        })
+    });
+    first_available(candidates, signer)
+}
+
+/// Whether `key` may sign a document of every one of `document_type_names` of `contract_id`
+/// at one of `security_levels` at time `now`, leaving its key type aside.
+fn eligible(
+    key: &IdentityPublicKey,
+    contract_id: Identifier,
+    document_type_names: &[&str],
+    security_levels: &[SecurityLevel],
+    now: u64,
+) -> bool {
+    key.purpose() == Purpose::AUTHENTICATION
+        && security_levels.contains(&key.security_level())
+        && document_type_names
+            .iter()
+            .all(|name| bounds_cover(key.contract_bounds(), contract_id, name))
+        && !key.is_disabled()
+        && !key.is_expired_at(now)
 }
 
 /// Whether a key carrying `bounds` may sign a `document_type_name` document of `contract_id`.

@@ -5114,22 +5114,22 @@ extension ManagedPlatformWallet {
     }
 
     /// Replace + broadcast `documentId`'s properties on `contractId`'s
-    /// `documentType`, owned by `ownerIdentityId`, signed with the
-    /// explicit AUTHENTICATION + ECDSA key `signingKeyId`. Returns the
-    /// 32-byte document id and the confirmed document's canonical
-    /// query-side JSON (now at the bumped revision) once Platform
-    /// confirms the transition.
+    /// `documentType`, owned by `ownerIdentityId`. Returns the 32-byte
+    /// document id and the confirmed document's canonical query-side
+    /// JSON (now at the bumped revision) once Platform confirms the
+    /// transition.
     ///
     /// Sibling to `createDocument`. Routes through
     /// `IdentityWallet::replace_document_with_signer` (via
     /// `platform_wallet_document_replace`): the Rust side fetches the
     /// current document, applies `propertiesJSON` (the full replacement
     /// property object, same hex/base58 encoding rules as create),
-    /// bumps the revision, validates `signingKeyId` is an
-    /// AUTHENTICATION + ECDSA key on the owner, broadcasts on the
-    /// platform-wallet 8 MB worker stack, and waits for confirmation.
-    /// The signing key never crosses into Swift logic — the
-    /// `KeychainSigner` trampoline services the signature on demand.
+    /// bumps the revision, selects the owner's AUTHENTICATION key that
+    /// the document type's security level requires and `signer` can
+    /// sign with, broadcasts on the platform-wallet 8 MB worker stack,
+    /// and waits for confirmation. No key is chosen in Swift, so an
+    /// identity restored from its wallet mnemonic (whose private keys
+    /// the `KeychainSigner` derives on demand) signs too.
     /// Callers persist the returned JSON verbatim so the local cache
     /// matches the on-chain document.
     ///
@@ -5143,7 +5143,6 @@ extension ManagedPlatformWallet {
         documentType: String,
         documentId: Identifier,
         propertiesJSON: String,
-        signingKeyId: UInt32,
         signer: KeychainSigner
     ) async throws -> (Identifier, String) {
         let handle = self.handle
@@ -5177,7 +5176,6 @@ extension ManagedPlatformWallet {
                                             typePtr,
                                             docBp.baseAddress!,
                                             propsPtr,
-                                            signingKeyId,
                                             signerHandle,
                                             outBp.baseAddress!,
                                             &documentJsonPtr
@@ -5203,9 +5201,10 @@ extension ManagedPlatformWallet {
     }
 
     /// Delete + broadcast `documentId` on `contractId`'s `documentType`,
-    /// owned by `ownerIdentityId`, signed with the explicit
-    /// AUTHENTICATION + ECDSA key `signingKeyId`. Returns the deleted
-    /// document's 32-byte id once Platform confirms the transition.
+    /// owned by `ownerIdentityId`. Returns the deleted document's
+    /// 32-byte id once Platform confirms the transition. Rust selects
+    /// the owner's AUTHENTICATION key that the document type's security
+    /// level requires and `signer` can sign with.
     ///
     /// Sibling to `createDocument`. Routes through
     /// `IdentityWallet::delete_document_with_signer` (via
@@ -5217,7 +5216,6 @@ extension ManagedPlatformWallet {
         contractId: Identifier,
         documentType: String,
         documentId: Identifier,
-        signingKeyId: UInt32,
         signer: KeychainSigner
     ) async throws -> Identifier {
         let handle = self.handle
@@ -5246,7 +5244,6 @@ extension ManagedPlatformWallet {
                                         contractBp.baseAddress!,
                                         typePtr,
                                         docBp.baseAddress!,
-                                        signingKeyId,
                                         signerHandle,
                                         outBp.baseAddress!
                                     )
@@ -5262,9 +5259,10 @@ extension ManagedPlatformWallet {
         }.value
     }
 
-    /// Delete + broadcast a document by its values, signed with the
-    /// explicit AUTHENTICATION + ECDSA key `signingKeyId`. Returns the
-    /// deleted document's 32-byte id once Platform confirms the transition.
+    /// Delete + broadcast a document by its values. Returns the deleted
+    /// document's 32-byte id once Platform confirms the transition. Rust
+    /// selects the owner's AUTHENTICATION key that the document type's
+    /// security level requires and `signer` can sign with.
     ///
     /// The delete an `indexOnly` document type needs: it keeps no document
     /// row, so the transition carries the values that identify its entries
@@ -5284,7 +5282,6 @@ extension ManagedPlatformWallet {
         documentType: String,
         documentId: Identifier,
         propertiesJSON: String,
-        signingKeyId: UInt32,
         signer: KeychainSigner
     ) async throws -> Identifier {
         let handle = self.handle
@@ -5316,7 +5313,6 @@ extension ManagedPlatformWallet {
                                             typePtr,
                                             docBp.baseAddress!,
                                             propsPtr,
-                                            signingKeyId,
                                             signerHandle,
                                             outBp.baseAddress!
                                         )
@@ -5371,11 +5367,12 @@ extension ManagedPlatformWallet {
     }
 
     /// Transfer + broadcast `documentId` on `contractId`'s
-    /// `documentType`, from `ownerIdentityId` to `recipientId`, signed
-    /// with the explicit AUTHENTICATION + ECDSA key `signingKeyId`.
-    /// Returns the 32-byte document id and the confirmed document's
-    /// canonical JSON (now reflecting the new owner) once Platform
-    /// confirms the transition.
+    /// `documentType`, from `ownerIdentityId` to `recipientId`. Returns
+    /// the 32-byte document id and the confirmed document's canonical
+    /// JSON (now reflecting the new owner) once Platform confirms the
+    /// transition. Rust selects the owner's AUTHENTICATION key that the
+    /// document type's security level requires and `signer` can sign
+    /// with.
     ///
     /// Sibling to `createDocument`. Routes through
     /// `IdentityWallet::transfer_document_with_signer` (via
@@ -5388,7 +5385,6 @@ extension ManagedPlatformWallet {
         documentType: String,
         documentId: Identifier,
         recipientId: Identifier,
-        signingKeyId: UInt32,
         signer: KeychainSigner
     ) async throws -> (Identifier, String) {
         let handle = self.handle
@@ -5423,7 +5419,6 @@ extension ManagedPlatformWallet {
                                             typePtr,
                                             docBp.baseAddress!,
                                             recipBp.baseAddress!,
-                                            signingKeyId,
                                             signerHandle,
                                             outBp.baseAddress!,
                                             &documentJsonPtr
@@ -5449,11 +5444,12 @@ extension ManagedPlatformWallet {
     }
 
     /// Set (update) the trade price of `documentId` on `contractId`'s
-    /// `documentType` to `price` credits, owned by `ownerIdentityId`,
-    /// signed with the explicit AUTHENTICATION + ECDSA key
-    /// `signingKeyId`. Returns the 32-byte document id and the confirmed
-    /// document's canonical JSON (now carrying `$price`) once Platform
-    /// confirms the transition.
+    /// `documentType` to `price` credits, owned by `ownerIdentityId`.
+    /// Returns the 32-byte document id and the confirmed document's
+    /// canonical JSON (now carrying `$price`) once Platform confirms the
+    /// transition. Rust selects the owner's AUTHENTICATION key that the
+    /// document type's security level requires and `signer` can sign
+    /// with.
     ///
     /// Sibling to `createDocument`. Routes through
     /// `IdentityWallet::set_document_price_with_signer` (via
@@ -5466,7 +5462,6 @@ extension ManagedPlatformWallet {
         documentType: String,
         documentId: Identifier,
         price: UInt64,
-        signingKeyId: UInt32,
         signer: KeychainSigner
     ) async throws -> (Identifier, String) {
         let handle = self.handle
@@ -5497,7 +5492,6 @@ extension ManagedPlatformWallet {
                                         typePtr,
                                         docBp.baseAddress!,
                                         price,
-                                        signingKeyId,
                                         signerHandle,
                                         outBp.baseAddress!,
                                         &documentJsonPtr
@@ -5523,11 +5517,11 @@ extension ManagedPlatformWallet {
 
     /// Purchase + broadcast for-sale `documentId` on `contractId`'s
     /// `documentType` for `price` credits, with `purchaserId` as the
-    /// buyer (and new owner), signed with the explicit AUTHENTICATION +
-    /// ECDSA key `signingKeyId` resolved on the purchaser. Returns the
-    /// 32-byte document id and the confirmed document's canonical JSON
-    /// (now owned by the purchaser) once Platform confirms the
-    /// transition.
+    /// buyer (and new owner). Returns the 32-byte document id and the
+    /// confirmed document's canonical JSON (now owned by the purchaser)
+    /// once Platform confirms the transition. Rust selects the
+    /// purchaser's AUTHENTICATION key that the document type's security
+    /// level requires and `signer` can sign with.
     ///
     /// Sibling to `createDocument`. Routes through
     /// `IdentityWallet::purchase_document_with_signer` (via
@@ -5540,7 +5534,6 @@ extension ManagedPlatformWallet {
         documentType: String,
         documentId: Identifier,
         price: UInt64,
-        signingKeyId: UInt32,
         signer: KeychainSigner
     ) async throws -> (Identifier, String) {
         let handle = self.handle
@@ -5571,7 +5564,6 @@ extension ManagedPlatformWallet {
                                         typePtr,
                                         docBp.baseAddress!,
                                         price,
-                                        signingKeyId,
                                         signerHandle,
                                         outBp.baseAddress!,
                                         &documentJsonPtr

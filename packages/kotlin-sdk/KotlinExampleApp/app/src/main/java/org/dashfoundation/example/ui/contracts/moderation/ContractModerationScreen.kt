@@ -37,6 +37,7 @@ import org.dashfoundation.dashsdk.moderation.ContractTeamActionStatus
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.ui.components.FormSection
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.ui.contracts.ParsedContract
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.hexToBytes
@@ -277,7 +278,7 @@ fun ContractModerationEntryScreen(contractIdHex: String, navController: NavHostC
     val contractFlow = remember(contractIdHex) {
         container.database.dataContractDao().observeById(contractIdHex.hexToBytes())
     }
-    val contract by contractFlow.collectAsStateWithLifecycle(initialValue = null)
+    val contract by contractFlow.collectEachAsStateWithLifecycle(initialValue = null)
     val current = contract ?: return
     val documentTypeNames = remember(current.id, current.lastUpdated) {
         ParsedContract.from(current)?.documentTypes?.keys.orEmpty().sorted()

@@ -62,6 +62,7 @@ import org.dashfoundation.dashsdk.wallet.PlatformWalletManager
 import org.dashfoundation.example.di.LocalAppContainer
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.ui.credits.rememberManagedWalletFor
 import org.dashfoundation.example.util.KeyLimitsFormatting
 import org.dashfoundation.example.util.hexToBytes
@@ -523,9 +524,9 @@ fun UpdateKeyLimitsScreen(
 ) {
     val container = LocalAppContainer.current
     val idBytes = remember(identityIdHex) { identityIdHex.hexToBytes() }
-    val identity by container.database.identityDao()
-        .observeByIdentityId(idBytes)
-        .collectAsStateWithLifecycle(initialValue = null)
+    val identity by remember(idBytes) {
+        container.database.identityDao().observeByIdentityId(idBytes)
+    }.collectEachAsStateWithLifecycle(initialValue = null)
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val wallet = rememberManagedWalletFor(identity?.walletId)
 

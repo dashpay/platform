@@ -56,7 +56,7 @@ use {
     },
     super::shielded::operations::{
         discharge_read_back_private_payments, private_document_create_from_pool_with_metadata,
-        token_purchase_from_pool, token_shielded_transfer, token_unshield,
+        token_purchase_from_pool, token_shielded_transfer, token_unshield, PrivateDocumentPurpose,
         ShieldedTokenPurchaseOutcome, ShieldedTokenSpendOutcome,
     },
     super::shielded::store::{
@@ -2983,16 +2983,13 @@ impl PlatformWallet {
             ));
         }
         let dashpay_id = dashpay_contract()?.id();
-        // Saved with the payment's record, so a restart restores the pair's
-        // reservation without opening the entry.
-        let private_contact =
-            started
-                .account_reference()
-                .map(|account_reference| PrivateContactPayment {
-                    sender: sender_identity_id.to_buffer(),
-                    recipient: recipient_identity_id.to_buffer(),
-                    account_reference,
-                });
+        // The account reference is saved with the payment's record, so a
+        // restart restores the pair's reservation without opening the entry.
+        let purpose = PrivateDocumentPurpose::ContactRequest {
+            sender: *sender_identity_id,
+            recipient: *recipient_identity_id,
+            account_reference: started.account_reference(),
+        };
         private_document_create_from_pool_with_metadata(
             &self.sdk,
             coordinator.store(),
@@ -3003,7 +3000,7 @@ impl PlatformWallet {
             dashpay_id,
             PRIVATE_CONTACT_REQUEST_DOCUMENT_TYPE_NAME,
             vec![entry],
-            private_contact,
+            purpose,
             &started,
             &prover,
         )
@@ -3080,7 +3077,7 @@ impl PlatformWallet {
             new.data_contract_id,
             &new.document_type_name,
             vec![sealed.entry],
-            None,
+            PrivateDocumentPurpose::Entry,
             &PaymentStarted::default(),
             &prover,
         )

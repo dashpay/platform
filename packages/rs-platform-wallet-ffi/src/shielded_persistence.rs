@@ -129,7 +129,18 @@ pub struct ShieldedActivityFFI {
     /// 5 Withdrawal, 6 IdentityCreate, 7 ShieldedSpend, 8 ShieldFromIdentity,
     /// 9 IdentityTopUp, 10 TokenPurchase, 11 TokenShieldedTransfer,
     /// 12 TokenUnshield (the counterparty of 10 to 12 is the token id; 12
-    /// carries the credited identity in `identity_id`).
+    /// carries the credited identity in `identity_id`),
+    /// 13 PrivateDocumentCreate (the counterparty is the data contract id),
+    /// 14 PrivateContactRequest (the counterparty is the recipient identity's
+    /// id). A row is recorded before its spend is broadcast, so a row of
+    /// kind 14 stands for an attempt: one that was refused stays, as Failed,
+    /// with the recipient's id, although no contact request was sent.
+    ///
+    /// A host stores the tag as is and shows any tag it does not know as 7.
+    /// A build that predates a tag loads its rows as 7
+    /// (`ShieldedActivityKind::from_tag`) and, the next time it emits such a
+    /// row (a status change), sends 7 for it: the host then stores 7 over the
+    /// original tag, and the kind is not recovered by a later build.
     pub kind_tag: u8,
     /// Direction: 0 In, 1 Out, 2 Self.
     pub direction: u8,
@@ -137,7 +148,9 @@ pub struct ShieldedActivityFFI {
     pub status: u8,
     /// Display principal, excluding self-change and zero-value fillers: in
     /// the token's smallest unit for kind tags 11 and 12 (a token transfer or
-    /// unshield), in credits otherwise. `fee` is always in credits.
+    /// unshield), in credits otherwise. `fee` is always in credits. Kind tags
+    /// 13 and 14 move nothing but their fee, so their amount is the fee: the
+    /// same number as `fee`, not a second charge.
     pub amount: u64,
     /// Exact fee in credits when `has_fee == 1`.
     pub fee: u64,
@@ -170,7 +183,8 @@ pub struct ShieldedActivityFFI {
     /// unshield (tag 12) restored with `0` is an opaque spend.
     pub has_identity_id: u8,
     /// Counterparty bytes pointer (43B Orchard / 21B PlatformAddress /
-    /// Core script) or null. Valid for the callback window only.
+    /// Core script, or the 32-byte id `kind_tag` 10 to 14 name) or null.
+    /// Valid for the callback window only.
     pub counterparty_ptr: *const u8,
     /// Length of `counterparty_ptr` in bytes (0 when null).
     pub counterparty_len: usize,

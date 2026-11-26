@@ -15,6 +15,17 @@ struct DataContractDetailsView: View {
     /// In-flight indicator for the Save button. Owned by the parent
     /// (the persist call lives there); we just toggle the spinner.
     var isSaving: Bool = false
+    /// The app's store, which holds the wallets' identities and keys. Set
+    /// when this view itself runs on a preview container: the moderation
+    /// hub then reads identities and signs against the app's store, not the
+    /// preview's. Nil when this view already runs on the app's store.
+    var appModelContainer: ModelContainer? = nil
+    /// `AppState.sdkGeneration` of the SDK this contract was read through.
+    /// Set for a preview fetched from the network: the moderation hub is
+    /// scoped to that connection, so after an SDK rebuild it asks the user
+    /// to reopen. Nil for a saved contract, whose hub takes the connection
+    /// current when it is opened.
+    var moderationGeneration: Int? = nil
     @Environment(\.dismiss) var dismiss
     /// Read for the connection the moderation screens are opened on.
     @EnvironmentObject var appState: AppState
@@ -85,10 +96,7 @@ struct DataContractDetailsView: View {
                 IdentityDetailView(identityId: route.identityId)
             }
             .navigationDestination(for: ModerationRoute.self) { route in
-                ContractModerationView(
-                    scope: route.scope,
-                    documentTypeNames: route.documentTypeNames
-                )
+                moderationHub(for: route)
             }
             // A boolean route on the stack itself, not a link inside a
             // section, so a re-render of this list cannot pop it (see the
@@ -310,10 +318,11 @@ struct DataContractDetailsView: View {
                 value: ModerationRoute(
                     // The connection is captured as the hub is opened: once it is
                     // replaced, the hub shows a notice rather than read this id
-                    // through the new SDK, which may hold another chain's contract
+                    // through the new SDK, which may hold another chain's contract.
+                    // A preview keeps the connection it was fetched through
                     scope: ModerationScope(
                         contractId: contract.idBase58,
-                        generation: appState.sdkGeneration
+                        generation: moderationGeneration ?? appState.sdkGeneration
                     ),
                     documentTypeNames: (contract.documentTypes ?? []).map(\.name).sorted()
                 )
@@ -321,6 +330,22 @@ struct DataContractDetailsView: View {
                 Label("Moderation and Fee Pots", systemImage: "shield.lefthalf.filled")
             }
             .accessibilityIdentifier("contractModeration.link")
+        }
+    }
+
+    /// The moderation hub for `route`, on the app's store when this view
+    /// runs on a preview container (``appModelContainer``). The hub asks the
+    /// wallets of the identities in that store and signs with their keys.
+    @ViewBuilder
+    private func moderationHub(for route: ModerationRoute) -> some View {
+        let hub = ContractModerationView(
+            scope: route.scope,
+            documentTypeNames: route.documentTypeNames
+        )
+        if let appModelContainer {
+            hub.modelContainer(appModelContainer)
+        } else {
+            hub
         }
     }
 

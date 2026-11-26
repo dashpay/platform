@@ -20,6 +20,9 @@ import SwiftDashSDK
 struct ContractModerationView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var walletManager: PlatformWalletManager
+    /// The store the hub reads identities from and signs against. Passed on
+    /// to every screen of the hub so they all use the same one.
+    @Environment(\.modelContext) private var modelContext
     @Query private var identities: [PersistentIdentity]
     @StateObject private var offers = ContractModerationOfferStore()
 
@@ -41,6 +44,7 @@ struct ContractModerationView: View {
             .navigationDestination(for: ContractModerationRoute.self) { route in
                 ModerationScopeGate(scope: scope) { destination(for: route) }
                     .environmentObject(offers)
+                    .environment(\.modelContext, modelContext)
             }
             .task(id: scope) { await reloadOffer() }
             // A replaced SDK: the answer was read through the old connection
@@ -82,11 +86,24 @@ struct ContractModerationView: View {
                     text: "Could not ask who may moderate: \(error)",
                     identifier: "contractModeration.offer.error"
                 )
-            } else if offers.loadedOnce && offers.moderators.isEmpty {
+            } else if offers.loadedOnce && offers.noLinkedWallet {
+                ModerationMessageRow(
+                    kind: .empty,
+                    text: "No wallet linked to an identity on this network was found in this app, so no wallet was asked who may moderate this contract.",
+                    identifier: "contractModeration.offer.noWallet"
+                )
+            } else if offers.nobodyModerates {
                 ModerationMessageRow(
                     kind: .empty,
                     text: "No identity of a loaded wallet moderates this contract.",
                     identifier: "contractModeration.offer.none"
+                )
+            }
+            if !offers.isLoading && offers.loadedOnce && offers.unloadedWalletCount > 0 {
+                ModerationMessageRow(
+                    kind: .error,
+                    text: unloadedWalletsText(offers.unloadedWalletCount),
+                    identifier: "contractModeration.offer.unloadedWallets"
                 )
             }
             ForEach(offers.moderators) { moderator in
@@ -117,6 +134,14 @@ struct ContractModerationView: View {
         } footer: {
             Text("The identities of the loaded wallets that moderate this contract, as Rust read its declaration and seated team. Identities are moderated from a list row or the identity status screen; Platform still refuses what the target, document or team action does not admit.")
         }
+    }
+
+    /// The note for wallets that hold identities on this network but are not
+    /// loaded, so they were not asked.
+    private func unloadedWalletsText(_ count: Int) -> String {
+        count == 1
+            ? "1 wallet holding identities on this network is not loaded and was not asked."
+            : "\(count) wallets holding identities on this network are not loaded and were not asked."
     }
 
     /// The alias of a local identity, or its base58 id.

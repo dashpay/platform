@@ -11,6 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -18,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -45,8 +47,16 @@ import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
 import org.dashfoundation.example.ui.components.SubmitButton
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.util.hexToBytes
 import org.dashfoundation.example.util.toHex
+
+/**
+ * What a form shows after its action returned: everything the dialog
+ * renders, fixed when the action ends, so a configuration change cannot
+ * relabel it from form state that is reloading.
+ */
+data class TokenActionNotice(val title: String, val message: String, val testTag: String)
 
 /**
  * Shared submit state for the 12 token-action forms — the Kotlin
@@ -72,24 +82,24 @@ class TokenActionViewModel : ViewModel() {
      * closes ([showNoticeUntilDismissed]). Held here, not in the
      * composition, so it survives a configuration change.
      */
-    var notice by mutableStateOf<String?>(null)
+    var notice by mutableStateOf<TokenActionNotice?>(null)
         private set
 
     private var noticeDismissed: CompletableDeferred<Unit>? = null
 
     /**
-     * Show [message] and suspend until [dismissNotice]. Called at the end
+     * Show [notice] and suspend until [dismissNotice]. Called at the end
      * of a [submit] block whose result the user must read before the form
      * pops: the action is over, so no retry is offered while it shows.
      */
-    suspend fun showNoticeUntilDismissed(message: String) {
+    suspend fun showNoticeUntilDismissed(notice: TokenActionNotice) {
         val dismissed = CompletableDeferred<Unit>()
         noticeDismissed = dismissed
-        notice = message
+        this.notice = notice
         try {
             dismissed.await()
         } finally {
-            notice = null
+            this.notice = null
         }
     }
 
@@ -163,12 +173,14 @@ fun rememberTokenActionContext(
     val tokenFlow = remember(tokenIdHex) {
         container.database.tokenDao().observeTokenById(tokenId)
     }
-    val token by tokenFlow.collectAsStateWithLifecycle(initialValue = null)
+    // Every emission: rows compare equal by id, and a rewritten row (the
+    // paused flag) must replace the one the form shows.
+    val token by tokenFlow.collectEachAsStateWithLifecycle(initialValue = null)
 
     val identityFlow = remember(identityIdHex) {
         container.database.identityDao().observeByIdentityId(identityId)
     }
-    val identity by identityFlow.collectAsStateWithLifecycle(initialValue = null)
+    val identity by identityFlow.collectEachAsStateWithLifecycle(initialValue = null)
 
     val contractIdHex = token?.contractId?.toHex()
     val contractFlow = remember(contractIdHex) {
@@ -177,7 +189,7 @@ fun rememberTokenActionContext(
     }
     val contract by (contractFlow
         ?: remember { kotlinx.coroutines.flow.flowOf<DataContractEntity?>(null) })
-        .collectAsStateWithLifecycle(initialValue = null)
+        .collectEachAsStateWithLifecycle(initialValue = null)
 
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()
     val walletsMap by (manager?.wallets
@@ -294,6 +306,20 @@ fun TokenActionScaffold(
         title = "$title failed",
         onDismiss = { viewModel.error = null },
     )
+
+    // A result the user must read before the form closes
+    // ([TokenActionViewModel.showNoticeUntilDismissed]); dismissing it lets
+    // the submit finish and the form pop.
+    viewModel.notice?.let { notice ->
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissNotice() },
+            title = { Text(notice.title) },
+            text = { Text(notice.message, modifier = Modifier.testTag(notice.testTag)) },
+            confirmButton = {
+                TextButton(onClick = { viewModel.dismissNotice() }) { Text("OK") }
+            },
+        )
+    }
 }
 
 /**

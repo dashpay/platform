@@ -146,4 +146,40 @@ class ShieldedTokenPurchaseTest {
         assertNotNull(supportingText(KIND_TOKEN_PURCHASE, 1))
         assertEquals("another kind keeps its bare status", "Pending", supportingText(3, 0))
     }
+
+    @Test
+    fun `should report an accepted identity-funded purchase as submitted, not as a receipt`() = runTest {
+        // The QA tester bought three times because the form closed silently.
+        val notice = identityPurchaseNotice("2.5", totalCost = 1_500_000uL) {}
+        assertEquals("Purchase submitted", notice.title)
+        assertEquals("tokenPurchase.outcome", notice.testTag)
+        assertTrue(notice.message.startsWith("The purchase of 2.5 for 1500000 credits"))
+        assertTrue(notice.message.contains("was submitted. Do not buy again"))
+        assertFalse(notice.message.contains("Platform"))
+        assertTrue(notice.message.contains("Do not buy again"))
+    }
+
+    @Test
+    fun `should tell the buyer an unconfirmed purchase may have gone through`() = runTest {
+        for (unconfirmed in listOf(
+            DashSdkError.PlatformWallet.TransactionBroadcastUnconfirmed("no result in time"),
+            DashSdkError.StateTransitionResultUnconfirmed("no result in time"),
+        )) {
+            val notice = identityPurchaseNotice("2.5", totalCost = 1_500_000uL) { throw unconfirmed }
+            assertEquals("Purchase may have gone through", notice.title)
+            assertTrue(notice.message.contains("Do not submit it again until you know its outcome"))
+            assertTrue(notice.message.contains("an unchanged token balance does not mean it failed"))
+        }
+    }
+
+    @Test
+    fun `should leave a definite purchase failure to the error dialog`() = runTest {
+        val refused = IllegalStateException("insufficient credits")
+        try {
+            identityPurchaseNotice("2.5", totalCost = 1_500_000uL) { throw refused }
+            fail("a definite failure must propagate")
+        } catch (e: IllegalStateException) {
+            assertSame(refused, e)
+        }
+    }
 }

@@ -83,6 +83,19 @@ struct TransitionInputView: View {
         return results.sorted(by: { $0.token.displayName < $1.token.displayName })
     }
 
+    /// `text` inputs that hold prose. They keep autocorrection and auto
+    /// capitalization; every other `text` input holds an id, an amount, an
+    /// index value or a list and gets `.machineTextEntry()`.
+    private static let proseTextInputNames: Set<String> = [
+        "description", "keywords", "note", "publicNote",
+    ]
+
+    /// `text` inputs that can hold JSON (a price schedule map). They use
+    /// `PlainTextField` so a typed quote is not turned into a curly one. It
+    /// stays single-line: a Return in a multi-line editor would put a
+    /// newline into a single price and make it unparseable.
+    private static let jsonTextInputNames: Set<String> = ["priceData"]
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if input.type != "button" && input.type != "checkbox" {
@@ -98,12 +111,24 @@ struct TransitionInputView: View {
             }
 
             switch input.type {
+            case "text" where Self.jsonTextInputNames.contains(input.name):
+                PlainTextField(
+                    placeholder: input.placeholder ?? "",
+                    text: $value,
+                    textStyle: .body,
+                    monospaced: false,
+                    borderStyle: .roundedRect
+                )
+
             case "text":
                 TextField(input.placeholder ?? "", text: $value)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .machineTextEntry(!Self.proseTextInputNames.contains(input.name))
 
             case "textarea":
-                TextEditor(text: $value)
+                // Every textarea input holds machine text (seed phrase,
+                // asset lock proof, public keys).
+                PlainTextEditor(text: $value, monospaced: false)
                     .frame(minHeight: 100)
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
@@ -144,8 +169,7 @@ struct TransitionInputView: View {
                 }
 
             case "json":
-                TextEditor(text: $value)
-                    .font(.system(.caption, design: .monospaced))
+                PlainTextEditor(text: $value, textStyle: .caption1)
                     .frame(minHeight: 150)
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
@@ -186,6 +210,7 @@ struct TransitionInputView: View {
             default:
                 TextField(input.placeholder ?? "", text: $value)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .machineTextEntry(!Self.proseTextInputNames.contains(input.name))
             }
 
             if let help = input.help {
@@ -649,6 +674,7 @@ struct TransitionInputView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     TextField("Enter recipient identity ID", text: $value)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .machineTextEntry()
 
                     if !identities.isEmpty {
                         Button(action: {
@@ -669,6 +695,7 @@ struct TransitionInputView: View {
     private func documentPicker() -> some View {
         TextField(input.placeholder ?? "Enter document ID", text: $value)
             .textFieldStyle(RoundedBorderTextFieldStyle())
+            .machineTextEntry()
     }
 
     @ViewBuilder

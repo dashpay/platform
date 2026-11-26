@@ -286,14 +286,12 @@ struct GetAddressesInfosView: View {
             .font(.subheadline)
             .fontWeight(.medium)
 
-          TextEditor(text: $viewModel.addressesText)
+          PlainTextEditor(text: $viewModel.addressesText, monospaced: false)
             .frame(height: 120)
             .overlay(
               RoundedRectangle(cornerRadius: 8)
                 .stroke(Color.gray.opacity(0.3), lineWidth: 1)
             )
-            .autocapitalization(.none)
-            .disableAutocorrection(true)
 
           HStack {
             Button("Use Bech32m Test") {

@@ -71,6 +71,7 @@ import androidx.compose.ui.text.font.FontWeight
 import org.dashfoundation.example.ui.components.ErrorAlertDialog
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.ui.components.LabeledContent
+import org.dashfoundation.example.ui.components.collectEachAsStateWithLifecycle
 import org.dashfoundation.example.ui.shielded.UnfinishedWalletDrainsList
 import org.dashfoundation.example.ui.theme.appStatusColors
 import org.dashfoundation.example.util.formatCredits
@@ -104,7 +105,7 @@ fun WalletDetailScreen(
     val walletFlow = remember(walletIdHex) {
         container.database.walletDao().observeByWalletId(walletId)
     }
-    val wallet by walletFlow.collectAsStateWithLifecycle(initialValue = null)
+    val wallet by walletFlow.collectEachAsStateWithLifecycle(initialValue = null)
 
     // The live Rust-side wallet handle (for the lock-free balance read).
     val manager by container.walletManagerStore.activeManager.collectAsStateWithLifecycle()

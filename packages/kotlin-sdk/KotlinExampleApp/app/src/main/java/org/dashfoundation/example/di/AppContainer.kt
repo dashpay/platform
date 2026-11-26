@@ -456,6 +456,7 @@ class AppContainer(private val context: Context) {
             appState.initializeSdk()
             loadKnownContractsIntoSdk()
             backfillOncePerIdentityDistributions()
+            rederiveTokenRules()
             activateManager()
             _bootstrapState.value = BootstrapState.Ready
         } catch (e: Exception) {
@@ -480,6 +481,28 @@ class AppContainer(private val context: Context) {
             android.util.Log.i(TAG, "Backfilled $filled once-per-identity token blocks")
         } catch (e: Exception) {
             android.util.Log.w(TAG, "Failed to backfill once-per-identity token blocks", e)
+        }
+    }
+
+    /**
+     * Repair token rows whose rule columns no longer match their stored
+     * contract, such as rows written before the rules parser read rs-dpp's
+     * `$type` action-taker maps (every rule stored as "NoOne", so Mint, Burn,
+     * Freeze and the other rule-gated actions show as locked). Runs on every
+     * launch rather than once, so rows an older build writes again after a
+     * downgrade are repaired too; unchanged rows are not written
+     * (`TokenMaterializer.rederiveRules`). Best-effort and non-fatal.
+     */
+    private suspend fun rederiveTokenRules() {
+        try {
+            val contracts = database.dataContractDao().observeWithTokens().first()
+            val rewritten = org.dashfoundation.example.services.tokens.TokenMaterializer
+                .rederiveRules(contracts, database.tokenDao())
+            if (rewritten > 0) {
+                android.util.Log.i(TAG, "Re-derived the rules of $rewritten token rows")
+            }
+        } catch (e: Exception) {
+            android.util.Log.w(TAG, "Failed to re-derive token rules", e)
         }
     }
 

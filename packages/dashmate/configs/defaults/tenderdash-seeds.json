@@ -1,112 +1,113 @@
 {
   "mainnet": {
     "source": "https://quorums.mainnet.networks.dash.org/masternodes",
-    "lastUpdated": 1795493874,
+    "lastUpdated": 1795564577,
     "seeds": [
       {
-        "id": "0fc7db91892879ced156cf7333a207669e7e1a35",
-        "host": "132.243.197.38",
+        "id": "28ae1aed5bf1614d9039443eefc5c26a8ac7f557",
+        "host": "135.181.110.216",
         "port": 26656
       },
       {
-        "id": "23d668ca43a148cbb914c25b9a073b63ef553718",
-        "host": "62.171.136.245",
+        "id": "2f7c394110739a49c66333d151853e440acf3511",
+        "host": "65.108.4.213",
         "port": 26656
       },
       {
-        "id": "2ae17a6aad074ade9f5fb5b3dfa62b2bacc888b1",
-        "host": "109.199.109.39",
+        "id": "3ed7bb4f1ed2f19cacd33f44a68b95d3f24cf85d",
+        "host": "134.255.182.186",
         "port": 26656
       },
       {
-        "id": "3278016ffd8597a69ac452f3ccebefc8aa0a792e",
-        "host": "38.242.200.227",
+        "id": "4087962cd907745b8fd3da02ce4ce07e0a932278",
+        "host": "65.108.0.158",
         "port": 26656
       },
       {
-        "id": "3afa54b933c343a4777b16fc616c9ff2e7ca342a",
-        "host": "194.163.166.76",
+        "id": "4af7ff1ed897fde66a094b1b25c5830b7d43acd9",
+        "host": "173.212.232.90",
         "port": 26656
       },
       {
-        "id": "4e0c4b6997fbfc232bfd7e81fcc7347359d74a54",
-        "host": "169.58.206.63",
+        "id": "5e9a29e48a11daedfe8ee8fe5fd9490f763b81ed",
+        "host": "65.108.0.153",
         "port": 26656
       },
       {
-        "id": "4f21fa4d6051261560888daae5efe36199062adf",
-        "host": "158.220.101.10",
+        "id": "7c65baee69410cbca33ceba2d5f9b1103fe65bd9",
+        "host": "185.215.164.84",
         "port": 26656
       },
       {
-        "id": "55bba9521550caea42364d4500a1c999b2527da0",
-        "host": "43.167.239.145",
+        "id": "7d09e99c0838ea3154b988dcbcd25700d67c9504",
+        "host": "213.199.54.35",
         "port": 26656
       },
       {
-        "id": "6120dbe1a1939e8a60dad0780851b121d683b8b0",
-        "host": "95.111.242.220",
+        "id": "8cfa3b43e8c318496c62212425e1b2d330283c2a",
+        "host": "37.60.244.253",
         "port": 26656
       },
       {
-        "id": "62480f06368630f8947476cba04e9f78356c2f9b",
-        "host": "37.27.83.17",
+        "id": "9bb1cdb3e536923887f401dac219da86db8dcd1b",
+        "host": "84.32.54.121",
         "port": 26656
       },
       {
-        "id": "6865fca004ae7903ae16af03b199f62418a9b69e",
-        "host": "65.109.114.215",
+        "id": "9f2d57a5c930ed4f3d77ea5fb6f963d655168505",
+        "host": "65.109.84.203",
         "port": 26656
       },
       {
-        "id": "7c5d7b282b20ea5adba8576b20226df63631c2b7",
-        "host": "65.108.4.195",
+        "id": "c94ecc1d76974899acbf00be9b842ab9640a6345",
+        "host": "173.212.196.214",
         "port": 26656
       },
       {
-        "id": "86d0b68fce2aae14e44686109dc808d1dd30e244",
-        "host": "207.180.224.96",
+        "id": "cc8c8166bfdbb3502b3d29ad93500b08560f0856",
+        "host": "161.97.180.182",
         "port": 26656
       },
       {
-        "id": "9357841c590e71ef12555d7d85b1269964b82f6a",
-        "host": "65.108.246.145",
+        "id": "e6d827fc1f87b1be8fd2662230c66b845883f3c7",
+        "host": "91.198.108.37",
         "port": 26656
       },
       {
-        "id": "9f843a9513ce94d3dd56868bced80176848bee31",
-        "host": "173.249.21.12",
+        "id": "ece42e9804ca92d30df7ff07067479190fa53b81",
+        "host": "37.60.244.35",
         "port": 26656
       },
       {
-        "id": "a6323cc29189aa8719b38cbbf9b5085a9f25779d",
-        "host": "89.125.209.195",
+        "id": "ee6ccb6a2ed621f2eb3be1b6e5cabb10ba799d0e",
+        "host": "95.111.232.18",
         "port": 26656
       },
       {
-        "id": "be8ca0d8e02093a413e6b8e56b8009f319622032",
-        "host": "213.199.44.112",
+        "id": "ef54e94f628deb62af1f2bc99a02b7a5df9e603b",
+        "host": "185.239.208.110",
         "port": 26656
       },
       {
-        "id": "d3b0f131d7b723b6b25a1b1b5a1e02ac514cdf01",
-        "host": "207.180.233.6",
+        "id": "f47c22c3b32efd7abd78ce799bddd22ff89c60ba",
+        "host": "89.35.131.218",
         "port": 26656
       },
       {
-        "id": "d4158e647b807d52465cb20d0dbc8b74f7115723",
-        "host": "5.75.133.148",
+        "id": "fcc47214b0cc4ec58f252b052b5c154c3254b3ae",
+        "host": "66.29.147.83",
         "port": 26656
       },
       {
-        "id": "ea3535194f6615965f9a75a7ffb9b57db0681562",
-        "host": "65.109.84.201",
+        "id": "fed1007c668b46abc06dedb423d1adca933bce56",
+        "host": "45.76.141.74",
         "port": 26656
       }
     ],
     "previousSeedSetHashes": [
       "185c462de50f7c468fbb489c84152e707fd334ab1b687215ce66e62d862b10e7",
       "25fa98cc805ba48f310139a2901809271ca16cd6e5e3a46bf3517aaa8bc2fa3f",
+      "2dc4e859d6a91d4aa0ec16907113446f2855e0387dfcf19353da030d0e986cb5",
       "3d364d2040d1b69cfea53f98e56e8a331c6550c3a9f9fbcaea1e86c382867bce",
       "3d734eab7a35728e379645d69501b7a503d96fa7c7080b24ed6ea854a2f9fbdf",
       "4043e45eb5d7265f5c771f399ef7c4c2a934f4b725546079e1ea647f33c514a6",
@@ -116,21 +117,21 @@
   },
   "testnet": {
     "source": "https://quorums.testnet.networks.dash.org/masternodes",
-    "lastUpdated": 1795493486,
+    "lastUpdated": 1795564402,
     "seeds": [
       {
-        "id": "0498ade3c80045c2a7520e921180ae1c39da5c57",
-        "host": "68.67.122.25",
-        "port": 36656
-      },
-      {
-        "id": "0785881ea118c05df7bb9dd2195a78f10cdde0bb",
-        "host": "68.67.122.4",
+        "id": "02aa69f8ef6666e7cad6d9323755a0ef3c1b6bd9",
+        "host": "68.67.122.15",
         "port": 36656
       },
       {
         "id": "1ffbf1d32541dcb8f5555305295704a9ff9adc24",
         "host": "68.67.122.17",
+        "port": 36656
+      },
+      {
+        "id": "2677f7069a7a1245b716f2ec0f24cc337efc1f30",
+        "host": "85.209.243.12",
         "port": 36656
       },
       {
@@ -144,16 +145,6 @@
         "port": 36656
       },
       {
-        "id": "41b308f737ca9e39f67b553158903198a88c516e",
-        "host": "68.67.122.21",
-        "port": 36656
-      },
-      {
-        "id": "5192501d94ca7b039afbc0ed6a83aec48614e827",
-        "host": "68.67.122.3",
-        "port": 36656
-      },
-      {
         "id": "530465b012908125960c2737631248a028d3f804",
         "host": "87.229.22.126",
         "port": 36656
@@ -164,8 +155,8 @@
         "port": 36656
       },
       {
-        "id": "6d57707c196e06487d326094c964f258f5b77c35",
-        "host": "68.67.122.23",
+        "id": "65f60ccafcb05e87142b5c9da3ff13639abd772c",
+        "host": "85.209.243.7",
         "port": 36656
       },
       {
@@ -184,8 +175,13 @@
         "port": 36656
       },
       {
-        "id": "972a33056d57359de8acfa4fb8b29dc1c14f76b8",
-        "host": "68.67.122.16",
+        "id": "8feb00404d6f765856c95e587b2523a365bc7258",
+        "host": "68.67.122.24",
+        "port": 36656
+      },
+      {
+        "id": "9ef65e627b3f7186fcae8d8e1b2131aad09fd802",
+        "host": "206.245.167.63",
         "port": 36656
       },
       {
@@ -199,8 +195,8 @@
         "port": 36656
       },
       {
-        "id": "c374f016ea61e76aab79b8bb95a1ba0e6e3eee6f",
-        "host": "68.67.122.13",
+        "id": "c075993a8336f93a13bb7bbb7e0e89928be4aafb",
+        "host": "68.67.122.28",
         "port": 36656
       },
       {
@@ -214,13 +210,19 @@
         "port": 36656
       },
       {
-        "id": "ed1131823bcea23ac78af8c01e4d24683d6ecf88",
-        "host": "68.67.122.14",
+        "id": "ec7bf3b9bc72eda38c80bb7cf16e294e763e56b4",
+        "host": "68.67.122.22",
+        "port": 36656
+      },
+      {
+        "id": "f6561d0463ad58686f03ed72aef6aea0685cbf4b",
+        "host": "85.209.243.9",
         "port": 36656
       }
     ],
     "previousSeedSetHashes": [
       "3956cd4bfa6796a06d349a0753d543b29606d0b4eed71cf7ae7109abd24c53ce",
+      "6296bb498b1721077e8a5410beb603820e6d3ef0198234c23a6a83391d6ad059",
       "638c8d40c2fa7aeeeeea218a299bceba0e65bfed88c36daebf001d525b8caba3",
       "8a32b8779d5eae671428ec2cbf413c5ebb1a7cd9103007c03b4c0299bec5a274",
       "990e93f1fd0831cf839c18c0672e460eb72515efbd78cdfcb5b4a343f8d577aa",
@@ -228,5 +230,5 @@
       "cb2dc79597852bf7e50e9954da9fc8b46db3ce58d871fb59df9684e4fc026794"
     ]
   },
-  "version": "5.1.0-dev.4"
+  "version": "5.1.0-rc.1"
 }

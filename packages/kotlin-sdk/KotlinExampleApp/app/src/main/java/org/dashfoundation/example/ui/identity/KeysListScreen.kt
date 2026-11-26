@@ -37,6 +37,7 @@ import org.dashfoundation.example.di.LocalAppState
 import org.dashfoundation.example.navigation.AddIdentityKey
 import org.dashfoundation.example.navigation.KeyDetail
 import org.dashfoundation.example.navigation.UpdateKeyLimits
+import org.dashfoundation.example.services.IdentityKeys
 import org.dashfoundation.example.ui.components.FormSection
 import org.dashfoundation.example.util.Base58
 import org.dashfoundation.example.util.KeyLimitsFormatting
@@ -137,14 +138,18 @@ fun KeysListScreen(identityIdHex: String, navController: NavHostController) {
                         .clickable { navController.navigate(KeyDetail(identityIdHex, key.keyId)) },
                 ) {
                     ListItem(
-                        headlineContent = { Text("Key #${key.keyId} · ${key.purpose}") },
+                        // ← KeyRowView: purpose, security level and key
+                        // type by name, not by their raw values.
+                        headlineContent = {
+                            Text("Key #${key.keyId} · ${IdentityKeys.purposeLabel(key.purpose)}")
+                        },
                         supportingContent = {
                             Column {
                                 Text(
                                     buildString {
-                                        append(key.securityLevel)
+                                        append(IdentityKeys.securityLevelLabel(key.securityLevel))
                                         append(" · ")
-                                        append(key.keyType)
+                                        append(IdentityKeys.keyTypeLabel(key.keyType))
                                         if (key.disabledAt != null) append(" · disabled")
                                     },
                                 )
