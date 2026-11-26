@@ -8,7 +8,10 @@ import promptOrThrow from '../../../../util/promptOrThrow.js';
 import wait from '../../../../util/wait.js';
 import { ERRORS } from '../../../../ssl/zerossl/validateZeroSslCertificateFactory.js';
 import VerificationServerUnreachableError from '../../../../ssl/errors/VerificationServerUnreachableError.js';
-import findCertificatePairProblem from '../../../../ssl/findCertificatePairProblem.js';
+import findCertificatePairProblem, {
+  findCertificateFilesProblem,
+} from '../../../../ssl/findCertificatePairProblem.js';
+import selectLeafCertificate from '../../../../ssl/selectLeafCertificate.js';
 
 /**
  * @param {generateCsr} generateCsr
@@ -358,6 +361,27 @@ and all Dash service ports listed above.`);
         title: 'Save certificate file',
         skip: (ctx) => ctx.isBundleFilePresent,
         task: async (ctx, task) => {
+          // Checked before the file is replaced: renewal writes over a bundle
+          // the gateway is serving.
+          const privateKeyPem = fs.readFileSync(ctx.privateKeyFilePath, 'utf8');
+
+          const { error, detail } = selectLeafCertificate(ctx.certificateFile, privateKeyPem);
+
+          if (error) {
+            throw new Error(`The certificate ZeroSSL sent does not belong to the private key in ${ctx.privateKeyFilePath}: ${detail}.\n`
+              + `${ctx.bundleFilePath} was left as it was.`
+              + ' Please obtain a new certificate using the obtain command with the --force flag,'
+              + ' and revoke the previous certificate in the ZeroSSL dashboard');
+          }
+
+          const problem = findCertificatePairProblem(ctx.certificateFile, privateKeyPem);
+
+          if (problem !== null) {
+            throw new Error(`The certificate ZeroSSL sent cannot be served: ${problem}.\n`
+              + `${ctx.bundleFilePath} was left as it was. Fix the cause and run the obtain`
+              + ' command again: it downloads the certificate again');
+          }
+
           fs.writeFileSync(ctx.bundleFilePath, ctx.certificateFile, 'utf8');
 
           // eslint-disable-next-line no-param-reassign
@@ -365,26 +389,17 @@ and all Dash service ports listed above.`);
         },
       },
       {
-        // The gateway serves TLS from these files. A bundle found on disk is
-        // not downloaded again, so one that a full disk cut short would stay
-        // as it is.
+        // The gateway serves TLS from these files, and a write can stop short
+        // of what was checked. The certificate stays issued, and the next
+        // obtain downloads a bundle it cannot serve again.
         title: 'Check certificate files',
         task: async (ctx) => {
-          let problem;
-
-          try {
-            problem = findCertificatePairProblem(
-              fs.readFileSync(ctx.bundleFilePath, 'utf8'),
-              fs.readFileSync(ctx.privateKeyFilePath, 'utf8'),
-            );
-          } catch (e) {
-            problem = e.message;
-          }
+          const problem = findCertificateFilesProblem(ctx.bundleFilePath, ctx.privateKeyFilePath);
 
           if (problem !== null) {
             throw new Error(`The certificate files in ${ctx.sslConfigDir} cannot be served: ${problem}.\n`
-              + 'Please obtain a new certificate using the obtain command with the --force flag,'
-              + ' and revoke the previous certificate in the ZeroSSL dashboard');
+              + 'Fix the cause and run the obtain command again: it downloads the certificate'
+              + ' again without creating a new one');
           }
         },
       },

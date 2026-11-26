@@ -5,7 +5,8 @@ import HomeDir from '../../../../src/config/HomeDir.js';
 import ConfigFile from '../../../../src/config/configFile/ConfigFile.js';
 import ConfigFileJsonRepository from '../../../../src/config/configFile/ConfigFileJsonRepository.js';
 import getBaseConfigFactory from '../../../../configs/defaults/getBaseConfigFactory.js';
-import { ERRORS } from '../../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
+import validateZeroSslCertificateFactory, { ERRORS } from '../../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
+import Certificate from '../../../../src/ssl/zerossl/Certificate.js';
 import getEnquirerMock from '../../../../src/test/mock/getEnquirerMock.js';
 import { issueCertificate } from '../../../../src/test/certificateFixtures.js';
 
@@ -345,9 +346,9 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
     }
   });
 
-  // A disk that filled while the bundle was written leaves part of it next
-  // to an intact key. The issued certificate is not downloaded again while a
-  // bundle is there, and TLS enabled over this one would serve nothing.
+  // The files are checked once more before TLS is enabled, whatever the
+  // validation said about them: TLS enabled over a bundle cut short would
+  // serve nothing.
   it('should not enable TLS until the certificate files on disk can be served', async function it() {
     const homeDir = HomeDir.createTemp();
 
@@ -457,6 +458,117 @@ describe('obtainZeroSSLCertificateTaskFactory', () => {
     } finally {
       homeDir.remove();
     }
+  });
+
+  // ZeroSSL saves the certificate ID before verification, and a run can stop
+  // after the key is written and before the bundle is written in full: out
+  // of disk space, say. The certificate stays issued, and a plain obtain has
+  // to install it again rather than ask for another one.
+  describe('a certificate ZeroSSL already issued', () => {
+    const CERTIFICATE_ID = 'c'.repeat(32);
+
+    let homeDir;
+    let realConfig;
+    let sslConfigDir;
+    let bundleFilePath;
+    let privateKeyFilePath;
+    let createCertificate;
+    let downloadCertificate;
+    let other;
+
+    /**
+     * ZeroSSL's own date format
+     *
+     * @param {Date} date
+     * @return {string}
+     */
+    function toZeroSslDate(date) {
+      const pad = (number) => String(number).padStart(2, '0');
+
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+        + ` ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    }
+
+    function buildTask() {
+      const getCertificate = this.sinon.stub().resolves(new Certificate({
+        id: CERTIFICATE_ID,
+        common_name: '1.2.3.4',
+        status: 'issued',
+        created: toZeroSslDate(new Date(Date.now() - 24 * 60 * 60 * 1000)),
+        expires: toZeroSslDate(new Date(Date.now() + 60 * 24 * 60 * 60 * 1000)),
+      }));
+
+      return obtainZeroSSLCertificateTaskFactory(
+        this.sinon.stub(),
+        this.sinon.stub(),
+        createCertificate,
+        this.sinon.stub(),
+        downloadCertificate,
+        getCertificate,
+        this.sinon.stub(),
+        this.sinon.stub(),
+        verificationServer,
+        homeDir,
+        validateZeroSslCertificateFactory(homeDir, getCertificate),
+      )(realConfig, {
+        onCertificateCreated: this.sinon.stub(),
+      });
+    }
+
+    before(function before() {
+      this.timeout(30000);
+      other = issueCertificate({ ip: '1.2.3.4' });
+    });
+
+    beforeEach(function beforeEach() {
+      homeDir = HomeDir.createTemp();
+      realConfig = getBaseConfigFactory(homeDir)();
+      realConfig.set('externalIp', '1.2.3.4');
+      realConfig.set('platform.gateway.ssl.provider', 'zerossl');
+      realConfig.set('platform.gateway.ssl.providerConfigs.zerossl.apiKey', 'k'.repeat(32));
+      realConfig.set('platform.gateway.ssl.providerConfigs.zerossl.id', CERTIFICATE_ID);
+
+      sslConfigDir = homeDir.joinPath(realConfig.getName(), 'platform', 'gateway', 'ssl');
+      bundleFilePath = path.join(sslConfigDir, 'bundle.crt');
+      privateKeyFilePath = path.join(sslConfigDir, 'private.key');
+      writeCertificatePair(bundleFilePath, privateKeyFilePath);
+      fs.writeFileSync(path.join(sslConfigDir, 'csr.pem'), 'certificate-request');
+      fs.writeFileSync(bundleFilePath, pair.pem.slice(0, pair.pem.length / 2));
+
+      createCertificate = this.sinon.stub().rejects(new Error('a new certificate was requested'));
+      downloadCertificate = this.sinon.stub().resolves(pair.pem);
+    });
+
+    afterEach(() => {
+      homeDir.remove();
+    });
+
+    it('should download it again over a truncated bundle, without creating one', async function it() {
+      // Each download attempt waits five seconds first.
+      this.timeout(30000);
+
+      await buildTask.call(this).run({ expirationDays: Certificate.EXPIRATION_LIMIT_DAYS });
+
+      expect(createCertificate).to.not.have.been.called();
+      expect(downloadCertificate).to.have.been.calledOnceWith(CERTIFICATE_ID);
+      expect(fs.readFileSync(bundleFilePath, 'utf8')).to.equal(pair.pem);
+      expect(realConfig.get('platform.gateway.ssl.enabled')).to.be.true();
+    });
+
+    // The bundle is replaced in place, and renewal writes over one the gateway
+    // is serving.
+    it('should not replace the bundle with a download the key on disk cannot serve', async function it() {
+      this.timeout(30000);
+      downloadCertificate.resolves(other.pem);
+
+      await expect(buildTask.call(this).run({ expirationDays: Certificate.EXPIRATION_LIMIT_DAYS }))
+        .to.be.rejectedWith('--force');
+
+      expect(downloadCertificate).to.have.been.calledOnce();
+      expect(createCertificate).to.not.have.been.called();
+      expect(fs.readFileSync(bundleFilePath, 'utf8')).to.equal(pair.pem.slice(0, pair.pem.length / 2));
+      expect(realConfig.get('platform.gateway.ssl.enabled')).to.be.false();
+    });
   });
 
   describe('domain verification retry', () => {

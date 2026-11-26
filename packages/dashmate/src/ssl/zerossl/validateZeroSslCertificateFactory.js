@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { findCertificateFilesProblem } from '../findCertificatePairProblem.js';
 
 export const ERRORS = {
   API_KEY_IS_NOT_SET: 'API_KEY_IS_NOT_SET',
@@ -13,6 +14,14 @@ export const ERRORS = {
   CERTIFICATE_IS_NOT_VALID: 'CERTIFICATE_IS_NOT_VALID',
   ZERO_SSL_API_ERROR: 'ZERO_SSL_API_ERROR',
 };
+
+/**
+ * @param {string} filePath
+ * @return {boolean}
+ */
+function isRegularFile(filePath) {
+  return fs.statSync(filePath, { throwIfNoEntry: false })?.isFile() === true;
+}
 
 /**
  * @param {HomeDir} homeDir
@@ -63,10 +72,16 @@ export default function validateZeroSslCertificateFactory(homeDir, getCertificat
 
     // Certificate is already configured
 
-    // Check if certificate files are present
+    // Check if certificate files are present. Compose creates a missing
+    // bind-mount source as a directory, which holds no key.
     data.isCsrFilePresent = fs.existsSync(data.csrFilePath);
-    data.isPrivateKeyFilePresent = fs.existsSync(data.privateKeyFilePath);
-    data.isBundleFilePresent = fs.existsSync(data.bundleFilePath);
+    data.isPrivateKeyFilePresent = isRegularFile(data.privateKeyFilePath);
+
+    // A bundle counts as downloaded only when the gateway can serve it with
+    // the key beside it. One that a full disk cut short, or that belongs to
+    // another key, is downloaded again rather than kept.
+    data.isBundleFilePresent = data.isPrivateKeyFilePresent
+      && findCertificateFilesProblem(data.bundleFilePath, data.privateKeyFilePath) === null;
 
     // This function will throw an error if certificate with specified ID is not present
     try {

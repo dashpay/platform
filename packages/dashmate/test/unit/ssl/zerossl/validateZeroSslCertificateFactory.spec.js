@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import validateZeroSslCertificateFactory, { ERRORS } from '../../../../src/ssl/zerossl/validateZeroSslCertificateFactory.js';
 import Certificate from '../../../../src/ssl/zerossl/Certificate.js';
+import HomeDir from '../../../../src/config/HomeDir.js';
+import { issueCertificate } from '../../../../src/test/certificateFixtures.js';
 
 describe('validateZeroSslCertificateFactory', () => {
   let config;
@@ -33,6 +35,7 @@ describe('validateZeroSslCertificateFactory', () => {
     config.get.withArgs('platform.gateway.ssl.providerConfigs.zerossl.id').returns('certificate-id');
 
     this.sinon.stub(fs, 'existsSync').returns(true);
+    this.sinon.stub(fs, 'statSync').returns({ isFile: () => true });
 
     validateZeroSslCertificate = validateZeroSslCertificateFactory(homeDir, getCertificate);
   });
@@ -65,7 +68,7 @@ describe('validateZeroSslCertificateFactory', () => {
     const sslConfigDir = path.join('/home/dir', 'my-config', 'platform', 'gateway', 'ssl');
     const privateKeyFilePath = path.join(sslConfigDir, 'private.key');
 
-    fs.existsSync.withArgs(privateKeyFilePath).returns(false);
+    fs.statSync.withArgs(privateKeyFilePath).returns(undefined);
 
     getCertificate.resolves({
       common_name: '1.2.3.4',
@@ -209,5 +212,71 @@ describe('validateZeroSslCertificateFactory', () => {
     expect(result.error).to.be.undefined();
     expect(result.data).to.exist();
     expect(result.data.certificate).to.equal(certificate);
+  });
+
+  // The files the certificate was installed as, on a real disk: an obtain
+  // downloads a bundle again unless it counts as there.
+  describe('the certificate files on disk', () => {
+    let pair;
+    let realHomeDir;
+    let sslConfigDir;
+
+    before(function before() {
+      this.timeout(30000);
+      pair = issueCertificate({ ip: '1.2.3.4' });
+    });
+
+    beforeEach(function beforeEach() {
+      fs.existsSync.restore();
+      fs.statSync.restore();
+
+      realHomeDir = HomeDir.createTemp();
+      sslConfigDir = realHomeDir.joinPath('my-config', 'platform', 'gateway', 'ssl');
+      fs.mkdirSync(sslConfigDir, { recursive: true });
+      fs.writeFileSync(path.join(sslConfigDir, 'csr.pem'), 'certificate-request');
+
+      getCertificate.resolves({
+        common_name: '1.2.3.4',
+        status: 'issued',
+        isExpiredInDays: this.sinon.stub().returns(false),
+      });
+
+      validateZeroSslCertificate = validateZeroSslCertificateFactory(realHomeDir, getCertificate);
+    });
+
+    afterEach(() => {
+      realHomeDir.remove();
+    });
+
+    it('should count a bundle the gateway can serve with the key as downloaded', async () => {
+      fs.writeFileSync(path.join(sslConfigDir, 'bundle.crt'), pair.pem);
+      fs.writeFileSync(path.join(sslConfigDir, 'private.key'), pair.keyPem);
+
+      const result = await validateZeroSslCertificate(config, expirationDays);
+
+      expect(result.error).to.be.undefined();
+      expect(result.data.isBundleFilePresent).to.be.true();
+    });
+
+    // A full disk cuts the bundle short after the key was written.
+    it('should not count a truncated bundle as downloaded', async () => {
+      fs.writeFileSync(path.join(sslConfigDir, 'bundle.crt'), pair.pem.slice(0, pair.pem.length / 2));
+      fs.writeFileSync(path.join(sslConfigDir, 'private.key'), pair.keyPem);
+
+      const result = await validateZeroSslCertificate(config, expirationDays);
+
+      expect(result.error).to.be.undefined();
+      expect(result.data.isBundleFilePresent).to.be.false();
+    });
+
+    // Compose creates a missing bind-mount source as a directory. The key the
+    // certificate was requested with is gone.
+    it('should not count a directory where the key goes as the key', async () => {
+      fs.mkdirSync(path.join(sslConfigDir, 'private.key'));
+
+      const result = await validateZeroSslCertificate(config, expirationDays);
+
+      expect(result.error).to.equal(ERRORS.PRIVATE_KEY_IS_NOT_PRESENT);
+    });
   });
 });
