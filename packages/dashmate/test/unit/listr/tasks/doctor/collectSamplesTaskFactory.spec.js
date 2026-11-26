@@ -2,13 +2,18 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import tls from 'node:tls';
+import zlib from 'zlib';
 import { Listr } from 'listr2';
+import si from 'systeminformation';
 import getBaseConfigFactory from '../../../../../configs/defaults/getBaseConfigFactory.js';
 import HomeDir from '../../../../../src/config/HomeDir.js';
 import createCertificateForTest from '../../../../../src/test/createCertificateForTest.js';
 import analyseConfigFactory from '../../../../../src/doctor/analyse/analyseConfigFactory.js';
+import analyseServiceContainersFactory from '../../../../../src/doctor/analyse/analyseServiceContainersFactory.js';
+import archiveSamples from '../../../../../src/doctor/archiveSamples.js';
 import { SEVERITY } from '../../../../../src/doctor/Prescription.js';
 import Samples from '../../../../../src/doctor/Samples.js';
+import unarchiveSamplesFactory from '../../../../../src/doctor/unarchiveSamplesFactory.js';
 import collectSamplesTaskFactory from '../../../../../src/listr/tasks/doctor/collectSamplesTaskFactory.js';
 import Certificate from '../../../../../src/ssl/zerossl/Certificate.js';
 import checkGatewayCertificateFactory from '../../../../../src/ssl/checkGatewayCertificateFactory.js';
@@ -412,6 +417,153 @@ describe('collectSamplesTaskFactory', () => {
       }
 
       expect(samples.getServiceInfo('gateway', 'sslPrivateKeyMode')).to.be.undefined();
+    });
+  });
+
+  // The report is the artefact an operator sends to support, and the command
+  // tells them it carries no secrets. Containers get their credentials through
+  // the environment, so the inspect sample is where they would end up.
+  describe('container samples in the archive', () => {
+    const SERVICE = { name: 'drive_abci', title: 'Drive ABCI' };
+
+    // Deliberately not a value from the config: the environment has to be
+    // redacted in its own right, not only because the same value is also
+    // scrubbed as a known config secret.
+    const ENVIRONMENT_SECRET = 'environmentOnlyValue7Qx2';
+
+    let archiveRoot;
+    let previousTmpDir;
+    let getServiceList;
+
+    /**
+     * @return {Promise<string>} path to the archive
+     */
+    async function collectAndArchive() {
+      await collectSamples();
+      await archiveSamples(samples, archiveRoot, config);
+
+      const [archiveName] = fs.readdirSync(archiveRoot)
+        .filter((name) => name.endsWith('.tar.gz'));
+
+      return path.join(archiveRoot, archiveName);
+    }
+
+    /**
+     * A tarball stores member contents verbatim, so the decompressed stream
+     * holds every byte of every file in the archive, whatever its name.
+     *
+     * @param {string} archivePath
+     * @return {string}
+     */
+    function readArchivedBytes(archivePath) {
+      return zlib.gunzipSync(fs.readFileSync(archivePath)).toString('utf8');
+    }
+
+    beforeEach(function beforeEach() {
+      archiveRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dashmate-report-test-'));
+
+      // The archive is staged under the system temp directory before it is packed
+      previousTmpDir = process.env.TMPDIR;
+      process.env.TMPDIR = archiveRoot;
+
+      getServiceList = () => [SERVICE];
+
+      this.sinon.stub(si, 'dockerContainerStats').resolves([]);
+
+      collectSamplesTask = collectSamplesTaskFactory(
+        dockerCompose,
+        this.sinon.stub().returns(rpcClient),
+        this.sinon.stub().resolves('127.0.0.1'),
+        this.sinon.stub().returns({ request: this.sinon.stub().resolves({}) }),
+        getServiceList,
+        this.sinon.stub().resolves({}),
+        homeDir,
+        validateZeroSslCertificateFactory(homeDir, getCertificate),
+        this.sinon.stub().resolves({}),
+        checkGatewayCertificateFactory(homeDir),
+        new RenewalRecordRepository(homeDir),
+      );
+
+      getCertificate.resolves(new Certificate({
+        id: 'certificate-id',
+        common_name: EXTERNAL_IP,
+        status: 'issued',
+        created: toZeroSslDate(daysFromNow(-1)),
+        expires: toZeroSslDate(daysFromNow(89)),
+      }));
+    });
+
+    afterEach(() => {
+      if (previousTmpDir === undefined) {
+        delete process.env.TMPDIR;
+      } else {
+        process.env.TMPDIR = previousTmpDir;
+      }
+
+      fs.rmSync(archiveRoot, { recursive: true, force: true });
+    });
+
+    it('should not archive the values of container environment variables', async () => {
+      dockerCompose.inspectService.resolves({
+        Id: 'container-id',
+        Config: {
+          Image: 'dashpay/drive:test',
+          Env: [
+            `CORE_CONSENSUS_JSON_RPC_PASSWORD=${ENVIRONMENT_SECRET}`,
+            'NETWORK=testnet',
+            'PROMETHEUS_BIND_ADDRESS=',
+          ],
+        },
+        State: { Status: 'running', Restarting: false, ExitCode: 0 },
+      });
+
+      const archived = readArchivedBytes(await collectAndArchive());
+
+      expect(archived).to.not.contain(ENVIRONMENT_SECRET);
+
+      // Every value goes, not only the ones whose name looks sensitive: a
+      // variable added later is redacted without anyone having to list it.
+      expect(archived).to.not.contain('NETWORK=testnet');
+
+      // Which variables a container was started with still tells a container
+      // created before a variable existed apart from one created after.
+      expect(archived).to.contain('"CORE_CONSENSUS_JSON_RPC_PASSWORD=<redacted>"');
+      expect(archived).to.contain('"NETWORK=<redacted>"');
+      expect(archived).to.contain('"PROMETHEUS_BIND_ADDRESS="');
+    });
+
+    it('should keep what the container analyser reads from an archived inspect', async () => {
+      const state = {
+        Status: 'restarting',
+        Running: true,
+        Restarting: true,
+        OOMKilled: false,
+        ExitCode: 137,
+        Error: 'container exited unexpectedly',
+      };
+
+      dockerCompose.inspectService.resolves({
+        Id: 'container-id',
+        Config: {
+          Image: 'dashpay/drive:test',
+          Env: [`CORE_CONSENSUS_JSON_RPC_PASSWORD=${ENVIRONMENT_SECRET}`],
+        },
+        State: state,
+      });
+
+      const restored = await unarchiveSamplesFactory(getServiceList)(await collectAndArchive());
+
+      const inspect = restored.getServiceInfo(SERVICE.name, 'dockerInspect');
+
+      expect(inspect.State).to.deep.equal(state);
+      expect(inspect.Config.Image).to.equal('dashpay/drive:test');
+
+      const problems = analyseServiceContainersFactory(getServiceList)(restored)
+        .map((problem) => problem.getDescription());
+
+      expect(problems).to.include(
+        'Service Drive ABCI failed with an error code 137\nand message: container exited unexpectedly.',
+      );
     });
   });
 });

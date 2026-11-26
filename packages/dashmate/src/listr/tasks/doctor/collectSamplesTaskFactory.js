@@ -93,6 +93,63 @@ function hideOperatorNameIn(text) {
   return maskOperatorIdentity(text, getOperatorIdentity());
 }
 
+const REDACTED_ENVIRONMENT_VALUE = '<redacted>';
+
+/**
+ * @param {*} entry - a `NAME=value` string
+ * @return {string}
+ */
+function redactEnvironmentEntry(entry) {
+  if (typeof entry !== 'string') {
+    return REDACTED_ENVIRONMENT_VALUE;
+  }
+
+  const separatorIndex = entry.indexOf('=');
+
+  // Docker reports every variable as NAME=value, so an entry without a
+  // separator is not a name it is safe to assume
+  if (separatorIndex === -1) {
+    return REDACTED_ENVIRONMENT_VALUE;
+  }
+
+  // A variable set to nothing has nothing to hide, and that it is empty can
+  // be what is wrong with it
+  if (separatorIndex === entry.length - 1) {
+    return entry;
+  }
+
+  return `${entry.slice(0, separatorIndex)}=${REDACTED_ENVIRONMENT_VALUE}`;
+}
+
+/**
+ * Keep the names of a container's environment variables and drop their values.
+ *
+ * Services receive their credentials through the environment, and a report is
+ * what an operator hands to whoever is helping them. The values are not worth
+ * keeping: each one either repeats the dashmate config, which the report
+ * carries with its secrets hidden, or comes with the image, which the inspect
+ * output names. The names stay, because which variables a container was
+ * started with tells one created before a variable existed apart from one
+ * created after.
+ *
+ * Every value goes, not only those whose name looks secret, so a variable
+ * added later is covered without anyone having to remember to list it.
+ *
+ * @param {Object} inspect - mutated in place
+ */
+function redactContainerEnvironment(inspect) {
+  const environment = inspect?.Config?.Env;
+
+  if (environment === undefined || environment === null) {
+    return;
+  }
+
+  // eslint-disable-next-line no-param-reassign
+  inspect.Config.Env = Array.isArray(environment)
+    ? environment.map(redactEnvironmentEntry)
+    : REDACTED_ENVIRONMENT_VALUE;
+}
+
 export default function collectSamplesTaskFactory(
   dockerCompose,
   createRpcClient,
@@ -573,6 +630,8 @@ export default function collectSamplesTaskFactory(
                 if (logs?.err) {
                   logs.err = hideOperatorNameIn(logs.err);
                 }
+
+                redactContainerEnvironment(inspect);
 
                 // Hide username & external ip from inspect
                 obfuscateOperatorName(inspect);
