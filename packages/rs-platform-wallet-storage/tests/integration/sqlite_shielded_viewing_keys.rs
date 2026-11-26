@@ -168,7 +168,7 @@ fn shielded_wipe_drops_the_networks_viewing_keys_and_keeps_other_networks() {
 }
 
 #[test]
-fn shielded_wipe_flushes_buffered_viewing_keys_before_deleting() {
+fn shielded_wipe_drops_the_networks_buffered_viewing_keys() {
     let (persister, _tmp, path) =
         common::fresh_persister_with_mode(platform_wallet_storage::FlushMode::Manual);
     let wallet = wid(0x73);
@@ -182,6 +182,43 @@ fn shielded_wipe_flushes_buffered_viewing_keys_before_deleting() {
         .expect("wipe testnet");
     persister.commit_writes().expect("flush after wipe");
 
+    assert_eq!(viewing_key_count(&path, &wallet), 0);
+}
+
+#[test]
+fn shielded_wipe_does_not_fail_on_the_networks_other_buffered_writes() {
+    let (persister, _tmp, path) =
+        common::fresh_persister_with_mode(platform_wallet_storage::FlushMode::Manual);
+    let wallet = wid(0x7B);
+    ensure_wallet_meta(&persister, &wallet);
+    persister
+        .store(
+            wallet,
+            with_metadata(
+                changeset(SubwalletId::new(wallet, 0), [0xE9; 96]),
+                dashcore::Network::Testnet,
+            ),
+        )
+        .expect("buffer a viewing key beside another write");
+    persister.force_next_flush_to_fail(WalletStorageError::Sqlite(rusqlite::Error::SqliteFailure(
+        rusqlite::ffi::Error {
+            code: rusqlite::ErrorCode::DatabaseBusy,
+            extended_code: rusqlite::ffi::SQLITE_BUSY,
+        },
+        Some("database is busy".into()),
+    )));
+
+    persister
+        .wipe_shielded_state(dashcore::Network::Testnet)
+        .expect("the wallet's other buffered write does not fail the wipe");
+
+    let report = persister.commit_writes().expect("commit report");
+    assert_eq!(
+        report.failed.len(),
+        1,
+        "the wipe flushed nothing, so the primed failure is still armed"
+    );
+    persister.commit_writes().expect("flush after wipe");
     assert_eq!(viewing_key_count(&path, &wallet), 0);
 }
 
@@ -270,15 +307,20 @@ fn shielded_wipe_classifies_a_wallet_with_no_row_by_its_buffered_network() {
             )
             .unwrap()
     };
-    assert_eq!(wallet_rows(&testnet_wallet), 1, "flushed by the wipe");
-    assert_eq!(viewing_key_count(&path, &testnet_wallet), 0, "then wiped");
-    assert_eq!(
-        wallet_rows(&mainnet_wallet),
-        0,
-        "another network's new wallet stays buffered"
-    );
+    assert_eq!(wallet_rows(&testnet_wallet), 0, "the wipe flushes nothing");
+    assert_eq!(wallet_rows(&mainnet_wallet), 0, "the wipe flushes nothing");
 
     persister.commit_writes().expect("flush after wipe");
+    assert_eq!(
+        wallet_rows(&testnet_wallet),
+        1,
+        "its other writes stayed buffered"
+    );
+    assert_eq!(
+        viewing_key_count(&path, &testnet_wallet),
+        0,
+        "its buffered viewing key was dropped"
+    );
     assert_eq!(viewing_key_count(&path, &mainnet_wallet), 1);
 }
 

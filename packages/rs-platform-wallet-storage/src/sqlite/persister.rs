@@ -1453,45 +1453,39 @@ impl PlatformWalletPersistence for SqlitePersister {
         }
     }
 
-    /// Flushes this network's buffered writes under the delete's connection
-    /// guard, then deletes the network's viewing keys in one transaction. A
-    /// wallet with no stored row yet is classified by the network of its
-    /// buffered metadata. One with neither has an unknown network, like a
-    /// viewing-key row whose wallet has no row: its shielded writes are
-    /// dropped on every network's wipe. A flush failure fails the wipe with
-    /// the rows in place.
+    /// Deletes the network's viewing keys in one transaction, under the
+    /// connection guard every flush takes. The buffered viewing keys of the
+    /// network's wallets are dropped, not written first: the delete would
+    /// remove them anyway. Their other buffered writes stay buffered, so a
+    /// failing unrelated write cannot fail the wipe. A wallet with no stored
+    /// row yet is classified by the network of its buffered metadata. One with
+    /// neither has an unknown network, like a viewing-key row whose wallet has
+    /// no row, and its buffered viewing keys are dropped on every network's
+    /// wipe.
     #[cfg(feature = "shielded")]
     fn wipe_shielded_state(&self, network: dashcore::Network) -> Result<(), PersistenceError> {
         self.ensure_writable("wipe_shielded_state")
             .map_err(PersistenceError::from)?;
         let mut conn = self.conn().map_err(PersistenceError::from)?;
-        // Other networks' buffers stay put: a failing changeset there must
-        // not fail this network's Clear.
         let label = schema::wallets::network_to_str(network);
         for wallet_id in self
             .buffer
             .dirty_wallets()
             .map_err(PersistenceError::from)?
         {
-            let this_network =
+            let other_network =
                 match schema::wallets::fetch(&conn, &wallet_id).map_err(PersistenceError::from)? {
-                    Some((stored_network, _)) => stored_network == label,
-                    None => match self
+                    Some((stored_network, _)) => stored_network != label,
+                    None => self
                         .buffer
                         .buffered_network(&wallet_id)
                         .map_err(PersistenceError::from)?
-                    {
-                        Some(buffered) => buffered == network,
-                        None => {
-                            self.buffer
-                                .discard_shielded(&wallet_id)
-                                .map_err(PersistenceError::from)?;
-                            false
-                        }
-                    },
+                        .is_some_and(|buffered| buffered != network),
                 };
-            if this_network {
-                self.flush_locked(&mut conn, &wallet_id)?;
+            if !other_network {
+                self.buffer
+                    .discard_shielded(&wallet_id)
+                    .map_err(PersistenceError::from)?;
             }
         }
         let tx = conn
