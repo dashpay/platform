@@ -6,6 +6,12 @@ This guide explains how to update Dashmate and your node to the latest version.
 
 The `update` command is used to quickly get the latest patches for dashmate components. It is necessary to restart the node after the update is complete.
 
+Successful updates also clean up unused historical Dash images built more than
+14 days ago, including images already on disk before this feature was installed.
+Configured, container-referenced and immediate pre-update images are protected.
+Use `--skip-image-cleanup` to opt out; see the
+[cleanup policy](./commands/update.md#historical-docker-image-cleanup) for details.
+
 ```
 USAGE
   $ dashmate update [-v] [--config <value>]
